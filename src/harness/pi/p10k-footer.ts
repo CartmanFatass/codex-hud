@@ -19,6 +19,10 @@ import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { WorkSignals } from '../../render/work-summary.js';
 import { applyBarSettings } from '../../bar-settings.js';
+import { readOpenAiBalance } from '../../collectors/exp-store.js';
+import { expApproxUsd } from '../../exp-config.js';
+import { experimentsEnabled } from '../../settings.js';
+import { getHudHome } from '../../hud-home.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
 import { HUD_STATUS_KEY } from './segment.js';
 import type { FooterAPI, FooterContext, FooterHost } from './footer-host.js';
@@ -462,7 +466,7 @@ export function createP10kFooter(
   const DUPLICATE_STATUS_KEYS = new Set(['mcp', 'lens', 'pi-lens', 'pi-lens-lsp', HUD_STATUS_KEY]);
 
   /** What pi has to say, as `renderBar` takes it; a switched-off or empty field is simply not there. */
-  function buildFacts(ctx: FooterContext, pi: FooterAPI, quota: string | undefined): bar.BarFacts {
+  function buildFacts(ctx: FooterContext, pi: FooterAPI, quota: bar.BarFacts['quota']): bar.BarFacts {
     const model = ctx.model;
     const thinking = model?.reasoning ? pi.getThinkingLevel?.() : undefined;
     // Context pressure against the window; `?` while pi has no reading yet.
@@ -511,7 +515,7 @@ export function createP10kFooter(
         marks: marks.join(''),
         dirty: marks.length > 0,
       },
-      quota: quota ? { text: quota } : undefined,
+      quota,
       needs: work.needs,
       events: work.events,
       loaded: {
@@ -528,6 +532,21 @@ export function createP10kFooter(
   let view: FooterContext | null = null;
   let stats: Stats | undefined;
   let capturedViz: string | undefined;
+  let apiQuota: bar.BarFacts['quota'];
+  function readApiQuota(model: FooterContext['model']): bar.BarFacts['quota'] {
+    try {
+      if (model?.provider !== 'oapi' || !experimentsEnabled(env)) return;
+      const balance = readOpenAiBalance(getHudHome(env), Date.now(), true);
+      return (
+        balance && {
+          label: 'API',
+          text: balance.remainingMicros === null ? 'uncalibrated' : expApproxUsd(Math.max(0, balance.remainingMicros)),
+        }
+      );
+    } catch {
+      return;
+    }
+  }
   let capturedLoaded: LoadedCounts = { mcp: 0, skills: 0 };
   /** What the HUD jobs ask and just did, pushed by the Work segment's timer. */
   let work: WorkSignals = { needs: [], events: [] };
@@ -567,6 +586,7 @@ export function createP10kFooter(
     if (!stats || stats.sessionId !== sessionId || stats.leafId !== leafId) stats = computeStats(ctx);
     capturedViz = readVizMode(ctx);
     capturedLoaded = loadedCounts(pi);
+    apiQuota = readApiQuota(ctx.model);
     const cwd = ctx.sessionManager.getCwd(),
       name = ctx.sessionManager.getSessionName?.(),
       usage = ctx.getContextUsage();
@@ -582,14 +602,17 @@ export function createP10kFooter(
     repaint?.();
   }
   /** The one line, fitted to `width`; pi's own width measure has the last word, so the host never gets a wider row. */
-  function line(width: number, quota: string | undefined): string {
+  function line(width: number, ctx: FooterContext): string {
     if (!view || !stats || !mounted || width <= 0) return '';
+    const subscriptionQuota = subscription.draw(ctx);
+    // Only oapi uses the ledger; subscription.draw only returns a reading for openai + OAuth.
+    const quota = ctx.model?.provider === 'oapi' ? apiQuota : subscriptionQuota ? { text: subscriptionQuota } : undefined;
     const facts = buildFacts(view, pi, quota);
     const now = Date.now();
     const style = noColor() ? 'line' : activeBarStyle();
     let { line: text, kept } = bar.renderBar(facts, width, now, style);
     // In a narrow pi pane, prefer the subscription reading to the path and context.
-    if (quota && displayConfig().barFields.includes('quota') && !kept.includes('quota')) {
+    if (subscriptionQuota && displayConfig().barFields.includes('quota') && !kept.includes('quota')) {
       for (const context of [facts.context, undefined]) {
         const fitted = bar.renderBar({ ...facts, project: undefined, context }, width, now, style);
         if (fitted.kept.includes('quota')) {
@@ -697,6 +720,7 @@ export function createP10kFooter(
     view = null;
     repaint = null;
     stats = undefined;
+    apiQuota = undefined;
     turnStartedAt = null;
     footerStatuses = null;
     subscription.stop();
@@ -719,8 +743,7 @@ export function createP10kFooter(
       footerStatuses = () => data.getExtensionStatuses();
       return {
         render(width) {
-          const quota = mounted && current === ctx && width > 0 ? subscription.draw(ctx) : undefined;
-          const text = line(width, quota);
+          const text = current === ctx ? line(width, ctx) : '';
           return text ? text.split('\n') : [];
         },
         invalidate() {},
@@ -740,9 +763,10 @@ export function createP10kFooter(
     modelChanged: subscription.modelChanged,
     requestStarted: subscription.requestStarted,
     requestWindows: subscription.requestWindows,
-    /** The Work segment's timer: what the HUD jobs ask now and what they just did. */
+    /** Work signals also refresh idle ledger balances (other workers or cycle rollover); no new timer. */
     setWork(signals: WorkSignals) {
       work = signals;
+      apiQuota = readApiQuota(current?.model);
       repaint?.();
     },
     working() {

@@ -1,4 +1,5 @@
 /** Public host projections. The package template supplies pi's own classes and width helpers. */
+import type { ExpModelCost } from './exp-usage.js';
 export interface FooterComponent {
   render(width: number): string[];
   invalidate(): void;
@@ -41,6 +42,7 @@ export interface FooterContext {
     name?: string;
     provider?: string;
     baseUrl?: string;
+    cost?: ExpModelCost;
     reasoning?: boolean;
     contextWindow?: number;
   };

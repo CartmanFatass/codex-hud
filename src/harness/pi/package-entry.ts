@@ -9,6 +9,7 @@ import { startSessionWatch } from '../../cli/watch.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
+import { piExpUsage } from './exp-usage.js';
 import type { FooterAPI, FooterHost } from './footer-host.js';
 /** Structural host projection. SDK compatibility is checked against the installed declarations. */
 export interface PiPackageAPI extends FooterAPI {
@@ -271,6 +272,10 @@ export function installPiPackage(
     },
   });
   if (mode !== 'delegate') return;
+  const expUsage = piExpUsage(binding.hudHome, env);
+  on('context', expUsage.requestStart);
+  on('message_end', expUsage.messageEnd);
+  on('turn_end', expUsage.turnEnd);
   for (const tool of PI_ROLE_TOOLS)
     pi.registerTool({
       name: tool.name,

@@ -4,11 +4,13 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import {
   EXP_ACCOUNTS,
   expAlias,
+  expApproxUsd,
   expInteger,
   expTimeZone,
   expUsd,
   parseExpUsd,
   type ExpAccount,
+  type ExpBalance,
   type ExpData,
   type ExpEdit,
 } from '../exp-config.js';
@@ -56,6 +58,36 @@ export interface ExpPage {
 
 const enabled = (on: boolean) => t(on ? 'on' : 'off');
 const offline = () => t('not connected');
+const remaining = (balance: ExpBalance | undefined) =>
+  !balance
+    ? t('unavailable')
+    : balance.remainingMicros === null
+      ? t('uncalibrated')
+      : expApproxUsd(Math.max(0, balance.remainingMicros));
+function accountReadings(detail: ExpAccount, balance: ExpBalance | undefined): [string, string][] {
+  const value = (reading: string) => (detail === 'openai-api' ? reading : offline());
+  const unknown = t('unavailable');
+  const calibration = balance?.lastCalibration;
+  return [
+    ['Estimated remaining', value(remaining(balance))],
+    ['Current period', value(balance ? `${balance.startDate} → ${balance.endDate} · ${balance.timeZone}` : unknown)],
+    ['Billed this period', value(balance ? `$${expUsd(balance.billedMicros)}` : unknown)],
+    ['Unpriced requests', value(balance ? String(balance.unpriced) : unknown)],
+    [
+      'Recent calibration',
+      value(
+        balance
+          ? calibration
+            ? `${calibration.at.slice(0, 16).replace('T', ' ')} UTC · $${expUsd(calibration.remainingMicros)}`
+            : t('none')
+          : unknown
+      ),
+    ],
+    ...(balance?.remainingMicros != null && balance.remainingMicros < 0
+      ? [['Estimated overage', `$${expUsd(-balance.remainingMicros)}`] as [string, string]]
+      : []),
+  ];
+}
 const toggle = (id: string, label: string, on: boolean, change: (value: boolean) => ExpEdit): Entry => ({
   id,
   label,
@@ -132,7 +164,7 @@ function proxyReadings(data: ExpData, nowMs: number): [string, string][] {
 function groups(
   data: ExpData,
   detail: Detail | undefined
-): { label: string; entries?: Entry[]; readings?: string[]; notes?: string[] }[] {
+): { label: string; entries?: Entry[]; readings?: (string | [string, string])[]; notes?: string[] }[] {
   const { config, profiles } = data;
   if (detail === 'codex-help')
     return [
@@ -184,13 +216,9 @@ function groups(
             return value === undefined ? undefined : { field: 'calibration', account: detail, value };
           }),
         ],
-        readings: [
-          'Estimated remaining',
-          'Current period',
-          'Recorded costs',
-          'Unpriced requests',
-          'Recent calibration',
-        ],
+        readings: accountReadings(detail, detail === 'openai-api' ? data.openAiBalance : undefined),
+        notes:
+          detail === 'openai-api' ? ['Only oapi requests observed by the installed pi HUD are counted.'] : undefined,
       },
     ];
   }
@@ -262,7 +290,11 @@ function groups(
     {
       label: 'API grants',
       entries: EXP_ACCOUNTS.map((account) =>
-        link(account, account, `${enabled(config.grants[account].enabled)} · ${offline()}`)
+        link(
+          account,
+          account,
+          `${enabled(config.grants[account].enabled)} · ${account === 'openai-api' ? remaining(data.openAiBalance) : offline()}`
+        )
       ),
     },
   ];
@@ -285,7 +317,10 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
         ...rows,
         boardRow(''),
         ...text(t('Old estimate → new base')),
-        ...text(`${offline()} → $${expUsd(edit.preview.value)}`, theme.board.active),
+        ...text(
+          `${edit.preview.account === 'openai-api' ? remaining(data.openAiBalance) : offline()} → $${expUsd(edit.preview.value)}`,
+          theme.board.active
+        ),
         ...text(t('This does not change the next grant.'), theme.board.muted),
       ];
     }
@@ -302,6 +337,12 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
       ...rows,
       boardRow(''),
       ...text(t(entry.edit.hint), theme.board.muted),
+      ...(page.detail === 'openai-api' &&
+      data.openAiBalance &&
+      (data.config.grants['openai-api'].schedule || data.config.grants['openai-api'].enabled) &&
+      ['grant', 'renewal', 'zone'].includes(entry.id)
+        ? text(t('Effective at next renewal: {date}', { date: data.openAiBalance.endDate }), theme.board.muted)
+        : []),
       ...text(`> ${monitorText(edit.text)}${edit.text ? ' ' : ''}▌`, theme.board.active),
     ];
   }
@@ -313,7 +354,9 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
       ...(entries ?? []).flatMap((entry) =>
         labeled(entry.label, entry.value).map((row, i) => (i ? row : { ...row, item: entry.id }))
       ),
-      ...(readings ?? []).flatMap((reading) => labeled(t(reading), offline())),
+      ...(readings ?? []).flatMap((reading) =>
+        typeof reading === 'string' ? labeled(t(reading), offline()) : labeled(t(reading[0]), reading[1])
+      ),
       ...(page.detail === 'proxy-status'
         ? proxyReadings(data, nowMs).flatMap(([name, value]) => labeled(name, value))
         : []),

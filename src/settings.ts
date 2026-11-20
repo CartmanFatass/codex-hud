@@ -203,6 +203,8 @@ function readSettings(file: string): HudSettings {
   }
 }
 
+export const experimentsEnabled = (env = process.env): boolean => readSettings(settingsPath(env)).experiments;
+
 function decisionApi(env = process.env): DecisionProviderId {
   try { return resolveDecisions(readHudConfig(path.join(getHudHome(env), 'config.json'))).primary; }
   catch { return 'openai'; }

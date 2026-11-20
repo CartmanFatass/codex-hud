@@ -42,7 +42,7 @@ function fixture(t) {
 }
 
 function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiments: true }) {
-  const data = () => readExpData(f.env.HUD_HOME, f.env);
+  const data = () => readExpData(f.env.HUD_HOME, f.env, NOW);
   const decoder = new WorkbenchInputDecoder('workboard');
   let expData = data(),
     frame = draw(state, expData);
@@ -236,7 +236,7 @@ test('calibration previews before any write, cancels cleanly, then appends one p
   p.press('enter');
   const file = join(f.dir, 'ledger-openai-api.jsonl');
   assert.equal(p.edit('calibration', '13.40'), undefined);
-  assert.match(plain(p.frame()), /Old estimate → new base\nnot connected → \$13\.40/);
+  assert.match(plain(p.frame()), /Old estimate → new base\nuncalibrated → \$13\.40/);
   p.press('escape');
   assert.equal(fs.existsSync(file), false);
   p.edit('grant', '20');
@@ -303,7 +303,7 @@ test('40 columns in EN and ZH: both layouts show whole labels, offline data, and
       p.press('escape');
       p.select('openai-api');
       p.press('enter');
-      assert.match(exact(), lang === 'en' ? /Unpriced requests\s+not connected/ : /未计价请求数\s+未接入/);
+      assert.match(exact(), lang === 'en' ? /Unpriced requests\s+0/ : /未计价请求数\s+0/);
       p.edit('calibration', '13.40');
       assert.match(exact(), lang === 'en' ? /Old estimate → new base/ : /旧估算 → 新基准/);
     }

@@ -6,9 +6,10 @@ import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createFooterHost } from '../fakes/pi.mjs';
+import { expProxyPath, readExpConfig, readOpenAiBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
 const { displayTarget } = await import(pathToFileURL(path.join(root, 'integrations/panel/receipt.js')));
-const { visualWidth, truncateAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
+const { visualWidth, truncateAnsi, stripAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
 const footerHost = createFooterHost({ visibleWidth: visualWidth, truncateToWidth: truncateAnsi });
 const node = fs.realpathSync(process.execPath);
 function setup(t) {
@@ -309,6 +310,234 @@ test('combined pi packages retain delegation after canceled navigation and displ
   assert.equal(p.counts().splits, 0);
 });
 
+test('delegation collects live oapi requests, using request-time prices and persisted fallback IDs without a footer', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h, 'synthetic-worker', 'rpc');
+  const pathToLedger = path.join(f.binding.hudHome, 'exp', 'ledger-openai-api.jsonl');
+  const settings = (experiments) =>
+    fs.writeFileSync(path.join(f.binding.hudHome, 'hud-settings.json'), JSON.stringify({ experiments }));
+  const now = Date.parse('2026-11-20T10:30:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const grant = (field, value) =>
+    saveExpEdit(f.binding.hudHome, { field, account: 'openai-api', value }, Date.now(), f.env);
+  const lines = () => fs.readFileSync(pathToLedger, 'utf8').trimEnd().split('\n').map(JSON.parse);
+  const reply = (fields = {}) => ({
+    role: 'assistant',
+    provider: 'oapi',
+    model: 'synthetic-oapi',
+    stopReason: 'stop',
+    responseId: 'synthetic-vendor-id',
+    timestamp: now - 60000,
+    content: 'synthetic prompt text must never persist',
+    usage: { input: 12500, output: 40000, cacheRead: 20000, cacheWrite: 10000, cost: { total: 99 } },
+    ...fields,
+  });
+  const start = () => h.emit('context', c.ctx);
+  const finish = async (message, messageEntryId = 'assistant-entry') => {
+    await h.emit('message_end', c.ctx, { message });
+    await h.emit('turn_end', c.ctx, { message, messageEntryId });
+  };
+  c.ctx.model = {
+    id: 'synthetic-oapi',
+    provider: 'oapi',
+    cost: { input: 12, output: 10, cacheRead: 1, cacheWrite: 8 },
+  };
+  c.ctx.sessionManager.getEntries = () => {
+    throw Error('collector must not read old sessions');
+  };
+  c.ctx.sessionManager.getBranch = c.ctx.sessionManager.getEntries;
+  await load(f, h, { options: { env: f.env } });
+  await h.emit('session_start', c.ctx);
+  settings(true);
+  await start();
+  await finish(reply());
+  assert.equal(fs.existsSync(pathToLedger), false, 'account disabled');
+  grant('grant-enabled', true);
+  settings(false);
+  await start();
+  settings(true);
+  await finish(reply());
+  assert.equal(fs.existsSync(pathToLedger), false, 'no collection for requests started before enable');
+  for (const provider of ['openai', 'openai-codex', 'anthropic', 'synthetic-gateway']) {
+    await start();
+    await finish(reply({ provider }));
+  }
+  await start();
+  await finish(reply({ stopReason: 'error' }));
+  await start();
+  await finish(reply({ stopReason: 'aborted' }));
+  assert.equal(fs.existsSync(pathToLedger), false, 'non-oapi and incomplete requests');
+
+  grant('calibration', 13_400_000);
+  await start();
+  c.ctx.model.cost.input = 500; // in-flight edits cannot reprice the request
+  t.mock.timers.setTime(now + 1000);
+  await finish(reply());
+  assert.equal(lines()[1].costMicros, 650_000);
+  assert.equal(lines()[1].at, new Date(now + 1000).toISOString(), 'actual completion, not message start');
+  assert.equal(lines()[1].source, 'priced');
+  assert.deepEqual(Object.keys(lines()[1]).sort(), ['at', 'costMicros', 'id', 'model', 'source', 'tokens', 'type']);
+  assert.deepEqual(lines()[1].tokens, { input: 12500, output: 40000, cacheRead: 20000, cacheWrite: 10000 });
+  assert.doesNotMatch(fs.readFileSync(pathToLedger, 'utf8'), /synthetic prompt|synthetic-vendor-id/);
+  if (process.env.EXP_EXAMPLES) t.diagnostic(JSON.stringify(lines()[1]));
+
+  await start();
+  await finish(reply());
+  assert.equal(readOpenAiBalance(f.binding.hudHome, Date.now()).remainingMicros, 12_750_000);
+  const fallback = reply({
+    responseId: undefined,
+    model: 'synthetic-unknown',
+    usage: { ...reply().usage, cost: { total: 0, totalFromProvider: true } },
+  });
+  await start();
+  await h.emit('message_end', c.ctx, { message: fallback });
+  assert.equal(lines().length, 3, 'fallback waits for native message ID');
+  t.mock.timers.setTime(now + 90_000);
+  await h.emit('turn_end', c.ctx, { message: { ...fallback }, messageEntryId: 'stable-entry' });
+  assert.equal(lines().at(-1).at, new Date(now + 1000).toISOString(), 'tool time is not completion time');
+  await start();
+  await finish({ ...fallback }, 'stable-entry');
+  assert.equal(lines().at(-1).id, lines().at(-2).id);
+  assert.equal(lines().at(-1).source, 'unpriced');
+  assert.equal(lines().at(-1).costMicros, null);
+  await start();
+  await finish({ ...fallback, responseId: 'distinct-same-ms', usage: { ...fallback.usage, cost: { total: 99 } } });
+  assert.equal(lines().at(-1).source, 'unpriced', 'unmarked total alone is not billed cost');
+  assert.equal(readOpenAiBalance(f.binding.hudHome, Date.now()).unpriced, 2);
+  await start();
+  await finish(
+    reply({ responseId: 'reported', usage: { ...reply().usage, cost: { total: 0.25, totalFromProvider: true } } })
+  );
+  assert.equal(lines().at(-1).source, 'reported');
+  assert.equal(lines().at(-1).costMicros, 250_000);
+  await start();
+  await finish(
+    reply({
+      responseId: 'priced-by-actual-route',
+      model: 'synthetic-routed',
+      usage: {
+        ...reply().usage,
+        cost: { total: 0.65, input: 0.15, output: 0.4, cacheRead: 0.02, cacheWrite: 0.08, totalFromProvider: false },
+      },
+    })
+  );
+  assert.equal(lines().at(-1).source, 'priced');
+  assert.equal(lines().at(-1).costMicros, 650_000);
+  assert.equal(h.calls.footer, 0);
+  const count = lines().length;
+  await h.emit('session_shutdown', c.ctx);
+  h.tools.clear(); // The replacement Pi runtime starts with a fresh tool registry.
+  await load(f, h, { options: { env: f.env } });
+  await h.emit('session_start', c.ctx);
+  await finish(reply());
+  assert.equal(lines().length, count, 'startup/resume does not replay');
+  await start();
+  settings(false);
+  await finish(reply({ responseId: 'disabled-in-flight' }));
+  assert.equal(lines().length, count, 'closing EXP stops writes and preserves history');
+  await h.emit('session_shutdown', c.ctx);
+});
+
+test('40-column pi footer switches between a live subscription proxy and oapi balance, and clears on master off', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f);
+  const home = f.binding.hudHome;
+  f.env.NO_COLOR = '1';
+  f.env.PATH = path.join(f.home, 'bin'); // Only the fake herdr; no real Codex or provider.
+  const settings = (experiments) =>
+    fs.writeFileSync(path.join(home, 'hud-settings.json'), JSON.stringify({ experiments }));
+  settings(true);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-20T10:30:00Z') });
+  c.ctx.model = { id: 'gpt-5.2', provider: 'oapi' };
+  let oauth = true;
+  c.ctx.modelRegistry = { isUsingOAuth: () => oauth };
+  const profile = path.join(fs.realpathSync(f.home), '.codex');
+  fs.mkdirSync(profile);
+  fs.writeFileSync(path.join(profile, 'config.toml'), '# synthetic profile\n');
+  const change = (field, value) =>
+    saveExpEdit(home, { field, account: 'openai-api', value }, Date.now(), f.env);
+  change('grant-enabled', true);
+  change('calibration', 13_400_000);
+  change('binding', profile);
+  change('proxy-enabled', true);
+  fs.writeFileSync(
+    expProxyPath(home),
+    JSON.stringify({
+      profile,
+      bindingVersion: readExpConfig(home).proxy.bindingVersion,
+      primary: { usedPercent: 28, windowDurationMins: 300, resetsAt: Date.now() / 1000 + 1800 },
+      observedAtMs: Date.now(),
+      error: null,
+      failures: 0,
+      nextAttemptMs: null,
+    }),
+    { mode: 0o600 }
+  );
+  t.after(() => h.emit('session_shutdown', c.ctx));
+  await load(f, h, { options: { env: { ...f.env, HERDR_PANE_ID: undefined } } });
+  await load(f, h, p, 'hud-display.mjs');
+  await h.emit('session_start', c.ctx);
+  const request = async (responseId, total) => {
+    await h.emit('context', c.ctx);
+    t.mock.timers.tick(1000);
+    await h.emit('message_end', c.ctx, {
+      message: {
+        role: 'assistant',
+        provider: 'oapi',
+        model: 'gpt-5.2',
+        responseId,
+        stopReason: 'stop',
+        usage: { input: 4, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total, totalFromProvider: true } },
+      },
+    });
+    await h.emit('agent_end', c.ctx);
+  };
+  await request('sample-request', 0.65);
+  const row = () => {
+    const text = stripAnsi(h.components().footer.render(40)[0]);
+    assert.ok(visualWidth(text) <= 40, text);
+    return text;
+  };
+  const select = async (provider) => {
+    c.ctx.model = { ...c.ctx.model, provider };
+    await h.emit('model_select', c.ctx);
+  };
+  const api = /API ≈\$12\.75/;
+  const proxy = /5h ≈72%/;
+  assert.match(row(), api);
+  await select('openai');
+  assert.doesNotMatch(row(), /API/, 'switching to subscription immediately drops the ledger');
+  await until(() => proxy.test(row()), 'timed out loading the synthetic proxy snapshot');
+  const subscriptionRow = row();
+  await select('oapi');
+  const apiRow = row();
+  assert.match(apiRow, api);
+  assert.doesNotMatch(apiRow, /5h/, 'switching to oapi immediately drops the proxy');
+  await select('openai');
+  const switchedBack = row();
+  assert.match(switchedBack, proxy);
+  assert.doesNotMatch(switchedBack, /API/);
+  oauth = false;
+  await select('openai');
+  assert.doesNotMatch(row(), /5h|API/, 'openai without OAuth uses neither reading');
+  if (process.env.EXP_EXAMPLES) {
+    t.diagnostic(`openai OAuth: ${subscriptionRow}`);
+    t.diagnostic(`oapi: ${apiRow}`);
+  }
+  await select('oapi');
+  await h.commands.get('hud').handler('footer off', c.ctx);
+  await request('overage-request', 15);
+  assert.equal(readOpenAiBalance(f.binding.hudHome, Date.now()).remainingMicros, -2_250_000);
+  await h.commands.get('hud').handler('footer on', c.ctx);
+  assert.match(row(), /API ≈\$0(?:\s|$)/);
+  settings(false);
+  p.advance(5000); // The existing Work refresh clears an idle footer.
+  assert.doesNotMatch(row(), /API/);
+});
+
 test('agent_end updates the mounted footer exactly once', async (t) => {
   const f = setup(t),
     h = host(),
@@ -378,10 +607,10 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   await h.emit('session_shutdown', c.ctx);
 });
 
-async function until(check) {
-  const deadline = Date.now() + 3000;
+async function until(check, failure = 'timed out waiting for the native watcher') {
+  const deadline = performance.now() + 3000;
   while (!check()) {
-    assert.ok(Date.now() < deadline, 'timed out waiting for the native watcher');
+    assert.ok(performance.now() < deadline, failure);
     await sleep(20);
   }
 }

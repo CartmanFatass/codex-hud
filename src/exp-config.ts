@@ -2,11 +2,24 @@ import type { ExpProxySnapshot } from './exp-proxy.js';
 
 export const EXP_ACCOUNTS = ['anthropic-api', 'openai-api'] as const;
 export type ExpAccount = (typeof EXP_ACCOUNTS)[number];
-export interface ExpGrant {
-  enabled: boolean;
+export interface ExpGrantTerms {
   grantMicros: number;
   renewalDay: number;
   timeZone: string;
+  startsAt?: number;
+}
+export interface ExpGrant extends Omit<ExpGrantTerms, 'startsAt'> {
+  enabled: boolean;
+  schedule?: { startsAt: number; previous?: ExpGrantTerms };
+}
+export interface ExpBalance {
+  startDate: string;
+  endDate: string;
+  timeZone: string;
+  remainingMicros: number | null;
+  billedMicros: number;
+  unpriced: number;
+  lastCalibration?: { at: string; remainingMicros: number };
 }
 export interface ExpConfig {
   version: 1;
@@ -22,6 +35,7 @@ export interface ExpData {
   config: ExpConfig;
   profiles: ExpProfile[];
   proxySnapshot?: ExpProxySnapshot;
+  openAiBalance?: ExpBalance;
   unreadable?: true;
 }
 
@@ -56,6 +70,10 @@ export function parseExpUsd(text: string): number | undefined {
 export function expUsd(micros: number): string {
   const digits = String(micros).padStart(7, '0');
   return `${digits.slice(0, -6)}.${digits.slice(-6).replace(/0{1,4}$/, '')}`;
+}
+export function expApproxUsd(micros: number): string {
+  const cents = Math.round(Math.abs(micros) / 10_000);
+  return cents ? `≈$${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}` : '≈$0';
 }
 export function expTimeZone(value: string): boolean {
   if (!/^[a-z0-9_+\-/]{1,64}$/i.test(value)) return false;

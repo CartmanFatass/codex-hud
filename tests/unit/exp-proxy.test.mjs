@@ -307,34 +307,37 @@ test('EXP off or unbound causes zero RPCs and leaves the 40-column footer unchan
   assert.equal(calls, 1);
 });
 
-test('EXP reads both windows, reset, source, success, errors and next attempt at 40 columns', async (t) => {
+test('EXP shows live proxy and OpenAI grant readings at 40 columns', async (t) => {
   const f = fixture(t);
   await refresh(f, async () => ({ windows }));
   f.advance(6 * MIN);
   await refresh(f, async () => ({ error: 'timeout' }));
+  for (const edit of [
+    { field: 'grant-enabled', account: 'openai-api', value: true },
+    { field: 'calibration', account: 'openai-api', value: 12_750_000 },
+  ])
+    saveExpEdit(f.env.HUD_HOME, edit, f.now(), f.env);
+  const expData = readExpData(f.env.HUD_HOME, f.env, f.now());
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
   const old = setLanguage('en');
   t.after(() => setLanguage(old));
   for (const lang of ['en', 'zh'])
     for (const panelLayout of ['classic', 'split']) {
       setLanguage(lang);
-      const frame = renderMonitor({
-        tree,
-        state: {
-          ...initialMonitorState(),
-          mainTab: 'exp',
-          experiments: true,
-          panelLayout,
-          expPage: { detail: 'proxy-status' },
-        },
-        width: 40,
-        height: 24,
-        nowMs: f.now(),
-        expData: readExpData(f.env.HUD_HOME, f.env),
-        modelEnabled: false,
-      });
-      for (const line of frame.lines) assert.equal(visualLength(line), 40);
-      const plain = frame.lines.map(stripAnsi).join('\n');
+      const draw = (detail) => {
+        const frame = renderMonitor({
+          tree,
+          state: { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout, expPage: { detail } },
+          width: 40,
+          height: 24,
+          nowMs: f.now(),
+          expData,
+          modelEnabled: false,
+        });
+        for (const line of frame.lines) assert.equal(visualLength(line), 40);
+        return frame.lines.map(stripAnsi).join('\n');
+      };
+      const plain = draw('proxy-status');
       assert.match(plain, lang === 'en' ? /Codex profile\s+\.codex/ : /Codex 配置\s+\.codex/);
       assert.match(plain, lang === 'en' ? /Primary window\s+5h refresh pending/ : /主窗口\s+5h 待刷新/);
       assert.match(plain, /7d ≈57%/);
@@ -344,5 +347,6 @@ test('EXP reads both windows, reset, source, success, errors and next attempt at
       assert.match(plain, /2026-11-20 10:30Z/);
       assert.match(plain, lang === 'en' ? /Last error\s+Timed out/ : /最近错误\s+请求超时/);
       assert.match(plain, /2026-11-20 10:41Z/);
+      assert.match(draw('openai-api'), lang === 'en' ? /Estimated remaining\s+≈\$12\.75/ : /估算剩余\s+≈\$12\.75/);
     }
 });

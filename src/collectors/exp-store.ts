@@ -12,9 +12,12 @@ import {
   type ExpConfig,
   type ExpData,
   type ExpEdit,
+  type ExpGrantTerms,
   type ExpProfile,
 } from '../exp-config.js';
+import { expCycle, grantCycle, grantTerms } from '../exp-cycle.js';
 import { PROXY_ERRORS, proxyTime, proxyWindows, type ExpProxySnapshot } from '../exp-proxy.js';
+import { appendExpEvent, prepareExpDir, readExpBalance } from './exp-ledger.js';
 import { writePrivateFile } from './small-model.js';
 
 const expConfigPath = (hudHome: string) => join(hudHome, 'exp', 'config.json');
@@ -53,16 +56,22 @@ export function knownExpProfiles(env = process.env): ExpProfile[] {
   return [...profiles.values()];
 }
 
-export function readExpConfig(hudHome: string): ExpConfig {
-  let raw: string;
+function expConfigFile(hudHome: string): { config: ExpConfig; savedAt?: number } {
+  let fd: number;
   try {
-    raw = fs.readFileSync(expConfigPath(hudHome), 'utf8');
+    fd = fs.openSync(expConfigPath(hudHome), 'r');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultExpConfig();
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { config: defaultExpConfig() };
     throw err;
   }
-  return parseExpConfig(raw);
+  try {
+    return { config: parseExpConfig(fs.readFileSync(fd, 'utf8')), savedAt: fs.fstatSync(fd).mtimeMs };
+  } finally {
+    fs.closeSync(fd);
+  }
 }
+
+export const readExpConfig = (hudHome: string): ExpConfig => expConfigFile(hudHome).config;
 
 export async function readExpConfigAsync(hudHome: string): Promise<ExpConfig> {
   return parseExpConfig(await fs.promises.readFile(expConfigPath(hudHome), 'utf8'));
@@ -70,6 +79,13 @@ export async function readExpConfigAsync(hudHome: string): Promise<ExpConfig> {
 
 function parseExpConfig(raw: string): ExpConfig {
   const config = JSON.parse(raw) as ExpConfig;
+  const validTime = (at: unknown) => expInteger(at, 0, 8.64e15);
+  const validTerms = (terms: ExpGrantTerms | undefined) =>
+    expMicros(terms?.grantMicros) &&
+    expInteger(terms?.renewalDay, 1, 31) &&
+    typeof terms?.timeZone === 'string' &&
+    expTimeZone(terms.timeZone) &&
+    (terms.startsAt === undefined || validTime(terms.startsAt));
   const aliases = config?.codex?.aliases;
   if (
     config?.version !== 1 ||
@@ -88,12 +104,14 @@ function parseExpConfig(raw: string): ExpConfig {
     !expInteger(config.proxy.intervalMinutes, 5, 60) ||
     !EXP_ACCOUNTS.every((account) => {
       const grant = config.grants?.[account];
+      const schedule = grant?.schedule;
       return (
         typeof grant?.enabled === 'boolean' &&
-        expMicros(grant.grantMicros) &&
-        expInteger(grant.renewalDay, 1, 31) &&
-        typeof grant.timeZone === 'string' &&
-        expTimeZone(grant.timeZone)
+        validTerms(grant) &&
+        (schedule === undefined ||
+          (schedule &&
+            validTime(schedule.startsAt) &&
+            (schedule.previous === undefined || validTerms(schedule.previous))))
       );
     })
   )
@@ -132,10 +150,17 @@ export function parseProxySnapshot(raw: string, proxy: ExpConfig['proxy']): ExpP
   }
 }
 
-export function readExpData(hudHome: string, env = process.env): ExpData {
+export function readOpenAiBalance(hudHome: string, now: number, enabledOnly = false) {
+  const { config, savedAt } = expConfigFile(hudHome);
+  const grant = config.grants['openai-api'];
+  if (enabledOnly && !grant.enabled) return;
+  return readExpBalance(hudHome, 'openai-api', grant, now, grant.enabled && !grant.schedule ? savedAt : undefined);
+}
+
+export function readExpData(hudHome: string, env = process.env, now = Date.now()): ExpData {
   const profiles = knownExpProfiles(env);
   try {
-    const config = readExpConfig(hudHome);
+    const { config, savedAt } = expConfigFile(hudHome);
     let proxySnapshot: ExpProxySnapshot | undefined;
     if (config.proxy.enabled && config.proxy.profile) {
       try {
@@ -144,7 +169,16 @@ export function readExpData(hudHome: string, env = process.env): ExpData {
         /* No observation yet. */
       }
     }
-    return { config, profiles, proxySnapshot };
+
+    const grant = config.grants['openai-api'];
+    const openAiBalance = readExpBalance(
+      hudHome,
+      'openai-api',
+      grant,
+      now,
+      grant.enabled && !grant.schedule ? savedAt : undefined
+    );
+    return { config, profiles, proxySnapshot, openAiBalance };
   } catch {
     return { config: defaultExpConfig(), profiles, unreadable: true };
   }
@@ -152,8 +186,10 @@ export function readExpData(hudHome: string, env = process.env): ExpData {
 
 /** Saves only the edited field against the latest config. A calibration never rewrites configuration. */
 export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env = process.env): void {
-  const dir = join(hudHome, 'exp');
-  const config = readExpConfig(hudHome);
+  const { config, savedAt } = expConfigFile(hudHome);
+  const openai = config.grants['openai-api'];
+  if (openai.enabled && !openai.schedule && savedAt !== undefined)
+    openai.schedule = { startsAt: expCycle(openai, savedAt).end };
   const known = (home: string) => knownExpProfiles(env).some((p) => p.home === home);
   const invalid = () => {
     throw new Error('Invalid EXP setting');
@@ -183,20 +219,33 @@ export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env =
     default: {
       if (!EXP_ACCOUNTS.includes(edit.account)) invalid();
       const grant = config.grants[edit.account];
+      const changeTerms = (changed: boolean) => {
+        if (changed && edit.account === 'openai-api' && grant.schedule) {
+          grant.schedule = {
+            startsAt: grantCycle(grant, nowMs).end,
+            previous: grantTerms(grant, nowMs, undefined),
+          };
+        }
+      };
       switch (edit.field) {
         case 'grant-enabled':
+          if (edit.value && edit.account === 'openai-api' && !grant.schedule)
+            grant.schedule = { startsAt: expCycle(grant, nowMs).end };
           grant.enabled = edit.value;
           break;
         case 'grant':
           if (!expMicros(edit.value)) invalid();
+          changeTerms(grant.grantMicros !== edit.value);
           grant.grantMicros = edit.value;
           break;
         case 'renewal':
           if (!expInteger(edit.value, 1, 31)) invalid();
+          changeTerms(grant.renewalDay !== edit.value);
           grant.renewalDay = edit.value;
           break;
         case 'zone':
           if (!expTimeZone(edit.value)) invalid();
+          changeTerms(grant.timeZone !== edit.value);
           grant.timeZone = edit.value;
           break;
         case 'calibration':
@@ -205,30 +254,15 @@ export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env =
       }
     }
   }
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  if (!fs.lstatSync(dir).isDirectory()) throw new Error('EXP directory is not a directory');
-  fs.chmodSync(dir, 0o700);
   if (edit.field !== 'calibration') {
-    writePrivateFile(join(dir, 'config.json'), JSON.stringify(config, null, 2) + '\n');
+    prepareExpDir(hudHome);
+    writePrivateFile(expConfigPath(hudHome), JSON.stringify(config, null, 2) + '\n');
     return;
   }
-  const event = {
+  appendExpEvent(hudHome, edit.account, {
     type: 'calibration',
     id: randomUUID(),
     at: new Date(nowMs).toISOString(),
     remainingMicros: edit.value,
-  };
-  const { O_WRONLY, O_APPEND, O_CREAT, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-  const fd = fs.openSync(
-    join(dir, `ledger-${edit.account}.jsonl`),
-    O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK,
-    0o600
-  );
-  try {
-    if (!fs.fstatSync(fd).isFile()) throw new Error('EXP ledger is not a file');
-    fs.fchmodSync(fd, 0o600);
-    fs.appendFileSync(fd, JSON.stringify(event) + '\n');
-  } finally {
-    fs.closeSync(fd);
-  }
+  });
 }
