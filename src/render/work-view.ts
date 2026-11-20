@@ -50,7 +50,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['K J', 'place: move up, move down'],
       ['x', 'place: clear its exhausted mark'],
       ['h', 'Control: Roles / Harnesses'],
-      ['r', 'Control: refresh model lists'],
+      ['r ^R', 'refresh: Control / picker'],
       ['g', 'job: go to its herdr tab'],
       ['1-4 d', 'job: answer its open question'],
       ['X', 'job: stop it (y confirms)'],
@@ -61,7 +61,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['w', 'export a review board (HTML) and open it'],
       [',', 'Settings'],
       ['?', 'this page'],
-      ['Esc', 'back'],
+      ['Esc', 'back; picker: clear then exit'],
     ].flatMap(([key, label]) => kvRows(key, t(label), half, undefined, 7)),
   ];
   const marks = [
@@ -342,7 +342,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : control ? picking ? 'type filter  ↑↓ pick  ⏎ set  esc cancel'
+        : control ? picking ? `↑↓ pick  ⏎ set  ${state.projectInput?.text ? 'esc clear' : 'esc cancel'}  ^R refresh`
           : harnesses ? harnessHints(input.project, state) : sheet ? sheet.hints : controlHints(input.project, state.projectCursor)
         : project ? (page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
           : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help'

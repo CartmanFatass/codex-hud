@@ -133,6 +133,7 @@ export class WorkbenchInputDecoder {
                   X: 'stop-job',
                   '\x7f': 'backspace',
                   '\b': 'backspace',
+                  '\x12': 'model-refresh',
                   v: 'inspect',
                   ' ': 'inspect',
                   w: 'export-board',

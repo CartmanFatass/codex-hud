@@ -319,14 +319,15 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   let page = lines40(s).join('\n');
   assert.match(page, /Model ─+ pi · list 0m old/);
   assert.match(page, /default → synthetic\/model\n +from pi role/);
+  assert.match(page, /\? ctx {2}\? out {2}think \? {2}img \?/, 'legacy caches still populate the picker, without invented facts');
   assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length} matches`));
   await s.keys('ANTH');
-  page = lines40(s).join('\n');
+  page = lines40(s, 'en', 24).join('\n');
   assert.match(page, /\/ ANTH▌ +8 matches/);
   assert.match(page, /^anthropic ─+ 7\n[\s\S]*^arena ─+ 1/m);
   assert.match(page, /claude-opus-5-5-20261101/);
   assert.doesNotMatch(page, /openai/);
-  await s.keys(ESC, 'm', 'XAI/GROK-4.7', ENTER);
+  await s.keys(ESC, 'XAI/GROK-4.7', ENTER);
   assert.deepEqual(s.session.done, { ok: true, index: 0 });
   assert.equal(stored(s, 'imp').run[0].model, 'xai/grok-4.7');
   assert.equal(s.assignment('imp').model, 'xai/grok-4.7');
@@ -339,11 +340,11 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.equal(s.assignment('imp').places[0].state, 'off');
   await s.keys('m', 'grok');
   page = lines40(s).join('\n');
-  assert.match(page, /current  xai\/grok-4.7/);
+  assert.match(page, /current  xai\/grok-4.7 +⊘/);
   assert.match(page, /\/ grok▌ +2 matches/);
   assert.doesNotMatch(page, /^xai ─/m);
   assert.equal(s.registry().routing(NOW).byId.get('grok-4.7'), null, 'attribution still sees both providers');
-  await s.press(ESC);
+  await s.keys(ESC, ESC);
   setHarnessDisabled(s.hud, 'pi:xai', false);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.keys('m', 'grok', DOWN, DOWN, DOWN);
@@ -370,6 +371,12 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   await s.press(BACKSPACE);
   assert.equal(s.session.state.projectInput.text, 'custom/pi-nex');
   await s.press(ESC);
+  assert.equal(s.session.state.projectInput.text, '');
+  assert.equal(s.session.state.projectInput.pick, undefined);
+  assert.equal(stored(s, 'imp').run[0].model, long);
+  await s.press(ESC);
+  assert.equal(s.session.state.projectInput, undefined);
+  assert.equal(stored(s, 'imp').run[0].model, long);
   setHarnessDisabled(s.hud, 'pi:synthetic', true);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.keys('m', '\x1b[H');
@@ -426,15 +433,17 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
   const zh = plain(s.frame(40, 'zh', 14));
   assert.match(zh.join('\n'), /^模型 ─+ pi · 列表 0分钟前$/m);
   assert.match(zh[0], /首页.*项目.*控制/);
-  assert.match(zh.at(-1), /输入筛选 +↑↓ 选择 +⏎ 设置 +esc 取消/);
-  assert.match(plain(s.frame(40, 'en', 14)).at(-1), /type filter +↑↓ pick +⏎ set +esc cancel/);
+  assert.match(zh.at(-1), /↑↓ 选择 +⏎ 设为 +esc 清除 +\^R 刷新/);
+  assert.match(plain(s.frame(40, 'en', 14)).at(-1), /↑↓ pick +⏎ set +esc clear +\^R refresh/);
   assert.doesNotMatch(plain(s.frame(120, 'en', 14)).at(-1), /tab all|← back/);
   // Help says what m does now, and the key row for p e.
   s.session.state = { ...initialMonitorState(), help: true };
-  const help = plain(s.frame(80, 'en', 40)).join('\n').replace(/\n {8}/g, ' ');
+  const help = plain(s.frame(80, 'en', 48)).join('\n').replace(/\n {8}/g, ' ');
   assert.match(help, /^p P +role: preset list · place: harness/m);
   assert.match(help, /^e E +place: thinking \(capital goes back\)/m);
   assert.match(help, /^m +pick model; pi groups; type to filter/m);
+  assert.match(help, /^r \^R +refresh: Control \/ picker/m);
+  assert.match(help, /^Esc +back; picker: clear then exit/m);
 });
 test('40-column picker sample: same grouped, filtered and long-ID frames in Classic and Split', async (t) => {
   const s = await setup(t);
@@ -449,8 +458,65 @@ test('40-column picker sample: same grouped, filtered and long-ID frames in Clas
     assert.match(filtered, /arena ─+ 2[\s\S]*xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/);
     const long = frames[`pick-long-40-${lang}`];
     assert.match(long.join('\n'), /^› +meta-llama\/.*….*-fp8$/m);
-    const detail = long.findIndex((row) => /full ID under the cursor|所选的完整 ID/.test(row));
-    assert.equal(long.slice(detail + 1, -1).map((row) => row.trim()).join(''), `${MAVERICK}-fp8`);
+    const detail = long.findIndex((row) => /^(Selected|所选) ─/.test(row));
+    assert.equal(long.slice(detail + 1, -3).map((row) => row.trim()).join(''), `${MAVERICK}-fp8`);
+    assert.match(long.at(-3), lang === 'en' ? /1M ctx {2}16K out {2}think – {2}img ✓/ : /1M 上下文 {2}16K 输出 {2}思考 – {2}图片 ✓/);
+  }
+});
+
+test('pi picker paints live quota, off and unknown facts without offering off or unattributable IDs', async (t) => {
+  const s = await setup(t);
+  const model = (id) => ({ harness: 'pi', pi_role: 'implementer', split: false, model: id });
+  const current = (id) => {
+    writeRolePlaces(s.hud, 'imp', [model(id)]);
+    s.collector.refreshRoles(s.session.snap, NOW);
+  };
+  const exhausted = 'openai/gpt-6.1-sol';
+  setHarnessDisabled(s.hud, 'pi:deepseek', true);
+  markExhausted(s.hud, placeKey(model(exhausted)), 'quota exceeded; retry in 42m', NOW);
+  s.put(join(s.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW, pi: [...MODEL_LISTS.pi, 'deepseek/deepseek-synthetic'],
+    piFacts: { [exhausted]: ['272K', '128K', true, false], 'deepseek/deepseek-synthetic': ['1M', '96K', false, true] } });
+  current('xai/grok-4.7');
+  await s.keys('m', 'openai/gpt-6.1-sol');
+  const refresh = await s.press('\x12');
+  assert.deepEqual(refresh.action, { type: 'refresh-models' });
+  assert.equal(s.session.state.projectInput.text, exhausted);
+  let page = lines40(s).join('\n');
+  assert.match(page, /^›   gpt-6.1-sol +✗ 42m$/m, 'a target not in the chain can be exhausted');
+  assert.match(page, /Selected ─+\n +openai\/gpt-6.1-sol\n +272K ctx {2}128K out {2}think ✓ {2}img –\n +✗ exhausted · resets in 42m/);
+  const exact = () => {
+    for (const lang of ['en', 'zh']) for (const panelLayout of ['classic', 'split']) {
+      const frame = s.render(40, lang, { ...s.session.state, panelLayout }, 16, s.session.snap, true, 'unicode', 'mocha');
+      assert.equal(frame.lines.length, 16);
+      assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+      assert.match(stripAnsi(frame.lines.at(-5)), /^(Selected|所选) ─/);
+    }
+  };
+  exact();
+  assert.match(lines40(s, 'en', 9).join('\n'), /✗ exhausted · resets in 42m/, 'a short pane gives the strip room before the list');
+  const expired = plain(s.render(40, 'en', s.session.state, 20, s.session.snap, true, 'unicode', 'none', { nowMs: NOW + 42 * 60000 })).join('\n');
+  assert.doesNotMatch(expired, /✗|resets in/);
+  await s.press(ENTER);
+  assert.equal(stored(s, 'imp').run[0].model, exhausted, 'an exhausted target remains selectable');
+  for (const [id, row, status] of [
+    ['grok-4.7', /^› ◉ grok-4\.7 +\?$/m, /\n +\? unknown\n/],
+    ['deepseek/deepseek-synthetic', /^› ◉ deepseek\/deepseek-synthetic +⊘$/m, /\n +⊘ off\n/],
+  ]) {
+    current(id);
+    await s.press('m');
+    page = lines40(s).join('\n');
+    assert.match(page, row);
+    assert.match(page, status);
+    assert.ok(page.split('\n').includes(`  ${id}`), 'the strip keeps the whole ID');
+    if (id.startsWith('deepseek/')) assert.match(page, /1M ctx {2}96K out {2}think – {2}img ✓/);
+    assert.equal(page.match(/^⊘ off, not listed: deepseek$/gm)?.length, 1);
+    exact();
+    const frame = s.frame(40, 'en', 20);
+    assert.equal(frame.workboard.rows.find((r) => r.text.includes('not listed')).item, undefined);
+    assert.equal((await s.press(ENTER)).action, undefined);
+    assert.equal(stored(s, 'imp').run[0].model, id);
+    assert.ok(s.session.state.projectInput, 'Enter on the read-only reference does not close');
+    await s.press(ESC);
   }
 });
 

@@ -66,15 +66,67 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   if (status?.failed) rows.push(notice([t('Refresh failed'), pi ? '' : age].filter(Boolean).join(' · ')));
   else if (status?.fetchedAt !== undefined && now - status.fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
   if (piStatus?.offline) rows.push(notice(t('Limited offline catalog')));
+  type Entry = (typeof view.entries)[number];
+  const modelId = (entry: Entry) => entry.value === '' ? place.piModel?.defaultId : entry.value ?? view.currentId;
+  const stateOf = (entry: Entry, detail = false) => {
+    const unavailable = entry.value === undefined ? view.currentFact : entry.value === '' && place.piModel?.defaultId &&
+      !place.piModel.defaultId.includes('/') ? 'unknown' : undefined;
+    if (unavailable === 'off') {
+      const off = mark('⊘', 'x');
+      return theme.board.muted(detail ? t('{mark} off', { mark: off }) : off);
+    }
+    if (unavailable === 'unknown') return theme.board.attention(`?${detail ? ` ${t('unknown')}` : ''}`);
+    const until = !pi ? undefined : entry.value === '' ? place.piModel?.defaultUntil : entry.value === undefined ? place.until
+      : lists.piExhausted?.[entry.value];
+    if (until !== undefined && until > now) {
+      const n = Math.ceil((until - now) / 60000);
+      const reset = detail ? t('resets in {n}m', { n }) : t('{n}m', { n });
+      return detail ? `${glyph('exhausted')} ${theme.board.attention(t('exhausted'))} ${theme.board.muted(`· ${reset}`)}`
+        : `${glyph('exhausted')} ${theme.board.attention(reset)}`;
+    }
+    if (!detail) return '';
+    if (!entry.current) return theme.board.muted(t('Enter sets it · not the current model'));
+    const label = t('current');
+    const extra = `${where}${role?.preset ? ` [${monitorText(role.preset)}]` : ''} ${t('place #{n}', { n: input.index + 1 })}`;
+    return `${theme.board.active(mark('◉', '@'))} ${theme.board.muted(visualLength(label + ' · ' + extra) + 4 <= width ? `${label} · ${extra}` : label)}`;
+  };
   const selected = view.entries[view.at];
-  const full = selected?.value ? monitorText(selected.value) : '';
-  const detail = pi && visualLength(full) > width - 4 ? flowLines(full, width - 4).map((line) => boardRow(fit('  ' + line, width))) : [];
-  if (detail.length) detail.unshift(section(theme.board.muted(t('full ID under the cursor')), width));
+  const full = selected ? monitorText(modelId(selected) ?? '') || t('default') : view.free ? monitorText(view.free) : '';
+  const detail = [section(theme.board.muted(t('Selected')), width)];
+  const detailLine = (line: string) => boardRow(fit('  ' + line, width));
+  if (full) {
+    detail.push(...flowLines(full, width - 2).map(detailLine));
+    if (pi) {
+      const id = selected && modelId(selected), facts = id ? lists.piFacts?.[id] : undefined;
+      const [ctx, out, thinking, images] = facts ?? [];
+      const cap = (yes: boolean | undefined) => yes === undefined ? theme.board.muted('?') : yes ? theme.board.success(mark('✓', '+')) : theme.board.muted(mark('–', '-'));
+      const muted = theme.board.muted;
+      const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${cap(thinking)}`, `${muted(t('img'))} ${cap(images)}`];
+      let line = '';
+      for (const field of fields) {
+        if (line && visualLength(`${line}  ${field}`) > width - 2) {
+          detail.push(detailLine(line));
+          line = '';
+        }
+        line += (line ? '  ' : '') + field;
+      }
+      detail.push(detailLine(line));
+    }
+    if (selected) detail.push(detailLine(stateOf(selected, true)));
+  } else detail.push(detailLine(theme.board.muted(t('No selection'))));
+  // If the pane is too short even for the query and strip, drop the strip's heading first.
+  if (room <= detail.length) detail.shift();
+  const off = pi ? data.harnessSwitches?.filter((item) => item.group === 'provider' && item.off).map((item) => monitorText(item.name)).sort() : undefined;
+  const offLine = off?.length && room >= detail.length + 2
+    ? boardRow(fit(theme.board.muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.join(' · ') })}`), width)) : undefined;
   const current = view.currentId ? monitorText(view.currentId) : '';
-  if (!pi || (current && !view.entries.some((entry) => entry.current && !entry.value) && room >= rows.length + detail.length + 4)) {
+  if (!pi || (current && !view.entries.some((entry) => entry.current && !entry.value) && room >= rows.length + detail.length + 4 + Number(!!offLine))) {
     const label = pi ? t('current') : t('model');
-    rows.push(boardRow(fit(`  ${theme.board.muted(label)}  ${squeeze(current || t('default'), width - visualLength(label) - 4)}`, width)));
+    const fact = view.currentFact ? stateOf({ label: '', current: true }) : '';
+    rows.push(boardRow(fit(pair(`  ${theme.board.muted(label)}  ${squeeze(current || t('default'), width - visualLength(label) - 4 - (fact ? visualLength(fact) + 1 : 0))}`, fact, width), width)));
   }
+  // On short panes, the list and bottom strip take precedence over opening context.
+  rows.length = Math.min(rows.length, Math.max(0, room - detail.length - 2 - Number(!!offLine)));
   const count = view.free ? t('as typed') : t('{n} matches', { n: view.total });
   const queryRoom = width - visualLength(count) - 4;
   let tail = monitorText(input.text);
@@ -87,12 +139,9 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   rows.push({ text: pair(`${theme.board.muted('/')} ${tail}${theme.board.active(mark('▌', '_'))}`, theme.board.muted(count), width),
     item: placeItem(input.role, input.index), modelPick: pick });
   const empty = piStatus?.runnerOff ? 'pi is off' : piStatus?.empty ? 'No discovered models' : 'No matching models';
-  if (!selected) {
-    rows.push(view.free ? { text: fit(`  ${theme.board.active(mark('⏎', '>'))} ${monitorText(view.free)}`, width), item: 'project:pick' } : notice(t(empty)));
-    return rows;
-  }
   // Headers are paint-only and travel with their models, including when a window begins mid-group.
   const list: MonitorRow[] = [], headerAt = new Map<number, MonitorRow>();
+  if (!selected) list.push(view.free ? { text: fit(`  ${theme.board.active(mark('⏎', '>'))} ${monitorText(view.free)}`, width), item: 'project:pick' } : notice(t(empty)));
   let header: MonitorRow | undefined;
   const cursor = (at: number) => at === view.at;
   for (const [i, entry] of view.entries.entries()) {
@@ -102,18 +151,24 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
     }
     if (header) headerAt.set(list.length, header);
     const lead = `${cursor(i) ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
-    const defaultId = !entry.value && place.piModel?.defaultId ? ` → ${monitorText(place.piModel.defaultId)}` : '';
-    const name = entry.value ? monitorText(entry.label) : entry.label;
-    list.push({ text: fit(lead + squeeze(name + defaultId, width - 4), width), ...(cursor(i) ? { item: 'project:pick' } : {}) });
-    if (!entry.value && place.piModel?.defaultSource) list.push(boardRow(fit(`      ${theme.board.muted(t(place.piModel.defaultSource))}`, width)));
+    const defaultId = entry.value === '' && place.piModel?.defaultId ? ` → ${monitorText(place.piModel.defaultId)}` : '';
+    const name = entry.value !== '' ? monitorText(entry.label) : entry.label;
+    const fact = stateOf(entry);
+    const label = squeeze(name + defaultId, width - 4 - (fact ? visualLength(fact) + 2 : 0));
+    list.push({ text: fit(pair(lead + label, fact, width), width), ...(cursor(i) ? { item: 'project:pick' } : {}) });
+    if (entry.value === '' && place.piModel?.defaultSource) list.push(boardRow(fit(`      ${theme.board.muted(t(place.piModel.defaultSource))}`, width)));
   }
-  if (piStatus?.empty) list.push(notice(t(empty)));
+  if (piStatus?.empty && selected) list.push(notice(t(empty)));
   const at = list.findIndex((row) => row.item === 'project:pick');
-  const size = Math.max(1, room - rows.length - detail.length);
+  const listEnd = room - detail.length - Number(!!offLine);
+  const size = Math.max(0, listEnd - rows.length);
   let first = Math.max(0, Math.min(list.length - size, at - Math.floor(size / 2)));
   const group = headerAt.get(first);
   if (group && size > 1) { rows.push(group); first = Math.min(first + 1, at); }
-  rows.push(...list.slice(first, first + Math.max(1, room - rows.length - detail.length)), ...detail);
+  if (size) rows.push(...list.slice(first, first + listEnd - rows.length));
+  if (offLine) rows.push(offLine);
+  while (rows.length + detail.length < room) rows.push(boardRow(''));
+  rows.push(...detail);
   return rows;
 }
 export function radarFacts(radar: ControlRadar | undefined) {

@@ -515,19 +515,24 @@ model lists from `pi`, `agy` and `grok`.
 
 `m` (or `M`) opens the model picker. For `pi`, one list shows every discovered model from enabled
 providers, grouped by provider with counts. Type any part of the full `provider/model` (any case);
-the query and match count stay pinned. ↑↓/PgUp/PgDn select, Enter sets, and Esc or Ctrl+C cancels.
+the query and match count stay pinned. ↑↓/PgUp/PgDn select and Enter sets. Esc clears a typed
+filter first, then closes without setting; Ctrl+C closes immediately.
 `◉` marks the current assignment and `›` marks the cursor. A long model is shortened in the middle;
-its full ID wraps below the list when selected. The default row, when eligible, removes the explicit
-model and shows the effective default and its source when known. An off or unlisted current model
-is shown separately, not as a result. No match writes nothing; manual model IDs in role files and
+the bottom strip wraps the whole selected ID and shows its state. For pi models the strip also shows
+context, max output, thinking and images from `pi --list-models`; missing columns show `?`.
+Pi rows mark observed exhaustion with `✗` and time to reset. `⊘` means off and `?` means an unknown
+provider. One muted line names off providers; their models are not offered. An off or unattributable
+explicit current model can be inspected on its read-only current row; Enter there does nothing.
+The default row, when eligible, removes the explicit model and shows the effective default and its
+source when known. No pi match writes nothing; manual model IDs in role files and
 one-job overrides still work. The old `catalog.pi.include` key no longer filters the picker and is
 left untouched in existing configuration. While the picker is open, printable keys (including `q`
 and `r`) type into the filter; Backspace edits it.
 
 The bounded list commands (`pi --list-models`, `agy models`, `grok models`) run when Control opens
-with an absent or stale pi list (one-day cache), or on `r` in Control outside the picker. Overlapping
-refreshes in the panel coalesce; typing, redraws and ticks never run them. The same cache under
-`$HUD_HOME/display` holds the last good results. On failure the picker shows their age; without a
+with an absent or stale pi list (one-day cache), or on `r` in Control outside the picker or Ctrl+R
+(`^R`) inside it. Overlapping refreshes coalesce; typing, redraws and ticks never run them. The same
+cache under `$HUD_HOME/display` holds the last good results and pi model facts; older caches still open. On failure the picker shows their age; without a
 successful pi list it labels the limited offline catalog. A successful empty pi list is shown as
 empty. Other harnesses keep their separate catalogs and picker behavior, merging discovered models
 where supported, then shipped and owner catalog models, then models from owner role files. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
@@ -679,7 +684,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `N`, `R`, `D` | Control role row: copy the current chain, rename the selected preset, or preview and confirm deletion |
 | `h` | Control: switch Roles / Harnesses (or click the view heading) |
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
-| `m` (`M`) | Control: pick the model for the selected place. Pi models are in one list grouped by provider; type to filter, ↑↓ pick, Enter sets, Esc cancels |
+| `m` (`M`) | Control: pick the model for the selected place. Type to filter, ↑↓ pick, Enter sets, Esc clears then closes, Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |

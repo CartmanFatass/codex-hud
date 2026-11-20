@@ -8,7 +8,8 @@ import * as fs from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliAgents } from './cli-kinds.js';
-import { isModelToken, MODEL_ID_MAX, modelSourceStatus } from './model-discovery.js';
+import { isModelToken, MODEL_ID_MAX, modelSourceStatus, type ModelListCache } from './model-discovery.js';
+import { placeKey } from './exhausted.js';
 import {
   attributePiModel,
   clearExhausted,
@@ -52,6 +53,7 @@ export interface PlaceFact {
     defaultId: string | null;
     defaultSource?: 'from pi role' | 'from pi settings';
     defaultOff: boolean;
+    defaultUntil?: number;
   };
 }
 export interface RoleFact {
@@ -89,6 +91,8 @@ export interface HarnessSwitchFact {
 /** The enabled pi groups, and the separate CLI/browser catalogs the picker works from. */
 export interface ModelLists {
   pi: string[];
+  piFacts?: ModelListCache['piFacts'];
+  piExhausted?: Record<string, number>;
   piStatus?: { fetchedAt?: number; failed: boolean; offline: boolean; empty: boolean; runnerOff: boolean };
   cliStatus?: Partial<Record<'agy' | 'grok', ReturnType<typeof modelSourceStatus>>>;
   cli: Record<string, string[]>;
@@ -151,12 +155,14 @@ export function controlFacts(
         const id = (value: string | null, provider?: string | null) =>
           value && provider && !qualifiedPiProvider(value) ? `${provider}/${value}` : value;
         const defaultId = id(effective, defaultProvider);
+        const defaultMark = context.exhausted.get(placeKey({ harness: 'pi' }, fallback.value));
         piModel = {
           current: place.model === undefined ? defaultId : id(model.value, provider),
           isDefault: place.model === undefined,
           defaultId,
           ...(defaultId ? { defaultSource: fallback.value ? 'from pi role' : 'from pi settings' } : {}),
           defaultOff: disabled.has('pi') || (!!defaultProvider && disabled.has(`pi:${defaultProvider}`)),
+          ...(defaultMark ? { defaultUntil: Date.parse(defaultMark.until) } : {}),
         };
       }
       return {
@@ -228,6 +234,9 @@ export function controlFacts(
         const provider = qualifiedPiProvider(id);
         return !!provider && isModelToken(id) && !disabled.has(`pi:${provider}`);
       }),
+      piFacts: modelLists?.piFacts,
+      piExhausted: Object.fromEntries([...context.exhausted].flatMap(([key, mark]) =>
+        key.startsWith('pi:') ? [[key.slice(3), Date.parse(mark.until)]] : [])),
       piStatus: { ...modelSourceStatus(modelLists, 'pi'), offline: modelLists?.pi === undefined,
         empty: modelLists?.pi?.length === 0, runnerOff: disabled.has('pi') },
       cliStatus: { agy: modelSourceStatus(modelLists, 'agy'), grok: modelSourceStatus(modelLists, 'grok') },

@@ -18,10 +18,17 @@ interface SourceStatus {
   fetchedAt?: number;
   failed: boolean;
 }
+export type PiModelFacts = [context: string, maxOut: string, thinking: boolean, images: boolean];
+interface PiListing {
+  ids: string[];
+  facts?: Record<string, PiModelFacts>;
+}
 export interface ModelListCache {
   version: 1;
   fetchedAt: number;
   pi?: string[];
+  /** Optional so the original v1 cache still works. Keyed by the full provider/model ID. */
+  piFacts?: PiListing['facts'];
   cli?: Partial<Record<'agy' | 'grok', string[]>>;
   /** Separate success times let a failed source retain its list without borrowing another source's freshness. */
   status?: Partial<Record<ModelSource, SourceStatus>>;
@@ -66,25 +73,30 @@ function uniqueTokens(items: Iterable<string>): string[] {
   return out;
 }
 
-/** `pi --list-models`: a table of raw model IDs. A model ID may itself contain slashes. */
-export function parsePiModels(stdout: string): string[] | null {
+const isTokenCount = (value: unknown): value is string => typeof value === 'string' && /^\d+(?:\.\d+)?[KM]?$/i.test(value);
+const isYesNo = (value: string | undefined): value is string => /^(yes|no)$/i.test(value ?? '');
+
+/** `pi --list-models`: IDs and optional facts from the same table. A model ID may itself contain slashes. */
+export function parsePiModels(stdout: string): PiListing | null {
   const lines = stdout.replace(ANSI_CSI, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (/^No models available\.(?:$| Use \/login\b)/.test(lines[0] ?? '')) return [];
+  if (/^No models available\.(?:$| Use \/login\b)/.test(lines[0] ?? '')) return { ids: [] };
   const header = lines.findIndex((line) => /^provider\s+model(?:\s+context\s+max-out\s+thinking\s+images)?$/i.test(line));
   if (header < 0) return null;
   const columns = lines[header]!.split(/\s+/).length;
-  const models: string[] = [];
+  const ids = new Set<string>(), facts: Record<string, PiModelFacts> = {};
   for (const line of lines.slice(header + 1)) {
     if (/^[-=─]+$/.test(line)) continue;
-    const parts = line.split(/\s+/), [provider, model] = parts;
+    const parts = line.split(/\s+/), [provider, model, ctx, out, think, img] = parts;
     if (parts.length !== columns || !provider || !model || !isModelToken(provider) || provider.includes('/') || !isModelToken(model)) return null;
-    if (columns === 6 && (!parts.slice(2, 4).every((part) => /^\d+(?:\.\d+)?[KM]?$/i.test(part)) ||
-      !parts.slice(4).every((part) => /^(yes|no)$/i.test(part)))) return null;
     const id = `${provider}/${model}`;
     if (!isModelToken(id)) return null;
-    models.push(id);
+    if (columns === 6) {
+      if (!isTokenCount(ctx) || !isTokenCount(out) || !isYesNo(think) || !isYesNo(img)) return null;
+      if (!ids.has(id)) facts[id] = [ctx, out, think.toLowerCase() === 'yes', img.toLowerCase() === 'yes'];
+    }
+    ids.add(id);
   }
-  return [...new Set(models)];
+  return { ids: [...ids], ...(columns === 6 && ids.size ? { facts } : {}) };
 }
 
 /** `agy models`: `<id>\t<Display Name>` (after optional status prose). */
@@ -137,6 +149,17 @@ function cleanList(value: unknown): string[] | undefined {
   return value.length && !cleaned.length ? undefined : cleaned;
 }
 
+function cleanPiFacts(value: unknown, ids: string[] | undefined): ModelListCache['piFacts'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !ids?.length) return;
+  const obj = value as Record<string, unknown>;
+  const facts = ids.flatMap((id) => {
+    const row = obj[id];
+    return Array.isArray(row) && row.length === 4 && isTokenCount(row[0]) && isTokenCount(row[1]) &&
+      typeof row[2] === 'boolean' && typeof row[3] === 'boolean' ? [[id, row as PiModelFacts] as const] : [];
+  });
+  return facts.length ? Object.fromEntries(facts) : undefined;
+}
+
 export function readModelListCache(
   hudHome: string,
   now = Date.now(),
@@ -148,7 +171,7 @@ export function readModelListCache(
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const obj = raw as Record<string, unknown>;
     if (obj.version !== 1 || typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) return null;
-    const pi = cleanList(obj.pi);
+    const pi = cleanList(obj.pi), piFacts = cleanPiFacts(obj.piFacts, pi);
     const status: NonNullable<ModelListCache['status']> = {};
     const rawStatus = obj.status as Record<string, Partial<SourceStatus>> | undefined;
     for (const source of ['pi', 'agy', 'grok'] as const) {
@@ -167,6 +190,7 @@ export function readModelListCache(
       version: 1,
       fetchedAt: obj.fetchedAt,
       ...(pi ? { pi } : {}),
+      ...(piFacts ? { piFacts } : {}),
       ...(Object.keys(cli).length ? { cli } : {}),
       ...(Object.keys(status).length ? { status } : {}),
     };
@@ -198,7 +222,8 @@ export function writeModelListCache(hudHome: string, cache: ModelListCache): voi
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(temp, JSON.stringify(cache, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    // Keep the capability tuples compact under the existing cache read limit.
+    fs.writeFileSync(temp, JSON.stringify(cache) + '\n', { flag: 'wx', mode: 0o600 });
     assertRegularOrMissing(file, false);
     fs.renameSync(temp, file);
     fs.chmodSync(file, 0o600);
@@ -299,7 +324,10 @@ export async function discoverModelLists(
     cache.status![source] = { ...modelSourceStatus(previous, source), failed: true };
     return sourceList(previous, source);
   };
-  cache.pi = keep('pi', piRaw === null ? null : parsePiModels(piRaw));
+  const pi = piRaw === null ? null : parsePiModels(piRaw);
+  cache.pi = keep('pi', pi?.ids ?? null);
+  const piFacts = pi === null ? previous?.piFacts : pi.facts;
+  if (piFacts) cache.piFacts = piFacts;
   // The CLI parsers only recognize nonempty listings; an unrecognized reply is not authoritative.
   const agy = agyRaw === null ? [] : parseAgyModels(agyRaw);
   const grok = grokRaw === null ? [] : parseGrokModels(grokRaw);

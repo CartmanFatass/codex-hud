@@ -47,14 +47,18 @@ test('parsers extract model ids from pi, agy and grok output shapes and drop pro
   const piSample = [
     'provider       model                   context  max-out  thinking  images',
     'openai         gpt-synthetic-1         272K     128K     yes       yes   ',
-    'anthropic      claude-synthetic-1      1M       128K     yes       yes   ',
+    'anthropic      claude-synthetic-1      1M       8.2K     no        yes   ',
     'openai         gpt-synthetic-1         272K     128K     yes       yes   ',
   ].join('\n');
-  assert.deepEqual(parsePiModels(piSample), ['openai/gpt-synthetic-1', 'anthropic/claude-synthetic-1']);
+  assert.deepEqual(parsePiModels(piSample), {
+    ids: ['openai/gpt-synthetic-1', 'anthropic/claude-synthetic-1'],
+    facts: { 'openai/gpt-synthetic-1': ['272K', '128K', true, true], 'anthropic/claude-synthetic-1': ['1M', '8.2K', false, true] },
+  });
+  assert.deepEqual(parsePiModels('provider model\nsynthetic model'), { ids: ['synthetic/model'] });
   assert.equal(parsePiModels('Not logged in or format changed'), null);
   assert.equal(parsePiModels(`${piSample}\nunknown malformed output`), null);
-  assert.deepEqual(parsePiModels('No models available. Use /login to log in.\n  /synthetic/providers.md'), []);
-  assert.deepEqual(parsePiModels('provider model context max-out thinking images\n'), []);
+  assert.deepEqual(parsePiModels('No models available. Use /login to log in.\n  /synthetic/providers.md'), { ids: [] });
+  assert.deepEqual(parsePiModels('provider model context max-out thinking images\n'), { ids: [] });
 
   const agySample = [
     'Fetching available models...',
@@ -224,7 +228,10 @@ test('a full synthetic pi table survives discovery exactly, off/restore, failure
   writeFakeCli(s.bin, 'pi', `console.log(${JSON.stringify(table)});`);
   writeFakeCli(s.bin, 'agy', `console.log('agy-before\\tAgy Before');`);
   writeFakeCli(s.bin, 'grok', `console.log('Available models:\\n * grok-before');`);
-  assert.deepEqual((await discoverModelLists(s.hud, s.env, NOW)).pi, ids);
+  const discovery = await discoverModelLists(s.hud, s.env, NOW);
+  assert.deepEqual(discovery.pi, ids);
+  assert.deepEqual(discovery.piFacts, Object.fromEntries(ids.map((id) => [id, ['272K', '128K', true, false]])));
+  assert.deepEqual(readModelListCache(s.hud, NOW).piFacts, discovery.piFacts);
   s.env.PI_CODING_AGENT_DIR = join(s.root, 'pi');
   fs.mkdirSync(s.env.PI_CODING_AGENT_DIR);
   fs.writeFileSync(join(s.env.PI_CODING_AGENT_DIR, 'settings.json'), JSON.stringify({ defaultProvider: 'xai', defaultModel: 'grok-4.7' }));
@@ -253,6 +260,8 @@ test('a full synthetic pi table survives discovery exactly, off/restore, failure
   assert.equal(readModelListCache(s.hud, later + 1), null, 'a fresh agy success cannot hide the failed pi refresh');
   const failure = readModelListCache(s.hud, later + 1, undefined, true);
   assert.deepEqual(failure.pi, ids);
+  assert.deepEqual(failure.piFacts, discovery.piFacts);
+  assert.deepEqual(collect(later + 1).models.piFacts, discovery.piFacts);
   assert.deepEqual(failure.cli, { agy: ['agy-after'], grok: ['grok-before'] });
   assert.deepEqual(modelSourceStatus(failure, 'grok'), { fetchedAt: NOW, failed: true });
   assert.deepEqual(collect(later + 1).models.piStatus, { fetchedAt: NOW, failed: true, offline: false, empty: false, runnerOff: false });
@@ -260,11 +269,12 @@ test('a full synthetic pi table survives discovery exactly, off/restore, failure
   writeFakeCli(s.bin, 'pi', 'console.log("No models available.");');
   await discoverModelLists(s.hud, s.env, later + 2);
   assert.deepEqual(readModelListCache(s.hud, later + 2).pi, []);
+  assert.equal(readModelListCache(s.hud, later + 2).piFacts, undefined);
   assert.deepEqual(collect(later + 2).models.pi, []);
   assert.deepEqual(collect(later + 2).models.piStatus, { fetchedAt: later + 2, failed: false, offline: false, empty: true, runnerOff: false });
 });
 
-test('live panel coalesces Control refreshes and starts no discovery on picker input or ticks', { timeout: 20000 }, async (t) => {
+test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery on filter input or ticks', { timeout: 20000 }, async (t) => {
   const s = sandbox(t);
   const log = join(s.root, 'spawns.log'), hold = join(s.root, 'hold-pi');
   fs.mkdirSync(join(s.cwd, '.git'), { recursive: true });
@@ -363,7 +373,10 @@ test('live panel coalesces Control refreshes and starts no discovery on picker i
   child.stdin.write('rrr');
   await until(() => spawns().length === 6, 'r started a single refresh');
   child.stdin.write('rrm');
-  await until(() => /gpt-live-1/.test(stripAnsi(out)), 'picker shows the last-good list during the refresh');
+  await until(() => /Selected ─/.test(stripAnsi(out)) && /gpt-live-1/.test(stripAnsi(out)), 'picker shows the last-good list during the refresh');
+  child.stdin.write('\x12');
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(spawns().length, 6, 'picker refresh coalesces with the pending Control refresh');
   fs.unlinkSync(hold);
   await until(() => readModelListCache(s.hud)?.fetchedAt > firstList, 'refresh finished');
   assert.equal(spawns().filter((c) => c === 'pi').length, 2);
@@ -375,6 +388,13 @@ test('live panel coalesces Control refreshes and starts no discovery on picker i
   await until(() => /rqq▌/.test(stripAnsi(out)), 'refresh/quit keys typed into the picker');
   await new Promise((r) => setTimeout(r, 350));
   assert.equal(spawns().length, 6);
+  const secondList = readModelListCache(s.hud).fetchedAt;
+  fs.writeFileSync(hold, 'hold');
+  child.stdin.write('\x12\x12\x12');
+  await until(() => spawns().length === 9, 'Ctrl+R from the open picker refreshes all lists once');
+  assert.deepEqual(spawns().slice(-3).sort(), ['agy', 'grok', 'pi']);
+  fs.unlinkSync(hold);
+  await until(() => readModelListCache(s.hud)?.fetchedAt > secondList, 'picker refresh finished');
   child.stdin.write('\x7f\x7f\x7fOPENAI/GPT-LIVE\r');
   await until(
     () => fs.existsSync(join(s.hud, 'roles/imp.json')) && JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model === 'openai/gpt-live-1',

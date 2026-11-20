@@ -213,7 +213,7 @@ Project opens files through the existing `$EDITOR` herdr-tab action.
 one escaped, script-free page out; `cli/board.ts` collects once with a fresh `ProjectCollector` and the stored `TryBriefs`,
 and writes with `writePrivateFile`). No model call, no server; its text and sections are in the reference.
 
-Control is a top-level tab. It follows Project's selected root, but has its own cursor, folds and scroll. Its narrow `ProjectCollector` mode reads only that root's Control facts (no STATE, tickets or Git worktree/status collection) and caches them separately from Project's snapshot. Unlike Project's hub, Control never paints the previous root's snapshot while a new root loads. Local model list discovery starts only on entering Control or pressing `r` there, not on Home or on a collection tick.
+Control is a top-level tab. It follows Project's selected root, but has its own cursor, folds and scroll. Its narrow `ProjectCollector` mode reads only that root's Control facts (no STATE, tickets or Git worktree/status collection) and caches them separately from Project's snapshot. Unlike Project's hub, Control never paints the previous root's snapshot while a new root loads. Local model list discovery starts only on entering Control or refreshing (`r` in Control, Ctrl+R in the picker), not on Home or on a collection tick.
 `roles/role-control.ts` has both halves: `controlFacts` (read-only, called by the collector:
 each role's active/standby/off/exhausted/missing places and the machine's Harnesses inventory) and
 `editPlaces` (role and quota edits). `roleRegistry.assignment` resolves the chain for Control, roster and create;
@@ -232,8 +232,9 @@ in `render/control-view.ts`): the place and the merged model lists ride on the p
 reaches it as `text` on the decoder's key input (the panel's own keyboard only), and
 Enter returns the same `role-edit` action with the model id as `value`. Pi's picker groups
 one list of exact IDs from the unfiltered discovery cache, skipping off providers for display only.
-Discovery keeps the last successful list and timestamp per source; the same snapshot still supplies
-unfiltered provider attribution. A successful empty pi list supersedes the previous list; only the
+Discovery keeps the last successful list and timestamp per source. The same cache holds optional
+pi capability facts from the same `pi --list-models` call and supplies unfiltered provider attribution.
+The bottom strip uses those facts, the existing switch and exhaustion evidence, and the frame clock. A successful empty pi list supersedes the previous list; only the
 absence of any successful pi result uses the limited offline catalog. What is on screen needs no new
 data: the hub's Latest and Progress's History order by the commit dates the ledger read
 already carries, and the Projects list's second row is `ProjectOverview.latest`.

@@ -1,6 +1,7 @@
 /** Pure picker input: every pi provider in one list; Enter emits the existing role edit. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { MODEL_ID_MAX } from '../roles/model-discovery.js';
+import { qualifiedPiProvider } from '../roles/roster.js';
 import { placeItem, placeModels, type ModelLists, type PlaceFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
@@ -13,8 +14,8 @@ export interface ModelPick {
 }
 interface PickEntry {
   label: string;
-  /** What Enter sets: a full model ID, or empty to unset it. */
-  value: string;
+  /** What Enter sets: a model ID, empty to unset, or absent for the read-only current reference. */
+  value?: string;
   provider?: string;
   current?: boolean;
 }
@@ -33,6 +34,10 @@ export function pickView(pick: ModelPick, input: ModelInput) {
   const isDefault = place.piModel?.isDefault ?? !place.model;
   const counts = new Map<string, number>();
   const entries: PickEntry[] = [];
+  const currentFact = !pi || !currentId ? undefined : place.state === 'off' || lists.piStatus?.runnerOff ? 'off'
+    : !qualifiedPiProvider(currentId) ? 'unknown' : undefined;
+  if (!needle && currentId && (currentFact === 'off' || currentFact === 'unknown' && !isDefault))
+    entries.push({ label: currentId, current: true });
   if (!needle && !place.piModel?.defaultOff && !(pi && lists.piStatus?.runnerOff))
     entries.push({ label: t('default'), value: '', current: isDefault });
   const ids = (placeModels(place, lists) ?? []).filter((id) => id.toLowerCase().includes(needle));
@@ -49,7 +54,7 @@ export function pickView(pick: ModelPick, input: ModelInput) {
   const at = entries.length ? Math.min(entries.length - 1, input.pick ?? (needle ? 0 : Math.max(0, current))) : -1;
   // Non-pi pickers retain their catalog and custom typed values.
   const free = !pi && !entries.length && typed ? typed : undefined;
-  return { entries, counts, at, total: matches.length, currentId, free };
+  return { entries, counts, at, total: matches.length, currentId, currentFact, free };
 }
 
 /** Every key belongs to the picker while open; a click elsewhere leaves it. */
@@ -78,6 +83,11 @@ export function modelInputKey(state: MonitorState, input: Extract<WorkbenchInput
       next.projectInput = undefined;
       return done({ type: 'role-edit', role: open.role, index: open.index, op: 'model', value });
     }
+  } else if (input.key === 'model-refresh') {
+    return done({ type: 'refresh-models' });
+  } else if (input.key === 'escape' && typed.text) {
+    typed.text = '';
+    typed.pick = undefined;
   } else if (input.key === 'escape' || input.key === 'close') next.projectInput = undefined;
   return done();
 }

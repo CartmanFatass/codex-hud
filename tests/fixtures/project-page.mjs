@@ -226,15 +226,27 @@ export function pickerFrames(f, control = richControl(f.data), layout = 'split')
   const pick = (index, text = '', pick) => onControl({ projectCursor: placeItem('imp', index) }, {
     panelLayout: layout, projectInput: { role: 'imp', index, text, pick },
   });
-  const scenario = (isDefault) => ({ ...control, roles: control.roles.map((role) => role.role !== 'imp' ? role : {
-    ...role, preset: 'daily', places: [{ ...role.places[0], model: isDefault ? null : 'xai/grok-4.7', piModel: {
-      current: isDefault ? 'openai/gpt-6.1-sol' : 'xai/grok-4.7', isDefault, defaultId: 'openai/gpt-6.1-sol', defaultSource: 'from pi settings', defaultOff: false,
-    } }, ...role.places.slice(1)],
-  }) });
+  const scenario = (isDefault, current = isDefault ? 'openai/gpt-6.1-sol' : 'xai/grok-4.7', state = 'active', off = []) => ({
+    ...control,
+    models: { ...control.models, pi: control.models.pi.filter((id) => !off.includes(id.split('/')[0])),
+      piFacts: {
+        'openai/gpt-6.1-sol': ['272K', '128K', true, true], 'xai/grok-4.7': ['2M', '32K', true, true],
+        'xai/grok-4.7-fast': ['2M', '32K', true, true], [`${MAVERICK}-fp8`]: ['1M', '16K', false, true],
+      }, piExhausted: { 'openai/gpt-6.1-sol': NOW + 42 * 60000 } },
+    harnessSwitches: off.map((name) => ({ id: `pi:${name}`, name, group: 'provider', off: true, present: false, uses: [] })),
+    roles: control.roles.map((role) => role.role !== 'imp' ? role : {
+      ...role, preset: 'daily', places: [{ ...role.places[0], state, provider: current.includes('/') ? current.split('/')[0] : null,
+        model: isDefault ? null : current, piModel: { current, isDefault, defaultId: 'openai/gpt-6.1-sol', defaultSource: 'from pi settings', defaultOff: false },
+      }, ...role.places.slice(1)],
+    }),
+  });
   for (const lang of ['en', 'zh']) {
     frames[`pick-grouped-40-${lang}`] = plain(f.render(40, lang, pick(0, '', 4), 24, scenario(true)));
-    frames[`pick-filter-40-${lang}`] = plain(f.render(40, lang, pick(0, 'grok', 3), 16, scenario(false)));
+    frames[`pick-filter-40-${lang}`] = plain(f.render(40, lang, pick(0, 'grok', 3), 20, scenario(false)));
     frames[`pick-long-40-${lang}`] = plain(f.render(40, lang, pick(0, 'maverick', 1), 16, scenario(false)));
+    frames[`pick-exhausted-40-${lang}`] = plain(f.render(40, lang, pick(0, 'openai/gpt-6.1-sol'), 16, scenario(false, undefined, 'active', ['deepseek'])));
+    frames[`pick-unknown-40-${lang}`] = plain(f.render(40, lang, pick(0), 16, scenario(false, 'grok-4.7', 'active', ['deepseek'])));
+    frames[`pick-off-40-${lang}`] = plain(f.render(40, lang, pick(0), 16, scenario(false, 'xai/grok-4.7', 'off', ['deepseek', 'xai'])));
   }
   frames['pick-no-match-40-en'] = plain(f.render(40, 'en', pick(0, 'zz-new'), 16, scenario(false)));
   frames['pick-cli-40-en'] = plain(f.render(40, 'en', pick(1), 16, control));
