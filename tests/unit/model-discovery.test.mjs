@@ -359,7 +359,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   child.stdin.write('rrr');
   await until(() => spawns().length === 6, 'r started a single refresh');
   child.stdin.write('rr\rmGPT-LIVE');
-  await until(() => /Selected ─/.test(stripAnsi(out)) && /gpt-live-1/.test(stripAnsi(out)), 'picker filters the last-good list during the refresh');
+  await until(() => /\/ GPT-LIVE/.test(stripAnsi(out)) && /gpt-live-1/.test(stripAnsi(out)), 'picker filters the last-good list during the refresh');
   child.stdin.write('\x12');
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(spawns().length, 6, 'picker refresh coalesces with the pending Control refresh');

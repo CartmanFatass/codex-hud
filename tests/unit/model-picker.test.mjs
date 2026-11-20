@@ -101,7 +101,7 @@ test('S4 first screen, flat filters and aggregate have the same order in both wi
     const browse = open(width, lang), render = (out) => draw(width, lang, out.state);
     const lines = plain(browse).join('\n');
     assert.match(lines, /› ◉ xai\/grok-4.7[^\n]*\n +openai\/gpt-6.1-sol[^\n]*\n +xai\/grok-4.6[^\n]*(?:was|原)/);
-    if (width === 40) assert.match(lines, /^ +openai\/gpt-6.1-sol +✗ (?:42m|42分钟) \[sol\]$/m);
+    if (width === 40) assert.match(lines, /^ +openai\/gpt-6.1-sol +✗ (?:42m|42分) \[sol\]$/m);
     assert.match(lines, /^xai ─+ 6[^\n]*\n +grok-4.5/m);
     assert.doesNotMatch(lines, /^(?:Pinned|Selected|置顶|所选) ─/m);
     assert.equal(ids(browse).some((id) => /^model:(anthropic|arena|google)\//.test(id)), false);
