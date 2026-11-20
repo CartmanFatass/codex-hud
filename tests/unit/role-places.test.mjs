@@ -193,7 +193,7 @@ function ownImp(f) {
 test('imp falls back to agy when pi-role is missing on PATH', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, { withPi: false });
   ownImp(f);
-  const roster = await f.call('hud_roster');
+  const roster = await f.call('hud_roster', { detail: true });
   const imp = roster.roles.find((r) => r.role === 'imp');
   assert.equal(imp.available, true);
   assert.equal(imp.harness, 'cli');
@@ -230,7 +230,7 @@ test('quota failure marks pi exhausted for 1h, names next place, and falls back 
   const marks = readExhausted(f.env.HUD_HOME);
   assert.equal(marks.has('pi:gpt-6.1-sol'), true);
 
-  const roster = await f.call('hud_roster');
+  const roster = await f.call('hud_roster', { detail: true });
   const imp = roster.roles.find((r) => r.role === 'imp');
   assert.equal(imp.available, true);
   assert.deepEqual(imp.runs_on, {
@@ -302,7 +302,7 @@ test('hud_roster drops expired exhausted marks when queried through hud-mcp', { 
   ownImp(f);
   markExhausted(f.env.HUD_HOME, 'pi:gpt-6.1-sol', 'rate limit', Date.now() - 2 * EXHAUSTED_TTL_MS);
 
-  const roster = await f.call('hud_roster');
+  const roster = await f.call('hud_roster', { detail: true });
   const imp = roster.roles.find((r) => r.role === 'imp');
   assert.equal(imp.available, true);
   assert.equal(imp.runs_on.harness, 'pi');
@@ -369,7 +369,7 @@ test('pro falls back across chatgpt -> gemini -> argon and flow passes kind', { 
 
 test('oracle runs locally on claude fable with oracle.md and falls back to pi architect', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
-  const roster = await f.call('hud_roster');
+  const roster = await f.call('hud_roster', { detail: true });
   const oracle = roster.roles.find((r) => r.role === 'oracle');
   assert.equal(oracle.instructions, 'oracle');
   assert.equal(oracle.can_continue, false);
@@ -396,7 +396,7 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.match(prompt.args[3], /packages\/hud-mcp\/instructions\/oracle\.md/);
 
   fs.unlinkSync(join(f.env.PATH, 'claude'));
-  const fbRoster = (await f.call('hud_roster')).roles.find((r) => r.role === 'oracle');
+  const fbRoster = (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'oracle');
   assert.deepEqual(fbRoster.runs_on, { harness: 'pi', pi_role: 'architect', split: false });
   const fbJob = await f.call('hud_create', { role: 'oracle', request_key: 'ora-pi', task: 'Fallback design question?' });
   assert.ok(fbJob.job);

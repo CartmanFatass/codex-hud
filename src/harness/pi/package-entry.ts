@@ -1,4 +1,4 @@
-/** Ordinary pi package: six thin-server proxies (delegate) plus local controls and the owned pi footer (display). */
+/** Ordinary pi package: thin-server tools (delegate) plus local controls and the owned pi footer (display). */
 import { PiRoleClient, PI_ROLE_TOOLS } from './role-client.js';
 import { createPiSegment, isPiTui } from './segment.js';
 import type { PiPackageBinding, PiPackageContext } from './package-context.js';

@@ -20,12 +20,10 @@ Host pi libraries are peers, never bundled dependencies. No dotfile is shipped.
   the display package; bare `/hud` toggles. Unknown input and local failures give a
   bounded visible
   notification. It never sends a user message or starts a provider turn.
-- The six canonical `hud_roster`, `hud_create`, `hud_read`, `hud_send`,
-  `hud_respond`, `hud_close` proxies (delegation package, always loaded) use A2's
-  private stdio MCP/fd3 evidence bridge.
-  No `mcp.json` entry or generic MCP registration is used. Native context selects
-  identity, not model arguments or inherited session variables. The bridge epoch
-  starts on native startup; the child MCP is lazy, on the first persisted call.
+- The delegation package registers the eight [role tools](../../../packages/hud-mcp/README.md#tools)
+  with the same declarations as MCP and proxies them over private stdio. No `mcp.json` entry is needed.
+  In a main-session pane, the native watch delivers actionable follow-ups, including report-ready notices, without
+  changing the editor draft. Collect a report with `hud_read`; `hud_peek` only inspects. The child MCP starts lazily.
 - `session_shutdown` and before-switch/fork/tree fence synchronously. Cleanup
   clears `hud-delegation`, restores the native editor/footer, cancels the timer, disposes subscriptions and
   closes the old private channel and exact panel generation. Jobs are not closed.

@@ -73,7 +73,9 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
 
 MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**。
-先调用 `hud_roster` 获取生效的角色、模型／推理强度来源、可接受选项和约定。
+首次分派或项目上下文失效时，调用 `hud_roster` 获取角色可用性、能否继续、生效的 `runs_on` 和约定；上下文仍有效时直接调用 `hud_create`。
+刷新角色列表时，只有手头仍有约定正文才传入其 `convention_version`；匹配则省略正文，角色信息仍会刷新。
+传入 `detail: true` 可查看预设、后备位置、来源及可用选项。
 `$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON，已注册项目的 `.hud/roles` 再覆盖。
 已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
 见[项目工作者](#项目工作者)。
@@ -82,7 +84,7 @@ MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud
 默认在角色的首个可用位置（`runs_on`）启动。传入 `preset` 可使用指定预设中首个可用且未耗尽的位置，
 仅对本次任务生效，不修改角色文件。也可用 `on` 覆盖执行环境或浏览器服务商（默认值见内置
 `harnesses.json` 与 `$HUD_HOME/harnesses.json`）。`preset` 和 `on` 不能同时传入。
-重复键返回原任务，不再次启动。指定过的 `preset` 会随 `hud_read` 的任务详情返回。
+重复键返回原任务，不再次启动。只在用户要求时覆盖预设、执行环境、模型或推理强度；带 `detail: true` 的任务读取或查看会显示所选 `preset`。
 `model` 和 `thinking` 可覆盖所选 `pi` 或 `cli` 位置的模型和推理强度；`kind` 为 `flow` 选择 `image`（默认）或 `video`。
 仅 `pi` 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
 （最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；
@@ -97,7 +99,7 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 引用上游报告不会将其标为已读，也不会关闭其工作者。
 
 `isolation: "worktree"` 让任务在仓库旁自己的 Git 链接检出中运行（`<repo>-wt/<slug>-<id6>`，分支 `wt/<slug>-<id6>` 取自 HEAD，
-链接 `node_modules`，并复制该 CLI 对主检出的信任）。浏览器角色和非 Git 目录会被拒绝。对该任务的 `hud_read` 会附带 `git_summary`。
+链接 `node_modules`，并复制该 CLI 对主检出的信任）。浏览器角色和非 Git 目录会被拒绝。对该任务的 `hud_read` 会附带 `worktree`（含检出路径）及 `git_summary`。
 任务关闭后，只有检出中毫无改动、或其提交已合入主检出时，watcher 才会移除检出和分支，且从不强制；否则保留并在 `job.json` 记录
 `worktree_kept_reason`。Project 把这些检出视为任务自己的，不算未登记的 worktree。
 
@@ -122,14 +124,15 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 和精简任务列表 `jobs`。没有目标任务时立即返回 `ready: true` 和空列表。等待不会读取报告或问题正文、标记已读或已查看，也不会关闭工作者；
 完整结果请用带任务编号的 `hud_read` 读取。
 
-`hud_peek({ job, lines? })` 返回精简的 `status` 行和工作窗格末尾的 `pane_lines`（1–120 行，默认 40）。
-窗格缺失或不可用时，`pane_lines` 为 `null`，并返回 `pane_reason`。该工具不读取报告、不标记已读或已查看，也不关闭工作者。
+`hud_peek({ job })` 返回精简的 `status` 和里程碑，不读取窗格。显式传入 `lines`（1–120）才会读取窗格末尾的 `pane_lines`；
+窗格不可用时返回 `null` 和 `pane_reason`。`detail: true` 会附带启动诊断。该工具不读取报告、不标记已读或已查看，也不关闭工作者。
 pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里程碑（每条一行，最多 240 字符，保留最新 50 条）。
-`hud_read({ job })` 与 `hud_peek` 的 `progress` 返回最新 10 条，`latest_progress` 返回最后一条（没有则为 `null`）；
+`hud_read({ job })` 与 `hud_peek` 的 `progress` 返回最新 10 条，`latest_progress` 返回最后一条；普通读取省略空进度；
 列表和等待结果不含这些字段。里程碑不会触发 `changes` 或 `hud watch` 事件。
 
 带 `job` 时读取 STATUS、未读报告（最多 64 KiB）与待答问题。报告比 `read_at` 新，或尚无 `read_at`，即为未读。
-已读报告只返回 `report_unchanged: true`，`full: true` 可再次读取正文。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
+监听生效时可继续工作，无需轮询；报告就绪通知不会标记已读，仍需显式读取。已读报告只返回 `report_unchanged: true`，`full: true` 可再次读取正文。
+`detail: true` 可在读取时附带启动诊断；只想检查时用 `hud_peek`。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
 返回报告正文时记录 `read_at`（包括工作中和空闲宽限期），不代表验收。已结算的 pi 或 CLI 工作者在当前回合的报告被读取后关闭
 （`closed after report read`）；续写后读取上一回合的报告不会关闭工作者，未读报告仍保留原有的空闲期限。读取失败或受阻状态会单独标记为已查看。
 工作者写完报告后只回复 `report written: <path>`，不在对话中重复正文。

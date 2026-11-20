@@ -1,6 +1,6 @@
 /** Local HUD role tools and Codex statusline, newline-delimited JSON-RPC over stdio. */
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -28,6 +28,8 @@ import {
   type Role,
   type RolePlace,
 } from '../../../src/roles/roster.js';
+import { ROLE_TOOLS as tools } from '../../../src/roles/tool-definitions.js';
+
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
 const isWorker = process.env.HUD_JOB_DIR !== undefined;
@@ -78,111 +80,6 @@ interface Job extends PiOptions {
   worker_prompt?: string | null;
 }
 type Args = Record<string, unknown>;
-const text = { type: 'string' };
-const tool = (name: string, description: string, properties: Args, required: string[] = []) => ({
-  name,
-  description,
-  inputSchema: { type: 'object', properties, required, additionalProperties: false },
-});
-const tools = [
-  tool(
-    'hud_roster',
-    "List local roles, their availability, and the dispatch convention in effect. Optional cwd selects the project (default: this server's cwd).",
-    { cwd: { ...text, description: "Project directory. Default: the server's cwd." } }
-  ),
-  tool(
-    'hud_create',
-    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Uses the first available place in the role's run or named preset; use on instead to override the harness. model and thinking override pi or CLI places; kind is flow-only, idle_grace_s is CLI-only, and launch switches and pi_args are pi-only. Leave preset, on, model and thinking unset unless the user explicitly asks for that override: the role's configured place is the owner's choice.",
-    {
-      role: text,
-      request_key: text,
-      task: text,
-      context_files: {
-        type: 'array', items: text, maxItems: 32,
-        description: 'Text file paths within cwd. Local briefs reference them; browser briefs inline them.',
-      },
-      from_jobs: {
-        type: 'array', items: { ...text, pattern: '^j[0-9a-f]{16}$' }, maxItems: 16,
-        description: 'Use these jobs’ report.md files as context without marking them read.',
-      },
-      cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
-      package: { ...text, description: 'Display-only package label.' },
-      isolation: { type: 'string', enum: ['none', 'worktree'], default: 'none', description: 'Run a local job in a managed Git worktree from HEAD.' },
-      idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI-only idle grace override for this job, in seconds.' },
-      on: {
-        ...text,
-        description:
-          'Override the harness or browser provider for this job only (pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow). Only when the user explicitly asks; otherwise omit.',
-      },
-      preset: { type: 'string', description: 'Select a named role preset for this job without editing role files. Only when the user explicitly asks; otherwise omit.' },
-      kind: { type: 'string', enum: ['image', 'video'], description: 'Flow output kind: image (default) or video.' },
-      model: { ...text, description: 'Override the pi or cli role model for this job only. Only when the user explicitly asks; otherwise omit.' },
-      thinking: { ...text, description: 'Override the pi or cli role thinking for this job only. Only when the user explicitly asks; otherwise omit.' },
-      lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },
-      mcp: { type: 'boolean', description: 'Load MCP adapter (--mcp / --no-mcp).' },
-      tps: { type: 'boolean', description: 'Load tokens/s telemetry (--tps / --no-tps).' },
-      ui_ext: {
-        type: 'boolean',
-        description: 'False: --no-ui-ext; true: keep pi-role default UI extensions (no flag).',
-      },
-      skills: {
-        type: 'boolean',
-        description: 'True: --skills (personal skills); false: keep pi-role default exclusion (no flag).',
-      },
-      split: { type: 'boolean', description: 'Reserve a helper pane on the right; primary worker stays left.' },
-      pi_args: {
-        type: 'array',
-        items: { ...text, maxLength: 4096 },
-        maxItems: 128,
-        description:
-          'Append pi arguments after -- verbatim, never through a shell; --orchestrator and --notify are reserved for the inherited caller binding.',
-      },
-    },
-    ['role', 'request_key', 'task']
-  ),
-  tool(
-    'hud_read',
-    'List running jobs and jobs that need attention, or read one job, optionally waiting for settlement or a question. Reading a settled report from the main session closes the worker.',
-    {
-      job: text,
-      wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
-      full: { type: 'boolean', description: 'Include the report even if already read.' },
-      view: {
-        type: 'string',
-        enum: ['compact', 'recent'],
-        description: 'List only, without a job. Default: compact. Use recent for the newest 20 full rows.',
-      },
-    }
-  ),
-  tool(
-    'hud_wait',
-    'Wait for any or all specified jobs to settle, or for work that needs attention. Omit jobs to wait on the caller session’s unsettled jobs. Returns compact status without reading reports.',
-    {
-      jobs: { type: 'array', items: text },
-      mode: { type: 'string', enum: ['any', 'all'], default: 'any' },
-      wait_ms: { type: 'integer', minimum: 0, maximum: 120000, default: 60000 },
-    }
-  ),
-  tool(
-    'hud_peek',
-    'Inspect a job’s compact status, milestones and recent worker pane output without marking anything read or closing the worker.',
-    { job: text, lines: { type: 'integer', minimum: 1, maximum: 120, default: 40 } },
-    ['job']
-  ),
-  tool(
-    'hud_send',
-    'Send a message to a pi or CLI job: queued while it works, or continued during idle_grace before the report is read (roles that can continue); message_key deduplicates sends.',
-    { job: text, message_key: text, text },
-    ['job', 'message_key', 'text']
-  ),
-  tool('hud_respond', 'Write a question answer once.', { job: text, request_id: text, answer: text }, [
-    'job',
-    'request_id',
-    'answer',
-  ]),
-  tool('hud_close', 'Reap a job with pi-role-reap; safe to repeat.', { job: text }, ['job']),
-];
-
 function required(args: Args, key: string): string {
   if (typeof args[key] !== 'string' || !args[key]) throw new Error(`invalid_arguments: ${key}`);
   return args[key] as string;
@@ -260,7 +157,7 @@ function created(job: Job) {
       ok: false,
       code: job.dispatch_code ?? 'dispatch_failed',
       ...row,
-      reason: row.reason ?? 'dispatch failed',
+      reason: row.reason ?? (job.stderr_tail.trim() || `launch exited ${job.dispatch_exit_code}`),
       task_dir,
       agent: primary(task_dir),
       ...watch,
@@ -843,11 +740,17 @@ function compactRow(row: JobRow) {
   };
 }
 
-async function peekJob(job: Job, lines: unknown = 40) {
+async function peekJob(job: Job, { lines, detail }: Args) {
+  const dir = directory(job.job);
+  const { row } = readRow(job, false);
+  const summary = {
+    status: compactRow(row),
+    ...readJobProgress(dir),
+    ...(detail === true ? { diagnostics: { ...jobDiagnostics(job), display_state: row.display_state } } : {}),
+  };
+  if (lines === undefined) return summary;
   if (typeof lines !== 'number' || !Number.isInteger(lines) || lines < 1 || lines > 120)
     throw new Error('invalid_arguments: lines');
-  const dir = directory(job.job);
-  const summary = { status: compactRow(readRow(job, false).row), ...readJobProgress(dir) };
   let pane: string | undefined;
   try {
     const session = slice(join(dir, 'SESSION.txt'), 16384);
@@ -970,17 +873,10 @@ function openQuestions(dir: string): string[] {
     .filter((name) => !fs.existsSync(join(qa, name.replace('.md', '.answer.md'))))
     .sort();
 }
-function observation(job: Job, full = false) {
-  const dir = directory(job.job);
-  const { row, status } = readRow(job, !isWorker);
-  const report = row.report_unread || full ? slice(join(dir, 'report.md'), 65536) : null;
-  const questions = openQuestions(dir).map((name) => ({
-    id: name.slice(0, -3),
-    text: slice(join(dir, 'qa', name), 2048)?.text ?? '',
-  }));
+function jobDiagnostics(job: Job) {
   return {
-    job: job.job,
-    role: job.role,
+    cwd: job.cwd,
+    place: job.place,
     ...(job.preset !== undefined ? { preset: job.preset } : {}),
     model: job.model,
     thinking: job.thinking,
@@ -994,22 +890,41 @@ function observation(job: Job, full = false) {
           worker_prompt: job.worker_prompt ?? null,
         }
       : {}),
-    state: row.state,
-    display_state: row.display_state,
-    reason: row.reason,
-    blocked: row.blocked,
-    exit_reason: typeof status?.exit_reason === 'string' ? status.exit_reason : null,
-    // Why a quiet CLI job went where it did (e.g. `needs-human` / `prompt-failed`); absent when never asked.
-    ...(status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
+  };
+}
+function observation(job: Job, full: boolean, detail: boolean) {
+  const dir = directory(job.job);
+  const { row, status } = readRow(job, !isWorker);
+  const report = row.report_unread || full ? slice(join(dir, 'report.md'), 65536) : null;
+  const questions = openQuestions(dir).map((name) => ({
+    id: name.slice(0, -3),
+    text: slice(join(dir, 'qa', name), 2048)?.text ?? '',
+  }));
+  const progress = readJobProgress(dir);
+  const exit_reason = typeof status?.exit_reason === 'string' ? status.exit_reason : null;
+  return {
+    job: job.job,
+    role: job.role,
+    state: detail ? row.state : row.state ?? row.display_state,
+    ...(detail || (row.state !== null && row.state !== row.display_state) ? { display_state: row.display_state } : {}),
+    ...(detail || row.reason ? { reason: row.reason } : {}),
+    ...(detail || row.blocked ? { blocked: row.blocked } : {}),
+    ...(detail || exit_reason ? { exit_reason } : {}),
+    ...(status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
+    ...(detail ? jobDiagnostics(job) : {}),
+    ...(job.worktree ? { worktree: job.worktree } : {}),
+    ...(job.worktree_removed_at ? { worktree_removed_at: job.worktree_removed_at } : {}),
+    ...(job.worktree_kept_reason ? { worktree_kept_reason: job.worktree_kept_reason } : {}),
     report_exists: row.report_present,
-    report_unread: row.report_unread,
-    ...readJobProgress(dir),
-    ...(row.report_present && !report
-      ? { report_unchanged: true }
-      : { report: report?.text ?? null, report_truncated: report?.truncated ?? false }),
-    questions,
+    ...(detail || row.report_unread ? { report_unread: row.report_unread } : {}),
+    ...(detail || progress.latest_progress ? progress : {}),
+    ...(row.report_present && !report ? { report_unchanged: true } : {
+      ...(detail || report ? { report: report?.text ?? null } : {}),
+      ...(detail || report?.truncated ? { report_truncated: report?.truncated ?? false } : {}),
+    }),
+    ...(detail || questions.length ? { questions } : {}),
   };
 }
 async function readContextFile(path: string, limit: number | undefined) {
@@ -1090,8 +1005,8 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   const role = asked === 'architect' && !found.roles().has(asked) ? 'oracle' : asked;
   const definition = found.roles().get(role);
   if (!definition) {
-    const path = found.invalidPath(role);
-    return path ? { ok: false, code: 'role_unavailable', path } : { ok: false, code: 'role_unavailable' };
+    const invalid = found.invalidRole(role);
+    return { ok: false, code: 'role_unavailable', reason: `Role ${asked} is not configured or is hidden in this project`, ...invalid };
   }
   const request_key = required(args, 'request_key');
   const existing = jobs().find((job) => job.request_key === request_key);
@@ -1133,6 +1048,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     return {
       ok: false,
       code: 'no_available_place',
+      reason: effective.reason,
       ...(preset || effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
     };
   }
@@ -1348,16 +1264,51 @@ async function launchJob(job: Job, definition: Role, place: RolePlace, dir: stri
   return out;
 }
 
+function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['assignment']>) {
+  const { role, instructions, available, can_continue, runs_on, model, thinking, reason } = assignment;
+  const place = runs_on && {
+    harness: runs_on.harness,
+    pi_role: runs_on.pi_role,
+    agent: runs_on.agent,
+    tool: runs_on.tool,
+    provider: runs_on.provider,
+    kind: runs_on.kind,
+    effort: runs_on.effort,
+    model: model ?? undefined,
+    thinking: thinking ?? undefined,
+  };
+  return {
+    role, available, can_continue, runs_on: place,
+    ...(instructions && instructions !== role && instructions !== runs_on?.pi_role ? { instructions } : {}),
+    ...(reason ? { reason } : {}),
+  };
+}
+
 async function call(name: string, args: Args): Promise<unknown> {
+  if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
+  const detail = args.detail === true;
   if (name === 'hud_roster') {
+    if (args.convention_version !== undefined && typeof args.convention_version !== 'string')
+      throw new Error('invalid_arguments: convention_version');
     const found = registry(jobCwd(args));
-    const gate = found.project();
+    const { root, registered } = found.project();
+    const project = { root, registered };
     const ignored = found.projectConfigIgnored();
+    const invalid = found.invalid();
+    const convention = found.convention();
+    // Include the project and source. For a capped file, invalidate on changes beyond the returned prefix too.
+    const stat = convention.truncated ? fs.statSync(convention.path, { bigint: true, throwIfNoEntry: false }) : undefined;
+    const beyondCap = stat && `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    const convention_version = createHash('sha256').update(JSON.stringify([project, convention, beyondCap])).digest('hex');
     return {
-      roles: [...found.roles().values()].map((role) => found.assignment(role)),
-      invalid: found.invalid(),
-      convention: found.convention(),
-      project: { root: gate.root, registered: gate.registered },
+      roles: [...found.roles().values()].map((role) => {
+        const assignment = found.assignment(role);
+        return detail ? assignment : compactAssignment(assignment);
+      }),
+      ...(detail || invalid.length ? { invalid } : {}),
+      convention_version,
+      ...(args.convention_version === convention_version ? { convention_unchanged: true } : { convention }),
+      project,
       ...(callerPane ? { watcher_alive: watching(callerPane, hudHome) } : {}),
       ...(ignored ? { project_config_ignored: ignored } : {}),
     };
@@ -1370,13 +1321,16 @@ async function call(name: string, args: Args): Promise<unknown> {
       if (view !== 'compact' && view !== 'recent') throw new Error('invalid_arguments: view');
       if (args.job !== undefined) throw new Error('invalid_arguments: view is list-only');
     }
-    if (args.job === undefined) return { jobs: listJobs(view === 'recent') };
+    if (args.job === undefined) {
+      if (args.detail !== undefined) throw new Error('invalid_arguments: detail requires job');
+      return { jobs: listJobs(view === 'recent') };
+    }
   }
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
   const id = required(args, 'job');
   const job = /^j[0-9a-f]{16}$/.test(id) ? json<Job>(join(directory(id), 'job.json')) : null;
   if (!job) return { ok: false, code: 'job_not_found' };
-  if (name === 'hud_peek') return job.job === id ? peekJob(job, args.lines) : { ok: false, code: 'job_not_found' };
+  if (name === 'hud_peek') return job.job === id ? peekJob(job, args) : { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   if (name === 'hud_read') {
     if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
@@ -1396,11 +1350,11 @@ async function call(name: string, args: Args): Promise<unknown> {
       if (Date.now() >= end || ready(row)) {
         const receipt = json<Job>(join(dir, 'job.json')) ?? job;
         const git = receipt.worktree ? { git_summary: await gitSummary(receipt.worktree) } : {};
-        const result = observation(json<Job>(join(dir, 'job.json')) ?? receipt, args.full === true);
+        const result = observation(json<Job>(join(dir, 'job.json')) ?? receipt, args.full === true, detail);
         // A question may have been answered or a settled job continued since the lightweight poll.
         const currentRow = jobRow(job, json<Record<string, unknown>>(join(dir, 'STATUS.json')), {
           dir,
-          openQuestions: result.questions.length,
+          openQuestions: result.questions?.length ?? 0,
           reportPresent: result.report_exists,
         });
         // The full read disagrees with the quick one (answered or continued meanwhile): wait, never spin.
@@ -1408,11 +1362,13 @@ async function call(name: string, args: Args): Promise<unknown> {
           await sleep(Math.max(0, Math.min(200, end - Date.now())));
           continue;
         }
-        if (!isWorker && (('report' in result && result.report_exists) || result.blocked || result.display_state === 'failed')) {
+        const collected = 'report' in result && result.report_exists;
+        const observed = result.blocked || result.state === 'failed';
+        if (!isWorker && (collected || observed)) {
           const latest = json<Job>(join(dir, 'job.json'))!;
           const at = new Date().toISOString();
-          if ('report' in result && result.report_exists) latest.read_at = at;
-          if (result.blocked || result.display_state === 'failed') latest.observed_at = at;
+          if (collected) latest.read_at = at;
+          if (observed) latest.observed_at = at;
           save(latest);
         }
         return { ...result, ...git };
@@ -1596,7 +1552,7 @@ async function receive(line: string): Promise<void> {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
-        instructions: 'Call hud_roster before dispatching.',
+        instructions: 'Call hud_roster when project dispatch context is missing or stale. With live watch, keep working until notified, then collect with hud_read.',
       };
       break;
     case 'ping':

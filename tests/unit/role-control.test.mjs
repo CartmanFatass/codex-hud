@@ -262,7 +262,7 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   const child = spawn(process.execPath, [mcpEntry], { cwd: other, env: { ...process.env, HUD_MCP_SURFACE: 'roles', HUD_HOME: s.hud, PATH: s.env.PATH }, stdio: ['pipe', 'pipe', 'pipe'] });
   t.after(async () => { child.stdin.end(); await once(child, 'exit'); });
   const reply = new Promise((done) => createInterface({ input: child.stdout }).once('line', (line) => done(JSON.parse(line))));
-  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'hud_roster', arguments: {} } }) + '\n');
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'hud_roster', arguments: { detail: true } } }) + '\n');
   const roster = JSON.parse((await reply).result.content[0].text).roles.find((r) => r.role === 'imp');
   assert.deepEqual([roster.harness, roster.agent, roster.model, roster.available, roster.runs_on.agent], ['cli', 'agy', 'gemini-4-argon-high', true, 'agy']);
   assert.equal(roster.run.length, 2);

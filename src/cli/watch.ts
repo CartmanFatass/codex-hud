@@ -39,7 +39,9 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
           finally { if (fd !== undefined) fs.closeSync(fd); }
           const q = questionFields(body), one = (s: string) => s.replace(/\s+/g, ' ').trim();
           const tag = body.match(/^# Question q\d+ from (.+)$/m)?.[1] ?? row.role ?? row.job;
-          return `[${one(tag)}] QUESTION ${id}: ${one(q.question).slice(0, 400)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}`;
+          const question = body.replace(/^# Question q\d+ from .*\n/, '')
+            .split(/^(?:Options:\s*$|Default if unanswered:|Context:|Answer:)/m, 1)[0];
+          return `[${one(tag)}] QUESTION ${id}: ${one(question)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)}${q.context ? ` | context: ${one(q.context)}` : ''} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}`;
         });
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     let attentionUnread = true;

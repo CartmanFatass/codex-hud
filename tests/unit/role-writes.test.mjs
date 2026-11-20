@@ -212,7 +212,7 @@ test('writeRolePlaces seeds from shipped role, preserves existing fields, sets 0
   const reply = new Promise((done) => {
     createInterface({ input: child.stdout }).once('line', (line) => done(JSON.parse(line)));
   });
-  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'hud_roster', arguments: {} } }) + '\n');
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'hud_roster', arguments: { detail: true } } }) + '\n');
   const res = await reply;
   const roster = JSON.parse(res.result.content[0].text);
   const imp = roster.roles.find((r) => r.role === 'imp');
