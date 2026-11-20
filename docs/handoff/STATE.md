@@ -161,7 +161,7 @@ board counts these; update at every landing or decision. -->
 - accepted · 0.2.0 · PROJECT-LAYOUTS-01 · Settings → Panel → Project layout (Timeline | Board | Inbox); the Board layout (imp neon) (f9aa6dda)
 - accepted · 0.2.0 · PROJECT-LAYOUTS-02 · the Inbox layout: Needs you first, Running, Progress by To try; Project tab only (imp neon) (8b0aba6c)
 - working · — · EXP-01 · experimental EXP tab behind Settings → Panel → Experiments, settings page (imp)
-- working · — · EXP-02 · Codex native status line from hud-mcp (imp)
+- working · — · EXP-02 · Codex native status line from hud-mcp: compact row, important fields first (owner: Codex sends no width) (imp)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
