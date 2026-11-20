@@ -53,9 +53,9 @@ Every brief states:
 
 Design previews (owner, 2026-11-18): a design or options job writes one self-contained HTML page under
 `docs/design/<name>/`. It uses synthetic data, no outside fetches, and works at phone width and in light and dark.
-A Claude worker (frontend-imp, oracle on claude) publishes the page itself as a claude.ai Artifact (private by
-default) and puts the link in its report; the orchestrator passes the link on. A revision brief gives that link,
-so the next worker republishes to the same URL. The owner's comments on the page are read as feedback.
+The worker commits the page (and a plain-text `screens.txt` of the terminal frames when the design is a terminal
+UI) and puts their paths in its report; the orchestrator passes the paths on. No claude.ai Artifacts (owner,
+2026-11-20: they do not fit the workflow).
 
 ## Questions
 
