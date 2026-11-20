@@ -14,7 +14,7 @@ import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { HARNESS_OFF, harnessErrorRow } from './harness-page.js';
 import { presetSheet } from './preset-input.js';
-import { chainSheet, inlineModelSheet, roleModelIndex, takesModel } from './chain-input.js';
+import { chainSheet, roleModelIndex, takesModel } from './chain-input.js';
 import { splitPreviewRoom } from './split-frame.js';
 
 const muted = theme.board.muted;
@@ -166,11 +166,10 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
   const hints = controlHints(data);
   const scene = projectSplitScene(state, { list, preview, hints, start: list.find((r) => r.item)?.item },
     `control|${state.projectRoot ?? ''}|${state.controlPresetInput?.mode ?? ''}`);
-  if (state.controlChain || state.controlPresetInput || state.controlQuickModel?.choice) {
+  if (state.controlChain || state.controlPresetInput) {
     const room = splitPreviewRoom({ ...scene, compact: true }, state, height, notes);
-    const sheet = state.controlQuickModel?.choice ? inlineModelSheet(state, data.models, previewWidth, room)
-      : state.controlChain ? chainSheet(state.controlChain, data.models, previewWidth, room, now)
-        : presetSheet(state.controlPresetInput!, previewWidth, room);
+    const sheet = state.controlChain ? chainSheet(state.controlChain, data.models, previewWidth, room, now)
+      : presetSheet(state.controlPresetInput!, previewWidth, room);
     return { ...scene, rule: sheet.rule, preview: sheet.rows, sub: sheet.cursor, hints: sheet.hints, compact: true };
   }
   return scene;

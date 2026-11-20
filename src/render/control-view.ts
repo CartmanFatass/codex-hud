@@ -141,7 +141,7 @@ export function pickerListRows(input: ModelInput, pick: ModelPick, view: ReturnT
     return [{ ...section(theme.board.identifier(lead + names), width, count), modelHit: { entry: row.id },
       ...(selected ? { item: 'project:pick' } : {}) }];
   });
-  const status = pick.lists.piStatus, filtered = !!input.text.trim();
+  const status = pick.place.harness === 'pi' ? pick.lists.piStatus : undefined, filtered = !!input.text.trim();
   const empty = filtered ? (!view.total && 'No matching models')
     : status?.runnerOff ? 'pi is off' : status?.empty ? 'No discovered models' : !view.rows.length && 'No matching models';
   if (empty) list.push(boardRow(theme.board.attention(t(empty))));
@@ -149,20 +149,23 @@ export function pickerListRows(input: ModelInput, pick: ModelPick, view: ReturnT
   return list;
 }
 
-/** Narrow picker: one facts row, plus the full ID if it was cut in the list. */
+/** Single-column picker. Pi adds a facts row and the full ID if it was cut in the list. */
 export function pickerRows(input: ModelInput, pick: ModelPick, width: number, room: number, now: number): MonitorRow[] {
   const view = pickView(pick, input), { place, lists } = pick, selected = view.selected;
-  const piStatus = lists.piStatus, fetchedAt = piStatus?.fetchedAt, rows: MonitorRow[] = [];
+  const isPi = place.harness === 'pi';
+  const status = isPi ? lists.piStatus : place.harness === 'cli' && (place.label === 'agy' || place.label === 'grok')
+    ? lists.cliStatus?.[place.label] : undefined;
+  const fetchedAt = status?.fetchedAt, rows: MonitorRow[] = [];
   const notice = (text: string) => boardRow(fit('  ' + theme.board.attention(text), width));
-  if (piStatus?.failed) rows.push(notice(t('Refresh failed')));
+  if (status?.failed) rows.push(notice(t('Refresh failed')));
   else if (fetchedAt !== undefined && now - fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
-  if (piStatus?.offline) rows.push(notice(t('Limited offline catalog')));
+  if (isPi && lists.piStatus?.offline) rows.push(notice(t('Limited offline catalog')));
   let shortened = false;
   const list = pickerListRows(input, pick, view, width, (entry) => {
     const cursor = selected?.id === entry.id;
     const lead = `${cursor ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
     const name = monitorText(entry.label);
-    const fact = pickerFact(entry, now), was = entry.was ? theme.board.muted(t('was')) : '';
+    const fact = pickerFact(entry, now, !isPi && entry.fact === 'off'), was = entry.was ? theme.board.muted(t('was')) : '';
     const tags = entry.tags?.map((name) => theme.board.muted(`[${monitorText(name)}]`)) ?? [];
     const available = (side: string) => width - 4 - (side ? visualLength(side) + 2 : 0);
     const rightSide = () => [fact, ...tags, was].filter(Boolean).join(' ');
@@ -174,7 +177,7 @@ export function pickerRows(input: ModelInput, pick: ModelPick, width: number, ro
       ...(entry.value === '' && place.piModel?.defaultSource ? [boardRow(`      ${theme.board.muted(t(place.piModel.defaultSource))}`)] : [])];
   });
   const detail: MonitorRow[] = [];
-  if (selected?.model && room >= 3) {
+  if (isPi && selected?.model && room >= 3) {
     const muted = theme.board.muted;
     const [ctx, out, thinking, images] = lists.piFacts?.[selected.model] ?? [];
     const fields = [muted(`${monitorText(ctx ?? '?')} ${t('ctx')}`), muted(`${monitorText(out ?? '?')} ${t('out')}`),

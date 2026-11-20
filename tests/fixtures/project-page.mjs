@@ -197,7 +197,7 @@ export function projectFrames(f) {
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
-  Object.assign(frames, pickerFrames(f, control), pickerOrderFrames(f), presetFrames(f, control), quickModelFrames(f, control));
+  Object.assign(frames, pickerFrames(f, control), pickerOrderFrames(f), flatPickerFrames(f), presetFrames(f, control), quickModelFrames(f, control));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
   return frames;
@@ -360,6 +360,19 @@ export function pickerOrderFrames(f, layout = 'split') {
     const browse = open(width, lang, layout);
     const filter = draw(width, lang, send(browse, '', 'grok').state);
     for (const [name, frame] of Object.entries({ browse, filter })) frames[`pick-order-${name}-${width}-${lang}`] = frame.lines.map(stripAnsi);
+  }
+  return frames;
+}
+
+export function flatPickerFrames(f, panelLayout = 'split') {
+  const data = { ...richControl(f.data), models: { ...MODEL_LISTS, cli: { ...MODEL_LISTS.cli,
+    claude: [...MODEL_LISTS.cli.claude, 'fable'] } } }, frames = {};
+  const state = onControl({ projectCursor: 'project:role:oracle', projectFolded: new Set(['files', 'usage']) }, { panelLayout });
+  for (const width of [40, 120]) for (const lang of ['en', 'zh']) {
+    const draw = (state) => f.render(width, lang, state, 24, data);
+    const frame = draw(state);
+    const opened = handleMonitorInput(frame.state, { type: 'key', key: 'place-model', text: 'm' }, { frame, tree: TREE, nowMs: NOW });
+    frames[`pick-flat-claude-${width}-${lang}`] = draw(opened.state).lines.map(stripAnsi);
   }
   return frames;
 }

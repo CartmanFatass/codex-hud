@@ -22,7 +22,7 @@ import { controlShown, expShown, mainTabs } from './main-tabs.js';
 import { controlNavigation, storeControlNavigation } from './control-navigation.js';
 import { controlHeader, controlHints, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
-import { chainSheet, inlineModelSheet } from './chain-input.js';
+import { chainSheet } from './chain-input.js';
 import { glyph } from './control-view.js';
 import { paintModelPicker } from './model-picker-view.js';
 import { addBackHints, harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
@@ -281,13 +281,11 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes);
     }
   }
-  const inline = control && !harnesses && state.controlQuickModel?.choice;
-  const anchorRole = inline ? state.controlQuickModel!.role : state.controlChain?.role;
+  const anchorRole = state.controlChain?.role;
   const anchor = control && !harnesses && anchorRole && roleRows(anchorRole, width, now);
   const sheetRoom = height - 3 - top - Number(!!input.publicationNotice) - (anchor ? anchor.length : 0);
-  const sheet = inline && input.project ? inlineModelSheet(state, input.project.models, width, sheetRoom)
-    : chain && anchor && input.project ? chainSheet(state.controlChain!, input.project.models, width, sheetRoom, now)
-      : presetInput && presetSheet(presetInput, width, sheetRoom);
+  const sheet = chain && anchor && input.project ? chainSheet(state.controlChain!, input.project.models, width, sheetRoom, now)
+    : presetInput && presetSheet(presetInput, width, sheetRoom);
   const sheetRows = sheet ? [section(sheet.rule.label, width, sheet.rule.right), ...sheet.rows] : undefined;
   let chainTop = 0;
   if (anchor && sheetRows) {

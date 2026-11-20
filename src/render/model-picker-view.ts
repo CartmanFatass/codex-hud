@@ -1,4 +1,4 @@
-/** The picker owns the panel body. When wide, only its left column is a list. */
+/** The picker owns the panel body. Pi adds a detail column when wide. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
 import type { PlaceFact } from '../roles/role-control.js';
@@ -149,7 +149,7 @@ function wideRows(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput,
   return { rows, listWidth: left };
 }
 
-function narrowRows(frame: MonitorFrame, input: ModelInput, pick: ModelPick, width: number, room: number, now: number) {
+function singleColumnRows(frame: MonitorFrame, input: ModelInput, pick: ModelPick, width: number, room: number, now: number) {
   const where = location(input.role, null, input.index), harness = monitorText(pick.place.label);
   const right = [presetTag(pick.preset), harness].filter(Boolean).join(' · ');
   frame.lines[1] = theme.board.text(fit(section(where, width, visualLength(where + right) + 2 <= width ? right : harness).text, width));
@@ -164,8 +164,8 @@ function narrowRows(frame: MonitorFrame, input: ModelInput, pick: ModelPick, wid
 export function paintModelPicker(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, height: number, now: number) {
   const room = height - 3, wide = width >= MODEL_PICKER_WIDE;
   if (room >= 0) {
-    const { rows, listWidth } = wide ? wideRows(frame, data, input, pick, width, room, now)
-      : narrowRows(frame, input, pick, width, room, now);
+    const { rows, listWidth } = wide && pick.place.harness === 'pi' ? wideRows(frame, data, input, pick, width, room, now)
+      : singleColumnRows(frame, input, pick, width, room, now);
     frame.panes.push({ id: 'agents', x: 0, y: 2, width: listWidth, height: room, offset: 0, contentLength: rows.length, edge: 0, visible: room, rows });
   }
   if (height > 1) {

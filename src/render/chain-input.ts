@@ -18,7 +18,7 @@ import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from '.
 type Field = 'target' | 'model' | 'kind' | 'thinking' | 'effort' | 'done';
 type Choice = { text: string; at: number };
 type Sheet = { index: number; place?: DraftPlace; field: Field; choice?: Choice; error?: string };
-export type QuickModelInput = { role: RoleFact; index: number; choice?: Choice; error?: string };
+export type QuickModelInput = { role: RoleFact; index: number };
 export interface ChainInput {
   role: RoleFact;
   at: number;
@@ -53,7 +53,6 @@ export function finishChain(state: MonitorState): MonitorState {
     projectCursor: controlRoleItem(chain.role.role), splitFocus: undefined, splitList: undefined, splitSub: undefined, boardRevealed: undefined } };
 }
 
-/** The pi model field opens the panel-body picker; other fields use an inline list. */
 function fill(place: DraftPlace, field: 'model' | 'kind' | 'thinking' | 'effort', value?: string): DraftPlace {
   if (place.raw[field] === value) return place;
   const raw = { ...place.raw }, fact = { ...place.fact };
@@ -98,66 +97,27 @@ export const takesModel = (p: DraftPlace | undefined) => p && (p.fact.harness !=
 export const roleModelIndex = (role: RoleFact) => Math.max(0, role.places.findIndex((p) => p.state === 'active'));
 const quickPlace = (state: MonitorState, { role, index }: QuickModelInput) =>
   (state.controlChain?.draft?.run ?? role.editor?.places)?.[index];
-const inlineChoices = (state: MonitorState, quick: QuickModelInput, models: ModelLists) =>
-  matching(quick.role, { ...quick, field: 'model', place: quickPlace(state, quick) }, models);
 const choiceText = (text: string, typed?: string) => typed === undefined ? [...text].slice(0, -1).join('')
   : [...text, ...typed].slice(0, MODEL_ID_MAX).join('');
 
 export function openQuickModel(state: MonitorState, role: RoleFact, index: number, ctx: MonitorContext): MonitorState {
   const quick: QuickModelInput = { role, index }, p = quickPlace(state, quick), models = modelsOf(ctx);
   if (role.source === 'project' || !p || !takesModel(p)) return state;
-  if (p.raw.harness === 'pi') {
-    const place = state.controlChain?.draft ? previewDraft([p], models, clock(ctx))[0] : role.places[index];
-    return { ...state, controlQuickModel: quick, projectInput: { role: role.role, index, text: '', place } };
-  }
-  quick.choice = { text: '', at: Math.max(0, inlineChoices(state, quick, models).findIndex((o) => o.value === p.raw.model)) };
-  return { ...state, controlQuickModel: quick };
+  const place = state.controlChain?.draft ? previewDraft([p], models, clock(ctx))[0] : role.places[index];
+  return { ...state, controlQuickModel: quick, projectInput: { role: role.role, index, text: '', place } };
 }
 
 export function quickModelKey(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
-  const quick = state.controlQuickModel!, { role, index, choice } = quick, chain = state.controlChain;
-  const closed = { ...state, controlQuickModel: undefined, projectInput: undefined };
-  const out = (next = state, action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
-  const run = chain?.draft?.run ?? role.editor!.places, place = run[index]!, models = modelsOf(ctx);
-  const set = (value?: string) => {
-    const updated = [...run];
-    updated[index] = fill(place, 'model', value);
-    if (choice && value !== place.raw.model && previewDraft([updated[index]], models, clock(ctx))[0]?.state === 'off')
-      return out({ ...state, controlQuickModel: { ...quick, error: OFF } });
-    if (chain?.draft) return out({ ...closed, controlChain: { ...chain, draft: { ...chain.draft, run: updated }, error: undefined } });
-    return out(closed, { type: 'preset-edit', op: 'run', role: role.role, revision: role.revision, modelIndex: index, run: updated.map((p) => p.raw) });
-  };
-  if (!choice) {
-    const picked = modelInputEvent(state, input, ctx);
-    if (picked?.action?.type === 'model-picked') return set(picked.action.value || undefined);
-    if (!picked) return out();
-    return picked.state.projectInput ? picked : out(closed);
-  }
-  const list = inlineChoices(state, quick, models);
-  const update = (choice: Choice, error?: string) => out({ ...state, controlQuickModel: { ...quick, choice, error } });
-  const move = (at: number) => update({ ...choice, at: Math.max(0, Math.min(list.length - 1, at)) });
-  const apply = () => list[choice.at] ? set(list[choice.at]!.value) : update(choice, 'No matching choices');
-  if (input.type === 'mouse') {
-    if (input.button !== 'left') return move(choice.at + (input.button === 'wheel-down' ? 1 : -1));
-    if (ctx.frame?.controls.some((c) => c.kind === 'preset-cancel' && c.y === input.y && input.x >= c.x && input.x < c.x + c.width))
-      return out(closed);
-    const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
-    const item = pane && monitorRowAt(pane, input.x, input.y)?.item;
-    const id = /^chain:option:(\d+)$/.exec(item ?? '')?.[1];
-    return id === undefined ? out() : Number(id) === choice.at ? apply() : move(Number(id));
-  }
-  if (input.text !== undefined || input.key === 'backspace') return update({ text: choiceText(choice.text, input.text), at: 0 });
-  switch (input.key) {
-    case 'escape': case 'close': return out(closed);
-    case 'enter': return apply();
-    case 'up': return move(choice.at - 1);
-    case 'down': return move(choice.at + 1);
-    case 'page-up': return move(choice.at - 5);
-    case 'page-down': return move(choice.at + 5);
-    case 'home': return move(0);
-    case 'end': return move(list.length - 1);
-    default: return out();
-  }
+  const { role, index } = state.controlQuickModel!, chain = state.controlChain;
+  const picked = modelInputEvent(state, input, ctx);
+  if (picked.state.projectInput) return picked;
+  const closed = { ...picked.state, controlQuickModel: undefined };
+  if (picked.action?.type !== 'model-picked') return { ...picked, state: closed };
+  const run = [...(chain?.draft?.run ?? role.editor!.places)];
+  run[index] = fill(run[index]!, 'model', picked.action.value || undefined);
+  if (chain?.draft) return { close: false, state: { ...closed, controlChain: { ...chain, draft: { ...chain.draft, run }, error: undefined } } };
+  return { close: false, state: closed, action: { type: 'preset-edit', op: 'run', role: role.role, revision: role.revision,
+    modelIndex: index, run: run.map((p) => p.raw) } };
 }
 
 function optionRows(list: Option[], at: number, size: number, width: number): MonitorRow[] {
@@ -165,18 +125,6 @@ function optionRows(list: Option[], at: number, size: number, width: number): Mo
   return list.slice(start, start + size).map((opt, i) => ({ item: optItem(start + i), text: pair(
     `${start + i === at ? mark('›', '>') : ' '}     ` + (opt.off ? glyph('off') : opt.missing ? glyph('missing') : glyph('standby')) + ` ${textOf(opt.label)}`,
     muted(opt.off ? t('Off') : opt.missing ? t('not installed') : ''), width) }));
-}
-
-export function inlineModelSheet(state: MonitorState, models: ModelLists, width: number, room: number) {
-  const quick = state.controlQuickModel!, { role, index, choice, error } = quick, draft = state.controlChain?.draft;
-  const list = inlineChoices(state, quick, models), at = choice!.at;
-  const rule = { label: monitorText(role.role), right: [presetTag(draft?.name ?? role.preset), t('place #{n}', { n: index + 1 }),
-    draft ? t('Not saved') : ''].filter(Boolean).join(' · ') };
-  const count = String(list.length), label = `  ${fit(t('model'), 10)} `;
-  const query = boardRow(pair(label + squeeze(`/ ${textOf(choice!.text)}${mark('▌', '_')}`, width - visualLength(label + count) - 1), muted(count), width));
-  const messages = error || !list.length ? flowLines(t(error ?? 'No matching choices'), width).map((line) => boardRow(theme.board.attention(line))) : [];
-  return { rule, cursor: optItem(at), hints: 'type to filter  ↑↓ pick  ⏎ set  esc cancel',
-    rows: [query, ...messages, ...optionRows(list, at, Math.max(1, room - 1 - messages.length), width)] };
 }
 
 export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext,

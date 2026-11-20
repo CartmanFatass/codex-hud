@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
-import { projectFixture, pickerFrames, MAVERICK, plain, onPage, onControl, NOW, TREE, MODEL_LISTS, PROJECTS } from '../fixtures/project-page.mjs';
+import { projectFixture, pickerFrames, flatPickerFrames, MAVERICK, plain, onPage, onControl, NOW, TREE, MODEL_LISTS, PROJECTS } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -152,7 +152,7 @@ test('Control plane keeps the long model field usable when the role list scrolls
   const picked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: field.x, y: field.y }, { tree: TREE, frame });
   assert.equal(picked.state.controlChain.sheet, undefined);
   assert.equal(picked.state.controlQuickModel.index, 0);
-  assert.ok(picked.state.controlQuickModel.choice, 'the CLI catalog opens inline');
+  assert.equal(picked.state.projectInput.place.label, 'claude');
   frame = choose(frame, { type: 'key', key: 'down' });
   assert.equal(frame.state.controlChain.at, 1);
   const y = plain(frame).findIndex((line) => /3 ○ agy/.test(line));
@@ -270,8 +270,8 @@ test('browser fields use the actual adapter: site/effort, AI Studio model/thinki
   focus(s, 'pro', 2);
   await s.press('m');
   assert.equal(s.session.state.controlChain.sheet, undefined);
-  assert.match(s.text(), /model +\/ ▌/);
-  await s.keys('clear', ENTER);
+  assert.match(s.text(), /^pro #3 ─+ aistudio\n\/ ▌ +1\n› ◉ gemini-4-argon/m);
+  await s.keys(DOWN, ENTER);
   assert.equal(s.session.done.ok, true);
   assert.equal(stored(s, 'pro').run[2].model, undefined);
   assert.equal(s.session.state.controlChain.at, 2);
@@ -491,26 +491,72 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   assert.ok(click.state.projectInput, 'the model field owns input until it is cancelled');
   assert.equal(click.action, undefined);
 });
-test('CLI model and thinking fields list catalog entries inline and a miss leaves the place alone', async (t) => {
+test('m on oracle → claude opens the flat picker and Enter saves the active preset', async (t) => {
   const s = await setup(t);
-  discover(s);
+  const item = 'project:role:oracle', claude = { harness: 'cli', agent: 'claude', model: 'fable', thinking: 'high' };
+  const file = join(s.hud, 'roles/oracle.json'), before = { role: 'oracle', can_continue: true, active_preset: 'daily',
+    run: [claude], presets: [{ name: 'daily', run: [claude] }], note: 'keep' };
+  s.put(file, before);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  s.session.state = onControl({ projectCursor: item }, { panelLayout: 'split' });
+  assert.match(s.text(), /oracle \[daily\] → claude fable/);
+  await s.press('m');
+  assert.equal(s.session.state.controlChain, undefined);
+  const picker = s.frame(120);
+  assert.deepEqual(picker.panes.map((pane) => [pane.id, pane.width]), [['agents', 120]]);
+  assert.match(plain(picker).join('\n'), /^oracle #1 ─+ \[daily\] · claude\n\/ ▌ +4\n› ◉ fable +\[fable\]\n +clear\n +haiku\n +opus\n +sonnet$/m);
+  await s.keys('OPUS');
+  assert.deepEqual(stored(s, 'oracle'), before);
+  const { action } = await s.press(ENTER);
+  assert.deepEqual([action.type, action.op, action.modelIndex], ['preset-edit', 'run', 0]);
+  assert.equal(s.session.done.ok, true);
+  assert.deepEqual(stored(s, 'oracle'), { ...before, presets: [{ name: 'daily', run: [{ ...claude, model: 'opus' }] }] });
+  assert.equal(s.session.state.controlNav.projectCursor, item);
+  assert.equal(s.session.state.projectInput, undefined);
+  assert.equal(s.session.state.controlChain, undefined);
+
+  const saved = stored(s, 'oracle');
+  setHarnessDisabled(s.hud, 'cli:claude', true);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  await s.keys('m', 'sonnet');
+  assert.match(s.text(), /› +sonnet +⊘ off/);
+  assert.equal((await s.press(ENTER)).action, undefined);
+  assert.deepEqual(stored(s, 'oracle'), saved);
+
+  const frames = flatPickerFrames(s);
+  assert.deepEqual(flatPickerFrames(s, 'classic'), frames);
+  for (const [name, lines] of Object.entries(frames)) {
+    assert.ok(lines.every((line) => visualLength(line) === Number(name.split('-').at(-2))));
+    assert.match(lines[2], /^\/ ▌ +4 *$/);
+    assert.doesNotMatch(lines.slice(2).join('\n'), /│|─|ctx|输出|Edit place|编辑位置|\?/);
+  }
+});
+
+test('CLI quick picker merges catalog and discovery; Edit place keeps inline Model and Thinking', async (t) => {
+  const s = await setup(t);
   saveRun(s, 'imp', [{ harness: 'cli', agent: 'agy', model: 'gemini-4-argon-high' }]);
+  s.put(join(s.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW, pi: MODEL_LISTS.pi,
+    cli: { agy: ['gemini-synthetic-mid', 'gemini-4-argon-high'] } });
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.press('m');
   const page = lines40(s).join('\n');
-  assert.match(page, /model +\/ ▌ +4/);
-  assert.match(page, /gemini-4-argon-high[\s\S]*gemini-4-hydrogen-high[\s\S]*gemini-3\.8-flash-high/);
+  assert.match(page, /^\/ ▌ +4\n› ◉ gemini-4-argon-high\n +gemini-4-hydrogen-high +\[hydrogen\]\n +clear\n +gemini-3\.8-flash-high\n +gemini-synthetic-mid$/m);
+  assert.deepEqual((await s.press('\x12')).action, { type: 'refresh-models' });
   await s.keys('next-one', ENTER);
-  assert.match(lines40(s).join('\n'), /No matching choices/);
+  assert.match(lines40(s).join('\n'), /No matching models/);
   assert.equal(stored(s, 'imp').run[0].model, 'gemini-4-argon-high');
-  await s.press(ESC);
+  await s.keys(ESC, ESC);
   s.session.state = select(s.session.state, 'project:role:imp');
-  await s.keys('m', 'flash', ENTER);
+  await s.keys('m', 'MID synthetic', ENTER);
   assert.equal(s.session.done.ok, true);
-  assert.equal(stored(s, 'imp').run[0].model, 'gemini-3.8-flash-high');
+  assert.equal(stored(s, 'imp').run[0].model, 'gemini-synthetic-mid');
   assert.equal(s.session.state.controlChain, undefined);
   focus(s);
-  await s.keys(ENTER, DOWN, DOWN, ENTER, 'xhigh', ENTER, END, ENTER, 's');
+  await s.keys(ENTER, DOWN, ENTER, 'flash', ENTER);
+  assert.equal(s.session.state.projectInput, undefined);
+  assert.equal(s.session.state.controlChain.sheet.place.raw.model, 'gemini-3.8-flash-high');
+  assert.equal(stored(s, 'imp').run[0].model, 'gemini-synthetic-mid');
+  await s.keys(DOWN, ENTER, 'xhigh', ENTER, END, ENTER, 's');
   assert.equal(stored(s, 'imp').run[0].thinking, 'xhigh');
   // Width and cursor invariants for both languages/layouts, with long Latin and wide queries.
   const inputs = ['', '探'.repeat(90), 'maverick', 'openai'];

@@ -1,4 +1,4 @@
-/** Pure picker input: every pi provider in one list; Enter returns the chosen model to its caller. */
+/** Pure picker input: Enter returns the chosen model to its caller. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { MODEL_ID_MAX } from '../roles/model-discovery.js';
 import { qualifiedPiProvider } from '../roles/roster.js';
@@ -47,7 +47,9 @@ export function rememberModel(state: MonitorState, before: MonitorState, savedRo
 
 export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput, previous?: MonitorState['modelPrevious']): ModelPick | undefined {
   const role = data?.roles.find((r) => r.role === input.role), place = input.place;
-  if (!data || !role || place?.harness !== 'pi' || role.source === 'project') return;
+  if (!data || !role || !place || role.source === 'project' || (place.harness === 'bro' && place.label !== 'aistudio')) return;
+  const common = { place, lists: data.models, presets: role.presets, preset: role.preset, previous: previous?.[previousKey(role, input.index)] };
+  if (place.harness !== 'pi') return common;
   const inUse = new Map<string, number>();
   for (const r of data.roles) {
     // The active preset can share its chain with role.places, and the file chain may be the active chain.
@@ -59,7 +61,7 @@ export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput, pre
     }
   }
   const off = (data.harnessSwitches ?? []).filter((s) => s.group === 'provider' && s.off).map((s) => s.name).sort();
-  return { place, lists: data.models, presets: role.presets, preset: role.preset, inUse, off, previous: previous?.[previousKey(role, input.index)] };
+  return { ...common, inUse, off };
 }
 
 export const OTHER_PROVIDERS = 'other';
@@ -84,7 +86,11 @@ export function pickView(pick: ModelPick, input: ModelInput) {
   const { place, lists, presets, inUse = new Map<string, number>(), previous } = pick, needle = input.text.trim().toLowerCase();
   const currentId = place.piModel?.current ?? place.model;
   const isDefault = place.piModel?.isDefault ?? !place.model;
+  const flat = place.harness !== 'pi';
+  const flatOff = flat && (lists.editor?.off.includes(place.harness === 'cli' ? `cli:${place.label}` : 'bro:jev-aistudio') ?? place.state === 'off');
   const reference = (model: string, p: PlaceFact): PickEntry => {
+    if (flat) return { id: `pin:${model}`, label: model, model, until: p.until,
+      fact: flatOff ? 'off' : undefined, value: flatOff ? undefined : model };
     const provider = qualifiedPiProvider(model);
     const fact = p.state === 'off' || lists.piStatus?.runnerOff || (provider && pick.off?.includes(provider)) ? 'off'
       : !provider ? 'unknown' : undefined;
@@ -94,12 +100,13 @@ export function pickView(pick: ModelPick, input: ModelInput) {
   const current = currentId ? { ...reference(currentId, place), current: true } : undefined;
   const defaultId = place.piModel?.defaultId ?? undefined;
   const provider = qualifiedPiProvider(defaultId);
-  const canUnset = !place.piModel?.defaultOff && !lists.piStatus?.runnerOff && !(provider && pick.off?.includes(provider));
+  const canUnset = flat ? !flatOff : !place.piModel?.defaultOff && !lists.piStatus?.runnerOff && !(provider && pick.off?.includes(provider));
   const unsetLabel = defaultId ? t(place.piModel?.defaultSource === 'from pi role' ? "role's model ({model})" : "pi's model ({model})", {
     model: provider ? defaultId.slice(provider.length + 1) : defaultId,
   }) : t('clear');
-  const unset: PickEntry = { id: 'default', label: unsetLabel, model: defaultId, value: '', current: isDefault,
-    fact: defaultId && !qualifiedPiProvider(defaultId) ? 'unknown' : undefined, until: place.piModel?.defaultUntil };
+  const unset: PickEntry = { id: 'default', label: unsetLabel, model: defaultId, value: flatOff ? undefined : '', current: isDefault,
+    fact: flatOff ? 'off' : defaultId && !qualifiedPiProvider(defaultId) ? 'unknown' : undefined,
+    until: flat && isDefault ? place.until : place.piModel?.defaultUntil };
   const pins = new Map<string, PickEntry>();
   if (!needle && current) pins.set(current.model!, isDefault && canUnset ? unset : current);
   if (!needle) for (const preset of presets ?? []) for (const p of preset.places ?? []) {
@@ -122,21 +129,22 @@ export function pickView(pick: ModelPick, input: ModelInput) {
       else top.push({ ...pin, was: true });
     }
   }
-  if (!needle && canUnset) {
-    if (!isDefault) top.push({ ...unset, was: previous === '' });
-    else if (!current) top.unshift(unset);
-  }
+  if (!needle && canUnset && !isDefault) top.push({ ...unset, was: previous === '' });
+  else if (!needle && !current && (canUnset || flat && isDefault)) top.unshift(unset);
 
   const groups = new Map<string, PickEntry[]>(), parts = needle ? needle.split(/\s+/) : [];
   const ids = new Set(placeModels(place, lists) ?? []);
   const matches: { entry: PickEntry; used: boolean; rank: number }[] = [];
+  const pinned = flat && !needle ? new Set(top.map((entry) => entry.model)) : undefined;
   for (const value of ids) {
-    const entry: PickEntry = { id: `model:${value}`, label: value, model: value, value,
-      current: value === currentId && (!!needle || !isDefault), until: lists.piExhausted?.[value] };
+    if (pinned?.has(value)) continue;
+    const entry: PickEntry = { id: `model:${value}`, label: value, model: value, value: flatOff ? undefined : value,
+      current: value === currentId && (!!needle || !isDefault),
+      fact: flatOff ? 'off' : undefined, until: flat ? value === currentId ? place.until : undefined : lists.piExhausted?.[value] };
     const slash = value.indexOf('/'), provider = value.slice(0, slash);
-    if (needle) {
+    if (needle || flat) {
       const rank = matchRank(value.toLowerCase(), parts);
-      if (rank >= 0) matches.push({ entry, rank, used: inUse.has(provider) });
+      if (rank >= 0) matches.push({ entry, rank, used: !flat && inUse.has(provider) });
     } else {
       const group = groups.get(provider) ?? [];
       group.push({ ...entry, label: value.slice(slash + 1) });
@@ -153,8 +161,9 @@ export function pickView(pick: ModelPick, input: ModelInput) {
   const used = providers.filter((p) => !inUse.size || inUse.has(p)).sort((a, b) =>
     Number(b === currentProvider) - Number(a === currentProvider) || useCount(b) - useCount(a) || alphabetical(a, b));
   const other = inUse.size ? providers.filter((p) => !inUse.has(p)) : [];
-  const rows: PickRow[] = needle ? matches.sort((a, b) => Number(b.used) - Number(a.used) || b.rank - a.rank || alphabetical(a.entry.label, b.entry.label))
-    .map(({ entry }) => entry) : [
+  const ranked = () => matches.sort((a, b) => Number(b.used) - Number(a.used) || b.rank - a.rank || alphabetical(a.entry.label, b.entry.label))
+    .map(({ entry }) => entry);
+  const rows: PickRow[] = needle ? ranked() : flat ? [...top, ...ranked()] : [
       ...top, ...groupRows(used), ...(other.length ? [
         { id: OTHER_PROVIDERS, label: '', providers: other, count: other.reduce((n, p) => n + groups.get(p)!.length, 0) },
         ...(input.otherOpen ? groupRows(other) : []),
