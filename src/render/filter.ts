@@ -21,8 +21,8 @@ const FILTER_MAX = 48;
 /** Where a filter can be: Home, or the shown project's Progress or Tickets page. Another scope clears it. */
 export function filterScope(state: MonitorState): string | undefined {
   if (state.help || state.focus !== 'agents') return undefined;
-  if (state.mainTab === 'exp') return undefined;
-  if (state.mainTab !== 'project') return 'home';
+  if (!state.mainTab || state.mainTab === 'home') return 'home';
+  if (state.mainTab !== 'project') return undefined;
   const page = projectPageOf(state);
   return page === 'progress' || page === 'tickets' ? `${page}|${state.projectRoot ?? ''}` : undefined;
 }

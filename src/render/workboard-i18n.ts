@@ -145,7 +145,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '{n} worktrees': '{n} 个工作树',
   'no checklist': '没有检查项',
   comment: '评论',
-  'switch project (Project)': '切换项目（项目页）',
+  'Project/Control: switch project': '项目／控制：切换项目',
   'no STATE.md': '无 STATE.md',
   'switch tab (a click too)': '切换页面（也可点击）',
   'Waiting for you': '等你处理',
@@ -173,7 +173,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '{n} unlisted worktrees': '{n} 个未登记工作树',
   'ledger: {state}': '清单：{state}',
   Docs: '文档',
-  'Control plane': '控制面',
+  Control: '控制',
+  '⏎ Control': '⏎ 控制',
+  'Loading…': '正在加载…',
   editing: '编辑中',
   last: '最近提交',
   spec: 'spec',
@@ -195,6 +197,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'click selects · again expands · wheel scrolls': '点击选中 · 再点展开 · 滚轮滚动',
   // Control plane: where each role runs.
   Roles: '角色',
+  Custom: '自定义',
+  Chain: '备选链',
+  source: '来源',
   'Project roles': '项目角色',
   'Browser tasks': '浏览器任务',
   Harnesses: '宿主',
@@ -246,7 +251,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'next job': '下个任务',
   '↑↓ move  ⏎ open  esc back  ? help  r refresh': '↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  r 刷新',
   'place: clear its exhausted mark': '位置：清除耗尽标记',
-  'place: refresh model lists': '位置：刷新模型列表',
+  'Control: refresh model lists': '控制：刷新模型列表',
   'job: go to its herdr tab': '任务：切换到它的 herdr 标签页',
   'job: answer its open question': '任务：回答它的提问',
   'job: stop it (y confirms)': '任务：停止它（y 确认）',
@@ -264,8 +269,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Already answered': '已有答复',
   'Could not answer': '无法答复',
   'Could not stop': '无法停止',
-  'On the Control plane c/C applies the next/previous role preset; p m e i Del K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened':
-    '在控制面中 c/C 应用下一个／上一个角色预设；p m e i Del K J x 修改光标所在的位置（m 选择模型，r 刷新模型列表）：写入 $HUD_HOME/roles，下一个任务即用；项目自己的角色文件优先，只能打开',
+  'On Control, Enter opens a fold or chain. Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).':
+    '在控制标签中 Enter 展开折叠项或备选链。改动写入 $HUD_HOME/roles，下一个任务即用；项目角色文件只读（按 o 打开）。',
   'role not found': '没有这个角色',
   'the project file is in force: o opens it': '项目文件生效中：按 o 打开它',
   'no other harness for this role': '该角色没有别的宿主可选',
@@ -279,14 +284,14 @@ export const WORKBOARD_ZH: Record<string, string> = {
   Layout: '布局',
   Classic: '经典',
   Split: '分栏',
-  'Home and Project: Classic is the default; Split puts a list over a preview of the selected row':
-    '首页和项目：默认经典；分栏上方是列表，下方预览所选行',
+  'Home, Project and Control: Classic is the default; Split puts a list over a preview of the selected row':
+    '首页、项目和控制：默认经典；分栏上方是列表，下方预览所选行',
   'Project layout': '项目布局',
   Timeline: '时间线',
   Board: '看板',
   Inbox: '收件箱',
-  'Project tab: Timeline is the default; Board shows a milestone map, chains and tables; Inbox puts what needs you first':
-    '项目页：默认时间线；看板展示里程碑图、角色链和项目表；收件箱优先显示待处理项',
+  'Project tab: Timeline is the default; Board shows a milestone map and project table; Inbox puts what needs you first':
+    '项目页：默认时间线；看板展示里程碑图和项目表；收件箱优先显示待处理项',
   latest: '最近',
   now: '现在',
   Milestones: '里程碑',

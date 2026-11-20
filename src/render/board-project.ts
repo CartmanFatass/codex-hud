@@ -1,30 +1,27 @@
 /**
  * Board project layout (PROJECT-UX direction B, `.scratch/project-layouts/spec.md`):
  * milestone map rows (one cell per slice, `n/m`, age, `+N` on overflow), gauges on the hub,
- * current milestone open in cell order on Progress, one chain row per role on the Control plane,
+ * current milestone open in cell order on Progress,
  * and a one-row-per-project table on the Projects list. Works in both Split and Classic. Pure.
  */
 import type { ActiveJob, LedgerSlice, ProjectSnapshot, SliceState } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { TryAction } from '../collectors/try-records.js';
 import { projectWorkCard } from '../collectors/work-card.js';
-import type { PlaceFact, RoleFact } from '../roles/role-control.js';
 import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import {
   NO_MILESTONE, PAGE_WORD, PROJECT_PAGES, asksYou, barText, briefStack, clampClean, clampLines,
   currentRows, dateText, foldRow, inFlight, inline, landedAge, landedInline, landedMark, landedNewest, ledgerText,
-  meter, milestoneOrder, pageRows, pageSummary, progressSegments, projectFoldedSet, projectItem, projectOrder, roleInk,
+  meter, milestoneOrder, pageRows, pageSummary, progressSegments, projectFoldedSet, projectOrder, roleInk,
   sinceText, sliceInk, stacked, ticketWorking, tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted,
   unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
-import { glyph, needsAttention, placePreview, placeRows, placeTarget, radarFacts, radarRows, roleName } from './control-view.js';
-import { controlPreview, controlTail, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
+import { hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { jobSentenceLine, labelSummary, workCardDetail } from './work-card.js';
-import { boardRow, kvRows, mark, minuteAge, section } from './workboard-rows.js';
-import { cutWords, fit, flowLines, monitorText, pair } from './monitor-text.js';
+import { boardRow, mark, minuteAge, section } from './workboard-rows.js';
+import { cutWords, fit, monitorText, pair } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
-import { basename } from 'node:path';
 import { t } from './i18n.js';
 
 const muted = theme.board.muted;
@@ -121,10 +118,6 @@ function boardInFlightRows(data: ProjectSnapshot, width: number, now: number, bo
   ];
 }
 
-const roleCell = (role: RoleFact) => {
-  const dead = role.places.some((p) => p.state === 'exhausted'), live = role.places.some((p) => p.state === 'active');
-  return dead && live ? theme.board.attention(mark('◉', '@')) : dead ? theme.board.attention(mark('✗', 'x')) : live ? theme.board.active(mark('◉', '@')) : muted(mark('−', '-'));
-};
 function gaugeRow(page: ProjectPage, data: ProjectSnapshot, width: number, now: number, col: number, prefix = '', tryMarks?: ReadonlyMap<string, TryAction>): MonitorRow {
   const head = `${prefix}${theme.board.title(fit(t(PAGE_WORD[page]), col))}`, space = Math.max(1, width - visualLength(head)), item = `project:page:${page}`;
   if (page === 'progress') {
@@ -148,19 +141,9 @@ function gaugeRow(page: ProjectPage, data: ProjectSnapshot, width: number, now: 
     const body = `${dot} ${g.branch ? monitorText(g.branch) : muted(t('detached'))}`, warn = extra ? ` · ${theme.board.attention(`! ${extra}`)}` : '';
     return { item, text: fit(head + (visualLength(body + warn) <= space ? body + warn : truncateAnsi(body, space)), width) };
   }
-  if (page === 'docs') {
-    const facts = pageSummary('docs', data, now);
-    while (facts.length > 1 && visualLength(facts.join(' · ')) > space) facts.pop();
-    return { item, text: fit(head + (facts.join(' · ') || muted(mark('–', '-'))), width) };
-  }
-  const onFallback = data.roles.filter((r) => r.places.some((p) => p.state === 'exhausted') && r.places.some((p) => p.state === 'active')).length;
-  const atLimit = data.roles.filter((r) => r.places.some((p) => p.state === 'exhausted')).length;
-  const stuck = data.roles.filter((r) => !r.places.some((p) => p.state === 'active')).length;
-  const note = onFallback ? theme.board.attention(t('{n} on fallback', { n: onFallback }))
-    : atLimit ? theme.board.attention(t('{n} at limit', { n: atLimit }))
-    : stuck ? theme.board.attention(t('{n} unavailable', { n: stuck })) : muted(`${data.roleCount} ${t('roles')}`);
-  const cells = cellStrip(data.roles.map(roleCell), Math.max(0, space - visualLength(note) - 3));
-  return { item, text: fit(head + (cells ? `${cells} · ${note}` : note), width) };
+  const facts = pageSummary('docs', data, now);
+  while (facts.length > 1 && visualLength(facts.join(' · ')) > space) facts.pop();
+  return { item, text: fit(head + (facts.join(' · ') || muted(mark('–', '-'))), width) };
 }
 
 /** Board Hub (Classic): Waiting for you, milestone map + latest + legend, In flight, page rows as gauges. */
@@ -222,7 +205,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
   const waiting: MonitorRow[] = data.waiting.length ? [{ item: 'project:fold:waiting', text: pair(`${theme.board.attention('?')} ${theme.board.title(t('Waiting for you'))}`, muted(waitFacts), width) }] : [];
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);
   const mark_ = (page: ProjectPage) => page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
-    : (page === 'tickets' && tickets.some(asksYou)) || (page === 'control' && data.roles.some(needsAttention)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
+    : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
     : muted(mark('○', 'o'));
   const shownPages = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length);
   const col = Math.max(...shownPages.map((p) => visualLength(t(PAGE_WORD[p])))) + 1;
@@ -232,7 +215,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
     if (page && page !== 'progress') {
       const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
-      const body = page === 'control' ? boardControlRows(facts, state, width, now) : pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1);
+      const body = pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1);
       return { label: t(PAGE_WORD[page]), right: t('⏎ open page'), rows: body.map(({ item: _i, files: _f, ...row }) => row) };
     }
     const milestones = boardMilestones(data), cols = mapCols(milestones, now), latest = boardLatestRow(data, width, now, input.tryMarks);
@@ -366,86 +349,6 @@ export function boardProgressPart(input: MonitorData, data: ProjectSnapshot, sta
   return {
     list, preview, start: list.find((r) => r.item?.startsWith('project:slice:'))?.item ?? list.find((r) => r.item)?.item,
     hints: '↑↓ move  ⏎ open file  ? help  PgUp PgDn scroll  esc back', focusHints: '↑↓ move  ⏎ fold / unfold the ledger line  esc back  ? help',
-  };
-}
-
-/** One role's fallback chain (`✗pi › ◉agy › ○claude`), tightening separator and overflowing with `+N` inside `room`. */
-export function chainText(places: PlaceFact[], room: number): string {
-  if (!places.length) return muted(mark('–', '-'));
-  const tokens = places.map((p) => `${glyph(p.state)}${p.state === 'active' ? monitorText(p.label) : muted(monitorText(p.label))}`);
-  for (const sep of [` ${muted(mark('›', '>'))} `, muted(mark('›', '>'))]) {
-    const joined = tokens.join(sep);
-    if (visualLength(joined) <= room) return joined;
-  }
-  for (let n = tokens.length - 1; n >= 1; n--) {
-    const candidate = `${tokens.slice(0, n).join(muted(mark('›', '>')))} ${muted(`+${tokens.length - n}`)}`;
-    if (visualLength(candidate) <= room) return candidate;
-  }
-  return truncateAnsi(tokens[0], room);
-}
-function roleGroups(data: ProjectSnapshot, width: number, itemOf: (role: RoleFact) => string): MonitorRow[] {
-  const out: MonitorRow[] = [], nameCol = Math.max(8, Math.min(10, Math.max(0, ...data.roles.map((r) => visualLength(roleName(r))))));
-  for (const [title, group] of [['Roles', 'roles'], ['Project roles', 'project'], ['Browser tasks', 'browser']] as const) {
-    const roles = data.roles.filter((r) => r.group === group);
-    if (!roles.length) continue;
-    if (out.length) out.push(boardRow(''));
-    out.push(section(t(title), width, String(roles.length)));
-    for (const role of roles) {
-      const lead = ` ${fit(theme.board.title(roleName(role)), nameCol)} `;
-      out.push({ text: fit(lead + chainText(role.places, Math.max(1, width - visualLength(lead))), width), item: itemOf(role), files: [role.path] });
-    }
-  }
-  const invalid = data.control.filter((r) => r.label === 'invalid');
-  if (invalid.length) {
-    if (out.length) out.push(boardRow(''));
-    out.push(section(t('Needs attention'), width, theme.board.attention(String(invalid.length))));
-    invalid.forEach((r, i) => out.push({ text: pair(`  ${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, muted(monitorText(t(r.value))), width), item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : [] }));
-  }
-  return out;
-}
-
-/** Board Control plane (Classic): one chain row per role; Enter expands that role's places underneath, where place keys act. */
-export function boardControlRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
-  const folded = projectFoldedSet(state), out: MonitorRow[] = [], mins = (until: number) => t('{n}m', { n: Math.max(1, Math.ceil((until - now) / 60000)) });
-  for (const row of roleGroups(data, width, (r) => `project:fold:role:${r.role}`)) {
-    out.push(row);
-    const name = /^project:fold:role:(.+)$/.exec(row.item ?? '')?.[1], role = name && folded.has(`role:${name}`) ? data.roles.find((r) => r.role === name) : undefined;
-    if (role) for (const [i, p] of role.places.entries()) {
-      const tag = p.state === 'exhausted' && p.until !== undefined ? theme.board.attention(mins(p.until)) : p.state === 'missing' ? muted(t('not installed')) : '';
-      out.push(...placeRows(`    ${glyph(p.state)} `, p, width, ' ', tag, placeTarget(role, i, data), p.state === 'active' ? undefined : muted));
-    }
-  }
-  out.push(...placePreview(data, (out.find((r) => r.item === state.projectCursor && r.item) ?? out.find((r) => r.item))?.item, width));
-  const radar = radarRows(radarFacts(data.radar), width);
-  if (radar.length) out.push(boardRow(''), section(t('Usage'), width), ...radar);
-  if (data.harnesses.length) {
-    out.push(boardRow(''), section(t('Harnesses'), width));
-    const up = data.harnesses.filter((h) => h.ok).map((h) => monitorText(h.name)), down = data.harnesses.filter((h) => !h.ok).map((h) => monitorText(h.name));
-    if (up.length) flowLines(up.join('  '), Math.max(1, width - 3)).forEach((l, k) => out.push(plain(`${k ? '   ' : ` ${theme.board.success(mark('✓', '+'))} `}${l}`, width)));
-    if (down.length) flowLines(down.join(' '), Math.max(1, width - 3)).forEach((l, k) => out.push(plain(`${k ? '   ' : ` ${muted(mark('−', '-'))} `}${muted(l)}`, width)));
-  }
-  const files = data.control.filter((r) => r.label !== 'invalid'), have = data.keys.filter((k) => k[1]).length;
-  out.push(boardRow(''), foldRow(folded, 'files', 'Files', width, String(files.length + data.agents.length)));
-  if (folded.has('files')) {
-    const dots = data.keys.map(([, ok]) => (ok ? theme.board.success(mark('●', '+')) : muted(mark('○', '-')))).join('');
-    out.push({ text: fit(`  ${muted(`${t('keys')} ${have}/${data.keys.length}`)}${dots ? '  ' + dots : ''}`, width), item: 'project:fold:files' });
-  } else {
-    files.forEach((r, i) => out.push(projectItem(r.label === 'convention' ? { ...r, value: t(r.value) + ' · ' + basename(r.path!) } : r, i, '', width, now)));
-    out.push(foldRow(folded, 'agents', 'agents', width, String(data.agents.length)));
-    if (!folded.has('agents')) data.agents.forEach((r, i) => out.push(projectItem(r, i, '', width, now)));
-    out.push(...kvRows('keys', data.keys.map(([n, p]) => `${n} ${mark(p ? '✓' : '−', p ? '+' : '-')}`).join('  '), width));
-    out.push(projectItem({ label: 'browser', value: mark(data.browser ? '✓' : '−', data.browser ? '+' : '-') }, 0, '', width, now));
-  }
-  return out;
-}
-
-/** Board Control plane (Split): one chain row per role in the list; selected role's places in the preview (all place keys work there). */
-export function boardControlPart(data: ProjectSnapshot, width: number, now: number): Part {
-  const list = [...roleGroups(data, width, (r) => `project:role:${r.role}`), boardRow(''), ...controlTail(data, width)];
-  return {
-    list, preview: controlPreview(data, width, now), start: list.find((r) => r.item)?.item,
-    hints: '↑↓ move  ⏎ places  c C preset  ? help  PgUp PgDn scroll  esc back',
-    focusHints: '↑↓ place  p harness  m model  e thinking  i add  Del remove  K J move  x clear  esc back  ? help',
   };
 }
 

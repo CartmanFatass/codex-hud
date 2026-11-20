@@ -83,7 +83,7 @@ export async function projectFixture(root) {
   const data = await collector.collect(true, board, NOW);
   // `state` may be a page name ('progress', 'tickets', 'tree', 'docs', 'control') or a full state; none is the hub.
   const render = (width, lang = 'en', state = undefined, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none', extra = {}) => {
-    state = typeof state === 'string' ? onPage(state) : state ?? onPage();
+    state = typeof state === 'string' ? state === 'control' ? onControl() : onPage(state) : state ?? onPage();
     const display = setDisplayConfig({ theme, icons }), previous = setLanguage(lang);
     try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, modelEnabled, ...extra }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
@@ -154,6 +154,7 @@ export const MODEL_LISTS = {
 export const PROJECTS = [{ root: '/synthetic/demo-project', name: 'demo-project' }, { root: '/synthetic/second-project', name: 'second-project' }, { root: '/synthetic/third', name: 'third' }];
 /** A Project tab state: the hub, or one page of it. */
 export const onPage = (projectPage, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
+export const onControl = (controlNav, extra) => ({ ...initialMonitorState(), mainTab: 'control', controlNav, ...extra });
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
 export const PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'];
 /** The hub at 40/80/120 (and text icons at 40), and each page at 40 and 120, so a regression shows in the diff. */
@@ -177,12 +178,16 @@ export function projectFrames(f) {
   frames['hub-rich-120-40-en'] = plain(f.render(120, 'en', undefined, 40, f.rich));
   // The Control plane: what needs the owner first, healthy roles folded; opened, with the files.
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`control-rich-${width}-${lang}`] = plain(f.render(width, lang, 'control', 48, control));
-  const opened = onPage('control', { projectFolded: new Set(['agents']) });
-  for (const lang of ['en', 'zh']) frames[`control-rich-open-40-${lang}`] = plain(f.render(40, lang, opened, 56, control));
+  const opened = onControl({ projectFolded: new Set(['agents', 'usage']) });
+  for (const lang of ['en', 'zh']) {
+    frames[`control-rich-open-40-${lang}`] = plain(f.render(40, lang, opened, 56, control));
+    frames[`control-chain-40-${lang}`] = plain(f.render(40, lang,
+      onControl({ projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files', 'usage', 'role:imp']) }), 26, control));
+  }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
   // The model picker over the page: providers, one provider's models, a filter, every model, a short CLI list.
-  const pick = (role, index, input) => onPage('control', { projectCursor: placeItem(role, index), projectInput: { role, index, text: '', ...input } });
+  const pick = (role, index, input) => onControl({ projectCursor: placeItem(role, index) }, { projectInput: { role, index, text: '', ...input } });
   for (const lang of ['en', 'zh']) {
     frames[`pick-provider-40-${lang}`] = plain(f.render(40, lang, pick('imp', 0), 16, control));
     frames[`pick-model-40-${lang}`] = plain(f.render(40, lang, pick('imp', 0, { provider: 'openai' }), 16, control));

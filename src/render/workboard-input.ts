@@ -12,7 +12,9 @@ import { splitHomeInput, splitProjectInput } from './split-input.js';
 import { join } from 'node:path';
 import { tryInput } from './try-input.js';
 import { openJobAction } from './job-actions.js';
-import { mainTabOf, mainTabs, type MainTab } from './main-tabs.js';
+import { controlShown, mainTabOf, mainTabs, type MainTab } from './main-tabs.js';
+import { controlNavigation, controlRoleItem, controlRoleOf, storeControlNavigation } from './control-navigation.js';
+import { controlFolded } from './control-page.js';
 import { expInput } from './exp-view.js';
 
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
@@ -25,8 +27,9 @@ const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
   'place-up': { op: 'up' }, 'place-down': { op: 'down' }, 'place-clear': { op: 'clear' },
 };
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
-  const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
-  const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
+  let next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
+  let controlBase: MonitorState | undefined;
+  const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: controlBase ? storeControlNavigation(controlBase, next) : next, close: false, action });
   const frame = ctx.frame,
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
@@ -34,16 +37,19 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const main = next.focus === 'agents', classic = next.panelLayout !== 'split';
   const inspector = next.focus === 'details';
   const goTab = (tab: MainTab = 'home') => {
+    const keepingProject = next.mainTab === 'control' || tab === 'control';
     next.mainTab = tab;
     if (tab === 'home') next.trySelection = undefined;
     next.focus = 'agents';
     next.modes.agents = 'open';
     next.zoom = false;
     next.boardInspect = undefined;
-    next.boardRevealed = undefined;
-    next.boardAnchor = undefined;
-    next.projectList = undefined;
-    next.projectBack = undefined;
+    if (!keepingProject) {
+      next.boardRevealed = undefined;
+      next.boardAnchor = undefined;
+      next.projectList = undefined;
+      next.projectBack = undefined;
+    }
   };
   // Opening a page keeps where it was left; closing it lands the hub's cursor on that page's row.
   const goProject = (page?: ProjectPage, cursor?: string) => {
@@ -77,6 +83,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const useProject = (root?: string) => {
     if (root === next.projectRoot) return;
     next.projectRoot = root;
+    next.controlNav = undefined;
+    next.projectInput = undefined;
     next.trySelection = undefined;
     // Esc goes back to the list only from a hub opened out of it, not from one stepped to with `[` and `]`.
     next.projectBack = undefined;
@@ -179,23 +187,45 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
-  if (main && next.mainTab === 'project') {
+  const control = controlShown(next);
+  if (control && (key === 'project-prev' || key === 'project-next')) {
+    cycleProject(key === 'project-next' ? 1 : -1);
+    return result();
+  }
+  if (control) {
+    controlBase = next;
+    next = controlNavigation(next);
+  }
+  if (control || (main && next.mainTab === 'project')) {
+    const folds = () => control ? controlFolded(next) : projectFoldedSet(next);
+    const toggleFold = (id: string) => {
+      const folded = new Set(folds());
+      if (!folded.delete(id)) folded.add(id);
+      next.projectFolded = folded;
+    };
     // A hub entry may span two rows (the bar); the cursor visits it once.
     const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
       at = rows.findIndex((r) => r.item === next.projectCursor);
     // `o` opens a row's file even where Enter folds (a ticket, a long Next bullet); folds with no file toggle on either.
     const activate = (row = rows[at], open = false) => {
       if (open && row?.files) return { type: 'open-files' as const, files: row.files };
-      if (row?.item === 'project:switch') showList(true);
+      const role = /^inbox:role:(.+)$/.exec(row?.item ?? '')?.[1];
+      if (role) {
+        const selectedRoot = next.projectRoot ?? frame?.projects?.[0].root;
+        // Project can still be rendering the previous root while a switch is loading.
+        if (selectedRoot && frame?.projectDisplayRoot && frame.projectDisplayRoot !== selectedRoot) return;
+        goTab('control');
+        next.controlNav = { ...next.controlNav, projectCursor: controlRoleItem(role), projectScroll: 0,
+          splitFocus: undefined, splitList: undefined, splitSub: undefined, boardRevealed: undefined };
+      } else if (control && /^project:role:[^:]+$/.test(row?.item ?? '')) {
+        if (classic) toggleFold(`role:${controlRoleOf(row?.item)}`);
+      } else if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
       else if (classic && row?.item === 'project:try') tryOnly();
       else if (/^project:wait:\d+$/.test(row?.item ?? '')) readWait(Number(row!.item!.slice(13)));
-      else if (row?.item?.startsWith('project:fold:')) {
-        const folded = new Set(projectFoldedSet(next)), id = row.item.slice(13);
-        if (!folded.delete(id)) folded.add(id);
-        next.projectFolded = folded;
-      } else if (row?.files) return { type: 'open-files' as const, files: row.files };
+      else if (row?.item?.startsWith('project:fold:')) toggleFold(row.item.slice(13));
+      else if (row?.files) return { type: 'open-files' as const, files: row.files };
     };
     // The Split layout has its own list and preview; what it does not do is Classic's, below.
     if (!classic && frame?.panes.some((p) => p.id === 'preview')) {
@@ -228,7 +258,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
       return result();
     }
-    if (classic && projectPageOf(next) === 'progress') {
+    if (!control && classic && projectPageOf(next) === 'progress') {
       if (input.type === 'key' && input.text === 't') {
         tryOnly();
         return result();
@@ -236,24 +266,32 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       const tried = (next.projectTry || next.projectLayout === 'board' || next.projectLayout === 'inbox') && tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
-    if (classic && !projectPageOf(next) && !listed && next.projectLayout === 'inbox') {
+    if (!control && classic && !projectPageOf(next) && !listed && next.projectLayout === 'inbox') {
       const tried = tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
-    // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
-    if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });
-    const onFoldRole = /^project:fold:role:(.+)$/.exec(next.projectCursor ?? '');
-    if ((key === 'role-preset' || key === 'role-preset-prev') && onFoldRole && projectPageOf(next) === 'control')
-      return result({ type: 'role-edit', role: onFoldRole[1], index: 0, op: 'preset', ...(key === 'role-preset-prev' ? { step: -1 as const } : {}) });
-    const place = PLACE_KEYS[key === 'backspace' ? 'place-remove' : key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');
-    // `m` opens the model picker where there is something to pick; elsewhere it is the old key (a Flow place's kind, the project file's refusal).
-    const pick = rows[at]?.modelPick;
-    if ((key === 'place-model' || key === 'place-model-prev') && onPlace && projectPageOf(next) === 'control' && pick && pickable(pick)) {
-      next.projectInput = { role: onPlace[1], index: Number(onPlace[2]), text: '' };
-      return result();
+    if (control) {
+      if (key === 'reset') return result({ type: 'refresh-models' });
+      const place = PLACE_KEYS[key === 'backspace' ? 'place-remove' : key];
+      const item = rows[at]?.item, role = controlRoleOf(item), index = /:(\d+)$/.exec(item ?? '')?.[1];
+      if (role && place && (index !== undefined || place.op === 'preset')) {
+        // `m` uses the existing picker; Flow and pinned places retain the existing edit path.
+        const pick = rows[at]?.modelPick;
+        if (place.op === 'model' && index !== undefined && pick && pickable(pick)) {
+          next.projectInput = { role, index: Number(index), text: '' };
+          return result();
+        }
+        return result({ type: 'role-edit', role, index: Number(index ?? 0), ...place });
+      }
+      if (key === 'escape') {
+        if (classic && role && (index !== undefined || folds().has(`role:${role}`))) {
+          next.projectCursor = controlRoleItem(role);
+          if (folds().has(`role:${role}`)) toggleFold(`role:${role}`);
+        } else goTab();
+        return result();
+      }
+      return ['help', 'settings'].includes(key) ? null : result();
     }
-    if (place && onPlace && projectPageOf(next) === 'control')
-      return result({ type: 'role-edit', role: onPlace[1], index: Number(onPlace[2]), ...place });
     if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {
       if (listed) showList(false);
       else if (classic && next.projectTry) tryOnly();

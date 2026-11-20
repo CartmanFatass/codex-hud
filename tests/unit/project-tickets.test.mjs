@@ -98,8 +98,9 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
       assert.match(text, /rt retired-tools 2\/2/);
       assert.doesNotMatch(text, /Claude collector|Legacy cleanup|Not a ticket/);
       const entries = plain(hub).join('\n'), at = (word) => entries.indexOf(word);
-      const [progress, tickets, tree, docs, control] = (lang === 'en' ? ['Progress', 'Tickets', 'Working tree', 'Docs', 'Control plane'] : ['进度', '工单', '工作区', '文档', '控制面']).map(at);
-      assert.ok(progress >= 0 && progress < tickets && tickets < tree && tree < docs && docs < control, 'the hub lists Progress, Tickets, Working tree, Docs, Control plane');
+      const [progress, tickets, tree, docs] = (lang === 'en' ? ['Progress', 'Tickets', 'Working tree', 'Docs'] : ['进度', '工单', '工作区', '文档']).map(at);
+      assert.ok(progress >= 0 && progress < tickets && tickets < tree && tree < docs, 'the hub lists Progress, Tickets, Working tree, Docs');
+      assert.equal(at(lang === 'en' ? 'Control plane' : '控制面'), -1);
     }
   }
   const coloured = f.render(120, 'en', 'tickets', f.data, 'mocha');

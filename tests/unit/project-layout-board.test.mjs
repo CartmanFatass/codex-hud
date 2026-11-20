@@ -11,7 +11,6 @@ import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { tryCount } from '../../dist/render/project-view.js';
-import { chainText } from '../../dist/render/board-project.js';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
 import { listFixture } from '../fixtures/project-list.mjs';
 import { NOW, TREE, onPage, plain } from '../fixtures/project-page.mjs';
@@ -122,7 +121,7 @@ test('Board hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
       assert.match(text, /0\.1\.3 ◐◆◇○/);
       assert.match(text, lang === 'zh' ? /最近 ◇ DATA-ONE/ : /latest ◇ DATA-ONE/);
       assert.match(text, lang === 'zh' ? /✓ 完成 ◇ 待试用 ◐ 现在 ◆ 受阻 ○ 待办/ : /✓ done ◇ to try ◐ now ◆ blocked ○ todo/);
-      assert.match(text, lang === 'zh' ? /◉◉◉◉◉◉− · 2 个备选中/ : /◉◉◉◉◉◉− · 2 on fallback/);
+      assert.ok(!frame.workboard.rows.some((r) => r.item === 'project:page:control'));
       if (lang === 'zh') assert.doesNotMatch(text, /\b(latest|In flight|on fallback|to try|blocked|working|Control plane|Working tree)\b/);
     }
   }
@@ -191,55 +190,17 @@ test('Board Progress at 40 cols EN and ZH (Split and Classic): cell order, brief
   assert.deepEqual(cl.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
 });
 
-test('Board Control plane at 40 cols EN and ZH (Split and Classic): chain rows, +N overflow, and all place keys act on the selected role', async (t) => {
+test('Board has no Control page and does not change the standalone Control tab', async (t) => {
   const { busy } = await fixture(t);
   const control = { ...busy.control, radar: undefined };
-  // Overflow check on chainText with 6 places at narrow room.
-  const longChain = chainText(Array.from({ length: 6 }, (_, i) => ({ harness: 'cli', label: `harness${i}`, model: null, thinking: null, state: i ? 'standby' : 'active' })), 24);
-  assert.ok(visualLength(longChain) <= 24);
-  assert.match(stripAnsi(longChain), /\+\d+$/);
-
-  for (const lang of ['en', 'zh']) {
-    for (const layout of ['split', 'classic']) {
-      const state = layout === 'split'
-        ? split({ mainTab: 'project', projectPage: 'control', projectLayout: 'board' })
-        : onPage('control', { projectLayout: 'board', projectFolded: new Set(['agents', 'healthy', 'files', 'role:imp']) });
-      const frame = busy.render(40, lang, 36, state, control);
-      assertWidth(frame, 40, `control ${layout} ${lang}`);
-      const text = plain(frame).join('\n');
-      assert.match(text, /imp\s+✗pi › ◉agy › ○claude/);
-      assert.match(text, /reviewer\s+◉pi › −codex/);
-      if (lang === 'zh') assert.doesNotMatch(text, /\b(Roles|Project roles|Browser tasks|Harnesses|Files|next job|exhausted|source file)\b/);
-    }
+  for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
+    const board = { projectLayout: 'board', panelLayout };
+    const hub = busy.render(40, lang, 36, onPage(undefined, board), control);
+    assert.ok(!hub.workboard.rows.some((r) => r.item === 'project:page:control'));
+    const controlState = { ...split(), mainTab: 'control', panelLayout };
+    const draw = (state) => busy.render(40, lang, 36, state, control).lines;
+    assert.deepEqual(draw({ ...controlState, ...board }), draw(controlState));
   }
-
-  // Split: c/C on role list, Enter into preview, all place keys (p m e i Del K J x) act on selected role's place.
-  const sp = driver(busy, { data: control, state: split({ mainTab: 'project', projectPage: 'control', projectLayout: 'board' }) });
-  assert.equal(sp.state.projectCursor, 'project:role:imp');
-  assert.deepEqual([sp.run('role-preset').action.op, sp.run('role-preset').action.role], ['preset', 'imp']);
-  sp.run('enter');
-  assert.equal(sp.state.splitFocus, 'preview');
-  assert.equal(sp.state.projectCursor, 'project:role:imp:0');
-  for (const [key, op] of [['place-harness', 'harness'], ['place-thinking', 'thinking'], ['place-add', 'add'], ['place-remove', 'remove'], ['place-up', 'up'], ['place-down', 'down'], ['place-clear', 'clear']]) {
-    const out = sp.run(key);
-    assert.deepEqual([out.action?.type, out.action?.role, out.action?.index, out.action?.op], ['role-edit', 'imp', 0, op], `split control ${key}`);
-  }
-  sp.run('place-model');
-  assert.deepEqual([sp.state.projectInput?.role, sp.state.projectInput?.index], ['imp', 0], 'split control m opens model picker');
-
-  // Classic: Enter on role expands its places; c/C works on role row; all place keys act on expanded place.
-  const cl = driver(busy, { data: control, state: onPage('control', { projectLayout: 'board' }) });
-  assert.equal(cl.state.projectCursor, 'project:fold:role:imp');
-  assert.deepEqual([cl.run('role-preset').action.op, cl.run('role-preset').action.role], ['preset', 'imp']);
-  cl.run('enter');
-  cl.run('down');
-  assert.equal(cl.state.projectCursor, 'project:role:imp:0');
-  for (const [key, op] of [['place-harness', 'harness'], ['place-thinking', 'thinking'], ['place-add', 'add'], ['place-remove', 'remove'], ['place-up', 'up'], ['place-down', 'down'], ['place-clear', 'clear']]) {
-    const out = cl.run(key);
-    assert.deepEqual([out.action?.type, out.action?.role, out.action?.index, out.action?.op], ['role-edit', 'imp', 0, op], `classic control ${key}`);
-  }
-  cl.run('place-model');
-  assert.deepEqual([cl.state.projectInput?.role, cl.state.projectInput?.index], ['imp', 0], 'classic control m opens model picker');
 });
 
 test('Board Projects list at 40 and 80 cols EN and ZH: aligned one-row-per-project table, exact width, no STATE.md whole', async (t) => {

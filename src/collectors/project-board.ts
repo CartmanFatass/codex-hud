@@ -45,7 +45,7 @@ export interface ProjectSnapshot {
   waiting: ProjectItem[];
   docs: ProjectItem[];
   control: ProjectItem[];
-  /** Each role's places, and the harnesses this machine has: what the Control plane switches. Full collection only. */
+  /** Role places and installed harnesses. Full Project and Control collection only. */
   roles: RoleFact[];
   harnesses: HarnessFact[];
   /** The merged model lists behind the Control plane's typed model input (the same ones `m` cycles). */
@@ -227,69 +227,9 @@ export class ProjectCollector {
       Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, models: facts.models, roleCount: facts.roles.length });
     } catch { /* The next collection reads them again. */ }
   }
-  /** Where each unsettled job of that lookup works (canonical paths), for the Projects list's per-root counts: no Git, no board. */
-  liveCwds(): string[] {
-    this.seen.clear();
-    const cwds: string[] = [];
-    for (const { id } of this.recentJobs()) {
-      const dir = join(this.hudHome, 'jobs', id), job = this.json(join(dir, 'job.json'));
-      if (job && typeof job.cwd === 'string' && !job.reaped_at && !SETTLED_JOB_STATES.has(jobState(job, this.json(join(dir, 'STATUS.json')) ?? {}))) cwds.push(canonicalPath(job.cwd));
-    }
-    for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
-    return cwds;
-  }
-  async collect(shown: boolean | 'home' | 'export', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
-    if (!shown) return;
-    this.seen.clear();
-    const out: ProjectSnapshot = {
-      waiting: [], docs: [], control: [], roles: [], harnesses: [], models: { pi: [], include: {}, cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
-      ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: this.tickets(),
-      counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
-    };
-    const statePath = statePaths(this.cwd).find((p) => this.read(p));
-    const state = statePath ? this.read(statePath)!.text : '';
-    const bullets = (heading: string, whole = false) => stateBullets(state, heading).map((text) => ({
-      label: '', value: text.replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: text.replace(/\r/g, '') } : {}),
-    }));
-    out.waiting = bullets('Waiting for the owner', true);
-    out.next = bullets('Next');
-    out.statePath = statePath;
-    try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
-    out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim() ?? '';
-    const ledger = new Map<string, { state: string; text: string }>();
-    for (const { state: status, milestone, id, text } of parseLedger(state)) {
-      ledger.set(id, { state: status, text });
-      if (!SLICE_STATES.includes(status as SliceState)) continue;
-      const state = status as SliceState;
-      out.counts[state]++;
-      const commit = [...text.matchAll(/\b[0-9a-f]{7,40}\b/gi)].at(-1)?.[0];
-      out.ledger.push({ id, state, milestone, text, ...(commit ? { commit } : {}) });
-      if (state === 'working' || state === 'blocked') out.slices.push({
-        label: id, value: text, path: statePath, ledgerState: state,
-      });
-    }
-    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
-    const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
-    out.ladder.current = milestone?.split(/\s+/)[0];
-    if (shown === 'home') {
-      for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
-      return out;
-    }
+  private collectControl(out: ProjectSnapshot, now: number): void {
     const radar = collectControlRadar(this.hudHome, this.env, now);
     if (radar) out.radar = radar;
-    const spec = this.read(join(this.cwd, 'docs/spec.md'))?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
-    out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+),/gm)].map((m) => m[1]);
-    if (milestone) out.docs.push({ label: 'spec', value: milestone, path: join(this.cwd, 'docs/spec.md') });
-    const reviews = join(this.cwd, 'docs/reviews');
-    const review = this.names(reviews).filter((n) => n.endsWith('.md')).reverse().slice(0, 12)
-      .flatMap((n) => {
-        const path = join(reviews, n);
-        try {
-          const st = fs.lstatSync(path);
-          return st.isFile() ? [{ path, at: st.mtimeMs }] : [];
-        } catch { return []; }
-      }).sort((a, b) => b.at - a.at)[0];
-    if (review) out.docs.push({ label: 'review', value: basename(review.path), ...review });
     const registry = this.registry();
     try {
       const facts = controlFacts(registry, this.hudHome, this.env, now, this.readJson, this.names);
@@ -338,6 +278,75 @@ export class ProjectCollector {
     out.keys = [...new Set(['GEMINI_API_KEY', 'MISTRAL_API_KEY', 'OPENAI_API_KEY', 'TYPESAFE_API_KEY', ...keys.keys()])]
       .map((n) => [n, keys.get(n) ?? false]);
     out.browser = !!executable('google-chrome', this.env) && !!executable('jev-ask', this.env);
+  }
+  /** Where each unsettled job of that lookup works (canonical paths), for the Projects list's per-root counts: no Git, no board. */
+  liveCwds(): string[] {
+    this.seen.clear();
+    const cwds: string[] = [];
+    for (const { id } of this.recentJobs()) {
+      const dir = join(this.hudHome, 'jobs', id), job = this.json(join(dir, 'job.json'));
+      if (job && typeof job.cwd === 'string' && !job.reaped_at && !SETTLED_JOB_STATES.has(jobState(job, this.json(join(dir, 'STATUS.json')) ?? {}))) cwds.push(canonicalPath(job.cwd));
+    }
+    for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
+    return cwds;
+  }
+  async collect(shown: boolean | 'home' | 'export' | 'control', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
+    if (!shown) return;
+    this.seen.clear();
+    const out: ProjectSnapshot = {
+      waiting: [], docs: [], control: [], roles: [], harnesses: [], models: { pi: [], include: {}, cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
+      ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: [],
+      counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
+    };
+    if (shown === 'control') {
+      this.collectControl(out, now);
+      // This narrow read shares a collector with Project; keep its signature cache for the next Project visit.
+      return out;
+    }
+    out.tickets = this.tickets();
+    const statePath = statePaths(this.cwd).find((p) => this.read(p));
+    const state = statePath ? this.read(statePath)!.text : '';
+    const bullets = (heading: string, whole = false) => stateBullets(state, heading).map((text) => ({
+      label: '', value: text.replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: text.replace(/\r/g, '') } : {}),
+    }));
+    out.waiting = bullets('Waiting for the owner', true);
+    out.next = bullets('Next');
+    out.statePath = statePath;
+    try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
+    out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim() ?? '';
+    const ledger = new Map<string, { state: string; text: string }>();
+    for (const { state: status, milestone, id, text } of parseLedger(state)) {
+      ledger.set(id, { state: status, text });
+      if (!SLICE_STATES.includes(status as SliceState)) continue;
+      const state = status as SliceState;
+      out.counts[state]++;
+      const commit = [...text.matchAll(/\b[0-9a-f]{7,40}\b/gi)].at(-1)?.[0];
+      out.ledger.push({ id, state, milestone, text, ...(commit ? { commit } : {}) });
+      if (state === 'working' || state === 'blocked') out.slices.push({
+        label: id, value: text, path: statePath, ledgerState: state,
+      });
+    }
+    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
+    const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
+    out.ladder.current = milestone?.split(/\s+/)[0];
+    if (shown === 'home') {
+      for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
+      return out;
+    }
+    const spec = this.read(join(this.cwd, 'docs/spec.md'))?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
+    out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+),/gm)].map((m) => m[1]);
+    if (milestone) out.docs.push({ label: 'spec', value: milestone, path: join(this.cwd, 'docs/spec.md') });
+    const reviews = join(this.cwd, 'docs/reviews');
+    const review = this.names(reviews).filter((n) => n.endsWith('.md')).reverse().slice(0, 12)
+      .flatMap((n) => {
+        const path = join(reviews, n);
+        try {
+          const st = fs.lstatSync(path);
+          return st.isFile() ? [{ path, at: st.mtimeMs }] : [];
+        } catch { return []; }
+      }).sort((a, b) => b.at - a.at)[0];
+    if (review) out.docs.push({ label: 'review', value: basename(review.path), ...review });
+    this.collectControl(out, now);
     for (const w of board.workers.filter((w) => w.state === 'working')) {
       const id = w.evidence[0]?.sourceId;
       if (!id || !/^j[0-9a-f]{16}$/.test(id)) continue;

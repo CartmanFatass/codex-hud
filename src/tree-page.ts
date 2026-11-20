@@ -5,7 +5,8 @@ import { appendTry, TryLog } from './collectors/try-records.js';
 import { answerJobQuestion } from './collectors/panel-actions.js';
 import { readBackupSkills } from './collectors/backup-skills.js';
 import { readExpData, saveExpEdit } from './collectors/exp-store.js';
-import { expShown } from './render/main-tabs.js';
+import { controlShown, expShown } from './render/main-tabs.js';
+import { controlRoleItem } from './render/control-navigation.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
 import { editPlaces, placeItem } from './roles/role-control.js';
@@ -556,9 +557,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
-  const controlShown = (s: MonitorState) => projectShown(s, Boolean(settingsPage)) && projectPageOf(s) === 'control' && !listing(s);
   const syncModelListDiscovery = () => {
-    const shown = controlShown(state);
+    const shown = controlShown(state, Boolean(settingsPage));
     if (shown && !lastControlShown) refreshModelLists(false);
     lastControlShown = shown;
   };
@@ -670,7 +670,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     if (closed || (place && !collected)) return;
     syncPanelView();
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
-    const shown = state.mainTab === 'project' ? visits.shown(shownRoot()) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
+    const control = controlShown(state, Boolean(settingsPage)), chosen = shownRoot();
+    const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
+      : state.mainTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
     const page = projectPageOf(state);
     const showTries = state.panelLayout === 'split' || state.projectLayout === 'board' || state.projectLayout === 'inbox' ? !page || page === 'progress' : !!state.projectTry;
     const tryMarks = projectShown(state, !!settingsPage) && !listing(state) && showTries && shown.snapshot
@@ -713,7 +715,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           state,
           worktrees,
           expData: expShown(state) ? expData : undefined,
-          project: tryBriefs.apply(shown.root, shown.snapshot),
+          project: control ? shown.snapshot : tryBriefs.apply(shown.root, shown.snapshot),
+          projectDisplayRoot: shown.root,
+          projectWaiting: control ? visits.snapshot(chosen)?.waiting.length : undefined,
           tryMarks,
           backupSkills,
           projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
@@ -1021,8 +1025,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       homeRecommendation.update(displayBoard());
       // Only the shown project is collected; the list of projects is read again at most every five seconds.
-      const shown = projectShown(state, Boolean(settingsPage));
-      if (shown && Date.now() - projectsAt >= 5000) {
+      const shown = projectShown(state, Boolean(settingsPage)), control = controlShown(state, Boolean(settingsPage));
+      if ((shown || control) && Date.now() - projectsAt >= 5000) {
         projectsAt = Date.now();
         projects = projectList(jobPipeline.home, HUD_CWD_REAL);
       }
@@ -1035,14 +1039,17 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           overview = await overviews.read(projects.map((p) => p.root), jobPipeline.workboard(tree, panelDelegation), Date.now());
         }
       } else overviewAt = -Infinity;
-      const root = shown ? shownRoot() : HUD_CWD_REAL;
+      const root = shown || control ? shownRoot() : HUD_CWD_REAL;
       const visit = visits.visit(root);
       const projectFacts = await visit.collector.collect(
-        shown ? full : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
+        control ? 'control' : shown ? full : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
         jobPipeline.workboard(tree, panelDelegation),
         Date.now()
       );
-      if (projectFacts) visit.snapshot = projectFacts;
+      if (projectFacts) {
+        if (control) visit.control = projectFacts;
+        else visit.snapshot = projectFacts;
+      }
       const stillShown = () => !closed && projectShown(state, Boolean(settingsPage)) && !listing(state) && shownRoot() === root;
       if (full && stillShown()) tryBriefs.update(root, visit.snapshot?.ledger ?? [], stillShown);
       error = settingsError || roleNotice || null;
@@ -1198,7 +1205,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   };
   // `w`: one full collection of the shown project, off the paint path; the file opens in a browser when an opener exists.
   const exportBoard = () => {
-    const root = state.mainTab === 'project' ? shownRoot() : HUD_CWD_REAL;
+    const root = state.mainTab === 'project' || state.mainTab === 'control' ? shownRoot() : HUD_CWD_REAL;
     void writeBoard({ cwd: root, hudHome: jobPipeline.home, env: process.env, now: Date.now(), lang: language(), workboard: displayBoard(), briefs: tryBriefs })
       .then((file) => {
         openBoard(file, process.env);
@@ -1285,7 +1292,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (expShown(state) && !expShown(previous)) expData = readExpData(jobPipeline.home);
       syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
-      if (projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) void collect(true);
+      if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) ||
+        (controlShown(state) && (!controlShown(previous) || state.projectRoot !== previous.projectRoot))) void collect(true);
       if (result.close) {
         finish();
         break;
@@ -1344,11 +1352,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (result.action?.type === 'role-edit') {
         const { type: _type, ...edit } = result.action;
         const done = editPlaces(jobPipeline.home, shownRoot(), process.env, edit);
-        if (done.ok && done.index !== undefined) state = { ...state, projectCursor: placeItem(edit.role, done.index), boardRevealed: undefined };
-        // Read the roles again now, so this frame (and a cursor on a new row) show what the next job will use; the
-        // collection after every key reads everything else.
+        const cursor = state.controlNav?.projectCursor;
+        if (done.ok && done.index !== undefined && cursor !== controlRoleItem(edit.role))
+          state.controlNav = { ...state.controlNav, projectCursor: placeItem(edit.role, done.index), boardRevealed: undefined };
+        // Read the roles again now so a moved place or new assignment is reflected immediately.
         const visit = visits.visit(shownRoot());
-        if (visit.snapshot) visit.collector.refreshRoles(visit.snapshot, Date.now());
+        if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
         roleNotice = done.ok ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : '');
         error = roleNotice || settingsError || null;
       }

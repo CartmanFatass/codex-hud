@@ -78,9 +78,9 @@ test('n flags a to-try row and does nothing on Home; > and < are Home’s next a
 
 test('the Control plane’s place keys are not the Split ratio’s: i and Delete add and remove, + - = leave the places alone', async (t) => {
   const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.control, state: split({ mainTab: 'project', projectPage: 'control', projectFolded: new Set(['agents', 'healthy', 'files']) }) });
+  const d = driver(busy, { data: busy.control, state: split({ mainTab: 'control' }) });
   d.run('enter');
-  assert.equal(d.state.splitFocus, 'preview', 'the keys are on the places');
+  assert.equal(d.state.controlNav.splitFocus, 'preview', 'the keys are on the places');
   const ratio = d.state.splitRatio;
   for (const key of ['list-grow', 'list-shrink']) {
     const out = d.run(key);
@@ -120,11 +120,11 @@ test('the footer shows the keys the selected row accepts', async (t) => {
   hub.run('down');
   assert.doesNotMatch(foot(hub), /y accept|n flag|Space mark/, 'Tickets takes none of them');
   // The Control plane: a role takes presets, the Usage and Harnesses rows do not; a place takes its own keys.
-  const control = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'project', projectPage: 'control', projectFolded: new Set(['agents', 'healthy', 'files']) }) });
+  const control = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'control' }) });
   assert.match(foot(control), /c C preset/);
-  while (!/split:(radar|harnesses)/.test(control.state.projectCursor)) control.run('down');
+  while (control.state.controlNav.projectCursor !== 'project:fold:usage') control.run('down');
   assert.doesNotMatch(foot(control), /c C preset|⏎ places/);
-  const places = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'project', projectPage: 'control', projectFolded: new Set(['agents', 'healthy', 'files']) }) });
+  const places = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'control' }) });
   places.run('enter');
   assert.match(foot(places), /i add {2}Del remove/);
   assert.doesNotMatch(foot(places), /\+ -/);
@@ -153,36 +153,29 @@ test('a row says its state once: Home’s lane rows, its cards and their model m
   assert.match(plain(idle.render(40, 'en', 40, split(), idle.data)).find((l) => /^✓ NATIVE-TREE/.test(l)), /^✓ NATIVE-TREE +2 jobs +done \d+m$/);
 });
 
-test('at 40 columns a place keeps its model’s distinguishing part: no vendor or date, a row of its own before any cut, no preset tag in a role row', async (t) => {
+test('at 40 columns the role row retains the preset and next target; detail retains full place names', async (t) => {
   const { busy } = await fixtures(t);
-  const control = { ...busy.control, radar: undefined }, folded = new Set(['agents', 'files']);
-  for (const lang of ['en', 'zh']) {
-    const views = [onPage('control', { projectFolded: folded }), split({ mainTab: 'project', projectPage: 'control', projectFolded: folded }),
-      split({ mainTab: 'project', projectPage: 'control', projectFolded: folded, projectCursor: 'project:role:imp', splitFocus: undefined }),
-      onPage('control', { projectFolded: new Set(['agents', 'files', 'healthy']) })];
-    // The place rows, not the selected place's detail (it says the full model id on a line of its own).
-    const text = views.map((state) => plain(busy.render(40, lang, 60, state, control)).filter((l) => !/^(model|模型) /.test(l)).join('\n')).join('\n');
-    // The names that tell the places apart are whole somewhere on the page; no model is cut with an ellipsis, and no row has a preset tag.
-    for (const name of ['gpt-6.1-sol', 'gemini-4-hydrogen-high', 'deepseek-v4-1-flash']) assert.ok(text.includes(name), `${lang}: ${name} is whole`);
-    assert.doesNotMatch(text, /deepseek-v4-1-flash-1017|openai\/gpt|mistral\//, 'no snapshot date and, short of room, no vendor');
-    assert.doesNotMatch(text, /[A-Za-z0-9]…[A-Za-z0-9]/, `${lang}: nothing is cut in the middle`);
-    assert.doesNotMatch(text, /◉ (imp|reviewer|oracle) \[/, 'a role row has no preset tag');
-    for (const state of views) for (const line of busy.render(40, lang, 60, state, control).lines) assert.equal(visualLength(line), 40);
+  const control = { ...busy.control, radar: undefined };
+  for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
+    const state = split({ mainTab: 'control', panelLayout, controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'usage', 'files', 'role:imp']) } });
+    const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
+    assert.match(text, lang === 'en' ? /imp \[Custom\] → agy/ : /imp \[自定义\] → agy/);
+    assert.match(text, /openai\/gpt-6\.1-sol/);
+    assert.match(text, /gemini-4-hydrogen-high/);
+    assert.match(text, lang === 'en' ? /fro\S*nd \[Custom\] → pi\/project +project/ : /frontend \[自定义\] → pi\/project +项目/);
+    for (const line of frame.lines) assert.equal(visualLength(line), 40);
   }
-  // The preset is in the preview: the rule says it, Classic's selected place has a `role` line.
-  assert.match(plain(busy.render(40, 'en', 60, split({ mainTab: 'project', projectPage: 'control', projectFolded: folded, projectCursor: 'project:role:imp' }), control)).join('\n'), /imp ─+ 3 places · preset: custom/);
-  assert.match(plain(busy.render(40, 'en', 60, onPage('control', { projectFolded: folded, projectCursor: 'project:role:imp:0' }), control)).join('\n'), /role +imp \[custom\]/);
 });
 
 test('fixed words follow the panel language: the invalid role file’s reason, the Usage block with what is left, the Settings (no key) mark', async (t) => {
   const { busy } = await fixtures(t);
   const control = { ...busy.control, radar: { quotas: { codex: [{ label: '5h', remaining: 71 }], claude: [{ label: '7d', remaining: 7 }] }, roleStats: {} } };
-  const zh = plain(busy.render(40, 'zh', 60, split({ mainTab: 'project', projectPage: 'control', projectFolded: new Set(['agents', 'files']) }), control)).join('\n');
+  const zh = plain(busy.render(40, 'zh', 60, split({ mainTab: 'control' }), control)).join('\n');
   assert.match(zh, /JSON 无法解析/);
   assert.doesNotMatch(zh, /unparseable|雷达/);
-  assert.match(zh, /用量 +Codex 剩余 71%/, 'the figure says it is what is left');
-  const en = plain(busy.render(80, 'en', 60, split({ mainTab: 'project', projectPage: 'control', projectFolded: new Set(['agents', 'files']) }), control)).join('\n');
-  assert.match(en, /Usage +codex 71% left · claude 7% left/);
+  assert.match(zh, /用量 ─+ Codex 剩余 71%/, 'the figure says it is what is left');
+  const en = plain(busy.render(80, 'en', 60, split({ mainTab: 'control' }), control)).join('\n');
+  assert.match(en, /Usage ─+ codex 71% left · claude 7% left/);
   assert.match(en, /unparseable JSON/);
   // Settings: the mark on a Decision API without a key is the panel's language too.
   const row = SETTING_ROWS.findIndex((r) => r.key === 'decisionApi'), state = { draft: defaultSettings(), selected: row, offset: 0, message: '', decisionKeys: {} };

@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { MonitorState } from '../render/monitor.js';
+import { CONTROL_FOLDS, controlRoleItem, controlRoleOf, storeControlNavigation } from '../render/control-navigation.js';
 
 const PLACE = 'HUD_PANEL_RELOAD_PLACE', SUPERVISED = 'HUD_PANEL_RELOAD_SUPERVISED', RESTART = 75;
 type Place = { state: MonitorState; settings: { selected: number; offset: number } | null; widthOverride?: number | null; openedAt?: number };
@@ -14,6 +15,24 @@ export function readPanelPlace(): Place | undefined {
       // Older builds saved Skills as a main tab; it now lives in Help.
       if ((place.state?.mainTab as string | undefined) === 'skills') place.state.mainTab = 'home';
       if (place.state) delete place.state.trySelection; // Legacy handoffs encoded a marked batch as a plain object.
+      const state = place.state;
+      if ((state?.projectPage as string | undefined) === 'control') {
+        const old = state.projectCursor?.replace('project:fold:role:', 'project:role:');
+        const role = controlRoleOf(old), roleItem = role && controlRoleItem(role);
+        const folded = new Set<string>(CONTROL_FOLDS);
+        if (role) {
+          folded.delete('healthy');
+          if (state.panelLayout !== 'split' && old !== roleItem) folded.add(`role:${role}`);
+        }
+        for (const key of ['files', 'agents']) if (state.projectFolded?.has && !state.projectFolded.has(key)) folded.delete(key);
+        place.state = storeControlNavigation({}, {
+          ...state, mainTab: state.mainTab === 'project' ? 'control' : state.mainTab, projectPage: undefined,
+          projectList: undefined, projectBack: undefined,
+          projectCursor: old === 'split:radar' ? 'project:fold:usage' : old === 'split:files' ? 'project:fold:files' : old,
+          projectFolded: folded, splitList: roleItem, splitFocus: state.panelLayout === 'split' && roleItem && old !== roleItem ? 'preview' : undefined,
+          splitSub: old, boardRevealed: undefined,
+        });
+      }
       place.openedAt ??= Date.now(); // Legacy handoffs start their lifetime when consumed.
     }
     return place;

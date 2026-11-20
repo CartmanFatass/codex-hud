@@ -18,7 +18,10 @@ import { projectScene } from './split-project.js';
 import { paintSplit, splitScrolls } from './split-frame.js';
 import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
-import { expShown, mainTabs } from './main-tabs.js';
+import { controlShown, expShown, mainTabs } from './main-tabs.js';
+import { controlNavigation, storeControlNavigation } from './control-navigation.js';
+import { controlHeader, controlHints, controlRows, controlScene } from './control-page.js';
+import { pickerRows } from './control-view.js';
 import { expHints, expRows } from './exp-view.js';
 export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
@@ -33,7 +36,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['/', 'filter rows live'],
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
-      ['[ ]', 'switch project (Project)'],
+      ['[ ]', 'Project/Control: switch project'],
       ['Space', 'mark a to-try row'],
       ['y n', 'accept / flag the marked to-try rows'],
       ['c C', 'role: next / previous preset'],
@@ -42,7 +45,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['i Del', 'place: add, remove'],
       ['K J', 'place: move up, move down'],
       ['x', 'place: clear its exhausted mark'],
-      ['r', 'place: refresh model lists'],
+      ['r', 'Control: refresh model lists'],
       ['g', 'job: go to its herdr tab'],
       ['1-4 d', 'job: answer its open question'],
       ['X', 'job: stop it (y confirms)'],
@@ -79,7 +82,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const notes = [
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
     ...(input.state.panelLayout === 'split' ? ['Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens'] : []),
-    'On the Control plane c/C applies the next/previous role preset; p m e i Del K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
+    'On Control, Enter opens a fold or chain. Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
@@ -92,6 +95,13 @@ export function renderWorkboardFrame(
   source: WorkboardSnapshot,
   now: number
 ): MonitorFrame {
+  if (!controlShown(state)) return renderFrame(input, state, source, now);
+  const frame = renderFrame(input, controlNavigation(state), source, now);
+  frame.state = storeControlNavigation(state, frame.state);
+  return frame;
+}
+
+function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardSnapshot, now: number): MonitorFrame {
   const width = Math.max(0, Math.floor(input.width)),
     height = Math.max(0, Math.floor(input.height));
   const frame: MonitorFrame = {
@@ -99,6 +109,7 @@ export function renderWorkboardFrame(
     lines: Array.from({ length: height }, () => fit('', width)),
     panes: [],
     controls: [],
+    projectDisplayRoot: input.projectDisplayRoot,
     ...((input.projects?.length ?? 0) > 1 ? { projects: input.projects } : {}),
   };
   if (!width || !height) return frame;
@@ -107,10 +118,10 @@ export function renderWorkboardFrame(
     changes = !help && state.focus === 'changes';
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
-  const exp = expShown(state);
+  const control = controlShown(state), exp = expShown(state);
   const experiment = exp ? { ...state.expPage } : undefined;
   if (exp) frame.expData = input.expData;
-  const home = !sub && !project && !exp;
+  const home = !sub && !project && !control && !exp;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   // The `/` filter: Home's board keeps the cards that match; Progress and Tickets read a snapshot of the slices or tickets that do.
@@ -126,7 +137,9 @@ export function renderWorkboardFrame(
   const bar = filtering ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
     (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
   ) : undefined;
-  const top = bar ? 1 : 0;
+  const headers = [...(control ? controlHeader(input, state, width) : []), ...(bar ? [bar.text] : []),
+    ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
+  const top = Math.min(headers.length, Math.max(0, height - 2));
   const target = state.boardInspect;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
   const decision = target?.kind === 'decision' ? lane?.decisions.find((d) => d.id === target.decisionId) : undefined;
@@ -148,7 +161,7 @@ export function renderWorkboardFrame(
     const count = source.workers.filter((w) => w.homeNeedsHuman).length;
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
-    const counts = { home: count, project: input.project?.waiting.length ?? 0 };
+    const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0 };
     const tabs = mainTabs(state);
     const labels = (badges: boolean, marker: boolean) => tabs.map((tab) =>
       ` ${t(tab.label)}${'experimental' in tab ? marker ? ` ${theme.board.muted(t('exp'))}` : ''
@@ -156,11 +169,11 @@ export function renderWorkboardFrame(
     let titles = labels(true, true);
     let models = t(input.modelEnabled === false ? 'models off' : 'models on');
     const fits = (words: string[], right: string) => visualLength(words.join('')) + (right ? visualLength(right) + 1 : 0) <= width;
-    if (state.experiments && !fits(titles, models)) {
-      // EXP gets a whole hit target: drop badges, then its optional mark, then the models hint before cutting tabs.
-      titles = labels(false, true);
+    if (!fits(titles, models)) {
+      // Keep whole tab labels and hit targets. At 40 columns the model hint is optional.
+      titles = labels(true, false);
+      if (!fits(titles, models)) models = '';
       if (!fits(titles, models)) titles = labels(false, false);
-      if (!fits(titles, models)) { models = ''; titles = labels(false, fits(labels(false, true), '')); }
     }
     const modelsWidth = visualLength(models);
     const leftRoom = Math.max(0, width - (modelsWidth ? modelsWidth + 1 : 0));
@@ -176,7 +189,8 @@ export function renderWorkboardFrame(
     if (models) frame.controls.push({ kind: 'brief', x: Math.max(0, width - modelsWidth), y: 0, width: Math.min(width, modelsWidth) });
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
-  if (state.projectInput && !(project && page === 'control' && pickOf(input.project, state.projectInput))) state.projectInput = undefined;
+  if (state.projectInput && !(control && pickOf(input.project, state.projectInput))) state.projectInput = undefined;
+  const picking = control && !!state.projectInput;
   const targets = new Map<string, WorkTarget>();
   for (const lane of board.lanes) {
     const all: WorkTarget[] = [
@@ -198,11 +212,13 @@ export function renderWorkboardFrame(
   // The Split layout draws Home, the hub and the pages that are lists in its own frame (split-*.ts); the rest is Classic's.
   if (state.panelLayout === 'split' && !sub && !list && !exp) {
     const build = (w: number) => home ? homeScene(input, board, state, targets, w, now, doneToday())
-      : project && !(page === 'control' && state.projectInput) ? projectScene(input, state, board, page, w, now) : undefined;
-    const notes = [...(bar ? [bar.text] : []), ...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
-    let scene = build(width);
+      : project ? projectScene(input, state, board, page, w, now) : undefined;
+    const notes = [...headers, ...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), !control && input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
+    const controlSplit = control && !picking && input.project;
+    let scene = controlSplit ? controlScene(controlSplit, state, width, now) : build(width);
     // A preview that scrolls keeps its last cell for the scrollbar: its rows are laid out one cell narrower, so none is cut.
-    if (scene && splitScrolls(scene, state, height, notes.length)) scene = { ...scene, preview: build(width - 1)?.preview ?? scene.preview };
+    if (scene && splitScrolls(scene, state, height, notes.length)) scene = { ...scene,
+      preview: (controlSplit ? controlScene(controlSplit, state, width, now, width - 1) : build(width - 1))?.preview ?? scene.preview };
     if (scene) return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes);
   }
   const rows = help
@@ -214,8 +230,10 @@ export function renderWorkboardFrame(
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
+          : control ? picking ? pickerRows(input.project!, state.projectInput!, width, height - 2 - top)
+            : controlRows(input.project, state, width, now)
           : experiment ? expRows(experiment, input.expData, width, now) : homeRows(board, state, width, now, input);
-  if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
+  if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   // A stop waiting for its answer is the top row of Home and the Inspector, where the job under the cursor is.
   if (home || inspector) rows.unshift(...stopPromptRows(state, width));
@@ -252,34 +270,22 @@ export function renderWorkboardFrame(
     state.projectCursor = (!page && !list && state.projectLayout === 'inbox'
       ? rows.find((r) => r.item && r.item !== 'project:switch') || rows.find((r) => r.item)
       : rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
-  // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
-  const picking = project && page === 'control' && !!state.projectInput;
+  if (control && !picking && input.project && !rows.some((r) => r.item && r.item === state.projectCursor))
+    state.projectCursor = rows.find((r) => r.item)?.item;
+  // The model picker has its own cursor; the list's scroll and reveal wait.
   if (experiment && !experiment.edit && !rows.some((r) => r.item && r.item === experiment.cursor))
     experiment.cursor = rows.find((r) => r.item)?.item;
   if (experiment?.edit) state.boardRevealed = undefined;
-  const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor
+  const key = picking ? 'project:pick' : project || control ? state.projectCursor : inspector ? state.inspectCursor
     : experiment ? experiment.edit ? undefined : experiment.cursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
-  let room = Math.max(0, height - 2 - top);
-  let preview: MonitorRow[] = [];
-  if (project && page === 'control' && !picking) {
-    const start = rows.findIndex((r) => r.placePreview);
-    if (start >= 0) {
-      const count = rows.filter((r) => r.placePreview).length;
-      // Under the role list when it fits; on a shorter frame keep it below the scrollable rows.
-      // If even the preview would fill the terminal, leave it in the ordinary scrolling content.
-      if (start + count > room && count < room) {
-        preview = rows.splice(start, count);
-        room -= count;
-      }
-    }
-  }
+  const room = Math.max(0, height - 2 - top);
   const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(0, rows.length - room);
   const scroll = help
     ? (state.helpScroll ?? 0)
     : picking ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
-      : project ? (state.projectScroll ?? 0) : experiment ? (experiment.scroll ?? 0) : (state.homeScroll ?? 0);
+      : project || control ? (state.projectScroll ?? 0) : experiment ? (experiment.scroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
   if (!help && !changes && !picking && key && state.boardRevealed !== key && room) {
     if (cursorAt < offset) offset = cursorAt;
@@ -290,20 +296,19 @@ export function renderWorkboardFrame(
     state.helpScroll = offset;
     frame.helpPage = { count: room, total: rows.length };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
-  else if (project) { if (!picking) state.projectScroll = offset; }
+  else if (project || control) { if (!picking && (!control || input.project)) state.projectScroll = offset; }
   else if (experiment) state.expPage = { ...experiment, scroll: offset };
   else state.homeScroll = offset;
-  if (bar) frame.lines[1] = bar.text;
+  headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
     if (!row) continue;
     const text = fit(row.paint?.() ?? row.text, width);
     // A Projects list entry is two rows and the cursor marks both.
-    const marked = offset + i === cursorAt || (list && !!key && row.item === key);
+    const marked = offset + i === cursorAt || ((list || control) && !!key && row.item === key);
     frame.lines[i + 1 + top] = !help && !changes && marked ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 + top });
   }
-  preview.forEach((row, i) => { frame.lines[room + 1 + top + i] = row.text; });
   const done = doneToday();
   const hints = help
     ? '↑↓ scroll  esc back'
@@ -311,11 +316,8 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
-          : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  i add  Del remove  x clear  r refresh'
-          : page === 'control' && state.projectCursor?.startsWith('project:fold:role:') ? '↑↓ move  ⏎ places  c C preset  o open file  esc back  ? help  r refresh'
-          : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
-          : page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
+        : control ? picking ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back' : controlHints(input.project, state.projectCursor)
+        : project ? (page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
           : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help'
             : (state.projectLayout === 'board' || state.projectLayout === 'inbox') && rows.some((r) => r.item === state.projectCursor && r.tryTarget) ? 'Space mark  y accept  n flag  ⏎ details  o open file  t to try  esc back  ? help'
             : '↑↓ move  ⏎ open  t to try  esc back  ? help')

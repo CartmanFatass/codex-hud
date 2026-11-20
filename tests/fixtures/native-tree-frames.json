@@ -1,6 +1,6 @@
 {
   "en-80": [
-    " Home  Project                                                        models off",
+    " Home  Project  Control                                               models off",
     "                                                                                ",
     "✓ Nothing needs you · 4 running                                                 ",
     "                                                                                ",
@@ -30,7 +30,7 @@
     "✓ 1 done today     ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all"
   ],
   "zh-80": [
-    " 首页  项目                                                              模型 关",
+    " 首页  项目  控制                                                        模型 关",
     "                                                                                ",
     "✓ 没有需要你处理的事 · 4 运行中                                                 ",
     "                                                                                ",
@@ -60,7 +60,7 @@
     "✓ 1 今日完成     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置"
   ],
   "en-120": [
-    " Home  Project                                                                                                models off",
+    " Home  Project  Control                                                                                       models off",
     "                                                                                                                        ",
     "✓ Nothing needs you · 4 running                                                                                         ",
     "                                                                                                                        ",
@@ -90,7 +90,7 @@
     "✓ 1 done today                         ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "zh-120": [
-    " 首页  项目                                                                                                      模型 关",
+    " 首页  项目  控制                                                                                                模型 关",
     "                                                                                                                        ",
     "✓ 没有需要你处理的事 · 4 运行中                                                                                         ",
     "                                                                                                                        ",

@@ -6,12 +6,10 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { basename } from 'node:path';
-import { boardRow, itemRow, section, mark, minuteAge, kvRows, pack } from './workboard-rows.js';
-import { controlRows, pickerRows } from './control-view.js';
-import { boardControlRows, boardHubRows, boardListRows, boardProgressRows } from './board-project.js';
+import { boardRow, itemRow, section, mark, minuteAge, pack } from './workboard-rows.js';
+import { boardHubRows, boardListRows, boardProgressRows } from './board-project.js';
 import { inboxHubRows, inboxListRows, inboxProgressRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
-import { pickOf } from './model-input.js';
 import { monitorText, fit, pair, flowLines, cutWords } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { t } from './i18n.js';
@@ -124,16 +122,15 @@ export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, 
   const fill = (rows: MonitorRow[]) => [...out, ...Array.from({ length: spare - out.length - rows.length }, () => boardRow('')), ...rows];
   return progress.length ? fill(out.length && !gap ? [boardRow(''), ...progress] : progress) : out;
 }
-export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'] as const;
+export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs'] as const;
 /** The hub's pages, and the page of one waiting item (`MonitorState.projectWait`), which a row opens and the hub does not list. */
 export type ProjectPage = (typeof PROJECT_PAGES)[number] | 'waiting';
 export const PAGE_WORD: Record<ProjectPage, string> = {
-  progress: 'Progress', tickets: 'Tickets', tree: 'Working tree', docs: 'Docs', control: 'Control plane', waiting: 'Waiting',
+  progress: 'Progress', tickets: 'Tickets', tree: 'Working tree', docs: 'Docs', waiting: 'Waiting',
 };
 /** The open page; none, or a name this build does not know, is the hub. */
 export const projectPageOf = (state: MonitorState) => [...PROJECT_PAGES, 'waiting' as const].find((p) => p === state.projectPage);
-/** What starts folded: the Control plane's healthy roles, its files and the native-agents list (a page's own header is its crumb). */
-export const projectFoldedSet = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(['agents', 'healthy', 'files']);
+export const projectFoldedSet = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set();
 export const ticketWorking = (r: ProjectTicket) => !['done', 'dropped', 'blocked'].includes(r.state)
   && (r.state === 'working' || (!!r.job && !SETTLED_JOB_STATES.has(r.job.state)));
 const parts = (...p: (string | number | false | null | undefined)[]) =>
@@ -152,7 +149,6 @@ function pageMeta(page: ProjectPage, data: ProjectSnapshot, now: number): string
   }
   if (page === 'tickets') return data.tickets?.length ? [t('{features} features · {tickets} tickets', {
     features: data.tickets.length, tickets: data.tickets.reduce((n, f) => n + f.tickets.length, 0) })] : [];
-  if (page === 'control') return [`${data.roleCount} ${t('roles')} · ${data.agents.length} ${t('agents')}`, `${data.roleCount} ${t('roles')}`];
   return [];
 }
 /** `Project › Page` for the sub-page title row (the project's name instead of `Project` when there is a switch), with the page's own facts on the right when there is room. */
@@ -181,9 +177,7 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
     const spec = data.docs.find((r) => r.label === 'spec'), review = data.docs.find((r) => r.label === 'review');
     return parts(spec && monitorText(spec.value), review && `${t('review')} ${minuteAge(review.at ?? null, now)}`);
   }
-  const limit = data.roles.filter((r) => r.places.some((p) => p.state === 'exhausted')).length;
-  return parts(limit && theme.board.attention(t('{n} at limit', { n: limit })), `${data.roleCount} ${t('roles')}`, data.keys.length && `${t('keys')} ${data.keys.filter((k) => k[1]).length}/${data.keys.length}`,
-    `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`);
+  return [];
 }
 export const foldRow = (folded: ReadonlySet<string>, id: string, label: string, width: number, right = ''): MonitorRow => ({
   ...section(`${folded.has(id) ? mark('▸', '>') + ' ' : ''}${t(label)}`, width, right), item: `project:fold:${id}`,
@@ -665,26 +659,6 @@ export function pageRows(
     if (unlisted(data).length) rows.push(boardRow(''), section(t('Unlisted worktrees'), width, String(unlisted(data).length)),
       ...unlisted(data).map((r) => boardRow(pair(`  ${theme.board.attention('!')} ${monitorText(r.label)}`, theme.board.muted(t('not in ledger')), width))));
   } else if (page === 'docs') data.docs.forEach((r, i) => item(r, i));
-  else if (state.projectLayout === 'board') {
-    rows.push(...boardControlRows(data, state, width, now));
-  } else {
-    rows.push(...controlRows(data, width, now, !folded.has('healthy'), state.projectCursor));
-    // Files: the role definitions and instruction files, the native agents, keys and browser; one row of keys while folded.
-    const files = data.control.filter((r) => r.label !== 'invalid'), open = !folded.has('files'), have = data.keys.filter((k) => k[1]).length;
-    rows.push(boardRow(''), foldRow(folded, 'files', 'Files', width, String(files.length + data.agents.length)));
-    if (!open) {
-      const missing = data.keys.filter((k) => !k[1]).map((k) => k[0].replace(/_API_KEY$/, ''));
-      rows.push({ text: fit('  ' + theme.board.muted(parts(data.keys.length && `${t('keys')} ${have}/${data.keys.length}`,
-        `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`, missing.length && `${t('missing')} ${monitorText(missing.join(' '))}`).join(' · ')), width), item: 'project:fold:files' });
-    } else {
-      files.forEach((r, i) => item(r.label === 'convention' ? { ...r, value: t(r.value) + ' · ' + basename(r.path!) } : r, i));
-      rows.push(foldRow(folded, 'agents', 'agents', width, String(data.agents.length)));
-      if (!folded.has('agents')) data.agents.forEach((r, i) => item(r, i));
-      rows.push(...kvRows('keys', data.keys.map(([name, present]) =>
-        `${name} ${mark(present ? '✓' : '−', present ? '+' : '-')}`).join('  '), width));
-      item({ label: 'browser', value: mark(data.browser ? '✓' : '−', data.browser ? '+' : '-') }, 0);
-    }
-  }
   if (rows.length === 1) rows.push(boardRow('  ' + theme.board.muted(t('none'))));
   return rows;
 }
@@ -698,8 +672,6 @@ export function projectRows(
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
   if (projectListOpen(state, projects)) return state.projectLayout === 'board' ? boardListRows(projects, width, now) : state.projectLayout === 'inbox' ? inboxListRows(projects, width, now) : listRows(projects, width, now);
   if (!data) return [];
-  // The model picker is the Control plane while it is open.
-  if (page === 'control' && state.projectInput && pickOf(data, state.projectInput)) return pickerRows(data, state.projectInput, width, room ?? 24);
   if (!page && state.projectLayout === 'board') return boardHubRows(data, state, width, now, name, projects, board, room, tryMarks);
   if (!page && state.projectLayout === 'inbox') return inboxHubRows(data, state, width, now, name, projects, board, room, tryMarks);
   return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks, room) : hubRows(data, state, width, now, name, projects, board, room);

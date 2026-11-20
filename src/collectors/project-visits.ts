@@ -3,7 +3,7 @@ import { insideRoot, type ProjectCollector, type ProjectSnapshot } from './proje
 import type { WorkboardSnapshot } from './workboard-types.js';
 
 export class ProjectVisits {
-  private readonly seen = new Map<string, { collector: ProjectCollector; snapshot?: ProjectSnapshot }>();
+  private readonly seen = new Map<string, { collector: ProjectCollector; snapshot?: ProjectSnapshot; control?: ProjectSnapshot }>();
   constructor(readonly own: string, private readonly make: (root: string) => ProjectCollector, private readonly max = 4) {
     this.seen.set(own, { collector: make(own) });
   }
@@ -21,6 +21,9 @@ export class ProjectVisits {
   /** The last snapshot of a root, without counting as a visit. */
   snapshot(root: string): ProjectSnapshot | undefined {
     return this.seen.get(root)?.snapshot;
+  }
+  control(root: string): ProjectSnapshot | undefined {
+    return this.seen.get(root)?.control;
   }
   private last?: { root: string; snapshot: ProjectSnapshot };
   /**
