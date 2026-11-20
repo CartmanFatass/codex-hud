@@ -8,12 +8,11 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Waiting for the owner
 
 - Try 0.2.0 (4 slices on the Progress page).
-- Decide: answer a question with `1–4`/`d` directly, or `r` first.
-- Decide: keep dragging the Split divider, or keys only.
 - Try the 5 older slices still marked to try.
 
 ## Next
 
+- PANEL-UX (`.scratch/panel-ux/`, from the owner's UI/UX review 2026-11-19): 01 to-try briefs in rows, one count, number keys off the tabs, direct `1–4`/`d` answers, no divider drag (frontend-imp) → 02 one meaning per key, no repeated status, 40-column rows, one language.
 - MCP-NEXT (`.scratch/mcp-next/`, 7 tickets): 01 fine-grained locks + pre-flight trust + parsed quota TTL → 02 `hud_create` preset + 04 pi native silent watch → 03 `hud_wait` → 05 `context_files`/`from_jobs` → 06 `hud-progress` + `hud_peek` → 07 managed `worktree` isolation.
 - PANEL-V2 (`.scratch/panel-v2/`, 7 tickets): 01 micro-actions (`g` tab focus, `1–4`/`d` QA reply, `X` stop) + 05 safe `--numstat` diff bars + 06 Control plane quota/spend radar → 02 Split V2 (working cues, ratio, scrollbar) + 07 static HTML review board (`hud board` / `w`) → 03 global `/` filter → 04 activity sparklines + nested sonic subtrees.
 - SUPERVISOR-FIX: CLI jobs stayed `working` because npm-launched MCP servers finished starting after the first turn (docs/reviews/2026-11-18-supervisor-stuck.md); owner chose fix 1 (known launcher chains are not work) + A (stop vs tab close) + B (retry failed cleanup) + C (refused send opens no turn); landed 1c4530ce (generic launcher rule) + 32e26e4f (npm quotes the bin name in sh -c; found by the live check); live check passed. thin-mcp.test.mjs SIGPIPE deaths fixed 8a43ed40 (hud watch removed its process-wide SIGPIPE listener, which on Node 24 reset the test process to die on a closed-socket write; test-only symptom, predates the supervisor fix). Full suite 85+678 green. SUPERVISOR-FIX waits for the owner's try: dispatch any Claude worker (frontend-imp or oracle) and watch it settle after its report.
@@ -155,6 +154,8 @@ board counts these; update at every landing or decision. -->
 - try · 0.2.0 · PANEL-V2 · panel micro-actions (g/QA reply/X), Split V2 cues/ratio/scrollbar, live / filter, sparklines + sonic subtrees, safe --numstat diff bars, Control quota radar, static HTML board (.scratch/panel-v2/, 7 tickets)
 - try · — · MCP-READ-COMPACT · compact actionable `hud_read()` list; `view:"recent"` retains the newest 20 full rows (separately scheduled, `.scratch/mcp-read-compact/issues/01-compact-hud-read.md`); landed e629b295 (default 327 B vs recent 4,475 B, −92.69%)
 - try · — · SUPERVISOR-MCP · bug 2026-11-18 (live, Claude frontend-imp): a CLI worker stays `working` after its report when its CLI started an MCP server directly (`node …/hud-mcp`) just after the first input; cli-judge counts it as turn work (spec §2.1: MCP servers do not count); landed 2d281b7b: on the first turn a direct non-shell child started within 10 s of the first input is a launch helper (shells and later children still count); live check passed 2026-11-18 (panel-v2 04 frontend-imp j9dbc6abfd9f248a6 reached idle_grace on its own after its report)
+- working · 0.2.0 · PANEL-UX-01 · to-try rows read as briefs; counts agree; number keys leave the tabs; direct answers; no divider drag
+- todo · 0.2.0 · PANEL-UX-02 · one meaning per key; no repeated status; 40-column rows; one language
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
