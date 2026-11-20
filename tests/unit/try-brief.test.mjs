@@ -64,7 +64,8 @@ test('Split at 40 columns: the hub and Progress preview wrap a long to-try slice
   assert.ok(flat(waiting).includes('ENDOFWAITING'));
   const page = f.render(40, 'en', 60, split({ ...progress(), projectCursor: 'project:slice:DATA-ONE' }), data);
   fits(page);
-  whole(page, 'ENDOFLEDGER');
+  // The Progress list row is cut at a word (UX-PASS D2); the preview below it keeps the whole text.
+  assert.ok(flat(page).includes('ENDOFLEDGER'), 'the preview keeps the whole slice text');
 });
 
 const TWO = { brief: 'Job rows no longer vanish when a session file loops back. Nothing else changes.', steps: BRIEF.steps };
