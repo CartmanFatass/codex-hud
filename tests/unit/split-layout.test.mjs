@@ -383,8 +383,8 @@ test('Classic is untouched: no layout set draws no preview pane, its Help has no
   assert.equal(defaultSettings().panelLayout, 'classic');
   const classic = busy.render(40, 'en', 40, initialMonitorState());
   assert.equal(classic.panes.some((p) => p.id === 'preview'), false);
-  const help = (layout) => plain(busy.render(80, 'en', 40, { ...initialMonitorState(), help: true, panelLayout: layout })).join('\n');
-  assert.doesNotMatch(help(undefined), /PgUp|Split/);
+  const help = (layout) => plain(busy.render(80, 'en', 100, { ...initialMonitorState(), help: true, panelLayout: layout })).join('\n');
+  assert.doesNotMatch(help(undefined), /^Split ─|scroll the preview|= \+ -/m);
   assert.match(help('split'), /PgUp Dn.*scroll the preview/);
   // The pages Split leaves to Classic keep their frames: one waiting item's text, in either layout.
   const waiting = (layout) => plain(busy.render(40, 'en', 40, { ...initialMonitorState(), mainTab: 'project', projectPage: 'waiting', projectWait: 0, panelLayout: layout }));

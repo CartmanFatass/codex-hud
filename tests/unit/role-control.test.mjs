@@ -543,12 +543,13 @@ test('CLI model and thinking fields list catalog entries inline and a miss leave
   assert.match(plain(s.frame(40, 'en', 14)).at(-1), /^ *⏎ set +esc clear +\^R refresh$/);
   assert.doesNotMatch(plain(s.frame(120, 'en', 14)).at(-1), /tab all|← back/);
   s.session.state = { ...initialMonitorState(), help: true };
-  const help = plain(s.frame(80, 'en', 52)).join('\n').replace(/\n {8}/g, ' ');
+  const help = plain(s.frame(80, 'en', 100)).join('\n').replace(/\n {8}/g, ' ');
   assert.doesNotMatch(help, /^p P |^e E /m);
-  assert.match(help, /^p +role: filter and choose a preset/m);
-  assert.match(help, /^m +role or place: choose a model/m);
-  assert.match(help, /^r \^R +refresh: Control \/ picker/m);
-  assert.match(help, /^Esc +back; confirm discarding a draft/m);
+  assert.match(help, /^p +role: choose a preset by name/m);
+  assert.match(help, /^m +role\/place: picker in this pane/m);
+  assert.match(help, /^r +refresh the model lists/m);
+  assert.match(help, /^\^R +picker: refresh model lists/m);
+  assert.match(help, /^Esc +picker: clear filter, then close/m);
 });
 test('40-column picker preserves defaults, full IDs and capability strips in Classic and Split', async (t) => {
   const s = await setup(t);

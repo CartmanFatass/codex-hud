@@ -152,7 +152,7 @@ test('the Help page lists w and the saved board shows at the top in both languag
   const root = fs.mkdtempSync(join(tmpdir(), 'html-board-help-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await projectFixture(root);
-  assert.match(plain(f.render(120, 'en', { ...initialMonitorState(), help: true }, 80)).join('\n'), /\bw\s+export a review board \(HTML\) and open it/);
+  assert.match(plain(f.render(120, 'en', { ...initialMonitorState(), help: true }, 80)).join('\n'), /\bw\s+write the review board \(HTML\)/);
   assert.match(plain(f.render(120, 'zh', { ...initialMonitorState(), help: true }, 80)).join('\n'), /导出审阅看板/);
   const frame = f.render(80, 'en', undefined, 24, f.data, true, 'unicode', 'none', { publicationNotice: 'Board saved: board-project.html' });
   assert.match(plain(frame).join('\n'), /^Board saved: board-project\.html$/m);
