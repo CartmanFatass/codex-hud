@@ -275,15 +275,15 @@ for (const bound of [false, true]) for (const view of ['project', 'help', 'inspe
 test('the 40-column Classic to-try view reloads with its cursor but without pending batch marks', async (t) => {
   const f = live(t, (state) => ({ state: { ...state, mainTab: 'project', projectPage: 'progress', projectTry: { scroll: 0 } }, settings: null }), { columns: 40 });
   writeFileSync(join(f.env.CODEX_HUD_CWD, 'STATE.md'), 'Milestone: M4\n\n## Slices\n- try · M4 · RELOAD-ONE · Synthetic reload slice\n');
-  await until(() => f.output().includes('RELOAD-ONE'), 'the to-try view did not render');
+  await until(() => f.output().includes('1 slice'), 'the to-try view did not render');
   f.child.stdin.write('gjj ');
   await until(() => f.output().includes('▣'), 'the slice was not marked');
   const at = f.output().length;
   appendFileSync(f.entry, '\n// marked try view build');
-  await until(() => f.output().slice(at).includes('RELOAD-ONE'), 'the marked page did not repaint after reload: ' + f.stderr());
+  await until(() => f.output().slice(at).includes('1 slice'), 'the marked page did not repaint after reload: ' + f.stderr());
   assert.equal(f.events().filter((e) => e.start).length, 2);
   const saved = f.restarts()[0].restart.state;
-  assert.equal(saved.projectCursor, 'project:fold:hist:RELOAD-ONE');
+  assert.equal(saved.projectCursor, 'project:fold:task:milestone:M4');
   assert.ok(saved.projectTry);
   assert.doesNotMatch(f.output().slice(at), /▣/);
   f.child.stdin.write(' ');

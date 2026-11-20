@@ -24,7 +24,7 @@ function fixture(t) {
   t.after(() => rmSync(home, { recursive: true, force: true }));
   return pageFixture(home);
 }
-for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'help', 'changes'])
+for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes'])
   test(`frame: ${page} in Home's kit`, (t) => {
     const f = fixture(t),
       frames = pageFrames(f);
@@ -34,21 +34,18 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
     const frame = f.render(page, 80, 'en', page === 'help' ? 54 : 40),
       text = plainFrame(frame).join('\n');
     if (page === 'older') {
-      assert.match(text, /5 older shown · a hide/);
+      assert.match(text, /3 older shown · a hide/);
       assert.match(text, /✓ imp  Add the retry helper\s+done 1h12m/);
     }
     if (page === 'home') {
-      assert.match(text, /\+5 older · a/);
+      assert.match(text, /\+3 older · a/);
+      assert.doesNotMatch(text, /Decided for you|Backoff with jitter, cap 30s/);
       assert.doesNotMatch(text, /Add the retry helper/);
     }
     if (page === 'job') {
       assert.match(text, /◉ imp  Retry on HTTP 429/);
       assert.match(text, /Files ─+ 4/);
       assert.doesNotMatch(text, /Time basis|Source details|Evidence time/);
-    }
-    if (page === 'decision') {
-      assert.match(text, /instead of\s+a: fixed 5s retry/);
-      assert.match(text, /why\s+same policy as the payment client/);
     }
     if (page === 'settings') {
       assert.match(text, /Bar style\s+line/);
@@ -87,7 +84,7 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
   const f = fixture(t);
   for (const width of [32, 40, 56, 80, 120])
     for (const lang of ['en', 'zh'])
-      for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'help', 'changes']) {
+      for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes']) {
         const frame = f.render(page, width, lang, 40);
         assert.equal(frame.lines.length, 40);
         for (const line of frame.lines)
@@ -183,17 +180,6 @@ test('Inspector uses collected files, selects the open question/report/brief and
     nowMs: NOW,
   });
   assert.match(report.state.inspectCursor, /report\.md$/);
-  frame = f.render('decision', 80);
-  assert.deepEqual(press('enter').action.files, [join(f.api, 'qa/q2.md')]);
-  frame = renderMonitor({
-    tree: TREE,
-    workboard: f.board,
-    state: press('down').state,
-    width: 80,
-    height: 40,
-    nowMs: NOW,
-  });
-  assert.deepEqual(press('enter').action.files, [join(f.api, 'qa/q2.answer.md')]);
 });
 test('old rows have only muted ink, no band; expansion restores the card and a returns to a nearby row', (t) => {
   const f = fixture(t),
@@ -210,13 +196,8 @@ test('old rows have only muted ink, no band; expansion restores the card and a r
   const frame = draw({ ...f.states.older, homeTarget: target });
   const oldRow = frame.workboard.rows.find((r) => r.item === key);
   assert.equal(oldRow.text, theme.board.muted(stripAnsi(oldRow.text)));
-  const oldDecision = f.board.decisions.find(
-    (d) => d.evidence[0].relativePath === 'qa/q1.md' && d.evidence[0].sourceId.endsWith('1')
-  );
-  const decisionRow = frame.workboard.rows.find(
-    (r) => r.item === targetKey({ kind: 'decision', laneId: oldDecision.laneId, decisionId: oldDecision.id })
-  );
-  assert.equal(decisionRow.text, theme.board.muted(stripAnsi(decisionRow.text)));
+  assert.ok(f.board.decisions.length);
+  assert.ok(![...frame.workboard.targets.values()].some((target) => target.kind === 'decision'));
   const oldLane = f.board.lanes.find((l) => l.label === 'R5');
   const laneRow = frame.workboard.rows.find((r) => r.item === targetKey({ kind: 'lane', laneId: oldLane.id }));
   assert.equal(laneRow.text, theme.board.muted(stripAnsi(laneRow.text)));

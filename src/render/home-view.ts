@@ -1,14 +1,14 @@
-/** Home: the ask, package lanes, then decisions made for the owner. */
+/** Home: the ask and package lanes. */
 import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { boardRow, minuteAge, decisionBlock, mark, footHints } from './workboard-rows.js';
+import { boardRow, minuteAge, mark, footHints } from './workboard-rows.js';
 import { laneRows, orderedLanes } from './work-lanes.js';
 import { quietDecisionSummary, requestLines, stemLines } from './work-card.js';
 import { theme } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
-import { currentWorker, currentDecision, foldedWorker } from './work-visibility.js';
+import { currentWorker, foldedWorker } from './work-visibility.js';
 import { answerable, answerKeys } from './job-actions.js';
 /** The amber question title and options, with the answer keys beside the expanded options. */
 export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state: MonitorState, width: number, now: number, underLane = false): MonitorRow[] {
@@ -97,13 +97,9 @@ export function homeRows(
       if (!lane.workers.length) continue;
       rows.push(...laneRows(input, lane, state, width, now));
     }
-  rows.push(...decisionBlock(board, state, width, now, input?.workboard));
   const source = input?.workboard;
-  if (filtering && !board.workers.length && !board.decisions.length) rows.push(boardRow(theme.board.muted('  ' + t('No matches'))));
-  const hidden = source && !filtering
-    ? source.workers.filter((w) => !currentWorker(w, now, state)).length +
-      source.decisions.filter((d) => !currentDecision(d, now)).length
-    : 0;
+  if (filtering && !board.workers.length) rows.push(boardRow(theme.board.muted('  ' + t('No matches'))));
+  const hidden = source && !filtering ? source.workers.filter((w) => !currentWorker(w, now, state)).length : 0;
   if (hidden)
     rows.push(
       boardRow(theme.board.muted(t(state.tree.showAll ? '{n} older shown · a hide' : '+{n} older · a', { n: hidden })))

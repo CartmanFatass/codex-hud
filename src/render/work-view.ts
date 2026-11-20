@@ -180,12 +180,12 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const filtering = !!filterScope(state) && (!!state.filterOpen || !!state.filterQuery), needle = filtering ? filterNeedle(state) : '';
   let matches: number | undefined;
   if (needle && input.project && (page === 'progress' || page === 'tickets')) {
-    const found = filterProject(input.project, page, needle);
+    const found = filterProject(input.project, page, needle, state.acceptance);
     input = { ...input, project: found.data };
     matches = found.count;
   }
   const board = inspector || pick ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.cardStallMinutes) : undefined);
-  if (home && needle) matches = board.workers.length + board.decisions.length;
+  if (home && needle) matches = board.workers.length;
   const bar = filtering ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
     (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
   ) : undefined;
@@ -198,16 +198,12 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   });
   const target = state.boardInspect;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
-  const decision = target?.kind === 'decision' ? lane?.decisions.find((d) => d.id === target.decisionId) : undefined;
-  const worker =
-    target?.kind === 'worker'
-      ? lane?.workers.find((w) => w.id === target.workerId)
-      : lane?.workers.find((w) => w.evidence.some((e) => e.sourceId === decision?.evidence[0]?.sourceId));
+  const worker = target?.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
   const crumb = help
     ? t('Help')
     : changes
       ? t('Changes')
-      : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}${target?.kind === 'decision' ? ' ' + (lane?.decisions.find((d) => d.id === target.decisionId)?.evidence[0]?.relativePath.match(/q\d+/)?.[0] ?? '') : ''}`;
+      : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}`;
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
     const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
@@ -250,7 +246,6 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     const all: WorkTarget[] = [
       { kind: 'lane', laneId: lane.id },
       ...lane.workers.map((w) => ({ kind: 'worker' as const, laneId: lane.id, workerId: w.id })),
-      ...lane.decisions.map((d) => ({ kind: 'decision' as const, laneId: lane.id, decisionId: d.id })),
     ];
     for (const target of all) targets.set(targetKey(target), target);
   }
@@ -320,16 +315,15 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   if (home) {
     // The waiting items and the newest landed slices sit under the cards, progress at the bottom (owner): the work above keeps the room next to it.
     const spare = height - 2 - top - rows.length;
-    if (!needle) rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim()));
+    if (!needle) rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim(), state, input.tryMarks));
   }
-  if (state.boardAnchor?.startsWith('home-progress:') && !rows.some((r) => r.item === state.boardAnchor))
+  if (home && state.boardAnchor && /^(home-progress:|project:fold:task:)/.test(state.boardAnchor) && !rows.some((r) => r.item === state.boardAnchor))
     state.boardAnchor = undefined;
   let selected = state.homeTarget;
   if (home && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
     const order = source.lanes.flatMap((l) => [
       { kind: 'lane' as const, laneId: l.id },
       ...l.workers.map((w) => ({ kind: 'worker' as const, laneId: l.id, workerId: w.id })),
-      ...l.decisions.map((d) => ({ kind: 'decision' as const, laneId: l.id, decisionId: d.id })),
     ]);
     const at = order.findIndex((t) => selected && targetKey(t) === targetKey(selected));
     selected = order
@@ -393,7 +387,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   }
   const done = doneToday();
   const projectSwitch = frame.projects ? ['[ ] project'] : [];
-  const onTry = project && rows.some((r) => r.item === state.projectCursor && r.tryTarget);
+  const onTry = (project || home) && rows.some((r) => r.item === (project ? state.projectCursor : state.boardAnchor) && r.tryTarget);
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
     : inspector ? ['⏎ open', 'Esc back']
@@ -402,12 +396,12 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
             : sheet ? sheet.hints : controlHints(input.project, state.projectCursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : page === 'progress' ? (state.projectTry ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
-            : (state.projectLayout === 'board' || state.projectLayout === 'inbox') && onTry ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
+            : onTry && (state.acceptance !== 'slice' || state.projectLayout === 'board' || state.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
             : ['t to try', '⏎ open', 'Esc back'])
           : page || list ? ['⏎ open', 'Esc back']
-          : state.projectLayout === 'inbox' && onTry ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
+          : onTry && (state.acceptance !== 'slice' || state.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
           : ['⏎ open', ...projectSwitch])
-        : experiment ? expHints(experiment) : homeKeys(state, source, 'expand');
+        : experiment ? expHints(experiment) : onTry ? [...TRY_ACTIONS, '⏎ details', 'o file'] : homeKeys(state, source, 'expand');
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (control && !harnesses && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1)

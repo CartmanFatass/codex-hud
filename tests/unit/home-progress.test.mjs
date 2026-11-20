@@ -48,7 +48,7 @@ test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary
     for (let spare = 30; spare >= -3; spare--) {
       const height = base + 2 + spare, frame = f.render(width, lang, height), rows = compact(frame);
       for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-      assert.deepEqual(frame.workboard.rows.slice(0, base), baseline.workboard.rows, 'questions, job/native cards, decisions unchanged');
+      assert.deepEqual(frame.workboard.rows.slice(0, base), baseline.workboard.rows, 'questions and job/native cards unchanged');
       assert.ok(frame.workboard.rows.length - base <= Math.max(0, spare), 'only whole spare rows, the separator included');
       const tickets = rows.some((r) => r.item.startsWith('home-progress:tickets:'));
       const legend = rows.some((r) => stripAnsi(r.text).includes(lang === 'en' ? 'working 1' : '工作中 1'));
@@ -99,15 +99,14 @@ test('Home progress layout: separator row, milestone on the rule, bar as wide as
     assert.doesNotMatch(few, /more|另 \d+ 个|还有 \d+ 项/, 'five open tickets fit the short list');
   }
 });
-test('expanded questions/cards/decisions and notices claim space before progress; missing facts never get placeholders', async (t) => {
+test('expanded questions/cards and notices claim space before progress; missing facts never get placeholders', async (t) => {
   const f = await fixture(t), expanded = new Set(f.board.workers.map((w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id })));
-  for (const d of f.board.decisions) expanded.add(targetKey({ kind: 'decision', laneId: d.laneId, decisionId: d.id }));
   for (const width of [80, 120]) for (const lang of ['en', 'zh']) {
     const state = { ...initialMonitorState(), boardExpanded: expanded, boardToggled: expanded };
     const extras = { error: 'Synthetic read fault', publicationNotice: 'Synthetic coverage notice' };
     const base = rowsAbove(f, width, lang, structuredClone(state), extras), baseline = f.render(width, lang, base + 2, structuredClone(state), f.data, extras);
     assert.equal(baseline.workboard.rows.length, base);
-    assert.ok(base > rowsAbove(f, width, lang));
+    assert.ok(baseline.workboard.rows.some((r) => stripAnsi(r.text).includes('Which synthetic option?')), 'the open question remains visible');
     const short = f.render(width, lang, base + 4, structuredClone(state), f.data, extras);
     assert.equal(compact(short).length, 0);
     assert.deepEqual(short.workboard.rows.slice(0, base), baseline.workboard.rows, 'only the waiting list may use the two spare rows');
@@ -183,7 +182,7 @@ test('Home-only collection: only STATE/issues cached reads; no git, control-plan
   assert.deepEqual(spawned, [], 'Home never calls git, even past the five-second Project gate');
   assert.equal(await collector.collect(false, f.board, NOW + 60002), undefined);
 });
-test('live panel stays Home-only: actual collection gate never spawns git', async (t) => {
+test('live panel stays Home-only at slice detail: actual collection gate never spawns git', async (t) => {
   const f = await fixture(t), runner = join(f.root, 'home-only.mjs'), log = join(f.root, 'git-spawns');
   f.put(join(f.root, 'bin/git'), `#!${process.execPath}\nimport fs from 'node:fs'; fs.appendFileSync(process.env.GIT_TEST_LOG, 'git\\n'); process.exit(1);\n`);
   fs.chmodSync(join(f.root, 'bin/git'), 0o700);
@@ -201,7 +200,7 @@ ProjectCollector.prototype.collect = async function(mode, ...args) {
 await runLivePage();
 `);
   const settings = join(f.root, 'settings.json');
-  f.put(settings, { modelEnabled: false, refreshMs: 100 });
+  f.put(settings, { modelEnabled: false, refreshMs: 100, acceptance: 'slice' });
   const child = childProcess.spawn(process.execPath, [runner], { env: { ...process.env, ...f.env,
     PATH: `${join(f.root, 'bin')}:${process.env.PATH}`, CODEX_HUD_CWD: f.cwd, HUD_SETTINGS_PATH: settings,
     GIT_TEST_LOG: log, CODEX_HUD_STANDALONE_PANEL: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });

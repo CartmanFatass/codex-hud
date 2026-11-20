@@ -86,7 +86,7 @@ export async function projectFixture(root) {
   const render = (width, lang = 'en', state = undefined, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none', extra = {}) => {
     state = typeof state === 'string' ? state === 'control' ? onControl() : onPage(state) : state ?? onPage();
     const display = setDisplayConfig({ theme, icons }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, modelEnabled, ...extra }); }
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state: { acceptance: 'slice', ...state }, width, height, nowMs: NOW, modelEnabled, ...extra }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   return { cwd, hud, home, env, put, board, collector, data, rich: richProgress(data), render, job, linked, sliceJob };

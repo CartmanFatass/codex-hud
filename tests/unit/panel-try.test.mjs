@@ -38,8 +38,8 @@ const until = async (condition, diagnostic) => {
   assert.fail(diagnostic());
 };
 
-function panel(t, f, { layout = 'classic', columns = 80, prelude = '' } = {}) {
-  fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, modelEnabled: false, refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
+function panel(t, f, { layout = 'classic', columns = 80, prelude = '', acceptance = 'slice' } = {}) {
+  fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, acceptance, modelEnabled: false, refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
   const runner = `process.stdout.columns = ${columns}; process.stdout.rows = 24;
     ${prelude}
     const { runLivePage } = await import(${JSON.stringify(new URL('../../dist/tree-page.js', import.meta.url).href)});
@@ -113,6 +113,29 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   fs.writeFileSync(f.state, fs.readFileSync(f.state, 'utf8').replace('first slice', 'updated first slice'));
   await painted(/◇ ONE/);
   await painted(/▾ 0\.1\.4 +◇ 1$/m);
+  await close();
+});
+
+test('task acceptance writes each pending slice of the milestone in one record', async (t) => {
+  const f = fixture(t), { key, painted, recorded, close } = panel(t, f, { acceptance: 'task' });
+  key('\x1b[C');
+  await painted(/^Progress +2 to try/m);
+  key('\rtj');
+  await painted(/^Only to try ─+ 2$/m);
+  await painted(/◇ 0\.1\.4 +2 slices/);
+  key(' ');
+  await painted(/▣ ◇ 0\.1\.4/);
+  key('y');
+  await recorded(1);
+  await painted(/✓ 0\.1\.4 +2 slices/);
+  key('n');
+  await recorded(2);
+  await painted(/⚑ 0\.1\.4 +2 slices/);
+  assert.deepEqual(f.records().map(({ action, milestone, slices }) => ({ action, milestone, slices })), [
+    { action: 'accept', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
+    { action: 'flag', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
+  ]);
+  assert.equal(fs.readFileSync(f.state, 'utf8'), f.body);
   await close();
 });
 

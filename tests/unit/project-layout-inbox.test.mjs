@@ -70,7 +70,7 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
       ? { ...r, brief: { brief: 'Inbox layout ranks what needs you first. Older slices fold cleanly.', steps: ['Open Project tab', 'Check Needs you'] } }
       : r)),
   };
-  const tries = tryCount(briefed);
+  const tries = tryCount(briefed, 'slice');
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
       const state = layout === 'split'
@@ -154,7 +154,7 @@ test('Inbox Progress at 40 cols EN and ZH (Split and Classic): To try newest fir
       ? { ...r, brief: { brief: 'Inbox progress groups by owner priority. Accepted slices fold away.', steps: ['Open Progress', 'Try Space, y and n'] } }
       : r)),
   };
-  const tries = tryCount(briefed);
+  const tries = tryCount(briefed, 'slice');
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
       const state = layout === 'split' ? split({ mainTab: 'project', projectPage: 'progress', projectLayout: 'inbox' }) : onPage('progress', { projectLayout: 'inbox' });

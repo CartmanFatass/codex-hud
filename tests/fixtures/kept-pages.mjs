@@ -138,7 +138,6 @@ export function pageFixture(home) {
   };
   const apiWorker = board.workers.find((w) => w.id.endsWith('1')),
     askingWorker = board.workers.find((w) => w.id.endsWith('4'));
-  const decision = board.decisions.find((d) => d.modelTitle === 'Backoff with jitter, cap 30s');
   const inspect = (item) => ({
     ...initialMonitorState(),
     focus: 'details',
@@ -151,7 +150,6 @@ export function pageFixture(home) {
     older: { ...initialMonitorState(), tree: { ...initialMonitorState().tree, showAll: true } },
     job: inspect(target(apiWorker)),
     asking: inspect(target(askingWorker)),
-    decision: inspect({ kind: 'decision', laneId: decision.laneId, decisionId: decision.id }),
     help: { ...initialMonitorState(), help: true },
     changes: {
       ...initialMonitorState(),
@@ -199,13 +197,13 @@ export function pageFixture(home) {
       setLanguage(previous);
     }
   };
-  return { board, worktrees, states, render, apiWorker, askingWorker, decision, api, ux };
+  return { board, worktrees, states, render, apiWorker, askingWorker, api, ux };
 }
 export const plainFrame = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
 export function pageFrames(fixture) {
   const frames = {};
   for (const width of [80, 120])
-    for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'help', 'changes']) {
+    for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes']) {
       frames[`${page}-${width}-en`] = plainFrame(fixture.render(page, width));
       if (['home', 'older', 'settings'].includes(page))
         frames[`${page}-${width}-zh`] = plainFrame(fixture.render(page, width, 'zh'));

@@ -113,6 +113,8 @@ export interface MonitorState {
   panelLayout?: HudSettings['panelLayout'];
   /** Settings → Panel → Project layout; unset is Timeline. */
   projectLayout?: HudSettings['projectLayout'];
+  /** Settings → Panel → Acceptance; unset groups by task. */
+  acceptance?: HudSettings['acceptance'];
   /** Split: the list's cursor (an item id), the preview's cursor while the keys are in the preview, and the preview's scroll. */
   splitCursor?: string;
   splitFocus?: 'preview';
@@ -286,7 +288,7 @@ export function monitorModes(settings: HudSettings): MonitorModes {
   return { agents: 'open', changes: settings.changesPane, details: settings.detailsPane };
 }
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
-  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout, projectLayout: settings.projectLayout, experiments: settings.experiments };
+  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout, projectLayout: settings.projectLayout, acceptance: settings.acceptance, experiments: settings.experiments };
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return { changesPane: state.modes.changes, detailsPane: state.modes.details };

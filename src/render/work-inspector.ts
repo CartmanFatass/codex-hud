@@ -10,8 +10,6 @@ import {
   itemRow,
   mark,
   minuteAge,
-  decisionTitle,
-  decisionRows,
   boardRow,
   asciiBoard,
 } from './workboard-rows.js';
@@ -211,33 +209,5 @@ export function boardInspectorRows(
         files: w.files?.find((f) => f.kind === 'report')?.paths ?? w.files?.find((f) => f.kind === 'brief')?.paths,
       })),
     ];
-  const d = lane.decisions.find((d) => d.id === target.decisionId);
-  if (!d) return [];
-  const rows = [
-    boardRow(''),
-    decisionRows(d, lane, { ...state, boardExpanded: new Set([targetKey(target)]) }, width, now)[0],
-    ...(d.modelTitle ? jobSentenceRows(d.modelTitle, width, theme.board.muted, true) : stemLines(decisionTitle(d), width)).map((text) => boardRow(theme.board.body(text))),
-    boardRow(''),
-    ...[
-      ['asked', d.modelQuestion ?? d.question],
-      [d.verdict ? 'verdict' : 'answer', d.modelAnswer ?? d.verdict ?? d.option ?? (d.kind === 'answer' ? d.title : undefined)],
-      ['instead of', d.modelInstead ?? d.instead],
-      ['why', d.modelWhy ?? d.rationale ?? d.context],
-    ].flatMap(([label, value]) =>
-      value ? kvRows(label!, value, width, label === 'instead of' ? theme.board.attention : undefined) : []
-    ),
-  ];
-  rows.push(boardRow(''), section(t('Files'), width, String(d.evidence.length)));
-  for (const e of d.evidence) {
-    const paths =
-      lane.identity.kind === 'invocation' && /^j[0-9a-f]{16}$/.test(e.sourceId)
-        ? [`${lane.identity.home}/jobs/${e.sourceId}/${e.relativePath}`]
-        : undefined;
-    rows.push({
-      ...itemRow('', monitorText(e.relativePath), localTime(e.at, now), width),
-      item: paths ? 'file:' + paths[0] : undefined,
-      files: paths,
-    });
-  }
-  return rows;
+  return [];
 }

@@ -12,13 +12,13 @@ import { getHudDisplayHome, getHudHome } from '../hud-home.js';
 import { renderHtmlBoard } from '../render/html-board.js';
 import { resolveLanguage, type Language } from '../render/i18n.js';
 import { executable } from '../roles/roster.js';
-import { loadSettings } from '../settings.js';
+import { loadSettings, type HudSettings } from '../settings.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
 export const BOARD_HELP =
   'Usage: hud board [--html] [--cwd DIR] [--out FILE] [--open]\n' +
-  'Write this project\'s review board (progress, to-try slices, jobs, tickets, newest review) as one static HTML file\n' +
+  'Write this project\'s review board (progress, to-try work, jobs, tickets, newest review) as one static HTML file\n' +
   'and print its path. Default: $HUD_HOME/display/board-<project>.html (0600). --open: wslview or xdg-open, if installed.\n';
 
 export interface BoardRun {
@@ -27,6 +27,7 @@ export interface BoardRun {
   env: NodeJS.ProcessEnv;
   now: number;
   lang: Language;
+  acceptance?: HudSettings['acceptance'];
   workboard: WorkboardSnapshot;
   /** Stored briefs only: `TryBriefs.apply` reads its cache and starts no model call. */
   briefs: Pick<TryBriefs, 'apply'>;
@@ -54,7 +55,7 @@ export async function writeBoard(run: BoardRun): Promise<string> {
   const project = collected && run.briefs.apply(root, collected);
   if (!project) throw new Error('no project facts');
   const html = renderHtmlBoard({
-    projectName: basename(root), root, project, workboard: run.workboard, generatedAt: run.now, lang: run.lang,
+    projectName: basename(root), root, project, workboard: run.workboard, generatedAt: run.now, lang: run.lang, acceptance: run.acceptance,
     reviewText: readReview(project.docs.find((d) => d.label === 'review')?.path),
   });
   const file = run.out ? resolve(run.out) : join(getHudDisplayHome(run.env), `board-${slug(basename(root))}.html`);
@@ -114,7 +115,7 @@ export async function boardCommand(args: readonly string[], io: HudIO): Promise<
   const briefs = new TryBriefs(new SmallModel(), join(getHudDisplayHome(io.env), 'model-cache', 'try-briefs.json'));
   briefs.configure(settings?.modelEnabled ?? false, lang);
   let file: string;
-  try { file = await writeBoard({ cwd, hudHome, env: io.env, now, lang, workboard, briefs, out }); }
+  try { file = await writeBoard({ cwd, hudHome, env: io.env, now, lang, acceptance: settings?.acceptance, workboard, briefs, out }); }
   catch (error) { throw new CliError(`board_failed: ${(error as NodeJS.ErrnoException).code ?? 'could not write the board'}`, 1); }
   await io.stdout(`${file}\n`);
   if (open && !openBoard(file, io.env)) io.stderr('no opener found (wslview or xdg-open); open the file above in a browser\n');

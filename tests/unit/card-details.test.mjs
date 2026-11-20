@@ -7,7 +7,6 @@ import { cardFixture, colourFrame, colourFrames, NOW } from '../fixtures/card-de
 import { initialMonitorState, handleMonitorInput } from '../../dist-test/src/render/monitor.js';
 import { cardExpanded, jobSentenceRows, identifiers, paintSentence, workCardDetail, renderWorkCard } from '../../dist-test/src/render/work-card.js';
 import { projectWorkCard } from '../../dist-test/src/collectors/work-card.js';
-import { decisionRows } from '../../dist-test/src/render/workboard-rows.js';
 import { workInspectorRows } from '../../dist-test/src/render/work-inspector.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
 import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
@@ -85,7 +84,8 @@ for (const language of ['en', 'zh']) test(`all mark inks and deterministic unmar
   }
 });
 for (const language of ['en', 'zh']) test(`flag marks retain prefixes as identifiers, stance marks still work: ${language}`, (t) => {
-  const f = fixture(t), lead = language === 'en' ? 'Use ' : '使用';
+  fixture(t);
+  const lead = language === 'en' ? 'Use ' : '使用';
   for (const [raw, plain] of [
     ['«--orchestrator»', '--orchestrator'], ['«--notify»', '--notify'],
     ['`«-x»`', '`-x`'], ['«`-x`»', '`-x`'],
@@ -101,16 +101,6 @@ for (const language of ['en', 'zh']) test(`flag marks retain prefixes as identif
     const title = markedTitle(lead + raw, language);
     assert.equal(keywordMarks(title).plain, lead + plain);
     assert.equal(paintSentence(title), painted);
-    const lane = f.board.lanes[0];
-    const d = { id: 'flag-decision', laneId: lane.id, title: 'Fallback', modelTitle: title,
-      departure: false, evidence: [{ at: NOW, relativePath: 'qa/q1.md', sourceId: 'j0123456789abcdef' }], at: NOW };
-    for (const expanded of [false, true]) {
-      const state = initialMonitorState();
-      if (expanded) state.boardExpanded = new Set([targetKey({ kind: 'decision', laneId: lane.id, decisionId: d.id })]);
-      const row = decisionRows(d, lane, state, 120, NOW).map((r) => r.text).join('\n');
-      assert.ok(row.includes(theme.board.identifier(plain)), row);
-      assert.ok(stripAnsi(row).includes(plain));
-    }
   }
   const words = language === 'en' ? ['reject', 'approve', 'recommends simplicity'] : ['拒绝', '批准', '认为更简单'];
   const raw = `«-${words[0]}» «+${words[1]}» «!${words[2]}»`;
@@ -164,18 +154,8 @@ test('corner keyword grammar preserves ordinary quotations and shares the four-m
   assert.equal(markedTitle('「+批准」使用「!更简单」', 'zh'), '«+批准»使用«!更简单»');
   assert.equal(markedTitle('「甲，乙」', 'zh'), '「甲，乙」');
 });
-test('decision titles share paint in collapsed/expanded rows; visible eight-word cap does not count prefixes or break marks', (t) => {
-  const f = fixture(t), lane = f.board.lanes[0];
-  const d = { id: 'synthetic-decision', laneId: lane.id, title: 'Fallback', modelTitle: '«+Accept» «!simpler report.md»',
-    departure: false, evidence: [{ at: NOW - 1000, relativePath: 'qa/q1.md', sourceId: 'j0123456789abcdef' }], at: NOW - 1000 };
-  for (const expanded of [false, true]) {
-    const state = initialMonitorState();
-    if (expanded) state.boardExpanded = new Set([targetKey({ kind: 'decision', laneId: lane.id, decisionId: d.id })]);
-    const rows = decisionRows(d, lane, state, 120, NOW).map((r) => r.text).join('\n');
-    for (const expected of [theme.board.success('Accept'), theme.board.opinion('simpler '), theme.board.identifier('report.md')])
-      assert.ok(rows.includes(expected), expected);
-    assert.doesNotMatch(stripAnsi(rows), /[«»!+]/);
-  }
+test('decision title eight-word cap does not count prefixes or break marks', (t) => {
+  fixture(t);
   for (const [language, raw, expected] of [
     ['en', '«+Accept» «design» «!today» «-instead»', '«+Accept» «design» today instead'],
     ['zh', '«+批准»«设计»«!今天»«-替代»', '«+批准»«设计»今天替代'],

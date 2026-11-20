@@ -94,6 +94,7 @@ export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key
       intoPreview(subs[0]);
       return result();
     }
+    if (!focus && at?.startsWith('project:fold:task:')) return result(); // Its details are already in the preview.
     return activate();
   };
   const got = read(next, input, key, ctx, move);
@@ -115,10 +116,11 @@ export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key
   if (key === 'enter' || key === 'activate') return enter();
   if (key === 'space' || key === 'try-accept' || key === 'try-flag') {
     const cursorRow = rows.find((r) => r.item === at && r.tryTarget);
-    const row = cursorRow ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget));
+    const parent = focus && next.splitList?.startsWith('project:fold:task:') ? rows.find((r) => r.item === next.splitList && r.tryTarget) : undefined;
+    const row = cursorRow ?? parent ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget));
     if (preview && row?.item) {
       const index = preview.rows.indexOf(row);
-      if (key === 'space' && !cursorRow) intoPreview(row.item);
+      if (key === 'space' && !cursorRow && !parent) intoPreview(row.item);
       // For an unmarked decision, show the target's header before accepting a second keypress.
       if (key !== 'space' && !next.trySelection && index >= 0 && (index < preview.offset || index >= preview.offset + preview.height)) {
         intoPreview(row.item);

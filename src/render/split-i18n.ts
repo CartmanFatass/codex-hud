@@ -1,7 +1,6 @@
 /** The Split layout's own words in Chinese; English is the key. */
 export const SPLIT_ZH: Record<string, string> = {
   '{n} jobs': '{n} 个任务',
-  '{n} worth a look': '{n} 项值得一看',
   '{n} accepted': '{n} 个已验收',
   '{done}/{total} accepted': '{done}/{total} 已验收',
   '{n} places': '{n} 个位置',

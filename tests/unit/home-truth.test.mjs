@@ -112,23 +112,21 @@ test('an idle Home at 38×46 shows waiting items and the newest landed slices ab
   }
 });
 
-test('cards keep their rows, then the progress block, before Home\'s waiting and latest rows; the block shrinks to its bar before its summary goes', async (t) => {
+test('cards keep their rows, then the progress block, before Home\'s waiting and latest rows', async (t) => {
   const f = await fixture(t), base = f.render(38, 'en', 100, undefined, null).workboard.rows.length + 2;
   // The cards, with the top line above them (two rows) and nothing spare.
   const cards = f.render(38, 'en', base + 2);
   assert.equal(cards.workboard.rows.length, base);
-  let sawBarOnly = false;
   for (let spare = 40; spare >= 0; spare--) {
     const frame = f.render(38, 'en', base + 2 + spare), lines = plain(frame), rows = frame.workboard.rows.length - base;
     assert.ok(rows <= spare, `spare ${spare}: ${rows} rows`);
     assert.deepEqual(plain(frame).slice(1, base + 1), plain(cards).slice(1, base + 1), 'no card row cut or displaced');
     const summary = lines.some((l) => /^  Synthetic milestone/.test(l)), bar = lines.some((l) => /^  █/.test(l));
     if (summary) assert.ok(bar, `spare ${spare}: the summary never outlives the bar`);
-    if (bar && !summary) sawBarOnly = true;
-    // The two lists only take rows the whole block (tickets too) leaves.
-    if (lines.some((l) => /^(Waiting for you|Latest) ─/.test(l))) assert.ok(lines.some((l) => /^Tickets · native-tree ─/.test(l)), `spare ${spare}`);
+    if (spare === 3) assert.ok(bar && summary, 'the cards end in a blank, leaving room for both the bar and the summary');
+    // Below three spare rows the progress block cannot fit. Otherwise the lists only use what it leaves.
+    if (spare >= 3 && lines.some((l) => /^(Waiting for you|Latest) ─/.test(l))) assert.ok(lines.some((l) => /^Tickets · native-tree ─/.test(l)), `spare ${spare}`);
   }
-  assert.ok(sawBarOnly, 'one height shows the bar without the summary');
   const roomy = plain(f.render(38, 'en', base + 2 + 40));
   assert.ok(roomy.some((l) => /^Waiting for you ─/.test(l)) && roomy.some((l) => /^Latest ─/.test(l)), 'with room, both lists come');
 });

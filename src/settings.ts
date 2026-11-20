@@ -32,6 +32,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   panelLayout: 'classic' | 'split';
   /** How the Project tab's pages are arranged (owner, 2026-11-20): Timeline (default), Board or Inbox. */
   projectLayout: 'timeline' | 'board' | 'inbox';
+  acceptance: 'task' | 'slice';
   experiments: boolean;
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
@@ -83,6 +84,7 @@ export function defaultSettings(): HudSettings {
     homeMode: 'default',
     panelLayout: 'classic',
     projectLayout: 'timeline',
+    acceptance: 'task',
     experiments: false,
     language: 'auto',
     briefingApiBase: 'https://api.mistral.ai/v1',
@@ -132,6 +134,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   homeMode: oneOf('default', 'recommended'),
   panelLayout: oneOf('classic', 'split'),
   projectLayout: oneOf('timeline', 'board', 'inbox'),
+  acceptance: oneOf('task', 'slice'),
   experiments: isBoolean,
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   language: oneOf('auto', 'en', 'zh'),

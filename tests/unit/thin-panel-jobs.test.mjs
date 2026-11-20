@@ -114,12 +114,11 @@ function fixture(t) {
   return { env, pipeline, tree, render, put, job, askDir, ready };
 }
 const plain = (frame) => frame.lines.map(stripAnsi);
-// Everything starts collapsed; this is the state of a panel where every card and decision was expanded with Enter.
+// Everything starts collapsed; this is the state of a panel where every card was expanded with Enter.
 const expandAll = (board, from = initialMonitorState()) => ({
   ...from,
   boardExpanded: new Set([
     ...board.workers.map((w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id })),
-    ...board.decisions.map((d) => targetKey({ kind: 'decision', laneId: d.laneId, decisionId: d.id })),
   ]),
 });
 const joined = (frame) =>
@@ -127,7 +126,7 @@ const joined = (frame) =>
     .map((l) => l.replace(/^[┃|]\s?/, '').trim())
     .join(' ')
     .replace(/\s+/g, ' ');
-test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision order and ten-minute fold', async (t) => {
+test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes and ten-minute fold', async (t) => {
   const f = fixture(t);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
@@ -141,9 +140,6 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision o
       blocked,
       'a) separate model line',
       'b) beside the phase strip',
-      asked,
-      chosen.slice(3),
-      instead,
       reason,
     ])
       assert.ok(text.replace(/\s/g, '').includes(full.replace(/\s/g, '')), full);
@@ -152,7 +148,7 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision o
       plain(frame).findIndex((l) => l.startsWith('PANEL-THIN')) <
         plain(frame).findIndex((l) => l.startsWith('TEST-CUT'))
     );
-    assert.ok(text.indexOf(chosen.slice(3)) < text.indexOf('yes'));
+    for (const hidden of [asked, chosen.slice(3), instead]) assert.ok(!text.includes(hidden));
     assert.ok(!text.includes('Folded old success'));
     assert.ok(!text.includes('WRONG-PANE'));
     for (const title of ['thin job cards', 'review card renderer', 'list the slowest', 'check the cut', 'width flag']) {
@@ -163,24 +159,8 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision o
       writeFileSync(join(process.env.PANEL_DUMPS, `home-${lang}.txt`), plain(f.render(board, 64)).join('\n') + '\n');
   }
   const home = f.render(board);
-  const decision = board.decisions.find((d) => d.departure);
-  const target = { kind: 'decision', laneId: decision.laneId, decisionId: decision.id };
-  const state = { ...home.state, homeTarget: target };
-  // Enter expands the decision in place and the tab stays; `o` opens its files.
-  const opened = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: home });
-  assert.equal(opened.action, undefined);
-  assert.equal(opened.state.mainTab, 'home');
-  const expanded = f.render(board, 24, 56, opened.state);
-  assert.ok(
-    plain(expanded).some((l) => l.startsWith('◆ PANEL-THIN · imp q2')),
-    'the decision is on screen'
-  );
-  const enter = handleMonitorInput(
-    expanded.state,
-    { type: 'key', key: 'open-session' },
-    { tree: f.tree, frame: expanded }
-  );
-  assert.deepEqual(enter.action.files, [join(f.askDir, 'qa/q2.md'), join(f.askDir, 'qa/q2.answer.md')]);
+  assert.ok(board.decisions.some((d) => d.departure));
+  assert.ok(![...home.workboard.targets.values()].some((target) => target.kind === 'decision'));
   const notifier = new Notifier({ enabled: true, cooldownMs: 0, deliver() {} });
   assert.deepEqual(notifier.update({}, now, board), [], 'existing questions and settled jobs are the baseline');
   f.put(join(f.askDir, 'qa/q3.answer.md'), 'a) separate model line', 0);
@@ -209,7 +189,7 @@ test('Home frame places a sonic card under its parent in the parent lane', async
   assert.ok(lines.every((line) => visualLength(line) === 56));
 });
 
-test('Home shows questions, lanes with cards, then decisions; Enter reveals the whole question', async (t) => {
+test('Home shows questions and lanes with cards; Enter reveals the whole question', async (t) => {
   const f = fixture(t);
   f.put(
     join(f.askDir, 'qa/q3.md'),
@@ -228,14 +208,10 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     assert.doesNotMatch(card.join('\n'), /blocked|b\) beside|qa\/q3\.md|⏎/);
     if (width === 40) assert.match(card.at(-2), /…\s*$/, 'a long question is cut with an ellipsis');
     const lane = home.findIndex((l) => l.startsWith('PANEL-THIN  '));
-    const decided = home.findIndex((l) => l.startsWith('Decided for you'));
-    assert.ok(at < lane && lane < decided);
+    assert.ok(at < lane);
+    assert.doesNotMatch(home.join('\n'), /Decided for you|PANEL-THIN · imp q[12]/);
     assert.match(home[lane + 1], /thin job cards/);
     assert.match(home[0], /^ Home \?1\s+Project\s+Control\s*$/);
-    assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
-    assert.match(home[decided + 1], /\d+m\s*$/);
-    assert.equal(home[decided + 2].trim(), '');
-    assert.match(home[decided + 3], /^◇ PANEL-THIN · imp q1  yes\s+\d+m\s*$/);
     assert.doesNotMatch(home.join('\n'), /asked|instead of/);
   }
   const expanded = joined(f.render(board, 180, 56, expandAll(board))).replace(/\s/g, '');
@@ -246,9 +222,6 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     'b) beside the phase strip',
     'c) drop the chip',
     'default: a) separate model line',
-    asked,
-    chosen.slice(3),
-    'instead of ' + instead,
   ])
     assert.ok(expanded.includes(full.replace(/\s/g, '')), full);
 });
@@ -282,14 +255,12 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
   const painted = frameDiff(null, ['abc']);
   assert.ok(painted.indexOf('\x1b[K') < painted.indexOf('abc') && !painted.endsWith('\x1b[K'));
 });
-test('Home Enter toggles cards, decisions and lanes; navigation opens Project; a reveals older decisions', async (t) => {
+test('Home Enter toggles cards and lanes; navigation opens Project; a reveals older cards only', async (t) => {
   const f = fixture(t);
   f.put(join(f.askDir, 'qa/q0.md'), '# Question\n\nOlder choice?\n\nDefault if unanswered: yes', 1500);
   f.put(join(f.askDir, 'qa/q0.answer.md'), 'yes', 1500);
   await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree),
-    d = board.decisions.find((d) => d.departure),
-    w = board.workers[0];
+  const board = f.pipeline.workboard(f.tree), w = board.workers[0];
   const rendered = (state) => f.render(board, 180, 56, state);
   const text = (state) => plain(rendered(state)).join('\n');
   const press = (state, bytes) => {
@@ -299,14 +270,9 @@ test('Home Enter toggles cards, decisions and lanes; navigation opens Project; a
   };
   const at = (target) => ({ ...initialMonitorState(), mainTab: 'home', homeTarget: target });
   const card = at({ kind: 'worker', laneId: w.laneId, workerId: w.id });
-  for (const [state, shown] of [
-    [card, /cannot be finished/],
-    [at({ kind: 'decision', laneId: d.laneId, decisionId: d.id }), /^┃ instead of /m],
-  ]) {
-    assert.doesNotMatch(text(state), shown);
-    assert.match(text(press(state, '\r')), shown);
-    assert.doesNotMatch(text(press(press(state, '\r'), '\r')), shown);
-  }
+  assert.doesNotMatch(text(card), /cannot be finished/);
+  assert.match(text(press(card, '\r')), /cannot be finished/);
+  assert.doesNotMatch(text(press(press(card, '\r'), '\r')), /cannot be finished/);
   const lane = at({ kind: 'lane', laneId: w.laneId }),
     folded = press(lane, '\r');
   assert.doesNotMatch(text(folded), /thin job cards/);
@@ -320,7 +286,7 @@ test('Home Enter toggles cards, decisions and lanes; navigation opens Project; a
   assert.equal(press(before, 'n').mainTab, 'home');
   assert.equal(press(before, 'N').mainTab, 'home');
   assert.doesNotMatch(text(before), /imp q0/);
-  assert.match(text(press(before, 'a')), /imp q0/);
+  assert.doesNotMatch(text(press(before, 'a')), /imp q0|Older choice/);
   assert.match(text(press(before, 'a')), /Folded old success/);
 });
 test('Home expiry thresholds and show-all use the real render/input path', async (t) => {
@@ -332,13 +298,10 @@ test('Home expiry thresholds and show-all use the real render/input path', async
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree),
     worker = (n) => board.workers.find((w) => w.id.endsWith(String(n)));
-  const decision = (q) => board.decisions.find((d) => d.evidence[0].relativePath === `qa/${q}.md`);
   for (const [kind, item, minutes] of [
     ['workers', worker(4), 10],
     ['workers', worker(3), 21],
     ['workers', worker(6), 15],
-    ['decisions', decision('q1'), 22],
-    ['decisions', decision('q2'), 114],
   ]) {
     const draw = (at, state = initialMonitorState()) =>
       renderMonitor({ tree: f.tree, workboard: board, state, width: 56, height: 180, nowMs: at });
@@ -352,10 +315,7 @@ test('Home expiry thresholds and show-all use the real render/input path', async
       handleMonitorInput(frame.state, { type: 'key', key: 'show-all' }, { tree: f.tree, frame }).state;
     const shown = draw(edge, toggle(hidden));
     assert.ok(has(shown), `${kind} revealed by a`);
-    const target =
-      kind === 'workers'
-        ? { kind: 'worker', laneId: item.laneId, workerId: item.id }
-        : { kind: 'decision', laneId: item.laneId, decisionId: item.id };
+    const target = { kind: 'worker', laneId: item.laneId, workerId: item.id };
     const rows = shown.workboard.rows.filter((r) => r.item === targetKey(target));
     assert.equal(rows.length, 1, 'old items start as one row');
     assert.doesNotMatch(stripAnsi(rows[0].text), /older/);
@@ -368,7 +328,7 @@ test('Home expiry thresholds and show-all use the real render/input path', async
     assert.ok(!has(draw(edge, toggle(shown))), `${kind} hidden again by a`);
   }
 });
-test('a current decision keeps its author after the finished job hides', async (t) => {
+test('an answered question is still collected after the finished job hides', async (t) => {
   const f = fixture(t);
   f.put(join(f.ready, 'qa/q1.md'), '# Question\n\nKeep this choice?\n\nDefault if unanswered: yes', 5);
   f.put(join(f.ready, 'qa/q1.answer.md'), 'yes', 5);
@@ -383,7 +343,8 @@ test('a current decision keeps its author after the finished job hides', async (
     nowMs: now + 10 * 60000,
   });
   assert.ok(!frame.workboard.snapshot.workers.some((w) => w.id.endsWith('4')));
-  assert.match(plain(frame).join('\n'), /TEST-CUT · imp q1/);
+  assert.ok(frame.workboard.snapshot.decisions.some((d) => d.question === 'Keep this choice?'));
+  assert.doesNotMatch(plain(frame).join('\n'), /TEST-CUT · imp q1|Keep this choice/);
 });
 test('model button uses the master preference; b matches it and S is inert', async (t) => {
   const f = fixture(t);

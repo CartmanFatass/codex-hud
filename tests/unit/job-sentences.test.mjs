@@ -6,12 +6,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { JobSentences, jobActivity } from '../../dist/collectors/job-sentences.js';
 import { DecisionTitles } from '../../dist/collectors/decision-titles.js';
-import { decisionRows, decisionTitle } from '../../dist/render/workboard-rows.js';
+import { keywordMarks } from '../../dist/utils/keyword-marks.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { SmallModel, modelHttpRequest } from '../../dist/collectors/small-model.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
-import { renderWorkCard, jobSentenceLine } from '../../dist/render/work-card.js';
+import { renderWorkCard, jobSentenceLine, paintSentence } from '../../dist/render/work-card.js';
 import { laneRows } from '../../dist/render/work-lanes.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -459,6 +459,7 @@ test('single line word cut, malformed/unmarked text, and job-local symlink refus
   f.service.configure(false, 'en');
   assert.match(stripAnsi(f.render(f.service.apply(f.board()))), /Factual progress/);
 });
+const decisionTitle = (d) => keywordMarks(d.modelTitle ?? d.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? d.title).plain;
 function decisionFixture(t, mode = 'on') {
   const f = fixture(t, mode);
   f.file = join(f.home, 'display/model-cache/decision-titles.json');
@@ -472,22 +473,15 @@ function decisionFixture(t, mode = 'on') {
   f.reply = 'Use the durable parser for all future input processing tasks';
   return f;
 }
-test('decision title: eight words, row and expanded block, dedupe, persisted reopen, new answer and Chinese', async (t) => {
+test('decision title collection: eight words, dedupe, persisted reopen, new answer and Chinese', async (t) => {
   const f = decisionFixture(t),
     factual = decisionTitle(f.board().decisions[0]);
   assert.equal(decisionTitle(f.service.apply(f.board()).decisions[0]), factual);
   let b = await f.update();
-  const title = 'Use the durable parser for all future input',
-    d = b.decisions[0],
-    state = initialMonitorState();
+  const title = 'Use the durable parser for all future input', d = b.decisions[0];
   assert.equal(decisionTitle(d), title);
-  const row = () =>
-    decisionRows(d, b.lanes[0], state, 160, f.now)
-      .map((r) => stripAnsi(r.text))
-      .join('\n');
-  assert.match(row(), /Use the durable parser for all future input/);
-  state.boardExpanded = new Set([targetKey({ kind: 'decision', laneId: d.laneId, decisionId: d.id })]);
-  assert.match(row(), /Use the durable parser for all future input[\s\S]*asked Which parser\?[\s\S]*instead of A/);
+  assert.equal(d.question, 'Which parser?');
+  assert.equal(d.instead, 'A');
   await f.update();
   f.service = new DecisionTitles(f.model, f.file);
   f.service.configure(true, 'en');
@@ -509,7 +503,7 @@ test('decision title: eight words, row and expanded block, dedupe, persisted reo
   f.service.configure(false, 'zh');
   assert.equal(decisionTitle(f.service.apply(f.board()).decisions[0]), 'fast parser');
 });
-test('decision JSON: localized detail in expanded Home and Inspector at 80/120, preserved facts and cache', async (t) => {
+test('decision JSON: localized detail stays collected and cached without a Home or Inspector decision target', async (t) => {
   const f = decisionFixture(t);
   const previous = setLanguage('zh');
   t.after(() => setLanguage(previous));
@@ -540,22 +534,11 @@ test('decision JSON: localized detail in expanded Home and Inspector at 80/120, 
   assert.deepEqual(Object.keys(JSON.parse(f.calls[0].messages[1].content.split('\n')[1])), ['question', 'answer']);
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
   const target = { kind: 'decision', laneId: d.laneId, decisionId: d.id };
-  for (const width of [80, 120]) {
-    const state = { ...initialMonitorState(), mainTab: 'home', homeTarget: target, boardExpanded: new Set([targetKey(target)]) };
-    const home = renderMonitor({ tree, workboard: board, state, width, height: 40, nowMs: f.now });
-    const inspected = handleMonitorInput(home.state, { type: 'key', key: 'inspect' }, { tree, frame: home }).state;
-    assert.deepEqual(inspected.boardInspect, target);
-    const inspector = renderMonitor({ tree, workboard: board, state: inspected, width, height: 40, nowMs: f.now });
-    for (const frame of [home, inspector]) {
-      const text = frame.lines.map(stripAnsi).join('\n');
-      for (const value of Object.values(localized)) assert.ok(text.includes(value), text);
-      assert.doesNotMatch(text, /Which parser|durable parser|fast parser|Preserve input/);
-      for (const line of frame.lines) assert.equal(visualLength(line), width);
-    }
-    if (process.env.PANEL_DUMPS && width === 80) {
-      const rows = decisionRows(d, board.lanes[0], state, width, f.now);
-      fs.writeFileSync(join(process.env.PANEL_DUMPS, 'decided-zh-80.txt'), rows.filter((r) => r.text).map((r) => stripAnsi(r.text)).join('\n') + '\n');
-    }
+  for (const panelLayout of ['classic', 'split']) {
+    const state = { ...initialMonitorState(), panelLayout, mainTab: 'home', homeTarget: target, boardExpanded: new Set([targetKey(target)]) };
+    const home = renderMonitor({ tree, workboard: board, state, width: 80, height: 40, nowMs: f.now });
+    assert.ok(!home.workboard.targets.has(targetKey(target)));
+    assert.doesNotMatch(home.lines.map(stripAnsi).join('\n'), /已替你决定|哪个解析器处理|保留输入/);
   }
   f.service = new DecisionTitles(f.model, f.file);
   f.service.configure(true, 'zh');
@@ -588,7 +571,7 @@ test('decision old title-only key gets exactly one versioned call', async (t) =>
   assert.equal(f.calls.length, 1);
   assert.equal(board.decisions[0].modelQuestion, 'Which parser?');
 });
-test('decision plain title keeps original detail in the Settings language view', async (t) => {
+test('decision plain title keeps original collected detail', async (t) => {
   const f = decisionFixture(t);
   const previous = setLanguage('zh');
   t.after(() => setLanguage(previous));
@@ -597,18 +580,8 @@ test('decision plain title keeps original detail in the Settings language view',
   const board = await f.update(), d = board.decisions[0];
   assert.equal(d.modelTitle, f.reply);
   for (const field of ['modelQuestion', 'modelAnswer', 'modelInstead', 'modelWhy']) assert.equal(d[field], undefined);
-  const target = { kind: 'decision', laneId: d.laneId, decisionId: d.id };
-  const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
-  for (const width of [80, 120])
-    for (const inspector of [false, true]) {
-      const state = { ...initialMonitorState(), boardExpanded: new Set([targetKey(target)]), boardInspect: inspector ? target : undefined };
-      const frame = renderMonitor({ tree, workboard: board, state, width, height: 40, nowMs: f.now });
-      const text = frame.lines.map(stripAnsi).join('\n');
-      assert.ok(text.includes(f.reply));
-      assert.match(text, /Which parser\?/);
-      assert.match(text, /B: durable parser/);
-      for (const line of frame.lines) assert.equal(visualLength(line), width);
-    }
+  assert.equal(d.question, 'Which parser?');
+  assert.equal(d.option, 'B: durable parser');
   assert.equal(f.calls.length, 1);
 });
 test('decision malformed JSON fields fall back to original free-text answer and do not invent detail', async (t) => {
@@ -621,18 +594,8 @@ test('decision malformed JSON fields fall back to original free-text answer and 
   const board = await f.update(), d = board.decisions[0];
   assert.equal(d.option, undefined, 'free text is not an explicit option');
   for (const field of ['modelQuestion', 'modelAnswer', 'modelInstead', 'modelWhy']) assert.equal(d[field], undefined);
-  const target = { kind: 'decision', laneId: d.laneId, decisionId: d.id };
-  const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
-  for (const width of [80, 120])
-    for (const inspector of [false, true]) {
-      const state = { ...initialMonitorState(), boardExpanded: new Set([targetKey(target)]), boardInspect: inspector ? target : undefined };
-      const frame = renderMonitor({ tree, workboard: board, state, width, height: 40, nowMs: f.now });
-      const text = frame.lines.map(stripAnsi).join('\n');
-      assert.match(text, /Keep both parsers available\./);
-      assert.match(text, /Which parser\?/);
-      assert.doesNotMatch(text, /不应显示的替代项/);
-      for (const line of frame.lines) assert.equal(visualLength(line), width);
-    }
+  assert.equal(d.title, 'Keep both parsers available.');
+  assert.equal(d.question, 'Which parser?');
   assert.equal(f.calls.length, 1);
 });
 test('decision already written in Settings language still uses the same call and text', async (t) => {
@@ -672,7 +635,7 @@ for (const language of ['en', 'zh']) {
     f.service.configure(true, language);
     f.reply = language === 'en' ? '«+Accept» the «!simpler report.md»' : '「+批准」使用「!更简单的report.md」。';
     let board = await f.update();
-    const paint = () => decisionRows(board.decisions[0], board.lanes[0], initialMonitorState(), 160, f.now).map((r) => r.text).join('\n');
+    const paint = () => paintSentence(board.decisions[0].modelTitle);
     assert.ok(paint().includes(theme.board.success(language === 'en' ? 'Accept' : '批准')));
     assert.ok(paint().includes(theme.board.identifier('report.md')));
     assert.doesNotMatch(stripAnsi(paint()), /[«»「」!+]/);
@@ -710,9 +673,7 @@ for (const mode of ['off', 'no-key'])
     assert.equal(f.calls.length, 0);
     assert.equal(decisionTitle(b.decisions[0]), before);
     assert.equal(b.decisions[0].modelQuestion, undefined);
-    const d = b.decisions[0], target = { kind: 'decision', laneId: d.laneId, decisionId: d.id };
-    const state = { ...initialMonitorState(), boardExpanded: new Set([targetKey(target)]) };
-    assert.match(decisionRows(d, b.lanes[0], state, 80, f.now).map((r) => stripAnsi(r.text)).join('\n'), /asked Which parser\?/);
+    assert.equal(b.decisions[0].question, 'Which parser?');
     assert.equal(f.calls.length, 0);
   });
 

@@ -69,7 +69,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.controlPresetNotice = undefined;
     const keepingProject = next.mainTab === 'control' || tab === 'control';
     next.mainTab = tab;
-    if (tab === 'home') next.trySelection = undefined;
+    if (tab === 'home' || next.trySelection && state.mainTab === 'home') next.trySelection = undefined;
     next.focus = 'agents';
     next.modes.agents = 'open';
     next.zoom = false;
@@ -368,10 +368,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         tryOnly();
         return result();
       }
-      const tried = (next.projectTry || next.projectLayout === 'board' || next.projectLayout === 'inbox') && tryInput(next, key, rows[at]);
+      const tried = (next.acceptance !== 'slice' || next.projectTry || next.projectLayout === 'board' || next.projectLayout === 'inbox') && tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
-    if (!control && classic && !projectPageOf(next) && !listed && next.projectLayout === 'inbox') {
+    if (!control && classic && !projectPageOf(next) && !listed && (next.acceptance !== 'slice' || next.projectLayout === 'inbox')) {
       const tried = tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
@@ -388,9 +388,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     if (!['help', 'settings', 'escape'].includes(key)) return result();
   }
+  const homeTry = boardFrame?.rows.find((r) => r.item === next.boardAnchor && r.tryTarget);
+  if (main && (homeTry || next.trySelection) && !(key === 'space' && !homeTry)) {
+    const tried = tryInput(next, key, homeTry);
+    if (tried) return tried;
+    if (key === 'open-session' && homeTry?.files) return result({ type: 'open-files', files: homeTry.files });
+  }
   const inspect = () => {
     const target = next.homeTarget;
-    if (!target || !boardFrame || next.boardAnchor) return;
+    if (!target || target.kind === 'decision' || !boardFrame || next.boardAnchor) return;
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
     next.boardInspect = target;
@@ -442,10 +448,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     if (!target.laneId.startsWith('thin-job:') || lane?.identity.kind !== 'invocation') return;
     // A job card with no question open opens its report, else its brief.
-    const evidence =
-      target.kind === 'decision'
-        ? lane.decisions.find((d) => d.id === target.decisionId)?.evidence[0]
-        : (worker?.work?.requestInfo?.evidence ?? worker?.evidence.at(-1));
+    const evidence = worker?.work?.requestInfo?.evidence ?? worker?.evidence.at(-1);
     if (!evidence || !/^j[0-9a-f]{16}$/.test(evidence.sourceId)) return;
     const file = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
     if (/^(report|brief)\.md$/.test(evidence.relativePath)) return { type: 'open-files', files: [file] };
@@ -472,8 +475,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // A ticket row opens the Tickets page where it was left: its lanes cross features, so no feature row is there to rest on.
     goProject('tickets');
   };
+  const taskStop = (item?: string) => item?.startsWith('project:fold:task:');
   // Cards expand in place; the compact progress block opens its Project destination.
   const activate = (target = selected()) => {
+    if (taskStop(next.boardAnchor)) {
+      const item = next.boardAnchor!;
+      goTab('project');
+      useProject(undefined);
+      goProject('progress', item);
+      next.projectFolded = new Set([...(next.projectFolded ?? []), item.slice('project:fold:'.length)]);
+      return;
+    }
     if (next.boardAnchor?.startsWith('home-progress:')) return openProgress(next.boardAnchor);
     if (next.boardAnchor) {
       toggle(next.boardAnchor);
@@ -486,7 +498,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.boardFolded = folded;
   };
   if (next.panelLayout === 'split' && main && frame?.panes.some((p) => p.id === 'preview')) {
-    const out = splitHomeInput(next, input, key, ctx, result, { toggle: (item) => toggle(item), openProgress });
+    const out = splitHomeInput(next, input, key, ctx, result, { toggle: (item) => {
+      if (/^project:fold:(task|ledger):/.test(item)) {
+        const id = item.slice('project:fold:'.length), folded = new Set(next.projectFolded);
+        if (!folded.delete(id)) folded.add(id);
+        next.projectFolded = folded;
+      } else toggle(item);
+    }, openProgress });
     if (out) return out;
   }
   if (input.type === 'mouse') {
@@ -523,6 +541,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const row = monitorRowAt(pane, input.x, input.y),
       item = control?.kind === 'board-pick' ? control.item : row?.item;
+    if (item && taskStop(item)) {
+      const again = next.boardAnchor === item;
+      next.boardAnchor = item;
+      if (again) activate();
+      return result();
+    }
     if (item?.startsWith('home-progress:')) {
       openProgress(item);
       return result();
@@ -584,7 +608,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const index =
       key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + step));
     const item = items[index];
-    if (item?.startsWith('home-progress:')) {
+    if (item?.startsWith('home-progress:') || taskStop(item)) {
       next.boardAnchor = item;
       next.boardRevealed = undefined;
       return result();

@@ -305,7 +305,7 @@ project directory, run `hud trust <dir>` yourself.
 ## Home
 
 Home shows needs-you questions, package lanes with compact job cards, native
-session lanes, then **Decided for you**. It observes files and never briefs or chains work; its only
+session lanes. It observes files and never briefs or chains work; its only
 actions on a job are the owner's three micro-actions (see [Keys](#keys)).
 Running jobs with unanswered questions need you; an unanswered question left on a
 finished job does not. A report is not proof of success, and display labels are not
@@ -331,14 +331,13 @@ Native agents and Project's STATE slice lookup keep their own scope.
 **Card lifetimes.** Settled HUD/native cards fold to one row after 5 minutes and
 hide after 15 by default; failed/stopped cards stay at least 30. Settings → Panel
 changes both. A hide time below fold time counts as fold time. Running/asking cards
-stay. `a` reveals hidden cards/decisions in place as muted one-row titles; Enter
+stay. `a` reveals hidden cards in place as muted one-row titles; Enter
 expands them. The job scan considers the newest 200 directories.
 
-**Decisions.** Answered QA pairs show question/answer, alternative and why; `≠`
-requires a recorded departure from an explicit default, not ambiguous free text.
-Only an explicit `One-way: true` pins a departure. Ordinary decisions hide after
-30 minutes, departures after two hours. A review verdict requires its recorded
-accept/changes-required line and settled output, not merely helper exit.
+Answered questions are still collected but have no Home block or dedicated panel view.
+The Inspector still lists job files, including answers and their default/departure marks.
+A review verdict requires its recorded accept/changes-required line and settled output,
+not merely helper exit.
 
 **Native agents on Home.** Claude/Codex main sessions get their own lanes, labeled
 `subagents` in Split. Children indent once; deeper descendants say `↳ parent`. A hidden parent never hides a live
@@ -362,9 +361,9 @@ with the job questions (the same items as the Project tab's count); `✓ Nothing
 shows only when both are zero. With waiting items, Enter or a click opens the Project hub on its
 Waiting block. The footer shows `✓ N done today` from 56 columns, `✓ N` below 56, and no count at zero.
 
-**Spare rows.** Cards/decisions get space first. Remaining rows show, top to bottom: STATE's
-waiting items (a row each, up to five, then `+N more`), the newest landed slices (three at 38–55
-columns, five wider; Home reads no commit dates, so later ledger rows come first), then at the
+**Spare rows.** Cards get space first. Remaining rows show, top to bottom: STATE's
+waiting items (a row each, up to five, then `+N more`), the newest landed work (three rows at 38–55
+columns, five wider; at `slice` Home uses ledger order), then at the
 bottom the progress block: STATE's Now summary (up to three wrapped rows), a six-state progress
 bar/legend and up to six open tickets per feature. The block counts the current milestone's
 slices exactly as the Project hub does; with no current milestone it counts the whole ledger and
@@ -381,7 +380,7 @@ what is happening, what landed, then where each page stands. Top to bottom the h
 - the project's name row (the panel's directory name; see Switching projects below) with the
   current milestone;
 - **Waiting for you**: STATE's waiting items, folding with Enter (an item ending `(waits on ID, feature/NN)` drops out by itself once those slices are accepted or dropped and those tickets done); the header says how many there are
-  and how many slices are still to try (`4 · 5 to try`: the ledger's slices in state `try`, whatever the milestone; the Progress row and the Projects list say the same number). An item whose text does not
+  and how much work is still to try (`4 · 5 to try`; the second number follows the Acceptance setting, across all milestones). An item whose text does not
   fit one row flows on under its first word, whole, into the hub's spare rows, top down (what the owner tries is
   never cut to a name); a panel too short for that cuts it to one row, before Latest or the page rows give way,
   except the item the cursor is on, which keeps its whole text. Enter or a
@@ -395,8 +394,8 @@ what is happening, what landed, then where each page stands. Top to bottom the h
   slice shows (`◉ role  title  age`). A slice's text goes on its row only when it fits whole.
   Worktrees with no ledger row are not work in flight: they are counted on the Working tree row.
   With nothing in flight it says `Nothing in progress`;
-- **Latest**: the newest landed slices (to try, accepted), newest first by the commit date the
-  ledger read already has (`◇ ID  text  to try 10h`; with the model on, a to-try slice's text is its brief's first sentence, cut with `…` to the room); three rows at 40 columns, five wider;
+- **Latest**: the newest landed work (to try or accepted), newest first by known commit date;
+  three rows at 40 columns, five wider;
 - one row per page with a one-line summary: **Progress** (to try, blocked, working: the milestone is already on the project name row, and the last facts drop first on a short row; the
   current milestone's bar under it), **Tickets** (done/total, working, blocked; absent when the
   project has no tickets), **Working tree** (worktrees with no ledger row, branch, changed, worktrees,
@@ -438,9 +437,18 @@ what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`)
   guessed and sits under its milestone. The date is the ledger row's last hash (7-40 hex) read
   through the safe Git policy, in the one batched `git log` the collector already runs.
 
-**To try only.** Enter or a click on the to-try count (`2 to try`, a stop of its own), or `t`, filters the
+**Acceptance.** Settings → Panel → **Acceptance** (`acceptance` in `hud-settings.json`) defaults to
+`task`. All pending `try` slices of a milestone share a row showing its name, slice count, and oldest
+known age. A `—` or empty milestone keeps each slice separate. The Waiting and Progress summaries count
+these tasks; the ledger progress bar and accepted totals still measure slices. Enter (or the Split preview)
+shows the member slices with their usual ledger text or stored briefs and steps. Space marks the whole
+row; `y` accepts and `n` flags it. A filter matching one member still acts on the complete task. The HTML
+board uses the same setting. Watch/MCP notices and brief generation are unchanged. Set `slice` for the
+previous per-slice display and controls described below.
+
+**To try only (Classic).** Enter or a click on the to-try count (`2 to try`, a stop of its own), or `t`, filters the
 page to what is still to try: the header `Only to try ── n` replaces everything below the crumb, then
-the ledger's slices in state `try` (never matched by their words, whatever the milestone) grouped by
+the acceptance rows. At `slice`, these are the ledger's slices in state `try` grouped by
 milestone, newest first: the newest is open (`◇ DATA-ONE  text  1d`), each older one
 a folded row (`▸ M3b  ◇ 1  19d`) that Enter opens. With the model on and a brief stored, a slice is one row: its id and its brief's first sentence (cut with `…`). Without a brief (model off, pending or failed) it shows its whole ledger text, wrapped under its id (a break falls at a space or after a `/`, `-`, `_` or `.`, never inside a word); a briefed row whose id leaves little room for its sentence (a long id) puts the sentence on its own line under the id; a panel
 too short for all of them keeps two rows for those slices the cursor is not on. Enter on a slice shows its milestone, commit and
@@ -655,7 +663,7 @@ rows; orders Progress as To try (every milestone, newest first), Blocked, Workin
 groups the Projects list into Needs you, Running and Quiet (one row per quiet project); and keeps Timeline's Tickets.
 Enter on an Inbox role alert opens that role on Control; `o` still opens its file.
 
-In Classic's to-try view and on Split's to-try rows, Space toggles a mark (`▣`, or `*` with text icons).
+On a to-try task row, or on a slice row in the to-try view, Space toggles a mark (`▣`, or `*` with text icons).
 `y` accepts and `n` flags the marked rows, or the current row if nothing is marked. All affected slices go into
 one record in `$HUD_HOME/tries.jsonl` and produce one line in `hud watch` and MCP `changes`. Recording a result
 or leaving the view clears the Space marks.
@@ -728,16 +736,16 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then `pi-role-reap <dir>` runs and the panel reads again); any other key cancels |
-| Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
+| Enter | Expand/collapse card, question or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
 | `v` | Inspector |
-| `a` | Show/hide older jobs and decisions |
+| `a` | Show/hide older job cards |
 | `>` / `<` | Home: next / previous card that needs you (asking, failed or stalled) |
-| Space | Toggle a mark on the to-try row under the cursor; on Home, open Inspector |
+| Space | Toggle a mark on the to-try row under the cursor; elsewhere on Home, open Inspector |
 | `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked (`n` means nothing else on any page) |
 | `b` | Toggle model text (also in Settings → Models). The top row shows `models off` when model text is off and the label fits; click it to turn model text back on |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
-| `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`; a decision's package and title); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
+| `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Control or EXP, Esc does nothing |
 | `q` | Close panel |
@@ -754,26 +762,26 @@ The saved setting `panelLayout` (`classic` by default; Settings → Panel → La
 Home, Project and Control become **a list above and a preview of the cursor row below**
 (`docs/design/panel-v8/`, option 2). The preview uses Classic's cards and sentences; a question slab doesn't repeat the lane name from its preview rule.
 
-- **Home.** One row per package lane and per block (Waiting for you, Decided for you,
+- **Home.** One row per package lane and per block (Waiting for you,
   Progress), always the same height, whatever runs: mark, name, phase, then the state
   of the lane's most important job. A question or a failure keeps a reason row, so what
   needs you is always on screen; the cursor starts on the first such row. Below the
   list the preview shows that row: the question's slab and the lane's cards, the
-  waiting items with the newest landed slices, the decisions, or the progress block.
+  waiting items with the newest landed work, or the progress block.
   On a short panel blank rows go first, then the preview from its bottom; the list
   never gives way (a very short panel scrolls it with its cursor). A lane at work that
   the cursor is not on shows, in the row's free cells, the marked keywords of its
   model sentence (else its reason or the phases so far); when the width leaves under
   six cells, nothing.
 - **Project hub.** Waiting for you and the pages are the list; the preview of the
-  cursor row is that page's substance (Progress: summary, bar, slices to try, Now,
+  cursor row is that page's substance (Progress: summary, bar, work to try, Now,
   latest accepted). Rows in those two state groups keep their marks and ages without repeating the state word. Enter on a page opens it, as before. A waiting item shows its whole text, wrapped, and a slice to try its
   brief's first sentence (or, without a brief, its whole text wrapped); the preview scrolls with PgUp/PgDn when it is long.
 - **Progress.** One ledger list (working, blocked, to try, todo; accepted, Next and
   History are one row each) with the cursor slice explained underneath: its whole ledger
   text and state (on the preview rule). On the list row, the mark carries the state and the ledger text is cut at a word boundary. For a slice to try with a stored brief, the list still shows its first sentence instead; the preview shows the brief and acceptance steps with the ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
-  the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
+  the preview. Without Space marks, `y` / `n` on the hub preview act on the next row to try.
 - **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the chain and opens the place sheet on the next Enter. Drafts and discard confirmation stay in the preview. On a role row, `c` / `C` switch presets and `p` opens the preset list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
 - **Tickets, Working tree, Docs.** A row each, the ticket's checklist and latest
   comment or the fact's whole text underneath; Enter opens the file.
@@ -815,7 +823,7 @@ or unreadable catalog shows a muted notice, an empty one another.
 
 ### Inspector
 
-The selected card/question/decision expands above facts: role/harness, model/effort,
+The selected card/question expands above facts: role/harness, model/effort,
 package, state/phase and observed local times. The Inspector and expanded running cards in both layouts show
 one muted Milestone line when the worker has logged one, and an Activity row under it: ten one-minute
 buckets (`▁▂▃▄▅▆▇█`, `..--==##` with text icons) of how often the panel saw the running worker write (session, status,
@@ -909,7 +917,7 @@ make no new request. Sentences have at most three pending handles on the shared
 single-flight text queue; Decision labels have a separate single-flight path.
 Titles use effort none, sentences low, Home briefs high; no model-tier/effort selector.
 Wrong-language text is rejected. Keyword marks `«keyword»`, `«+approve»`, `«-reject»`,
-`«!opinion»` (and short Chinese `「…」`) share painting across cards/decisions/Inspector;
+`«!opinion»` (and short Chinese `「…」`) share painting across cards and the Inspector;
 files/paths retain identifier ink. No recap, session-title or change-summary generator runs.
 
 Configure text through the settings file, not a connection editor:

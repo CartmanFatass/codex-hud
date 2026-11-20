@@ -342,11 +342,11 @@ await runLivePage();
   assert.ok(collects().slice(before).every((c) => c.cwd === other && c.shown === true), 'only the shown project is collected');
   const leave = mark();
   child.stdin.write('\x1b[D'); // ← is Home again
-  await until(() => collects().slice(leave).some((c) => c.cwd === own && c.shown === 'home'), 'Home again');
+  await until(() => collects().slice(leave).some((c) => c.cwd === own && c.shown === 'home-tasks'), 'Home again');
   const home = mark();
   await new Promise((r) => setTimeout(r, 400));
   assert.ok(mark() > home);
-  assert.ok(collects().slice(home).every((c) => c.cwd === own && c.shown === 'home'), 'Home reads its own project again, never the other');
+  assert.ok(collects().slice(home).every((c) => c.cwd === own && c.shown === 'home-tasks'), 'Home reads its own project again, never the other');
 });
 
 // A ledger across two milestones: the current one (0.1.3) and an older one (M3b), each with a slice to try, and a todo slice whose text says "to try".

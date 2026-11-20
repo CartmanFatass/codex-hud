@@ -111,6 +111,7 @@ export class ProjectCollector {
   private last?: ProjectSnapshot['last'];
   private worktrees: WorktreeInfo[] = [];
   private commitAt = new Map<string, number>();
+  private homeTryDates?: { key: string; at: number; dates: Map<string, number> };
   private diffs = new DiffStatCollector();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {}
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
@@ -299,7 +300,26 @@ export class ProjectCollector {
     for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
     return cwds;
   }
-  async collect(shown: boolean | 'home' | 'export' | 'control', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
+  private async commitDates(hashes: string[]): Promise<Map<string, number>> {
+    const dates = new Map<string, number>();
+    if (!hashes.length) return dates;
+    try {
+      const log = await worktreeGit(this.cwd, [
+        'log', '--no-walk', '--ignore-missing', '--no-show-signature', '--format=%h%x00%ct', ...hashes, '--',
+      ]);
+      const resolved = log.trim().split('\n').filter(Boolean).map((line) => {
+        const [h, ct] = line.split('\0');
+        return [h?.toLowerCase() ?? '', Number(ct) * 1000] as const;
+      }).filter(([h, ts]) => h && Number.isFinite(ts));
+      for (const c of hashes) {
+        const hit = resolved.find(([h]) => h === c || h.startsWith(c) || c.startsWith(h));
+        if (hit) dates.set(c, hit[1]);
+      }
+    } catch { /* Unknown or unavailable commits: no at. */ }
+    return dates;
+  }
+
+  async collect(shown: boolean | 'home' | 'home-tasks' | 'export' | 'control', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
@@ -338,7 +358,18 @@ export class ProjectCollector {
     out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
     out.ladder.current = milestone?.split(/\s+/)[0];
-    if (shown === 'home') {
+    if (shown === 'home' || shown === 'home-tasks') {
+      if (shown === 'home-tasks') {
+        const tries = out.ledger.filter((r) => r.state === 'try'), hashes = [...new Set(tries.flatMap((r) => r.commit ? [r.commit.toLowerCase()] : []))];
+        const key = hashes.join(' ');
+        if (!this.homeTryDates || this.homeTryDates.key !== key || now - this.homeTryDates.at >= 5000) {
+          this.homeTryDates = { key, at: now, dates: await this.commitDates(hashes) };
+        }
+        for (const row of tries) {
+          const at = row.commit ? this.homeTryDates.dates.get(row.commit.toLowerCase()) : undefined;
+          if (at !== undefined) row.at = at;
+        }
+      }
       for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
       return out;
     }
@@ -376,7 +407,6 @@ export class ProjectCollector {
       this.git = undefined;
       this.last = undefined;
       this.worktrees = [];
-      this.commitAt.clear();
       try {
         const filters = await neutralizeFilters(worktreeGit, this.cwd);
         this.git = parseWorktreeStatus(await worktreeGit(this.cwd, [
@@ -389,21 +419,7 @@ export class ProjectCollector {
         if (hash && at && Number.isFinite(Number(at))) this.last = { text: `${hash} ${subject}`, at: Number(at) * 1000 };
       } catch { /* No repo, unborn HEAD or failed probe: unknown, not zero. */ }
       const hashes = [...new Set(out.ledger.map((r) => r.commit?.toLowerCase()).filter((c): c is string => !!c))];
-      if (hashes.length) {
-        try {
-          const log = await worktreeGit(this.cwd, [
-            'log', '--no-walk', '--ignore-missing', '--no-show-signature', '--format=%h%x00%ct', ...hashes, '--',
-          ]);
-          const resolved = log.trim().split('\n').filter(Boolean).map((line) => {
-            const [h, ct] = line.split('\0');
-            return [h?.toLowerCase() ?? '', Number(ct) * 1000] as const;
-          }).filter(([h, ts]) => h && Number.isFinite(ts));
-          for (const c of hashes) {
-            const hit = resolved.find(([h]) => h === c || h.startsWith(c) || c.startsWith(h));
-            if (hit) this.commitAt.set(c, hit[1]);
-          }
-        } catch { /* Unknown or unavailable commits: no at. */ }
-      }
+      this.commitAt = await this.commitDates(hashes);
     }
     for (const row of out.ledger) {
       const at = row.commit ? this.commitAt.get(row.commit.toLowerCase()) : undefined;

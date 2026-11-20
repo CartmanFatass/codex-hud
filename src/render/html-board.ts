@@ -4,6 +4,8 @@
  * Content-Security-Policy allows inline style and nothing else, and every dynamic string is escaped once, here.
  */
 import { SETTLED_JOB_STATES, SLICE_STATES, type LedgerSlice, type ProjectSnapshot, type ProjectTicket, type SliceState, type TicketFeature } from '../collectors/project-board.js';
+import { acceptanceTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
+import type { HudSettings } from '../settings.js';
 import type { DiffStatSummary } from '../collectors/diff-stat.js';
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { age } from './monitor-labels.js';
@@ -17,6 +19,7 @@ export interface BoardInput {
   reviewText?: string;
   generatedAt: number;
   lang?: Language;
+  acceptance?: HudSettings['acceptance'];
 }
 
 const ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -131,6 +134,12 @@ function tryCard(slice: LedgerSlice, project: ProjectSnapshot, now: number): str
   return `<article class="card try"><header><span class="id">${e(slice.id)}</span>${chip('try', slice.milestone)}<span class="meta">${slice.commit ? `<code>${e(slice.commit)}</code> · ` : ''}${e(ago(slice.at, now))}</span></header>${text}${diffBlock(slice.diff)}${tickets ? `<h3>${e(t('Tickets'))}</h3>${tickets}` : ''}</article>`;
 }
 
+function taskCard(task: AcceptanceTask, project: ProjectSnapshot, now: number): string {
+  const name = task.key.startsWith('slice:') ? `— ${task.slices[0].id}` : task.milestone, n = task.slices.length;
+  const summary = `<span class="id">${e(name)}</span> ${chip('try', t(n === 1 ? '{n} slice' : '{n} slices', { n }))} <span class="meta">${e(ago(task.oldest, now))}</span>`;
+  return `<article class="card try"><details><summary>${summary}</summary>${task.slices.map((r) => tryCard(r, project, now)).join('')}</details></article>`;
+}
+
 const live = (w: OwnerWorker) => w.settledAt === null && !SETTLED_JOB_STATES.has(w.state) && w.state !== 'completed';
 
 export function renderHtmlBoard(input: BoardInput): string {
@@ -138,8 +147,11 @@ export function renderHtmlBoard(input: BoardInput): string {
   try { return page(input); } finally { setLanguage(previous); }
 }
 
-function page({ projectName, root, project, workboard, reviewText, generatedAt: now }: BoardInput): string {
+function page({ projectName, root, project, workboard, reviewText, acceptance, generatedAt: now }: BoardInput): string {
   const lang = language(), git = project.git;
+  const tries = project.ledger.filter((r) => r.state === 'try').reverse().sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
+  const tasks = acceptance === 'slice' ? undefined : acceptanceTasks(tries), pending = tasks?.length ?? tries.length;
+  const displayCount = (s: SliceState) => s === 'try' && tasks ? pending : project.counts[s];
   const total = SLICE_STATES.filter((s) => s !== 'dropped').reduce((n, s) => n + project.counts[s], 0);
   const header = `<header><div class="top"><span class="eyebrow">${e(t('Review board'))}</span><div class="theme"><span>${e(t('Theme'))}</span><label for="t-auto">${e(t('Auto'))}</label><label for="t-dark">${e(t('Dark'))}</label><label for="t-light">${e(t('Light'))}</label></div></div>
 <h1>${e(projectName)}</h1><p class="root">${e(root)}</p>
@@ -151,8 +163,8 @@ function page({ projectName, root, project, workboard, reviewText, generatedAt: 
     chip('plain', `${t('Generated')} ${new Date(now).toISOString().slice(0, 16).replace('T', ' ')} UTC`),
   ].join('')}</div>
 ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
-<div class="bar" role="img" aria-label="${e(STATES.map(([s, l]) => `${project.counts[s]} ${t(l)}`).join(', '))}">${STATES.filter(([s]) => project.counts[s] > 0).map(([s, l]) => `<i title="${e(`${project.counts[s]} ${t(l)}`)}" style="flex:${count(project.counts[s])};background:var(--${s === 'try' ? 'trying' : s})"></i>`).join('')}</div>
-<ul class="legend">${STATES.map(([s, l]) => `<li><i style="background:var(--${s === 'try' ? 'trying' : s})"></i><b>${count(project.counts[s])}</b> ${e(t(l))}</li>`).join('')}<li>${count(total)} ${e(t('slices'))}</li></ul></header>`;
+<div class="bar" role="img" aria-label="${e(STATES.map(([s, l]) => `${displayCount(s)} ${t(l)}`).join(', '))}">${STATES.filter(([s]) => project.counts[s] > 0).map(([s, l]) => `<i title="${e(`${displayCount(s)} ${t(l)}`)}" style="flex:${count(project.counts[s])};background:var(--${s === 'try' ? 'trying' : s})"></i>`).join('')}</div>
+<ul class="legend">${STATES.map(([s, l]) => `<li><i style="background:var(--${s === 'try' ? 'trying' : s})"></i><b>${count(displayCount(s))}</b> ${e(t(l))}</li>`).join('')}<li>${count(total)} ${e(t('slices'))}</li></ul></header>`;
 
   const activeIds = new Set(project.active.map((job) => job.jobId));
   const workers = (workboard?.workers ?? []).filter((w) => live(w) && activeIds.has(w.evidence[0]?.sourceId));
@@ -165,7 +177,6 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
     }),
   ];
 
-  const tries = project.ledger.filter((r) => r.state === 'try').reverse().sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
   const slices = project.slices.filter((s) => s.ledgerState === 'working' || s.ledgerState === 'blocked');
   const flight = [
     ...slices.map((s) => {
@@ -179,7 +190,7 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
   const features = project.tickets.filter((f) => f.tickets.length);
   const review = project.docs.find((d) => d.label === 'review');
   const lines = (reviewText ?? '').slice(0, 65536).split(/\r?\n/).map((l) => (/^#{1,6}\s/.test(l) ? `<b>${e(l)}</b>` : e(l))).join('\n');
-  const nav = [['needs', 'Needs you', needs.length], ['try', 'To try', tries.length], ['flight', 'In flight', flight.length], ['tickets', 'Tickets', features.length], ['review', 'Review', reviewText ? 1 : 0]] as const;
+  const nav = [['needs', 'Needs you', needs.length], ['try', 'To try', pending], ['flight', 'In flight', flight.length], ['tickets', 'Tickets', features.length], ['review', 'Review', reviewText ? 1 : 0]] as const;
 
   return `<!doctype html>
 <html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -190,7 +201,7 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
 <div class="page"><div class="wrap">${header}
 <nav class="badges" style="margin-top:18px">${nav.filter(([, , n]) => n).map(([id, label, n]) => `<a class="chip plain" href="#${id}">${e(t(label))} ${n}</a>`).join('')}</nav>
 ${needs.length ? section('needs', t('Needs you'), needs.length, `<div class="grid">${needs.join('')}</div>`) : ''}
-${tries.length ? section('try', t('To try'), tries.length, `<div class="grid">${tries.map((r) => tryCard(r, project, now)).join('')}</div>`) : ''}
+${pending ? section('try', t('To try'), pending, `<div class="grid">${(tasks ? tasks.map((task) => taskCard(task, project, now)) : tries.map((r) => tryCard(r, project, now))).join('')}</div>`) : ''}
 ${flight.length ? section('flight', t('In flight'), flight.length, `<div class="grid s">${flight.join('')}</div>`) : ''}
 ${features.length ? section('tickets', t('Tickets'), features.length, `<div class="card">${features.map((f) => feature(f, undefined, 12)).join('')}</div>`) : ''}
 ${reviewText ? section('review', t('Latest milestone review'), undefined, `${review ? `<p class="root">${e(review.value)}</p>` : ''}<div class="review">${lines}</div>`) : ''}

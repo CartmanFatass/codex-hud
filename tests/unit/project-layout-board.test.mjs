@@ -102,7 +102,7 @@ test('Board leaves Home and Tickets unchanged', async (t) => {
 
 test('Board hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-word cut, counts equal Timeline, +N on full milestone', async (t) => {
   const { busy } = await fixture(t);
-  const tries = tryCount(busy.control);
+  const tries = tryCount(busy.control, 'slice');
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
       const state = layout === 'split' ? split({ mainTab: 'project', projectLayout: 'board' }) : onPage(undefined, { projectLayout: 'board' });
@@ -145,7 +145,7 @@ test('Board Progress at 40 cols EN and ZH (Split and Classic): cell order, brief
       ? { ...r, brief: { brief: 'Board layout added beside Timeline. Older milestones stay compact.', steps: ['Open Project tab', 'Check 40 columns'] } }
       : r)),
   };
-  const tries = tryCount(briefed);
+  const tries = tryCount(briefed, 'slice');
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
       const state = layout === 'split' ? split({ mainTab: 'project', projectPage: 'progress', projectLayout: 'board' }) : onPage('progress', { projectLayout: 'board' });

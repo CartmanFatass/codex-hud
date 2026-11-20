@@ -10,7 +10,7 @@ import { ticketFixture } from './project-tickets.mjs';
 import { NOW, TREE, plain, onControl, richProgress, richControl } from './project-page.mjs';
 
 export const split = (extra) => ({ ...initialMonitorState(), panelLayout: 'split', ...extra });
-/** `idle`: every job has settled and nothing asks, so Home's list is what finished plus Waiting, Decided and Progress. */
+/** `idle`: every job has settled and nothing asks, so Home's list is what finished plus Waiting and Progress. */
 export async function splitFixture(root, { idle = false } = {}) {
   const f = await ticketFixture(root);
   const job = (n, role, title, status, age, files = {}) => {
@@ -38,7 +38,7 @@ export async function splitFixture(root, { idle = false } = {}) {
   const rich = { ...richProgress(data), tickets: data.tickets, waiting: data.waiting };
   const render = (width, lang = 'en', height = 40, state = split(), snapshot = data, { icons = 'unicode', ...extras } = {}) => {
     const display = setDisplayConfig({ theme: 'none', icons }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state: { acceptance: 'slice', ...state }, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   return { ...f, board, data, rich, control: richControl(rich), render };

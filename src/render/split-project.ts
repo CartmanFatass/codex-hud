@@ -10,7 +10,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, cutTicketTitle, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
-  ledgerText, ledgerFoldItem, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, tryDetailRows, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
+  ledgerText, ledgerFoldItem, newestTasks, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, tryDetailRows, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark, taskDetailRows, taskItem, taskLabel, taskRow, taskRows,
   type ProjectPage } from './project-view.js';
 import { glyph, placeRows, placeTarget, radarFacts, roleToday } from './control-view.js';
 import { boardHubPart, boardProgressPart } from './board-project.js';
@@ -40,6 +40,14 @@ const tryTotals = (n: number) => (n ? t('{n} to try', { n }) : '');
 
 /** To-try rows for a Split hub preview (shared by Timeline and Board): `Space`/`y`/`n` act on `act` or the focused row. */
 export function hubTryRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>) {
+  if (state.acceptance !== 'slice') {
+    const tasks = newestTasks(data), pending = (task: typeof tasks[number]) => task.slices.some((r) => !marks?.get(r.id));
+    const todo = tasks.filter(pending), done = tasks.filter((task) => !pending(task));
+    return {
+      rows: tasks.length ? [boardRow(''), plain(muted(t('To try')), width), ...[...todo, ...done].flatMap((task) => taskRows(task, data, state, width, now, marks))] : [],
+      act: todo.length ? taskItem(todo[0]) : undefined,
+    };
+  }
   const queue = landedNewest(data).filter(({ r }) => r.state === 'try');
   const todo = queue.filter(({ r }) => !marks?.get(r.id)), done = queue.filter(({ r }) => marks?.get(r.id));
   const tryRows = ({ r }: { r: LedgerSlice }, act: boolean): MonitorRow[] => {
@@ -61,14 +69,14 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
   const name: MonitorRow = { ...section(theme.board.title(monitorText(input.projectName ?? '') || t('Project')), width,
     [data.ladder.current && theme.board.active(monitorText(data.ladder.current)), many && `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}`].filter(Boolean).join(' ')),
   ...(many ? { item: 'project:switch' } : {}) };
-  const waitFacts = [data.waiting.length, tryTotals(tryCount(data))].filter(Boolean).join(' · ');
+  const waitFacts = [data.waiting.length, tryTotals(tryCount(data, state.acceptance))].filter(Boolean).join(' · ');
   const waiting: MonitorRow[] = data.waiting.length ? [{ item: 'project:fold:waiting', text: pair(`${theme.board.attention('?')} ${theme.board.title(t('Waiting for you'))}`, muted(waitFacts), width) }] : [];
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);
   const mark_ = (page: ProjectPage) => page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
     : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
     : page === 'tree' || page === 'docs' ? ' ' : muted(mark('○', 'o'));
   const pages = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length).map((page): MonitorRow => {
-    const facts = pageSummary(page, data, now, false), room = width - 2 - 14 - 1;
+    const facts = pageSummary(page, data, now, false, state.acceptance), room = width - 2 - 14 - 1;
     while (facts.length > 1 && visualLength(facts.join(' · ')) > room) facts.pop();
     return { item: `project:page:${page}`, text: fit(`${mark_(page)} ${theme.board.title(fit(t(PAGE_WORD[page]), 14))}${facts.join(' · ') || mark('–', '-')}`, width) };
   });
@@ -98,6 +106,13 @@ const TRY_HINTS = [...TRY_ACTIONS, ...PROJECT_FILE_HINTS];
 const SLICE_MARK: Partial<Record<SliceState, () => string>> = { working: () => sliceInk('working')(mark('◐', '@')), blocked: () => sliceInk('blocked')(mark('◆', '!')), todo: () => muted(mark('○', '-')) };
 /** Preview for a slice, Next, or unsliced job on Split Progress (shared by Timeline and Board). */
 export function slicePreview(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number, cursor?: string): Shown {
+  if (cursor?.startsWith('project:fold:task:')) {
+    const task = newestTasks(data).find((group) => taskItem(group) === cursor);
+    if (task) {
+      const rows = taskDetailRows(task, state, width, now, input.tryMarks);
+      return { label: taskLabel(task), rows, hints: rows.some((r) => r.item) ? PROGRESS_FOLD_HINTS : [...TRY_ACTIONS, 'Esc back', 'o file'] };
+    }
+  }
   const id = /^project:slice:(.+)$/.exec(cursor ?? '')?.[1], r = data.ledger.find((x) => x.id === id);
   if (r) {
     const s = data.slices.find((x) => x.label === r.id), worker = board.workers.find((w) => w.evidence[0]?.sourceId === s?.jobId);
@@ -124,22 +139,29 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
   const label = cur.whole || !data.ladder.current ? '' : ` ${monitorText(data.ladder.current)} `, frac = acceptedText(cur.counts, cur.rows.length);
   if (cur.rows.length) list.push(plain(`  ${label ? theme.board.title(label) + ' ' : ''}${barText({ counts: cur.counts }, Math.max(6, Math.min(24, width - 3 - visualLength(label) - visualLength(frac) - 2)))} ${muted(frac)}`, width), boardRow(''));
   else if (!path) list.push(plain('  ' + muted(t('no STATE.md')), width));
-  // The bar counts the current milestone; every slice still to try gets a selectable preview.
+  // The bar is slice-based; the acceptance list is task-based unless the owner selected slice mode.
+  const tasks = state.acceptance === 'slice' ? undefined : newestTasks(data);
   const slices = cur.whole || state.filterQuery ? data.ledger : [...cur.rows, ...data.ledger.filter((r) => r.state === 'try' && r.milestone !== data.ladder.current)];
   const ids = slices.map((r) => visualLength(monitorText(r.id))), col = Math.max(8, Math.min(14, Math.max(0, ...ids)));
   const info = (r: LedgerSlice) => data.slices.find((s) => s.label === r.id), workerOf = (r: LedgerSlice) => board.workers.find((w) => w.evidence[0]?.sourceId === info(r)?.jobId);
-  for (const st of ['working', 'blocked', 'try', 'todo'] as const) for (const r of slices.filter((x) => x.state === st)) {
-    const s = info(r), role = workerOf(r)?.role ?? s?.role ?? '';
-    const right = s?.drift ? theme.board.attention(t(s.drift)) : st === 'working' && s?.jobId ? `${role ? roleInk(role)(monitorText(role)) + ' ' : ''}${muted(minuteAge(s.at ?? null, now))}` : st === 'try' ? muted(sinceText(r.at, now)) : '';
-    const item = `project:slice:${r.id}`;
-    // Keep a stored brief's first sentence; otherwise give the room to the ledger text.
-    const head = `${trySelectionMark(state, item)}${st === 'try' ? landedMark(r, marks?.get(r.id)) : SLICE_MARK[st]!()} ${fit(monitorText(r.id), col)}`, sentence = trySentence(r);
-    for (const text of sentence ? briefStack(head, sentence, right, width, 2) : [sliceLedgerLine(r, head, right, width)])
-      list.push({ item, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text });
+  for (const st of ['working', 'blocked', 'try', 'todo'] as const) {
+    if (st === 'try' && tasks) {
+      list.push(...tasks.map((task) => taskRow(task, data, state, width, now, marks, { indent: 0 })));
+      continue;
+    }
+    for (const r of slices.filter((x) => x.state === st)) {
+      const s = info(r), role = workerOf(r)?.role ?? s?.role ?? '';
+      const right = s?.drift ? theme.board.attention(t(s.drift)) : st === 'working' && s?.jobId ? `${role ? roleInk(role)(monitorText(role)) + ' ' : ''}${muted(minuteAge(s.at ?? null, now))}` : st === 'try' ? muted(sinceText(r.at, now)) : '';
+      const item = `project:slice:${r.id}`;
+      // Keep a stored brief's first sentence; otherwise give the room to the ledger text.
+      const head = `${trySelectionMark(state, item)}${st === 'try' ? landedMark(r, marks?.get(r.id)) : SLICE_MARK[st]!()} ${fit(monitorText(r.id), col)}`, sentence = trySentence(r);
+      for (const text of sentence ? briefStack(head, sentence, right, width, 2) : [sliceLedgerLine(r, head, right, width)])
+        list.push({ item, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text });
+    }
   }
   for (const job of unsliced(data)) list.push({ item: `project:job:${job.jobId}`, ...(job.path ? { files: [job.path] } : {}),
     text: pair(`${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))} ${muted(monitorText(job.title ?? job.package ?? ''))}`, job.asking ? theme.board.attention(`${t('asking')} ?`) : muted(minuteAge(job.at ?? null, now)), width) });
-  const landed = landedNewest(data), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY);
+  const landed = landedNewest(data).filter(({ r }) => !tasks || r.state === 'accepted'), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY);
   const block = (item: string, left: string, right: string): MonitorRow => ({ item, ...files, text: pair(left, muted(right), width) });
   if (cur.counts.accepted) list.push(block('split:accepted', `${sliceInk('accepted')(mark('✓', '+'))} ${muted(t('{n} accepted', { n: cur.counts.accepted }))}  ${muted(mark('▸', '>'))}`, ''));
   if (data.next.length) list.push(block('split:next', `${muted(mark('→', '>'))} ${t('Next')}`, String(data.next.length)));

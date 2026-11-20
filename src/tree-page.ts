@@ -680,8 +680,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
       : state.mainTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
     const page = projectPageOf(state);
-    const showTries = state.panelLayout === 'split' || state.projectLayout === 'board' || state.projectLayout === 'inbox' ? !page || page === 'progress' : !!state.projectTry;
-    const tryMarks = projectShown(state, !!settingsPage) && !listing(state) && showTries && shown.snapshot
+    const taskMode = state.acceptance !== 'slice';
+    const showTries = taskMode || state.panelLayout === 'split' || state.projectLayout === 'board' || state.projectLayout === 'inbox' ? !page || page === 'progress' : !!state.projectTry;
+    const homeTries = taskMode && state.mainTab === 'home' && state.focus === 'agents' && !state.help && !settingsPage;
+    const tryMarks = (homeTries || projectShown(state, !!settingsPage) && !listing(state) && showTries) && shown.snapshot
       ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;
     const output = time('render', () => {
       let lines: string[];
@@ -1032,10 +1034,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       treeBuiltFor = rootId;
       applyAgentContext();
       state = reconcileMonitor(state, tree, Date.now(), delegation);
-      const visibleDecisions = new Set(
-        (frame?.panes ?? []).flatMap((p) => p.rows.slice(p.offset, p.offset + (p.visible ?? 0)).map((r) => r.item!))
-      );
-      decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, visibleDecisions);
+      decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home);
       decisionLabels.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       homeRecommendation.update(displayBoard());
@@ -1057,7 +1056,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       const root = shown || control ? shownRoot() : HUD_CWD_REAL;
       const visit = visits.visit(root);
       const projectFacts = await visit.collector.collect(
-        control ? 'control' : shown ? full : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
+        control ? 'control' : shown ? full : state.focus === 'agents' && !state.help && !settingsPage
+          ? state.acceptance === 'slice' ? 'home' : 'home-tasks'
+          : false,
         jobPipeline.workboard(tree, panelDelegation),
         Date.now()
       );
@@ -1168,7 +1169,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const page = settingsPage;
     if (!page) return false;
     try {
-      const previousWidth = settings.treeWidth, previousLayout = settings.panelLayout, previousProjectLayout = settings.projectLayout;
+      const previousWidth = settings.treeWidth, previousLayout = settings.panelLayout, previousProjectLayout = settings.projectLayout, previousAcceptance = settings.acceptance;
       settings = saveSettings(page.draft);
       if (settings.treeWidth !== previousWidth) widthOverride = undefined;
       settingsError = '';
@@ -1186,7 +1187,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         scroll: { ...state.scroll, agents: 0 },
         // The rows of the other layout are not these: the cursors and the to-try filter start over.
         ...(settings.panelLayout !== previousLayout ? { boardAnchor: undefined, homeTarget: undefined, projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, homeScroll: 0 } : {}),
-        ...(settings.projectLayout !== previousProjectLayout ? { projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, splitFocus: undefined, splitList: undefined, splitSub: undefined, splitScroll: 0, splitListScroll: 0, splitFor: undefined } : {}),
+        ...(settings.projectLayout !== previousProjectLayout || settings.acceptance !== previousAcceptance ? { projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, splitFocus: undefined, splitList: undefined, splitSub: undefined, splitScroll: 0, splitListScroll: 0, splitFor: undefined } : {}),
       };
       if (!settings.experiments) expData = undefined;
       worktrees = null;
@@ -1221,7 +1222,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   // `w`: one full collection of the shown project, off the paint path; the file opens in a browser when an opener exists.
   const exportBoard = () => {
     const root = state.mainTab === 'project' || state.mainTab === 'control' ? shownRoot() : HUD_CWD_REAL;
-    void writeBoard({ cwd: root, hudHome: jobPipeline.home, env: process.env, now: Date.now(), lang: language(), workboard: displayBoard(), briefs: tryBriefs })
+    void writeBoard({ cwd: root, hudHome: jobPipeline.home, env: process.env, now: Date.now(), lang: language(), acceptance: settings.acceptance, workboard: displayBoard(), briefs: tryBriefs })
       .then((file) => {
         openBoard(file, process.env);
         boardNotice = t('Board saved: {name}', { name: path.basename(file) });
@@ -1342,9 +1343,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           render();
         });
       }
-      if (result.action?.type === 'record-try' && visits.snapshot(shownRoot())) {
+      const tryRoot = state.mainTab === 'home' ? HUD_CWD_REAL : shownRoot();
+      if (result.action?.type === 'record-try' && visits.snapshot(tryRoot) &&
+          (state.acceptance === 'slice' || frame?.projectDisplayRoot === tryRoot)) {
         try {
-          appendTry(jobPipeline.home, shownRoot(), result.action.action, result.action.target);
+          appendTry(jobPipeline.home, tryRoot, result.action.action, result.action.target);
           roleNotice = '';
         } catch { roleNotice = t('Could not record try'); }
         error = roleNotice || settingsError || null;

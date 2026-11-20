@@ -54,9 +54,9 @@ test('Split frames at 40 columns, English and Chinese: Home busy, idle and short
 test('Home: the list has a row per lane and block, a question and a failure keep a reason row, and the cursor starts on the first row that needs the owner', async (t) => {
   const { busy, idle } = await fixtures(t);
   const d = driver(busy), lines = d.lines();
-  // Needs first (asking, the failure), then what runs, then Waiting, Decided and Progress; the preview is the cursor lane's slab and cards.
+  // Needs first (asking, the failure), then what runs, then Waiting and Progress; the preview is the cursor lane's slab and cards.
   // AUTH-REFRESH's phase does not fit its row beside the role and the age, so it takes a row of its own, not a cut.
-  assert.deepEqual(lines.slice(2, 13).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '  reviewing · ', '◉ this session', '? Waiting for ', '◇ Decided for ', '◐ Progress    ']);
+  assert.deepEqual(lines.slice(2, 12).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '  reviewing · ', '◉ this session', '? Waiting for ', '◐ Progress    ']);
   assert.match(lines[9], /^◉ this session +subagents +1 running$/);
   assert.match(plain(busy.render(40, 'zh')).join('\n'), /^◉ 本次会话 +子代理 +1 运行中$/m);
   assert.match(rule(d), /^NATIVE-TREE ─+ imp · 2 jobs$/);

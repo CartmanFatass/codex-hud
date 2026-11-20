@@ -11,7 +11,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import {
   NO_MILESTONE, PAGE_WORD, PROJECT_PAGES, asksYou, barText, briefStack, clampClean, clampLines,
-  currentRows, dateText, foldRow, inFlight, inline, landedAge, landedInline, landedMark, landedNewest, ledgerText,
+  currentRows, dateText, foldRow, inFlight, inline, landedAge, landedEntries, landedInline, landedMark, ledgerText, newestTasks, taskRow, taskRows,
   meter, milestoneOrder, pageRows, pageSummary, progressSegments, projectFoldedSet, projectOrder, roleInk,
   sinceText, sliceInk, sliceLedgerLine, stacked, ticketWorking, tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted,
   unsliced, waitingRows, type ProjectPage,
@@ -87,9 +87,12 @@ function boardLegendRow(width: number): MonitorRow {
   while (items.length > 1 && visualLength(' ' + items.join(' ')) > width) items.pop();
   return plain(' ' + items.join(' '), width);
 }
-function boardLatestRow(data: ProjectSnapshot, width: number, now: number, tryMarks?: ReadonlyMap<string, TryAction>): MonitorRow | undefined {
-  const newest = landedNewest(data)[0]?.r;
-  return newest ? plain(landedInline(newest, ` ${muted(t('latest'))} ${landedMark(newest, tryMarks?.get(newest.id))} ${monitorText(newest.id)}`, landedAge(newest, now), width), width) : undefined;
+function boardLatestRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number, tryMarks?: ReadonlyMap<string, TryAction>, split = false): MonitorRow[] {
+  const newest = landedEntries(data, state.acceptance)[0];
+  if (!newest) return [];
+  if ('task' in newest) return split ? [] : [plain(` ${muted(t('latest'))}`, width), ...taskRows(newest.task, data, state, width, now, tryMarks, true)];
+  const r = newest.r;
+  return [{ text: landedInline(r, ` ${muted(t('latest'))} ${landedMark(r, tryMarks?.get(r.id))} ${monitorText(r.id)}`, landedAge(r, now), width), item: 'project:page:progress' }];
 }
 function unslicedRow(job: ActiveJob, width: number, now: number, selectable = false): MonitorRow {
   const lead = `  ${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))}`;
@@ -118,9 +121,11 @@ function boardInFlightRows(data: ProjectSnapshot, width: number, now: number, bo
   ];
 }
 
-function gaugeRow(page: ProjectPage, data: ProjectSnapshot, width: number, now: number, col: number, prefix = '', tryMarks?: ReadonlyMap<string, TryAction>): MonitorRow {
+function gaugeRow(page: ProjectPage, data: ProjectSnapshot, width: number, now: number, col: number, prefix = '', tryMarks?: ReadonlyMap<string, TryAction>, acceptance?: MonitorState['acceptance']): MonitorRow {
   const head = `${prefix}${theme.board.title(fit(t(PAGE_WORD[page]), col))}`, space = Math.max(1, width - visualLength(head)), item = `project:page:${page}`;
   if (page === 'progress') {
+    const pending = acceptance === 'slice' ? 0 : tryCount(data, acceptance);
+    if (pending) return { item, text: fit(head + t('{n} to try', { n: pending }), width) };
     const ms = boardMilestones(data)[0];
     if (!ms) return { item, text: fit(head + muted(data.statePath ? mark('–', '-') : t('no STATE.md')), width) };
     const frac = muted(`${ms.accepted}/${ms.total}`);
@@ -156,7 +161,7 @@ export function boardHubRows(
     ...section(theme.board.title(monitorText(name) || t('Project')), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''),
     ...(many ? { item: 'project:switch' } : {}),
   }];
-  const tries = tryCount(data);
+  const tries = tryCount(data, state.acceptance);
   const waitingBlock = (wrap: number, keep = false): MonitorRow[] => {
     if (!data.waiting.length) return [];
     const rows = [foldRow(folded, 'waiting', 'Waiting for you', width, [data.waiting.length, tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · '))];
@@ -167,7 +172,7 @@ export function boardHubRows(
     }
     return [...rows, boardRow('')];
   };
-  const milestones = boardMilestones(data), cols = mapCols(milestones, now), latest = boardLatestRow(data, width, now, tryMarks), legend = milestones.length ? boardLegendRow(width) : undefined;
+  const milestones = boardMilestones(data), cols = mapCols(milestones, now), latest = boardLatestRows(data, state, width, now, tryMarks), legend = milestones.length ? boardLegendRow(width) : undefined;
   const progRight = [data.ladder.current && monitorText(data.ladder.current), tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · ');
   const mapRows = milestones.length ? milestones.map((m) => milestoneMapRow(m, cols, width, now, tryMarks, { item: 'project:page:progress' }))
     : [{ text: fit('  ' + muted(data.statePath ? t('none') : t('no STATE.md')), width), item: 'project:page:progress' }];
@@ -178,7 +183,7 @@ export function boardHubRows(
   const build = (lat: boolean, leg: boolean, cap: number, gaps: boolean, wrap = 0, keep = false) => [
     ...top, ...waitingBlock(wrap, keep),
     { ...section(t('Progress'), width, progRight), item: 'project:page:progress' }, ...mapRows,
-    ...(lat && latest ? [{ ...latest, item: 'project:page:progress' }] : []), ...(leg && legend ? [{ ...legend, item: 'project:page:progress' }] : []), boardRow(''),
+    ...(lat ? latest : []), ...(leg && legend ? [{ ...legend, item: 'project:page:progress' }] : []), boardRow(''),
     section(t('In flight'), width, live.length ? String(live.length) : ''), ...(live.length ? live.slice(0, cap) : [boardRow('  ' + muted(t('Nothing in progress')))]), boardRow(''),
     ...pages,
   ].filter((r) => gaps || r.text !== '' || r.item);
@@ -188,7 +193,9 @@ export function boardHubRows(
   ];
   for (const [k, [lat, leg, cap, gaps]] of tiers.entries()) {
     const rows = build(lat, leg, cap, gaps);
-    if (room === undefined || rows.length <= room) return build(lat, leg, cap, gaps, k ? 0 : room === undefined ? Infinity : room - rows.length, true);
+    if (room === undefined || rows.length <= room || rows.some((r) => r.item === state.projectCursor && r.item?.startsWith('project:fold:task:'))) {
+      return build(lat, leg, cap, gaps, k ? 0 : room === undefined ? Infinity : Math.max(0, room - rows.length), true);
+    }
   }
   return build(false, false, Math.min(2, live.length), false, 0, true);
 }
@@ -201,7 +208,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
       [data.ladder.current && theme.board.active(monitorText(data.ladder.current)), many && `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}`].filter(Boolean).join(' ')),
     ...(many ? { item: 'project:switch' } : {}),
   };
-  const tries = tryCount(data), waitFacts = [data.waiting.length, tries ? t('{n} to try', { n: tries }) : ''].filter(Boolean).join(' · ');
+  const tries = tryCount(data, state.acceptance), waitFacts = [data.waiting.length, tries ? t('{n} to try', { n: tries }) : ''].filter(Boolean).join(' · ');
   const waiting: MonitorRow[] = data.waiting.length ? [{ item: 'project:fold:waiting', text: pair(`${theme.board.attention('?')} ${theme.board.title(t('Waiting for you'))}`, muted(waitFacts), width) }] : [];
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);
   const mark_ = (page: ProjectPage) => page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
@@ -209,7 +216,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     : page === 'tree' || page === 'docs' ? ' ' : muted(mark('○', 'o'));
   const shownPages = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length);
   const col = Math.max(...shownPages.map((p) => visualLength(t(PAGE_WORD[p])))) + 1;
-  const pages = shownPages.map((p) => gaugeRow(p, data, width, now, col, `${mark_(p)} `, input.tryMarks));
+  const pages = shownPages.map((p) => gaugeRow(p, data, width, now, col, `${mark_(p)} `, input.tryMarks, state.acceptance));
   const preview = (cursor?: string): Shown => {
     if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingRows(r, i, width, now, Infinity)) };
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
@@ -218,14 +225,14 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
       const body = pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1);
       return { label: t(PAGE_WORD[page]), rows: body.map(({ item: _i, files: _f, ...row }) => row) };
     }
-    const milestones = boardMilestones(data), cols = mapCols(milestones, now), latest = boardLatestRow(data, width, now, input.tryMarks);
-    const rows: MonitorRow[] = [...milestones.map((m) => milestoneMapRow(m, cols, width, now, input.tryMarks)), ...(latest ? [latest] : []), ...(milestones.length ? [boardLegendRow(width)] : [])];
+    const milestones = boardMilestones(data), cols = mapCols(milestones, now), latest = boardLatestRows(data, state, width, now, input.tryMarks, true);
+    const rows: MonitorRow[] = [...milestones.map((m) => milestoneMapRow(m, cols, width, now, input.tryMarks)), ...latest.map(({ text }) => ({ text })), ...(milestones.length ? [boardLegendRow(width)] : [])];
     const { rows: tryRows, act } = hubTryRows(data, state, width, now, input.tryMarks);
     const live = boardInFlightRows(data, width, now, board);
     if (tryRows.length) rows.push(...tryRows);
     if (live.length) rows.push(boardRow(''), plain(muted(t('In flight')), width), ...live);
     return {
-      label: t('Progress'), right: tries ? muted(t('{n} to try', { n: tries })) : '', rows,
+      label: t('Progress'), right: tries && state.acceptance === 'slice' ? muted(t('{n} to try', { n: tries })) : '', rows,
       ...(act ? { act, hints: HUB_TRY_HINTS } : {}),
     };
   };
@@ -273,17 +280,18 @@ export function boardProgressRows(data: ProjectSnapshot, state: MonitorState, wi
   const rows: MonitorRow[] = [boardRow('')], folded = projectFoldedSet(state), path = data.statePath, files = path ? { files: [path] } : {};
   if (!path && !data.ledger.length) return [...rows, boardRow('  ' + muted(t('no STATE.md')))];
   if (data.summary && !state.filterQuery) for (const l of clampLines(data.summary, width - 2, 2).lines) rows.push({ text: fit('  ' + l, width), ...(path ? { item: `project:file:${path}:summary` } : {}), ...files });
-  const milestones = boardMilestones(data), cols = mapCols(milestones, now), current = data.ladder.current ?? milestones[0]?.id, tries = tryCount(data);
+  const milestones = boardMilestones(data), cols = mapCols(milestones, now), current = data.ladder.current ?? milestones[0]?.id, tasks = state.acceptance === 'slice' ? undefined : newestTasks(data), tries = tasks?.length ?? tryCount(data, 'slice');
   if (milestones.length) {
     if (rows.length > 1) rows.push(boardRow(''));
     rows.push(section(t('Milestones'), width, [String(milestones.length), tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · ')));
     for (const m of milestones) {
       const foldId = `board:m:${m.id}`, open = !!state.filterQuery || (m.id === current ? !folded.has(foldId) : folded.has(foldId));
       rows.push(milestoneMapRow(m, cols, width, now, tryMarks, { item: `project:fold:${foldId}`, ...files }));
-      if (open) for (const r of m.slices) rows.push(...boardSliceRows(r, data, state, width, now, board, modelEnabled, tryMarks));
+      if (open) for (const r of m.slices) if (!tasks || r.state !== 'try') rows.push(...boardSliceRows(r, data, state, width, now, board, modelEnabled, tryMarks));
     }
     rows.push(boardLegendRow(width));
   }
+  if (tasks?.length) rows.push(...tasks.flatMap((task) => taskRows(task, data, state, width, now, tryMarks)));
   const jobs = unsliced(data);
   if (jobs.length) rows.push(boardRow(''), section(t('Outside the ledger'), width, String(jobs.length)), ...jobs.map((j) => unslicedRow(j, width, now, true)));
   if (data.next.length && !state.filterQuery) {
@@ -305,7 +313,7 @@ export function boardProgressRows(data: ProjectSnapshot, state: MonitorState, wi
 /** Board Progress (Split): current milestone open in cell order + older map rows + unsliced jobs + Next; preview shows selected slice or milestone. */
 export function boardProgressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number): Part {
   const path = data.statePath, files = path ? { files: [path] } : {}, marks = input.tryMarks;
-  const milestones = boardMilestones(data), cols = mapCols(milestones, now), current = data.ladder.current ?? milestones[0]?.id, tries = tryCount(data);
+  const milestones = boardMilestones(data), cols = mapCols(milestones, now), current = data.ladder.current ?? milestones[0]?.id, tasks = state.acceptance === 'slice' ? undefined : newestTasks(data), tries = tasks?.length ?? tryCount(data, 'slice');
   const list: MonitorRow[] = [];
   if (!path && !data.ledger.length) list.push(plain('  ' + muted(t('no STATE.md')), width));
   const addSlice = (r: LedgerSlice) => {
@@ -325,10 +333,11 @@ export function boardProgressPart(input: MonitorData, data: ProjectSnapshot, sta
     list.push(section(t('Milestones'), width, [String(milestones.length), tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · ')));
     for (const m of milestones) {
       list.push(milestoneMapRow(m, cols, width, now, marks, { item: `project:board:m:${m.id}`, ...files }));
-      if (m.id === current || state.filterQuery) m.slices.forEach(addSlice);
+      if (m.id === current || state.filterQuery) m.slices.filter((r) => !tasks || r.state !== 'try').forEach(addSlice);
     }
     if (!state.filterQuery) list.push(boardLegendRow(width));
   }
+  if (tasks?.length) list.push(...tasks.map((task) => taskRow(task, data, state, width, now, marks)));
   const jobs = unsliced(data);
   if (jobs.length) list.push(boardRow(''), section(t('Outside the ledger'), width, String(jobs.length)), ...jobs.map((j) => unslicedRow(j, width, now, true)));
   if (data.next.length && !state.filterQuery) list.push(boardRow(''), { item: 'split:next', ...files, text: pair(`${muted(mark('→', '>'))} ${t('Next')}`, muted(String(data.next.length)), width) });
@@ -336,14 +345,17 @@ export function boardProgressPart(input: MonitorData, data: ProjectSnapshot, sta
     const mId = /^project:board:m:(.*)$/.exec(cursor ?? '')?.[1], m = mId !== undefined ? milestones.find((x) => x.id === mId) : undefined;
     if (m) {
       const mTries = m.slices.filter((r) => r.state === 'try');
-      const rows = m.slices.flatMap((r): MonitorRow[] => {
+      const ownTasks = tasks?.filter((task) => mTries.includes(task.slices[0]));
+      const rows = m.slices.filter((r) => !tasks || r.state !== 'try').flatMap((r): MonitorRow[] => {
         if (r.state !== 'try') return [plain(inline(`  ${sliceCell(r, marks)} ${monitorText(r.id)}`, ledgerText(r), r.state === 'accepted' ? muted(sinceText(r.at, now)) : '', width), width)];
         const item = `project:slice:${r.id}`, sentence = trySentence(r), age = muted(sinceText(r.at, now)), body = monitorText(ledgerText(r));
         const head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`;
         const lines = sentence ? briefStack(head, sentence, age, width) : body ? [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))] : [pair(head, age, width)];
         return lines.map((text) => ({ item, ...files, tryTarget: { milestone: r.milestone, slices: [r] }, text }));
       });
-      return { label: m.label, right: [`${m.accepted}/${m.total}`, mTries.length && t('{n} to try', { n: mTries.length })].filter(Boolean).join(' · '), rows, ...(mTries.length ? { hints: [...TRY_ACTIONS, '⏎ details', 'Esc back'] } : {}) };
+      if (ownTasks) rows.push(...ownTasks.flatMap((task) => taskRows(task, data, state, width, now, marks)));
+      const pending = ownTasks?.length ?? mTries.length;
+      return { label: m.label, right: [`${m.accepted}/${m.total}`, pending && t('{n} to try', { n: pending })].filter(Boolean).join(' · '), rows, ...(pending ? { hints: [...TRY_ACTIONS, '⏎ details', 'Esc back'] } : {}) };
     }
     return slicePreview(input, data, state, board, width, now, cursor);
   };

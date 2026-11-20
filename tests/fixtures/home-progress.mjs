@@ -20,7 +20,7 @@ export async function homeFixture(root) {
   const data = await collector.collect('home', board, NOW);
   const render = (width, lang = 'en', height = 56, state = initialMonitorState(), snapshot = data, extras = {}) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, state, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, state: { acceptance: 'slice', ...state }, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   return { ...f, board, collector, data, render };

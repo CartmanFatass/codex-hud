@@ -2,6 +2,7 @@
 import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice, type TryBrief } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { TryAction } from '../collectors/try-records.js';
+import { acceptanceTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
@@ -49,15 +50,18 @@ function legendGrid(entries: string[], room: number): { lines: string[]; width: 
   return { lines: [], width: 0 };
 }
 /**
- * Only whole spare rows; cards and decisions have already claimed their space. The counts are the current milestone's, as on the hub
+ * Only whole spare rows; cards have already claimed their space. The counts are the current milestone's, as on the hub
  * (the whole ledger when there is none, and the title says so). Shrinks from the bottom up: tickets, the summary's wrapped rows,
  * legend, summary, then the bar, then the block.
  */
-export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true): MonitorRow[] {
+export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true, acceptance?: MonitorState['acceptance']): MonitorRow[] {
   if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.tickets.length)) return [];
   const row = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
   const cur = currentRows(data), counts = cur.counts, states = SLICE_STATES.filter((s) => counts[s]);
-  const legend = legendGrid(states.map((s) => legendItem(counts, s)), Math.min(width - 2, HOME_BLOCK));
+  const pending = acceptance === 'slice' ? 0 : tryCount(data, acceptance);
+  const legend = legendGrid(SLICE_STATES.flatMap((s) => s === 'try' && acceptance !== 'slice'
+    ? pending ? [sliceInk(s)(`${mark('●', '*')} ${t('{n} to try', { n: pending })}`)] : []
+    : counts[s] ? [legendItem(counts, s)] : []), Math.min(width - 2, HOME_BLOCK));
   const summary = data.summary ? clampLines(data.summary, width - 2, 3).lines : [];
   const milestone = data.ladder.current && (cur.whole && cur.rows.length ? '' : data.ladder.current);
   const head = section(t('Progress'), width, milestone ? `${t('Milestone')} ${monitorText(milestone)}` : cur.rows.length ? t('All slices') : '');
@@ -95,9 +99,10 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
  * Home's spare rows, top to bottom: STATE's waiting items (a row each) and the newest landed slices under the cards, the progress block
  * at the bottom. The block takes its rows first (its own order of shrinking is above); the two lists, waiting first, take what is left.
  */
-export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, spare: number, now: number, gap = true): MonitorRow[] {
+export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, spare: number, now: number, gap: boolean, state: MonitorState, marks?: ReadonlyMap<string, TryAction>): MonitorRow[] {
   if (!data || spare < 1) return [];
-  const progress = homeProgressRows(data, width, spare, gap), out: MonitorRow[] = [], keep = progress.length + (progress.length && !gap ? 1 : 0);
+  const progress = homeProgressRows(data, width, spare, gap, state.acceptance), out: MonitorRow[] = [], keep = progress.length + (progress.length && !gap ? 1 : 0);
+  const pending = state.acceptance === 'slice' ? 0 : tryCount(data, state.acceptance);
   // A list of at most `all.length` rows out of `total`; short of room it ends with `+N more` for those it does not show.
   const list = (head: MonitorRow, id: string, all: MonitorRow[], total: number, room: number): MonitorRow[] => {
     const slots = room - 1, item = `home-progress:${id}`;
@@ -106,11 +111,12 @@ export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, 
     return [{ ...head, item }, ...shown, ...(hidden > 0 && slots > 2 ? [{ text: fit('  ' + theme.board.muted(t('+{n} more', { n: hidden })), width), item }] : [])];
   };
   const lists = [
-    (room: number) => list(section(t('Waiting for you'), width, String(data.waiting.length)), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r, i): MonitorRow => ({
+    (room: number) => list(section(t('Waiting for you'), width, [String(data.waiting.length), pending ? t('{n} to try', { n: pending }) : ''].filter(Boolean).join(' · ')), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r, i): MonitorRow => ({
       ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: `home-progress:wait:${i}` })), data.waiting.length, room),
     (room: number) => {
-      const landed = landedNewest(data).slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow => ({
-        text: landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width), item: 'home-progress:latest' }));
+      const landed = landedEntries(data, state.acceptance, true).slice(0, width < 56 ? 3 : 5).map((entry): MonitorRow => 'task' in entry
+        ? taskRow(entry.task, data, state, width, now, marks, { status: true })
+        : { text: landedInline(entry.r, `  ${landedMark(entry.r)} ${monitorText(entry.r.id)}`, landedAge(entry.r, now), width), item: 'home-progress:latest' });
       return list(section(t('Latest'), width, t('newest first')), 'latest', landed, landed.length, room);
     },
   ];
@@ -157,11 +163,12 @@ export function projectCrumb(page: ProjectPage, data: ProjectSnapshot | undefine
   return { crumb, right: (data && pageMeta(page, data, now).find((r) => r && visualLength(crumb) + 4 + visualLength(r) <= width)) || '' };
 }
 /** One line per page, most important fact first: a row too short for all of them drops the last, not part of one. */
-export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number, showMilestone = true): string[] {
+export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number, showMilestone = true, acceptance?: MonitorState['acceptance']): string[] {
   const c = currentRows(data).counts, tickets = data.tickets.flatMap((f) => f.tickets), g = data.git;
-  // What the owner acts on first: the slices to try (the ledger's whole count, as Waiting says it), then what is blocked, then what works.
+  // The whole ledger's acceptance count, as Waiting says it, then what is blocked and working.
+  const pending = page === 'progress' ? tryCount(data, acceptance) : 0;
   if (page === 'progress') return parts(showMilestone && data.ladder.current && monitorText(data.ladder.current),
-    tryCount(data) && t('{n} to try', { n: tryCount(data) }), c.blocked && `${c.blocked} ${t('blocked')}`,
+    pending && t('{n} to try', { n: pending }), c.blocked && `${c.blocked} ${t('blocked')}`,
     c.working && `${c.working} ${t('working')}`, !data.statePath && t('no STATE.md'));
   if (page === 'tickets') {
     const working = tickets.filter(ticketWorking).length, blocked = tickets.filter((r) => r.state === 'blocked').length;
@@ -235,8 +242,9 @@ export const landedInline = (r: LedgerSlice, head: string, right: string, width:
   const sentence = trySentence(r);
   return inline(head, sentence || ledgerText(r), right, width, !!sentence);
 };
-/** What the owner still tries: every slice the ledger says is `try`, whatever its milestone. The Waiting and Progress rows and the Projects list all say this number. */
-export const tryCount = (data: Pick<ProjectSnapshot, 'ledger'>) => data.ledger.filter((r) => r.state === 'try').length;
+/** The whole ledger's pending acceptance count, independent of the selected milestone. */
+export const tryCount = (data: Pick<ProjectSnapshot, 'ledger'>, acceptance?: MonitorState['acceptance']) =>
+  acceptance === 'slice' ? data.ledger.filter((r) => r.state === 'try').length : acceptanceTasks(data.ledger).length;
 /** `3/8 accepted`: what a milestone's bar counts, in words (accepted slices of all but the dropped). */
 export const acceptedText = (counts: ProjectSnapshot['counts'], rows: number) =>
   t('{done}/{total} accepted', { done: counts.accepted, total: rows - counts.dropped });
@@ -248,6 +256,20 @@ export const inFlight = (data: ProjectSnapshot) => data.slices.filter((r) => r.d
 /** Landed slices (to try or accepted), the newest first by commit date; those with none last, the later ledger rows first. */
 export const landedNewest = (data: ProjectSnapshot) => data.ledger.flatMap((r, i) => r.state === 'try' || r.state === 'accepted' ? [{ r, i }] : [])
   .sort((a, b) => (b.r.at ?? -1) - (a.r.at ?? -1) || b.i - a.i);
+export const newestTasks = (data: ProjectSnapshot) => acceptanceTasks(landedNewest(data).map(({ r }) => r));
+/** In mixed feeds, a pending task takes the place of its newest member. Accepted entries stay per slice. */
+export function landedEntries(data: ProjectSnapshot, acceptance?: MonitorState['acceptance'], home = false): ({ r: LedgerSlice } | { task: AcceptanceTask })[] {
+  // The Home read knows commit dates only for pending work, so keep ledger order for its mixed list.
+  const landed = home && acceptance !== 'slice'
+    ? data.ledger.filter((r) => r.state === 'try' || r.state === 'accepted').reverse().map((r) => ({ r }))
+    : landedNewest(data);
+  if (acceptance === 'slice') return landed;
+  const tasks = new Map(acceptanceTasks(landed.map(({ r }) => r)).map((task) => [task.slices[0], task]));
+  return landed.flatMap(({ r }): ({ r: LedgerSlice } | { task: AcceptanceTask })[] => {
+    const task = tasks.get(r);
+    return r.state === 'accepted' ? [{ r }] : task ? [{ task }] : [];
+  });
+}
 export const trySelectionMark = (state: MonitorState, item: string) => state.trySelection?.has(item) ? `${theme.board.active(mark('▣', '*'))} ` : '';
 export const landedMark = (r: LedgerSlice, action?: TryAction) => action === 'flag' ? theme.board.attention(mark('⚑', '!'))
   : r.state === 'try' && action !== 'accept' ? sliceInk('try')(mark('◇', 'o')) : sliceInk('accepted')(mark('✓', '+'));
@@ -276,7 +298,7 @@ export function hubNowRows(data: ProjectSnapshot, width: number, now: number, bo
  */
 function hubRows(
   data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: ProjectChoice[],
-  board?: WorkboardSnapshot, room?: number
+  board?: WorkboardSnapshot, room?: number, tryMarks?: ReadonlyMap<string, TryAction>
 ): MonitorRow[] {
   const folded = projectFoldedSet(state);
   // With more than one project the name row opens the Projects list (Enter or a click); `[` and `]` still step through them.
@@ -287,7 +309,7 @@ function hubRows(
     ...(many ? { item: 'project:switch' } : {}),
   }];
   // The header counts the items and how many of them are tries; the items flow into `wrap` spare rows, top down, and the one the cursor is on keeps its whole text.
-  const tries = tryCount(data);
+  const tries = tryCount(data, state.acceptance);
   const waitingBlock = (wrap: number, keep = false): MonitorRow[] => {
     if (!data.waiting.length) return [];
     const rows = [foldRow(folded, 'waiting', 'Waiting for you', width, [data.waiting.length, tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · '))];
@@ -302,15 +324,15 @@ function hubRows(
   // Nothing in flight is said, not left blank.
   const nowBlock: MonitorRow[] = [section(t('Now'), width, nowRows.length ? String(nowRows.length) : ''),
     ...(nowRows.length ? nowRows : [boardRow('  ' + theme.board.muted(t('Nothing in progress')))]), boardRow('')];
-  const landed = landedNewest(data).slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow => ({
-    text: landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width),
-  }));
-  const latest = (n: number): MonitorRow[] => n ? [section(t('Latest'), width), ...landed.slice(0, n), boardRow('')] : [];
+  const landed = landedEntries(data, state.acceptance).slice(0, width < 56 ? 3 : 5);
+  const latest = (n: number): MonitorRow[] => n ? [section(t('Latest'), width), ...landed.slice(0, n).flatMap((entry): MonitorRow[] => 'task' in entry
+    ? taskRows(entry.task, data, state, width, now, tryMarks, true)
+    : [{ text: landedInline(entry.r, `  ${landedMark(entry.r)} ${monitorText(entry.r.id)}`, landedAge(entry.r, now), width) }]), boardRow('')] : [];
   const column = Math.max(...PROJECT_PAGES.map((p) => visualLength(t(PAGE_WORD[p])))) + 1, space = Math.max(1, width - column);
   const pages = (bar: boolean): MonitorRow[] => PROJECT_PAGES.flatMap((page) => {
     // A project with no tickets has no Tickets entry, as it had no empty section before.
     if (page === 'tickets' && !data.tickets?.length) return [];
-    const facts = pageSummary(page, data, now, false);
+    const facts = pageSummary(page, data, now, false, state.acceptance);
     while (facts.length > 1 && visualLength(facts.join(' · ')) > space) facts.pop();
     const item = `project:page:${page}`, rows: MonitorRow[] = [{ text: fit(`${theme.board.title(fit(t(PAGE_WORD[page]), column))}${facts.join(' · ') || mark('–', '-')}`, width), item }];
     // The bar is the current milestone's, under its row; it opens the same page.
@@ -324,7 +346,9 @@ function hubRows(
   for (const [k, [n, bar, gaps]] of tiers.entries()) {
     const rows = build(n, bar, gaps);
     // Only the spare rows of the whole hub flow waiting items; a shorter panel cuts them to one row before Latest or the bar give way (the cursor's item stays whole).
-    if (room === undefined || rows.length <= room) return build(n, bar, gaps, k ? 0 : room === undefined ? Infinity : room - rows.length, true);
+    if (room === undefined || rows.length <= room || rows.some((r) => r.item === state.projectCursor && r.item?.startsWith('project:fold:task:'))) {
+      return build(n, bar, gaps, k ? 0 : room === undefined ? Infinity : Math.max(0, room - rows.length), true);
+    }
   }
   return build(0, false, false, 0, true);
 }
@@ -342,7 +366,7 @@ export function sinceText(at: number | undefined, now: number): string {
   return minutes < 0 ? '' : minutes < 60 ? t('{n}m', { n: minutes }) : minutes < 1440 ? t('{n}h', { n: Math.floor(minutes / 60) }) : t('{n}d', { n: Math.floor(minutes / 1440) });
 }
 /** Two rows a project: its name, milestone and what needs you (`?`) or runs (`◉`); then what it is doing (`◐ A-ONE working`, `◇ B-TWO to try`) and how long since it was touched; a wide row keeps its bar. */
-function listRows(projects: ProjectChoice[], width: number, now: number): MonitorRow[] {
+function listRows(projects: ProjectChoice[], width: number, now: number, acceptance?: MonitorState['acceptance']): MonitorRow[] {
   const rows: MonitorRow[] = [boardRow('')], cells = Math.max(8, Math.min(24, width - 26));
   for (const { root, name, overview: o } of projectOrder(projects)) {
     const item = `project:list:${root}`, title = monitorText(name), milestone = o?.milestone ? monitorText(o.milestone) : '';
@@ -353,9 +377,11 @@ function listRows(projects: ProjectChoice[], width: number, now: number): Monito
     const bar = o?.hasState && progressSegments(o.counts, cells).some((s) => s.width) ? barText(o, cells) : '';
     const last = o?.latest, glyph = !last ? '' : ({ working: sliceInk('working')(mark('◐', '@')), blocked: sliceInk('blocked')(mark('◆', '!')),
       try: sliceInk('try')(mark('◇', 'o')), accepted: sliceInk('accepted')(mark('✓', '+')) })[last.state];
-    const key = !o ? '' : o.counts.try ? sliceInk('try')(t('{n} to try', { n: o.counts.try })) : o.open ? theme.board.muted(t('{n} open', { n: o.open })) : '';
+    const pending = acceptance === 'slice' ? o?.counts.try : o?.tryTasks ?? o?.counts.try;
+    const key = !o ? '' : pending ? sliceInk('try')(t('{n} to try', { n: pending })) : o.open ? theme.board.muted(t('{n} open', { n: o.open })) : '';
     const body = !o ? theme.board.muted(mark('…', '~'))
       : !o.hasState ? theme.board.muted([t('no STATE.md'), o.open ? t('{n} open', { n: o.open }) : ''].filter(Boolean).join(' · '))
+      : last?.state === 'try' && acceptance !== 'slice' && key ? key
       : last ? `${width >= 80 && bar ? bar + '  ' : ''}${glyph} ${monitorText(last.ids.join(', '))} ${sliceInk(last.state)(t(last.state === 'try' ? 'to try' : last.state))}`
       : `${bar}${' '.repeat(Math.max(0, cells - visualLength(bar)))}${key ? '  ' + key : ''}`;
     rows.push({ text: pair(`  ${body}`, theme.board.muted(sinceText(o?.at, now)), width), item });
@@ -421,6 +447,31 @@ export function tryDetailRows(r: LedgerSlice, width: number, indent: number, ope
   return [...briefRows(r.brief, width, indent).map((text): MonitorRow => ({ text: fit(text, width) })),
     { text: fit(pad + theme.board.muted(`${open ? mark('▾', 'v') : mark('▸', '>')} ${t('Ledger line')}`), width), item: ledgerFoldItem(r) },
     ...(open ? original.map((l): MonitorRow => ({ text: fit(`${pad}  ${theme.board.muted(l)}`, width) })) : [])];
+}
+export const taskItem = (task: AcceptanceTask) => `project:fold:task:${task.key}`;
+export const taskLabel = (task: AcceptanceTask) => monitorText(task.key.startsWith('slice:') ? `— ${task.slices[0].id}` : task.milestone);
+export const sliceCountText = (n: number) => t(n === 1 ? '{n} slice' : '{n} slices', { n });
+export function taskRow(task: AcceptanceTask, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
+  marks?: ReadonlyMap<string, TryAction>, options: { status?: boolean; indent?: number } = {}): MonitorRow {
+  const item = taskItem(task), first = task.slices[0];
+  const firstMark = marks?.get(first.id), action = task.slices.every((r) => marks?.get(r.id) === firstMark) ? firstMark : undefined;
+  const head = `${' '.repeat(options.indent ?? 2)}${trySelectionMark(state, item)}${landedMark(first, action)} ${taskLabel(task)}`;
+  const right = [sliceCountText(task.slices.length), options.status && t('to try'), sinceText(task.oldest, now)].filter(Boolean).join(' · ');
+  return { item, text: pair(head, theme.board.muted(right), width), tryTarget: { milestone: task.milestone, slices: task.slices },
+    ...(data.statePath ? { files: [data.statePath] } : {}) };
+}
+export function taskDetailRows(task: AcceptanceTask, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>): MonitorRow[] {
+  const folded = projectFoldedSet(state);
+  return task.slices.flatMap((r) => [
+    boardRow(pair(`  ${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, theme.board.muted(sinceText(r.at, now)), width)),
+    ...tryDetailRows(r, width, 4, folded.has(`ledger:${r.id}`)), ...diffStatRows(r.diff, width),
+  ]);
+}
+export function taskRows(task: AcceptanceTask, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
+  marks?: ReadonlyMap<string, TryAction>, status = false): MonitorRow[] {
+  const row = taskRow(task, data, state, width, now, marks, { status });
+  return projectFoldedSet(state).has(row.item!.slice('project:fold:'.length))
+    ? [row, ...taskDetailRows(task, state, width, now, marks).map((detail) => ({ ...row, ...detail, item: detail.item ?? row.item }))] : [row];
 }
 /** A done/total meter `cells` wide, as thin as the panel's other meters; a started one shows at least a cell, an unfinished one never looks full. */
 export function meter(done: number, total: number, cells: number): string {
@@ -513,7 +564,8 @@ export function pageRows(
     });
     const head = (label: string, right: string | number = '') => rows.push(boardRow(''), section(t(label), width, String(right)));
     // Landed slices as rows: each a row Enter opens (its milestone, commit and day), the milestones one row each that Enter opens into its slices.
-    const landed = landedNewest(data), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY), older = landed.filter((x) => !recent.includes(x));
+    const tasks = state.acceptance === 'slice' ? undefined : newestTasks(data);
+    const landed = landedNewest(data).filter(({ r }) => !tasks || r.state === 'accepted'), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY), older = landed.filter((x) => !recent.includes(x));
     // A to-try slice with a brief is one row, its first sentence beside its id; without one it shows its whole text, and short of room
     // (`short`) the rows the cursor is not on keep two rows of it. Expanded (Enter), the brief and steps come first and the original text
     // folds under them (Enter on that row unfolds it).
@@ -562,7 +614,8 @@ export function pageRows(
     else if (state.projectTry) {
       // Only what the ledger says is `try`, whatever the milestone: the header is the way back (Enter, a click or `t`).
       const tries = landed.filter(({ r }) => r.state === 'try');
-      rows.push({ ...section(t('Only to try'), width, String(tries.length)), item: 'project:try', files: [data.statePath] });
+      rows.push({ ...section(t('Only to try'), width, String(tasks?.length ?? tries.length)), item: 'project:try', files: [data.statePath] });
+      if (tasks?.length) return [...rows, ...tasks.flatMap((task) => taskRows(task, data, state, width, now, tryMarks))];
       if (!tries.length) rows.push(boardRow('  ' + theme.board.muted(t('Nothing to try'))));
       const from = rows.length;
       byMilestone(tries, 'try:m:', true);
@@ -580,9 +633,10 @@ export function pageRows(
         const label = cur.whole || !data.ladder.current ? '' : ` ${monitorText(data.ladder.current)} `, frac = acceptedText(cur.counts, cur.rows.length);
         const cells = Math.max(6, Math.min(24, width - 3 - visualLength(label) - visualLength(frac) - 2));
         fileRow(`  ${label ? theme.board.title(label) + ' ' : ''}${barText({ counts: cur.counts }, cells)} ${theme.board.muted(frac)}`, 'bar');
-        const words = SLICE_STATES.filter((s) => s !== 'accepted' && cur.counts[s]).map((s) => sliceInk(s)(`${cur.counts[s]} ${t(s === 'try' ? 'to try' : s)}`));
+        const counts = tasks ? { ...cur.counts, try: tasks.length } : cur.counts;
+        const words = SLICE_STATES.filter((s) => s !== 'accepted' && counts[s]).map((s) => sliceInk(s)(`${counts[s]} ${t(s === 'try' ? 'to try' : s)}`));
         // The to-try count is the way into the to-try filter; `o` still opens STATE.md from it.
-        for (const line of pack(words, width)) cur.counts.try ? rows.push({ text: fit(line, width), item: 'project:try', files: [data.statePath] }) : fileRow(line, 'counts');
+        for (const line of pack(words, width)) counts.try ? rows.push({ text: fit(line, width), item: 'project:try', files: [data.statePath] }) : fileRow(line, 'counts');
         const order = milestoneOrder(data), before = order.slice(0, Math.max(0, order.indexOf(data.ladder.current ?? ''))), earlier = data.ledger.filter((r) => r.state === 'accepted' && before.includes(r.milestone));
         const places = new Set(earlier.map((r) => r.milestone)).size;
         if (!cur.whole && earlier.length) fileRow(`  ${sliceInk('accepted')(mark('✓', '+'))} ${theme.board.muted(t(places === 1 ? '{n} accepted in {m} earlier milestone' : '{n} accepted in {m} earlier milestones', { n: earlier.length, m: places }))}`, 'earlier');
@@ -634,6 +688,10 @@ export function pageRows(
       });
     });
     if (more > 0) rows.push({ text: fit(`  ${theme.board.muted(`${all ? mark('▾', 'v') : mark('▸', '>')} ${all ? t('fewer') : t('{n} more', { n: more })}`)}`, width), item: 'project:fold:next' });
+    if (tasks?.length) {
+      head('To try');
+      rows.push(...tasks.flatMap((task) => taskRows(task, data, state, width, now, tryMarks)));
+    }
     // History: the last seven days in full, newest first (`recent`); everything older, and whatever has no commit date, one row a milestone.
     if (landed.length) head('History');
     recent.forEach((x) => entry(x, 2));
@@ -677,9 +735,9 @@ export function projectRows(
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
-  if (projectListOpen(state, projects)) return state.projectLayout === 'board' ? boardListRows(projects, width, now) : state.projectLayout === 'inbox' ? inboxListRows(projects, width, now) : listRows(projects, width, now);
+  if (projectListOpen(state, projects)) return state.projectLayout === 'board' ? boardListRows(projects, width, now) : state.projectLayout === 'inbox' ? inboxListRows(projects, width, now, state.acceptance) : listRows(projects, width, now, state.acceptance);
   if (!data) return [];
   if (!page && state.projectLayout === 'board') return boardHubRows(data, state, width, now, name, projects, board, room, tryMarks);
   if (!page && state.projectLayout === 'inbox') return inboxHubRows(data, state, width, now, name, projects, board, room, tryMarks);
-  return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks, room) : hubRows(data, state, width, now, name, projects, board, room);
+  return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks, room) : hubRows(data, state, width, now, name, projects, board, room, tryMarks);
 }

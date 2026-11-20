@@ -199,7 +199,7 @@ test('the list reads no Git and re-reads only the files that changed', async (t)
 test('the live panel reads the overviews only while the list is open, and the shown project only while it is not', async (t) => {
   const l = await fixture(t), own = fs.realpathSync(l.cwd), others = l.projects.slice(1).map((p) => p.root);
   l.put(join(l.hud, 'projects.json'), { version: 1, projects: others.map((root) => ({ root, registered_at: '2026-11-13T00:00:00.000Z' })) });
-  l.put(join(l.hud, 'hud-settings.json'), { modelEnabled: false, refreshMs: 100, language: 'en' });
+  l.put(join(l.hud, 'hud-settings.json'), { modelEnabled: false, refreshMs: 100, language: 'en', acceptance: 'slice' });
   const runner = join(l.root, 'collect-log.mjs');
   fs.writeFileSync(runner, `
 import { ProjectCollector } from ${JSON.stringify(pathToFileURL(resolve('dist/collectors/project-board.js')).href)};
