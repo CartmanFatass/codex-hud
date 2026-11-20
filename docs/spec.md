@@ -67,10 +67,12 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    `hud watch` and MCP `changes` and updates STATE (accepted slices become `accepted`; a flagged one goes under
    Waiting for the owner and the main session asks the owner what is wrong); the owner can mark several rows first and
    `y`/`n` then records them as one record, so the main session hears one line (owner, 2026-11-18). What the owner
-   tries is never cut to a name (owner, 2026-11-18): a to-try slice and a waiting item show their whole text, wrapped,
-   wherever the panel has the rows; with the model on, a slice also gets a short brief (what changed, in plain words)
-   and acceptance steps (how to try it), made from its ledger line, ticket and commits; with the model off the
-   original text shows. This is the one place the progress board uses the model; the control plane opens with what needs attention and the place the next job will use, healthy
+   tries is never cut to a name (owner, 2026-11-18): a waiting item shows its whole text, wrapped, wherever the panel
+   has the rows. With the model on, a to-try slice gets a short brief (what changed, in plain words) and acceptance
+   steps (how to try it), made from its ledger line, ticket and commits; its list row then shows its ID and the
+   brief's first sentence, and its preview (or expanded row) shows the whole brief, the steps and, folded below them,
+   the original ledger text (owner, 2026-11-19: the ledger text is written for agents). With the model off, or before
+   its brief exists, the row shows the whole original text, wrapped. This is the one place the progress board uses the model; the control plane opens with what needs attention and the place the next job will use, healthy
    roles folded. Skills list (owner, 2026-11-17; moved from a third main tab into Help, owner, 2026-11-17 second decision: Home and Project are the only main tabs): a section of Help (`?`) lists the backup skills, Matt Pocock
    skills that are not installed (adapted copies in `integrations/skills-optional/` and the upstream text) and that
    the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
