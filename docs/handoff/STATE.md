@@ -11,7 +11,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Next
 
 - EXP (`.scratch/exp/`, owner 2026-11-20): experimental top-level tab behind Settings → Panel → Experiments; 01 tab + settings, 02 Codex native status line, 03 pi subscription proxy (refresh while used, no timer) ← 01, 04 oapi grant ledger (JSONL) ← 01, 05 Anthropic ledger ← 04. 01 and 02 landed (to try); all five landed; owner try (real accounts) is the EXP-05 joint check of the plan.
-- CONTROL-TAB (owner 2026-11-20): Control plane becomes its own main tab; harness on/off at CLI and pi-provider level (off = skipped like exhausted, files untouched); full pi model list for providers that are on; per-role presets created, reordered and switched from the panel. Design: docs/design/control-tab/design.md (oracle); HTML sample docs/design/control-tab/index.html (10 open points on the page) → owner settles → 5 tickets (standalone tab, harness switches, full pi picker, role-row presets, chain editing).
+- CONTROL-TAB (owner 2026-11-20): Control plane becomes its own main tab; harness on/off at CLI and pi-provider level (off = skipped like exhausted, files untouched); full pi model list for providers that are on; per-role presets created, reordered and switched from the panel. Sample settled 2026-11-20 as drawn; tickets .scratch/control-tab/ 01 tab → 02 harness switches, 03 pi picker, 04 role-row presets → 05 chain editing.
 - PROJECT-LAYOUTS (`.scratch/project-layouts/`, owner 2026-11-20: PROJECT-UX B and C back as Project layouts, consistent with PANEL-UX): 01 Board and 02 Inbox landed; both to try.
 - PANEL-UX (`.scratch/panel-ux/`, from the owner's UI/UX review 2026-11-19): 01 to-try briefs in rows, one count, number keys off the tabs, direct `1–4`/`d` answers, no divider drag (frontend-imp) → 02 one meaning per key, no repeated status, 40-column rows, one language.
 - MCP-NEXT (`.scratch/mcp-next/`, 7 tickets): 01 fine-grained locks + pre-flight trust + parsed quota TTL → 02 `hud_create` preset + 04 pi native silent watch → 03 `hud_wait` → 05 `context_files`/`from_jobs` → 06 `hud-progress` + `hud_peek` → 07 managed `worktree` isolation.
@@ -165,6 +165,7 @@ board counts these; update at every landing or decision. -->
 - try · — · EXP-03 · pi subscription proxy: bind a Codex profile in EXP; pi footer on openai+OAuth shows its 5h/7d windows (≈), refreshed only while a pi footer draws (no timer) (imp) (67811752)
 - try · — · EXP-04 · oapi grant ledger: per-request cost JSONL (dedup), balance on read, pi footer on oapi shows API ≈$; EXP openai-api rows live (imp) (feb9893b)
 - try · — · EXP-05 · Anthropic API grant ledger: only API-key routes count; footer shows the current route's reading among proxy / oapi / anthropic (imp) (7dc40a59)
+- working · — · CONTROL-TAB-01 · Control as its own main tab, Roles landing per the sample (imp)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
