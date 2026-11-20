@@ -51,10 +51,12 @@ Every brief states:
   performance tests in the default suite, no real-process tests unless the slice is about processes;
 - `no self-review` unless it is one of the risky cases above.
 
-Design previews (owner, 2026-11-18): a design or options job writes one self-contained HTML page under
-`docs/design/<name>/`. It uses synthetic data, no outside fetches, and works at phone width and in light and dark.
-The worker commits the page (and a plain-text `screens.txt` of the terminal frames when the design is a terminal
-UI) and puts their paths in its report; the orchestrator passes the paths on. No claude.ai Artifacts (owner,
+Design previews (owner, 2026-11-18; images, owner 2026-11-20): a UI job's preview is PNG images the owner can look
+at, committed under `docs/design/<name>/png/`, with their paths in the report; the orchestrator passes the paths on.
+For the panel, `npm run preview:png -- docs/design/<name>/png` renders the real frames in colour from the synthetic
+Split fixture (extend `scripts/preview-png.mjs` when a new frame matters). A `screens.txt` or an HTML page with
+synthetic data may come with the images, never instead of them. A dedicated UI/UX optimisation pass shows its
+images first; the owner settles them before the build (owner, 2026-11-14). No claude.ai Artifacts (owner,
 2026-11-20: they do not fit the workflow).
 
 ## Questions
