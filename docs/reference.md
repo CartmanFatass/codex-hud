@@ -625,8 +625,14 @@ Home and Project are the default main tabs. Settings → Panel → **Experiments
 off by default) adds the experimental **EXP** tab. Use ↑/↓ to select and Enter to edit or open an account;
 Enter saves, and Esc cancels. For calibration, Enter first previews the change, then Enter saves the new base.
 The form is the same in Classic and Split. Settings apply to all projects on this machine, and are stored under
-`$HUD_HOME/exp/`. Codex profile choices are local; EXP does not change CLI configuration. Live usage readings
-say **not connected** until their integrations are available.
+`$HUD_HOME/exp/`. Codex profile choices are local; EXP does not change CLI configuration.
+
+In **pi subscription proxy**, choose a Codex profile and turn on Auto-refresh. When pi draws its HUD footer, a due refresh uses
+that profile's existing login to read quota from Codex; it sends no prompt and does not run while pi is unused. The `openai`
+OAuth footer shows approximate remaining quota (`5h ≈72%`); a reading from the current request takes precedence (`5h left 72%`).
+Other routes such as `oapi` do not show it. Old readings are marked stale, and a window past its reset says `refresh pending`.
+Open **Proxy readings** for both windows and their reset times, source, last success and error, and next eligible attempt.
+If the proxy pauses for sign-in, sign in to the bound profile and turn Auto-refresh off and back on. Experiments off stops refreshes.
 
 Inspector, Changes, Settings and Help share
 one title band, exact-width rows and whole footer hints (rightmost hints drop when

@@ -14,7 +14,11 @@ import {
   type ExpEdit,
   type ExpProfile,
 } from '../exp-config.js';
+import { PROXY_ERRORS, proxyTime, proxyWindows, type ExpProxySnapshot } from '../exp-proxy.js';
 import { writePrivateFile } from './small-model.js';
+
+const expConfigPath = (hudHome: string) => join(hudHome, 'exp', 'config.json');
+export const expProxyPath = (hudHome: string) => join(hudHome, 'exp', 'proxy.json');
 
 /** Directory and marker metadata only. Never read auth.json, config.toml or shell definitions. */
 export function knownExpProfiles(env = process.env): ExpProfile[] {
@@ -52,11 +56,19 @@ export function knownExpProfiles(env = process.env): ExpProfile[] {
 export function readExpConfig(hudHome: string): ExpConfig {
   let raw: string;
   try {
-    raw = fs.readFileSync(join(hudHome, 'exp', 'config.json'), 'utf8');
+    raw = fs.readFileSync(expConfigPath(hudHome), 'utf8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultExpConfig();
     throw err;
   }
+  return parseExpConfig(raw);
+}
+
+export async function readExpConfigAsync(hudHome: string): Promise<ExpConfig> {
+  return parseExpConfig(await fs.promises.readFile(expConfigPath(hudHome), 'utf8'));
+}
+
+function parseExpConfig(raw: string): ExpConfig {
   const config = JSON.parse(raw) as ExpConfig;
   const aliases = config?.codex?.aliases;
   if (
@@ -71,6 +83,8 @@ export function readExpConfig(hudHome: string): ExpConfig {
       config.proxy.profile === null ||
       (typeof config.proxy.profile === 'string' && isAbsolute(config.proxy.profile))
     ) ||
+    (config.proxy.bindingVersion !== undefined &&
+      !(typeof config.proxy.bindingVersion === 'string' && /^[a-f0-9-]{36}$/.test(config.proxy.bindingVersion))) ||
     !expInteger(config.proxy.intervalMinutes, 5, 60) ||
     !EXP_ACCOUNTS.every((account) => {
       const grant = config.grants?.[account];
@@ -87,10 +101,50 @@ export function readExpConfig(hudHome: string): ExpConfig {
   return config;
 }
 
+export const proxyBindingVersion = (proxy: ExpConfig['proxy']) => proxy.bindingVersion ?? 'legacy';
+
+export function parseProxySnapshot(raw: string, proxy: ExpConfig['proxy']): ExpProxySnapshot | undefined {
+  if (!proxy.enabled || !proxy.profile) return;
+  const bindingVersion = proxyBindingVersion(proxy);
+  try {
+    const data = JSON.parse(raw) as ExpProxySnapshot;
+    if (
+      data?.profile !== proxy.profile ||
+      data.bindingVersion !== bindingVersion ||
+      (data.observedAtMs !== null && !proxyTime(data.observedAtMs)) ||
+      (data.error !== null && !PROXY_ERRORS.includes(data.error)) ||
+      !expInteger(data.failures, 0, Number.MAX_SAFE_INTEGER) ||
+      (data.nextAttemptMs !== null && !proxyTime(data.nextAttemptMs))
+    )
+      return;
+    const { observedAtMs, error, failures, nextAttemptMs } = data;
+    return {
+      profile: proxy.profile,
+      bindingVersion,
+      observedAtMs,
+      error,
+      failures,
+      nextAttemptMs,
+      ...proxyWindows(data),
+    };
+  } catch {
+    return;
+  }
+}
+
 export function readExpData(hudHome: string, env = process.env): ExpData {
   const profiles = knownExpProfiles(env);
   try {
-    return { config: readExpConfig(hudHome), profiles };
+    const config = readExpConfig(hudHome);
+    let proxySnapshot: ExpProxySnapshot | undefined;
+    if (config.proxy.enabled && config.proxy.profile) {
+      try {
+        proxySnapshot = parseProxySnapshot(fs.readFileSync(expProxyPath(hudHome), 'utf8'), config.proxy);
+      } catch {
+        /* No observation yet. */
+      }
+    }
+    return { config, profiles, proxySnapshot };
   } catch {
     return { config: defaultExpConfig(), profiles, unreadable: true };
   }
@@ -109,6 +163,7 @@ export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env =
       config.codex.enabled = edit.value;
       break;
     case 'proxy-enabled':
+      if (config.proxy.enabled !== edit.value) config.proxy.bindingVersion = randomUUID();
       config.proxy.enabled = edit.value;
       break;
     case 'alias':
@@ -119,6 +174,7 @@ export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env =
     case 'binding':
       if (edit.value !== null && !known(edit.value)) invalid();
       config.proxy.profile = edit.value;
+      config.proxy.bindingVersion = randomUUID();
       break;
     case 'interval':
       if (!expInteger(edit.value, 5, 60)) invalid();

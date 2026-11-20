@@ -12,6 +12,15 @@ import {
   type ExpData,
   type ExpEdit,
 } from '../exp-config.js';
+import {
+  proxyDueAt,
+  proxyStale,
+  windowLabel,
+  windowPending,
+  windowRemaining,
+  type ExpProxyError,
+  type ExpProxyWindow,
+} from '../exp-proxy.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { monitorRowAt } from './monitor-input.js';
 import { theme, visualLength } from './colors.js';
@@ -72,6 +81,54 @@ const profileLabel = (data: ExpData, home: string) => {
   return alias ? `${monitorText(alias)} (${name})` : name;
 };
 
+const PROXY_ERROR_LABEL: Record<ExpProxyError, string> = {
+  not_logged_in: 'Codex sign-in required',
+  binding_changed: 'Codex account changed',
+  rate_limited: 'Rate limited',
+  timeout: 'Timed out',
+  unavailable: 'Codex unavailable',
+  invalid_response: 'Invalid quota response',
+  request_failed: 'Quota request failed',
+};
+const time = (at?: number | null) =>
+  at == null ? '—' : new Date(at).toISOString().slice(0, 16).replace('T', ' ') + 'Z';
+
+function proxyReadings(data: ExpData, nowMs: number): [string, string][] {
+  const { proxy } = data.config;
+  const snapshot = data.proxySnapshot;
+  const stale = snapshot && proxyStale(snapshot.observedAtMs, proxy.intervalMinutes, nowMs);
+  const window = (w?: ExpProxyWindow) => {
+    if (!w) return '—';
+    const label = windowLabel(w);
+    const value = windowPending(w, nowMs) ? t('refresh pending') : `≈${windowRemaining(w)}%`;
+    return [label, value].filter(Boolean).join(' ');
+  };
+  const next = proxyDueAt(snapshot, proxy.intervalMinutes);
+  return [
+    [t('Codex profile'), proxy.profile ? profileLabel(data, proxy.profile) : t('Unbound')],
+    [t('Primary window'), window(snapshot?.primary)],
+    [t('Primary reset'), time(snapshot?.primary?.resetsAt == null ? null : snapshot.primary.resetsAt * 1000)],
+    [t('Secondary window'), window(snapshot?.secondary)],
+    [t('Secondary reset'), time(snapshot?.secondary?.resetsAt == null ? null : snapshot.secondary.resetsAt * 1000)],
+    [
+      t('Source'),
+      snapshot?.observedAtMs != null ? `${t('Codex proxy')}${stale ? ` · ${t('Stale reading')}` : ''}` : '—',
+    ],
+    [t('Last success'), time(snapshot?.observedAtMs)],
+    [t('Last error'), snapshot?.error ? t(PROXY_ERROR_LABEL[snapshot.error]) : '—'],
+    [
+      t('Next attempt'),
+      !proxy.enabled || !proxy.profile
+        ? '—'
+        : next === null
+          ? t('Paused')
+          : next <= nowMs
+            ? t('On next pi draw')
+            : time(next),
+    ],
+  ];
+}
+
 function groups(
   data: ExpData,
   detail: Detail | undefined
@@ -92,14 +149,12 @@ function groups(
     return [
       {
         label: 'Proxy readings',
-        readings: [
-          'Primary window / reset',
-          'Secondary window / reset',
-          'Source',
-          'Last success',
-          'Last error',
-          'Next attempt',
-        ],
+        notes:
+          data.proxySnapshot?.error === 'not_logged_in'
+            ? ['Sign in to the bound profile, then turn Auto-refresh off and on.']
+            : data.proxySnapshot?.error === 'binding_changed'
+              ? ['Verify and reselect the Codex profile to resume.']
+              : [],
       },
     ];
   if (detail) {
@@ -191,7 +246,17 @@ function groups(
             return value === undefined ? undefined : { field: 'interval', value };
           }
         ),
-        link('proxy-status', t('Proxy readings'), offline()),
+        link(
+          'proxy-status',
+          t('Proxy readings'),
+          !binding || !config.proxy.enabled
+            ? t('off')
+            : data.proxySnapshot?.error
+              ? t(PROXY_ERROR_LABEL[data.proxySnapshot.error])
+              : data.proxySnapshot
+                ? t('Codex proxy')
+                : t('On next pi draw')
+        ),
       ],
     },
     {
@@ -203,7 +268,7 @@ function groups(
   ];
 }
 
-export function expRows(page: ExpPage, data: ExpData | undefined, width: number): MonitorRow[] {
+export function expRows(page: ExpPage, data: ExpData | undefined, width: number, nowMs: number): MonitorRow[] {
   const text = (s: string, ink = theme.board.text) => flowLines(s, width).map((line) => boardRow(ink(line)));
   if (!data) return [];
   const sections = groups(data, page.detail);
@@ -249,12 +314,16 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number)
         labeled(entry.label, entry.value).map((row, i) => (i ? row : { ...row, item: entry.id }))
       ),
       ...(readings ?? []).flatMap((reading) => labeled(t(reading), offline())),
+      ...(page.detail === 'proxy-status'
+        ? proxyReadings(data, nowMs).flatMap(([name, value]) => labeled(name, value))
+        : []),
       ...(notes ?? []).flatMap((note) => text(t(note))),
     ]),
   ];
 }
 
 export const expHints = (page: ExpPage, data?: ExpData): string => {
+  if (page.detail === 'proxy-status') return '↑↓ scroll  esc back';
   if (!page.edit) return page.detail ? '↑↓ select  ⏎ edit  esc back' : '↑↓ select  ⏎ edit  ←→ tab';
   if (page.edit.preview) return '⏎ save  esc cancel';
   const entry =

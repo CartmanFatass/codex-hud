@@ -186,7 +186,6 @@ export function installPiPackage(
     return result;
   });
   for (const event of [
-    'model_select',
     'thinking_level_select',
     'agent_settled',
     'message_end',
@@ -201,6 +200,18 @@ export function installPiPackage(
       segment.refresh();
       footer?.update();
     });
+  onDisplay('model_select', () => {
+    subscriptionFooter()?.modelChanged();
+    segment.refresh();
+    footer?.update();
+  });
+  function subscriptionFooter(ctx?: PiPackageContext) {
+    const s = active;
+    if (s?.footerOn && current(s) && (!ctx || s.ctx.sessionManager === ctx.sessionManager)) return footer;
+  }
+  onDisplay('before_provider_request', (_event, ctx) => subscriptionFooter(ctx)?.requestStarted(ctx));
+  onDisplay('after_provider_response', (event, ctx) => subscriptionFooter(ctx)?.requestWindows(ctx, event, false));
+  onDisplay('provider_stream_event', (event, ctx) => subscriptionFooter(ctx)?.requestWindows(ctx, event, true));
   onDisplay('agent_start', () => {
     segment.refresh();
     footer?.working();

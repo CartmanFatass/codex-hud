@@ -22,6 +22,8 @@ import { applyBarSettings } from '../../bar-settings.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
 import { HUD_STATUS_KEY } from './segment.js';
 import type { FooterAPI, FooterContext, FooterHost } from './footer-host.js';
+import { createPiSubscription } from './subscription.js';
+import type { ProxyRefreshOptions } from '../../collectors/exp-proxy-refresh.js';
 export type { FooterHost } from './footer-host.js';
 
 /** One ordinary package instance; no process-global state or host SDK dependency. */
@@ -31,6 +33,7 @@ export function createP10kFooter(
   env: NodeJS.ProcessEnv,
   deps: {
     gitStatus?: (cwd: string, done: (error: Error | null, stdout: string) => void) => void;
+    subscription?: ProxyRefreshOptions;
   } = {}
 ) {
   // ─── Which segments exist, and which are on ────────────────────────────────
@@ -459,7 +462,7 @@ export function createP10kFooter(
   const DUPLICATE_STATUS_KEYS = new Set(['mcp', 'lens', 'pi-lens', 'pi-lens-lsp', HUD_STATUS_KEY]);
 
   /** What pi has to say, as `renderBar` takes it; a switched-off or empty field is simply not there. */
-  function buildFacts(ctx: FooterContext, pi: FooterAPI): bar.BarFacts {
+  function buildFacts(ctx: FooterContext, pi: FooterAPI, quota: string | undefined): bar.BarFacts {
     const model = ctx.model;
     const thinking = model?.reasoning ? pi.getThinkingLevel?.() : undefined;
     // Context pressure against the window; `?` while pi has no reading yet.
@@ -508,6 +511,7 @@ export function createP10kFooter(
         marks: marks.join(''),
         dirty: marks.length > 0,
       },
+      quota: quota ? { text: quota } : undefined,
       needs: work.needs,
       events: work.events,
       loaded: {
@@ -531,6 +535,7 @@ export function createP10kFooter(
   let mounted = false;
   let live = true;
   const removers: (() => void)[] = [];
+  const subscription = createPiSubscription(env, () => repaint?.(), deps.subscription);
   // Measurements belong in the ribbon, not in the chat.
   pi.registerEntryRenderer?.('tps', () => undefined);
   function listen(name: string, handler: (data: unknown) => void) {
@@ -577,9 +582,22 @@ export function createP10kFooter(
     repaint?.();
   }
   /** The one line, fitted to `width`; pi's own width measure has the last word, so the host never gets a wider row. */
-  function line(width: number): string {
+  function line(width: number, quota: string | undefined): string {
     if (!view || !stats || !mounted || width <= 0) return '';
-    const text = bar.renderBar(buildFacts(view, pi), width, Date.now(), noColor() ? 'line' : activeBarStyle()).line;
+    const facts = buildFacts(view, pi, quota);
+    const now = Date.now();
+    const style = noColor() ? 'line' : activeBarStyle();
+    let { line: text, kept } = bar.renderBar(facts, width, now, style);
+    // In a narrow pi pane, prefer the subscription reading to the path and context.
+    if (quota && displayConfig().barFields.includes('quota') && !kept.includes('quota')) {
+      for (const context of [facts.context, undefined]) {
+        const fitted = bar.renderBar({ ...facts, project: undefined, context }, width, now, style);
+        if (fitted.kept.includes('quota')) {
+          text = fitted.line;
+          break;
+        }
+      }
+    }
     return text
       .split('\n')
       .map((row) => {
@@ -681,6 +699,7 @@ export function createP10kFooter(
     stats = undefined;
     turnStartedAt = null;
     footerStatuses = null;
+    subscription.stop();
     ctx?.ui.setEditorComponent(undefined);
     ctx?.ui.setFooter(undefined);
   }
@@ -700,7 +719,8 @@ export function createP10kFooter(
       footerStatuses = () => data.getExtensionStatuses();
       return {
         render(width) {
-          const text = line(width);
+          const quota = mounted && current === ctx && width > 0 ? subscription.draw(ctx) : undefined;
+          const text = line(width, quota);
           return text ? text.split('\n') : [];
         },
         invalidate() {},
@@ -717,6 +737,9 @@ export function createP10kFooter(
     start,
     stop,
     update,
+    modelChanged: subscription.modelChanged,
+    requestStarted: subscription.requestStarted,
+    requestWindows: subscription.requestWindows,
     /** The Work segment's timer: what the HUD jobs ask now and what they just did. */
     setWork(signals: WorkSignals) {
       work = signals;

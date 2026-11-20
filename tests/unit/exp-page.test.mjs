@@ -195,7 +195,13 @@ test('EXP edits every group, Esc drops drafts, and another project sees the same
   p.edit('grant', '12.345678');
   const cfg = readExpConfig(f.env.HUD_HOME);
   assert.deepEqual(cfg.codex, { enabled: true, aliases: { [f.other]: 'Second profile' } });
-  assert.deepEqual(cfg.proxy, { enabled: true, profile: f.other, intervalMinutes: 60 });
+  assert.deepEqual(cfg.proxy, {
+    enabled: true,
+    profile: f.other,
+    intervalMinutes: 60,
+    bindingVersion: cfg.proxy.bindingVersion,
+  });
+  assert.match(cfg.proxy.bindingVersion, /^[a-f0-9-]{36}$/);
   assert.deepEqual(cfg.grants['anthropic-api'], {
     enabled: true,
     grantMicros: 20_000_000,
@@ -293,7 +299,7 @@ test('40 columns in EN and ZH: both layouts show whole labels, offline data, and
       assert.match(overview, /openai-api/);
       p.select('proxy-status');
       p.press('enter');
-      assert.match(exact(), lang === 'en' ? /Next attempt\s+not connected/ : /下次尝试\s+未接入/);
+      assert.match(exact(), lang === 'en' ? /Next attempt\s+—/ : /下次尝试\s+—/);
       p.press('escape');
       p.select('openai-api');
       p.press('enter');

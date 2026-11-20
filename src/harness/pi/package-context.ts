@@ -10,6 +10,7 @@ export interface PiPackageBinding {
 export interface PiPackageContext extends PiContext, SegmentContext {
   cwd: string;
   model?: FooterContext['model'];
+  modelRegistry?: FooterContext['modelRegistry'];
   getContextUsage: FooterContext['getContextUsage'];
   sessionManager: PiContext['sessionManager'] &
     FooterContext['sessionManager'] & {

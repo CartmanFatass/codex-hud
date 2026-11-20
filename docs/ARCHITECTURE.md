@@ -379,11 +379,14 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |
 | `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
 | `display/state/claude-quota.json` | Last reported quota windows only; optional private cache from Claude statusline stdin |
+| `exp/config.json`, `exp/proxy.json` | Private EXP settings and the bound Codex profile's quota snapshot (windows, binding revision, observation time and retry state) |
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |
 | `display/model-cache/` | Shared text replies/reservations and revision-keyed overlays; Decision reservations have their own subdirectory |
 | `display/profile.log` | Optional stage timings |
 | `panel-actions.jsonl` | Append-only 0600 log of answers the owner gave from the panel; read by `hud watch` and the MCP `changes` |
 | `watch.pid`, `watch.log` | On-demand watcher PID and diagnostics |
+
+An EXP-enabled pi footer draw initiates asynchronous snapshot collection. A per-HUD-home Linux abstract socket excludes concurrent refreshes; the bounded Codex app-server stdio request is only for account rate limits, not inference. The panel reads the snapshot but never starts refreshes. Pi keeps direct subscription windows in memory for the current request only.
 
 Pi history lives in pi's own session store; job directories contain links. The watcher
 reaps finished tabs, keeps failed tabs for two hours, and deletes settled job directories

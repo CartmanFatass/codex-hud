@@ -1068,7 +1068,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         /* A state file nobody can write is not a reason to stop drawing. */
       }
     }
-    // Collection owns publication. Paint only consumes the same cached workboard.
+    // Collection owns publication. Paint only consumes cached facts.
+    if (expShown(state) && !settingsPage) expData = readExpData(jobPipeline.home);
     syncPanelView();
     render();
     void refreshAgentContext();

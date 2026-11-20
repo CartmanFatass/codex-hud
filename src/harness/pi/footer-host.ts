@@ -44,6 +44,8 @@ export interface FooterContext {
     reasoning?: boolean;
     contextWindow?: number;
   };
+  /** pi exposes the selected credential kind without returning or refreshing the credential. */
+  modelRegistry?: { isUsingOAuth(model: NonNullable<FooterContext['model']>): boolean };
   sessionManager: {
     getSessionId(): string;
     getLeafId(): string | null;

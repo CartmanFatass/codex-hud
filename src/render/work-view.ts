@@ -214,7 +214,7 @@ export function renderWorkboardFrame(
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
-          : experiment ? expRows(experiment, input.expData, width) : homeRows(board, state, width, now, input);
+          : experiment ? expRows(experiment, input.expData, width, now) : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   // A stop waiting for its answer is the top row of Home and the Inspector, where the job under the cursor is.

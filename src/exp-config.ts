@@ -1,3 +1,5 @@
+import type { ExpProxySnapshot } from './exp-proxy.js';
+
 export const EXP_ACCOUNTS = ['anthropic-api', 'openai-api'] as const;
 export type ExpAccount = (typeof EXP_ACCOUNTS)[number];
 export interface ExpGrant {
@@ -9,7 +11,7 @@ export interface ExpGrant {
 export interface ExpConfig {
   version: 1;
   codex: { enabled: boolean; aliases: Record<string, string> };
-  proxy: { enabled: boolean; profile: string | null; intervalMinutes: number };
+  proxy: { enabled: boolean; profile: string | null; intervalMinutes: number; bindingVersion?: string };
   grants: Record<ExpAccount, ExpGrant>;
 }
 export interface ExpProfile {
@@ -19,6 +21,7 @@ export interface ExpProfile {
 export interface ExpData {
   config: ExpConfig;
   profiles: ExpProfile[];
+  proxySnapshot?: ExpProxySnapshot;
   unreadable?: true;
 }
 
