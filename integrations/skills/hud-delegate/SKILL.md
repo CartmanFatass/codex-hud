@@ -1,6 +1,6 @@
 ---
 name: hud-delegate
-description: Hand work to a local HUD role in its own herdr tab - imp (implementer), reviewer, sonic (small chores), and any other role hud_roster lists. Use whenever the user delegates in plain words ("交给 imp", "让 implementer 做", "派个 sonic", "让 sonic 查一下", "review 一下", "起个 reviewer", "问 oracle", "delegate this", "dispatch a sonic") or a project's docs route work to a role. The main session writes the brief, dispatches with hud_create, waits for the job to settle, reads the report and decides the next step.
+description: Hand work to a local HUD role in its own herdr tab - imp (implementer), reviewer, sonic (small chores), and any other role hud_roster lists. Use whenever the user delegates in plain words ("交给 imp", "让 implementer 做", "派个 sonic", "让 sonic 查一下", "review 一下", "起个 reviewer", "问 oracle", "delegate this", "dispatch a sonic") or a project's docs route work to a role. The main session writes the brief, dispatches with hud_create, reads the report when ready, and decides the next step.
 ---
 
 # Delegate through HUD
@@ -13,11 +13,13 @@ The user names a role and a task in plain words; you do the rest. Never ask them
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
 5. Claude Code: run `hud watch` under Monitor and re-arm after expiry. Codex: events are queued automatically;
    no Monitor command is needed, and drafts stay untouched (missing thread id or queue failure falls back to typing).
-   Both catch up pending work and deliver full questions, settlements/unread reports, new blocks and quiet-worker
+   pi: keep working; native HUD notices wake an idle session or arrive before the next model request after the
+   current tool batch, without touching the draft. No Monitor or foreground wait is needed in pi.
+   These watches catch up pending work and deliver full questions, settlements/unread reports, new blocks and quiet-worker
    reasons—not working starts/resumes, answered questions or already-reported closure. `--verbose` and MCP
    `changes` retain the fuller stream. When waiting across jobs, use `hud_wait` (`mode: "any"` or `"all"`),
    not repeated list reads. Without a watch or queue, main sessions receive typed questions. A live pane-scoped
-   watch suppresses direct questions. Answer within 20 minutes using the line's
+   watch suppresses direct pushes. Answer within 20 minutes using the line's
    `hud_respond` reply.
    Use `hud_peek` to see a worker's recent pane and optional `hud-progress` milestones without marking the job read or closing it.
 6. Read the report file through `hud_read`, check it (for code: the diff and named checks), then decide: accept,

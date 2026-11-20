@@ -144,7 +144,7 @@ CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得�
 每个 MCP 响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
 与 `hud watch` 用同一个 `jobRow` 推导任务状态，所以结论一致。`hud watch` 默认只打印需要关注的事件，如提问、结算、受阻或新的静置原因；
 `--verbose` 才打印所有变化。范围是调用者窗格（`HERDR_PANE_ID`），`--all` 为所有任务；空闲时只每 30 秒重扫一次。Claude Code 用 Monitor 运行它。
-Codex 通过 `codex queue` 自动静默接收；pi 的 HUD 扩展自动把事件作为原生后续消息送给主会话，不改编辑器草稿，也不需要打开面板或 Monitor。
+Codex 通过 `codex queue` 自动静默接收；pi 的 HUD 扩展用原生消息唤醒空闲的主会话，或在当前批工具调用完成后、下次模型请求前送达通知，不改编辑器草稿，也不需要打开面板或 Monitor。
 pi 工作者不会启动此监听。调用者有窗格时，`hud_roster` 和 `hud_create` 返回 `watcher_alive`；监听有效时不会直接向窗格输入，也不会显示 Monitor 提示。
 未启用监听时，问题仍可通过 Codex 队列发送；若无法排队或没有队列，则回退为直接输入。
 
