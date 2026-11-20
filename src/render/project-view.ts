@@ -10,7 +10,7 @@ import { boardRow, itemRow, section, mark, minuteAge, kvRows, pack } from './wor
 import { controlRows, pickerRows } from './control-view.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { pickOf } from './model-input.js';
-import { monitorText, fit, pair, flowLines } from './monitor-text.js';
+import { monitorText, fit, pair, flowLines, cutWords } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { t } from './i18n.js';
 export const sliceInk = (state: SliceState) => ({ working: theme.board.active, blocked: theme.board.attention,
@@ -379,7 +379,9 @@ export function clampLines(text: string, room: number, max: number) {
 /** `clampLines` for text already through `monitorText`. */
 export function clampClean(body: string, room: number, max: number) {
   const lines = flowLines(body, Math.max(1, room)), more = lines.length > max;
-  return { more, lines: more ? [...lines.slice(0, max - 1), fit(lines.slice(max - 1).join(' '), Math.max(1, room))] : lines };
+  // The last row is cut at a word end (Chinese at a character), never inside a word; a single word longer than the row is cut by cell.
+  const rest = lines.slice(max - 1).join(' '), last = cutWords(rest, Math.max(1, room)) || fit(rest, Math.max(1, room));
+  return { more, lines: more ? [...lines.slice(0, max - 1), last] : lines };
 }
 /** `head` and `text` on one row when they fit beside `right` (and `one`); else `head` with `right`, and the text wrapped under it at `indent`. */
 function stacked(head: string, text: string, right: string, width: number, indent: number, max = 2, one = true): string[] {

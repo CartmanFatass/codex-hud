@@ -291,3 +291,14 @@ test('model off: no call, and the snapshot is the very one it was given', async 
   assert.equal(s.calls.length, 0);
   assert.equal(s.briefs.apply(s.root, snap), snap);
 });
+
+test('a clamped brief sentence ends at a word, never inside one (EN at 40 columns)', async () => {
+  const { clampClean } = await import('../../dist/render/project-view.js');
+  const { lines, more } = clampClean('Ledger history, live jobs and ticket detail now show on the Progress page.', 34, 2);
+  assert.equal(more, true);
+  assert.equal(lines.length, 2);
+  assert.match(lines[1], /\b(?:the|Progress)…$/, lines[1]);
+  assert.doesNotMatch(lines[1], /pag…$/);
+  const zh = clampClean('台账历史、进行中的任务和工单详情现在都能在进度页直接看到。其余页面不变。', 20, 2).lines;
+  assert.match(zh[1], /…$/);
+});
