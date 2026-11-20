@@ -157,6 +157,7 @@ board counts these; update at every landing or decision. -->
 - try · — · SUPERVISOR-MCP · bug 2026-11-18 (live, Claude frontend-imp): a CLI worker stays `working` after its report when its CLI started an MCP server directly (`node …/hud-mcp`) just after the first input; cli-judge counts it as turn work (spec §2.1: MCP servers do not count); landed 2d281b7b: on the first turn a direct non-shell child started within 10 s of the first input is a launch helper (shells and later children still count); live check passed 2026-11-18 (panel-v2 04 frontend-imp j9dbc6abfd9f248a6 reached idle_grace on its own after its report)
 - try · 0.2.0 · PANEL-UX-01 · to-try rows read as briefs; counts agree; number keys leave the tabs (f = Changes); direct `1–4`/`d` answers; no divider drag (f287d6e1)
 - try · 0.2.0 · PANEL-UX-02 · one meaning per key (n flag, > < next question, i/Del places, g job tab); state said once; 40-column rows keep model names; zh words (用量, JSON 无法解析) (b1b4c8eb; job-sentence JSON fix 8e384387)
+- working · 0.2.0 · PANEL-UX-TITLES · ticket titles cut at a word, never inside one (imp neon; EN check found it; clamped sentences fixed 9d60eec7)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
