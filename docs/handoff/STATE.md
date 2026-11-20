@@ -7,10 +7,10 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
-- Try 0.2.0 (MCP-NEXT, PANEL-V2, MCP-READ-COMPACT, SUPERVISOR-MCP; review docs/reviews/2026-11-18-0.2.0-milestone.md, fixed 3635da5d).
-- Decide: panel question reply stays two keys (`r`, then `1–4`/`d`) or follows spec §2.2 literally (`1–4`/`d` on an expanded slab; `1–4` are also tab keys).
-- Decide: Split rule drag needs terminal mouse mode 1002 (motion while a button is held); keep it or keys only.
-- Try the older slices still marked `try`: HOME-RECOMMEND, SETTLE-FIX, M4-PRUNE, MATT-OFF, SUPERVISOR-FIX.
+- Try 0.2.0 (4 slices on the Progress page).
+- Decide: answer a question with `1–4`/`d` directly, or `r` first.
+- Decide: keep dragging the Split divider, or keys only.
+- Try the 5 older slices still marked to try.
 
 ## Next
 
