@@ -715,3 +715,24 @@ for (const mode of ['off', 'no-key'])
     assert.match(decisionRows(d, b.lanes[0], state, 80, f.now).map((r) => stripAnsi(r.text)).join('\n'), /asked Which parser\?/);
     assert.equal(f.calls.length, 0);
   });
+
+test('a cut-off JSON reply is no sentence, and a cached one is dropped on load', async () => {
+  const { sentenceReply } = await import('../../dist/collectors/job-sentences.js');
+  assert.deepEqual(sentenceReply('{"name":"Keys","sentence":"Keys mean one thing."}'), { name: 'Keys', sentence: 'Keys mean one thing.' });
+  assert.deepEqual(sentenceReply('```json\n{"sentence":"Fenced."}\n```'), { name: undefined, sentence: 'Fenced.' });
+  assert.deepEqual(sentenceReply('A plain old sentence.'), { sentence: 'A plain old sentence.' });
+  assert.equal(sentenceReply('{"name":"面板按键与行布局统一","s'), undefined);
+  assert.equal(sentenceReply('{"name":"no sentence"}'), undefined);
+  const dir = fs.mkdtempSync(join(tmpdir(), 'job-sentence-cache-')), file = join(dir, 'job-sentences.json');
+  fs.writeFileSync(file, JSON.stringify([
+    ['thin-job:j0000000000000001:zh', { fingerprint: 'a', at: 1, text: '{"name":"x","s', final: true, settledAt: 1 }],
+    ['thin-job:j0000000000000002:zh', { fingerprint: 'b', at: 1, text: '正常的一句话。', final: true, settledAt: 1 }],
+  ]));
+  const sentences = new JobSentences({ submit() { throw new Error('no call'); } }, file);
+  sentences.configure(true, 'zh');
+  const lane = { workers: [{ id: 'thin-job:j0000000000000001', task: 't1' }, { id: 'thin-job:j0000000000000002', task: 't2' }] };
+  const board = sentences.apply({ lanes: [lane], workers: lane.workers });
+  assert.equal(board.workers[0].modelSentence, undefined);
+  assert.equal(board.workers[1].modelSentence, '正常的一句话。');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

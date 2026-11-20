@@ -163,6 +163,19 @@ interface Saved {
   final?: boolean;
   settledAt?: number | null;
 }
+/** A reply that starts as JSON or a code fence but does not parse is cut off, never a sentence. */
+const looksLikeJson = (text: string) => /^\s*(?:\{|```)/.test(text);
+/** The model's `{"name","sentence"}` reply, or an old plain sentence; a cut-off or malformed JSON reply is nothing. */
+export function sentenceReply(text: string): { name?: string; sentence: string } | undefined {
+  const body = text.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, '');
+  try {
+    const v = JSON.parse(body);
+    if (typeof v?.sentence !== 'string' || !v.sentence.trim()) return undefined;
+    return { name: typeof v.name === 'string' ? v.name.trim().slice(0, 80) || undefined : undefined, sentence: v.sentence };
+  } catch {
+    return looksLikeJson(text) || !text.trim() ? undefined : { sentence: text };
+  }
+}
 export class JobSentences {
   private rows = new Map<string, Saved>();
   private active = new Map<string, ModelHandle>();
@@ -181,7 +194,7 @@ export class JobSentences {
           typeof key === 'string' &&
           typeof row?.fingerprint === 'string' &&
           typeof row.at === 'number' &&
-          (row.text === undefined || typeof row.text === 'string') &&
+          (row.text === undefined || (typeof row.text === 'string' && !looksLikeJson(row.text))) &&
           (row.name === undefined || typeof row.name === 'string')
         )
           this.rows.set(key, row);
@@ -258,6 +271,7 @@ export class JobSentences {
           prompt,
           cacheKey: `${key}:${fingerprint}`,
           maxOutputTokens: 200,
+          validateResponse: (text) => !!sentenceReply(text),
         });
         this.active.set(key, h);
         void h.result.then((result) => {
@@ -265,15 +279,9 @@ export class JobSentences {
           this.active.delete(key);
           row.at = this.clock();
           if (result.ok) {
-            let reply = result.text;
-            try {
-              const parsed = JSON.parse(reply);
-              reply = parsed.sentence;
-              row.name = typeof parsed.name === 'string' ? parsed.name.trim().slice(0, 80) || undefined : undefined;
-            } catch {
-              /* Old plain-sentence responses still work. */
-            }
-            const text = typeof reply === 'string' ? summarySentence(reply, 600) : '';
+            const reply = sentenceReply(result.text);
+            if (reply) row.name = reply.name;
+            const text = reply ? summarySentence(reply.sentence, 600) : '';
             if (text) {
               row.text = text;
               row.final = final;
