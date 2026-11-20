@@ -14,6 +14,7 @@ import { projectList } from './roles/projects.js';
 import { editPlaces, editPreset } from './roles/role-control.js';
 import { finishChain } from './render/chain-input.js';
 import { effectiveModel } from './render/control-view.js';
+import { rememberModel } from './render/model-input.js';
 import { discoverModelLists, readModelListCache } from './roles/model-discovery.js';
 import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
@@ -1430,7 +1431,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const visit = visits.visit(shownRoot());
         if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
         if (done.ok && modelIndex !== undefined && edit.op === 'run') {
-          const place = visit.control?.roles.find((r) => r.role === edit.role)?.places[modelIndex];
+          const role = visit.control?.roles.find((r) => r.role === edit.role);
+          if (role) rememberModel(state, previous, role, edit.run[modelIndex]?.model);
+          const place = role?.places[modelIndex];
           const model = place ? place.piModel?.current ?? effectiveModel(place) : edit.run[modelIndex]?.model ?? null;
           state.controlPresetNotice = { role: edit.role, index: modelIndex, model };
           state.controlNav = { ...state.controlNav, boardRevealed: undefined };

@@ -529,17 +529,21 @@ Flow has no model, and project-locked places show plain text and cannot be edite
 When unset, the model field shows the effective model in muted text if known, or just `[▾]`.
 Unset thinking likewise shows the known value in muted text or stays blank. If you open Edit place
 with Enter, its Model field still fills the form: choose Done to put the place in the draft, then `s` to save.
-With an empty query, the picker pins the current model and compatible models from this role's named
-presets, tagged except for `default`. No recent history is kept. Pinned models also stay in their provider groups.
-The picker opens in the panel's own pane and fills the body below the tabs in Classic and Split.
-It does not zoom the pane. At 100 columns or more, including outside herdr, provider groups start open.
-Their rows show context, max output, thinking, images and HUD state. The read-only right column wraps
-the full model ID and shows those facts, whether it is current, which roles and presets use it, list age,
-and what Enter will do. Below 100 columns, provider groups start folded with counts and the selected ID
-and facts appear in the bottom strip. Missing pi facts show `?`.
+With an empty query, the picker starts with the current model, compatible models from this role's other
+presets (tagged except for `default`), the previous model from the last quick save for this place (`was`,
+kept only for this panel session), and a clear row when applicable. These models also stay in their groups.
+Providers used by role or preset places (including resolved defaults for unset places) are open below: the
+current provider first, then by number of uses. The `▸` row groups the other providers; Enter or a click
+opens or closes them together. Individual headers are not selectable. With no providers in use, all groups are open.
+The picker fills the panel body below the tabs in Classic and Split without zooming. At 100 columns or more,
+the left list has columns for context, max output, thinking, images and HUD state. The read-only right column
+wraps the full model ID and shows those facts, whether it is current, which roles and presets use it, list age,
+and what Enter will do. Below 100 columns, the bottom strip shows one row of facts and wraps the full ID
+above it if it was shortened. Missing pi facts show `?`.
 
-Type any part of the full `provider/model` (any case) to hide the pins and open matching groups.
-In either layout, click a provider header to fold or unfold it; one click on a model sets it. The wheel
+Type to filter the full `provider/model` IDs. Every space-separated term must match, ignoring case
+(for example, `gpt mini`). Results are one flat list: providers in use first, then matches at the start
+of names, after separators, or inside words, then alphabetical. One click on a model sets it. The wheel
 scrolls three list rows at a time, keeping the selection visible. ↑↓ move without recentering the list,
 and PgUp/PgDn move one visible list window less one row. Enter sets. Esc clears a typed filter first,
 then closes without setting; clicking `esc cancel` or pressing Ctrl+C closes immediately. `◉` marks the current

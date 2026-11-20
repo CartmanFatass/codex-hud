@@ -165,7 +165,8 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
   const picker = state.projectInput;
-  const pick = picker && control && !harnesses && (chain?.sheet || state.controlQuickModel) ? pickOf(input.project, picker) : undefined;
+  const pick = picker && control && !harnesses && (chain?.sheet || state.controlQuickModel)
+    ? pickOf(input.project, picker, chain?.draft ? undefined : state.modelPrevious) : undefined;
   if (picker && !pick) {
     state.projectInput = undefined;
     state.controlQuickModel = undefined;

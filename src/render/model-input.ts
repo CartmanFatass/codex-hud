@@ -14,6 +14,9 @@ export interface ModelPick {
   lists: ModelLists;
   presets?: RoleFact['presets'];
   preset?: string | null;
+  inUse?: Map<string, number>;
+  off?: string[];
+  previous?: string;
 }
 export interface PickEntry {
   id: string;
@@ -25,27 +28,73 @@ export interface PickEntry {
   until?: number;
   current?: boolean;
   tags?: string[];
+  was?: boolean;
+}
+type OtherProviders = PickEntry & { providers: string[]; count: number };
+type PickRow = PickEntry | OtherProviders | { provider: string; count: number };
+
+const previousKey = (role: RoleFact, index: number) => JSON.stringify([role.path, role.preset ?? null, index]);
+
+/** Called only after the existing quick-save writer succeeds. Empty remembers a previously unset override. */
+export function rememberModel(state: MonitorState, before: MonitorState, savedRole: RoleFact, model?: string) {
+  const input = before.projectInput, role = before.controlQuickModel?.role, place = input?.place;
+  if (!role || !input || !place) return;
+  const old = role.editor?.places[input.index]?.raw.model;
+  if (old === model) return;
+  // The first write to a shipped chain can change its path, and editing a legacy chain can change its displayed preset.
+  state.modelPrevious = { ...state.modelPrevious, [previousKey(savedRole, input.index)]: old ? place.piModel?.current ?? old : '' };
 }
 
-export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput): ModelPick | undefined {
+export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput, previous?: MonitorState['modelPrevious']): ModelPick | undefined {
   const role = data?.roles.find((r) => r.role === input.role), place = input.place;
-  return data && role && place?.harness === 'pi' && role.source !== 'project' ? { place, lists: data.models, presets: role.presets, preset: role.preset } : undefined;
+  if (!data || !role || place?.harness !== 'pi' || role.source === 'project') return;
+  const inUse = new Map<string, number>();
+  for (const r of data.roles) {
+    // The active preset can share its chain with role.places, and the file chain may be the active chain.
+    const chains = new Set([r.places, r.fileChain, ...(r.presets ?? []).map((p) => p.places)]);
+    for (const chain of chains) for (const p of chain ?? []) {
+      if (p.harness !== 'pi') continue;
+      const provider = qualifiedPiProvider((p.piModel?.isDefault ?? !p.model) ? p.piModel?.defaultId : p.model);
+      if (provider) inUse.set(provider, (inUse.get(provider) ?? 0) + 1);
+    }
+  }
+  const off = (data.harnessSwitches ?? []).filter((s) => s.group === 'provider' && s.off).map((s) => s.name).sort();
+  return { place, lists: data.models, presets: role.presets, preset: role.preset, inUse, off, previous: previous?.[previousKey(role, input.index)] };
 }
 
-export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
-  const { place, lists, presets } = pick, typed = input.text.trim(), needle = typed.toLowerCase();
+export const OTHER_PROVIDERS = 'other';
+const alphabetical = (a: string, b: string) => a.localeCompare(b, 'en') || (a < b ? -1 : a > b ? 1 : 0);
+
+/** Best position per token: start of a provider/model, then a separator, then within a word. */
+function matchRank(id: string, parts: string[]) {
+  const modelStart = id.indexOf('/') + 1;
+  let starts = 0, boundaries = 0;
+  for (const part of parts) {
+    let at = id.indexOf(part);
+    if (at < 0) return -1;
+    if (at === 0 || id.startsWith(part, modelStart)) { starts++; continue; }
+    for (; at >= 0; at = id.indexOf(part, at + 1)) {
+      if ('/-._:'.includes(id[at - 1]!)) { boundaries++; break; }
+    }
+  }
+  return starts * (parts.length + 1) + boundaries;
+}
+
+export function pickView(pick: ModelPick, input: ModelInput) {
+  const { place, lists, presets, inUse = new Map<string, number>(), previous } = pick, needle = input.text.trim().toLowerCase();
   const currentId = place.piModel?.current ?? place.model;
   const isDefault = place.piModel?.isDefault ?? !place.model;
   const reference = (model: string, p: PlaceFact): PickEntry => {
-    const fact = p.state === 'off' || lists.piStatus?.runnerOff ? 'off'
-      : !qualifiedPiProvider(model) ? 'unknown' : undefined;
+    const provider = qualifiedPiProvider(model);
+    const fact = p.state === 'off' || lists.piStatus?.runnerOff || (provider && pick.off?.includes(provider)) ? 'off'
+      : !provider ? 'unknown' : undefined;
     return { id: `pin:${model}`, label: model, model, fact, until: p.until ?? lists.piExhausted?.[model],
       value: fact ? undefined : model };
   };
   const current = currentId ? { ...reference(currentId, place), current: true } : undefined;
-  const canUnset = !place.piModel?.defaultOff && !lists.piStatus?.runnerOff;
   const defaultId = place.piModel?.defaultId ?? undefined;
   const provider = qualifiedPiProvider(defaultId);
+  const canUnset = !place.piModel?.defaultOff && !lists.piStatus?.runnerOff && !(provider && pick.off?.includes(provider));
   const unsetLabel = defaultId ? t(place.piModel?.defaultSource === 'from pi role' ? "role's model ({model})" : "pi's model ({model})", {
     model: provider ? defaultId.slice(provider.length + 1) : defaultId,
   }) : t('clear');
@@ -54,40 +103,66 @@ export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
   const pins = new Map<string, PickEntry>();
   if (!needle && current) pins.set(current.model!, isDefault && canUnset ? unset : current);
   if (!needle) for (const preset of presets ?? []) for (const p of preset.places ?? []) {
-    if (p.harness !== place.harness || p.label !== place.label) continue;
+    if (preset.name === pick.preset || p.harness !== place.harness || p.label !== place.label) continue;
     const id = p.piModel?.current ?? p.model;
     if (!id) continue;
     const pin = pins.get(id) ?? reference(id, p);
     if (pin.fact === 'off' && !pin.current) continue;
-    // The current row already names the selected place's own preset in its detail strip.
-    if (preset.name !== 'default' && (!pin.current || preset.name !== pick.preset)) {
+    if (preset.name !== 'default') {
       pin.tags ??= [];
       if (!pin.tags.includes(preset.name)) pin.tags.push(preset.name);
     }
     pins.set(id, pin);
   }
-  const groups = new Map<string, { provider: string; open: boolean; entries: PickEntry[] }>();
-  const ids = [...new Set((placeModels(place, lists) ?? []).filter((id) => id.toLowerCase().includes(needle)))];
+  const top = [...pins.values()];
+  if (!needle && previous && (previous !== currentId || isDefault)) {
+    const pinned = pins.get(previous), pin = pinned?.value ? pinned : reference(previous, { ...place, state: 'standby', until: undefined });
+    if (!pin.fact) {
+      if (pin === pinned) pin.was = true;
+      else top.push({ ...pin, was: true });
+    }
+  }
+  if (!needle && canUnset) {
+    if (!isDefault) top.push({ ...unset, was: previous === '' });
+    else if (!current) top.unshift(unset);
+  }
+
+  const groups = new Map<string, PickEntry[]>(), parts = needle ? needle.split(/\s+/) : [];
+  const ids = new Set(placeModels(place, lists) ?? []);
+  const matches: { entry: PickEntry; used: boolean; rank: number }[] = [];
   for (const value of ids) {
     const entry: PickEntry = { id: `model:${value}`, label: value, model: value, value,
-      current: !isDefault && value === currentId, until: lists.piExhausted?.[value] };
+      current: value === currentId && (!!needle || !isDefault), until: lists.piExhausted?.[value] };
     const slash = value.indexOf('/'), provider = value.slice(0, slash);
-    let group = groups.get(provider);
-    if (!group) {
-      const open = input.groups && Object.hasOwn(input.groups, provider) ? input.groups[provider] : wide || !!needle;
-      group = { provider, open, entries: [] };
+    if (needle) {
+      const rank = matchRank(value.toLowerCase(), parts);
+      if (rank >= 0) matches.push({ entry, rank, used: inUse.has(provider) });
+    } else {
+      const group = groups.get(provider) ?? [];
+      group.push({ ...entry, label: value.slice(slash + 1) });
       groups.set(provider, group);
     }
-    group.entries.push({ ...entry, label: value.slice(slash + 1) });
   }
-  const byProvider = [...groups.values()].sort((a, b) => a.provider.localeCompare(b.provider) || (a.provider < b.provider ? -1 : 1));
-  for (const group of byProvider) group.entries.sort((a, b) => a.label.localeCompare(b.label));
-  const fallback = !needle && canUnset && !(current && isDefault) ? unset : undefined;
-  const pinned = [...pins.values()];
-  const entries = [...pinned, ...byProvider.flatMap((g) => g.open ? g.entries : []), ...(fallback ? [fallback] : [])];
-  const selected = entries.find((entry) => entry.id === input.pick) ?? (!needle ? entries.find((entry) => entry.current) : undefined)
-    ?? entries[0];
-  return { entries, pinned, groups: byProvider, fallback, selected, current, total: ids.length };
+  const currentProvider = qualifiedPiProvider(currentId);
+  const useCount = (p: string) => inUse.get(p) ?? 0;
+  const groupRows = (providers: string[]) => providers.flatMap((provider) => {
+    const entries = groups.get(provider)!.sort((a, b) => alphabetical(a.label, b.label));
+    return [{ provider, count: entries.length }, ...entries];
+  });
+  const providers = [...groups.keys()].sort(alphabetical);
+  const used = providers.filter((p) => !inUse.size || inUse.has(p)).sort((a, b) =>
+    Number(b === currentProvider) - Number(a === currentProvider) || useCount(b) - useCount(a) || alphabetical(a, b));
+  const other = inUse.size ? providers.filter((p) => !inUse.has(p)) : [];
+  const rows: PickRow[] = needle ? matches.sort((a, b) => Number(b.used) - Number(a.used) || b.rank - a.rank || alphabetical(a.entry.label, b.entry.label))
+    .map(({ entry }) => entry) : [
+      ...top, ...groupRows(used), ...(other.length ? [
+        { id: OTHER_PROVIDERS, label: '', providers: other, count: other.reduce((n, p) => n + groups.get(p)!.length, 0) },
+        ...(input.otherOpen ? groupRows(other) : []),
+      ] : []),
+    ];
+  const entries = rows.filter((row): row is PickEntry => 'id' in row);
+  const selected = entries.find((entry) => entry.id === input.pick) ?? entries[0];
+  return { rows, entries, selected, current, total: needle ? matches.length : ids.size, catalogCount: ids.size };
 }
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
@@ -97,7 +172,7 @@ export function pickerListWindow(list: MonitorRow[], input: ModelInput, size: nu
   const max = Math.max(0, list.length - size), at = list.findIndex((row) => row.item === 'project:pick');
   let first = clamp(input.scroll ?? 0, 0, max);
   if (at >= 0 && size) first = clamp(first, Math.max(0, at - size + 1), at);
-  const entries = list.flatMap(({ modelHit }, row) => modelHit && 'entry' in modelHit ? [{ id: modelHit.entry, row }] : []);
+  const entries = list.flatMap(({ modelHit }, row) => modelHit ? [{ id: modelHit.entry, row }] : []);
   return { first, max, size, entries, wide };
 }
 
@@ -109,7 +184,7 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
   const pane = ctx.frame?.panes.find((p) => p.id === 'agents');
   const query = pane?.rows.find((r) => r.modelPick && r.item === placeItem(open.role, open.index));
   const pick = query?.modelPick, window = query?.modelWindow;
-  const filter = (text: string) => Object.assign(typed, { text, pick: undefined, groups: undefined, scroll: undefined });
+  const filter = (text: string) => Object.assign(typed, { text, pick: undefined, otherOpen: undefined, scroll: undefined });
   if (input.type === 'key') {
     if (input.text !== undefined) { filter([...typed.text, ...input.text].slice(0, MODEL_ID_MAX).join('')); return done(); }
     if (input.key === 'backspace') { filter([...typed.text].slice(0, -1).join('')); return done(); }
@@ -121,8 +196,12 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
       ctx.frame?.controls.some((c) => c.kind === 'model-cancel' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width)) return close();
   if (!pane || !pick || !window?.size) return done();
   const { first, max, size, entries } = window;
-  const view = pickView(pick, typed, window.wide), index = entries.findIndex(({ id }) => id === view.selected?.id);
+  const view = pickView(pick, typed), index = entries.findIndex(({ id }) => id === view.selected?.id);
   const set = (entry: PickEntry | undefined) => {
+    if (entry?.id === OTHER_PROVIDERS) {
+      Object.assign(typed, { otherOpen: !typed.otherOpen, pick: entry.id, scroll: first });
+      return done();
+    }
     if (entry?.value === undefined) return window.wide && entry?.current ? close() : done();
     next.projectInput = undefined;
     return done({ type: 'model-picked', value: entry.value });
@@ -130,13 +209,7 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
   if (input.type === 'mouse') {
     if (input.button === 'left') {
       const hit = monitorRowAt(pane, input.x, input.y)?.modelHit;
-      if (hit && 'entry' in hit) return set(view.entries.find((e) => e.id === hit.entry));
-      if (hit && 'provider' in hit) {
-        const group = view.groups.find((g) => g.provider === hit.provider)!;
-        typed.groups = { ...typed.groups, [group.provider]: !group.open };
-        if (group.open && group.entries.some(({ id }) => id === typed.pick)) typed.pick = undefined;
-        typed.scroll = first;
-      }
+      if (hit) return set(view.entries.find((e) => e.id === hit.entry));
     } else if (index >= 0) {
       typed.scroll = clamp(first + (input.button === 'wheel-down' ? 3 : -3), 0, max);
       const edge = clamp(entries[index]!.row, typed.scroll, typed.scroll + size - 1);
@@ -150,8 +223,8 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
   const step = input.key === 'up' || input.key === 'page-up' ? -1 : 1;
   let at = clamp(index + step, 0, entries.length - 1);
   let scroll = first;
-  if (input.key === 'home') at = 0;
-  else if (input.key === 'end') at = entries.length - 1;
+  if (input.key === 'home') { at = 0; scroll = 0; }
+  else if (input.key === 'end') { at = entries.length - 1; scroll = max; }
   else if (input.key === 'page-up' || input.key === 'page-down') {
     const delta = step * Math.max(1, size - 1), target = entries[index]!.row + delta;
     while (entries[at + step] && step * (entries[at]!.row - target) < 0) at += step;

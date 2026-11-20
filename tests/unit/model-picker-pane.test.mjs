@@ -47,7 +47,8 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
     const a = draw(picker);
     assert.equal(a.lines.length, 36);
     assert.ok(a.lines.every((line) => visualLength(line) === 120));
-    assert.match(left(a).join('\n'), /^▾ anthropic ─+ 9\n +claude-opus-5-5 +500K +64K +✓ +✓/m);
+    assert.match(left(a).join('\n'), /^xai ─+ 6\n +grok-4.5 +256K +64K +✓ +✓/m);
+    assert.doesNotMatch(left(a).join('\n'), /^anthropic ─|claude-opus-5-5/m);
     assert.match(left(a).join('\n'), /openai\/gpt-6.1-sol +1M +128K +✓ +✓ +✗/);
     assert.match(right(a), /xai\/grok-4.7/);
     assert.match(cells(a)[0], zh ? /首页.*项目.*控制/ : /Home.*Project.*Control/);
@@ -57,9 +58,9 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
     const boundary = drawing(picker, 100);
     assert.ok(boundary.lines.every((line) => visualLength(line) === 100));
     assert.equal(yOf(boundary, /^\/ /), 2);
-    assert.match(left(boundary).join('\n'), /^▾ anthropic ─+/m);
+    assert.match(left(boundary).join('\n'), /^▸ anthropic · arena · google · mistral ─+/m);
     const narrow = drawing(picker, 99);
-    assert.match(cells(narrow).join('\n'), /^▸ anthropic ─+/m);
+    assert.match(cells(narrow).join('\n'), /^▸ anthropic · arena · google · mistral ─+/m);
     assert.doesNotMatch(cells(narrow)[2], /│/);
     const normalized = (line) => line.trim().replace(/ +/g, ' ');
     const modelHeader = build(lang).frames.find((frame) => frame.id === '3e').frame.rows[2].segs.map((s) => s.t).join('').split('│')[0];
@@ -77,18 +78,17 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
     assert.equal(picked.action.type, 'preset-edit');
     assert.equal(picked.action.run[0].model, 'openai/gpt-6.1-sol');
     assert.equal(picked.state.controlChain.sheet, undefined);
-    const wheel = draw(click(b, 2, 4, 'wheel-down').state);
-    assert.notDeepEqual(left(wheel), left(b));
-    assert.equal(left(wheel)[0], left(b)[0]);
+    const expanded = draw(click(a, 2, yOf(a, /^▸ anthropic /)).state);
+    assert.match(left(expanded).join('\n'), /^› ▾ anthropic /m);
+    const wheel = draw(click(expanded, 2, 4, 'wheel-down').state);
+    assert.notDeepEqual(left(wheel), left(expanded));
+    assert.equal(left(wheel)[0], left(expanded)[0]);
     assert.match(left(wheel).join('\n'), /^› /m);
-    const folded = draw(click(a, 2, yOf(a, /^▾ anthropic /)).state);
-    assert.match(left(folded).join('\n'), /^▸ anthropic /m);
-    assert.doesNotMatch(left(folded).join('\n'), /claude-opus-5-5/);
 
     const c = draw(type(a, 'grok').state);
-    assert.match(left(c)[0], zh ? /8 \/ 88 个匹配/ : /8 \/ 88 matches/);
-    assert.match(left(c).join('\n'), /^▾ arena [\s\S]*^▾ xai /m);
-    const selected = draw(send(c, 'down').state); // arena's grok-4.7, not xai's.
+    assert.match(left(c)[0], /^\/ grok▌ +8$/);
+    assert.match(left(c).join('\n'), /^› +xai\/grok-4.5 [\s\S]*^ +arena\/grok-4.7 /m);
+    const selected = draw(send(c, 'end').state); // arena's grok-4.7, not xai's.
     assert.match(right(selected), /arena\/grok-4.7/);
     assert.match(right(selected), /xai\/grok-4.7/);
     assert.match(right(selected), /imp \[lab\]/);
@@ -103,29 +103,24 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
     assert.equal(send(draw(cleared.state), 'escape').state.projectInput, undefined);
 
     const d = draw(send(draw(type(a, 'maverick').state), 'down').state);
-    assert.match(left(d).join('\n'), /^› +meta-llama\/.*….*-fp8 +1M +16K +– +✓/m);
+    assert.match(left(d).join('\n'), /^› +arena\/meta-llama\/.*….*-fp8 +1M +16K +– +✓/m);
     assert.equal(right(d).split('\n').slice(0, 2).map((s) => s.trim()).join(''), 'arena/meta-llama/llama-4-maverick-17b-128e-instruct-fp8');
 
     const pickerOff = send(sample.draw(lang, sample.state(layout), 24, dataOff), 'place-model').state;
-    const allOpenOff = draw(pickerOff, dataOff);
-    const groups = { anthropic: false, arena: false, google: false, mistral: false, openai: false };
-    const e = draw({ ...pickerOff, projectInput: { ...pickerOff.projectInput, groups } }, dataOff);
-    for (const frame of [allOpenOff, e]) {
+    const e = draw(pickerOff, dataOff);
+    for (const frame of [e, draw({ ...pickerOff, projectInput: { ...pickerOff.projectInput, otherOpen: true } }, dataOff)]) {
       assert.ok(frame.lines.every((line) => visualLength(line) === 120));
       assert.match(left(frame).join('\n'), /› ◉ xai\/grok-4.7 +256K +64K +✓ +✓ +⊘/);
-      assert.doesNotMatch(left(frame).join('\n'), /^[▸▾] xai /m);
+      assert.doesNotMatch(left(frame).join('\n'), /^xai ─/m);
       assert.match(right(frame).replace(/\n\s*/g, ' '), zh ? /这个位置被跳过：imp \[daily\] → agy/ : /this place is skipped: imp \[daily\] → agy/);
       assert.match(right(frame), zh ? /⏎ 保留 xai\/grok-4.7/ : /⏎ keeps xai\/grok-4.7/);
       assert.deepEqual([send(frame, 'enter').action, send(frame, 'enter').state.projectInput], [undefined, undefined]);
     }
-    const sampleOff = build(lang).frames.find((frame) => frame.id === '3e').frame.rows.map((r) => r.segs.map((s) => s.t).join('').split('│')[0]);
-    assert.deepEqual(left(e).filter((s) => /^[▸⊘/]/.test(s)).map(normalized), sampleOff.filter((s) => /^[▸⊘/]/.test(s)).map(normalized));
-    if (layout === 'split' && process.env.HUD_MODEL_PICKER_REPORT_FRAMES)
-      for (const [width, frame] of [[100, boundary], [120, a]]) console.log(`${lang} ${width}×36\n${cells(frame).join('\n')}`);
+    assert.match(left(e).join('\n'), zh ? /^⊘ 已停用：deepseek · xai$/m : /^⊘ off: deepseek · xai$/m);
   }
 });
 
-test('live picker paints wide immediately and never asks herdr to zoom or restore', { timeout: 10000 }, async (t) => {
+test('live picker paints immediately, types without discovery and can restore the previous quick save', { timeout: 10000 }, async (t) => {
   const f = await fixture(t), log = join(f.cwd, 'herdr-log');
   f.put(join(f.hud, 'hud-settings.json'), { language: 'en', modelEnabled: false, theme: 'none', panelLayout: 'classic' });
   const exhausted = { harness: 'pi', pi_role: 'implementer', model: 'synthetic/exhausted' };
@@ -133,8 +128,13 @@ test('live picker paints wide immediately and never asks herdr to zoom or restor
   f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen'], run: [
     exhausted, { harness: 'pi', pi_role: 'implementer', model: 'synthetic/current' },
   ] });
-  f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: ['synthetic/current', 'synthetic/next'] });
-  const herdr = join(f.env.PATH, 'herdr');
+  f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: ['synthetic/current', 'synthetic/next'], cli: { agy: [], grok: [] } });
+  const herdr = join(f.env.PATH, 'herdr'), discovery = join(f.cwd, 'discovery-log');
+  for (const name of ['pi', 'agy', 'grok']) {
+    const bin = join(f.env.PATH, name);
+    f.put(bin, `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(discovery)}, ${JSON.stringify(name + '\n')});`);
+    chmodSync(bin, 0o700);
+  }
   f.put(herdr, `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\n` +
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nprocess.exitCode = 97;\n`);
   chmodSync(herdr, 0o700);
@@ -166,8 +166,10 @@ test('live picker paints wide immediately and never asks herdr to zoom or restor
   assert.doesNotMatch(stripAnsi(output), /imp #2 ─/, 'the first update is already wide');
   output = '';
   child.stdin.write('next');
-  await waitFor(/1 \/ 2 matches[\s\S]*› +next/);
-  child.stdin.write('\x1b[<0;5;6M');
+  await waitFor(/\/ next▌ +1/);
+  await waitFor(/› +synthetic\/next/);
+  assert.equal(existsSync(discovery), false, 'typing did not run any catalog command');
+  child.stdin.write('\x1b[<0;5;5M');
   await waitFor(/✓ imp #2 → synthetic\/next/);
   assert.doesNotMatch(stripAnsi(output), /Edit place|Not saved/);
   const role = JSON.parse(readFileSync(join(f.hud, 'roles/imp.json'), 'utf8'));
@@ -175,7 +177,11 @@ test('live picker paints wide immediately and never asks herdr to zoom or restor
   assert.equal(role.run[1].model, 'synthetic/next');
   output = '';
   child.stdin.write('m');
-  await waitFor(/2 models · list .* old/);
+  await waitFor(/synthetic\/current +[^│\n]*was[\s\S]*│/);
+  child.stdin.write('\x1b[B\r');
+  await waitFor(/✓ imp #2 → synthetic\/current/);
+  assert.equal(JSON.parse(readFileSync(join(f.hud, 'roles/imp.json'), 'utf8')).run[1].model, 'synthetic/current');
+  assert.equal(existsSync(discovery), false);
   child.kill('SIGTERM');
   assert.deepEqual(await exited, { code: 0, signal: null }, stderr);
   const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];

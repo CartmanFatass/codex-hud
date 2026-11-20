@@ -335,9 +335,9 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length}$`, 'm'));
   await s.keys('ANTH');
   page = lines40(s, 'en', 24).join('\n');
-  assert.match(page, /\/ ANTH▌ +8 matches/);
-  assert.match(page, /^▾ anthropic ─+ 7\n[\s\S]*^▾ arena ─+ 1/m);
-  assert.match(page, /claude-opus-5-5-20261101/);
+  assert.match(page, /^\/ ANTH▌ +8$/m);
+  assert.match(page, /^› +anthropic\/claude-haiku-5[\s\S]*^ +arena\/anthropic.claude-opus-5-5$/m);
+  assert.match(page, /20261101/);
   assert.doesNotMatch(page, /openai/);
   await s.keys(ESC, 'XAI/GROK-4.7', ENTER);
   assert.equal(s.session.state.controlChain.at, 0);
@@ -356,17 +356,16 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   focus(s);
   await s.keys('m', 'grok');
   page = lines40(s).join('\n');
-  assert.match(page, /current  xai\/grok-4.7 +⊘/);
-  assert.match(page, /\/ grok▌ +2 matches/);
-  assert.doesNotMatch(page, /^▾ xai ─/m);
+  assert.match(page, /^\/ grok▌ +2$/m);
+  assert.doesNotMatch(page, /xai\/grok/);
   assert.equal(s.registry().routing(NOW).byId.get('grok-4.7'), null, 'attribution still sees both providers');
   await s.keys(ESC, ESC, ESC);
   setHarnessDisabled(s.hud, 'pi:xai', false);
   s.collector.refreshRoles(s.session.snap, NOW);
-  await s.keys('m', 'grok', DOWN, DOWN, DOWN);
+  await s.keys('m', 'grok', DOWN);
   page = lines40(s).join('\n');
-  assert.match(page, /\/ grok▌ +5 matches/);
-  assert.match(page, /^▾ arena ─+ 2\n[\s\S]*^▾ xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/m);
+  assert.match(page, /^\/ grok▌ +5$/m);
+  assert.match(page, /^  ◉ xai\/grok-4.7\n›   xai\/grok-4.7-fast[\s\S]*^ +arena\/grok-4.7$/m);
   const closed = await s.press('\x03');
   assert.equal(closed.close, false);
   assert.equal(s.session.state.projectInput, undefined);
@@ -453,7 +452,7 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   assert.equal(stored(s, 'imp').run[0].model, long, 'the full 128-character ID survives the edit');
   focus(s);
   await s.keys('m', 'custom/pi-next', ENTER);
-  assert.match(lines40(s).join('\n'), /0 matches\n +No matching models/);
+  assert.match(lines40(s).join('\n'), /▌ +0\nNo matching models/);
   assert.equal(s.session.state.projectInput.text, 'custom/pi-next');
   assert.equal(stored(s, 'imp').run[0].model, long);
   await s.press(BACKSPACE);
@@ -472,7 +471,11 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   await s.press(ESC);
   setHarnessDisabled(s.hud, 'pi:synthetic', false);
   s.collector.refreshRoles(s.session.snap, NOW);
-  await s.keys('m', END, ENTER);
+  await s.press('m');
+  const window = s.frame().panes[0].rows.find((r) => r.modelWindow).modelWindow;
+  const clear = window.entries.findIndex(({ id }) => id === 'default');
+  assert.ok(clear > 0, 'the clear row precedes provider models');
+  await s.keys(...Array(clear).fill(DOWN), ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
   assert.equal(s.assignment('imp').model, 'synthetic/model');
   focus(s);
@@ -558,15 +561,14 @@ test('40-column picker preserves defaults, full IDs and capability strips in Cla
   for (const lang of ['en', 'zh']) {
     const grouped = frames[`pick-grouped-40-${lang}`].join('\n');
     assert.match(grouped, lang === 'en' ? /pi's model \(gpt-6.1-sol\)\n +from pi settings/ : /pi 自带模型（gpt-6.1-sol）\n +来自 pi 设置/);
-    assert.ok(grouped.indexOf('anthropic ─') < grouped.indexOf('arena ─'));
+    assert.match(grouped, /^openai ─+ 7[\s\S]*^▸ anthropic · arena/m);
     const filtered = frames[`pick-filter-40-${lang}`].join('\n');
-    assert.match(filtered, /\/ grok▌ +5 (?:个匹配|matches)/);
-    assert.match(filtered, /▾ arena ─+ 2[\s\S]*▾ xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/);
+    assert.match(filtered, /^\/ grok▌ +5$/m);
+    assert.match(filtered, /^  ◉ xai\/grok-4.7\n›   xai\/grok-4.7-fast[\s\S]*^ +arena\/grok-4.7$/m);
     const long = frames[`pick-long-40-${lang}`];
-    assert.match(long.join('\n'), /^› +meta-llama\/.*….*-fp8$/m);
-    const detail = long.findIndex((row) => /^(Selected|所选) ─/.test(row));
-    assert.equal(long.slice(detail + 1, -3).map((row) => row.trim()).join(''), `${MAVERICK}-fp8`);
-    assert.match(long.at(-3), lang === 'en' ? /1M ctx {2}16K out {2}think – {2}img ✓/ : /1M 上下文 {2}16K 输出 {2}思考 – {2}图片 ✓/);
+    assert.match(long.join('\n'), /^› +arena\/meta-llama\/.*….*-fp8$/m);
+    assert.equal(long.slice(-4, -2).map((row) => row.trim()).join(''), `${MAVERICK}-fp8`);
+    assert.match(long.at(-2), lang === 'en' ? /^1M ctx {2}16K out {2}think – {2}img ✓$/ : /^1M 上下文 {2}16K 输出 {2}思考 – {2}图片 ✓$/);
   }
 });
 
@@ -588,38 +590,38 @@ test('pi picker paints live quota, off and unknown facts without offering off or
   assert.deepEqual(refresh.action, { type: 'refresh-models' });
   assert.equal(s.session.state.projectInput.text, exhausted);
   let page = lines40(s).join('\n');
-  assert.match(page, /^›   gpt-6.1-sol +✗ 42m$/m, 'a target not in the chain can be exhausted');
-  assert.match(page, /Selected ─+\n +openai\/gpt-6.1-sol\n +272K ctx {2}128K out {2}think ✓ {2}img –\n +✗ exhausted · resets in 42m/);
+  assert.match(page, /^›   openai\/gpt-6.1-sol +✗ 42m$/m, 'a target not in the chain can be exhausted');
+  assert.match(page, /^272K ctx {2}128K out {2}think ✓ {2}img –$/m);
+  assert.doesNotMatch(page, /Selected|resets in/);
   const exact = () => {
     for (const lang of ['en', 'zh']) for (const panelLayout of ['classic', 'split']) {
       const frame = s.render(40, lang, { ...s.session.state, panelLayout }, 16, s.session.snap, true, 'unicode', 'mocha');
       assert.equal(frame.lines.length, 16);
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
-      assert.match(stripAnsi(frame.lines.at(-5)), /^(Selected|所选) ─/);
+      assert.match(stripAnsi(frame.lines.at(-2)), lang === 'en' ? / ctx / : / 上下文 /);
     }
   };
   exact();
-  assert.match(lines40(s, 'en', 9).join('\n'), /✗ exhausted · resets in 42m/, 'a short pane gives the strip room before the list');
+  assert.match(lines40(s, 'en', 9).join('\n'), /✗ 42m[\s\S]*^272K ctx/m, 'a short pane still shows the cursor and strip');
   const expired = plain(s.render(40, 'en', s.session.state, 20, s.session.snap, true, 'unicode', 'none', { nowMs: NOW + 42 * 60000 })).join('\n');
   assert.doesNotMatch(expired, /✗|resets in/);
   await s.press(ENTER);
   assert.equal(stored(s, 'imp').run[0].model, exhausted, 'an exhausted target remains selectable');
-  for (const [id, row, status] of [
-    ['grok-4.7', /^› ◉ grok-4\.7 +\?$/m, /\n +\? unknown\n/],
-    ['deepseek/deepseek-synthetic', /^› ◉ deepseek\/deepseek-synthetic +⊘$/m, /\n +⊘ off\n/],
+  for (const [id, row] of [
+    ['grok-4.7', /^› ◉ grok-4\.7 +\?$/m],
+    ['deepseek/deepseek-synthetic', /^› ◉ deepseek\/deepseek-synthetic +⊘$/m],
   ]) {
     current(id);
     focus(s);
     await s.press('m');
     page = lines40(s).join('\n');
     assert.match(page, row);
-    assert.match(page, status);
-    assert.ok(page.split('\n').includes(`  ${id}`), 'the strip keeps the whole ID');
     if (id.startsWith('deepseek/')) assert.match(page, /1M ctx {2}96K out {2}think – {2}img ✓/);
-    assert.equal(page.match(/^⊘ off, not listed: deepseek$/gm)?.length, 1);
     exact();
-    const frame = s.frame(40, 'en', 20);
-    assert.equal(frame.panes[0].rows.find((r) => r.text.includes('not listed')).item, undefined);
+    const frame = s.frame(40, 'en', 60);
+    const off = frame.panes[0].rows.filter((r) => r.text.includes('off: deepseek'));
+    assert.equal(off.length, 1);
+    assert.equal(off[0].modelHit, undefined);
     assert.equal((await s.press(ENTER)).action, undefined);
     assert.equal(stored(s, 'imp').run[0].model, id);
     assert.ok(s.session.state.projectInput, 'Enter on the read-only reference does not close');

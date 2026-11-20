@@ -1,12 +1,12 @@
 /** The picker owns the panel body. When wide, only its left column is a list. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
-import { placeModels, type PlaceFact } from '../roles/role-control.js';
+import type { PlaceFact } from '../roles/role-control.js';
 import { qualifiedPiProvider } from '../roles/roster.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
-import { pickerAge, pickerCap, pickerFact, pickerQuery, pickerRows, presetTag } from './control-view.js';
+import { pickerAge, pickerCap, pickerFact, pickerListRows, pickerQuery, pickerRows, presetTag } from './control-view.js';
 import { t } from './i18n.js';
-import { pickerListWindow, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
+import { OTHER_PROVIDERS, pickerListWindow, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import type { MonitorFrame, MonitorRow } from './monitor.js';
 import { boardCursor, footerLayout, footRow, mark, section } from './workboard-rows.js';
@@ -45,7 +45,7 @@ function uses(data: ProjectSnapshot, model: string, place: PlaceFact, bare?: str
 
 function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view: ReturnType<typeof pickView>, width: number, height: number, now: number) {
   const entry = view.selected;
-  if (!entry) return [muted(t('No selection'))];
+  if (!entry || entry.id === OTHER_PROVIDERS) return [muted(t('No selection'))];
   const model = entry.model, full = monitorText(model ?? entry.label);
   const target = location(input.role, pick.preset, input.index);
   const clear = () => t('clears the model override for {place}', { place: target });
@@ -108,14 +108,10 @@ function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view:
 
 function wideRows(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, room: number, now: number) {
   const left = Math.floor(width * 7 / 12), rightWidth = width - left - 1;
-  const view = pickView(pick, input, true), status = pick.lists.piStatus;
+  const view = pickView(pick, input), status = pick.lists.piStatus, count = view.catalogCount;
   const age = status?.fetchedAt === undefined ? '' : t('list {age} old', { age: pickerAge(status.fetchedAt, now) });
-  const filtered = !!input.text.trim(), count = filtered ? new Set(placeModels(pick.place, pick.lists)).size : view.total;
   const total = t(count === 1 ? '{n} model' : '{n} models', { n: count });
   const provider = view.current?.fact === 'off' ? qualifiedPiProvider(view.current.model) : undefined;
-  const off = data.harnessSwitches?.filter((s) => s.group === 'provider' && s.off).map((s) => s.name).sort();
-  if (provider && off?.includes(provider)) off.unshift(...off.splice(off.indexOf(provider), 1));
-  const offLine = off?.length ? muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.map(monitorText).join(' · ') })}`) : '';
   const offBadge = provider ? `${monitorText(provider)} ${mark('⊘', 'x')}` : '';
   const where = ` ${t('Model')} · ${placeName(input.role, pick.preset)} ${t('place #{n}', { n: input.index + 1 })} · ${monitorText(pick.place.label)}`;
   const titles = [total, age, offBadge].filter(Boolean).join(' · ');
@@ -125,40 +121,25 @@ function wideRows(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput,
   const idWidth = left - 38, cols = (ctx: string, out: string, thinking: string, images: string) =>
     ` ${end(ctx, 6)} ${end(out, 5)} ${center(thinking, 5)} ${center(images, 4)}`;
   const columns = `    ${fit(t('Model'), idWidth)}${cols(t('ctx'), t('out'), t('think'), t('img'))} ${t('note')}`;
-  const list: MonitorRow[] = [];
-  const add = (entry: PickEntry) => {
+  const list = pickerListRows(input, pick, view, left, (entry) => {
     const selected = view.selected?.id === entry.id;
-    list.push({ text: '', modelHit: { entry: entry.id }, ...(selected ? { item: 'project:pick' } : {}), paint: () => {
+    return [{ text: '', modelHit: { entry: entry.id }, ...(selected ? { item: 'project:pick' } : {}), paint: () => {
       const lead = `${selected ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
       const name = monitorText(entry.label);
       const [ctx, out, thinking, images] = capsOf(pick, entry) ?? [];
       const fact = note(entry, now), tag = entry.tags?.map((s) => `[${monitorText(s)}]`).join(' ') ?? '';
       const prefix = lead + fit(squeeze(name, idWidth), idWidth)
         + cols(muted(monitorText(ctx ?? '·')), muted(monitorText(out ?? '·')), pickerCap(thinking), pickerCap(images)) + ' ';
-      const annotations = [fact, muted(tag)].filter((s) => visualLength(s)).join(' ');
-      return prefix + (visualLength(prefix + annotations) <= left ? annotations : fact || squeeze(tag, left - visualLength(prefix)));
-    } });
-  };
-  if (view.pinned.length) {
-    list.push(section(t('Pinned'), left, String(view.pinned.length)));
-    view.pinned.forEach(add);
-  }
-  for (const group of view.groups) {
-    list.push({ ...section(theme.board.identifier(`${group.open ? mark('▾', 'v') : mark('▸', '>')} ${monitorText(group.provider)}`), left,
-      String(group.entries.length)), modelHit: { provider: group.provider } });
-    if (group.open) group.entries.forEach(add);
-  }
-  if (view.fallback) add(view.fallback);
-  if (pick.lists.piStatus?.runnerOff) list.push({ text: muted(t('pi is off')) });
-  else if (pick.lists.piStatus?.empty) list.push({ text: muted(t('No discovered models')) });
-  else if (!view.groups.length && !view.selected) list.push({ text: muted(t('No matching models')) });
-  const showColumns = room >= 3, showOff = !!offLine && room >= 4;
-  const size = Math.max(0, room - 1 - Number(showColumns) - Number(showOff));
+      const was = entry.was ? muted(t('was')) : '';
+      const annotations = [fact, muted(tag), was].filter((s) => visualLength(s)).join(' ');
+      const fallback = [fact, was].filter(Boolean).join(' ');
+      return prefix + (visualLength(prefix + annotations) <= left ? annotations : fallback || squeeze(tag, left - visualLength(prefix)));
+    } }];
+  });
+  const showColumns = room >= 3, size = Math.max(0, room - 1 - Number(showColumns));
   const window = pickerListWindow(list, input, size, true);
-  const matches = filtered ? t('{n} / {total} matches', { n: view.total, total: count }) : String(view.total);
-  const rows: MonitorRow[] = [pickerQuery(input, pick, window, matches, left), ...(showColumns ? [{ text: muted(columns) }] : []),
+  const rows: MonitorRow[] = [pickerQuery(input, pick, window, String(view.total), left), ...(showColumns ? [{ text: muted(columns) }] : []),
     ...list.slice(window.first, window.first + size)];
-  if (showOff) rows.push({ text: offLine });
   const details = detail(data, input, pick, view, rightWidth - 1, room, now);
   const divider = theme.board.frame(mark('│', '|'));
   for (let i = 0; i < room; i++) {
@@ -168,11 +149,11 @@ function wideRows(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput,
   return { rows, listWidth: left };
 }
 
-function narrowRows(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, room: number, now: number) {
+function narrowRows(frame: MonitorFrame, input: ModelInput, pick: ModelPick, width: number, room: number, now: number) {
   const where = location(input.role, null, input.index), harness = monitorText(pick.place.label);
   const right = [presetTag(pick.preset), harness].filter(Boolean).join(' · ');
   frame.lines[1] = theme.board.text(fit(section(where, width, visualLength(where + right) + 2 <= width ? right : harness).text, width));
-  const rows = room ? pickerRows(data, input, pick, width, room, now) : [];
+  const rows = room ? pickerRows(input, pick, width, room, now) : [];
   rows.forEach((row, i) => {
     const line = fit(row.text, width);
     frame.lines[i + 2] = theme.board.text(row.item === 'project:pick' ? boardCursor(line) : line);
@@ -184,12 +165,12 @@ export function paintModelPicker(frame: MonitorFrame, data: ProjectSnapshot, inp
   const room = height - 3, wide = width >= MODEL_PICKER_WIDE;
   if (room >= 0) {
     const { rows, listWidth } = wide ? wideRows(frame, data, input, pick, width, room, now)
-      : narrowRows(frame, data, input, pick, width, room, now);
+      : narrowRows(frame, input, pick, width, room, now);
     frame.panes.push({ id: 'agents', x: 0, y: 2, width: listWidth, height: room, offset: 0, contentLength: rows.length, edge: 0, visible: room, rows });
   }
   if (height > 1) {
     const hints = { modal: ['⏎ set', input.text ? 'esc clear' : 'esc cancel', '^R refresh',
-      ...(wide ? ['type to filter', 'click a header: fold'] : [])] };
+      ...(wide ? ['type to filter'] : [])] };
     const y = height - 1;
     frame.lines[y] = theme.board.text(footRow('', hints, width));
     const cancel = footerLayout(hints, width).find(({ key }) => key === 'esc cancel');

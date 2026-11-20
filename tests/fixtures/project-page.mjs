@@ -6,6 +6,7 @@ import { deflateSync } from 'node:zlib';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
+import { rememberModel } from '../../dist/render/model-input.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -196,7 +197,7 @@ export function projectFrames(f) {
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
-  Object.assign(frames, pickerFrames(f, control), presetFrames(f, control), quickModelFrames(f, control));
+  Object.assign(frames, pickerFrames(f, control), pickerOrderFrames(f), presetFrames(f, control), quickModelFrames(f, control));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
   return frames;
@@ -322,4 +323,43 @@ export function modelPickerSample(f) {
     projectName: 'harbor-api', projects: PROJECTS, projectWaiting: 2,
   });
   return { state, draw, data };
+}
+
+/** S4's 88-model scene. The clear option is off here, so all eight mistral rows fit the first screen. */
+export function pickerOrderSample(f) {
+  const { data: sample } = modelPickerSample(f), base = sample.roles.find((r) => r.role === 'imp');
+  const active = { ...base.places[0], piModel: { current: 'xai/grok-4.7', isDefault: false, defaultId: 'deepseek/offline', defaultOff: true } };
+  const old = { ...active, model: 'xai/grok-4.6', piModel: { ...active.piModel, current: 'xai/grok-4.6' } };
+  const places = [active, ...base.places.slice(1)], oldPlaces = [old, ...places.slice(1)];
+  const sol = { name: 'sol', places: base.presets.find((p) => p.name === 'default').places };
+  const role = { ...base, places, editor: mockEditor(places), presets: [sol, { name: 'daily', places }] };
+  const reviewer = { ...sample.roles.find((r) => r.role === 'reviewer'), preset: null, presets: [], places: [
+    { ...active, provider: 'mistral', model: 'mistral/mistral-small-4', piModel: undefined },
+  ] };
+  const mistral = ['codestral-3', 'magistral-2', 'mistral-large-4', 'mistral-medium-4', 'mistral-nemo-2', 'mistral-small-4', 'pixtral-3', 'voxtral-2'];
+  const data = { ...sample, roles: [role, reviewer], models: { ...sample.models, pi: [
+    ...sample.models.pi.filter((id) => !id.startsWith('mistral/')), ...mistral.map((id) => `mistral/${id}`),
+  ] } };
+  const send = (frame, key, text) => handleMonitorInput(frame.state, { type: 'key', key, text }, { frame, tree: TREE, nowMs: NOW });
+  const draw = (width, lang, state, snapshot = data) => f.render(width, lang, state, 24, snapshot, true, 'unicode', 'none', {
+    projectWaiting: 2,
+  });
+  const open = (width, lang, panelLayout = 'split') => {
+    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout, experiments: true });
+    const shipped = { ...role, source: 'default', path: '/synthetic/shipped/roles/imp.json', places: oldPlaces, editor: mockEditor(oldPlaces) };
+    const before = send(draw(width, lang, state, { ...data, roles: [shipped, reviewer] }), 'place-model');
+    rememberModel(state, before.state, role, active.model);
+    return draw(width, lang, send(draw(width, lang, state), 'place-model').state);
+  };
+  return { data, draw, open, send };
+}
+
+export function pickerOrderFrames(f, layout = 'split') {
+  const { draw, open, send } = pickerOrderSample(f), frames = {};
+  for (const width of [40, 120]) for (const lang of ['en', 'zh']) {
+    const browse = open(width, lang, layout);
+    const filter = draw(width, lang, send(browse, '', 'grok').state);
+    for (const [name, frame] of Object.entries({ browse, filter })) frames[`pick-order-${name}-${width}-${lang}`] = frame.lines.map(stripAnsi);
+  }
+  return frames;
 }

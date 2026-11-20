@@ -121,100 +121,73 @@ export function pickerQuery(input: ModelInput, pick: ModelPick, window: NonNulla
     item: placeItem(input.role, input.index), modelPick: pick, modelWindow: window };
 }
 
-/** Narrow picker: keep the query and selected ID outside the scrolling list. */
-export function pickerRows(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, room: number, now: number): MonitorRow[] {
-  const view = pickView(pick, input), { place, lists } = pick;
-  const piStatus = lists.piStatus, fetchedAt = piStatus?.fetchedAt;
-  const where = monitorText(input.role), rows: MonitorRow[] = [];
+export function pickerListRows(input: ModelInput, pick: ModelPick, view: ReturnType<typeof pickView>, width: number,
+  paintModel: (entry: PickEntry) => MonitorRow[]): MonitorRow[] {
+  const list = view.rows.flatMap((row) => {
+    if ('provider' in row) return [section(theme.board.identifier(monitorText(row.provider)), width, String(row.count))];
+    if (!('providers' in row)) return paintModel(row);
+    const selected = view.selected?.id === row.id, count = String(row.count);
+    const lead = (selected ? `${theme.board.active(mark('›', '>'))} ` : '') + mark(input.otherOpen ? '▾' : '▸', input.otherOpen ? 'v' : '>');
+    let names = '';
+    for (const [i, provider] of row.providers.entries()) {
+      const next = names + (names ? ' · ' : ' ') + monitorText(provider);
+      const rest = row.providers.length - i - 1;
+      if (visualLength(lead + next + (rest ? ` +${rest}` : '') + count) + 3 > width) {
+        names += ` +${rest + 1}`;
+        break;
+      }
+      names = next;
+    }
+    return [{ ...section(theme.board.identifier(lead + names), width, count), modelHit: { entry: row.id },
+      ...(selected ? { item: 'project:pick' } : {}) }];
+  });
+  const status = pick.lists.piStatus, filtered = !!input.text.trim();
+  const empty = filtered ? (!view.total && 'No matching models')
+    : status?.runnerOff ? 'pi is off' : status?.empty ? 'No discovered models' : !view.rows.length && 'No matching models';
+  if (empty) list.push(boardRow(theme.board.attention(t(empty))));
+  if (!filtered && pick.off?.length) list.push(boardRow(theme.board.muted(`${mark('⊘', 'x')} ${t('off: {names}', { names: pick.off.map(monitorText).join(' · ') })}`)));
+  return list;
+}
+
+/** Narrow picker: one facts row, plus the full ID if it was cut in the list. */
+export function pickerRows(input: ModelInput, pick: ModelPick, width: number, room: number, now: number): MonitorRow[] {
+  const view = pickView(pick, input), { place, lists } = pick, selected = view.selected;
+  const piStatus = lists.piStatus, fetchedAt = piStatus?.fetchedAt, rows: MonitorRow[] = [];
   const notice = (text: string) => boardRow(fit('  ' + theme.board.attention(text), width));
   if (piStatus?.failed) rows.push(notice(t('Refresh failed')));
   else if (fetchedAt !== undefined && now - fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
   if (piStatus?.offline) rows.push(notice(t('Limited offline catalog')));
-  const stateOf = (entry: PickEntry, detail = false) => {
-    const fact = pickerFact(entry, now, detail);
-    if (fact || !detail) return fact;
-    if (!entry.current) return theme.board.muted(t('Enter sets it · not the current model'));
-    const label = t('current');
-    const extra = [where, presetTag(pick.preset), t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' ');
-    return `${theme.board.active(mark('◉', '@'))} ${theme.board.muted(visualLength(label + ' · ' + extra) + 4 <= width ? `${label} · ${extra}` : label)}`;
-  };
-  const selected = view.selected;
-  const full = selected ? monitorText(selected.model ?? selected.label) : '';
-  const detail = [section(theme.board.muted(t('Selected')), width)];
-  const detailLine = (line: string) => boardRow(fit('  ' + line, width));
-  if (full) {
-    detail.push(...flowLines(full, width - 2).map(detailLine));
-    const id = selected?.model;
-    if (id) {
-      const [ctx, out, thinking, images] = lists.piFacts?.[id] ?? [];
-      const muted = theme.board.muted;
-      const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${pickerCap(thinking)}`, `${muted(t('img'))} ${pickerCap(images)}`];
-      let line = '';
-      for (const field of fields) {
-        if (line && visualLength(`${line}  ${field}`) > width - 2) {
-          detail.push(detailLine(line));
-          line = '';
-        }
-        line += (line ? '  ' : '') + field;
-      }
-      detail.push(detailLine(line));
-    }
-    if (selected) {
-      detail.push(detailLine(stateOf(selected, true)));
-      if (selected.tags?.length) {
-        const tags = selected.tags.map((name) => `[${monitorText(name)}]`).join(' ');
-        detail.push(detailLine(theme.board.muted(flowLines(tags, width - 2)[0] ?? '')));
-      }
-    }
-  } else detail.push(detailLine(theme.board.muted(t('No selection'))));
-  // Keep a row for the cursor even when the strip wraps or the pane is short.
-  if (room < detail.length + 2) detail.shift();
-  detail.length = Math.min(detail.length, Math.max(0, room - 2));
-  const off = data.harnessSwitches?.filter((item) => item.group === 'provider' && item.off).map((item) => monitorText(item.name)).sort();
-  const offLine = off?.length && room >= detail.length + 3
-    ? boardRow(fit(theme.board.muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.join(' · ') })}`), width)) : undefined;
-  if (input.text.trim() && view.current?.fact && room >= rows.length + detail.length + 4 + Number(!!offLine)) {
-    const label = t('current'), fact = stateOf(view.current);
-    const id = squeeze(monitorText(view.current.label), width - visualLength(label + fact) - 5);
-    rows.push(boardRow(pair(`  ${theme.board.muted(label)}  ${id}`, fact, width)));
-  }
-  // On short panes, the list and bottom strip take precedence over opening context.
-  rows.length = Math.min(rows.length, Math.max(0, room - detail.length - 2 - Number(!!offLine)));
-  const count = !input.text.trim() ? String(view.total) : t('{n} matches', { n: view.total });
-  const empty = piStatus?.runnerOff ? 'pi is off' : piStatus?.empty ? 'No discovered models' : 'No matching models';
-  const list: MonitorRow[] = [];
-  const add = (entry: PickEntry) => {
+  let shortened = false;
+  const list = pickerListRows(input, pick, view, width, (entry) => {
     const cursor = selected?.id === entry.id;
     const lead = `${cursor ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
     const name = monitorText(entry.label);
-    const fact = stateOf(entry), tags = entry.tags?.map((name) => `[${monitorText(name)}]`) ?? [];
+    const fact = pickerFact(entry, now), was = entry.was ? theme.board.muted(t('was')) : '';
+    const tags = entry.tags?.map((name) => theme.board.muted(`[${monitorText(name)}]`)) ?? [];
     const available = (side: string) => width - 4 - (side ? visualLength(side) + 2 : 0);
-    // Keep whole tags when they fit, preserving the status and as much of the model ID as possible.
-    while (tags.length > 1 && visualLength(name) > available([fact, ...tags].filter(Boolean).join(' '))) tags.pop();
-    const tag = tags.length ? theme.board.muted(tags.join(' ')) : '';
-    const both = [fact, tag].filter(Boolean).join(' ');
-    const right = visualLength(name) <= available(both) ? both : fact;
-    list.push({ text: pair(lead + squeeze(name, available(right)), right, width), modelHit: { entry: entry.id },
-      ...(cursor ? { item: 'project:pick' } : {}) });
-    if (entry.value === '' && place.piModel?.defaultSource) list.push(boardRow(fit(`      ${theme.board.muted(t(place.piModel.defaultSource))}`, width)));
-  };
-  if (view.pinned.length) {
-    list.push(section(t('Pinned'), width, String(view.pinned.length)));
-    for (const entry of view.pinned) add(entry);
+    const rightSide = () => [fact, ...tags, was].filter(Boolean).join(' ');
+    while (tags.length && visualLength(name) > available(rightSide())) tags.pop();
+    const right = rightSide(), nameRoom = available(right);
+    if (cursor) shortened = visualLength(name) > nameRoom;
+    return [{ text: pair(lead + squeeze(name, nameRoom), right, width), modelHit: { entry: entry.id },
+      ...(cursor ? { item: 'project:pick' } : {}) },
+      ...(entry.value === '' && place.piModel?.defaultSource ? [boardRow(`      ${theme.board.muted(t(place.piModel.defaultSource))}`)] : [])];
+  });
+  const detail: MonitorRow[] = [];
+  if (selected?.model && room >= 3) {
+    const muted = theme.board.muted;
+    const [ctx, out, thinking, images] = lists.piFacts?.[selected.model] ?? [];
+    const fields = [muted(`${monitorText(ctx ?? '?')} ${t('ctx')}`), muted(`${monitorText(out ?? '?')} ${t('out')}`),
+      `${muted(t('think'))} ${pickerCap(thinking)}`, `${muted(t('img'))} ${pickerCap(images)}`];
+    while (fields.length > 1 && visualLength(fields.join('  ')) > width) fields.pop();
+    if (shortened) detail.push(...flowLines(monitorText(selected.model), width).slice(0, room - 3).map((line) => boardRow(muted(line))));
+    detail.push(boardRow(fields.join('  ')));
   }
-  for (const group of view.groups) {
-    const arrow = group.open ? mark('▾', 'v') : mark('▸', '>');
-    list.push({ ...section(theme.board.identifier(`${arrow} ${monitorText(group.provider)}`), width, String(group.entries.length)),
-      modelHit: { provider: group.provider } });
-    if (group.open) for (const entry of group.entries) add(entry);
-  }
-  if (view.fallback) add(view.fallback);
-  if ((!selected && !view.groups.length) || piStatus?.empty) list.push(notice(t(empty)));
-  const size = Math.max(0, room - detail.length - Number(!!offLine) - rows.length - 1);
+  rows.length = Math.min(rows.length, Math.max(0, room - detail.length - 2));
+  const size = Math.max(0, room - detail.length - rows.length - 1);
   const window = pickerListWindow(list, input, size);
-  rows.push(pickerQuery(input, pick, window, count, width));
+  rows.push(pickerQuery(input, pick, window, String(view.total), width));
   rows.push(...list.slice(window.first, window.first + size));
-  if (offLine) rows.push(offLine);
   while (rows.length + detail.length < room) rows.push(boardRow(''));
   rows.push(...detail);
   return rows;

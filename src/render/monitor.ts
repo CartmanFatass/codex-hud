@@ -83,7 +83,8 @@ export interface MonitorState {
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
   /** Model picker on this place. Group overrides and viewport belong to the current query. */
-  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: Record<string, boolean>; scroll?: number; place?: PlaceFact };
+  projectInput?: { role: string; index: number; text: string; pick?: string; otherOpen?: boolean; scroll?: number; place?: PlaceFact };
+  modelPrevious?: Record<string, string>;
   /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
   confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
@@ -143,7 +144,7 @@ export interface MonitorRow {
   files?: string[];
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
-  modelHit?: { entry: string } | { provider: string };
+  modelHit?: { entry: string };
   modelWindow?: { first: number; max: number; size: number; entries: { id: string; row: number }[]; wide?: boolean };
   harnessOff?: boolean;
   roleFact?: RoleFact;
