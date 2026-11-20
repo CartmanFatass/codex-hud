@@ -168,6 +168,7 @@ board counts these; update at every landing or decision. -->
 - try · — · EXP-04 · oapi grant ledger: per-request cost JSONL (dedup), balance on read, pi footer on oapi shows API ≈$; EXP openai-api rows live (imp) (feb9893b)
 - try · — · EXP-05 · Anthropic API grant ledger: only API-key routes count; footer shows the current route's reading among proxy / oapi / anthropic (imp) (7dc40a59)
 - try · — · CONTROL-TAB-01 · Control as its own main tab, Roles landing per the sample (imp) (1e6334dd; test fix 1446ff59)
+- working · — · CONTROL-TAB-02 · harness switches end to end: Harnesses view, disabled IDs in harnesses.json, one shared chain evaluation for panel/roster/create (imp j55022ddf4c5e74f6)
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 
