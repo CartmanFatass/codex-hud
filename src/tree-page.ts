@@ -560,6 +560,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let settingsPage: SettingsPageState | null = place?.settings
     ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
+  let settingsHelp: MonitorState | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
   const syncModelListDiscovery = () => {
@@ -686,7 +687,15 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const pickerWasOpen = !!state.projectInput;
     const output = time('render', () => {
       let lines: string[];
-      if (settingsPage) {
+      if (settingsPage && settingsHelp) {
+        // Help is drawn over Settings without changing Settings or the underlying tab.
+        frame = withDisplaySettings(settingsPage.draft, () => renderMonitor({
+          tree, state: settingsHelp!, backupSkills, mouse: settingsPage!.draft.mouse,
+          width: process.stdout.columns || 30, height: process.stdout.rows || 24,
+        }));
+        settingsHelp = frame.state;
+        lines = frame.lines;
+      } else if (settingsPage) {
         settingsFrame = withDisplaySettings(settingsPage.draft, () =>
           renderSettingsPage(settingsPage!, process.stdout.columns || 30, process.stdout.rows || 24, {
             state: hudStatus.health.current(),
@@ -1269,6 +1278,18 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         input = { type: 'key', key: destination };
       }
       if (settingsPage && settingsFrame) {
+        if (settingsHelp) {
+          const result = handleMonitorInput(settingsHelp, input, { tree, frame });
+          // `q` returns to Settings too, so an unsaved draft is not lost.
+          settingsHelp = !result.close && result.state.help ? result.state : undefined;
+          render();
+          continue;
+        }
+        if (input.type === 'key' && input.key === 'help') {
+          settingsHelp = { ...initialMonitorState(), panelLayout: settingsPage.draft.panelLayout, help: true };
+          render();
+          continue;
+        }
         const result = handleSettingsInput(settingsPage, input, settingsFrame);
         settingsPage = result.state;
         probe.invalidate(settingsPage.draft);

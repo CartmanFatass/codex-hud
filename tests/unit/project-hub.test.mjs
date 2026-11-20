@@ -136,7 +136,7 @@ test('Enter or a click on a waiting item opens its whole STATE text on a page, i
     assert.equal(opened.action, undefined, 'it reads here; it does not open the editor');
   }
   assert.deepEqual(press(hubAt('en'), 'open-session').action, { type: 'open-files', files: [f.data.statePath] });
-  for (const [lang, crumb, hint] of [['en', '‹ Project › Waiting', '↑↓ scroll  o open  esc back  ? help'], ['zh', '‹ 项目 › 等你处理', '↑↓ 滚动  o 打开  esc 返回  ? 帮助']]) {
+  for (const [lang, crumb, hint] of [['en', '‹ Project › Waiting', 'o file  Esc back  ? help'], ['zh', '‹ 项目 › 等你处理', 'o 文件  Esc 返回  ? 帮助']]) {
     const page = f.render(38, lang, key.state, 30), lines = plain(page);
     assert.equal(lines[0], crumb);
     assert.equal(lines.at(-1).trim(), hint);

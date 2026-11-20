@@ -353,7 +353,7 @@ the last good text and valid ranking. Models off hides both.
 **Top line.** `? 5 waiting for you · 0 running` counts STATE's "Waiting for the owner" items
 with the job questions (the same items as the Project tab's count); `✓ Nothing needs you`
 shows only when both are zero. With waiting items, Enter or a click opens the Project hub on its
-Waiting block. The footer's `✓ n done today` is absent at 0.
+Waiting block. The footer shows `✓ N done today` from 56 columns, `✓ N` below 56, and no count at zero.
 
 **Spare rows.** Cards/decisions get space first. Remaining rows show, top to bottom: STATE's
 waiting items (a row each, up to five, then `+N more`), the newest landed slices (three at 38–55
@@ -671,11 +671,13 @@ requests the installed pi HUD can identify as direct Anthropic API-key usage. Cl
 and unknown routes are not charged. The Claude Code status line is unchanged. Turning Experiments off preserves
 both ledgers and stops collection.
 
-Inspector, Changes, Settings and Help share
-one title band, exact-width rows and whole footer hints (rightmost hints drop when
-narrow). Home, the hub and the Control plane footers show the keys of the selected row: a HUD
-job's row adds `g job tab` and `X stop`, a to-try row `Space mark  y accept  n flag`, a role
-`c C preset` and `p presets`, a place `i add  Del remove  K J move`; a key the row does not take is not listed.
+The panel keeps footer hints whole: the selected row's actions take priority, then Enter with its
+verb, `Esc back` where applicable, and page actions. Hints drop from the right to make room, but
+`? help` stays last. Movement, tab switching and the Settings shortcut remain available without taking
+footer space. An editor or picker that owns the keyboard shows its own hints without `? help`; Help
+itself shows `Esc back`. For example, a running HUD job offers `g job tab` and `X stop`, a to-try row
+has `Space mark  y accept  n flag`, and a Control role shows `⏎ chain` in either layout. `o file` opens
+a row's file.
 One key means one thing on a page (`n` flags a to-try row and nothing else; `>` `<` move between
 Home's cards that need you; `i` `Del` change places; `+` `=` `-` size Split's list), and the Help
 page lists each key once. A row says its state once: a card's `[done]` mark is left out when its
@@ -722,7 +724,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `b` | Model text master on/off (also the top-row models word) |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
 | `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`; a decision's package and title); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
-| `,`, `?` | Settings, Help |
+| `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
 | `q` | Close panel |
 

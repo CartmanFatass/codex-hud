@@ -319,14 +319,8 @@ export function renderSettingsPage(
     ];
   while (lines.length < height - 1) lines.push('');
   const models = settingGroup({ selected }) === 'Models';
-  const hints = t(
-    models
-      ? '↑↓ select  ←→ change  s save  t test  esc back  r reset'
-      : '↑↓ select  ←→ change  s save  esc back  r reset'
-  ).split('  ');
-  // At narrow widths Esc wins; keep Save/Test/Esc when all three fit (owner ruling q2).
-  if (models && visualLength(hints.slice(0, -1).join('  ')) > width) [hints[3], hints[4]] = [hints[4], hints[3]];
-  if (height > 1) lines.push(footRow('', hints.join('  '), width));
+  const hints = ['←→ change', 's save', 'Esc back', ...(models ? ['t test'] : []), 'r reset'];
+  if (height > 1) lines.push(footRow('', hints, width));
   const back = body.findIndex((r) => r.back !== undefined),
     probe = body.findIndex((r) => r.probe);
   return {

@@ -27,7 +27,7 @@
     "◉ reviewer  Verify index ↳ Check migration                                    1m",
     "┃ Checking report.md and src/tree-page.ts.                                      ",
     "┃                                                                               ",
-    "✓ 1 done today     ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all"
+    "✓ 1 done today              ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "zh-80": [
     " 首页  项目  控制                                                        模型 开",
@@ -57,7 +57,7 @@
     "◉ reviewer  Verify index ↳ Check migration                                 1分钟",
     "┃ 正在检查report.md和src/tree-page.ts。                                         ",
     "┃                                                                               ",
-    "✓ 1 今日完成     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置"
+    "✓ 1 今日完成                      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "en-120": [
     " Home  Project  Control                                                                                        models on",
@@ -87,7 +87,7 @@
     "◉ reviewer  Verify index ↳ Check migration                                                                            1m",
     "┃ Checking report.md and src/tree-page.ts.                                                                              ",
     "┃                                                                                                                       ",
-    "✓ 1 done today                         ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
+    "✓ 1 done today                                                      ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "zh-120": [
     " 首页  项目  控制                                                                                                模型 开",
@@ -117,6 +117,6 @@
     "◉ reviewer  Verify index ↳ Check migration                                                                         1分钟",
     "┃ 正在检查report.md和src/tree-page.ts。                                                                                 ",
     "┃                                                                                                                       ",
-    "✓ 1 今日完成                                    ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "✓ 1 今日完成                                                              ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ]
 }

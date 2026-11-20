@@ -40,9 +40,10 @@ export function answerKeys(worker: OwnerWorker): string[] {
   return !a ? [] : [a.options.length ? `${a.options.length === 1 ? '1' : `1-${a.options.length}`} ${t('answer')}` : '', a.suggested ? `d ${t('default')}` : ''].filter(Boolean);
 }
 /** Home's footer for the row under the cursor, most useful first (a narrow row drops the last): a card takes `o` and `v`, a HUD job also its tab and, while it runs, stop. */
-export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefined, enter: string): string {
+export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefined, enter: 'open' | 'expand', preview = false): string[] {
   const job = jobUnderCursor(state, board), card = state.focus === 'agents' && state.mainTab === 'home' && !state.boardAnchor && !!state.homeTarget;
-  return [`⏎ ${enter}`, ...(job ? ['g job tab', ...(job.worker.settledAt === null ? ['X stop'] : [])] : []), '? help', ...(card ? ['o open', 'v inspect'] : []), '↑↓ move', 'a all', ', settings', '←→ tab'].join('  ');
+  return [...(job ? ['g job tab', ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
+    `⏎ ${enter}`, ...(preview ? ['Esc back'] : []), ...(card || preview ? ['o file', 'v inspect'] : []), 'a all'];
 }
 /** The one-row prompt above the page while a stop waits for its answer. */
 export function stopPromptRows(state: MonitorState, width: number): MonitorRow[] {

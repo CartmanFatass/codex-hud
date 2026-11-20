@@ -71,7 +71,7 @@ test('Projects list: the panel project first, then waiting, running, then the mo
   assert.doesNotMatch(zh, /\b\d+[mhd]$/m, 'no English unit left in the Chinese list');
   assert.match(plain(l.list(40, 'zh'))[0], /^‹ 项目列表/);
   assert.match(plain(frame)[0], /^‹ Projects/);
-  assert.match(plain(frame).at(-1), /esc back/);
+  assert.match(plain(frame).at(-1), /Esc back  \? help$/);
   // Text icons: no unicode glyph at all.
   assert.doesNotMatch(text(l.list(40, 'en', undefined, 24, 'text')), /[‹›▾◉█▒░…]/);
   assert.match(text(l.list(40, 'en', undefined, 24, 'text')), /^demo-project {2}M3b +\? 2 {2}@ 1$/m);

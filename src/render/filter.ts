@@ -12,7 +12,7 @@ import { keywordMarks } from '../utils/keyword-marks.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { projectPageOf } from './project-view.js';
 import { failed } from './work-card.js';
-import { boardRow, mark } from './workboard-rows.js';
+import { boardRow, mark, type FooterHints } from './workboard-rows.js';
 import { monitorText, pair } from './monitor-text.js';
 import { theme } from './colors.js';
 import { t } from './i18n.js';
@@ -66,13 +66,12 @@ export function filterRow(state: MonitorState, count: number | undefined, width:
   const right = count === undefined ? '' : [t(count === 1 ? '{n} match' : '{n} matches', { n: count }), !state.filterOpen && t('esc clear')].filter(Boolean).join(' · ');
   return boardRow(pair(left, theme.board.muted(right), width));
 }
-/** The footer's hints (already in the language) with `/ filter` after `? help`, which stays where it was; while typing, the keys the bar takes. */
-export function filterHints(state: MonitorState, hints: string): string {
-  if (!filterScope(state)) return hints;
-  if (state.filterOpen) return t('type to filter  ⏎ keep  esc stop  ↑↓ move');
-  const parts = hints.split('  '), at = parts.findIndex((p) => p.startsWith('?'));
-  parts.splice(at < 0 ? parts.length : at + 1, 0, `/ ${t('filter')}`);
-  return parts.join('  ');
+/** `/ filter` is a page action; while typing only the filter's own keys are relevant. */
+export function filterHints(state: MonitorState, hints: FooterHints): FooterHints {
+  if (typeof hints === 'string' || 'modal' in hints || !filterScope(state)) return hints;
+  if (state.filterOpen) return { modal: ['type to filter', '⏎ keep', 'Esc stop'] };
+  const at = hints.indexOf('a all');
+  return at < 0 ? [...hints, '/ filter'] : [...hints.slice(0, at), '/ filter', ...hints.slice(at)];
 }
 
 /**

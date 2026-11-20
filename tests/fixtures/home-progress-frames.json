@@ -37,7 +37,7 @@
     "  06 Polish                                    ready",
     "  10 Vocabulary needs-triage                   ready",
     "  +5 more",
-    "       ⏎ expand  ? help  / filter  o open  v inspect"
+    "⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-52-en-tickets-short": [
     " Home ?1  Project ?2  Control             models off",
@@ -72,7 +72,7 @@
     "Tickets · native-tree ──────────────────── 1/12 done",
     "  09 Vocabulary claimed                      working",
     "  02 Home lanes                                ready",
-    "       ⏎ expand  ? help  / filter  o open  v inspect"
+    "⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-52-en-legend-short": [
     " Home ?1  Project ?2  Control             models off",
@@ -104,7 +104,7 @@
     "  worktrees",
     "  ████████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
     "  ● working 1   ● landed, to try 1",
-    "       ⏎ expand  ? help  / filter  o open  v inspect"
+    "⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-52-en-bar-short": [
     " Home ?1  Project ?2  Control             models off",
@@ -134,7 +134,7 @@
     "Progress ───────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in",
     "  ████████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
-    "       ⏎ expand  ? help  / filter  o open  v inspect"
+    "⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-52-en-gone": [
     " Home ?1  Project ?2  Control             models off",
@@ -162,7 +162,7 @@
     "◇ M4-PROJECT · imp q1  compact                    0m",
     "",
     "",
-    "       ⏎ expand  ? help  / filter  o open  v inspect"
+    "⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-52-zh-tall": [
     " 首页 ?1  项目 ?2  控制                      模型 关",
@@ -202,7 +202,7 @@
     "  06 Polish                                     就绪",
     "  10 Vocabulary needs-triage                    就绪",
     "  另 5 个",
-    "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
+    "      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-52-zh-tickets-short": [
     " 首页 ?1  项目 ?2  控制                      模型 关",
@@ -237,7 +237,7 @@
     "工单 · native-tree ─────────────────────── 1/12 完成",
     "  09 Vocabulary claimed                       工作中",
     "  02 Home lanes                                 就绪",
-    "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
+    "      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-52-zh-legend-short": [
     " 首页 ?1  项目 ?2  控制                      模型 关",
@@ -269,7 +269,7 @@
     "  worktrees",
     "  ███████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
     "  ● 工作中 1   ● 已落地待试用 1",
-    "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
+    "      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-52-zh-bar-short": [
     " 首页 ?1  项目 ?2  控制                      模型 关",
@@ -299,7 +299,7 @@
     "进度 ──────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in",
     "  ███████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
-    "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
+    "      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-52-zh-gone": [
     " 首页 ?1  项目 ?2  控制                      模型 关",
@@ -327,7 +327,7 @@
     "◇ M4-PROJECT · imp q1  compact                 0分钟",
     "",
     "",
-    "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
+    "      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-en-tall": [
     " Home ?1  Project ?2  Control                                         models off",
@@ -367,7 +367,7 @@
     "  06 Polish                                                                ready",
     "  10 Vocabulary needs-triage                                               ready",
     "  +5 more",
-    "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
+    "                            ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-tickets-short": [
     " Home ?1  Project ?2  Control                                         models off",
@@ -402,7 +402,7 @@
     "  09 Vocabulary claimed                                                  working",
     "  02 Home lanes                                                            ready",
     "  +8 more",
-    "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
+    "                            ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-legend-short": [
     " Home ?1  Project ?2  Control                                         models off",
@@ -434,7 +434,7 @@
     "  Synthetic milestone closing; pages building in worktrees",
     "  ████████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
     "  ● working 1   ● landed, to try 1",
-    "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
+    "                            ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-bar-short": [
     " Home ?1  Project ?2  Control                                         models off",
@@ -464,7 +464,7 @@
     "Progress ───────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ████████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
-    "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
+    "                            ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-gone": [
     " Home ?1  Project ?2  Control                                         models off",
@@ -492,7 +492,7 @@
     "◇ M4-PROJECT · imp q1  compact                                                0m",
     "",
     "",
-    "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
+    "                            ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-zh-tall": [
     " 首页 ?1  项目 ?2  控制                                                  模型 关",
@@ -532,7 +532,7 @@
     "  06 Polish                                                                 就绪",
     "  10 Vocabulary needs-triage                                                就绪",
     "  另 5 个",
-    "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-tickets-short": [
     " 首页 ?1  项目 ?2  控制                                                  模型 关",
@@ -567,7 +567,7 @@
     "  09 Vocabulary claimed                                                   工作中",
     "  02 Home lanes                                                             就绪",
     "  另 8 个",
-    "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-legend-short": [
     " 首页 ?1  项目 ?2  控制                                                  模型 关",
@@ -599,7 +599,7 @@
     "  Synthetic milestone closing; pages building in worktrees",
     "  ███████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
     "  ● 工作中 1   ● 已落地待试用 1",
-    "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-bar-short": [
     " 首页 ?1  项目 ?2  控制                                                  模型 关",
@@ -629,7 +629,7 @@
     "进度 ──────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ███████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
-    "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-gone": [
     " 首页 ?1  项目 ?2  控制                                                  模型 关",
@@ -657,7 +657,7 @@
     "◇ M4-PROJECT · imp q1  compact                                             0分钟",
     "",
     "",
-    "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-en-tall": [
     " Home ?1  Project ?2  Control                                                                                 models off",
@@ -697,7 +697,7 @@
     "  06 Polish                                                                                                        ready",
     "  10 Vocabulary needs-triage                                                                                       ready",
     "  +5 more",
-    "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
+    "                                                                    ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-tickets-short": [
     " Home ?1  Project ?2  Control                                                                                 models off",
@@ -732,7 +732,7 @@
     "  09 Vocabulary claimed                                                                                          working",
     "  02 Home lanes                                                                                                    ready",
     "  +8 more",
-    "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
+    "                                                                    ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-legend-short": [
     " Home ?1  Project ?2  Control                                                                                 models off",
@@ -764,7 +764,7 @@
     "  Synthetic milestone closing; pages building in worktrees",
     "  ████████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
     "  ● working 1   ● landed, to try 1",
-    "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
+    "                                                                    ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-bar-short": [
     " Home ?1  Project ?2  Control                                                                                 models off",
@@ -794,7 +794,7 @@
     "Progress ───────────────────────────────────────────────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ████████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
-    "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
+    "                                                                    ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-gone": [
     " Home ?1  Project ?2  Control                                                                                 models off",
@@ -822,7 +822,7 @@
     "◇ M4-PROJECT · imp q1  compact                                                                                        0m",
     "",
     "",
-    "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
+    "                                                                    ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-zh-tall": [
     " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
@@ -862,7 +862,7 @@
     "  06 Polish                                                                                                         就绪",
     "  10 Vocabulary needs-triage                                                                                        就绪",
     "  另 5 个",
-    "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                                                          ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-tickets-short": [
     " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
@@ -897,7 +897,7 @@
     "  09 Vocabulary claimed                                                                                           工作中",
     "  02 Home lanes                                                                                                     就绪",
     "  另 8 个",
-    "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                                                          ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-legend-short": [
     " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
@@ -929,7 +929,7 @@
     "  Synthetic milestone closing; pages building in worktrees",
     "  ███████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
     "  ● 工作中 1   ● 已落地待试用 1",
-    "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                                                          ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-bar-short": [
     " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
@@ -959,7 +959,7 @@
     "进度 ──────────────────────────────────────────────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ███████████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒",
-    "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                                                          ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-gone": [
     " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
@@ -987,6 +987,6 @@
     "◇ M4-PROJECT · imp q1  compact                                                                                     0分钟",
     "",
     "",
-    "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
+    "                                                                          ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ]
 }

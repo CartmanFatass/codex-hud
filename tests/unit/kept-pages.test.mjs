@@ -352,8 +352,9 @@ test('Settings keeps draft confirmation, selected help, and a one-row synthetic 
       const body = plainFrame(short).join('\n');
       assert.match(body, lang === 'en' ? /Call cap/ : /调用上限/);
       assert.match(body, /14\/60/);
-      assert.match(stripAnsi(short.lines.at(-1)), lang === 'en' ? /esc back/ : /esc 返回/);
-      assert.doesNotMatch(stripAnsi(short.lines.at(-1)), /t test|t 测试/);
+      const footer = stripAnsi(short.lines.at(-1));
+      assert.match(footer, lang === 'en' ? /Esc back  \? help$/ : /Esc 返回(?:  t 测试)?  \? 帮助$/);
+      assert.doesNotMatch(footer, /t test|r reset|r 重置/);
       assert.ok(short.state.offset > 0);
     } finally {
       setLanguage(previous);

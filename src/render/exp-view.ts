@@ -27,7 +27,7 @@ import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from '.
 import { monitorRowAt } from './monitor-input.js';
 import { theme, visualLength } from './colors.js';
 import { flowLines, monitorText, pair } from './monitor-text.js';
-import { boardRow, section } from './workboard-rows.js';
+import { boardRow, section, type FooterHints } from './workboard-rows.js';
 import { t } from './i18n.js';
 
 type Detail = ExpAccount | 'codex-help' | 'proxy-status';
@@ -369,20 +369,10 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
   ];
 }
 
-export const expHints = (page: ExpPage, data?: ExpData): string => {
-  if (page.detail === 'proxy-status') return '↑↓ scroll  esc back';
-  if (!page.edit) return page.detail ? '↑↓ select  ⏎ edit  esc back' : '↑↓ select  ⏎ edit  ←→ tab';
-  if (page.edit.preview) return '⏎ save  esc cancel';
-  const entry =
-    data &&
-    groups(data, page.detail)
-      .flatMap((g) => g.entries ?? [])
-      .find((e) => e.id === page.cursor);
-  return entry?.edit && 'choices' in entry.edit
-    ? '↑↓ pick  ⏎ save  esc cancel'
-    : page.cursor === 'calibration'
-      ? '⏎ preview  esc cancel'
-      : '⏎ save  esc cancel';
+export const expHints = (page: ExpPage): FooterHints => {
+  if (page.detail === 'proxy-status') return ['Esc back'];
+  if (!page.edit) return page.detail ? ['⏎ edit', 'Esc back'] : ['⏎ edit'];
+  return { modal: [page.cursor === 'calibration' && !page.edit.preview ? '⏎ preview' : '⏎ save', 'Esc cancel'] };
 };
 
 export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {

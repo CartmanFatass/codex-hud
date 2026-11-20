@@ -81,7 +81,7 @@ export function renderSettingsConfirmation(
     lines.push(selected ? theme.board.selected(fit(text, width)) : text);
   }
   while (lines.length < height - 1) lines.push('');
-  if (lines.length < height) lines.push(footRow('', t('←→ choose  ⏎ confirm  esc keep editing'), width));
+  if (lines.length < height) lines.push(footRow('', { modal: ['←→ choose', '⏎ confirm', 'Esc keep editing'] }, width));
   return { lines: lines.map((line) => fit(line, width)), controls };
 }
 

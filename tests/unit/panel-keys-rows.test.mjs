@@ -111,10 +111,10 @@ test('the footer shows the keys the selected row accepts', async (t) => {
   const foot = (d) => d.lines().at(-1).trim();
   // Home: a HUD job row offers its tab and stop; the Waiting block offers neither.
   const home = driver(busy, { width: 80 });
-  assert.match(foot(home), /⏎ open {2}g job tab {2}X stop {2}\? help/);
+  assert.match(foot(home), /g job tab {2}X stop {2}⏎ open .*\? help$/);
   while (home.state.splitCursor !== 'home-progress:waiting') home.run('down');
-  assert.doesNotMatch(foot(home), /g job tab|X stop|o open|v inspect/);
-  assert.match(foot(home), /⏎ open {2}\? help/);
+  assert.doesNotMatch(foot(home), /g job tab|X stop|o file|v inspect/);
+  assert.match(foot(home), /⏎ open {2}\/ filter {2}a all {2}\? help$/);
   // The hub: the Progress row's to-try slices take Space, y and n; the other rows' pages do not.
   const hub = driver(busy, { width: 80, data: busy.control, state: onPage(undefined, { panelLayout: 'split' }) });
   assert.match(foot(hub), /Space mark {2}y accept {2}n flag/, 'the Progress row previews the to-try slices');

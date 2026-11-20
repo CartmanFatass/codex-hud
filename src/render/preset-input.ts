@@ -6,7 +6,7 @@ import { glyph, placeRows, presetTag, withDestination } from './control-view.js'
 import { monitorRowAt } from './monitor-input.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
-import { boardRow, mark } from './workboard-rows.js';
+import { boardRow, mark, type FooterHints } from './workboard-rows.js';
 import { t } from './i18n.js';
 
 export type PresetInput = { role: RoleFact; error?: string } & (
@@ -88,7 +88,7 @@ export function presetInputKey(state: MonitorState, input: WorkbenchInput, ctx: 
 }
 
 export function presetSheet(sheet: PresetInput, width: number, room: number): {
-  rule: { label: string; right: string }; hints: string; cursor?: string; rows: MonitorRow[]; scrollMax?: number;
+  rule: { label: string; right: string }; hints: FooterHints; cursor?: string; rows: MonitorRow[]; scrollMax?: number;
 } {
   const name = sheet.role.preset ?? null;
   const label = monitorText(sheet.role.role);
@@ -113,7 +113,7 @@ export function presetSheet(sheet: PresetInput, width: number, room: number): {
       const extra = offBy ? t('{id} off', { id: monitorText(offBy) }) : '';
       return { item: item(at), text: fit(row + (extra && visualLength(`${row}  ${extra}`) <= width ? `  ${muted(extra)}` : ''), width) };
     });
-    const hints = 'type to filter  ↑↓ pick  ⏎ apply  esc cancel';
+    const hints = { modal: ['type to filter', '⏎ apply', 'Esc cancel'] };
     const notes = [...lines(muted(t('⏎ applies · an all-off preset: none'))), ...lines(muted(t('Global role · all projects')))];
     const selected = found[sheet.at]?.name;
     const full = selected && selected.length > Math.max(4, width - visualLength(nextText(found[sheet.at]!.next)) - 8) ? lines(nameOf(selected)) : [];
@@ -130,14 +130,13 @@ export function presetSheet(sheet: PresetInput, width: number, room: number): {
     const places = chain.flatMap((p, i) => placeRows(`  ${i + 1} ${glyph(p.state)} `, withDestination(p), width, ' ', '', {}));
     const available = Math.max(1, room - header.length - error.length);
     const scroll = Math.min(sheet.scroll ?? 0, Math.max(0, places.length - available));
-    const hints = '⏎ delete  esc cancel';
-    return { rule, hints: hints + (places.length > available ? '  PgUp PgDn scroll' : ''),
+    return { rule, hints: { modal: ['⏎ delete', 'Esc cancel'] },
       rows: [...error, ...header, ...places.slice(scroll, scroll + available),
         ...(places.length < available ? lines(muted(t('Global role · all projects'))) : [])],
       // Number of extra chain rows is used by input to keep scrolling bounded.
       scrollMax: Math.max(0, places.length - available) };
   }
-  return { rule, hints: sheet.mode === 'rename' ? 'type a name  ⏎ rename  esc cancel' : 'type a name  ⏎ continue  esc cancel',
+  return { rule, hints: { modal: ['type a name', sheet.mode === 'rename' ? '⏎ rename' : '⏎ continue', 'Esc cancel'] },
     rows: [...(sheet.mode === 'rename' ? [] : lines(t('New preset'))), field(`${t('name')}  `, sheet.text, `${sheet.text.length}/32`), ...error,
       ...lines(t('A–Z a–z 0–9 . _ - · 1–32 chars')),
       ...lines(muted(t('must differ from {role}’s names', { role: label }))), boardRow(''), ...lines(`${t('saved')}  ${saved(name)}`)] };

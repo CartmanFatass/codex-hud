@@ -143,7 +143,7 @@ test('Settings mouse: first click selects row without changing value, second cli
   }
 });
 
-test('PTY smoke: tree-page enables SGR mouse, switches tabs on SGR click, opens Help, returns on crumb click, and restores terminal on exit', (t) => {
+test('PTY smoke: mouse, Help above an unsaved Settings draft, and terminal restore', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'pty-mouse-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const py = spawnSync('python3', ['--version'], { encoding: 'utf8' });
@@ -188,7 +188,13 @@ os.write(master, b"?")
 drain(0.25)
 os.write(master, b"\\x1b[<0;3;1M\\x1b[<0;3;1m")
 drain(0.25)
-os.write(master, b"q")
+# Open Settings, move to the second row, change its value, and open Help over it.
+os.write(master, b",\\x1b[B\\x1b[C?")
+drain(0.3)
+os.write(master, b"\\x1b")
+drain(0.25)
+# Undo the draft change and exit: this works only with the original draft and row.
+os.write(master, b"\\x1b[Dqq")
 drain(0.6)
 try:
     rc = proc.wait(timeout=3)
@@ -202,6 +208,9 @@ sys.stderr.write(f"EXIT={rc}\\n")
   const run = spawnSync('python3', ['-c', script, home, resolve('dist/tree-page.js')], { encoding: 'utf8', timeout: 15000 });
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stderr, /EXIT=0/);
+  const screen = stripAnsi(run.stdout);
+  assert.match(screen, /‹ Settings[^\r\n]*unsaved[\s\S]*‹ Help[\s\S]*‹ Settings[^\r\n]*unsaved/);
+  assert.doesNotMatch(screen, /Save your changes before leaving/);
   assert.ok(run.stdout.includes('\x1b[?1000h\x1b[?1006h'), 'enables SGR mouse');
   assert.ok(run.stdout.includes('\x1b[?1000l\x1b[?1006l'), 'restores SGR mouse on exit');
   assert.ok(!run.stdout.includes('?1002'), 'asks for clicks and the wheel only, no motion reports');

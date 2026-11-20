@@ -16,7 +16,7 @@ import {
   tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted, unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
 import { glyph, roleName } from './control-view.js';
-import { inboxRolePreview, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
+import { HUB_HINTS, HUB_TRY_HINTS, LEDGER_FOCUS_HINTS, PROJECT_FILE_HINTS, TRY_ACTIONS, inboxRolePreview, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { jobSentenceLine, labelSummary, workCardDetail } from './work-card.js';
 import { boardRow, mark, minuteAge, pack, section } from './workboard-rows.js';
@@ -206,18 +206,18 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
       const ticket = data.tickets.flatMap((f) => f.tickets.map((x) => ({ x, key: `${f.slug}:${basename(x.path)}` }))).find((o) => o.key === tkKey)?.x;
       if (!ticket) return { label: '', rows: [] };
       const rows = ticketRows(data, new Set([...folded, `ticket:${tkKey}`]), width, now).filter((r) => r.item === `project:fold:ticket:${tkKey}`).slice(1);
-      return { label: monitorText(`${ticket.number} ${ticket.title}`), right: monitorText(t(ticket.status)), rows: bare(rows), hints: '↑↓ move  ⏎ open file  ? help  ←→ tab  [ ] project' };
+      return { label: monitorText(`${ticket.number} ${ticket.title}`), right: monitorText(t(ticket.status)), rows: bare(rows), hints: ['⏎ open file', '[ ] project'] };
     }
     const roleId = /^inbox:role:(.+)$/.exec(cursor ?? '')?.[1];
     if (roleId) {
       const shownRole = inboxRolePreview(data, width, now)(`project:role:${roleId}`);
-      return { ...shownRole, rows: bare(shownRole.rows), hints: '↑↓ move  ⏎ Control  o open file  ? help  ←→ tab  [ ] project' };
+      return { ...shownRole, rows: bare(shownRole.rows), hints: ['o file', '⏎ Control', '[ ] project'] };
     }
     if (cursor === 'project:fold:inbox:more') return { label: t('Needs you'), right: waitFacts(data), rows: bare(needs.slice(NEEDS_CAP).flatMap((n) => n.rows)) };
     if (cursor?.startsWith('project:slice:') || cursor?.startsWith('project:job:')) {
       const shownSlice = slicePreview(input, data, state, board, width, now, cursor);
       const isTry = data.ledger.some((r) => `project:slice:${r.id}` === cursor && r.state === 'try');
-      return { ...shownSlice, ...(isTry ? { hints: '↑↓ move  Space mark  y accept  n flag  ⏎ details  ? help  ←→ tab  [ ] project' } : {}) };
+      return { ...shownSlice, ...(isTry ? { hints: [...TRY_ACTIONS, '⏎ details', '[ ] project'] } : {}) };
     }
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
     if (page && page !== 'progress') {
@@ -230,11 +230,11 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
       ...(progressSegments(cur.counts, cells).some((s) => s.width) ? [plain(`  ${barText({ counts: cur.counts }, cells)} ${muted(acceptedText(cur.counts, cur.rows.length))}`, width)] : []),
       ...tries.rows, ...(live.length ? [boardRow(''), plain(muted(t('Running')), width), ...bare(live)] : []), ...(last ? [plain(last.text, width)] : []),
     ];
-    return { label: t('Progress'), right: muted(t('⏎ open page')), rows, ...(tries.act ? { act: tries.act, hints: '↑↓ move  Space mark  y accept  n flag  ⏎ open  ? help  ←→ tab  [ ] project' } : {}) };
+    return { label: t('Progress'), right: muted(t('⏎ open page')), rows, ...(tries.act ? { act: tries.act, hints: HUB_TRY_HINTS } : {}) };
   };
   return {
     list, preview, start: list.find((r) => r.item && r.item !== 'project:switch')?.item ?? list.find((r) => r.item)?.item,
-    hints: '↑↓ move  ⏎ open  ? help  ←→ tab  [ ] project', focusHints: '↑↓ move  ⏎ fold / unfold the ledger line  esc back  ? help',
+    hints: HUB_HINTS, focusHints: LEDGER_FOCUS_HINTS,
   };
 }
 
@@ -365,7 +365,7 @@ export function inboxProgressPart(input: MonitorData, data: ProjectSnapshot, sta
   const preview = (cursor?: string): Shown => cursor === 'split:done'
     ? { label: t('Done'), right: t('{n} accepted', { n: accepted.length }), rows: accepted.map(({ r }) => ({ text: inline(`  ${sliceInk('accepted')(mark('✓', '+'))} ${monitorText(r.id)}`, ledgerText(r), muted(sinceText(r.at, now)), width) })) }
     : slicePreview(input, data, state, board, width, now, cursor);
-  return { list, preview, start: list.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ open file  ? help  PgUp PgDn scroll  esc back', focusHints: '↑↓ move  ⏎ fold / unfold the ledger line  esc back  ? help' };
+  return { list, preview, start: list.find((r) => r.item)?.item, hints: PROJECT_FILE_HINTS, focusHints: LEDGER_FOCUS_HINTS };
 }
 
 /** Inbox Projects list: grouped into Needs you, Running and Quiet (a quiet project is one row). */

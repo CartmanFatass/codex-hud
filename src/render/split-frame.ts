@@ -7,7 +7,7 @@
  */
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import type { MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
-import { boardCursor, footRow, hintText, mark, section } from './workboard-rows.js';
+import { boardCursor, footRow, mark, section, type FooterHints } from './workboard-rows.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
 import { fit } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -29,7 +29,7 @@ export interface SplitScene {
   act?: string;
   /** What the preview's scroll belongs to: another page or entry starts it at the top. */
   scope: string;
-  hints: string;
+  hints: FooterHints;
   /** The footer's left side (Home: what was done today). */
   left?: string;
 }
@@ -113,7 +113,7 @@ export function paintSplit(
     const row = scene.preview[previewAt + i], inThumb = i >= thumbAt && i < thumbAt + thumb;
     if (row) put(previewTop + i, row, previewAt + i === first(scene.preview, band), scrolls ? (inThumb ? theme.board.muted(mark('┃', '#')) : theme.board.frame(mark('│', '|'))) : '');
   }
-  if (height > 1) frame.lines[height - 1] = footRow(scene.left ?? '', filterHints(state, hintText(scene.hints)), width);
+  if (height > 1) frame.lines[height - 1] = footRow(scene.left ?? '', filterHints(state, scene.hints), width);
   frame.lines = frame.lines.map((line) => theme.board.text(fit(line, width)));
   frame.panes.push(
     { id: 'agents', x: 0, y: listTop, width, height: listRoom, offset: listAt, contentLength: list.length, rows: list, edge: 0, visible: listRoom },

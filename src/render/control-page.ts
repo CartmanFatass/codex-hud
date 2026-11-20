@@ -9,7 +9,7 @@ import { effectiveModel, glyph, modelFieldRows, needsAttention, pickerPlace, pic
 import { pickerHints, type ModelInput } from './model-input.js';
 import { projectItem } from './project-view.js';
 import { projectSplitScene, type Shown } from './split-project.js';
-import { boardRow, footHints, hintText, kvRows, mark, pack, section } from './workboard-rows.js';
+import { boardRow, footerLayout, hintText, kvRows, mark, pack, section, type FooterHints } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
@@ -48,18 +48,17 @@ export function controlHeader(input: MonitorData, state: MonitorState, width: nu
   }, ...(state.controlHarnesses ? [boardRow(caption)] : saved ? [boardRow(theme.board.success(`${mark('✓', '+')} ${saved}`))] : [])];
 }
 
-export function controlHints(data: ProjectSnapshot | undefined, item?: string, inChain = false): string {
+export function controlHints(data: ProjectSnapshot | undefined, item?: string): string[] {
   const role = data?.roles.find((r) => r.role === controlRoleOf(item));
   if (role) {
-    const enter = inChain ? '⏎ chain' : '⏎ open';
-    if (role.source === 'project') return `↑↓ move  o open file  ${enter}  h harnesses  ? help`;
-    const names = role.presets?.length ? '  c C preset  p presets' : '';
-    const manage = role.preset ? '  R rename  D delete' : '';
-    const model = takesModel(role.editor?.places[roleModelIndex(role)]) ? 'm model  ' : '';
-    return `${model}↑↓ move  ${enter}${names}  N copy  I empty${manage}  h harnesses  o open file  r refresh  ? help`;
+    if (role.source === 'project') return ['o file', '⏎ chain', 'h harnesses'];
+    const model = takesModel(role.editor?.places[roleModelIndex(role)]) ? ['m model'] : [];
+    const names = role.presets?.length ? ['c C preset', 'p presets'] : [];
+    const manage = role.preset ? ['R rename', 'D delete'] : [];
+    return [...model, ...names, '⏎ chain', 'N copy', 'I empty', ...manage, 'h harnesses', 'o file', 'r refresh'];
   }
-  const enter = item?.startsWith('project:file:') ? '  ⏎ open file' : item?.startsWith('project:fold:') ? '  ⏎ open' : '';
-  return `↑↓ move${enter}  h harnesses  r refresh  ←→ tab  [ ] project  ? help`;
+  const enter = item?.startsWith('project:file:') ? ['⏎ open file'] : item?.startsWith('project:fold:') ? ['⏎ open'] : [];
+  return [...enter, 'h harnesses', 'r refresh', '[ ] project'];
 }
 
 export function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
@@ -161,7 +160,7 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
   const list = controlList(data, state, listWidth, now, false);
   const preview = (item?: string): Shown => {
     const role = data.roles.find((r) => controlRoleItem(r.role) === item);
-    const hints = controlHints(data, item, true);
+    const hints = controlHints(data, item);
     return role ? { label: roleName(role), right: presetTag(role.preset), rows: roleDetail(data, role, previewWidth, now), hints }
       : { label: '', rows: [], hints };
   };
@@ -184,7 +183,7 @@ export function controlPickerScene(data: ProjectSnapshot, state: MonitorState, i
   const scene = { list: controlList(data, state, width, now, false), cursor: controlRoleItem(role.role),
     rule: { label: roleName(role), right: state.controlChain?.draft
       ? [presetName(state.controlChain.draft.name ?? role.preset), t('Not saved')].filter(Boolean).join(' · ') : pickerPlace(input, role.preset) }, preview: [] as MonitorRow[],
-    scope: 'control-picker', compact: true, sub: 'project:pick', hints: pickerHints(input) };
+    scope: 'control-picker', compact: true, sub: 'project:pick', hints: hintText(pickerHints(input)) };
   const room = splitPreviewRoom(scene, state, height, notes);
   if (room < 13) return;
   return { ...scene, preview: pickerRows(data, input, width, room, now, true) };
@@ -213,25 +212,22 @@ function roleActions(role: RoleFact, width: number): MonitorRow[] {
 }
 
 /** Match the footer's whole translated hints and their cells (same alignment as footRow). */
-export function presetFooterControls(frame: MonitorFrame, hints: string, width: number, y: number) {
+export function presetFooterControls(frame: MonitorFrame, hints: FooterHints, width: number, y: number) {
   const kinds: Record<string, MonitorControl['kind']> = {
     'p presets': 'preset-list', 'N copy': 'preset-copy', 'I empty': 'preset-empty', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
     '⏎ apply': 'preset-accept', '⏎ delete': 'preset-accept', '⏎ rename': 'preset-accept',
-    '⏎ continue': 'preset-accept', 'esc cancel': 'preset-cancel', 'o open file': 'control-open-file',
+    '⏎ continue': 'preset-accept', 'Esc cancel': 'preset-cancel', 'o file': 'control-open-file',
     'i add': 'chain-add', 's save': 'chain-save', '⏎ edit': 'chain-edit', '⏎ choose': 'chain-edit', '⏎ fill': 'chain-accept',
     'Del remove': 'chain-remove', 'm model': 'control-model',
-    'esc back': 'chain-back', 'esc discard': 'chain-back', '⏎ discard': 'chain-accept', 'esc resume': 'chain-back',
+    'Esc back': 'chain-back', 'Esc discard': 'chain-back', '⏎ discard': 'chain-accept', 'Esc resume': 'chain-back',
   };
-  const labels = hints.split('  '), shown = footHints(hintText(hints), width);
-  let x = width - visualLength(shown);
-  for (const [i, label] of shown.split('  ').entries()) {
-    const span = visualLength(label), kind = kinds[labels[i]!];
+  for (const { key, x, width: span } of footerLayout(hints, width)) {
+    const kind = kinds[key];
     if (kind) frame.controls.push({ kind, x, width: span, y });
-    if (labels[i] === 'c C preset' || labels[i] === 'K J move') {
-      const [first, second] = labels[i] === 'c C preset' ? ['preset-next', 'preset-prev'] as const : ['chain-up', 'chain-down'] as const;
+    if (key === 'c C preset' || key === 'K J move') {
+      const [first, second] = key === 'c C preset' ? ['preset-next', 'preset-prev'] as const : ['chain-up', 'chain-down'] as const;
       frame.controls.push({ kind: first, x, width: 1, y }, { kind: second, x: x + 2, width: 1, y },
         { kind: first, x: x + 4, width: Math.max(0, span - 4), y });
     }
-    x += span + 2;
   }
 }

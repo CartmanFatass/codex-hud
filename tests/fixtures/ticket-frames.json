@@ -71,7 +71,7 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "      ⏎ open  Esc back  / filter  ? help"
   ],
   "hub-40-en": [
     " Home ?1  Project ?2  Control",
@@ -97,7 +97,7 @@
     "Tickets      3/14 done · 2 working",
     "Working tree 1 unlisted worktree",
     "Docs         M3b · AI-THIN · review 30m",
-    "         ↑↓ move  ⏎ open  ←→ tab  ? help"
+    "                          ⏎ open  ? help"
   ],
   "ticket-open-40-en": [
     "‹ Project › Tickets",
@@ -171,7 +171,7 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "      ⏎ open  Esc back  / filter  ? help"
   ],
   "tickets-80-en": [
     "‹ Project › Tickets                                      2 features · 14 tickets",
@@ -245,7 +245,7 @@
     "",
     "",
     "",
-    "                                     ↑↓ move  ⏎ open  esc back  ? help  / filter"
+    "                                              ⏎ open  Esc back  / filter  ? help"
   ],
   "tickets-120-en": [
     "‹ Project › Tickets                                                                              2 features · 14 tickets",
@@ -319,7 +319,7 @@
     "",
     "",
     "",
-    "                                                                             ↑↓ move  ⏎ open  esc back  ? help  / filter"
+    "                                                                                      ⏎ open  Esc back  / filter  ? help"
   ],
   "hub-120-en": [
     " Home ?1  Project ?2  Control                                                                                 models off",
@@ -345,7 +345,7 @@
     "Tickets      3/14 done · 2 working · 2 blocked",
     "Working tree 1 unlisted worktree · synthetic-project · 5 changed · 2 worktrees · 1 editing",
     "Docs         M3b · AI-THIN · review 30m",
-    "                                                                                         ↑↓ move  ⏎ open  ←→ tab  ? help"
+    "                                                                                                          ⏎ open  ? help"
   ],
   "ticket-open-120-en": [
     "‹ Project › Tickets                                                                              2 features · 14 tickets",
@@ -419,7 +419,7 @@
     "",
     "",
     "",
-    "                                                                             ↑↓ move  ⏎ open  esc back  ? help  / filter"
+    "                                                                                      ⏎ open  Esc back  / filter  ? help"
   ],
   "tickets-40-zh": [
     "‹ 项目 › 工单       2 个功能 · 14 个工单",
@@ -493,7 +493,7 @@
     "",
     "",
     "",
-    "       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "        ⏎ 打开  Esc 返回  / 筛选  ? 帮助"
   ],
   "hub-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -519,7 +519,7 @@
     "工单   3/14 完成 · 2 工作中 · 2 受阻",
     "工作区 1 个未登记工作树",
     "文档   M3b · AI-THIN · 评审 30分钟",
-    "        ↑↓ 移动  ⏎ 打开  ←→ 切页  ? 帮助"
+    "                          ⏎ 打开  ? 帮助"
   ],
   "ticket-open-40-zh": [
     "‹ 项目 › 工单       2 个功能 · 14 个工单",
@@ -593,7 +593,7 @@
     "",
     "",
     "",
-    "       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "        ⏎ 打开  Esc 返回  / 筛选  ? 帮助"
   ],
   "tickets-80-zh": [
     "‹ 项目 › 工单                                               2 个功能 · 14 个工单",
@@ -667,7 +667,7 @@
     "",
     "",
     "",
-    "                                       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  / 筛选"
+    "                                                ⏎ 打开  Esc 返回  / 筛选  ? 帮助"
   ],
   "tickets-120-zh": [
     "‹ 项目 › 工单                                                                                       2 个功能 · 14 个工单",
@@ -741,7 +741,7 @@
     "",
     "",
     "",
-    "                                                                               ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  / 筛选"
+    "                                                                                        ⏎ 打开  Esc 返回  / 筛选  ? 帮助"
   ],
   "hub-120-zh": [
     " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
@@ -767,7 +767,7 @@
     "工单   3/14 完成 · 2 工作中 · 2 受阻",
     "工作区 1 个未登记工作树 · synthetic-project · 5 项修改 · 2 个工作树 · 1 编辑中",
     "文档   M3b · AI-THIN · 评审 30分钟",
-    "                                                                                        ↑↓ 移动  ⏎ 打开  ←→ 切页  ? 帮助"
+    "                                                                                                          ⏎ 打开  ? 帮助"
   ],
   "ticket-open-120-zh": [
     "‹ 项目 › 工单                                                                                       2 个功能 · 14 个工单",
@@ -841,6 +841,6 @@
     "",
     "",
     "",
-    "                                                                               ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  / 筛选"
+    "                                                                                        ⏎ 打开  Esc 返回  / 筛选  ? 帮助"
   ]
 }

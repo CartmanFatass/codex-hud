@@ -10,7 +10,7 @@ import { glyph, modelButton, modelFieldRows, placeRows, presetName, presetTag, s
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
-import { boardRow, kvRows, mark, section } from './workboard-rows.js';
+import { boardRow, kvRows, mark, section, type FooterHints } from './workboard-rows.js';
 import { modelInputEvent } from './model-input.js';
 import { monitorRowAt } from './monitor-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
@@ -312,14 +312,14 @@ export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: M
 }
 
 export function chainSheet(chain: ChainInput, models: ModelLists, width: number, room: number, now: number): {
-  rule: { label: string; right: string }; cursor?: string; hints: string; rows: MonitorRow[];
+  rule: { label: string; right: string }; cursor?: string; hints: FooterHints; rows: MonitorRow[];
 } {
   const { role, draft, sheet } = chain, name = draft?.name ?? role.preset;
   const rule = { label: monitorText(role.role), right: [draft ? presetName(name) : presetTag(name),
     draft ? t('Not saved') : ''].filter(Boolean).join(' · ') };
   const line = (text: string) => boardRow(fit(text, width));
   const error = (word?: string) => word ? flowLines(t(word), width).map((part) => line(theme.board.attention(part))) : [];
-  if (chain.leave) return { rule, cursor: undefined, hints: '⏎ discard  esc resume', rows: error('Discard edits?') };
+  if (chain.leave) return { rule, cursor: undefined, hints: { modal: ['⏎ discard', 'Esc resume'] }, rows: error('Discard edits?') };
   if (sheet) {
     const list = sheet.choice ? matching(role, sheet, models) : [];
     const at = sheet.choice?.at ?? 0;
@@ -346,8 +346,9 @@ export function chainSheet(chain: ChainInput, models: ModelLists, width: number,
     const options = optionRows(list, at, size, width);
     const rows = sheet.choice ? all.flatMap((f) => [row(f), ...(f === sheet.field ? options.length || sheet.error ? options : error('No matching choices') : [])]) : all.map(row);
     if (sheet.choice && sheet.field === 'target' && room > rows.length + messages.length + 1) rows.push(line(muted(t('off: not selectable · missing: marked'))));
-    return { rule, cursor, hints: sheet.choice ? 'type to filter  ↑↓ pick  ⏎ fill  esc cancel'
-      : sheet.error === ADVANCED ? 'o open file  ↑↓ field  ⏎ choose  esc cancel' : '↑↓ field  ⏎ choose  esc cancel', rows: [caption, ...messages, ...rows] };
+    const hints = sheet.choice ? { modal: ['type to filter', '⏎ fill', 'Esc cancel'] }
+      : [...(sheet.error === ADVANCED ? ['o file'] : []), '⏎ choose', 'Esc cancel'];
+    return { rule, cursor, hints, rows: [caption, ...messages, ...rows] };
   }
   const places = draft ? previewDraft(draft.run, models, now) : role.places;
   const cursor = places[chain.at] ? placeItem(role.role, chain.at) : undefined;
@@ -377,11 +378,11 @@ export function chainSheet(chain: ChainInput, models: ModelLists, width: number,
   while (rows[end + 1] && rows[end + 1]!.item === cursor) end++;
   // Keep the selected place's continuation and notes in view when they fit together.
   const start = Math.max(0, Math.min(rows.length - size, at, Math.max(end - size + 1, at - Math.floor(size / 2))));
-  const clear = !draft && places[chain.at]?.until !== undefined ? '  x clear' : '';
-  const move = places.length > 1 ? '  K J move' : '', edit = cursor ? '  ⏎ edit' : '';
-  const model = takesModel((draft?.run ?? role.editor?.places)?.[chain.at]) ? '  m model' : '';
-  const hints = role.source === 'project' ? `↑↓ place  o open file${clear}  esc back` : draft
-    ? places.length ? `s save  esc discard  i add${edit}${move}  Del remove${model}` : 'i add  esc discard'
-    : `${model.trim()}${model ? '  ' : ''}↑↓ place${edit}  i add${clear}  esc back  o open file${move}  Del remove`;
+  const clear = !draft && places[chain.at]?.until !== undefined ? ['x clear'] : [];
+  const move = places.length > 1 ? ['K J move'] : [], edit = cursor ? ['⏎ edit'] : [];
+  const model = takesModel((draft?.run ?? role.editor?.places)?.[chain.at]) ? ['m model'] : [];
+  const hints = role.source === 'project' ? ['o file', ...clear, 'Esc back'] : draft
+    ? places.length ? ['s save', ...edit, 'Esc discard', 'i add', ...move, 'Del remove', ...model] : ['i add', 'Esc discard']
+    : [...model, ...clear, ...edit, 'Esc back', 'i add', 'o file', ...move, 'Del remove'];
   return { rule, cursor, hints, rows: [...top, ...(places.length ? rows.slice(start, start + size) : [line(muted(`  ${t('empty · i adds the first place')}`))]), ...source] };
 }

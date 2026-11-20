@@ -16,7 +16,7 @@ import {
   sinceText, sliceInk, stacked, ticketWorking, tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted,
   unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
-import { hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
+import { HUB_HINTS, HUB_TRY_HINTS, LEDGER_FOCUS_HINTS, PROJECT_FILE_HINTS, TRY_ACTIONS, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { jobSentenceLine, labelSummary, workCardDetail } from './work-card.js';
 import { boardRow, mark, minuteAge, section } from './workboard-rows.js';
@@ -226,10 +226,10 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     if (live.length) rows.push(boardRow(''), plain(muted(t('In flight')), width), ...live);
     return {
       label: t('Progress'), right: muted([tries && t('{n} to try', { n: tries }), t('⏎ open page')].filter(Boolean).join(' · ')), rows,
-      ...(act ? { act, hints: '↑↓ move  Space mark  y accept  n flag  ⏎ open  ? help  ←→ tab  [ ] project' } : {}),
+      ...(act ? { act, hints: HUB_TRY_HINTS } : {}),
     };
   };
-  return { list: [name, boardRow(''), ...waiting, ...pages], preview, start: pages.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ open  ? help  ←→ tab  [ ] project', focusHints: '↑↓ move  ⏎ open  esc back  ? help' };
+  return { list: [name, boardRow(''), ...waiting, ...pages], preview, start: pages.find((r) => r.item)?.item, hints: HUB_HINTS, focusHints: ['⏎ open', 'Esc back'] };
 }
 
 function boardSliceRows(r: LedgerSlice, data: ProjectSnapshot, state: MonitorState, width: number, now: number, board?: WorkboardSnapshot, modelEnabled = false, tryMarks?: ReadonlyMap<string, TryAction>): MonitorRow[] {
@@ -342,13 +342,13 @@ export function boardProgressPart(input: MonitorData, data: ProjectSnapshot, sta
         const lines = sentence ? briefStack(head, sentence, age, width) : body ? [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))] : [pair(head, age, width)];
         return lines.map((text) => ({ item, ...files, tryTarget: { milestone: r.milestone, slices: [r] }, text }));
       });
-      return { label: m.label, right: [`${m.accepted}/${m.total}`, mTries.length && t('{n} to try', { n: mTries.length })].filter(Boolean).join(' · '), rows, ...(mTries.length ? { hints: '↑↓ move  Space mark  y accept  n flag  ⏎ details  esc back  ? help' } : {}) };
+      return { label: m.label, right: [`${m.accepted}/${m.total}`, mTries.length && t('{n} to try', { n: mTries.length })].filter(Boolean).join(' · '), rows, ...(mTries.length ? { hints: [...TRY_ACTIONS, '⏎ details', 'Esc back'] } : {}) };
     }
     return slicePreview(input, data, state, board, width, now, cursor);
   };
   return {
     list, preview, start: list.find((r) => r.item?.startsWith('project:slice:'))?.item ?? list.find((r) => r.item)?.item,
-    hints: '↑↓ move  ⏎ open file  ? help  PgUp PgDn scroll  esc back', focusHints: '↑↓ move  ⏎ fold / unfold the ledger line  esc back  ? help',
+    hints: PROJECT_FILE_HINTS, focusHints: LEDGER_FOCUS_HINTS,
   };
 }
 

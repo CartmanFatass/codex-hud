@@ -39,7 +39,7 @@
     "",
     "",
     "",
-    "✓ 1 done today         ⏎ open  g job tab"
+    "✓ 1    g job tab  X stop  ⏎ open  ? help"
   ],
   "home-short-40-en": [
     " Home ?1  Project ?2  Control",
@@ -65,7 +65,7 @@
     "┃ tests pass; two minor items left",
     "",
     "",
-    "✓ 1 done today         ⏎ open  g job tab"
+    "✓ 1    g job tab  X stop  ⏎ open  ? help"
   ],
   "home-idle-40-en": [
     " Home  Project ?2  Control    models off",
@@ -107,7 +107,7 @@
     "",
     "",
     "",
-    "✓ 5 done today  ⏎ open  ? help  / filter"
+    "✓ 5      ⏎ open  / filter  a all  ? help"
   ],
   "hub-40-en": [
     " Home ?1  Project ?2  Control",
@@ -149,7 +149,7 @@
     "  ✓ SKILL-MOVE              accepted 28d",
     "",
     "",
-    "   ↑↓ move  Space mark  y accept  n flag"
+    "    Space mark  y accept  n flag  ? help"
   ],
   "hub-short-40-en": [
     " Home ?1  Project ?2  Control",
@@ -175,7 +175,7 @@
     "  ◇ SENTENCE-CUT              to try 7d│",
     "    job sentences are cut at a word,   │",
     "    never between a name and its flag  │",
-    "   ↑↓ move  Space mark  y accept  n flag"
+    "    Space mark  y accept  n flag  ? help"
   ],
   "progress-40-en": [
     "‹ Project › Progress       updated 12:35",
@@ -217,7 +217,7 @@
     "",
     "",
     "",
-    "  ↑↓ move  ⏎ open file  ? help  / filter"
+    " ⏎ open file  Esc back  / filter  ? help"
   ],
   "control-40-en": [
     " Home ?1  Project ?2  Control",
@@ -259,7 +259,7 @@
     "",
     "",
     "",
-    "   m model  ↑↓ move  ⏎ chain  c C preset"
+    "  m model  c C preset  p presets  ? help"
   ],
   "control-unfolded-40-en": [
     " Home ?1  Project ?2  Control",
@@ -301,7 +301,7 @@
     "",
     "",
     "",
-    "   m model  ↑↓ move  ⏎ chain  c C preset"
+    "  m model  c C preset  p presets  ? help"
   ],
   "tickets-40-en": [
     "‹ Project › Tickets",
@@ -343,7 +343,7 @@
     "",
     "",
     "",
-    "  ↑↓ move  ⏎ open file  PgUp PgDn scroll"
+    " ⏎ open file  Esc back  / filter  ? help"
   ],
   "tree-40-en": [
     "‹ Project › Working tree",
@@ -385,7 +385,7 @@
     "",
     "",
     "",
-    "  ↑↓ move  ⏎ open file  PgUp PgDn scroll"
+    "           ⏎ open file  Esc back  ? help"
   ],
   "docs-40-en": [
     "‹ Project › Docs",
@@ -427,7 +427,7 @@
     "",
     "",
     "",
-    "  ↑↓ move  ⏎ open file  PgUp PgDn scroll"
+    "           ⏎ open file  Esc back  ? help"
   ],
   "home-busy-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -469,7 +469,7 @@
     "",
     "",
     "",
-    "✓ 1 今日完成    ⏎ 打开  g 任务页  X 停止"
+    "✓ 1     g 任务页  X 停止  ⏎ 打开  ? 帮助"
   ],
   "home-short-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -495,7 +495,7 @@
     "┃ tests pass; two minor items left",
     "",
     "",
-    "✓ 1 今日完成    ⏎ 打开  g 任务页  X 停止"
+    "✓ 1     g 任务页  X 停止  ⏎ 打开  ? 帮助"
   ],
   "home-idle-40-zh": [
     " 首页  项目 ?2  控制             模型 关",
@@ -537,7 +537,7 @@
     "",
     "",
     "",
-    "✓ 5 今日完成      ⏎ 打开  ? 帮助  / 筛选"
+    "✓ 5       ⏎ 打开  / 筛选  a 全部  ? 帮助"
   ],
   "hub-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -579,7 +579,7 @@
     "  ✓ SKILL-MOVE               已验收 28天",
     "",
     "",
-    "     ↑↓ 移动  Space 勾选  y 验收  n 标记"
+    "      Space 勾选  y 验收  n 标记  ? 帮助"
   ],
   "hub-short-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -605,7 +605,7 @@
     "  ◇ SENTENCE-CUT             待试用 7天│",
     "    job sentences are cut at a word,   │",
     "    never between a name and its flag  │",
-    "     ↑↓ 移动  Space 勾选  y 验收  n 标记"
+    "      Space 勾选  y 验收  n 标记  ? 帮助"
   ],
   "progress-40-zh": [
     "‹ 项目 › 进度               更新于 12:35",
@@ -647,7 +647,7 @@
     "",
     "",
     "",
-    "     ↑↓ 移动  ⏎ 打开文件  ? 帮助  / 筛选"
+    "    ⏎ 打开文件  Esc 返回  / 筛选  ? 帮助"
   ],
   "control-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -689,7 +689,7 @@
     "",
     "",
     "",
-    "     m 模型  ↑↓ 移动  ⏎ 备选链  c C 预设"
+    "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "control-unfolded-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -731,7 +731,7 @@
     "",
     "",
     "",
-    "     m 模型  ↑↓ 移动  ⏎ 备选链  c C 预设"
+    "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "tickets-40-zh": [
     "‹ 项目 › 工单       2 个功能 · 14 个工单",
@@ -773,7 +773,7 @@
     "",
     "",
     "",
-    "     ↑↓ 移动  ⏎ 打开文件  PgUp PgDn 滚动"
+    "    ⏎ 打开文件  Esc 返回  / 筛选  ? 帮助"
   ],
   "tree-40-zh": [
     "‹ 项目 › 工作区",
@@ -815,7 +815,7 @@
     "",
     "",
     "",
-    "     ↑↓ 移动  ⏎ 打开文件  PgUp PgDn 滚动"
+    "            ⏎ 打开文件  Esc 返回  ? 帮助"
   ],
   "docs-40-zh": [
     "‹ 项目 › 文档",
@@ -857,7 +857,7 @@
     "",
     "",
     "",
-    "     ↑↓ 移动  ⏎ 打开文件  PgUp PgDn 滚动"
+    "            ⏎ 打开文件  Esc 返回  ? 帮助"
   ],
   "home-busy-80-en": [
     " Home ?1  Project ?2  Control                                         models off",
@@ -899,7 +899,7 @@
     "",
     "",
     "",
-    "✓ 1 done today    ⏎ open  g job tab  X stop  ? help  / filter  o open  v inspect"
+    "✓ 1 done today    g job tab  X stop  ⏎ open  o file  v inspect  / filter  ? help"
   ],
   "home-busy-120-en": [
     " Home ?1  Project ?2  Control                                                                                 models off",
@@ -941,6 +941,6 @@
     "",
     "",
     "",
-    "✓ 1 done today        ⏎ open  g job tab  X stop  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
+    "✓ 1 done today                                     g job tab  X stop  ⏎ open  o file  v inspect  / filter  a all  ? help"
   ]
 }

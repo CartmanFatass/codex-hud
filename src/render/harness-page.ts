@@ -2,7 +2,7 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { HarnessSwitchFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { projectSplitScene, type Shown } from './split-project.js';
-import { boardRow, footHints, kvRows, mark, section } from './workboard-rows.js';
+import { boardRow, footerLayout, kvRows, mark, section, type FooterHints } from './workboard-rows.js';
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
@@ -88,13 +88,13 @@ export function harnessAddRows(data: ProjectSnapshot, state: MonitorState, width
     ...(data.harnessSwitchError ? harnessErrorRow(data, width) : items.length ? items : [boardRow(t('No matching switches'))])];
 }
 
-export function harnessHints(data: ProjectSnapshot | undefined, state: MonitorState, item = state.projectCursor): string {
-  if (state.controlHarnessAdd) return 'type to filter  ↑↓ pick  ⏎ restore  esc back';
+export const addBackHints = { modal: ['type to filter', '⏎ restore', 'Esc back'] };
+export function harnessHints(data: ProjectSnapshot | undefined, state: MonitorState, item = state.projectCursor): string[] {
   const entry = data?.harnessSwitches?.find((h) => h.id === harnessId(item));
-  return ['↑↓ move', ...(entry ? ['Space on/off'] : item === harnessFold ? [offFolded(state) ? '⏎ expand' : '⏎ fold']
+  return [...(entry ? ['Space on/off'] : item === harnessFold ? [offFolded(state) ? '⏎ expand' : '⏎ fold']
     : data?.harnessSwitchError ? ['⏎ open file'] : []),
     ...(data?.harnessSwitches?.some((h) => h.off) ? ['i add back'] : []),
-    ...(entry && !entry.off ? ['Del remove'] : []), 'h roles', 'r refresh', '? help'].join('  ');
+    'h roles', ...(entry && !entry.off ? ['Del remove'] : []), 'r refresh'];
 }
 
 export function harnessScene(data: ProjectSnapshot, state: MonitorState, width: number, previewWidth = width) {
@@ -114,22 +114,18 @@ export function harnessScene(data: ProjectSnapshot, state: MonitorState, width: 
     scene.sub = state.controlHarnessAdd?.pick;
     scene.compact = true;
   }
-  return scene;
+  return add ? { ...scene, hints: addBackHints } : scene;
 }
 
 /** Whole fitted footer hints are actions too. The shared footer right-aligns the same text. */
-export function harnessFooterControls(frame: MonitorFrame, hints: string, width: number, y: number): void {
+export function harnessFooterControls(frame: MonitorFrame, hints: FooterHints, width: number, y: number): void {
   const kinds: Record<string, MonitorControl['kind']> = {
     'Space on/off': 'harness-toggle', 'Del remove': 'harness-remove', 'i add back': 'harness-add',
     'h roles': 'control-roles', '⏎ expand': 'harness-fold', '⏎ fold': 'harness-fold',
-    '⏎ restore': 'harness-restore', 'esc back': 'harness-back', 'r refresh': 'harness-refresh', '? help': 'help',
+    '⏎ restore': 'harness-restore', 'Esc back': 'harness-back', 'r refresh': 'harness-refresh', '? help': 'help',
   };
-  const keys = hints.split('  '), shown = footHints(keys.map((s) => t(s)).join('  '), width);
-  if (!shown) return;
-  let x = width - visualLength(shown);
-  for (const [i, label] of shown.split('  ').entries()) {
-    const kind = kinds[keys[i]!], span = visualLength(label);
+  for (const { key, x, width: span } of footerLayout(hints, width)) {
+    const kind = kinds[key];
     if (kind) frame.controls.push({ kind, x, width: span, y });
-    x += span + 2;
   }
 }

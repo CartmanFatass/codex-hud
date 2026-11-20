@@ -7,14 +7,14 @@ import { homeRows } from './home-view.js';
 import { skillsRows } from './skills-view.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
-import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, hintText, mark } from './workboard-rows.js';
+import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, hintText, homeDoneCount, mark, type FooterHints } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
 import { pickOf, pickerHints } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { homeScene } from './split-home.js';
-import { projectScene } from './split-project.js';
+import { projectScene, TRY_ACTIONS } from './split-project.js';
 import { paintSplit, splitScrolls } from './split-frame.js';
 import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
@@ -25,9 +25,8 @@ import { presetSheet } from './preset-input.js';
 import { chainSheet, inlineModelSheet } from './chain-input.js';
 import { pickerRows } from './control-view.js';
 import { MODEL_PICKER_WIDE, paintZoomedPicker } from './model-picker-view.js';
-import { harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
+import { addBackHints, harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
 import { expHints, expRows } from './exp-view.js';
-export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const half = width >= 80 ? Math.floor((width - 4) / 2) : width;
   const keys = [
@@ -388,29 +387,29 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 + top });
   }
   const done = doneToday();
-  const hints = help
-    ? '↑↓ scroll  esc back'
-    : inspector
-      ? '↑↓ move  ⏎ open  esc back'
-      : changes
-        ? '↑↓ scroll  esc back'
-        : control ? picking ? pickerHints(state.projectInput!)
-          : harnesses ? harnessHints(input.project, state) : sheet ? sheet.hints : controlHints(input.project, state.projectCursor)
-        : project ? (page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
-          : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help'
-            : (state.projectLayout === 'board' || state.projectLayout === 'inbox') && rows.some((r) => r.item === state.projectCursor && r.tryTarget) ? 'Space mark  y accept  n flag  ⏎ details  o open file  t to try  esc back  ? help'
-            : '↑↓ move  ⏎ open  t to try  esc back  ? help')
-          : page || list ? '↑↓ move  ⏎ open  esc back  ? help'
-          : state.projectLayout === 'inbox' && rows.some((r) => r.item === state.projectCursor && r.tryTarget)
-            ? (frame.projects ? 'Space mark  y accept  n flag  ⏎ details  o open file  ←→ tab  [ ] project  ? help' : 'Space mark  y accept  n flag  ⏎ details  o open file  ←→ tab  ? help')
-          : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
-        : experiment ? expHints(experiment, input.expData) : homeKeys(state, source, 'expand');
+  const projectSwitch = frame.projects ? ['[ ] project'] : [];
+  const onTry = project && rows.some((r) => r.item === state.projectCursor && r.tryTarget);
+  const hints: FooterHints = help
+    ? { modal: ['Esc back'] }
+    : inspector ? ['⏎ open', 'Esc back']
+      : changes ? ['Esc back']
+        : control ? picking ? hintText(pickerHints(state.projectInput!))
+          : harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state)
+            : sheet ? sheet.hints : controlHints(input.project, state.projectCursor)
+        : project ? (page === 'waiting' ? ['o file', 'Esc back']
+          : page === 'progress' ? (state.projectTry ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
+            : (state.projectLayout === 'board' || state.projectLayout === 'inbox') && onTry ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
+            : ['t to try', '⏎ open', 'Esc back'])
+          : page || list ? ['⏎ open', 'Esc back']
+          : state.projectLayout === 'inbox' && onTry ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
+          : ['⏎ open', ...projectSwitch])
+        : experiment ? expHints(experiment) : homeKeys(state, source, 'expand');
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (control && !harnesses && !picking && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1)
     frame.lines[height - 1] = footRow(
-      !home || !done ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
-      filterHints(state, hintText(hints)),
+      home ? homeDoneCount(done, width) : '',
+      filterHints(state, hints),
       width
     );
   // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.

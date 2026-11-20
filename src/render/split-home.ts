@@ -14,7 +14,7 @@ import type { WorkCard } from '../collectors/work-card.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
 import { briefStack, currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedNewest, pageSummary, roleInk, tryCount, trySentence, waitingRows } from './project-view.js';
-import { boardRow, decisionBlock, mark, minuteAge, section } from './workboard-rows.js';
+import { boardRow, decisionBlock, homeDoneCount, mark, minuteAge, section } from './workboard-rows.js';
 import { splitScope, splitSubValid, type SplitScene } from './split-frame.js';
 import { cutWords, fit, flowLines, monitorText, pair } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
@@ -129,7 +129,7 @@ export function homeScene(
   return {
     list: entries.length ? entries.flatMap((e) => (e.cued && e.item !== cursor ? [e.cued, ...e.rows.slice(1)] : e.rows)) : [boardRow(theme.board.muted(fit('  ' + t(filtering ? 'No matches' : 'Nothing in progress'), width)))],
     cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, scope,
-    left: done ? theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`) : '',
-    hints: sub ? '↑↓ move  ⏎ expand  esc back  PgUp PgDn scroll  o open  v inspect  ? help' : homeKeys(state, board, 'open'),
+    left: homeDoneCount(done, width),
+    hints: homeKeys(state, board, sub ? 'expand' : 'open', !!sub),
   };
 }

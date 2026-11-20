@@ -59,15 +59,44 @@ export const itemRow = (glyph: string, left: string, right: string, width: numbe
   boardRow(pair(`${glyph || ' '} ${left}`, theme.board.muted(right), width));
 export const subTopRow = (crumb: string, right: string, width: number): string =>
   theme.board.title(pair(`${mark('‹', '<')} ${crumb}`, right, width));
-/** A footer's hints in the panel language: the whole string when it has an entry, else each `key word` hint on its own, so a row's own set needs no whole-line entry. */
+/** The legacy model picker's hint translation. Its footer is unchanged. */
 export const hintText = (hints: string): string => { const whole = t(hints); return whole !== hints ? whole : hints.split('  ').map((h) => t(h)).join('  '); };
 export function footHints(hints: string, room: number): string {
   const parts = hints.split('  ');
   while (parts.length && visualLength(parts.join('  ')) > room) parts.pop();
   return parts.join('  ');
 }
-export function footRow(left: string, hints: string, width: number): string {
-  return pair(left, theme.board.muted(footHints(hints, width - visualLength(left) - (left ? 2 : 0))), width);
+// A normal footer supplies the row's hints in priority order. A modal owns the keys
+// and supplies its own hints; the legacy picker supplies its already translated text.
+export type FooterHints = readonly string[] | { modal: readonly string[] } | string;
+export function footerLayout(hints: FooterHints, width: number, left = '') {
+  const legacy = typeof hints === 'string';
+  const keys = legacy ? hints.split('  ').filter(Boolean) : 'modal' in hints ? hints.modal : hints;
+  const localize = (key: string) => {
+    const label = legacy ? key : t(key);
+    return { key, label, width: visualLength(label) };
+  };
+  const parts = keys.map(localize);
+  const help = !legacy && !('modal' in hints) ? localize('? help') : undefined;
+  const room = Math.max(help?.width ?? 0, width - (left ? visualLength(left) + 2 : 0));
+  // Include a trailing gap in the budget for each hint, then remove the last gap.
+  let cells = parts.reduce((n, part) => n + part.width + 2, help ? help.width + 2 : 0);
+  while (parts.length && cells - 2 > room) cells -= parts.pop()!.width + 2;
+  if (help && help.width > width) return [];
+  if (help) parts.push(help);
+  let x = width - cells + 2;
+  return parts.map((hint) => {
+    const at = x;
+    x += hint.width + 2;
+    return { ...hint, x: at };
+  });
+}
+export function footRow(left: string, hints: FooterHints, width: number): string {
+  const right = footerLayout(hints, width, left).map(({ label }) => label).join('  ');
+  return fit(pair(left, theme.board.muted(right), width), width);
+}
+export function homeDoneCount(done: number, width: number): string {
+  return done ? theme.board.success(`${mark('✓', '+')} ${width < 56 ? done : t('{n} done today', { n: done })}`) : '';
 }
 export const decisionTitle = (record: DecisionRecord) =>
   keywordMarks(monitorText(record.modelTitle ?? record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title)).plain;

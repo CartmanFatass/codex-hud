@@ -110,10 +110,9 @@ const ZH: Record<string, string> = {
   'Invalid value': '数值或格式无效',
   'Could not read EXP configuration': '无法读取 EXP 设置',
   'Could not save EXP setting': 'EXP 设置未保存',
-  '↑↓ select': '↑↓ 选择',
-  '↑↓ pick': '↑↓ 选择',
-  '↑↓ scroll': '↑↓ 滚动',
-  'esc cancel': 'esc 取消',
+  '↑↓ pick': '↑↓ 选择', // Legacy model picker.
+  'esc cancel': 'esc 取消', // Legacy model picker.
+  'Esc cancel': 'Esc 取消',
   '⏎ edit': '⏎ 编辑',
   '⏎ preview': '⏎ 预览',
   '⏎ save': '⏎ 保存',
@@ -328,7 +327,6 @@ const ZH: Record<string, string> = {
   Resume: '继续',
   Switch: '切换',
   Keys: '按键',
-  '↑↓ select  ←→ change': '↑↓ 选择  ←→ 修改',
 
   // Tree page messages
   'Settings: {reason}': '设置：{reason}',

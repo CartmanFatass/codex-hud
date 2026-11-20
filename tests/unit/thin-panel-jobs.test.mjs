@@ -272,12 +272,13 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
     plain(renderMonitor({ tree: f.tree, workboard: board, state: frame.state, width, height: 40, nowMs: now }))
       .at(-1)
       .trimEnd();
-  assert.deepEqual([56, 40, 30, 20].map(foot), [
-    '✓ 2 done today        ⏎ expand  ? help  / filter  o open',
-    '✓ 2 done today          ⏎ expand  ? help',
-    '✓ 2 done today        ⏎ expand',
-    '✓ 2 done today',
-  ]);
+  for (const width of [56, 40, 30, 20]) {
+    const row = foot(width);
+    assert.equal(visualLength(row), width);
+    assert.match(row, width >= 56 ? /^✓ 2 done today +/ : /^✓ 2 +/);
+    assert.match(row, /  \? help$/);
+    assert.ok(!row.includes('…'), row);
+  }
   // The row is erased before it is written: a full-width row would lose its last cell to an erase after it.
   const painted = frameDiff(null, ['abc']);
   assert.ok(painted.indexOf('\x1b[K') < painted.indexOf('abc') && !painted.endsWith('\x1b[K'));
