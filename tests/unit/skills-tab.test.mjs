@@ -95,7 +95,7 @@ test('a missing or unreadable Skills catalog renders one muted notice, not a cra
       const backupSkills = readBackupSkills(path);
       assert.equal(backupSkills, null);
       for (const width of [40, 160]) {
-        const frame = render(help(), { backupSkills, width, height: 80 });
+        const frame = render(help(), { backupSkills, width, height: 120 });
         const rows = skillSection(frame);
         const last = rows.at(-1);
         assert.equal(stripAnsi(last.text).trim(), 'Skills catalog unavailable');
