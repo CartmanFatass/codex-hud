@@ -782,8 +782,12 @@ One waiting item's page and the Projects list are Classic's frames in either lay
 
 ### Help
 
-Press `?` for shortcuts, status marks and the **Backup skills** section. Scroll down
-with the movement keys or wheel to see the list.
+Press `?` for shortcuts grouped by where they work. From Project or Control, Help
+opens at that tab’s section; from Home, EXP or Settings it opens at Everywhere.
+The Split shortcuts appear only in the Split layout. Marks are grouped by jobs,
+slices, answers and places. At 80 columns and wider, Marks sit to the right of the
+shortcuts. Scroll with ↑↓, PgUp/PgDn or the wheel to reach the **Backup skills**
+section; Esc, `?` or Enter returns to the previous page.
 
 The section lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
 Matt Pocock skills not installed: the adapted copies in `integrations/skills-optional/`

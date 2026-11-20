@@ -30,7 +30,7 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
       frames = pageFrames(f);
     for (const [key, text] of Object.entries(frames).filter(([key]) => key.startsWith(page + '-')))
       assert.deepEqual(text, expected[key], key);
-    // Help is a scrolling page: more key rows moved the Backup skills header below the first 47 rows.
+    // Read the scrolling Help body separately from the visible frame.
     const frame = f.render(page, 80, 'en', page === 'help' ? 54 : 40),
       text = plainFrame(frame).join('\n');
     if (page === 'older') {
@@ -60,11 +60,15 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
       assert.doesNotMatch(text, /Home · Project/);
       const help = frame.workboard.rows.map((row) => stripAnsi(row.text)).join('\n');
       assert.match(help, /Backup skills ─+ 17/);
-      assert.match(help, /click the model field \(▾\) to open/);
-      assert.match(text, /Space\s+mark a try \/ toggle a harness/);
-      assert.match(text, /y n\s+accept \/ flag the marked/);
-      assert.match(text, /i Del\s+add \/ remove place or switch/);
-      assert.match(text, /h\s+Control: Roles \/ Harnesses/);
+      assert.match(help, /m\s+role\/place: picker in this\s+pane;/);
+      assert.match(help, /one click or Enter sets/);
+      assert.match(help, /Esc\s+picker: clear filter, then\s+close/);
+      assert.match(help, /\^R\s+picker: refresh model lists/);
+      assert.match(help, /Space\s+mark a to-try row/);
+      assert.match(help, /Space\s+harness: on \/ off/);
+      assert.match(help, /y n\s+accept \/ flag the marked/);
+      assert.match(help, /i Del\s+place: add \/ remove; harness:\s+add back \/ off/);
+      assert.match(help, /h\s+Roles \/ Harnesses/);
       assert.doesNotMatch(text, /\+ - K J|n N /);
       assert.match(text, /f\s+Changes/);
       assert.match(text, /← → Tab\s+switch tab \(a click too\)/);
@@ -382,22 +386,24 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   const opened = handleMonitorInput(asking.state, { type: 'key', key: 'help' }, ctx(asking)).state;
   const help = draw(opened, { mouse: false });
   const body = plainFrame(help).join('\n');
-  assert.match(body, /\+ done\s+@ running/);
-  assert.doesNotMatch(body, /click selects|Codex's own panel|Timeline|press .* first/);
-  assert.match(body, /switch tab \(a click too\)/);
+  assert.match(body, /jobs\s+@ running\s+\? asking\s+~ stalled/);
+  assert.match(body, /\+ done\s+x failed\s+- stopped/);
+  assert.doesNotMatch(body, /click|Codex's own panel|Timeline|press .* first/);
+  assert.match(body, /switch tab/);
   assert.equal(help.state.inspectCursor, cursor);
   const returned = handleMonitorInput(help.state, { type: 'key', key: 'escape' }, ctx(help)).state;
   assert.equal(returned.help, false);
   assert.equal(returned.focus, 'details');
   assert.equal(draw(returned).state.inspectCursor, cursor);
   const withMouse = plainFrame(draw({ ...opened, focus: 'agents' }, { mouse: true })).join('\n');
-  assert.match(withMouse, /click selects/);
+  assert.match(withMouse, /click\s+select; again = ⏎; wheel\s+scrolls/);
   assert.doesNotMatch(withMouse, /press .* first/);
   setLanguage('zh');
-  const chinese = plainFrame(draw({ ...opened, focus: 'agents' })).join('\n');
+  const chinese = plainFrame(draw({ ...opened, focus: 'agents' }, { width: 120 })).join('\n');
   assert.doesNotMatch(chinese, /在 Codex 自带的面板中|press .*first/);
-  assert.match(chinese, /c C\s+角色：下一个／上一个预设[\s\S]*m\s+角色或位置：选择模型/);
-  assert.match(chinese, /按 m 选模型后，Enter 立即保存/);
-  assert.match(chinese, /在控制的备选链中，按 Enter 编辑位置/);
+  assert.match(chinese, /c C\s+角色：下一个／上一个预设[\s\S]*m\s+角色或位置：本窗格选模型/);
+  assert.match(chinese, /单击或按 Enter 设定。有\s*草稿则填入/);
+  assert.match(chinese, /Esc\s+选择器：先清空筛选，再关闭/);
+  assert.match(chinese, /\^R\s+选择器：刷新模型列表/);
   assert.doesNotMatch(chinese, /On Control|pick a model/);
 });

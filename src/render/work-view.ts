@@ -23,81 +23,105 @@ import { controlNavigation, storeControlNavigation } from './control-navigation.
 import { controlHeader, controlHints, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
 import { chainSheet, inlineModelSheet } from './chain-input.js';
+import { glyph } from './control-view.js';
 import { paintModelPicker } from './model-picker-view.js';
 import { addBackHints, harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
 import { expHints, expRows } from './exp-view.js';
-function helpRows(input: MonitorData, width: number): MonitorRow[] {
+function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const half = width >= 80 ? Math.floor((width - 4) / 2) : width;
-  const keys = [
-    section(t('Keys'), half),
-    ...[
-      ['← → Tab', 'switch tab (a click too)'],
-      ['f', 'Changes'],
-      ['↑ ↓', 'move'],
-      ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)'], ['= + -', 'Split: list bigger / smaller']] : []),
-      ['/', 'filter rows live'],
-      ['⏎', 'expand / fold, edit a place, or toggle switch'],
-      ['o', 'open the file in $EDITOR'],
-      ['[ ]', 'Project/Control: switch project'],
-      ['Space', 'mark a try / toggle a harness'],
-      ['y n', 'accept / flag the marked to-try rows'],
-      ['c C', 'role: next / previous preset'],
-      ['p', 'role: filter and choose a preset'],
-      ['N I', 'role: start a copied or empty draft'],
-      ['R D', 'role: rename or preview deletion'],
-      ['m', 'role or place: choose a model'],
-      ['s', 'chain: save and select the draft'],
-      ['i Del', 'add / remove place or switch'],
-      ['K J', 'place: move up, move down'],
-      ['x', 'place: clear its exhausted mark'],
-      ['h', 'Control: Roles / Harnesses'],
-      ['r ^R', 'refresh: Control / picker'],
-      ['g', 'job: go to its herdr tab'],
-      ['1-4 d', 'job: answer its open question'],
-      ['X', 'job: stop it (y confirms)'],
-      ['v', 'inspect: details and files'],
-      ['a', 'show / hide older jobs and decisions (Home)'],
-      ['> <', 'next / previous card that needs you (Home)'],
-      ['b', 'models on / off'],
-      ['w', 'export a review board (HTML) and open it'],
-      [',', 'Settings'],
-      ['?', 'this page'],
-      ['Esc', 'back; confirm discarding a draft; picker: clear then exit'],
-    ].flatMap(([key, label]) => kvRows(key, t(label), half, undefined, 7)),
+  const mouse = input.mouse !== false;
+  const everywhere = [
+    ['← → Tab', mouse ? 'switch tab (a click too)' : 'switch tab'],
+    ['Shift+Tab', 'previous tab'],
+    ['h l', 'left / right (h outside Control)'],
+    ['↑ ↓ j k', 'move; PgUp PgDn page'],
+    ['Home End', 'first / last row (G = End)'],
+    ['⏎', 'act on the row; the footer says what it does there'],
+    ['o', 'open the row’s file in $EDITOR'],
+    ['/', 'filter rows live'],
+    ['Backspace', 'edit filter text'],
+    ['Esc', 'back; clear a filter first'],
+    [',', 'Settings'],
+    ['?', 'this page'],
+    ['b', 'model text on / off'],
+    ['w', 'write the review board (HTML)'],
+    ['f', 'Changes'],
+    ['q', 'close panel (also Q, ^C, ^D)'],
+    ...(mouse ? [['click', 'select; again = ⏎; wheel scrolls']] : []),
+    ['s r t', 'Settings: save / reset / test'],
   ];
+  const home = [
+    ['g', 'job: go to its herdr tab'],
+    ['1-4 d', 'job: answer its open question'],
+    ['X', 'job: stop it (y confirms)'],
+    ['v', 'inspect: details and files'],
+    ['a', 'show / hide older cards'],
+    ['> <', 'next / previous card that needs you'],
+  ];
+  const project = [
+    ['[ ]', 'previous / next project'],
+    ['Space', 'mark a to-try row'],
+    ['y n', 'accept / flag the marked rows, or the current one'],
+    ['t', 'Progress: only what is to try'],
+  ];
+  const control = [
+    ['c C', 'role: next / previous preset'],
+    ['p', 'role: choose a preset by name'],
+    ['N I', 'role: new draft, copied or empty'],
+    ['R D', 'role: rename / delete the preset'],
+    ['i Del', 'place: add / remove; harness: add back / off'],
+    ['K J', 'place: move up / down'],
+    ['m', mouse ? 'role/place: picker in this pane; one click or Enter sets. In a draft, fill only; else save.'
+      : 'role/place: picker in this pane; Enter sets. In a draft, fill only; else save.'],
+    ['Esc', 'picker: clear filter, then close'],
+    ['^R', 'picker: refresh model lists'],
+    ['x', 'place: clear its exhausted mark'],
+    ['s', 'draft: save and select it'],
+    ['h', 'Roles / Harnesses'],
+    ['Space', 'harness: on / off'],
+    ['r', 'refresh the model lists'],
+    ['', 'Saved to $HUD_HOME/roles; the next job uses it. Project role files are read-only here.'],
+  ];
+  const split = [
+    ['⏎ Esc', 'into the preview / back'],
+    ['PgUp Dn', 'scroll the preview'],
+    ['= + -', 'list bigger / smaller'],
+  ];
+  const keys: MonitorRow[] = [];
+  const add = (heading: string, bindings: string[][]) => {
+    if (keys.length) keys.push(boardRow(''));
+    const at = keys.length;
+    keys.push(section(t(heading), half), ...bindings.flatMap(([key, label]) =>
+      kvRows(key, t(label), half, key ? undefined : theme.board.muted, Math.max(7, visualLength(t(key))))));
+    return at;
+  };
+  add('Everywhere', everywhere);
+  add('Home', home);
+  const projectStart = add('Project', project);
+  const controlStart = add('Control', control);
+  if (state.panelLayout === 'split') add('Split', split);
+
+  const legend = (label: string, ...groups: string[][]) => groups.map((group, i) =>
+    boardRow(`${theme.board.muted(fit(i ? '' : t(label).toLowerCase(), 7))} ${group.join('  ')}`));
+  const entry = (symbol: string, label: string) => `${symbol} ${t(label).toLowerCase()}`;
+  const { active, attention, danger, muted, stalled, success } = theme.board;
   const marks = [
     section(t('Marks'), half),
-    boardRow(
-      `${theme.board.success(mark('✓', '+'))} ${t('done')}      ${theme.board.active(mark('◉', '@'))} ${t('running')}   ${theme.board.attention('?')} ${t('asking you')}`
-    ),
-    boardRow(
-      `${theme.board.danger(mark('✗', 'x'))} ${t('failed')}    ${theme.board.muted(mark('−', '-'))} ${t('stopped')}   ${theme.board.stalled(mark('◷', '~'))} ${t('stalled')}`
-    ),
-    boardRow(`${theme.board.attention(mark('◆', '*'))} ${t('answer differs from the default')}`),
-    boardRow(`${theme.board.muted(mark('◇', 'o'))} ${t('answer as proposed')}`),
-    boardRow(`${theme.board.active(mark('┃', '|'))} ${t('body of a card')}`),
-    ...flowLines(t('dim rows are older ones, shown with a'), half).map((s) => boardRow(theme.board.muted(s))),
+    ...legend('Jobs', [entry(active(mark('◉', '@')), 'running'), entry(attention('?'), 'asking'), entry(stalled(mark('◷', '~')), 'stalled')],
+      [entry(success(mark('✓', '+')), 'done'), entry(danger(mark('✗', 'x')), 'failed'), entry(muted(mark('−', '-')), 'stopped')]),
+    ...legend('Slices', [entry(active(mark('◐', '@')), 'working'), entry(attention(mark('◆', '!')), 'blocked'), entry(muted(mark('◇', 'o')), 'to try')],
+      [entry(success(mark('✓', '+')), 'accepted'), entry(muted(mark('○', '-')), 'todo')]),
+    ...legend('Answers', [entry(attention(mark('◆', '*')), 'differs from the default')], [entry(muted(mark('◇', 'o')), 'as proposed')]),
+    ...legend('Places', [entry(glyph('active'), 'next'), entry(glyph('standby'), 'standby'), entry(glyph('exhausted'), 'exhausted')],
+      [entry(glyph('off'), 'Off'), entry(glyph('missing'), 'not installed')]),
+    ...kvRows('dim', t('older rows; a shows them'), half, muted, 7),
     ...flowLines(t('lavender words are marked by the model'), half).map((s) => boardRow(theme.board.identifier(s))),
   ];
-  const rows =
-    width < 80
-      ? [...keys, boardRow(''), ...marks]
-      : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
-          boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4))
-        );
-  const notes = [
-    'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
-    ...(input.state.panelLayout === 'split' ? ['Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens'] : []),
-    'In a Control chain, Enter edits a place. Choose Target, Model or Flow kind, Thinking where offered, then Done. Nothing changes on disk until Save.',
-    'With m, Enter saves the model at once, or fills the place if a draft is open.',
-    'Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
-    'In the Inspector ⏎ opens the file',
-    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click the model field (▾) to open. In the pi picker, one click sets the model; click a provider to fold or unfold, or Esc cancel to close. The wheel keeps the selection visible.'] : []),
-    'Model picker: current and preset models are pinned until you type. Typing opens matching groups.',
-    'In Harnesses, remove means off. Add back: type to filter, Enter restores, Esc cancels.',
-  ];
-  rows.push(boardRow(''), ...notes.flatMap((s) => flowLines(t(s), width).map((s) => boardRow(theme.board.muted(s)))));
-  return [boardRow(''), ...rows, ...skillsRows(input.backupSkills, width)];
+  const rows = width < 80 ? [...keys, boardRow(''), ...marks]
+    : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
+        boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4)));
+  const start = state.mainTab === 'project' ? projectStart : state.mainTab === 'control' ? controlStart : undefined;
+  return { rows: [boardRow(''), ...rows, ...skillsRows(input.backupSkills, width)], anchor: start === undefined ? undefined : rows[start] };
 }
 export function renderWorkboardFrame(
   input: MonitorData,
@@ -282,8 +306,9 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       chainTop = at;
     }
   }
-  const rows: MonitorRow[] = help
-    ? helpRows(input, width)
+  const helpContent = help ? helpRows(input, state, width) : undefined;
+  const rows: MonitorRow[] = helpContent
+    ? helpContent.rows
     : changes
       ? [boardRow(''), ...changesRows(input, state, width, now)]
       : inspector
@@ -340,9 +365,10 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const key = addingHarness ? state.controlHarnessAdd?.pick : sheet ? sheet.cursor : project || control ? state.projectCursor : inspector ? state.inspectCursor
     : experiment ? experiment.edit ? undefined : experiment.cursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   const room = Math.max(0, height - 2 - top);
-  const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(0, rows.length - room);
+  const helpStart = helpContent?.anchor ? rows.indexOf(helpContent.anchor) : 0;
+  const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(helpStart, rows.length - room);
   const scroll = help
-    ? (state.helpScroll ?? 0)
+    ? (state.helpScroll ?? helpStart)
     : sheet ? chainTop + Number(!!input.publicationNotice && !!anchor)
     : addingHarness ? 0
     : sub
@@ -357,7 +383,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   }
   if (help) {
     state.helpScroll = offset;
-    frame.helpPage = { count: room, total: rows.length };
+    frame.helpPage = { count: room, maxOffset: max };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
   else if (project || control) { if (!addingHarness && !sheet && (!control || input.project)) state.projectScroll = offset; }
   else if (experiment) state.expPage = { ...experiment, scroll: offset };

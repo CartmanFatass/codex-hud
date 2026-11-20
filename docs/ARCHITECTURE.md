@@ -322,7 +322,7 @@ reload's JSON), and three rows around the cursor while `splitFocus` is `preview`
 the cursor is not on may add a cue (`laneCue`) to its row.
 A key has one meaning per page (`n` is only `try-flag`; `>` `<` move between Home's cards that need you; `i` and Delete
 add and remove a place, `+` `=` `-` are only `list-grow` / `list-shrink`; the decoder names each once and
-`tests/unit/panel-keys-rows.test.mjs` checks Help lists a key on one row). A footer's keys come from the selected row
+`tests/unit/panel-keys-rows.test.mjs` checks Help lists each key once per section). A footer's keys come from the selected row
 (`homeKeys` in `job-actions.ts`, the `hints` a split scene returns): per-hint words are in `split-i18n.ts`, and
 `hintText` translates a footer hint by hint, so a new hint is one entry, not one whole line per combination.
 Rows that have to fit 40 columns keep what identifies them: `cutWords` cuts at a word, `briefStack` gives a briefed

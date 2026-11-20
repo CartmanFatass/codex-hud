@@ -20,6 +20,8 @@ export function monitorItemAt(pane: MonitorRect, x: number, y: number): string |
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   const out = route(state, input, ctx);
+  // Help lays out the current tab's section at the current width on its first paint.
+  if (!state.help && out.state.help) out.state.helpScroll = undefined;
   // A `/` filter belongs to the view it was typed in: another tab, page, project, Help or the Inspector clears it.
   if ((out.state.filterQuery !== undefined || out.state.filterOpen) && filterScope(out.state) !== filterScope(state))
     out.state = { ...out.state, filterQuery: undefined, filterOpen: undefined };
@@ -61,7 +63,7 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
       const page = Math.max(1, ctx.frame?.helpPage?.count ?? 1);
       const delta =
         direction === 'down' ? 1 : direction === 'up' ? -1 : key === 'page-down' ? page : key === 'page-up' ? -page : 0;
-      const max = Math.max(0, (ctx.frame?.helpPage?.total ?? 0) - page);
+      const max = ctx.frame?.helpPage?.maxOffset ?? 0;
       next.helpScroll =
         key === 'home' ? 0 : key === 'end' ? max : Math.max(0, Math.min(max, (next.helpScroll ?? 0) + delta));
     }
@@ -73,10 +75,7 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   if (board) return board;
   if (key === 'settings') return result({ type: 'settings' });
   if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
-  if (key === 'help') {
-    next.help = true;
-    next.helpScroll = 0;
-  }
+  if (key === 'help') next.help = true;
   if (next.focus === 'changes') {
     const pane = ctx.frame?.panes.find((p) => p.id === 'changes');
     const max = pane ? Math.max(0, pane.contentLength - Math.max(1, pane.height)) : Infinity;

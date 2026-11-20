@@ -206,7 +206,7 @@ export interface MonitorFrame {
   state: MonitorState;
   /** Set when there is more than one project to switch between: the panel's own first. */
   projects?: ProjectChoice[];
-  helpPage?: { count: number; total: number };
+  helpPage?: { count: number; maxOffset: number };
   expData?: ExpData;
   controlModels?: ModelLists;
   controlNow?: number;

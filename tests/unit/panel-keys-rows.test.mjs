@@ -6,15 +6,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
 import { NOW, TREE, plain, onPage } from '../fixtures/project-page.mjs';
-import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
+import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setLanguage } from '../../dist/render/i18n.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { skillsRows } from '../../dist/render/skills-view.js';
 import { defaultSettings } from '../../dist/settings.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
-import { visualLength, stripAnsi } from '../../dist/render/colors.js';
+import { visualLength, stripAnsi, truncateAnsi } from '../../dist/render/colors.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 
-const decode = (raw) => new WorkbenchInputDecoder('workboard').push(Buffer.from(raw));
+const decode = (raw) => {
+  const decoder = new WorkbenchInputDecoder('workboard');
+  return [...decoder.push(Buffer.from(raw)), ...decoder.flushEscape()];
+};
 async function fixtures(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'keys-rows-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -31,7 +36,7 @@ function driver(f, { width = 40, height = 40, data = f.data, state = split(), bo
   return { run, get frame() { return frame; }, get state() { return frame.state; }, lines: () => plain(frame) };
 }
 
-test('a printable key is one decoder name, and the Help page lists no key twice', async (t) => {
+test('a printable key is one decoder name, and Help covers the decoder with each key once per section', async (t) => {
   // Lower case n flags, while the upper-case preset management keys act only on role rows.
   assert.deepEqual([...'n<>'].map((c) => decode(c)[0].key), ['try-flag', 'previous-trouble', 'next-trouble']);
   assert.deepEqual([...'NIRDgpPeE'].map((c) => decode(c)[0].key), ['preset-copy', 'preset-empty', 'preset-rename', 'preset-delete', '', 'preset-list', '', '', '']);
@@ -44,16 +49,90 @@ test('a printable key is one decoder name, and the Help page lists no key twice'
   }
   for (const name of ['try-flag', 'next-trouble', 'previous-trouble', 'place-add', 'list-shrink']) assert.equal(named.get(name)?.length, 1, `${name} is on one key`);
   assert.deepEqual(named.get('list-grow'), ['+', '=']);
-  // The Help page: every key it names is on one row, in either layout and language.
-  const { busy } = await fixtures(t);
-  for (const panelLayout of ['split', 'classic']) {
-    const help = plain(busy.render(120, 'en', 60, { ...split({ panelLayout }), help: true }));
-    const start = help.findIndex((l) => /^Keys ─/.test(l)), end = help.findIndex((l, i) => i > start && /^\s*$/.test(l));
-    const tokens = help.slice(start + 1, end < 0 ? undefined : end).flatMap((l) => l.slice(0, 7).trim().split(/\s+/).filter(Boolean));
-    assert.ok(tokens.length > 20, 'the key column was read');
-    const twice = tokens.filter((tok, i) => tokens.indexOf(tok) !== i);
-    assert.deepEqual(twice, [], `${panelLayout}: keys named on two Help rows`);
-  }
+  // Walk the standalone decoder: ASCII (including control keys) and the terminal forms for navigation.
+  const ascii = Array.from({ length: 128 }, (_, c) => String.fromCharCode(c));
+  const terminals = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].flatMap((end) => [`\x1b[${end}`, `\x1bO${end}`]);
+  const numbered = Array.from({ length: 24 }, (_, n) => `\x1b[${n}~`);
+  const names = new Set([...ascii, ...terminals, ...numbered].flatMap((raw) => decode(raw).map(({ key }) => key)).filter(Boolean));
+  const raw = {
+    '↑': '\x1b[A', '↓': '\x1b[B', '←': '\x1b[D', '→': '\x1b[C',
+    Tab: '\t', 'Shift+Tab': '\x1b[Z', Home: '\x1b[H', End: '\x1b[F', PgUp: '\x1b[5~', PgDn: '\x1b[6~',
+    '⏎': '\r', Esc: '\x1b', Space: ' ', Del: '\x1b[3~', Backspace: '\x7f', '^R': '\x12',
+  };
+  const headings = { en: ['Everywhere', 'Home', 'Project', 'Control', 'Split'], zh: ['通用', '首页', '项目', '控制', '分栏'] };
+  const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
+  try {
+    for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
+      const prev = setLanguage(lang);
+      try {
+        const draw = (width) => renderMonitor({ tree: TREE, state: { ...initialMonitorState(), panelLayout, help: true }, width, height: 40, nowMs: NOW });
+        const read = (width) => {
+          const rows = draw(width).workboard.rows;
+          const body = rows.slice(0, rows.findIndex((r) => /(?:Backup skills|备用技能) ─/.test(r.text)));
+          // The extra cell is the space replacing the cropped right column; trim it with the padding.
+          return body.map(({ text }) => (width < 80 ? text : truncateAnsi(text, (width - 4) / 2 + 1, ' ')).trimEnd());
+        };
+        const lines = read(40), marksAt = lines.findIndex((l) => /^(?:Marks|图例) ─/.test(l));
+        assert.ok(marksAt > 0);
+        const keys = lines.slice(0, marksAt), sections = new Map();
+        let seen;
+        for (const line of keys) {
+          const heading = headings[lang].find((label) => line.startsWith(label + ' ─'));
+          if (heading) { seen = new Set(); sections.set(heading, seen); continue; }
+          if (!line || line.startsWith(' ')) continue;
+          const label = line.match(/^(Shift\+Tab|Home End|Backspace|点击)(?= )/)?.[1] ?? line.slice(0, 7).trim();
+          const tokens = label.split(/\s+/).flatMap((key) => key === '1-4' ? [...'1234'] : [key === 'Dn' ? 'PgDn' : key]);
+          if (label === '↑ ↓ j k') tokens.push(...(line.match(/PgUp|PgDn/g) ?? []));
+          for (const key of tokens) {
+            assert.ok(!seen.has(key), `${panelLayout} ${lang}: ${key} repeated in ${[...sections.keys()].at(-1)}`);
+            seen.add(key);
+          }
+        }
+        assert.deepEqual([...sections.keys()], headings[lang].slice(0, panelLayout === 'split' ? 5 : 4));
+        const covered = new Set([...sections.values()].flatMap((keys) => [...keys]).flatMap((key) => decode(raw[key] ?? key).map((event) => event.key)));
+        const expected = panelLayout === 'split' ? [...names] : [...names].filter((key) => !['list-grow', 'list-shrink'].includes(key));
+        assert.deepEqual(expected.filter((key) => !covered.has(key)), [], `${panelLayout} ${lang}: decoder keys missing in Help`);
+        // At 40 columns the columns fit, and wrapping retains the same words as the wide left column.
+        const text = (rows) => rows.join('').replace(/[─\s]/gu, '');
+        assert.equal(text(keys), text(read(120)), `${panelLayout} ${lang}: no lost or clipped descriptions`);
+        for (const { text } of draw(40).workboard.rows) assert.ok(visualLength(text) <= 40, text);
+        assert.doesNotMatch(lines.join('\n'), /…|┃/);
+      } finally { setLanguage(prev); }
+    }
+  } finally { setDisplayConfig(display); }
+});
+
+test('Help opens at the source tab, scrolls back to Everywhere, and leaves the skills rows intact', () => {
+  const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
+  try {
+    for (const panelLayout of ['classic', 'split']) for (const width of [40, 120]) for (const height of [24, 160]) {
+      for (const [lang, titles] of [['en', ['Everywhere', 'Project', 'Control', 'Everywhere']], ['zh', ['通用', '项目', '控制', '通用']]]) {
+        const previous = setLanguage(lang);
+        try {
+          for (const [i, mainTab] of ['home', 'project', 'control', 'exp'].entries()) {
+            const backupSkills = [{ name: 'synthetic', en: 'A short test description.', zh: '用于测试的说明。' }];
+            const draw = (state) => renderMonitor({ tree: TREE, width, height, state, nowMs: NOW, backupSkills });
+            const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW }).state;
+            const from = draw({ ...initialMonitorState(), panelLayout, experiments: true, mainTab, helpScroll: 11 });
+            const help = draw(press(from, '?'));
+            assert.equal(help.state.mainTab, mainTab);
+            const anchored = i === 1 || i === 2;
+            assert.match(help.lines[anchored ? 1 : 2], new RegExp(`^${titles[i]} ─`));
+            if (!anchored) assert.equal(help.lines[1].trim(), '');
+            const skills = skillsRows(backupSkills, width);
+            assert.deepEqual(help.workboard.rows.slice(-skills.length), skills);
+            const top = draw(press(help, '\x1b[H'));
+            assert.match(top.lines[2], new RegExp(`^${titles[0]} ─`));
+            for (const key of ['\x1b', '?', '\r']) {
+              const closed = press(help, key);
+              assert.equal(closed.help, false);
+              assert.equal(closed.mainTab, mainTab);
+            }
+          }
+        } finally { setLanguage(previous); }
+      }
+    }
+  } finally { setDisplayConfig(display); }
 });
 
 test('n flags a to-try row and does nothing on Home; > and < are Home’s next and previous card that needs the owner', async (t) => {
