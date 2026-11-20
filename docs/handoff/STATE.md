@@ -171,6 +171,7 @@ board counts these; update at every landing or decision. -->
 - try · — · CONTROL-TAB-05 · direct chain editing: Enter focuses the chain, I empty draft, i one-sheet add (target/model/thinking, picker for pi), K/J/Del, s one atomic save + select, Discard edits?; p/P, e/E, M cycling and auto fallbacks removed (imp) (011bf261)
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa; Fishpref worker async ask 5e4b6d8 on main 2026-11-20)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
+- working · — · REVIEW-CONTROL-EXP · milestone review of the try set since 4b42a8a5 (EXP-01..05, PI-ASYNC-HUD, HUD-MCP-LEAN, CONTROL-TAB-01..05, MODEL-PICKER-01..03) on 2e4b45d3 (reviewer je6187c98b135f3ab)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
