@@ -19,7 +19,7 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PiRoleClient, PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 import { procStat, reportSignature, turnToken } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
-import { harnessDefaults, markExhausted } from '../../dist/roles/roster.js';
+import { harnessDefaults, markExhausted, placeKey } from '../../dist/roles/roster.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 test('CLI state trust defaults, owner overrides, roster facts and dispatch snapshots agree', async (t) => {
@@ -37,14 +37,14 @@ test('CLI state trust defaults, owner overrides, roster facts and dispatch snaps
   const bundled = resolve('packages/hud-mcp');
   const defaults = harnessDefaults(f.env.HUD_HOME, bundled);
   assert.equal(defaults.agy.model, 'synthetic/override');
-  let roster = (await f.call('hud_roster')).roles;
+  let roster = (await f.call('hud_roster', { detail: true })).roles;
   for (const agent of ['agy', 'claude', 'codex', 'grok']) {
     const expected = agent === 'agy' ? 'advisory' : 'turn';
     assert.equal(defaults[agent].state_trust, expected);
     assert.equal(roster.find((r) => r.role === `${agent}-check`).state_trust, expected);
   }
   fs.writeFileSync(config, JSON.stringify({ agy: { model: 'synthetic/override', state_trust: 'turn' }, grok: { state_trust: 'advisory' } }));
-  roster = (await f.call('hud_roster')).roles;
+  roster = (await f.call('hud_roster', { detail: true })).roles;
   assert.equal(roster.find((r) => r.role === 'agy-check').state_trust, 'turn');
   assert.equal(roster.find((r) => r.role === 'grok-check').state_trust, 'advisory');
   // Dispatch through the normal MCP path, rejecting the fake launch before any worker is started.
@@ -105,7 +105,8 @@ if (command === 'pi-dispatch') {
   if (at >= 0) {
     const dir = args[at + 1];
     fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
-    fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
+    if (!fs.existsSync(join(process.env.HOME, 'defer-pi-report')))
+      fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
   }
   if (['cli-exit', 'cli-unknown', 'cli-gone', 'grace-quiet-gone', 'blocked-quiet-gone', 'exit-after-done'].some((name) => fs.existsSync(join(process.env.HOME, name)))) {
     const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { detached: true, stdio: 'ignore' });
@@ -659,6 +660,111 @@ test('roster and create report pane watcher liveness, omitting the Monitor hint 
   child.kill('SIGTERM');
   await exited;
   assert.equal((await f.call('hud_roster')).watcher_alive, false);
+});
+
+test('lean main-pi delegation collects first and repeat reports through native watch without polling', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  await f.startCliSocket(); // Read-close checks fake Herdr's agent state after the report is collected.
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const convention = '# Synthetic project convention\n' + '- Retain the scope and evidence for this project. 下一步: read the report before accepting.\n'.repeat(26);
+  fs.writeFileSync(join(f.root, 'hud-convention.md'), convention);
+  // Stub the pi host API, not the HUD registration, native watcher, MCP proxy or stdio server.
+  // The synthetic launcher's basename is pi so the real pane/PID watcher check is exercised.
+  const launcher = join(f.root, 'pi');
+  fs.writeFileSync(launcher, `
+import { createInterface } from 'node:readline';
+import { installPiPackage } from ${JSON.stringify(resolve('dist/harness/pi/package-entry.js'))};
+const tools = new Map(), hooks = new Map();
+const send = (value) => console.log(JSON.stringify(value));
+const ctx = { cwd: process.cwd(), sessionManager: { getSessionDir: () => 'synthetic', getSessionId: () => 'main' } };
+installPiPackage({
+  on: (name, fn) => { hooks.set(name, fn); },
+  registerTool: (tool) => { tools.set(tool.name, tool); },
+  sendMessage: ({ content }) => send({ notice: content }),
+}, { release: ${JSON.stringify(resolve('.'))}, hudHome: process.env.HUD_HOME, node: process.execPath }, {}, 'delegate');
+await hooks.get('session_start')({}, ctx);
+try {
+  for await (const line of createInterface({ input: process.stdin })) {
+    const { name, args } = JSON.parse(line);
+    send(await tools.get(name).execute('synthetic', args, undefined, undefined, ctx));
+  }
+} finally { await hooks.get('session_shutdown')(); }
+`);
+  const pi = spawn(process.execPath, [launcher], { cwd: f.root, env: f.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const exited = once(pi, 'close'), notices = [], calls = [];
+  let stderr = '', reply;
+  pi.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+  createInterface({ input: pi.stdout }).on('line', (line) => {
+    const message = JSON.parse(line);
+    if (message.notice) notices.push(...message.notice.split('\n'));
+    else reply(message);
+  });
+  const call = async (name, args) => {
+    const result = await Promise.race([new Promise((done) => {
+      reply = done;
+      pi.stdin.write(JSON.stringify({ name, args }) + '\n');
+    }), exited.then(() => assert.fail(stderr || 'Synthetic pi host exited'))]);
+    assert.equal(result.isError, undefined);
+    const { text } = result.content[0];
+    calls.push([name, Buffer.byteLength(text, 'utf8')]);
+    return JSON.parse(text);
+  };
+  try {
+    const { result } = await f.rpc('tools/list');
+    const tools = result.tools.filter(({ name }) => name !== 'hud_statusline');
+    const bytes = (value) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+    t.diagnostic(`tool declarations: ${bytes(tools)} B (create ${bytes(tools.find(({ name }) => name === 'hud_create'))} B)`);
+    await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers', 'w4E:p1.pid')));
+    const roster = await call('hud_roster', { cwd: f.root });
+    assert.equal(roster.watcher_alive, true);
+    assert.equal(roster.roles.length, 7);
+    assert.equal(roster.convention.text, convention);
+    const imp = roster.roles.find((r) => r.role === 'imp' && r.available);
+    assert.equal(imp.can_continue, true);
+    assert.deepEqual(imp.runs_on, { harness: 'pi', pi_role: 'implementer', model: 'synthetic/default', thinking: 'low' });
+    let repeated, collected;
+    for (const request_key of ['lean-first', 'lean-repeat']) {
+      const created = await call('hud_create', { role: imp.role, cwd: f.root, request_key, task: 'Synthetic task: 新 report.' });
+      repeated = created.job;
+      assert.equal(created.watcher_alive, true);
+      assert.equal(created.hint, undefined);
+      assert.equal(created.role, 'imp');
+      assert.equal(cliState(created.task_dir).state, 'working');
+      assert.ok(f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === created.agent));
+      assert.equal(fs.existsSync(join(created.task_dir, 'report.md')), false, 'create waits for startup/prompt, not a report');
+      // Simulate the worker finishing after create returns; the caller only awaits a native event.
+      await publishPiGrace(created);
+      await until(() => notices.includes(`${created.job} imp: idle_grace | report`));
+      const receipt = () => JSON.parse(fs.readFileSync(join(created.task_dir, 'job.json')));
+      assert.equal(receipt().read_at, undefined, 'notification does not consume the report');
+      assert.equal(cliState(created.task_dir).state, 'idle_grace');
+      collected = await call('hud_read', { job: created.job });
+      assert.equal(collected.report, 'Synthetic settled pi report.\n');
+      assert.ok(receipt().read_at);
+      await until(() => cliState(created.task_dir)?.exit_reason === 'closed after report read');
+    }
+    const normal = calls.splice(0);
+    assert.deepEqual(normal.map(([name]) => name), ['hud_roster', 'hud_create', 'hud_read', 'hud_create', 'hud_read']);
+    t.diagnostic(`monitored replies (B): cold ${JSON.stringify(normal.slice(0, 3))}; repeat ${JSON.stringify(normal.slice(3))}`);
+    const refresh = await call('hud_roster', { cwd: f.root, convention_version: roster.convention_version });
+    assert.equal(refresh.convention_unchanged, true);
+    assert.equal(refresh.convention, undefined);
+    assert.ok([...(collected.changes ?? []), ...(refresh.changes ?? [])].some((line) => line.startsWith(`${repeated} imp: closed`)));
+    const working = waitFixtureJob(f, 1, 'working', 'w4E:p9');
+    fs.writeFileSync(join(working.dir, 'job.json'), JSON.stringify({ ...working.receipt, model: 'synthetic/default',
+      thinking: 'low', model_source: join(f.root, 'roles/implementer.md'), split: false, pi_args: [],
+      dispatch_exit_code: 0, stderr_tail: '', role_skills: [], skipped_skills: [], worker_prompt: null }));
+    const read = await call('hud_read', { job: working.job });
+    assert.deepEqual(read, { job: working.job, role: 'imp', state: 'working', report_exists: false });
+    t.diagnostic(`optional replies (B): roster refresh ${calls[0][1]}; working read ${calls[1][1]}`);
+    const retry = await call('hud_create', { role: imp.role, cwd: f.root, request_key: 'lean-repeat', task: 'Do not run this.' });
+    assert.equal(retry.job, repeated);
+    assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 2, 'retry never relaunches');
+  } finally {
+    pi.stdin.end();
+    assert.deepEqual(await exited, [0, null], stderr);
+    assert.equal(stderr, '');
+  }
 });
 
 function runSonic(f, action, dir, ...args) {
@@ -1483,8 +1589,9 @@ test('only a one-job read includes a bounded summary of committed and pending wo
   fs.appendFileSync(join(root, 'tracked.txt'), 'pending\n');
   fs.writeFileSync(join(root, 'new.txt'), 'untracked\n');
   const head = git(root, 'rev-parse', 'HEAD');
-  assert.deepEqual((await f.call('hud_read', { job: job.job })).git_summary,
-    { branch, base_head, head, ahead_commits: 1, changed_files: 2, dirty: true });
+  const read = await f.call('hud_read', { job: job.job });
+  assert.equal(read.worktree.root, root);
+  assert.deepEqual(read.git_summary, { branch, base_head, head, ahead_commits: 1, changed_files: 2, dirty: true });
   for (const result of [await f.call('hud_read'), await f.call('hud_read', { view: 'recent' }),
     await f.call('hud_wait', { jobs: [job.job], wait_ms: 0 })]) {
     assert.doesNotMatch(JSON.stringify(result), /git_summary/);
@@ -1856,7 +1963,7 @@ test(
 test('thin roster returns the convention and its path with whole-file overrides', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const initialized = await f.rpc('initialize');
-  assert.equal(initialized.result.instructions, 'Call hud_roster before dispatching.');
+  assert.match(initialized.result.instructions, /hud_roster when project dispatch context is missing or stale/);
   const shipped = resolve('packages/hud-mcp/hud-convention.md');
   assert.deepEqual((await f.call('hud_roster')).convention, {
     path: shipped,
@@ -1877,14 +1984,43 @@ test('thin roster returns the convention and its path with whole-file overrides'
     text: 'Synthetic project convention.',
     truncated: false,
   });
+  const first = await f.call('hud_roster');
+  const refresh = (version = first.convention_version, cwd = f.root) =>
+    f.call('hud_roster', { cwd, convention_version: version });
+  const checked = await refresh();
+  assert.equal(checked.convention_unchanged, true);
+  assert.equal(checked.convention, undefined);
+  fs.writeFileSync(project, 'Changed project convention.');
+  const changed = await refresh();
+  assert.equal(changed.convention.text, 'Changed project convention.');
+  fs.writeFileSync(owner, changed.convention.text);
+  fs.unlinkSync(project);
+  const source = await refresh(changed.convention_version);
+  assert.equal(source.convention.path, owner, 'identical text from a new source must be returned');
+  const other = join(f.root, 'other-project');
+  fs.mkdirSync(other);
+  const different = await refresh(source.convention_version, other);
+  assert.deepEqual(different.convention, source.convention, 'another project must get the body');
+  const model = first.roles.find(({ role }) => role === 'flow').runs_on;
+  markExhausted(f.env.HUD_HOME, placeKey(model), 'quota exceeded');
+  const refreshed = await refresh(source.convention_version);
+  assert.equal(refreshed.convention_unchanged, true);
+  const flow = refreshed.roles.find(({ role }) => role === 'flow');
+  assert.equal(flow.available, false);
+  assert.match(flow.reason, /quota exceeded.*until/);
+  const failure = await f.call('hud_create', { role: 'flow', request_key: 'unavailable-flow', task: 'Synthetic.' });
+  assert.equal(failure.code, 'no_available_place');
+  assert.equal(failure.reason, flow.reason);
+  assert.deepEqual(f.commands(), [], 'unavailable roles do not launch');
   fs.writeFileSync(project, 'x'.repeat(20001));
-  assert.deepEqual((await f.call('hud_roster')).convention, {
+  const capped = await f.call('hud_roster');
+  assert.deepEqual(capped.convention, {
     path: project,
     text: 'x'.repeat(20000),
     truncated: true,
   });
-  assert.equal(fs.readFileSync(owner, 'utf8'), 'Synthetic owner convention.');
-  assert.equal(fs.readFileSync(project, 'utf8'), 'x'.repeat(20001));
+  fs.appendFileSync(project, 'beyond cap');
+  assert.deepEqual((await refresh(capped.convention_version)).convention, capped.convention);
 });
 
 test('model-supplied pi_args cannot override the inherited caller notification binding', async (t) => {
@@ -2381,9 +2517,16 @@ test('hud_peek returns a bounded pane tail and does not acknowledge, exhaust or 
   const peek = await f.call('hud_peek', { job });
   assert.deepEqual(peek.status, { job, role: 'imp', state: 'idle_grace', report_unread: true });
   assert.deepEqual(peek.progress, [milestone]);
-  assert.deepEqual(peek.pane_lines, pane.slice(-40));
+  assert.equal(Object.hasOwn(peek, 'pane_lines'), false);
+  assert.deepEqual(f.commands(), [], 'status and progress do not fetch the pane');
+  const rich = await f.call('hud_peek', { job, detail: true });
+  assert.equal(rich.diagnostics.display_state, 'done');
+  assert.equal(rich.status.report_unread, true);
+  assert.equal(Object.hasOwn(rich, 'report'), false);
+  assert.deepEqual(f.commands(), [], 'diagnostics do not fetch the pane either');
+  assert.deepEqual((await f.call('hud_peek', { job, lines: 40 })).pane_lines, pane.slice(-40));
   assert.deepEqual((await f.call('hud_peek', { job, lines: 120 })).pane_lines, pane.slice(-120));
-  const noPane = await f.call('hud_peek', { job: fault.job });
+  const noPane = await f.call('hud_peek', { job: fault.job, lines: 1 });
   assert.equal(noPane.pane_lines, null);
   assert.equal(noPane.pane_reason, 'no pane');
   assert.equal(noPane.status.reason, 'HTTP 429 quota');
@@ -2484,7 +2627,7 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   assert.equal(recent.open_questions, 1);
   assert.equal(recent.report_unread, true);
   assert.equal(recent.report, undefined);
-  const first = await f.call('hud_read', { job: id });
+  const first = await f.call('hud_read', { job: id, detail: true });
   assert.equal(first.report, 'First report.');
   assert.equal(first.idle_grace_s, 120);
   const stamp = JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at;
@@ -2552,7 +2695,7 @@ test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses inv
     const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: `grace-${value}`, task: 'Synthetic.', idle_grace_s: value });
     assert.ok(job.job, JSON.stringify(job));
     assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).cli.idle_grace_s, value);
-    assert.equal((await f.call('hud_read', { job: job.job })).idle_grace_s, value);
+    assert.equal((await f.call('hud_read', { job: job.job, detail: true })).idle_grace_s, value);
     const brief = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
     assert.match(brief, /end your turn with the single line `report written:/);
     assert.match(brief, /^Optional milestone: node .*\/hud-progress\.mjs" --dir /m);
@@ -2584,7 +2727,7 @@ syncBuiltinESMExports();`
     fs.existsSync(join(f.env.HOME, 'reads'))
       ? fs.readFileSync(join(f.env.HOME, 'reads'), 'utf8').trim().split('\n')
       : [];
-  const read = (wait_ms = 0) => f.call('hud_read', { job, wait_ms });
+  const read = (wait_ms = 0) => f.call('hud_read', { job, wait_ms, detail: true });
   save();
   status('working');
   fs.writeFileSync(join(dir, 'report.md'), 'r'.repeat(65537));
@@ -2731,7 +2874,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   };
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'));
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'writer.json'), JSON.stringify(role));
-  const roster = await f.call('hud_roster');
+  const roster = await f.call('hud_roster', { detail: true });
   const place = {
     harness: 'pi',
     pi_role: 'implementer',
@@ -2783,6 +2926,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   assert.deepEqual(await f.call('hud_create', { role: 'unknown', request_key: 'unknown', task: 'Synthetic task.' }), {
     ok: false,
     code: 'role_unavailable',
+    reason: 'Role unknown is not configured or is hidden in this project',
   });
   const job = await f.call('hud_create', { role: role.role, request_key: 'custom-role', task: 'Synthetic task.' });
   const argv = f.commands().find((c) => c.command === 'pi-role').args;
@@ -2827,7 +2971,7 @@ test(
         .args.includes(args.model)
     );
     const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
-    for (const value of [receipt(), await f.call('hud_read', { job: job.job })]) {
+    for (const value of [receipt(), await f.call('hud_read', { job: job.job, detail: true })]) {
       assert.equal(value.model, args.model);
       assert.equal(value.thinking, args.thinking);
       assert.equal(value.model_source, 'hud_create');
@@ -2849,7 +2993,7 @@ test(
     });
     for (const value of [
       JSON.parse(fs.readFileSync(join(thinkingOnly.task_dir, 'job.json'))),
-      await f.call('hud_read', { job: thinkingOnly.job }),
+      await f.call('hud_read', { job: thinkingOnly.job, detail: true }),
     ]) {
       assert.equal(value.model, 'synthetic/default');
       assert.equal(value.thinking, 'max');
@@ -2873,7 +3017,7 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   const original = JSON.stringify(role, null, 2) + '\n';
   fs.mkdirSync(roles);
   fs.writeFileSync(file, original);
-  const roster = async () => (await f.call('hud_roster')).roles.find((r) => r.role === 'imp');
+  const roster = async () => (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'imp');
   const before = await roster();
   assert.equal(before.runs_on.model, 'synthetic/normal');
   assert.ok(before.accepts_options.includes('preset'));
@@ -2885,7 +3029,7 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   assert.equal(receipt(first).dispatch_exit_code, 0);
   assert.equal(receipt(first).preset, 'default');
   assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/primary', '--thinking', 'low']);
-  assert.equal((await f.call('hud_read', { job: first.job })).preset, 'default');
+  assert.equal((await f.call('hud_read', { job: first.job, detail: true })).preset, 'default');
   assert.deepEqual(receipt(first).skipped_skills, []); // No skills inherited from the unselected default run.
 
   markExhausted(f.env.HUD_HOME, 'pi:synthetic/primary', 'rate limit');
@@ -2899,7 +3043,7 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   assert.equal(record.model_source, 'hud_create');
   assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/override', '--thinking', 'high']);
   assert.ok(piArgv().includes('--no-lens'));
-  const read = await f.call('hud_read', { job: fallback.job });
+  const read = await f.call('hud_read', { job: fallback.job, detail: true });
   assert.deepEqual([read.preset, read.model, read.split], ['default', 'synthetic/override', false]);
   assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'grok' })).job, fallback.job);
 
@@ -3081,7 +3225,7 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
     assert.deepEqual(start.slice(-options.pi_args.length), options.pi_args);
     assert.equal(start[start.indexOf('--pane') + 1], 'w4E:p2');
     const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
-    for (const value of [receipt(), await f.call('hud_read', { job: job.job })])
+    for (const value of [receipt(), await f.call('hud_read', { job: job.job, detail: true })])
       for (const [key, expected] of Object.entries(options)) assert.deepEqual(value[key], expected);
     assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), enabled ? /^RIGHT=$/m : /^RIGHT=w4E:p3$/m);
     assert.deepEqual(await f.call('hud_create', { ...args, lens: !enabled, pi_args: [] }), job);
@@ -3090,7 +3234,7 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
   }
   assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 2);
   const defaults = await f.call('hud_create', { role: 'imp', request_key: 'launch-default', task: 'Synthetic task.' });
-  const original = await f.call('hud_read', { job: defaults.job });
+  const original = await f.call('hud_read', { job: defaults.job, detail: true });
   assert.equal(original.split, false);
   assert.equal(original.lens, undefined);
   assert.deepEqual(original.pi_args, []);
@@ -3099,7 +3243,7 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
 test('thin launch options reject Jev roles and invalid pi values before dispatch', async (t) => {
   const f = await fixture(t);
   const keys = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'];
-  assert.deepEqual((await f.call('hud_roster')).roles.find((r) => r.role === 'pro').accepts_options, ['on']);
+  assert.deepEqual((await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'pro').accepts_options, ['on']);
   for (const key of keys) {
     const value = key === 'pi_args' ? ['--tools', 'read'] : false;
     assert.deepEqual(
@@ -3325,7 +3469,7 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
     customCli,
     JSON.stringify({ role: 'cli-check', harness: 'cli', agent: 'grok', model: 'grok-4.7', thinking: 'high', can_continue: true })
   );
-  const roster = (await f.call('hud_roster')).roles;
+  const roster = (await f.call('hud_roster', { detail: true })).roles;
   for (const deleted of ['grok-imp', 'agy-imp', 'claude-imp', 'codex-imp', 'argon', 'gemini', 'flow-video']) {
     assert.equal(roster.some((entry) => entry.role === deleted), false, deleted);
   }
@@ -3364,7 +3508,7 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
     cleared.roles.some((entry) => entry.role === 'imp'),
     true
   );
-  assert.deepEqual(cleared.invalid, []);
+  assert.equal(cleared.invalid, undefined);
 });
 
 test('a bad role file is skipped; roster and create name it without dropping other roles', async (t) => {
@@ -3413,7 +3557,8 @@ test('a bad role file is skipped; roster and create name it without dropping oth
     assert.equal(JSON.stringify(roster.invalid).includes(secret), false, reason);
     assert.deepEqual(
       await f.call('hud_create', { role: roleName ?? 'bad', request_key: `bad-${reason}`, task: 'Synthetic task.' }),
-      roleName ? { ok: false, code: 'role_unavailable', path: badPath } : { ok: false, code: 'role_unavailable' },
+      roleName ? { ok: false, code: 'role_unavailable', path: badPath, reason } :
+        { ok: false, code: 'role_unavailable', reason: 'Role bad is not configured or is hidden in this project' },
       reason
     );
   }
@@ -3422,11 +3567,12 @@ test('a bad role file is skipped; roster and create name it without dropping oth
     {
       ok: false,
       code: 'role_unavailable',
+      reason: 'Role missing-entirely is not configured or is hidden in this project',
     }
   );
   assert.deepEqual(await f.call('hud_read'), { jobs: [] });
   fs.writeFileSync(join(rolesDir, 'imp.json'), '{');
-  const kept = await f.call('hud_roster');
+  const kept = await f.call('hud_roster', { detail: true });
   assert.equal(
     kept.roles.find((entry) => entry.role === 'imp').source_file,
     resolve('packages/hud-mcp/roles/imp.json')
@@ -3627,7 +3773,7 @@ test('hud watch catch-up does not replay reportless failures after hud_read or h
     if (method === 'hud_read') {
       // A failed dispatch can also have only a job receipt, not a STATUS file.
       fs.unlinkSync(join(job.task_dir, 'STATUS.json'));
-      assert.equal((await f.call(method, { job: job.job })).display_state, 'failed');
+      assert.equal((await f.call(method, { job: job.job })).state, 'failed');
     } else if (method === 'hud_close') {
       assert.equal((await f.call(method, { job: job.job })).exit_code, 0);
     }
@@ -4060,7 +4206,7 @@ test(
     const result = await pending;
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /ANSWER from the orchestrator \(q1, after \d+s\):\n\ncolumns/);
-    assert.equal((await f.call('hud_read', { job: id })).questions.length, 0);
+    assert.equal((await f.call('hud_read', { job: id })).questions, undefined);
   }
 );
 
@@ -4492,7 +4638,7 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
   fs.writeFileSync(join(proj, '.hud/project.json'), JSON.stringify({ version: 1, roles: ['frontend', 'nope'] }));
   fs.writeFileSync(join(proj, '.hud/hud-convention.md'), 'Project convention only.');
   fs.writeFileSync(join(proj, 'hud-convention.md'), 'Cwd convention must lose.');
-  const roster = await f.call('hud_roster', { cwd: join(proj, 'sub') });
+  const roster = await f.call('hud_roster', { cwd: join(proj, 'sub'), detail: true });
   assert.deepEqual(roster.project, { root, registered: true });
   assert.equal(roster.project_config_ignored, undefined);
   assert.equal(roster.roles.find((entry) => entry.role === 'frontend').model, 'project/model');
@@ -4534,7 +4680,7 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
   assert.equal(launch.includes('--skill'), false);
   assert.deepEqual(
     await f.call('hud_create', { role: 'imp', request_key: 'hidden-imp', task: 'Synthetic task.', cwd: proj }),
-    { ok: false, code: 'role_unavailable' }
+    { ok: false, code: 'role_unavailable', reason: 'Role imp is not configured or is hidden in this project' }
   );
   const home = await f.call('hud_create', { role: 'imp', request_key: 'home-imp', task: 'Synthetic task.' });
   assert.equal(JSON.parse(fs.readFileSync(join(home.task_dir, 'job.json'), 'utf8')).model, 'synthetic/default');
@@ -4568,7 +4714,7 @@ test('an unregistered .hud is ignored and roster says so', async (t) => {
   assert.equal(JSON.stringify(roster).includes('secret/model'), false);
   assert.deepEqual(
     await f.call('hud_create', { role: 'frontend', request_key: 'ignored-role', task: 'Synthetic task.', cwd: proj }),
-    { ok: false, code: 'role_unavailable' }
+    { ok: false, code: 'role_unavailable', reason: 'Role frontend is not configured or is hidden in this project' }
   );
 });
 
@@ -4654,7 +4800,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
     worker_prompt: prompt,
   };
   const receipt = JSON.parse(fs.readFileSync(join(created.task_dir, 'job.json'), 'utf8'));
-  const read = await f.call('hud_read', { job: created.job });
+  const read = await f.call('hud_read', { job: created.job, detail: true });
   for (const value of [receipt, read]) {
     assert.deepEqual(value.role_skills, expected.role_skills);
     assert.deepEqual(value.skipped_skills, expected.skipped_skills);
@@ -4681,7 +4827,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
   const sonicAt = plainArgv.indexOf('--hud-sonic-jobs');
   assert.notEqual(sonicAt, -1);
   assert.equal(plainArgv[sonicAt + 1], resolve('packages/hud-mcp/bin/sonic-jobs.mjs'));
-  const plainRead = await f.call('hud_read', { job: plain.job });
+  const plainRead = await f.call('hud_read', { job: plain.job, detail: true });
   assert.deepEqual(plainRead.role_skills, []);
   assert.deepEqual(plainRead.skipped_skills, []);
   assert.equal(plainRead.worker_prompt, null);
@@ -4698,7 +4844,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
     .at(-1).args;
   assert.equal(linkedArgv[linkedArgv.indexOf('--append-system-prompt') + 1], join(root, '.hud', 'agents', 'linked.md'));
   assert.equal(
-    (await f.call('hud_read', { job: linkedJob.job })).worker_prompt,
+    (await f.call('hud_read', { job: linkedJob.job, detail: true })).worker_prompt,
     join(root, '.hud', 'agents', 'linked.md')
   );
 
@@ -4713,7 +4859,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
     .filter((entry) => entry.command === 'pi-role')
     .at(-1).args;
   assert.equal(brokenArgv.includes('--append-system-prompt'), false);
-  assert.equal((await f.call('hud_read', { job: broken.job })).worker_prompt, null);
+  assert.equal((await f.call('hud_read', { job: broken.job, detail: true })).worker_prompt, null);
   assert.equal(JSON.parse(fs.readFileSync(join(broken.task_dir, 'job.json'), 'utf8')).dispatch_exit_code, 0);
 });
 
@@ -4775,7 +4921,7 @@ test('STATUS table matches across the panel reader and hud_read', async (t) => {
       });
     }
     const panel = workerFor(f, id);
-    const single = await f.call('hud_read', { job: id });
+    const single = await f.call('hud_read', { job: id, detail: true });
     const row = listed.find((item) => item.job === id);
     assert.equal(panel.state, entry.display, `${entry.name} panel.state`);
     assert.equal(single.display_state, entry.display, `${entry.name} hud_read.display_state`);
@@ -4843,7 +4989,7 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
   );
   const waited = await waitPromise;
   assert.equal(waited.state, 'waiting_orchestrator');
-  assert.equal(waited.blocked, false);
+  assert.equal(waited.blocked, undefined);
   assert.equal(waited.changes?.length, 1);
   assert.match(waited.changes[0], /^j00000000000001a1 imp 02-wait: waiting_orchestrator \| quiet$/);
 
@@ -4915,7 +5061,7 @@ test('unregistered skill names are skipped and a CLI role is not given skill fla
   assert.equal(argv.includes('--append-system-prompt'), false);
   assert.ok(argv.indexOf('--') < argv.indexOf('--skill') && argv.indexOf('--skill') < argv.indexOf('--tools'));
   assert.deepEqual(argv.slice(-2), ['--tools', 'read']);
-  const read = await f.call('hud_read', { job: job.job });
+  const read = await f.call('hud_read', { job: job.job, detail: true });
   assert.deepEqual(read.role_skills, [{ name: absolute, path: absolute }]);
   assert.deepEqual(read.skipped_skills, [{ name: 'to-tickets', reason: 'unresolved' }]);
   assert.equal(read.worker_prompt, null);

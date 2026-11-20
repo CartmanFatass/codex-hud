@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createFooterHost } from '../fakes/pi.mjs';
 import { expProxyPath, readExpConfig, readOpenAiBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
+import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
 const { displayTarget } = await import(pathToFileURL(path.join(root, 'integrations/panel/receipt.js')));
 const { visualWidth, truncateAnsi, stripAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
@@ -598,6 +599,9 @@ test('the delegation-only package registers the tools but no footer, no /hud and
     'hud_send',
     'hud_wait',
   ]);
+  assert.deepEqual([...h.tools.values()].map(({ name, description, parameters }) => ({
+    name, description, inputSchema: parameters,
+  })), PI_ROLE_TOOLS);
   assert.equal(h.commands.size, 0, 'no /hud command');
   await h.emit('session_start', c.ctx);
   assert.equal(p.counts().splits, 0, 'the settings-registered package a worker could load opens no panel');
@@ -634,9 +638,11 @@ test('pi delegation wakes the current session natively and fences the watcher on
   await h.emit('session_start', c.ctx);
   assert.equal(JSON.parse(fs.readFileSync(marker, 'utf8')).pid, process.pid);
   const q1 = path.join(dir, 'qa/q1.md');
-  fs.writeFileSync(q1, '# Question q1 from imp@demo\n\nWhich layout?\n\nDefault if unanswered: rows\n');
+  const question = 'Pick a layout. '.repeat(29) + 'Which keeps the columns aligned?';
+  fs.writeFileSync(q1, `# Question q1 from imp@demo\n\n${question}\n\nOptions:\n- rows\n- columns\n\nDefault if unanswered: rows\n\nContext: keep the headers.\n`);
   await until(() => messages.length === 1);
-  fs.writeFileSync(path.join(dir, 'qa/q1.answer.md'), 'rows');
+  const call = (name, args) => h.tools.get(name).execute('synthetic', args, undefined, undefined, c.ctx);
+  assert.equal((await call('hud_respond', { job: id, request_id: 'q1', answer: 'rows' })).details.written, true);
   fs.writeFileSync(path.join(dir, 'report.md'), 'Synthetic report.');
   status('idle_grace');
   await until(() => messages.length === 2);
@@ -646,7 +652,7 @@ test('pi delegation wakes the current session natively and fences the watcher on
   ].map(JSON.stringify).join('\n') + '\n');
   await until(() => messages.length === 3);
   assert.deepEqual(messages, [
-    `[imp@demo] QUESTION q1: Which layout? | default: rows | full text: ${q1} | reply: hud_respond job=${id} request_id=q1`,
+    `[imp@demo] QUESTION q1: ${question} | options: rows / columns | default: rows | context: keep the headers. | full text: ${q1} | reply: hud_respond job=${id} request_id=q1`,
     `${id} imp: idle_grace | report`,
     'try accepted workspace M1: demo',
   ].map((content) => ({
@@ -656,7 +662,14 @@ test('pi delegation wakes the current session natively and fences the watcher on
   assert.deepEqual(p.calls(), [], 'native delivery never calls herdr');
   assert.equal(h.calls.messages, 0, 'native delivery never sends as user input');
 
-  fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
+  const receiptFile = path.join(dir, 'job.json');
+  assert.equal(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).read_at, undefined);
+  const peek = await call('hud_peek', { job: id });
+  assert.equal(peek.details.status.report_unread, true);
+  assert.equal(peek.details.pane_lines, undefined);
+  assert.equal(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).read_at, undefined);
+  assert.equal((await call('hud_read', { job: id })).details.report, 'Synthetic report.');
+  assert.ok(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).read_at);
   const next = context(f, h, 'session-b');
   const rebinding = h.emit('session_tree', next.ctx);
   assert.equal(fs.existsSync(marker), false, 'fence synchronously unregisters the outgoing watch');

@@ -362,17 +362,21 @@ function frontmatterValue(frontmatter: string | undefined, key: 'model' | 'think
   const value = frontmatter?.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
   return value ? value.replace(/^(['"])(.*)\1$/, '$2') : null;
 }
+function missingCommand(place: RolePlace, env: NodeJS.ProcessEnv): string | undefined {
+  if (place.harness === 'pi') return executable('pi-role', env) ? undefined : 'pi-role';
+  if (place.harness === 'cli') {
+    if (!executable('herdr', env)) return 'herdr';
+    return place.agent && executable(place.agent, env) ? undefined : place.agent ?? 'CLI agent';
+  }
+  return place.tool && executable(place.tool, env) ? undefined : place.tool ?? 'browser tool';
+}
 export function placeAvailable(
   place: RolePlace,
   env: NodeJS.ProcessEnv,
   exhausted: Map<string, ExhaustedMark>,
   resolvedModel?: string | null
 ): boolean {
-  if (exhausted.has(placeKey(place, resolvedModel))) return false;
-  if (place.harness === 'pi') return executable('pi-role', env) !== null;
-  if (place.harness === 'cli')
-    return executable('herdr', env) !== null && !!place.agent && executable(place.agent, env) !== null;
-  return !!place.tool && executable(place.tool, env) !== null;
+  return !exhausted.has(placeKey(place, resolvedModel)) && !missingCommand(place, env);
 }
 /** Project injects bounded signature-cached readers; the MCP keeps its original readers. */
 export function roleRegistry(
@@ -454,10 +458,9 @@ export function roleRegistry(
     return scan().invalid.map(({ path, reason }) => ({ path, reason }));
   }
   /** Last invalid file that names this role, when no valid file does. */
-  function invalidPath(name: string): string | null {
-    const found = scan();
-    if (found.roles.has(name)) return null;
-    return found.invalid.filter((item) => item.role === name).at(-1)?.path ?? null;
+  function invalidRole(name: string): InvalidRole | undefined {
+    const item = scan().invalid.filter((item) => item.role === name).at(-1);
+    if (item) return { path: item.path, reason: item.reason };
   }
   function placeDetails(role: Role, place: RolePlace) {
     const piInfo =
@@ -481,9 +484,10 @@ export function roleRegistry(
       const details = placeDetails(role, place);
       const key = placeKey(place, details.model.value);
       const mark = exhaustedMap.get(key) ?? null;
-      return { place, details, key, mark, ok: placeAvailable(place, env, exhaustedMap, details.model.value) };
+      const missing = mark ? undefined : missingCommand(place, env);
+      return { place, details, key, mark, missing };
     });
-    const chosen = evaluated.find((entry) => entry.ok) ?? null;
+    const chosen = evaluated.find((entry) => !entry.mark && !entry.missing) ?? null;
     const activeEntry = chosen ?? evaluated[0]!;
     const active = activeEntry.place;
     const { pi_role_file, model, thinking } = activeEntry.details;
@@ -518,6 +522,11 @@ export function roleRegistry(
               : []),
       ],
       available: chosen !== null,
+      ...(chosen ? {} : {
+        reason: evaluated.map(({ place, details, mark, missing }) =>
+          `${describePlace(place, details.model.value)}: ${mark ? `${mark.reason} (until ${mark.until})` : `missing ${missing} on PATH`}`
+        ).join('; '),
+      }),
       run: role.run,
       presets: role.presets ?? [],
       preset: currentPreset(role),
@@ -543,7 +552,7 @@ export function roleRegistry(
     }
     throw new Error('convention_not_found');
   }
-  return { roles, invalid, invalidPath, assignment, placeDetails, convention, project, projectConfigIgnored };
+  return { roles, invalid, invalidRole, assignment, placeDetails, convention, project, projectConfigIgnored };
 }
 
 export function recordFailureExhaustion(

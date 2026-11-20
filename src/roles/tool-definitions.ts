@@ -1,0 +1,106 @@
+/** Shared MCP and native pi declarations; importing them never starts a server. */
+const text = { type: 'string' };
+const bool = { type: 'boolean' };
+const detail = { ...bool, description: 'Include diagnostics.' };
+const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
+  name,
+  description,
+  inputSchema: { type: 'object', properties, required, additionalProperties: false },
+});
+
+export const ROLE_TOOLS = [
+  tool('hud_roster', 'Get role availability, effective assignments and the project dispatch convention.', {
+    cwd: { ...text, description: 'Project directory (default: server cwd).' },
+    convention_version: { ...text, description: 'Pass the version only if you still have its convention text.' },
+    detail: { ...bool, description: 'Include presets, fallbacks, sources and accepted options.' },
+  }),
+  tool(
+    'hud_create',
+    'Dispatch a role with a stable request_key (retry returns the same job). Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for role options.',
+    {
+      role: text,
+      request_key: text,
+      task: text,
+      cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
+      package: { ...text, description: 'Display label.' },
+      context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths within cwd.' },
+      from_jobs: {
+        type: 'array',
+        items: { ...text, pattern: '^j[0-9a-f]{16}$' },
+        maxItems: 16,
+        description: 'Use reports as context without marking them read.',
+      },
+      isolation: {
+        type: 'string',
+        enum: ['none', 'worktree'],
+        default: 'none',
+        description: 'Managed Git checkout from HEAD (local only).',
+      },
+      idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI only.' },
+      on: { ...text, description: 'Harness/provider: pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow.' },
+      preset: { ...text, description: 'Named role preset; mutually exclusive with on.' },
+      kind: { type: 'string', enum: ['image', 'video'], description: 'Flow only (default image).' },
+      model: { ...text, description: 'Pi or CLI model.' },
+      thinking: { ...text, description: 'Pi or CLI effort.' },
+      lens: { ...bool, description: 'Pi: pi-lens.' },
+      mcp: { ...bool, description: 'Pi: MCP adapter.' },
+      tps: { ...bool, description: 'Pi: tokens/s.' },
+      ui_ext: { ...bool, description: 'Pi: false disables UI extensions.' },
+      skills: { ...bool, description: 'Pi: true includes personal skills.' },
+      split: { ...bool, description: 'Pi: reserve a right helper pane.' },
+      pi_args: {
+        type: 'array',
+        items: { ...text, maxLength: 4096 },
+        maxItems: 128,
+        description: 'Pi argv after --; --orchestrator and --notify are reserved.',
+      },
+    },
+    ['role', 'request_key', 'task']
+  ),
+  tool(
+    'hud_read',
+    'List active jobs or collect one job’s report. Reading a settled report closes the worker. For inspection use hud_peek.',
+    {
+      job: text,
+      wait_ms: { type: 'integer', minimum: 0, maximum: 120000, description: 'Wait for settlement or attention.' },
+      full: { ...bool, description: 'Include the report even if already read.' },
+      detail: { ...bool, description: 'Job only: include launch diagnostics.' },
+      view: {
+        type: 'string',
+        enum: ['compact', 'recent'],
+        description: 'List only (no job); recent gives the newest 20 full rows.',
+      },
+    }
+  ),
+  tool(
+    'hud_wait',
+    'Wait for settlement or attention without reading reports. Omit jobs for the caller’s unsettled jobs.',
+    {
+      jobs: { type: 'array', items: text },
+      mode: { type: 'string', enum: ['any', 'all'], default: 'any' },
+      wait_ms: { type: 'integer', minimum: 0, maximum: 120000, default: 60000 },
+    }
+  ),
+  tool(
+    'hud_peek',
+    'Inspect status and progress without marking anything read or closing the worker.',
+    {
+      job: text,
+      lines: { type: 'integer', minimum: 1, maximum: 120, description: 'Fetch this many recent pane lines.' },
+      detail,
+    },
+    ['job']
+  ),
+  tool(
+    'hud_send',
+    'Queue a message or continue an eligible worker in idle grace before reading its report. message_key deduplicates sends.',
+    { job: text, message_key: text, text },
+    ['job', 'message_key', 'text']
+  ),
+  tool('hud_respond', 'Write a question answer once.', { job: text, request_id: text, answer: text }, [
+    'job',
+    'request_id',
+    'answer',
+  ]),
+  tool('hud_close', 'Reap a job early; safe to repeat.', { job: text }, ['job']),
+];

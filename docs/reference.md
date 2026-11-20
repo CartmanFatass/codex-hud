@@ -85,9 +85,11 @@ Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pa
 Unavailable evidence leaves the jobs view unbound to a native session.
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
-**hud_send**, **hud_respond**, **hud_close**. Call `hud_roster` first for effective
-roles, model/thinking sources, accepted options and the convention. Bundled
-role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a
+**hud_send**, **hud_respond**, **hud_close**. Call `hud_roster` when project dispatch context is missing or stale.
+It returns role availability, continuation, effective `runs_on` and the convention. For presets, fallbacks,
+model/thinking sources and accepted options, pass `detail: true`. When refreshing, pass the prior
+`convention_version` only if you still have its text; a match omits the convention, never the fresh role rows.
+Bundled role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a
 registered project's `.hud/roles`. The first `hud-convention.md` in a registered
 project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
@@ -111,7 +113,8 @@ Without a live watch, CLI and pi worker questions go directly to the Codex threa
 receive typed questions and can use `hud_wait` for settlement. Queue delivery uses the pane's Codex
 process `CODEX_HOME` (default `~/.codex`), not the MCP account. A missing thread id or any queue failure falls
 back to typing that line, which can touch a draft or fire prompt hooks. Stale PIDs never suppress delivery.
-MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
+MCP `changes` stays the fuller, query-only stream; a `report` token always means unread. With live events, keep
+working until notified instead of polling or waiting. A report-ready notice leaves the report unread; collect it explicitly.
 
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
 `package`. By default it dispatches on the role's first available place (`runs_on`).
@@ -119,7 +122,7 @@ Pass `preset` to use the first available, non-exhausted place in a named role pr
 without editing role files. Alternatively, pass `on` to override the harness/provider
 (defaults from shipped `harnesses.json` overridden by `$HUD_HOME/harnesses.json`).
 `preset` and `on` are mutually exclusive. A repeated key returns the original job
-unchanged, not a second launch. `hud_read` returns the job's `preset` if one was selected.
+unchanged, not a second launch. Use these overrides only on user request. A detailed job read or peek shows the selected `preset`.
 `model` and `thinking` override the selected `pi` or `cli` place for this job;
 `kind` selects `image` (default) or `video` for `flow`. Optional `idle_grace_s` (integer 60–3600) overrides
 CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
@@ -140,7 +143,7 @@ an upstream report does not mark it read or close its worker.
 
 `isolation: "worktree"` runs the job in its own linked Git checkout beside the repository (`<repo>-wt/<slug>-<id6>`,
 branch `wt/<slug>-<id6>` from HEAD, `node_modules` linked, the CLI's trust of the main checkout copied). It is
-refused for browser roles and outside Git. `hud_read` of that job adds `git_summary`. After the job closes, the
+refused for browser roles and outside Git. `hud_read` of that job adds the `worktree` receipt (including the checkout path) and `git_summary`. After the job closes, the
 watcher removes the checkout and branch only when nothing in it changed or its commits are already merged into the
 main checkout, never with force; otherwise it keeps them and records `worktree_kept_reason`. Project lists these
 checkouts as the jobs' own, not as unlisted worktrees.
@@ -179,16 +182,17 @@ unsettled jobs at the start of the call. `mode: "any"` (default) returns when on
 `triggered` job IDs and compact `jobs` rows. No targets returns ready with empty lists. Waiting does not read
 report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID for the full result.
 
-`hud_peek({ job, lines? })` returns a compact `status` row and the last lines of the job's worker pane as
-`pane_lines` (1–120, default 40). A missing or unavailable pane returns `pane_lines: null` and a `pane_reason`.
-It does not read the report, mark the job seen or close the worker. Pi and CLI workers can use the optional
-`hud-progress.mjs` command in their briefs to log milestones (one line, up to 240 characters; newest 50 stored).
-`hud_read({ job })` and `hud_peek` show the newest 10 as `progress` and the last as `latest_progress` (or `null`);
-list and wait rows omit them. Milestones do not emit `changes` or `hud watch` events.
+`hud_peek({ job })` returns compact `status` and progress without fetching the pane. Request `lines` (1–120) to
+fetch the pane tail as `pane_lines`; if unavailable, that field is `null` with a `pane_reason`. `detail: true` adds
+launch `diagnostics`. Peeking does not read the report, mark the job seen or close the worker. Pi and CLI workers
+can use the optional `hud-progress.mjs` command in their briefs to log milestones (one line, up to 240 characters;
+newest 50 stored). Peek and single-job read show the newest 10 as `progress` and the last as `latest_progress`;
+ordinary reads omit empty progress, and list/wait rows omit all progress. Milestones do not emit watch events.
 
 With a `job`, `hud_read` reads STATUS, open questions and an unread report (up to 64 KiB). A report is unread when
 newer than `read_at`, or when no `read_at` exists. Already-read reports return `report_unchanged: true` without a
-body; `full: true` includes it again. CLI jobs show effective `idle_grace_s`. `wait_ms` waits at most 120000 ms, stopping at settlement, a
+body; `full: true` includes it again. `detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
+use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
 question or timeout. Every returned report body stamps `read_at` (including during work and idle grace), not
 acceptance. A settled pi or CLI worker closes when its current turn's report is read (`closed after report read`);
 reading an earlier turn's report after a continuation does not close the worker. An unread report keeps the usual
@@ -231,7 +235,7 @@ after herdr has been seen `working` in the current turn and is now `done` or `id
 2 s or reaches the no-report quiet decision after 10 s (the post-decision wait is unchanged).
 Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example,
 `{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
-`hud_roster` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
+`hud_roster({detail:true})` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
 The supervisor wakes on herdr pushes, file changes and its own deadlines,
 plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes. The on-demand watcher starts on
 create, reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
