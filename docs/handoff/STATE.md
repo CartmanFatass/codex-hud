@@ -7,6 +7,8 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
+- Fishpref `wt/integ-pi-async-ask` (5e4b6d8, pi worker async ask) is accepted but not merged: daily `pi-role` runs from the ~/Fishpref checkout, so merging main deploys it; merge when you want it live
+
 
 ## Next
 
@@ -165,7 +167,9 @@ board counts these; update at every landing or decision. -->
 - try · — · EXP-03 · pi subscription proxy: bind a Codex profile in EXP; pi footer on openai+OAuth shows its 5h/7d windows (≈), refreshed only while a pi footer draws (no timer) (imp) (67811752)
 - try · — · EXP-04 · oapi grant ledger: per-request cost JSONL (dedup), balance on read, pi footer on oapi shows API ≈$; EXP openai-api rows live (imp) (feb9893b)
 - try · — · EXP-05 · Anthropic API grant ledger: only API-key routes count; footer shows the current route's reading among proxy / oapi / anthropic (imp) (7dc40a59)
-- working · — · CONTROL-TAB-01 · Control as its own main tab, Roles landing per the sample (imp)
+- try · — · CONTROL-TAB-01 · Control as its own main tab, Roles landing per the sample (imp) (1e6334dd; test fix 1446ff59)
+- try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa)
+- try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
