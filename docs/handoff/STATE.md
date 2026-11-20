@@ -7,7 +7,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
-- Try PANEL-UX-01 (preview: docs/design/panel-ux/screens.txt).
+- Try PANEL-UX-01 and 02 (previews: docs/design/panel-ux/screens.txt, screens-02.txt).
 - Try 0.2.0 (4 slices on the Progress page).
 - Try the 5 older slices still marked to try.
 
@@ -156,7 +156,7 @@ board counts these; update at every landing or decision. -->
 - try · — · MCP-READ-COMPACT · compact actionable `hud_read()` list; `view:"recent"` retains the newest 20 full rows (separately scheduled, `.scratch/mcp-read-compact/issues/01-compact-hud-read.md`); landed e629b295 (default 327 B vs recent 4,475 B, −92.69%)
 - try · — · SUPERVISOR-MCP · bug 2026-11-18 (live, Claude frontend-imp): a CLI worker stays `working` after its report when its CLI started an MCP server directly (`node …/hud-mcp`) just after the first input; cli-judge counts it as turn work (spec §2.1: MCP servers do not count); landed 2d281b7b: on the first turn a direct non-shell child started within 10 s of the first input is a launch helper (shells and later children still count); live check passed 2026-11-18 (panel-v2 04 frontend-imp j9dbc6abfd9f248a6 reached idle_grace on its own after its report)
 - try · 0.2.0 · PANEL-UX-01 · to-try rows read as briefs; counts agree; number keys leave the tabs (f = Changes); direct `1–4`/`d` answers; no divider drag (f287d6e1)
-- working · 0.2.0 · PANEL-UX-02 · one meaning per key; no repeated status; 40-column rows; one language
+- try · 0.2.0 · PANEL-UX-02 · one meaning per key (n flag, > < next question, i/Del places, g job tab); state said once; 40-column rows keep model names; zh words (用量, JSON 无法解析) (b1b4c8eb; job-sentence JSON fix 8e384387)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
