@@ -279,7 +279,8 @@ test('only openai OAuth shows windows; direct data wins and never survives its m
   assert.match(p.draw(100), /5h ≈72%/);
   f.edit('binding', f.other);
   await until(() => !/≈|left/.test(p.draw(100)) || f.snapshot()?.profile === f.other);
-  await until(() => f.snapshot()?.profile === f.other);
+  // The proxy refreshes on footer draws only, so keep drawing while waiting.
+  await until(() => (p.draw(100), f.snapshot()?.profile === f.other));
   f.edit('binding', null);
   await until(() => !/≈|left/.test(p.draw(100)));
 });
