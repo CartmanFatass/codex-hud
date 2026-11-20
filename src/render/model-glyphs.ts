@@ -53,19 +53,18 @@ export function shortModelLabel(model?: string | null): string {
 
 /**
  * The badge's words: the version joined to the family, `gpt-6.1-sol` as
- * `6.1sol`. A model with no family keeps its own name, the `gpt-` prefix off.
+ * `6.1sol`, a variant kept (`gpt-6.2-sol-fast` as `6.2sol-fast`). A model with no family keeps its own name, the `gpt-` prefix off.
  */
 export function versionedModelLabel(model?: string | null): string {
-  const raw = (model ?? '').trim();
+  const raw = (model ?? '').trim().replace(/^.*\//, '');
   if (!raw) return '';
   const family = classifyModelFamily(raw);
   if (!family) return shortModelLabel(raw);
-  const version =
-    raw
-      .toLowerCase()
-      .replace(/^gpt-/, '')
-      .match(/^\d+(?:\.\d+)?/)?.[0] ?? '';
-  return version ? `${version}${family}` : family;
+  const slug = raw.toLowerCase();
+  const version = slug.replace(/^gpt-/, '').match(/^\d+(?:\.\d+)?/)?.[0] ?? '';
+  // A variant after the family (`gpt-6.2-sol-fast`) is a different model: keep it.
+  const variant = slug.match(new RegExp(`${family}(-[a-z][a-z0-9]*)$`))?.[1] ?? '';
+  return `${version}${family}${variant}`;
 }
 
 /**
