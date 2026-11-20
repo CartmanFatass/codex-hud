@@ -256,8 +256,12 @@ test('MCP changes carry unreflected try lines once, only for the session cwd', a
   t.after(async () => { child.stdin.end(); await exited; });
   const rpc = createInterface({ input: child.stdout });
   let id = 0;
+  let stderr = '';
+  child.stderr.on('data', (d) => (stderr += d));
+  // A child that exits (no packages/hud-mcp/dist: run `npm run build:hud-mcp`) fails the test instead of leaving it waiting for a line.
+  const died = exited.then(([code]) => { throw new Error(`hud-mcp exited (${code}) before answering: ${stderr.trim() || 'no stderr'}`); });
   const roster = async () => {
-    const next = once(rpc, 'line');
+    const next = Promise.race([once(rpc, 'line'), died]);
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: ++id, params: { name: 'hud_roster', arguments: {} } }) + '\n');
     const [line] = await next;
     return JSON.parse(JSON.parse(line).result.content[0].text);
