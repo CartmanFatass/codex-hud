@@ -10,6 +10,7 @@ import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { placeItem } from '../../dist/roles/role-control.js';
+import { LISTED, PROVIDER_COUNT, ROLES } from '../../docs/design/model-picker/gen/world.mjs';
 export const NOW = Date.parse('2026-11-12T12:35:00Z');
 export const TREE = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) };
 export async function projectFixture(root) {
@@ -235,15 +236,15 @@ export function pickerFrames(f, control = richControl(f.data), layout = 'split')
       }, piExhausted: { 'openai/gpt-6.1-sol': NOW + 42 * 60000 } },
     harnessSwitches: off.map((name) => ({ id: `pi:${name}`, name, group: 'provider', off: true, present: false, uses: [] })),
     roles: control.roles.map((role) => role.role !== 'imp' ? role : {
-      ...role, preset: 'daily', places: [{ ...role.places[0], state, provider: current.includes('/') ? current.split('/')[0] : null,
+      ...role, preset: 'daily', places: [{ ...role.places[0], state, until: undefined, provider: current.includes('/') ? current.split('/')[0] : null,
         model: isDefault ? null : current, piModel: { current, isDefault, defaultId: 'openai/gpt-6.1-sol', defaultSource: 'from pi settings', defaultOff: false },
       }, ...role.places.slice(1)],
     }),
   });
   for (const lang of ['en', 'zh']) {
-    frames[`pick-grouped-40-${lang}`] = plain(f.render(40, lang, pick(0, '', 4), 24, scenario(true)));
-    frames[`pick-filter-40-${lang}`] = plain(f.render(40, lang, pick(0, 'grok', 3), 20, scenario(false)));
-    frames[`pick-long-40-${lang}`] = plain(f.render(40, lang, pick(0, 'maverick', 1), 16, scenario(false)));
+    frames[`pick-grouped-40-${lang}`] = plain(f.render(40, lang, pick(0), 24, scenario(true)));
+    frames[`pick-filter-40-${lang}`] = plain(f.render(40, lang, pick(0, 'grok', 'model:xai/grok-4.7-fast'), 20, scenario(false)));
+    frames[`pick-long-40-${lang}`] = plain(f.render(40, lang, pick(0, 'maverick', `model:${MAVERICK}-fp8`), 16, scenario(false)));
     frames[`pick-exhausted-40-${lang}`] = plain(f.render(40, lang, pick(0, 'openai/gpt-6.1-sol'), 16, scenario(false, undefined, 'active', ['deepseek'])));
     frames[`pick-unknown-40-${lang}`] = plain(f.render(40, lang, pick(0), 16, scenario(false, 'grok-4.7', 'active', ['deepseek'])));
     frames[`pick-off-40-${lang}`] = plain(f.render(40, lang, pick(0), 16, scenario(false, 'xai/grok-4.7', 'off', ['deepseek', 'xai'])));
@@ -251,4 +252,40 @@ export function pickerFrames(f, control = richControl(f.data), layout = 'split')
   frames['pick-no-match-40-en'] = plain(f.render(40, 'en', pick(0, 'zz-new'), 16, scenario(false)));
   frames['pick-cli-40-en'] = plain(f.render(40, 'en', pick(1), 16, control));
   return frames;
+}
+
+/** The sample's roles and model counts, without the superseded Recent rows. */
+export function modelPickerSample(f) {
+  const current = { imp: 'daily', 'frontend-imp': 'default', oracle: 'fable' };
+  const cutoff = NOW + 42 * 60000;
+  const placesOf = (name, preset) => ROLES[name].presets[preset].map((p, i) => ({
+    harness: p.h, label: p.h === 'pi' ? 'pi' : p.agent, thinking: p.think ?? null,
+    model: p.prov ? `${p.prov}/${p.model}` : p.model, provider: p.h === 'pi' ? p.prov || null : undefined,
+    state: name === 'imp' && preset === 'default' && i === 0 ? 'exhausted' : i === 0 ? 'active' : 'standby',
+  }));
+  const roles = ['frontend-imp', 'imp', 'oracle'].map((name) => ({
+    role: name, source: 'yours', group: 'roles', path: `/synthetic/roles/${name}.json`,
+    preset: current[name], places: placesOf(name, current[name]),
+    presets: ROLES[name].order.map((preset) => ({ name: preset, places: placesOf(name, preset) })),
+  }));
+  const pi = [], piFacts = {};
+  for (const [provider, count] of Object.entries(PROVIDER_COUNT)) {
+    for (const model of LISTED[provider] ?? []) {
+      const id = `${provider}/${model.id}`;
+      pi.push(id);
+      piFacts[id] = [model.ctx, model.out, !!model.think, !!model.img];
+    }
+    for (let i = LISTED[provider]?.length ?? 0; i < count; i++) pi.push(`${provider}/synthetic-${i}`);
+  }
+  const data = { ...f.data, control: [], roles, models: { ...MODEL_LISTS, pi, piFacts, piExhausted: { 'openai/gpt-6.1-sol': cutoff } },
+    harnessSwitches: [{ id: 'pi:deepseek', name: 'deepseek', group: 'provider', off: true }], radar: undefined };
+  const item = placeItem('imp', 0);
+  const state = (layout = 'split') => onControl({
+    projectFolded: new Set(['role:imp', 'usage', 'files']), projectCursor: item,
+    ...(layout === 'split' ? { splitFocus: 'preview', splitList: 'project:role:imp', splitSub: item } : {}),
+  }, { panelLayout: layout, experiments: true });
+  const draw = (lang, state, height = 28, snapshot = data) => f.render(40, lang, state, height, snapshot, true, 'unicode', 'none', {
+    projectName: 'harbor-api', projects: PROJECTS, projectWaiting: 2,
+  });
+  return { state, draw, data };
 }

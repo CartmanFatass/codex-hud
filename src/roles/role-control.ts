@@ -67,7 +67,7 @@ export interface RoleFact {
   places: PlaceFact[];
   /** Null means the file chain; legacy equality can supply a displayed name. */
   preset?: string | null;
-  presets?: { name: string; next: string | null; offBy?: string }[];
+  presets?: { name: string; next: string | null; offBy?: string; places?: PlaceFact[] }[];
   fileChain?: PlaceFact[];
   chainPath?: string;
   missingPreset?: string;
@@ -204,6 +204,7 @@ export function controlFacts(
       presets: (role.presets ?? []).map(({ name, run }) => {
         const reviewed = run === role.run ? assigned : registry.assignment(role, now, undefined, context, { preset: name });
         return { name, next: destination(reviewed.places.find((p) => p.state === 'active')),
+          places: reviewed === assigned ? places : reviewed.places.map(toFact),
           ...(reviewed.places.every((p) => p.state === 'off') ? { offBy: [...new Set(reviewed.places.map((p) => p.off_by))].join(' ') } : {}) };
       }),
       fileChain: role.presets?.some((p) => p.run === role.run)

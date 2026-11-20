@@ -256,8 +256,23 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (id && row?.harnessOff !== undefined && (!remove || !row.harnessOff))
         return { type: 'harness-switch', id, off: !row.harnessOff };
     };
+    const openModel = (item: string) => {
+      const role = controlRoleOf(item)!, index = Number(item.slice(item.lastIndexOf(':') + 1));
+      next.projectCursor = item;
+      if (!classic && frame?.panes.some((p) => p.id === 'preview')) {
+        next.splitList = controlRoleItem(role);
+        next.splitFocus = 'preview';
+        next.splitSub = item;
+      }
+      next.projectInput = { role, index, text: '' };
+      return result();
+    };
     if (control && !harnesses) {
       next.controlPresetNotice = undefined;
+      if (tab === 'control-model' && input.type === 'mouse') {
+        const hit = frame?.controls.find((c) => c.kind === tab && c.y === input.y && input.x >= c.x && input.x < c.x + c.width);
+        if (hit?.item) return openModel(hit.item);
+      }
       if (tab === 'control-open-file' && rows[at]?.files) return result({ type: 'open-files', files: rows[at]!.files! });
       const clickedRole = input.type === 'mouse' && input.button === 'left'
         ? frame?.controls.find((c) => c.kind.startsWith('preset-') && c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.item
@@ -369,10 +384,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (role && place && index !== undefined && place.op !== 'preset' && (!pinned || place.op === 'clear')) {
         // `m` uses the existing picker; Flow and pinned places retain the existing edit path.
         const pick = rows[at]?.modelPick;
-        if (place.op === 'model' && index !== undefined && pick && pickable(pick)) {
-          next.projectInput = { role, index: Number(index), text: '' };
-          return result();
-        }
+        if (place.op === 'model' && pick && pickable(pick)) return openModel(item!);
         return result({ type: 'role-edit', role, index: Number(index), ...place });
       }
       if (key === 'escape') {

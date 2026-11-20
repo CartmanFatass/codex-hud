@@ -113,7 +113,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   await s.press('\r');
   assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');
 });
-test('Control plane previews the selected place in full, even when the role list scrolls', async (t) => {
+test('Control plane keeps the long model field usable when the role list scrolls', async (t) => {
   const s = await setup(t);
   const model = 'synthetic-provider/very-long-model-identifier-for-place-preview-20261117';
   const exhausted = { harness: 'cli', agent: 'claude', model, thinking: 'high' };
@@ -132,10 +132,16 @@ test('Control plane previews the selected place in full, even when the role list
   };
   let frame = draw();
   assert.equal(frame.state.controlNav.projectCursor, placeItem('reviewer', 0));
-  const lines = plain(frame), chain = lines.findIndex((line) => /^ {4}1 ✗/.test(line));
+  const lines = plain(frame), chain = lines.findIndex((line) => /^› +1 ✗/.test(line));
   assert.ok(chain > lines.findIndex((line) => /✗ reviewer/.test(line)));
   assert.match(lines.join('\n'), /source +yours · reviewer\.json/);
-  assert.ok(lines.slice(chain).map((line) => line.trim()).join('').includes(model), 'the entire long model wraps in the chain');
+  const field = frame.controls.find((c) => c.item === placeItem('reviewer', 0) && c.kind === 'control-model');
+  assert.equal(field.y, chain + 1, 'the long model field has its own row');
+  assert.match(lines[field.y], /\[very-long.*….*preview ▾\]/);
+  const picked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: field.x, y: field.y }, { tree: TREE, frame });
+  const details = plain(s.render(40, 'en', picked.state, 24, s.session.snap));
+  const strip = details.findIndex((line) => /^Selected ─/.test(line));
+  assert.ok(details.slice(strip + 1).map((line) => line.trim()).join('').startsWith(model), 'the strip wraps the full configured ID');
   frame = choose(frame, { type: 'key', key: 'down' });
   assert.equal(frame.state.controlNav.projectCursor, placeItem('reviewer', 1));
   const y = plain(frame).findIndex((line) => /3 ○ agy/.test(line));
@@ -143,7 +149,7 @@ test('Control plane previews the selected place in full, even when the role list
   frame = choose(frame, { type: 'mouse', button: 'left', x: 4, y });
   assert.equal(frame.state.controlNav.projectCursor, placeItem('reviewer', 2));
   const zh = s.frame(38, 'zh', 24);
-  assert.match(plain(zh).join('\n'), /^ {4}3 ○ agy synthetic-fallback low$/m);
+  assert.match(plain(zh).join('\n'), /^› +3 ○ agy +\[synthetic-fallback ▾\]/m);
   for (const line of zh.lines) assert.equal(visualLength(line), 38, stripAnsi(line));
   assert.deepEqual(stored(s, 'reviewer'), before);
 });
@@ -158,7 +164,7 @@ test('Classic expands only the selected role’s numbered chain; o opens a role�
   assert.doesNotMatch(s.text(), /^ {4}1 ◉/m);
   assert.deepEqual((await s.press('o')).action, { type: 'open-files', files: [resolve('packages/hud-mcp/roles/imp.json')] });
   await s.press(ENTER);
-  assert.match(s.text(), /^ {4}1 ◉ pi synthetic\/model high$/m);
+  assert.match(s.text(), /^ {4}1 ◉ pi\/synthetic +\[default ▾\] +high$/m);
   assert.match(s.text(), /^ {4}2 ○/m);
   assert.match(s.text(), /source +default · imp\.json/);
   await s.press(ESC);
@@ -177,7 +183,7 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   assert.deepEqual([imp.harness, imp.agent, imp.model, imp.runs_on.agent, imp.available], ['cli', 'agy', 'gemini-4-argon-high', 'agy', true]);
   assert.equal(imp.source_file, join(s.hud, 'roles/imp.json'));
   assert.match(s.text(), /◉ imp \[Custom\] → agy/);
-  assert.match(s.text(), /1 ◉ agy gemini-4-argon-high/);
+  assert.match(s.text(), /1 ◉ agy +\[gemini-4-argon-high ▾\]/);
   const file = join(s.hud, 'roles/imp.json');
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.deepEqual(fs.readdirSync(join(s.hud, 'roles')).filter((n) => n.endsWith('.tmp')), []);
@@ -193,7 +199,7 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   await s.keys('M', UP, ESC);
   assert.equal(s.assignment('imp').model, 'gemini-4-hydrogen-high');
   assert.equal(s.session.state.projectInput, undefined, 'Esc closes it too, and M opened it the same as m');
-  await s.keys('m', UP, ENTER);
+  await s.keys('m', 'argon', ENTER);
   assert.equal(s.assignment('imp').model, 'gemini-4-argon-high');
   // e: the catalog's next thinking; the capital goes back, and past the first comes "unset".
   await s.press('e');
@@ -212,7 +218,7 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 1));
   assert.equal(s.frame().state.controlNav.projectCursor, placeItem('imp', 1), 'the cursor is on the new row in the very next frame');
   assert.deepEqual(stored(s, 'imp').run.map((p) => p.harness === 'pi' ? 'pi' : p.agent), ['agy', 'pi']);
-  assert.match(s.text(), /2 ○ pi synthetic\/model high/);
+  assert.match(s.text(), /2 ○ pi\/synthetic +\[default ▾\] +high/);
   await s.press('K');
   assert.deepEqual(stored(s, 'imp').run.map((p) => p.harness === 'pi' ? 'pi' : p.agent), ['pi', 'agy']);
   assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 0));
@@ -320,11 +326,11 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.match(page, /Model ─+ pi · list 0m old/);
   assert.match(page, /default → synthetic\/model\n +from pi role/);
   assert.match(page, /\? ctx {2}\? out {2}think \? {2}img \?/, 'legacy caches still populate the picker, without invented facts');
-  assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length} matches`));
+  assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length}$`, 'm'));
   await s.keys('ANTH');
   page = lines40(s, 'en', 24).join('\n');
   assert.match(page, /\/ ANTH▌ +8 matches/);
-  assert.match(page, /^anthropic ─+ 7\n[\s\S]*^arena ─+ 1/m);
+  assert.match(page, /^▾ anthropic ─+ 7\n[\s\S]*^▾ arena ─+ 1/m);
   assert.match(page, /claude-opus-5-5-20261101/);
   assert.doesNotMatch(page, /openai/);
   await s.keys(ESC, 'XAI/GROK-4.7', ENTER);
@@ -342,7 +348,7 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   page = lines40(s).join('\n');
   assert.match(page, /current  xai\/grok-4.7 +⊘/);
   assert.match(page, /\/ grok▌ +2 matches/);
-  assert.doesNotMatch(page, /^xai ─/m);
+  assert.doesNotMatch(page, /^▾ xai ─/m);
   assert.equal(s.registry().routing(NOW).byId.get('grok-4.7'), null, 'attribution still sees both providers');
   await s.keys(ESC, ESC);
   setHarnessDisabled(s.hud, 'pi:xai', false);
@@ -350,7 +356,7 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   await s.keys('m', 'grok', DOWN, DOWN, DOWN);
   page = lines40(s).join('\n');
   assert.match(page, /\/ grok▌ +5 matches/);
-  assert.match(page, /^arena ─+ 2\n[\s\S]*^xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/m);
+  assert.match(page, /^▾ arena ─+ 2\n[\s\S]*^▾ xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/m);
   const closed = await s.press('\x03');
   assert.equal(closed.close, false);
   assert.equal(s.session.state.projectInput, undefined);
@@ -384,7 +390,7 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   await s.press(ESC);
   setHarnessDisabled(s.hud, 'pi:synthetic', false);
   s.collector.refreshRoles(s.session.snap, NOW);
-  await s.keys('m', '\x1b[H', ENTER);
+  await s.keys('m', '\x1b[F', ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
   assert.equal(s.assignment('imp').model, 'synthetic/model');
   await s.press('m');
@@ -394,7 +400,8 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   }
   assert.equal(s.session.state.projectInput.text, 'qpeirKoj');
   const view = s.frame();
-  const click = handleMonitorInput(view.state, { type: 'mouse', button: 'left', x: 3, y: 3 }, { tree: TREE, frame: view, nowMs: NOW, standalone: true });
+  const tab = view.controls.find((c) => c.kind === 'board-project');
+  const click = handleMonitorInput(view.state, { type: 'mouse', button: 'left', x: tab.x, y: tab.y }, { tree: TREE, frame: view, nowMs: NOW, standalone: true });
   assert.equal(click.state.projectInput, undefined);
   assert.equal(click.action, undefined);
 });
@@ -406,7 +413,7 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
   await s.press('m');
   let page = lines40(s).join('\n');
   assert.match(page, /^imp · agy ─+ model$/m, 'no provider level for agy: its models at once');
-  assert.match(page, /^ {4}default\n› ◉ gemini-4-argon-high\n {4}gemini-4-hydrogen-high\n {4}gemini-3\.8-flash-high$/m);
+  assert.match(page, /^› ◉ gemini-4-argon-high\n {4}gemini-4-hydrogen-high +\[hydrogen\]\n {4}gemini-3\.8-flash-high\n {4}default$/m);
   // The list filters on any part of a model; Enter on a match sets it, a miss sets what was typed.
   await s.keys('flash', ENTER);
   assert.equal(stored(s, 'imp').run[0].model, 'gemini-3.8-flash-high');
@@ -445,17 +452,16 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
   assert.match(help, /^r \^R +refresh: Control \/ picker/m);
   assert.match(help, /^Esc +back; picker: clear then exit/m);
 });
-test('40-column picker sample: same grouped, filtered and long-ID frames in Classic and Split', async (t) => {
+test('40-column picker preserves defaults, full IDs and capability strips in Classic and Split', async (t) => {
   const s = await setup(t);
-  const frames = pickerFrames(s);
-  assert.deepEqual(frames, pickerFrames(s, undefined, 'classic'));
-  for (const lang of ['en', 'zh']) {
+  for (const layout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+    const frames = pickerFrames(s, undefined, layout);
     const grouped = frames[`pick-grouped-40-${lang}`].join('\n');
     assert.match(grouped, /openai\/gpt-6.1-sol\n +(?:来自 pi 设置|from pi settings)/);
     assert.ok(grouped.indexOf('anthropic ─') < grouped.indexOf('arena ─'));
     const filtered = frames[`pick-filter-40-${lang}`].join('\n');
     assert.match(filtered, /\/ grok▌ +5 (?:个匹配|matches)/);
-    assert.match(filtered, /arena ─+ 2[\s\S]*xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/);
+    assert.match(filtered, /▾ arena ─+ 2[\s\S]*▾ xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/);
     const long = frames[`pick-long-40-${lang}`];
     assert.match(long.join('\n'), /^› +meta-llama\/.*….*-fp8$/m);
     const detail = long.findIndex((row) => /^(Selected|所选) ─/.test(row));
@@ -538,7 +544,7 @@ test('pi picker distinguishes the aged last-good list, offline catalog, and an a
   assert.match(failed, /new-provider ─+ 1/);
   assert.doesNotMatch(failed, /Limited offline catalog/);
   const empty = collected({ pi: [] });
-  assert.match(empty, /0 matches[\s\S]*No discovered models/);
+  assert.match(empty, /\/ ▌ +0\n[\s\S]*No discovered models/);
   assert.doesNotMatch(empty, /Limited offline catalog|new-model|Refresh failed/);
 });
 

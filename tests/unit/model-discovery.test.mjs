@@ -372,8 +372,8 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   fs.writeFileSync(hold, 'hold');
   child.stdin.write('rrr');
   await until(() => spawns().length === 6, 'r started a single refresh');
-  child.stdin.write('rrm');
-  await until(() => /Selected ─/.test(stripAnsi(out)) && /gpt-live-1/.test(stripAnsi(out)), 'picker shows the last-good list during the refresh');
+  child.stdin.write('rrmGPT-LIVE');
+  await until(() => /Selected ─/.test(stripAnsi(out)) && /gpt-live-1/.test(stripAnsi(out)), 'picker filters the last-good list during the refresh');
   child.stdin.write('\x12');
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(spawns().length, 6, 'picker refresh coalesces with the pending Control refresh');
@@ -384,7 +384,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   assert.equal(spawns().filter((c) => c === 'grok').length, 2);
 
   // The picker owns even r, q and Tab; none may spawn a command. A full ID selects directly.
-  child.stdin.write('rqq\t');
+  child.stdin.write('\x7f'.repeat('GPT-LIVE'.length) + 'rqq\t');
   await until(() => /rqq▌/.test(stripAnsi(out)), 'refresh/quit keys typed into the picker');
   await new Promise((r) => setTimeout(r, 350));
   assert.equal(spawns().length, 6);

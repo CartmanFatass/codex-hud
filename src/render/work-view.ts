@@ -9,7 +9,7 @@ import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpe
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, hintText, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
-import { pickOf } from './model-input.js';
+import { pickOf, pickerHints } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -20,7 +20,7 @@ import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 import { controlShown, expShown, mainTabs } from './main-tabs.js';
 import { controlNavigation, storeControlNavigation } from './control-navigation.js';
-import { controlHeader, controlHints, controlRows, controlScene, presetFooterControls } from './control-page.js';
+import { controlHeader, controlHints, controlPickerScene, controlRows, controlScene, presetFooterControls } from './control-page.js';
 import { presetSheet } from './preset-input.js';
 import { pickerRows } from './control-view.js';
 import { harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
@@ -89,7 +89,8 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
     ...(input.state.panelLayout === 'split' ? ['Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens'] : []),
     'On Control, Enter opens a fold or chain. Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
     'In the Inspector ⏎ opens the file',
-    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
+    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click [model ▾] to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.'] : []),
+    'Model picker: current and preset models are pinned until you type. Typing opens matching groups.',
     'In Harnesses, remove means off. Add back: type to filter, Enter restores, Esc cancels.',
   ];
   rows.push(boardRow(''), ...notes.flatMap((s) => flowLines(t(s), width).map((s) => boardRow(theme.board.muted(s)))));
@@ -231,6 +232,15 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     const build = (w: number) => home ? homeScene(input, board, state, targets, w, now, doneToday())
       : project ? projectScene(input, state, board, page, w, now) : undefined;
     const notes = [...headers, ...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), !control && input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
+    if (picking && input.project) {
+      // The picker owns its list window; painting it must not replace the chain's saved scroll or reveal.
+      const pickerState = { ...state, splitScroll: 0, boardRevealed: undefined };
+      const picker = controlPickerScene(input.project, pickerState, state.projectInput!, width, now, height, notes.length);
+      if (picker) {
+        const painted = paintSplit({ ...frame, state: pickerState }, picker, board, targets, state.homeTarget, width, height, notes);
+        return { ...painted, state };
+      }
+    }
     const controlSplit = control && !picking && input.project;
     const sceneFor = (w: number) => controlSplit ? harnesses ? harnessScene(controlSplit, state, width, w)
       : controlScene(controlSplit, state, width, now, w, height, notes.length) : build(w);
@@ -342,7 +352,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : control ? picking ? `↑↓ pick  ⏎ set  ${state.projectInput?.text ? 'esc clear' : 'esc cancel'}  ^R refresh`
+        : control ? picking ? pickerHints(state.projectInput!)
           : harnesses ? harnessHints(input.project, state) : sheet ? sheet.hints : controlHints(input.project, state.projectCursor)
         : project ? (page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
           : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help'

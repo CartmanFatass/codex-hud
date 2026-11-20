@@ -160,8 +160,8 @@ test('at 40 columns the role row retains the preset and next target; detail reta
     const state = split({ mainTab: 'control', panelLayout, controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'usage', 'files', 'role:imp']) } });
     const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
     assert.match(text, lang === 'en' ? /imp \[Custom\] → agy/ : /imp \[自定义\] → agy/);
-    assert.match(text, /openai\/gpt-6\.1-sol/);
-    assert.match(text, /gemini-4-hydrogen-high/);
+    assert.match(text, /pi\/openai +\[gpt-6\.1-sol ▾\]/);
+    assert.match(text, /agy +\[gemini-4-hydrogen-high ▾\]/);
     assert.match(text, lang === 'en' ? /fro\S*nd \[Custom\] → pi\/project +project/ : /frontend \[自定义\] → pi\/project +项目/);
     for (const line of frame.lines) assert.equal(visualLength(line), 40);
   }

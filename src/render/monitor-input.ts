@@ -2,7 +2,7 @@
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
 import { harnessAddInput, workboardInput } from './workboard-input.js';
-import { modelInputKey } from './model-input.js';
+import { modelInputEvent } from './model-input.js';
 import { presetInputKey } from './preset-input.js';
 import { jobModalInput } from './job-actions.js';
 import { filterInput, filterScope } from './filter.js';
@@ -30,8 +30,11 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   if (state.controlPresetInput) return presetInputKey(state, input, ctx);
   const add = harnessAddInput(state, input, ctx);
   if (add) return add;
-  // The Control plane's model input owns the keyboard (`q` is a letter in it); a click leaves it and is handled as ever.
-  if (state.projectInput && input.type === 'key') return modelInputKey(state, input, ctx);
+  // The Control picker owns its own mouse targets and printable keys (`q` is a letter in it).
+  if (state.projectInput) {
+    const picked = modelInputEvent(state, input, ctx);
+    if (picked) return picked;
+  }
   // The `/` filter: its typing owns the keyboard, as the model input's does.
   const filter = filterInput(state, input);
   if (filter) return filter;

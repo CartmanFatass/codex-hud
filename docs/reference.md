@@ -513,9 +513,14 @@ the end (the first harness not yet listed, else another model of the same one); 
 place (one always stays); `K`/`J` move it earlier/later; `x` clears its exhausted mark; `r` refreshes
 model lists from `pi`, `agy` and `grok`.
 
-`m` (or `M`) opens the model picker. For `pi`, one list shows every discovered model from enabled
-providers, grouped by provider with counts. Type any part of the full `provider/model` (any case);
-the query and match count stay pinned. ↑↓/PgUp/PgDn select and Enter sets. Esc clears a typed
+Click `[model ▾]` (or `[default ▾]` when unset) on an editable pi or CLI place to open the model picker.
+The `m` (or `M`) shortcut still works. Project-locked places show plain text; Flow keeps its image/video shortcut.
+With an empty query, the picker pins the current model and compatible models from this role's named
+presets, tagged by preset. No recent history is kept. Pi's enabled-provider groups start folded with
+counts; pinned models also stay in their groups. Type any part of the full `provider/model` (any case)
+to hide the pins and open matching groups. In Classic and Split, a provider-header click toggles its
+group; clicking a model selects it and clicking the same row again sets it. The wheel scrolls the list
+without moving the cursor, query or bottom strip. ↑↓/PgUp/PgDn select and Enter sets. Esc clears a typed
 filter first, then closes without setting; Ctrl+C closes immediately.
 `◉` marks the current assignment and `›` marks the cursor. A long model is shortened in the middle;
 the bottom strip wraps the whole selected ID and shows its state. For pi models the strip also shows
@@ -684,7 +689,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `N`, `R`, `D` | Control role row: copy the current chain, rename the selected preset, or preview and confirm deletion |
 | `h` | Control: switch Roles / Harnesses (or click the view heading) |
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
-| `m` (`M`) | Control: pick the model for the selected place. Type to filter, ↑↓ pick, Enter sets, Esc clears then closes, Ctrl+R refreshes the lists |
+| `m` (`M`) | Control: open the model picker (or click `[model ▾]`). Type to filter, ↑↓ or click to pick, Enter or click again to set, Esc clears then closes, Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |

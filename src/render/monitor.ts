@@ -79,11 +79,8 @@ export interface MonitorState {
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
-  /**
-   * The Control plane's model picker, open on the place `role`/`index`: what is typed to filter, which entry is picked (the
-   * default one until the arrows move it), the provider it has opened (pi: providers first), and whether it lists all.
-   */
-  projectInput?: { role: string; index: number; text: string; pick?: number };
+  /** Model picker on this place. Group overrides belong to the current query; the wheel moves the window, not the cursor. */
+  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: string[]; scroll?: number; clicked?: string };
   /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
   confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
@@ -143,6 +140,8 @@ export interface MonitorRow {
   files?: string[];
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
+  modelHit?: { entry: string } | { provider: string };
+  modelWindow?: { first: number; max: number };
   harnessOff?: boolean;
   roleFact?: RoleFact;
   tryTarget?: TryTarget;
@@ -172,6 +171,7 @@ export interface MonitorControl {
     | 'control-roles'
     | 'control-harnesses'
     | 'control-open-file'
+    | 'control-model'
     | 'harness-add'
     | 'harness-toggle'
     | 'harness-remove'

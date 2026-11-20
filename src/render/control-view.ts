@@ -50,7 +50,7 @@ export function placeTarget(role: RoleFact, i: number, data: ProjectSnapshot): P
   return { item: placeItem(role.role, i), files: [role.path], ...(pickable ? { modelPick: { place, lists: data.models } } : {}) };
 }
 /** One list and cursor in both layouts. Keep the query and selected ID outside the scrolling list. */
-export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: number, room: number, now: number): MonitorRow[] {
+export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: number, room: number, now: number, inPreview = false): MonitorRow[] {
   const pick = pickOf(data, input)!, view = pickView(pick, input), { place, lists } = pick;
   const pi = place.harness === 'pi', status = pi ? lists.piStatus : place.label === 'agy' || place.label === 'grok' ? lists.cliStatus?.[place.label] : undefined;
   const fetchedAt = status?.fetchedAt;
@@ -58,7 +58,7 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
     age: now - fetchedAt >= 3600000 ? t('{n}h', { n: Math.floor((now - fetchedAt) / 3600000) }) : minuteAge(fetchedAt, now),
   });
   const where = monitorText(input.role), role = data.roles.find((role) => role.role === input.role);
-  const rows = pi ? [section(where, width, [role?.preset ? `[${monitorText(role.preset)}]` : '', t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' · ')),
+  const rows = pi ? [...(inPreview ? [] : [section(where, width, pickerPlace(input, role?.preset))]),
     section(t('Model'), width, [place.label, age].filter(Boolean).join(' · '))]
     : [boardRow(''), section(`${where} · ${monitorText(place.label)}`, width, t('model'))];
   const notice = (text: string) => boardRow(fit('  ' + theme.board.attention(text), width));
@@ -67,17 +67,13 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   else if (status?.fetchedAt !== undefined && now - status.fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
   if (piStatus?.offline) rows.push(notice(t('Limited offline catalog')));
   type Entry = (typeof view.entries)[number];
-  const modelId = (entry: Entry) => entry.value === '' ? place.piModel?.defaultId : entry.value ?? view.currentId;
   const stateOf = (entry: Entry, detail = false) => {
-    const unavailable = entry.value === undefined ? view.currentFact : entry.value === '' && place.piModel?.defaultId &&
-      !place.piModel.defaultId.includes('/') ? 'unknown' : undefined;
-    if (unavailable === 'off') {
+    if (entry.fact === 'off') {
       const off = mark('⊘', 'x');
       return theme.board.muted(detail ? t('{mark} off', { mark: off }) : off);
     }
-    if (unavailable === 'unknown') return theme.board.attention(`?${detail ? ` ${t('unknown')}` : ''}`);
-    const until = !pi ? undefined : entry.value === '' ? place.piModel?.defaultUntil : entry.value === undefined ? place.until
-      : lists.piExhausted?.[entry.value];
+    if (entry.fact === 'unknown') return theme.board.attention(`?${detail || entry.tags?.length ? ` ${t('unknown')}` : ''}`);
+    const until = entry.until;
     if (until !== undefined && until > now) {
       const n = Math.ceil((until - now) / 60000);
       const reset = detail ? t('resets in {n}m', { n }) : t('{n}m', { n });
@@ -90,14 +86,14 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
     const extra = `${where}${role?.preset ? ` [${monitorText(role.preset)}]` : ''} ${t('place #{n}', { n: input.index + 1 })}`;
     return `${theme.board.active(mark('◉', '@'))} ${theme.board.muted(visualLength(label + ' · ' + extra) + 4 <= width ? `${label} · ${extra}` : label)}`;
   };
-  const selected = view.entries[view.at];
-  const full = selected ? monitorText(modelId(selected) ?? '') || t('default') : view.free ? monitorText(view.free) : '';
+  const selected = view.selected;
+  const full = selected ? monitorText(selected.model ?? '') || t('default') : '';
   const detail = [section(theme.board.muted(t('Selected')), width)];
   const detailLine = (line: string) => boardRow(fit('  ' + line, width));
   if (full) {
     detail.push(...flowLines(full, width - 2).map(detailLine));
     if (pi) {
-      const id = selected && modelId(selected), facts = id ? lists.piFacts?.[id] : undefined;
+      const id = selected?.model, facts = id ? lists.piFacts?.[id] : undefined;
       const [ctx, out, thinking, images] = facts ?? [];
       const cap = (yes: boolean | undefined) => yes === undefined ? theme.board.muted('?') : yes ? theme.board.success(mark('✓', '+')) : theme.board.muted(mark('–', '-'));
       const muted = theme.board.muted;
@@ -112,22 +108,27 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
       }
       detail.push(detailLine(line));
     }
-    if (selected) detail.push(detailLine(stateOf(selected, true)));
+    if (selected) {
+      detail.push(detailLine(stateOf(selected, true)));
+      if (selected.tags?.length) {
+        const tags = selected.tags.map((name) => `[${monitorText(name)}]`).join(' ');
+        detail.push(detailLine(theme.board.muted(flowLines(tags, width - 2)[0] ?? '')));
+      }
+    }
   } else detail.push(detailLine(theme.board.muted(t('No selection'))));
   // If the pane is too short even for the query and strip, drop the strip's heading first.
   if (room <= detail.length) detail.shift();
   const off = pi ? data.harnessSwitches?.filter((item) => item.group === 'provider' && item.off).map((item) => monitorText(item.name)).sort() : undefined;
   const offLine = off?.length && room >= detail.length + 2
     ? boardRow(fit(theme.board.muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.join(' · ') })}`), width)) : undefined;
-  const current = view.currentId ? monitorText(view.currentId) : '';
-  if (!pi || (current && !view.entries.some((entry) => entry.current && !entry.value) && room >= rows.length + detail.length + 4 + Number(!!offLine))) {
-    const label = pi ? t('current') : t('model');
-    const fact = view.currentFact ? stateOf({ label: '', current: true }) : '';
-    rows.push(boardRow(fit(pair(`  ${theme.board.muted(label)}  ${squeeze(current || t('default'), width - visualLength(label) - 4 - (fact ? visualLength(fact) + 1 : 0))}`, fact, width), width)));
+  if (input.text.trim() && view.current?.fact && room >= rows.length + detail.length + 4 + Number(!!offLine)) {
+    const label = t('current'), fact = stateOf(view.current);
+    const id = squeeze(monitorText(view.current.label), width - visualLength(label + fact) - 5);
+    rows.push(boardRow(pair(`  ${theme.board.muted(label)}  ${id}`, fact, width)));
   }
   // On short panes, the list and bottom strip take precedence over opening context.
   rows.length = Math.min(rows.length, Math.max(0, room - detail.length - 2 - Number(!!offLine)));
-  const count = view.free ? t('as typed') : t('{n} matches', { n: view.total });
+  const count = selected?.id === 'typed' ? t('as typed') : pi && !input.text.trim() ? String(view.total) : t('{n} matches', { n: view.total });
   const queryRoom = width - visualLength(count) - 4;
   let tail = monitorText(input.text);
   if (queryRoom > 1 && visualLength(tail) > queryRoom) {
@@ -136,41 +137,53 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
     while (chars.length && visualLength(chars.at(-1)! + kept) < queryRoom) kept = chars.pop()! + kept;
     tail = mark('…', '~') + kept;
   }
-  rows.push({ text: pair(`${theme.board.muted('/')} ${tail}${theme.board.active(mark('▌', '_'))}`, theme.board.muted(count), width),
-    item: placeItem(input.role, input.index), modelPick: pick });
   const empty = piStatus?.runnerOff ? 'pi is off' : piStatus?.empty ? 'No discovered models' : 'No matching models';
-  // Headers are paint-only and travel with their models, including when a window begins mid-group.
-  const list: MonitorRow[] = [], headerAt = new Map<number, MonitorRow>();
-  if (!selected) list.push(view.free ? { text: fit(`  ${theme.board.active(mark('⏎', '>'))} ${monitorText(view.free)}`, width), item: 'project:pick' } : notice(t(empty)));
-  let header: MonitorRow | undefined;
-  const cursor = (at: number) => at === view.at;
-  for (const [i, entry] of view.entries.entries()) {
-    if (entry.provider && entry.provider !== view.entries[i - 1]?.provider) {
-      header = section(theme.board.identifier(monitorText(entry.provider)), width, String(view.counts.get(entry.provider)));
-      list.push(header);
-    }
-    if (header) headerAt.set(list.length, header);
-    const lead = `${cursor(i) ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
-    const defaultId = entry.value === '' && place.piModel?.defaultId ? ` → ${monitorText(place.piModel.defaultId)}` : '';
-    const name = entry.value !== '' ? monitorText(entry.label) : entry.label;
-    const fact = stateOf(entry);
-    const label = squeeze(name + defaultId, width - 4 - (fact ? visualLength(fact) + 2 : 0));
-    list.push({ text: fit(pair(lead + label, fact, width), width), ...(cursor(i) ? { item: 'project:pick' } : {}) });
+  const list: MonitorRow[] = [];
+  const add = (entry: Entry) => {
+    const cursor = selected?.id === entry.id;
+    const lead = `${cursor ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
+    const defaultId = entry.value === '' && entry.model ? ` → ${monitorText(entry.model)}` : '';
+    const name = (entry.value === '' ? entry.label : monitorText(entry.label)) + defaultId;
+    const fact = stateOf(entry), tags = entry.tags?.map((name) => `[${monitorText(name)}]`) ?? [];
+    const available = (side: string) => width - 4 - (side ? visualLength(side) + 2 : 0);
+    // Keep whole tags when they fit, preserving the status and as much of the model ID as possible.
+    while (tags.length > 1 && visualLength(name) > available([fact, ...tags].filter(Boolean).join(' '))) tags.pop();
+    const tag = tags.length ? theme.board.muted(tags.join(' ')) : '';
+    const both = [fact, tag].filter(Boolean).join(' ');
+    const right = visualLength(name) <= available(both) ? both : fact;
+    list.push({ text: pair(lead + squeeze(name, available(right)), right, width), modelHit: { entry: entry.id },
+      ...(cursor ? { item: 'project:pick' } : {}) });
     if (entry.value === '' && place.piModel?.defaultSource) list.push(boardRow(fit(`      ${theme.board.muted(t(place.piModel.defaultSource))}`, width)));
+  };
+  if (view.pinned.length) {
+    list.push(section(t('Pinned'), width, String(view.pinned.length)));
+    for (const entry of view.pinned) add(entry);
   }
-  if (piStatus?.empty && selected) list.push(notice(t(empty)));
+  for (const group of view.groups) {
+    const arrow = group.open ? mark('▾', 'v') : mark('▸', '>');
+    list.push({ ...section(theme.board.identifier(`${arrow} ${monitorText(group.provider)}`), width, String(group.entries.length)),
+      modelHit: { provider: group.provider } });
+    if (group.open) for (const entry of group.entries) add(entry);
+  }
+  for (const entry of view.loose) add(entry);
+  if (selected?.id === 'typed') add(selected);
+  else if ((!selected && !view.groups.length) || piStatus?.empty) list.push(notice(t(empty)));
+  const size = Math.max(0, room - detail.length - Number(!!offLine) - rows.length - 1);
+  const max = Math.max(0, list.length - size);
   const at = list.findIndex((row) => row.item === 'project:pick');
-  const listEnd = room - detail.length - Number(!!offLine);
-  const size = Math.max(0, listEnd - rows.length);
-  let first = Math.max(0, Math.min(list.length - size, at - Math.floor(size / 2)));
-  const group = headerAt.get(first);
-  if (group && size > 1) { rows.push(group); first = Math.min(first + 1, at); }
-  if (size) rows.push(...list.slice(first, first + listEnd - rows.length));
+  const first = input.scroll === undefined ? Math.max(0, Math.min(max, at - Math.floor(size / 2)))
+    : Math.max(0, Math.min(input.clicked ? Math.max(0, list.length - 1) : max, input.scroll));
+  rows.push({ text: pair(`${theme.board.muted('/')} ${tail}${theme.board.active(mark('▌', '_'))}`, theme.board.muted(count), width),
+    item: placeItem(input.role, input.index), modelPick: pick, modelWindow: { first, max } });
+  rows.push(...list.slice(first, first + size));
   if (offLine) rows.push(offLine);
   while (rows.length + detail.length < room) rows.push(boardRow(''));
   rows.push(...detail);
   return rows;
 }
+export const pickerPlace = (input: ModelInput, preset?: string | null) =>
+  [preset ? `[${monitorText(preset)}]` : '', t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' · ');
+
 export function radarFacts(radar: ControlRadar | undefined) {
   const quotas = (['codex', 'claude'] as const).flatMap((client) => {
     const windows = radar?.quotas?.[client];

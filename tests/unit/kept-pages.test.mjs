@@ -58,7 +58,9 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
     }
     if (page === 'help') {
       assert.doesNotMatch(text, /Home · Project/);
-      assert.match(text, /Backup skills ─+ 17/);
+      const help = frame.workboard.rows.map((row) => stripAnsi(row.text)).join('\n');
+      assert.match(help, /Backup skills ─+ 17/);
+      assert.match(help, /click \[model ▾\] to open/);
       assert.match(text, /Space\s+mark a try \/ toggle a harness/);
       assert.match(text, /y n\s+accept \/ flag the marked/);
       assert.match(text, /i Del\s+add \/ remove place or switch/);

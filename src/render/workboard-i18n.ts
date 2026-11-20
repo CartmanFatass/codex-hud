@@ -265,6 +265,12 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '^R refresh': '^R 刷新',
   'back; picker: clear then exit': '返回；选择器：先清空筛选，再关闭',
   'pick model; pi groups; type to filter': '位置：选择模型（pi 按提供方分组；输入筛选）',
+  'click [model ▾] or press m to choose': '点 [模型 ▾] 或按 m：选择模型',
+  'Control: click [model ▾] to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.':
+    '控制：点 [模型 ▾] 打开。单击模型选中，再点一次设定；点提供方标题折叠或展开，滚轮滚动列表。',
+  'Model picker: current and preset models are pinned until you type. Typing opens matching groups.':
+    '模型选择器：未输入时置顶当前模型和预设模型。输入筛选时展开匹配分组。',
+  Pinned: '置顶',
   'list {age} old': '列表 {age}前',
   'Refresh failed': '刷新失败',
   'List is stale': '列表已过期',
