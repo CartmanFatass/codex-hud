@@ -5,6 +5,8 @@ import { workboardInput } from './workboard-input.js';
 import { modelInputKey } from './model-input.js';
 import { jobModalInput } from './job-actions.js';
 import { filterInput, filterScope } from './filter.js';
+import { expInput } from './exp-view.js';
+import { expShown } from './main-tabs.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
@@ -23,6 +25,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   return out;
 }
 function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
+  if (expShown(state) && state.expPage?.edit) return expInput(state, input, ctx)!;
   // The Control plane's model input owns the keyboard (`q` is a letter in it); a click leaves it and is handled as ever.
   if (state.projectInput && input.type === 'key') return modelInputKey(state, input, ctx);
   // The `/` filter: its typing owns the keyboard, as the model input's does.
@@ -61,7 +64,7 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
     }
     return result();
   }
-  if (key === 'export-board' && next.focus === 'agents') return result({ type: 'export-board' });
+  if (key === 'export-board' && next.focus === 'agents' && !expShown(next)) return result({ type: 'export-board' });
   if (key === 'help' || key === 'settings') next.trySelection = undefined;
   const board = workboardInput(next, input, ctx);
   if (board) return board;

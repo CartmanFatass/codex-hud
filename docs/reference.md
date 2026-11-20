@@ -621,7 +621,14 @@ or leaving the view clears the Space marks.
 
 ### Frame and reload
 
-Home and Project are the only main tabs. Inspector, Changes, Settings and Help share
+Home and Project are the default main tabs. Settings → Panel → **Experiments** (`experiments` in `hud-settings.json`,
+off by default) adds the experimental **EXP** tab. Use ↑/↓ to select and Enter to edit or open an account;
+Enter saves, and Esc cancels. For calibration, Enter first previews the change, then Enter saves the new base.
+The form is the same in Classic and Split. Settings apply to all projects on this machine, and are stored under
+`$HUD_HOME/exp/`. Codex profile choices are local; EXP does not change CLI configuration. Live usage readings
+say **not connected** until their integrations are available.
+
+Inspector, Changes, Settings and Help share
 one title band, exact-width rows and whole footer hints (rightmost hints drop when
 narrow). Home, the hub and the Control plane footers show the keys of the selected row: a HUD
 job's row adds `g job tab` and `X stop`, a to-try row `Space mark  y accept  n flag`, a role

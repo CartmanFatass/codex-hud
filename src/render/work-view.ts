@@ -18,6 +18,8 @@ import { projectScene } from './split-project.js';
 import { paintSplit, splitScrolls } from './split-frame.js';
 import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
+import { expShown, mainTabs } from './main-tabs.js';
+import { expHints, expRows } from './exp-view.js';
 export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const half = width >= 80 ? Math.floor((width - 4) / 2) : width;
@@ -105,7 +107,10 @@ export function renderWorkboardFrame(
     changes = !help && state.focus === 'changes';
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
-  const home = !sub && !project;
+  const exp = expShown(state);
+  const experiment = exp ? { ...state.expPage } : undefined;
+  if (exp) frame.expData = input.expData;
+  const home = !sub && !project && !exp;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   // The `/` filter: Home's board keeps the cards that match; Progress and Tickets read a snapshot of the slices or tickets that do.
@@ -118,7 +123,10 @@ export function renderWorkboardFrame(
   }
   const board = inspector ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.cardStallMinutes) : undefined);
   if (home && needle) matches = board.workers.length + board.decisions.length;
-  const bar = filtering ? filterRow(state, matches, width) : undefined, top = bar ? 1 : 0;
+  const bar = filtering ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
+    (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
+  ) : undefined;
+  const top = bar ? 1 : 0;
   const target = state.boardInspect;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
   const decision = target?.kind === 'decision' ? lane?.decisions.find((d) => d.id === target.decisionId) : undefined;
@@ -140,33 +148,32 @@ export function renderWorkboardFrame(
     const count = source.workers.filter((w) => w.homeNeedsHuman).length;
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
-    const title = ` ${t('Home')}${badge(count)} `;
-    const projectTitle = ` ${t('Project')}${badge(input.project?.waiting.length ?? 0)} `;
-    const models = t(input.modelEnabled === false ? 'models off' : 'models on');
+    const counts = { home: count, project: input.project?.waiting.length ?? 0 };
+    const tabs = mainTabs(state);
+    const labels = (badges: boolean, marker: boolean) => tabs.map((tab) =>
+      ` ${t(tab.label)}${'experimental' in tab ? marker ? ` ${theme.board.muted(t('exp'))}` : ''
+        : badges ? badge(counts[tab.id]) : ''} `);
+    let titles = labels(true, true);
+    let models = t(input.modelEnabled === false ? 'models off' : 'models on');
+    const fits = (words: string[], right: string) => visualLength(words.join('')) + (right ? visualLength(right) + 1 : 0) <= width;
+    if (state.experiments && !fits(titles, models)) {
+      // EXP gets a whole hit target: drop badges, then its optional mark, then the models hint before cutting tabs.
+      titles = labels(false, true);
+      if (!fits(titles, models)) titles = labels(false, false);
+      if (!fits(titles, models)) { models = ''; titles = labels(false, fits(labels(false, true), '')); }
+    }
     const modelsWidth = visualLength(models);
-    const leftRoom = Math.max(0, width - modelsWidth - 1);
-    frame.lines[0] = pair(
-      (home ? theme.board.title : theme.board.muted)(title) +
-        (project ? theme.board.title : theme.board.muted)(projectTitle),
-      (input.modelEnabled === false ? theme.board.attention : theme.board.muted)(models),
-      width
-    );
+    const leftRoom = Math.max(0, width - (modelsWidth ? modelsWidth + 1 : 0));
+    frame.lines[0] = pair(titles.map((label, i) => (state.mainTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''),
+      (input.modelEnabled === false ? theme.board.attention : theme.board.muted)(models), width);
     let x = 0;
-    for (const [kind, label] of [
-      ['board-home', title],
-      ['board-project', projectTitle],
-    ] as const) {
+    for (const [i, label] of titles.entries()) {
       const span = visualLength(label);
       const clipped = Math.max(0, Math.min(leftRoom, x + span) - x);
-      if (clipped > 0) frame.controls.push({ kind, x, y: 0, width: clipped });
+      if (clipped > 0) frame.controls.push({ kind: `board-${tabs[i].id}`, x, y: 0, width: clipped });
       x += span;
     }
-    frame.controls.push({
-      kind: 'brief',
-      x: Math.max(0, width - modelsWidth),
-      y: 0,
-      width: Math.min(width, modelsWidth),
-    });
+    if (models) frame.controls.push({ kind: 'brief', x: Math.max(0, width - modelsWidth), y: 0, width: Math.min(width, modelsWidth) });
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
   if (state.projectInput && !(project && page === 'control' && pickOf(input.project, state.projectInput))) state.projectInput = undefined;
@@ -189,7 +196,7 @@ export function renderWorkboardFrame(
     ).length;
   };
   // The Split layout draws Home, the hub and the pages that are lists in its own frame (split-*.ts); the rest is Classic's.
-  if (state.panelLayout === 'split' && !sub && !list) {
+  if (state.panelLayout === 'split' && !sub && !list && !exp) {
     const build = (w: number) => home ? homeScene(input, board, state, targets, w, now, doneToday())
       : project && !(page === 'control' && state.projectInput) ? projectScene(input, state, board, page, w, now) : undefined;
     const notes = [...(bar ? [bar.text] : []), ...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
@@ -207,7 +214,7 @@ export function renderWorkboardFrame(
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
-          : homeRows(board, state, width, now, input);
+          : experiment ? expRows(experiment, input.expData, width) : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   // A stop waiting for its answer is the top row of Home and the Inspector, where the job under the cursor is.
@@ -247,7 +254,11 @@ export function renderWorkboardFrame(
       : rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
   // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
   const picking = project && page === 'control' && !!state.projectInput;
-  const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
+  if (experiment && !experiment.edit && !rows.some((r) => r.item && r.item === experiment.cursor))
+    experiment.cursor = rows.find((r) => r.item)?.item;
+  if (experiment?.edit) state.boardRevealed = undefined;
+  const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor
+    : experiment ? experiment.edit ? undefined : experiment.cursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   let room = Math.max(0, height - 2 - top);
   let preview: MonitorRow[] = [];
   if (project && page === 'control' && !picking) {
@@ -268,7 +279,7 @@ export function renderWorkboardFrame(
     : picking ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
-      : project ? (state.projectScroll ?? 0) : (state.homeScroll ?? 0);
+      : project ? (state.projectScroll ?? 0) : experiment ? (experiment.scroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
   if (!help && !changes && !picking && key && state.boardRevealed !== key && room) {
     if (cursorAt < offset) offset = cursorAt;
@@ -280,6 +291,7 @@ export function renderWorkboardFrame(
     frame.helpPage = { count: room, total: rows.length };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
   else if (project) { if (!picking) state.projectScroll = offset; }
+  else if (experiment) state.expPage = { ...experiment, scroll: offset };
   else state.homeScroll = offset;
   if (bar) frame.lines[1] = bar.text;
   for (let i = 0; i < room; i++) {
@@ -311,7 +323,7 @@ export function renderWorkboardFrame(
           : state.projectLayout === 'inbox' && rows.some((r) => r.item === state.projectCursor && r.tryTarget)
             ? (frame.projects ? 'Space mark  y accept  n flag  ⏎ details  o open file  ←→ tab  [ ] project  ? help' : 'Space mark  y accept  n flag  ⏎ details  o open file  ←→ tab  ? help')
           : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
-        : homeKeys(state, source, 'expand');
+        : experiment ? expHints(experiment, input.expData) : homeKeys(state, source, 'expand');
   if (height > 1)
     frame.lines[height - 1] = footRow(
       !home || !done ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),

@@ -14,6 +14,9 @@ import type { PlaceEdit } from '../roles/role-control.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
+import { mainTabOf, type MainTab } from './main-tabs.js';
+import type { ExpPage } from './exp-view.js';
+import type { ExpData, ExpEdit } from '../exp-config.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
   iconic,
@@ -45,7 +48,9 @@ export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
-  mainTab?: 'home' | 'project';
+  mainTab?: MainTab;
+  experiments?: boolean;
+  expPage?: ExpPage;
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -150,8 +155,7 @@ export interface MonitorRect {
 export interface ProjectChoice { root: string; name: string; overview?: ProjectOverview }
 export interface MonitorControl {
   kind:
-    | 'board-home'
-    | 'board-project'
+    | `board-${MainTab}`
     | 'board-back'
     | 'board-pick'
     | 'board-activate'
@@ -178,6 +182,7 @@ export interface MonitorFrame {
   /** Set when there is more than one project to switch between: the panel's own first. */
   projects?: ProjectChoice[];
   helpPage?: { count: number; total: number };
+  expData?: ExpData;
 }
 export interface MonitorData {
   hud?: HudData & HudDelegationData;
@@ -194,6 +199,7 @@ export interface MonitorData {
   width: number;
   height: number;
   worktrees?: WorktreesSnapshot | null;
+  expData?: ExpData;
   nowMs?: number;
   notice?: string | null;
   error?: string | null;
@@ -214,6 +220,7 @@ export interface MonitorOutcome {
   close: boolean;
   action?:
     | { type: 'settings' }
+    | { type: 'exp-save'; edit: ExpEdit }
     | { type: 'open-files'; files: string[] }
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
@@ -244,7 +251,7 @@ export function monitorModes(settings: HudSettings): MonitorModes {
   return { agents: 'open', changes: settings.changesPane, details: settings.detailsPane };
 }
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
-  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout, projectLayout: settings.projectLayout };
+  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout, projectLayout: settings.projectLayout, experiments: settings.experiments };
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return { changesPane: state.modes.changes, detailsPane: state.modes.details };
@@ -255,7 +262,8 @@ export function reconcileMonitor(
   _nowMs?: number,
   _delegation?: DelegationViewModel | null
 ): MonitorState {
-  return { ...state, tree: { ...state.tree }, scroll: { ...state.scroll }, modes: { ...state.modes } };
+  return { ...state, mainTab: mainTabOf(state), expPage: state.experiments ? state.expPage : undefined,
+    tree: { ...state.tree }, scroll: { ...state.scroll }, modes: { ...state.modes } };
 }
 export function paneShown(state: MonitorState, id: MonitorPane): boolean {
   return state.focus === id && !state.help;

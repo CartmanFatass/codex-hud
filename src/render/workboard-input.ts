@@ -12,6 +12,8 @@ import { splitHomeInput, splitProjectInput } from './split-input.js';
 import { join } from 'node:path';
 import { tryInput } from './try-input.js';
 import { openJobAction } from './job-actions.js';
+import { mainTabOf, mainTabs, type MainTab } from './main-tabs.js';
+import { expInput } from './exp-view.js';
 
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
 const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
@@ -31,7 +33,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
   const main = next.focus === 'agents', classic = next.panelLayout !== 'split';
   const inspector = next.focus === 'details';
-  const home = (tab: 'home' | 'project' = 'home') => {
+  const goTab = (tab: MainTab = 'home') => {
     next.mainTab = tab;
     if (tab === 'home') next.trySelection = undefined;
     next.focus = 'agents';
@@ -125,7 +127,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (back || (key === 'escape' && next.focus === 'changes')) {
-    home();
+    goTab();
     return result();
   }
   // `g`, `r` and `X` on a HUD job, on Home (either layout) and in the Inspector; before the keys that move the cursor take `g` for Home.
@@ -155,10 +157,18 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   const tab = input.type === 'mouse' && input.button === 'left'
     ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : '';
-  if (tab === 'board-home' || tab === 'board-project' || (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
-    const to = tab === 'board-home' ? 'home' : tab === 'board-project' ? 'project' : next.mainTab === 'project' ? 'home' : 'project';
-    home(to);
+  const tabs = mainTabs(next), clicked = tabs.find(({ id }) => tab === `board-${id}`);
+  if (clicked || (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
+    const at = tabs.findIndex(({ id }) => id === mainTabOf(next));
+    const step = key === 'left' || key === 'shift-tab' ? -1 : 1;
+    goTab(clicked?.id ?? tabs[(at + step + tabs.length) % tabs.length].id);
     return result();
+  }
+  if (main && mainTabOf(next) === 'exp') {
+    if (key === 'escape' && !next.expPage?.detail) { goTab(); return result(); }
+    if (['help', 'settings', 'brief-toggle'].includes(key)) return null;
+    if (tab === 'brief') return result({ type: 'brief-toggle' });
+    return expInput(next, input, ctx) ?? result();
   }
   if (key === 'changes') {
     next.trySelection = undefined;
@@ -322,8 +332,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   };
   const openProgress = (item: string) => {
     const id = item.slice('home-progress:'.length);
-    home();
-    next.mainTab = 'project';
+    goTab('project');
     // Home's block is the panel's own project's.
     useProject(undefined);
     if (id === 'waiting') {
@@ -360,10 +369,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       input.button === 'left'
         ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)
         : undefined;
-    if (control?.kind === 'board-home') {
-      home();
-      return result();
-    }
     if (control?.kind === 'board-inspect') {
       inspect();
       return result();

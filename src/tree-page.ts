@@ -4,6 +4,8 @@ import { ProjectCollector, projectShown } from './collectors/project-board.js';
 import { appendTry, TryLog } from './collectors/try-records.js';
 import { answerJobQuestion } from './collectors/panel-actions.js';
 import { readBackupSkills } from './collectors/backup-skills.js';
+import { readExpData, saveExpEdit } from './collectors/exp-store.js';
+import { expShown } from './render/main-tabs.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
 import { editPlaces, placeItem } from './roles/role-control.js';
@@ -547,7 +549,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     return { ...next, ...monitorSettings(settings) };
   };
   const availableDecisionKeys = () => { try { return decisionKeys(readHudCredentials()); } catch { return undefined; } };
-  let state = { ...configuredState(), ...place?.state };
+  let state: MonitorState = { ...configuredState(), ...place?.state, experiments: settings.experiments };
+  let expData = expShown(state) ? readExpData(jobPipeline.home) : undefined;
   let settingsPage: SettingsPageState | null = place?.settings
     ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
@@ -709,6 +712,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           mouse: settings.mouse,
           state,
           worktrees,
+          expData: expShown(state) ? expData : undefined,
           project: tryBriefs.apply(shown.root, shown.snapshot),
           tryMarks,
           backupSkills,
@@ -867,7 +871,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       collectionEpoch++;
     }
     if (closed || collecting) return;
-    const ready = await reload.poll(() => Boolean(settingsPage && settingsDirty(settingsPage)));
+    const ready = await reload.poll(() => Boolean((settingsPage && settingsDirty(settingsPage)) || state.expPage?.edit));
     if (closed) return;
     if (ready) {
       restarting = reload.restart({ state, openedAt, widthOverride: widthOverride ?? null,
@@ -1161,6 +1165,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         ...(settings.panelLayout !== previousLayout ? { boardAnchor: undefined, homeTarget: undefined, projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, homeScroll: 0 } : {}),
         ...(settings.projectLayout !== previousProjectLayout ? { projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, splitFocus: undefined, splitList: undefined, splitSub: undefined, splitScroll: 0, splitListScroll: 0, splitFor: undefined } : {}),
       };
+      if (!settings.experiments) expData = undefined;
       worktrees = null;
       void refreshGit();
       notifier.configure(resolveNotifierOptions(process.env, settings));
@@ -1210,8 +1215,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     for (let input of inputs) {
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
-      // A printable key with no name is only the model picker's (it types into the filter); nothing else answers it here.
-      if (input.type === 'key' && !input.key && !state.projectInput) continue;
+      // Editors own unnamed printable keys; nowhere else do they trigger an action.
+      if (input.type === 'key' && !input.key && !state.projectInput && !state.expPage?.edit) continue;
       syncPanelView();
       const fromSettings = Boolean(settingsPage);
       if (settingsLeave && confirmationFrame) {
@@ -1276,6 +1281,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         navigationOverlay: fromSettings,
       });
       state = result.state;
+      if (expShown(state) && !expShown(previous)) expData = readExpData(jobPipeline.home);
       syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
       if (projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) void collect(true);
@@ -1325,6 +1331,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           void collect(true);
         });
       }
+      if (result.action?.type === 'exp-save' && expShown(state)) {
+        try {
+          saveExpEdit(jobPipeline.home, result.action.edit, Date.now());
+          expData = readExpData(jobPipeline.home);
+          state.expPage = { ...state.expPage, edit: undefined, notice: 'Saved' };
+        } catch { state.expPage = { ...state.expPage, notice: 'Could not save EXP setting' }; }
+      }
       if (result.action?.type === 'refresh-models') refreshModelLists(true);
       if (result.action?.type === 'export-board') exportBoard();
       if (result.action?.type === 'role-edit') {
@@ -1364,17 +1377,17 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     syncModelListDiscovery();
     if (!settingsPage) probe.cancel();
   };
-  /** The decoder also hands over printable keys with no name, for the model picker: they count only once `m` has opened it. */
-  const typedForPicker = (inputs: WorkbenchInput[]) => {
-    let picking = Boolean(state.projectInput);
+  /** Pass unnamed text when an editor is open or could be opened in this batch. */
+  const editorInput = (inputs: WorkbenchInput[]) => {
+    let picking = Boolean(state.projectInput || state.expPage?.edit);
     return inputs.filter((i) => {
-      if (i.type !== 'key') return true;
-      if (i.key.startsWith('place-model')) picking = true;
+      if (i.type !== 'key') { picking ||= !!state.experiments && i.button === 'left'; return true; }
+      if (i.key.startsWith('place-model') || (state.experiments && i.key === 'enter')) picking = true;
       return Boolean(i.key) || picking;
     });
   };
   const dispatch = (all: WorkbenchInput[]) => {
-    const inputs = typedForPicker(all);
+    const inputs = editorInput(all);
     return withInputRefresh(
       inputs.length > 0,
       () => processInput(inputs),
