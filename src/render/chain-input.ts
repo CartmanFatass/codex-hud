@@ -53,7 +53,7 @@ export function finishChain(state: MonitorState): MonitorState {
     projectCursor: controlRoleItem(chain.role.role), splitFocus: undefined, splitList: undefined, splitSub: undefined, boardRevealed: undefined } };
 }
 
-/** The model field can take the existing pi picker (including zoom); other fields use an inline list. */
+/** The pi model field opens the panel-body picker; other fields use an inline list. */
 function fill(place: DraftPlace, field: 'model' | 'kind' | 'thinking' | 'effort', value?: string): DraftPlace {
   if (place.raw[field] === value) return place;
   const raw = { ...place.raw }, fact = { ...place.fact };

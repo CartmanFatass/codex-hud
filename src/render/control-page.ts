@@ -4,9 +4,8 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { placeDestination, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { CONTROL_FOLDS, controlRoleItem, controlRoleOf } from './control-navigation.js';
-import { effectiveModel, glyph, modelFieldRows, needsAttention, pickerPlace, pickerRows, placeRows, placeTarget, presetName, presetTag,
+import { effectiveModel, glyph, modelFieldRows, needsAttention, placeRows, placeTarget, presetName, presetTag,
   radarFacts, radarRows, radarSummary, roleModelDestination, roleName, roleToday, sourceLabel } from './control-view.js';
-import { pickerHints, type ModelInput } from './model-input.js';
 import { projectItem } from './project-view.js';
 import { projectSplitScene, type Shown } from './split-project.js';
 import { boardRow, footerLayout, hintText, kvRows, mark, pack, section, type FooterHints } from './workboard-rows.js';
@@ -175,18 +174,6 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
     return { ...scene, rule: sheet.rule, preview: sheet.rows, sub: sheet.cursor, hints: sheet.hints, compact: true };
   }
   return scene;
-}
-
-/** A narrow Split picker keeps the role context when there is room for the query, list and strip. */
-export function controlPickerScene(data: ProjectSnapshot, state: MonitorState, input: ModelInput, width: number, now: number, height: number, notes: number) {
-  const role = state.controlChain?.role ?? data.roles.find((r) => r.role === input.role)!;
-  const scene = { list: controlList(data, state, width, now, false), cursor: controlRoleItem(role.role),
-    rule: { label: roleName(role), right: state.controlChain?.draft
-      ? [presetName(state.controlChain.draft.name ?? role.preset), t('Not saved')].filter(Boolean).join(' · ') : pickerPlace(input, role.preset) }, preview: [] as MonitorRow[],
-    scope: 'control-picker', compact: true, sub: 'project:pick', hints: hintText(pickerHints(input)) };
-  const room = splitPreviewRoom(scene, state, height, notes);
-  if (room < 13) return;
-  return { ...scene, preview: pickerRows(data, input, width, room, now, true) };
 }
 
 function roleActions(role: RoleFact, width: number): MonitorRow[] {

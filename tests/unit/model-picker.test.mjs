@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { build } from '../../docs/design/model-picker/gen/frames.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
+import { modelInputEvent } from '../../dist/render/model-input.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { modelPickerSample, onControl, plain, projectFixture, richControl, NOW, TREE } from '../fixtures/project-page.mjs';
@@ -70,18 +71,17 @@ test('40-column entry, pinned and typed frames follow the sample in EN/ZH and bo
     compare(pinned, '2a', /^(?:\/|▸|⊘)/);
     assert.match(plain(pinned).join('\n'), en ? /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42m\n +grok-4.7 +\? unknown \[lab\]/
       : /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42分钟\n +grok-4.7 +\? 未知 \[lab\]/);
-    const backup = click(pinned, 3, rowY(pinned, /^ +openai\/gpt-6.1-sol +✗/));
-    assert.doesNotMatch(plain(draw(lang, backup.state)).join('\n'), /\[default\]/, 'the selected strip also omits the default preset tag');
+    const backup = draw(lang, send(pinned, 'down').state);
+    assert.doesNotMatch(plain(backup).join('\n'), /\[default\]/, 'the selected strip also omits the default preset tag');
     assert.doesNotMatch(plain(pinned).join('\n'), /Recent|最近|claude-opus|mistral-small/);
     let filtered = draw(lang, type(pinned, 'grok').state);
-    const y = rowY(filtered, /grok-4.7-fast$/);
-    const selected = click(filtered, 8, y);
-    assert.equal(selected.action, undefined);
-    filtered = draw(lang, selected.state);
+    for (let i = 0; i < 8 && !plain(filtered).some((row) => /^› .*grok-4.7-fast$/.test(row)); i++)
+      filtered = draw(lang, send(filtered, 'down').state);
     compare(filtered, '2b', /^(?:\/|▾|[› ]{4}grok-)/);
     picked(send(filtered, 'enter'), 'xai/grok-4.7-fast');
     for (const frame of [entry, pinned, filtered]) assert.ok(frame.lines.every((line) => visualLength(line) === 40));
-    if (layout === 'split') assert.ok(pinned.panes.some((p) => p.id === 'preview'));
+    assert.deepEqual(pinned.panes.map((p) => p.id), ['agents']);
+    assert.match(plain(pinned)[1], en ? /^imp #1 ─+ \[daily\] · pi$/ : /^imp 第 1 位 ─+ \[daily\] · pi$/);
     if (layout === 'split' && process.env.HUD_MODEL_PICKER_REPORT_FRAMES)
       for (const [id, frame] of [['1a', entry], ['2a', pinned], ['2b', filtered]]) console.log(`${lang} ${id}\n${frame.lines.map(stripAnsi).join('\n')}`);
   }
@@ -116,7 +116,7 @@ test('draft reorder keeps clickable pi and CLI model fields in the in-memory cha
   }
 });
 
-test('picker mouse folds off-cursor headers, scrolls only the list, and requires a second click to set', async (t) => {
+test('picker mouse folds headers, ignores non-options, sets in one click and cancels from the footer', async (t) => {
   const f = await fixture(t), { draw, state } = modelPickerSample(f);
   for (const layout of ['classic', 'split']) {
     const render = (state) => draw('en', state, 32);
@@ -124,22 +124,26 @@ test('picker mouse folds off-cursor headers, scrolls only the list, and requires
     assert.equal(click(frame, 2, field(frame, 1).y).state.projectInput, undefined, 'the rest of a place row is not the model field');
     frame = render(send(frame, 'place-model').state);
     const hit = (re) => { const out = click(frame, 3, rowY(frame, re)); assert.equal(out.action, undefined); frame = render(out.state); };
-    hit(/› ◉ xai\/grok-4.7/); // Already the cursor, but not yet clicked.
-    assert.ok(frame.state.projectInput);
+    const untouched = frame.state.projectInput;
+    for (const y of [0, 1, 2, rowY(frame, /^$/), rowY(frame, /^Selected /)]) {
+      const out = click(frame, 3, y);
+      assert.equal(out.action, undefined);
+      assert.deepEqual(out.state.projectInput, untouched);
+    }
+    const cancel = frame.controls.find((c) => c.kind === 'model-cancel');
+    assert.match(frame.lines[cancel.y].slice(cancel.x, cancel.x + cancel.width), /^esc cancel$/);
+    const closed = click(frame, cancel.x, cancel.y);
+    assert.equal(closed.action, undefined);
+    assert.equal(closed.state.projectInput, undefined);
+    assert.deepEqual(closed.state.controlNav, frame.state.controlNav);
+    const currentY = rowY(frame, /› ◉ xai\/grok-4.7/);
+    const set = modelInputEvent(frame.state, { type: 'mouse', button: 'left', x: 3, y: currentY }, { frame });
+    assert.deepEqual(set.action, { type: 'model-picked', value: 'xai/grok-4.7' });
+    assert.equal(set.state.projectInput, undefined);
     hit(/^▸ xai ─/);
     assert.match(plain(frame).join('\n'), /▾ xai ─+ 6\n[\s\S]*  ◉ grok-4.7/, 'the pin stays in the group too');
     hit(/^▾ xai ─/);
     assert.doesNotMatch(plain(frame).join('\n'), /^ {2}◉ grok-4.7$/m);
-    hit(/^▸ openai ─/);
-    const query = rowY(frame, /^\/ /), strip = plain(frame).slice(rowY(frame, /^Selected /));
-    const before = plain(frame), wheel = click(frame, 3, query + 1, 65);
-    assert.equal(wheel.action, undefined);
-    frame = render(wheel.state);
-    assert.notDeepEqual(plain(frame), before);
-    assert.equal(plain(frame)[query], before[query]);
-    assert.deepEqual(plain(frame).slice(-strip.length), strip);
-    frame = render(click(frame, 3, query + 1, 64).state);
-    assert.deepEqual(plain(frame), before);
     frame = render(type(frame, 'grok').state);
     hit(/^▾ arena ─/);
     assert.match(plain(frame).join('\n'), /^▸ arena /m);
@@ -147,14 +151,43 @@ test('picker mouse folds off-cursor headers, scrolls only the list, and requires
     assert.match(plain(frame).join('\n'), /^▾ arena /m);
     frame = render(send(frame, 'home').state);
     picked(send(frame, 'enter'), 'arena/grok-4.6'); // Headers are skipped by navigation.
-    const fast = /grok-4.7-fast$/;
-    hit(fast);
-    const out = click(frame, 3, rowY(frame, fast));
-    picked(out, 'xai/grok-4.7-fast');
+    picked(click(frame, 3, rowY(frame, /grok-4.7-fast$/)), 'xai/grok-4.7-fast');
     const tab = frame.controls.find((c) => c.kind === 'board-project');
-    const left = click(frame, tab.x, tab.y);
-    assert.equal(left.state.mainTab, 'control');
-    assert.ok(left.state.projectInput, 'the active field owns input');
+    assert.deepEqual(click(frame, tab.x, tab.y).state.projectInput, frame.state.projectInput, 'typing owns input');
+  }
+});
+
+test('wheel, arrows and page keys keep the cursor in the painted list at both widths', async (t) => {
+  const f = await fixture(t), { state, data } = modelPickerSample(f);
+  for (const width of [40, 100]) {
+    const draw = (state) => f.render(width, 'en', state, 24, data);
+    const window = (frame) => frame.panes[0].rows.find((row) => row.modelWindow).modelWindow;
+    const entry = draw(state()), browse = draw(send(entry, 'place-model').state);
+    const start = draw(type(browse, 'arena/').state);
+    assert.equal(type(start, '?').state.projectInput.text, 'arena/?');
+    assert.doesNotMatch(start.lines.at(-1), /↑↓|\? help/);
+    const { first, size } = window(start);
+    const paged = draw(send(start, 'page-down').state);
+    assert.equal(window(paged).first, first + size - 1);
+    assert.equal(window(paged).entries.find(({ id }) => id === paged.state.projectInput.pick).row, size);
+    assert.equal(window(draw(send(paged, 'page-up').state)).first, first);
+    let frame = start;
+    for (let row = 2; row < first + size; row++) {
+      frame = draw(send(frame, 'down').state);
+      assert.equal(window(frame).first, first, 'arrows do not scroll before the cursor passes the edge');
+    }
+    const crossed = draw(send(frame, 'down').state);
+    assert.equal(window(crossed).first, first + 2, 'crossing leaves one row of context below the cursor');
+    frame = start;
+    for (const distance of [3, 6]) {
+      frame = draw(click(frame, 3, 5, 65).state);
+      assert.equal(window(frame).first, first + distance);
+      assert.equal(rowY(frame, /^\/ /), rowY(start, /^\/ /));
+    }
+    const visible = frame.panes[0].rows.find((row) => row.item === 'project:pick');
+    assert.ok(visible, 'the cursor survives two wheel steps');
+    picked(send(frame, 'enter'), visible.modelHit.entry.slice('model:'.length));
+    assert.match(plain(frame).join('\n'), /^› /m);
   }
 });
 

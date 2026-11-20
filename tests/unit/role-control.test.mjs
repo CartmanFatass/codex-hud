@@ -311,9 +311,9 @@ test('Control uses inherited model and thinking when known and a clickable arrow
       assert.ok(s.session.state.projectInput);
       const clear = lang === 'en' ? (known ? "role's model (gpt-6.2-sol)" : 'clear') : (known ? '角色自带模型（gpt-6.2-sol）' : '清除');
       assert.ok(plain(draw()).some((row) => row.startsWith(`› ◉ ${clear}`)));
-      const zoom = s.render(120, lang, s.session.state, 36, s.session.snap, true, 'unicode', 'none', { modelPickerZoomed: true });
-      assert.ok(plain(zoom).some((row) => row.startsWith(`› ◉ ${clear}`)));
-      assert.match(plain(zoom).join('\n'), lang === 'en' ? /clears the model override/ : /清除imp/);
+      const wide = s.render(120, lang, s.session.state, 36, s.session.snap);
+      assert.ok(plain(wide).some((row) => row.startsWith(`› ◉ ${clear}`)));
+      assert.match(plain(wide).join('\n'), lang === 'en' ? /clears the model override/ : /清除imp/);
       assert.equal(stored(s, 'imp').model, undefined);
     }
   }
@@ -328,7 +328,8 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   await s.press('m');
   assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false, 'opening writes nothing');
   let page = lines40(s).join('\n');
-  assert.match(page, /Model ─+ pi · list 0m old/);
+  assert.match(page, /^imp #1 ─+ pi$/m);
+  assert.doesNotMatch(page, /list 0m old/);
   assert.match(page, /role's model \(model\)\n +from pi role/);
   assert.match(page, /\? ctx {2}\? out {2}think \? {2}img \?/, 'legacy caches still populate the picker, without invented facts');
   assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length}$`, 'm'));
@@ -527,18 +528,19 @@ test('CLI model and thinking fields list catalog entries inline and a miss leave
       for (const lang of ['en', 'zh']) for (const width of [32, 40, 56, 80, 120]) {
         const view = s.frame(width, lang, 14);
         for (const line of view.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-        for (const row of view.workboard.rows) assert.doesNotMatch(row.text, /\n/);
+        const rows = view.panes.flatMap((pane) => pane.rows);
+        for (const row of rows) assert.doesNotMatch(row.text, /\n/);
         assert.equal(view.lines.length, 14);
-        assert.equal(view.workboard.rows.filter((r) => r.item === 'project:pick').length <= 1, true);
+        assert.ok(rows.filter((r) => r.item === 'project:pick').length <= 1);
       }
     }
   }
   s.session.state = { ...s.session.state, panelLayout: 'classic' };
   const zh = plain(s.frame(40, 'zh', 14));
-  assert.match(zh.join('\n'), /^模型 ─+ pi · 列表 0分钟前$/m);
+  assert.match(zh[1], /^imp 第 1 位 ─+ pi$/);
   assert.match(zh[0], /首页.*项目.*控制/);
-  assert.match(zh.at(-1), /↑↓ 选择 +⏎ 设为 +esc 清除 +\^R 刷新/);
-  assert.match(plain(s.frame(40, 'en', 14)).at(-1), /↑↓ pick +⏎ set +esc clear +\^R refresh/);
+  assert.match(zh.at(-1), /^ *⏎ 设为 +esc 清除 +\^R 刷新$/);
+  assert.match(plain(s.frame(40, 'en', 14)).at(-1), /^ *⏎ set +esc clear +\^R refresh$/);
   assert.doesNotMatch(plain(s.frame(120, 'en', 14)).at(-1), /tab all|← back/);
   s.session.state = { ...initialMonitorState(), help: true };
   const help = plain(s.frame(80, 'en', 52)).join('\n').replace(/\n {8}/g, ' ');
@@ -550,8 +552,9 @@ test('CLI model and thinking fields list catalog entries inline and a miss leave
 });
 test('40-column picker preserves defaults, full IDs and capability strips in Classic and Split', async (t) => {
   const s = await setup(t);
-  for (const layout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
-    const frames = pickerFrames(s, undefined, layout);
+  const frames = pickerFrames(s);
+  assert.deepEqual(pickerFrames(s, undefined, 'classic'), frames, 'both layouts paint the same picker body');
+  for (const lang of ['en', 'zh']) {
     const grouped = frames[`pick-grouped-40-${lang}`].join('\n');
     assert.match(grouped, lang === 'en' ? /pi's model \(gpt-6.1-sol\)\n +from pi settings/ : /pi 自带模型（gpt-6.1-sol）\n +来自 pi 设置/);
     assert.ok(grouped.indexOf('anthropic ─') < grouped.indexOf('arena ─'));
@@ -615,7 +618,7 @@ test('pi picker paints live quota, off and unknown facts without offering off or
     assert.equal(page.match(/^⊘ off, not listed: deepseek$/gm)?.length, 1);
     exact();
     const frame = s.frame(40, 'en', 20);
-    assert.equal(frame.workboard.rows.find((r) => r.text.includes('not listed')).item, undefined);
+    assert.equal(frame.panes[0].rows.find((r) => r.text.includes('not listed')).item, undefined);
     assert.equal((await s.press(ENTER)).action, undefined);
     assert.equal(stored(s, 'imp').run[0].model, id);
     assert.ok(s.session.state.projectInput, 'Enter on the read-only reference does not close');
@@ -637,9 +640,15 @@ test('pi picker distinguishes the aged last-good list, offline catalog, and an a
   assert.doesNotMatch(collected({ status: { pi: { failed: true } } }), /openai ─/);
   const age = NOW - 2 * 3600000;
   const failed = collected({ pi: ['new-provider/new-model'], status: { pi: { failed: true, fetchedAt: age } } });
-  assert.match(failed, /list 2h old\n +Refresh failed/);
+  assert.match(failed, /Refresh failed/);
+  assert.doesNotMatch(failed, /list 2h old/);
+  const wide = plain(s.frame(120, 'en', 24)).join('\n');
+  assert.match(wide, /list 2h old/);
+  assert.match(wide, /Refresh failed/);
   assert.match(failed, /new-provider ─+ 1/);
   assert.doesNotMatch(failed, /Limited offline catalog/);
+  const stale = collected({ pi: ['new-provider/new-model'], status: { pi: { failed: false, fetchedAt: NOW - 25 * 3600000 } } });
+  assert.match(stale, /List is stale/);
   const empty = collected({ pi: [] });
   assert.match(empty, /\/ ▌ +0\n[\s\S]*No discovered models/);
   assert.doesNotMatch(empty, /Limited offline catalog|new-model|Refresh failed/);
@@ -863,7 +872,7 @@ test('the live panel applies explicit owner edits, including batched name input'
   assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-sol');
   out = '';
   child.stdin.write('m');
-  await until(() => /Model ─/.test(stripAnsi(out)), 'the quick picker reopened');
+  await until(() => /imp #1 ─/.test(stripAnsi(out)), 'the quick picker reopened');
   const file = join(s.hud, 'roles/imp.json');
   s.put(file, { ...stored(s, 'imp'), ownerChange: true });
   const changed = fs.readFileSync(file);

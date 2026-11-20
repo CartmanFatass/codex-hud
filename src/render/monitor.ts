@@ -82,8 +82,8 @@ export interface MonitorState {
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
-  /** Model picker on this place. Group overrides belong to the current query; the wheel moves the window, not the cursor. */
-  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: Record<string, boolean>; scroll?: number; clicked?: string; place?: PlaceFact };
+  /** Model picker on this place. Group overrides and viewport belong to the current query. */
+  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: Record<string, boolean>; scroll?: number; place?: PlaceFact };
   /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
   confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
@@ -144,7 +144,7 @@ export interface MonitorRow {
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
   modelHit?: { entry: string } | { provider: string };
-  modelWindow?: { first: number; max: number; wide?: boolean };
+  modelWindow?: { first: number; max: number; size: number; entries: { id: string; row: number }[]; wide?: boolean };
   harnessOff?: boolean;
   roleFact?: RoleFact;
   tryTarget?: TryTarget;
@@ -175,6 +175,7 @@ export interface MonitorControl {
     | 'control-harnesses'
     | 'control-open-file'
     | 'control-model'
+    | 'model-cancel'
     | 'harness-add'
     | 'harness-toggle'
     | 'harness-remove'
@@ -219,8 +220,6 @@ export interface MonitorData {
   project?: ProjectSnapshot;
   projectDisplayRoot?: string;
   projectWaiting?: number;
-  /** Herdr confirmed the panel's own pane is zoomed for this picker opening. */
-  modelPickerZoomed?: boolean;
   tryMarks?: ReadonlyMap<string, TryAction>;
   backupSkills?: BackupSkill[] | null;
   /** The shown project's own name, for the hub's top row. */

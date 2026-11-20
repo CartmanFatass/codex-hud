@@ -1,91 +1,36 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { setImmediate as nextTurn, setTimeout as delay } from 'node:timers/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
-import { modelPickerZoom } from '../../dist/cli/model-picker-zoom.js';
 import { markExhausted, placeKey } from '../../dist/roles/roster.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { build } from '../../docs/design/model-picker/gen/frames.mjs';
 import { modelPickerSample, onControl, projectFixture, TREE, NOW } from '../fixtures/project-page.mjs';
 
-const pane = 'w4E:p2', caller = 'w4E:p1';
-const on = ['pane', 'zoom', '--on', pane], off = ['pane', 'zoom', '--off', pane];
-const reply = (changed, zoomed = true) => ({ ok: true, stdout: JSON.stringify({ result: { type: 'pane_zoom', zoom: {
-  pane_id: pane, focused_pane_id: pane, zoomed, zoom_changed: changed, reason: !zoomed ? 'single_pane' : changed ? null : 'already_zoomed',
-} } }) });
-function fake(answer, inside = true) {
-  const calls = [], env = { HOME: process.env.HOME, HUD_HOME: process.env.HUD_HOME, HERDR_PANE_ID: inside ? pane : undefined, HUD_PANEL_CALLER_PANE: caller };
-  let repaints = 0;
-  const zoom = modelPickerZoom(env, () => repaints++, async (args) => { calls.push(args); return answer(args); });
-  return { zoom, calls, repaints: () => repaints };
-}
 const send = (frame, key) => handleMonitorInput(frame.state, typeof key === 'string' ? { type: 'key', key } : key, { frame, tree: TREE, nowMs: NOW });
 const click = (frame, x, y, button = 'left') => send(frame, { type: 'mouse', x, y, button });
 const type = (frame, text) => send(frame, { type: 'key', key: '', text });
 const cells = (frame) => frame.lines.map(stripAnsi);
-const sides = (frame) => cells(frame).slice(1, -1).map((line) => line.split('│').map((s) => s.trimEnd()));
+const sides = (frame) => cells(frame).slice(2, -1).map((line) => line.split('│').map((s) => s.trimEnd()));
 const left = (frame) => sides(frame).map(([l]) => l);
 const right = (frame) => sides(frame).map(([, r]) => r ?? '').join('\n');
 const yOf = (frame, re) => {
   const i = left(frame).findIndex((line) => re.test(line));
   assert.ok(i >= 0, `${re}\n${left(frame).join('\n')}`);
-  return i + 1;
+  return i + 2;
 };
 function fixture(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'hud-zoom-picker-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hud-picker-pane-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return projectFixture(dir);
 }
 
-test('Herdr zooms only the panel: owned restores, preexisting stays, refusals and no Herdr make no restore call', async () => {
-  for (const [inside, answer, wide, expected] of [
-    [true, reply(true), true, [on, off]],
-    [true, reply(false), true, [on]],
-    [true, { ok: false }, false, [on]],
-    [true, reply(false, false), false, [on]],
-    [true, { ok: true, stdout: '{' }, false, [on]],
-    [false, undefined, false, []],
-  ]) {
-    const { zoom, calls, repaints } = fake(() => answer, inside);
-    zoom.open();
-    assert.equal(zoom.zoomed, false, 'paint narrow while the asynchronous request is outstanding');
-    await nextTurn();
-    assert.equal(zoom.zoomed, wide);
-    assert.equal(repaints(), Number(wide), 'no repeated repaint for a refusal');
-    await zoom.close();
-    await zoom.close();
-    assert.equal(zoom.zoomed, false);
-    assert.deepEqual(calls, expected);
-  }
-});
-
-test('closing during delayed --on does not wait in input; restore precedes a subsequent opening', async () => {
-  const pending = Promise.withResolvers();
-  const { zoom, calls, repaints } = fake((args) => args[2] === '--off' ? reply(false, false) : pending.promise);
-  zoom.open();
-  await nextTurn();
-  assert.deepEqual(calls, [on]);
-  const restoring = zoom.close(); // Not awaited by input.
-  zoom.open();
-  await nextTurn();
-  assert.deepEqual(calls, [on]);
-  assert.equal(zoom.zoomed, false);
-  pending.resolve(reply(true));
-  await restoring;
-  await nextTurn();
-  assert.deepEqual(calls, [on, off, on]);
-  assert.equal(repaints(), 1, 'a reply for the closed picker must not paint it');
-  assert.equal(zoom.zoomed, true);
-  await zoom.close();
-  assert.deepEqual(calls, [on, off, on, off]);
-});
-
-test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exact uses, long IDs, provider off', async (t) => {
+test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, provider off', async (t) => {
   const f = await fixture(t), sample = modelPickerSample(f);
   const dataOff = {
     ...sample.data,
@@ -94,48 +39,48 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     roles: sample.data.roles.map((r) => r.role !== 'imp' ? r : { ...r, places: r.places.map((p, i) => i === 0 ? { ...p, state: 'off' } : i === 1 ? { ...p, state: 'active' } : p) }),
   };
   for (const layout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
-    const zh = lang === 'zh', drawing = (state, width = 120, zoomed, data = sample.data) => f.render(width, lang, state, 36, data, true, 'unicode', 'none', { modelPickerZoomed: zoomed });
+    const zh = lang === 'zh', drawing = (state, width = 120, data = sample.data) => f.render(width, lang, state, 36, data);
     const entry = sample.draw(lang, sample.state(layout), 24), opening = send(entry, 'place-model');
     assert.ok(opening.state.projectInput);
     const picker = opening.state;
-    const confirmed = fake(() => reply(true)), preexisting = fake(() => reply(false)), refused = fake(() => ({ ok: false }));
-    for (const { zoom } of [confirmed, preexisting, refused]) zoom.open();
-    await nextTurn();
-    const draw = (state, data = sample.data) => drawing(state, 120, confirmed.zoom.zoomed, data);
+    const draw = (state, data = sample.data) => drawing(state, 120, data);
     const a = draw(picker);
     assert.equal(a.lines.length, 36);
     assert.ok(a.lines.every((line) => visualLength(line) === 120));
-    assert.deepEqual(cells(a), cells(drawing(picker, 120, preexisting.zoom.zoomed)));
     assert.match(left(a).join('\n'), /^▾ anthropic ─+ 9\n +claude-opus-5-5 +500K +64K +✓ +✓/m);
     assert.match(left(a).join('\n'), /openai\/gpt-6.1-sol +1M +128K +✓ +✓ +✗/);
     assert.match(right(a), /xai\/grok-4.7/);
-    assert.match(cells(a)[0], zh ? /88 个模型 · 列表 2小时前 · 已放大/ : /88 models · list 2h old · zoomed/);
-    assert.equal(yOf(a, /^\/ /), 1);
+    assert.match(cells(a)[0], zh ? /首页.*项目.*控制/ : /Home.*Project.*Control/);
+    assert.match(cells(a)[1], zh ? /模型 · imp \[daily\] 第 1 位 · pi +88 个模型 · 列表 2小时前/ : /Model · imp \[daily\] place #1 · pi +88 models · list 2h old/);
+    assert.doesNotMatch(cells(a).join('\n'), /zoomed|已放大|restore|还原/);
+    assert.equal(yOf(a, /^\/ /), 2);
+    const boundary = drawing(picker, 100);
+    assert.ok(boundary.lines.every((line) => visualLength(line) === 100));
+    assert.equal(yOf(boundary, /^\/ /), 2);
+    assert.match(left(boundary).join('\n'), /^▾ anthropic ─+/m);
+    const narrow = drawing(picker, 99);
+    assert.match(cells(narrow).join('\n'), /^▸ anthropic ─+/m);
+    assert.doesNotMatch(cells(narrow)[2], /│/);
     const normalized = (line) => line.trim().replace(/ +/g, ' ');
     const modelHeader = build(lang).frames.find((frame) => frame.id === '3e').frame.rows[2].segs.map((s) => s.t).join('').split('│')[0];
     assert.equal(normalized(left(a)[1]), normalized(modelHeader));
-    const pending = drawing(picker);
-    assert.deepEqual(cells(drawing(picker, 120, refused.zoom.zoomed)), cells(pending));
-    assert.deepEqual(cells(drawing(picker, 99, confirmed.zoom.zoomed)), cells(drawing(picker, 99)));
-    assert.notDeepEqual(cells(drawing(picker, 100, true)), cells(drawing(picker, 100)));
-    assert.match(cells(pending).join('\n'), /^▸ anthropic ─+/m);
 
-    const bSelected = click(a, 5, yOf(a, /openai\/gpt-6.1-sol/));
-    assert.equal(bSelected.action, undefined);
-    const b = draw(bSelected.state);
+    const b = draw(send(a, 'down').state);
     assert.match(right(b), zh ? /✗ 已耗尽 · 42分钟后恢复/ : /✗ exhausted · resets in 42m/);
     for (const role of ['imp +(?:#1|第 1 位)', 'reviewer \\[pi\\]', 'oracle \\[fable\\][\\s\\S]*\\[architect\\]']) assert.match(right(b), new RegExp(role));
     assert.doesNotMatch(right(b), /\[default\]/);
     assert.match(right(b), zh ? /2小时前发现/ : /discovered 2h ago/);
-    assert.equal(click(b, 75, yOf(b, /openai\/gpt-6.1-sol/)).state.projectInput.pick, b.state.projectInput.pick, 'detail is not a second list');
-    const picked = click(b, 5, yOf(b, /openai\/gpt-6.1-sol/));
+    const detailClick = click(b, 75, yOf(b, /openai\/gpt-6.1-sol/));
+    assert.equal(detailClick.action, undefined, 'detail is not a second list');
+    assert.deepEqual(detailClick.state.projectInput, b.state.projectInput);
+    const picked = click(a, 5, yOf(a, /openai\/gpt-6.1-sol/));
     assert.equal(picked.action.type, 'preset-edit');
     assert.equal(picked.action.run[0].model, 'openai/gpt-6.1-sol');
     assert.equal(picked.state.controlChain.sheet, undefined);
     const wheel = draw(click(b, 2, 4, 'wheel-down').state);
     assert.notDeepEqual(left(wheel), left(b));
-    assert.equal(right(wheel), right(b));
     assert.equal(left(wheel)[0], left(b)[0]);
+    assert.match(left(wheel).join('\n'), /^› /m);
     const folded = draw(click(a, 2, yOf(a, /^▾ anthropic /)).state);
     assert.match(left(folded).join('\n'), /^▸ anthropic /m);
     assert.doesNotMatch(left(folded).join('\n'), /claude-opus-5-5/);
@@ -175,13 +120,12 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     }
     const sampleOff = build(lang).frames.find((frame) => frame.id === '3e').frame.rows.map((r) => r.segs.map((s) => s.t).join('').split('│')[0]);
     assert.deepEqual(left(e).filter((s) => /^[▸⊘/]/.test(s)).map(normalized), sampleOff.filter((s) => /^[▸⊘/]/.test(s)).map(normalized));
-    if (layout === 'split' && process.env.HUD_MODEL_PICKER_ZOOM_REPORT)
-      for (const [id, frame] of [['3a', a], ['3e', e]]) console.log(`${lang} ${id}\n${cells(frame).join('\n')}`);
-    for (const { zoom } of [confirmed, preexisting, refused]) await zoom.close();
+    if (layout === 'split' && process.env.HUD_MODEL_PICKER_REPORT_FRAMES)
+      for (const [width, frame] of [[100, boundary], [120, a]]) console.log(`${lang} ${width}×36\n${cells(frame).join('\n')}`);
   }
 });
 
-test('live panel wiring opens with herdr on PATH and restores its own pane on shutdown', { timeout: 10000 }, async (t) => {
+test('live picker paints wide immediately and never asks herdr to zoom or restore', { timeout: 10000 }, async (t) => {
   const f = await fixture(t), log = join(f.cwd, 'herdr-log');
   f.put(join(f.hud, 'hud-settings.json'), { language: 'en', modelEnabled: false, theme: 'none', panelLayout: 'classic' });
   const exhausted = { harness: 'pi', pi_role: 'implementer', model: 'synthetic/exhausted' };
@@ -192,7 +136,7 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
   f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: ['synthetic/current', 'synthetic/next'] });
   const herdr = join(f.env.PATH, 'herdr');
   f.put(herdr, `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\n` +
-    `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nconsole.log(${JSON.stringify(reply(true).stdout)});\n`);
+    `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nprocess.exitCode = 97;\n`);
   chmodSync(herdr, 0o700);
   const state = onControl({ projectCursor: 'project:role:imp' });
   const place = JSON.stringify({ state, settings: null }, (_k, v) => v instanceof Set ? { panelSet: [...v] } : v);
@@ -200,7 +144,7 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
   const child = spawn(process.execPath, ['--input-type=module', '-e',
     `process.stdout.columns = 120; process.stdout.rows = 36; await (await import(${JSON.stringify(entry)})).runLivePage();`], {
     cwd: f.cwd, stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...f.env, PATH: `${f.env.PATH}:${dirname(process.execPath)}`, HERDR_PANE_ID: pane, HERDR_SOCKET_PATH: join(f.cwd, 'fake.sock'),
+    env: { ...f.env, PATH: `${f.env.PATH}:${dirname(process.execPath)}`, HERDR_PANE_ID: 'w4E:p2', HERDR_SOCKET_PATH: join(f.cwd, 'fake.sock'),
       HUD_PANEL_RELOAD_PLACE: place, CODEX_HUD_STANDALONE_PANEL: '1' },
   });
   let output = '', stderr = '';
@@ -216,10 +160,14 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
     assert.fail(`missing ${re}: ${stderr}\n${stripAnsi(output)}`);
   };
   await waitFor(/imp → synthetic\/current/);
-  child.stdin.write('m');
-  await waitFor(/2 models · list .* old · zoomed/);
   output = '';
-  child.stdin.write('next\r');
+  child.stdin.write('m');
+  await waitFor(/2 models · list .* old[\s\S]*│/);
+  assert.doesNotMatch(stripAnsi(output), /imp #2 ─/, 'the first update is already wide');
+  output = '';
+  child.stdin.write('next');
+  await waitFor(/1 \/ 2 matches[\s\S]*› +next/);
+  child.stdin.write('\x1b[<0;5;6M');
   await waitFor(/✓ imp #2 → synthetic\/next/);
   assert.doesNotMatch(stripAnsi(output), /Edit place|Not saved/);
   const role = JSON.parse(readFileSync(join(f.hud, 'roles/imp.json'), 'utf8'));
@@ -227,8 +175,10 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
   assert.equal(role.run[1].model, 'synthetic/next');
   output = '';
   child.stdin.write('m');
-  await waitFor(/2 models · list .* old · zoomed/);
+  await waitFor(/2 models · list .* old/);
   child.kill('SIGTERM');
   assert.deepEqual(await exited, { code: 0, signal: null }, stderr);
-  assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse).filter((args) => args[1] === 'zoom'), [on, off, on, off]);
+  const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
+  // The panel's background job observation is independent of the picker.
+  for (const args of calls) assert.deepEqual(args, ['agent', 'list', '--json']);
 });

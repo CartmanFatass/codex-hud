@@ -4,7 +4,7 @@ import type { ControlRadar, RoleRadar } from '../collectors/control-radar.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { placeDestination, placeItem, placeModels, type PlaceFact, type PlaceState, type RoleFact } from '../roles/role-control.js';
 import type { MonitorRow } from './monitor.js';
-import { pickOf, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
+import { pickerListWindow, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { boardRow, section, mark, kvRows, minuteAge } from './workboard-rows.js';
 import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
@@ -108,12 +108,6 @@ export function pickerFact(entry: PickEntry, now: number, detail = false) {
 export const pickerCap = (yes: boolean | undefined) => yes === undefined ? theme.board.muted('?')
   : yes ? theme.board.success(mark('✓', '+')) : theme.board.muted(mark('–', '-'));
 
-export function pickerListWindow(list: MonitorRow[], input: ModelInput, size: number) {
-  const max = Math.max(0, list.length - size), at = list.findIndex((row) => row.item === 'project:pick');
-  const first = input.scroll === undefined ? Math.max(0, Math.min(max, at - Math.floor(size / 2)))
-    : Math.max(0, Math.min(input.clicked ? Math.max(0, list.length - 1) : max, input.scroll));
-  return { first, max };
-}
 export function pickerQuery(input: ModelInput, pick: ModelPick, window: NonNullable<MonitorRow['modelWindow']>, count: string, width: number): MonitorRow {
   const queryRoom = width - visualLength(count) - 4;
   let tail = monitorText(input.text);
@@ -128,13 +122,10 @@ export function pickerQuery(input: ModelInput, pick: ModelPick, window: NonNulla
 }
 
 /** Narrow picker: keep the query and selected ID outside the scrolling list. */
-export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: number, room: number, now: number, inPreview = false): MonitorRow[] {
-  const pick = pickOf(data, input)!, view = pickView(pick, input), { place, lists } = pick;
+export function pickerRows(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, room: number, now: number): MonitorRow[] {
+  const view = pickView(pick, input), { place, lists } = pick;
   const piStatus = lists.piStatus, fetchedAt = piStatus?.fetchedAt;
-  const age = fetchedAt === undefined ? '' : t('list {age} old', { age: pickerAge(fetchedAt, now) });
-  const where = monitorText(input.role), role = data.roles.find((role) => role.role === input.role);
-  const rows = [...(inPreview ? [] : [section(where, width, pickerPlace(input, role?.preset))]),
-    section(t('Model'), width, [place.label, age].filter(Boolean).join(' · '))];
+  const where = monitorText(input.role), rows: MonitorRow[] = [];
   const notice = (text: string) => boardRow(fit('  ' + theme.board.attention(text), width));
   if (piStatus?.failed) rows.push(notice(t('Refresh failed')));
   else if (fetchedAt !== undefined && now - fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
@@ -144,7 +135,7 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
     if (fact || !detail) return fact;
     if (!entry.current) return theme.board.muted(t('Enter sets it · not the current model'));
     const label = t('current');
-    const extra = [where, presetTag(role?.preset), t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' ');
+    const extra = [where, presetTag(pick.preset), t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' ');
     return `${theme.board.active(mark('◉', '@'))} ${theme.board.muted(visualLength(label + ' · ' + extra) + 4 <= width ? `${label} · ${extra}` : label)}`;
   };
   const selected = view.selected;
@@ -176,10 +167,11 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
       }
     }
   } else detail.push(detailLine(theme.board.muted(t('No selection'))));
-  // If the pane is too short even for the query and strip, drop the strip's heading first.
-  if (room <= detail.length) detail.shift();
+  // Keep a row for the cursor even when the strip wraps or the pane is short.
+  if (room < detail.length + 2) detail.shift();
+  detail.length = Math.min(detail.length, Math.max(0, room - 2));
   const off = data.harnessSwitches?.filter((item) => item.group === 'provider' && item.off).map((item) => monitorText(item.name)).sort();
-  const offLine = off?.length && room >= detail.length + 2
+  const offLine = off?.length && room >= detail.length + 3
     ? boardRow(fit(theme.board.muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.join(' · ') })}`), width)) : undefined;
   if (input.text.trim() && view.current?.fact && room >= rows.length + detail.length + 4 + Number(!!offLine)) {
     const label = t('current'), fact = stateOf(view.current);
@@ -227,8 +219,6 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   rows.push(...detail);
   return rows;
 }
-export const pickerPlace = (input: ModelInput, preset?: string | null) =>
-  [presetTag(preset), t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' · ');
 
 export function radarFacts(radar: ControlRadar | undefined) {
   const quotas = (['codex', 'claude'] as const).flatMap((client) => {

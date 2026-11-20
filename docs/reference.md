@@ -531,18 +531,18 @@ Unset thinking likewise shows the known value in muted text or stays blank. If y
 with Enter, its Model field still fills the form: choose Done to put the place in the draft, then `s` to save.
 With an empty query, the picker pins the current model and compatible models from this role's named
 presets, tagged except for `default`. No recent history is kept. Pinned models also stay in their provider groups.
-Opening the picker asks herdr to zoom the panel's own pane. Closing restores the split only if this
-picker zoomed it; an already zoomed pane stays zoomed. At 100 columns or more after a confirmed zoom,
-pi provider groups start open. Their rows show context, max output, thinking, images and HUD state.
-The read-only right column wraps the full model ID and shows those facts, whether it is current, which
-roles and presets use it, list age, and what Enter will do. Below 100 columns, outside herdr, or if zoom
-fails, the narrow picker keeps provider groups folded with counts and puts the selected ID and facts
-in the bottom strip. Missing pi facts show `?`.
+The picker opens in the panel's own pane and fills the body below the tabs in Classic and Split.
+It does not zoom the pane. At 100 columns or more, including outside herdr, provider groups start open.
+Their rows show context, max output, thinking, images and HUD state. The read-only right column wraps
+the full model ID and shows those facts, whether it is current, which roles and presets use it, list age,
+and what Enter will do. Below 100 columns, provider groups start folded with counts and the selected ID
+and facts appear in the bottom strip. Missing pi facts show `?`.
 
 Type any part of the full `provider/model` (any case) to hide the pins and open matching groups.
-In either layout, click a provider header to fold or unfold it; click a model to select it and click the
-same row again to set it. The wheel scrolls only the list. ↑↓/PgUp/PgDn select and Enter sets. Esc clears
-a typed filter first, then closes without setting; Ctrl+C closes immediately. `◉` marks the current
+In either layout, click a provider header to fold or unfold it; one click on a model sets it. The wheel
+scrolls three list rows at a time, keeping the selection visible. ↑↓ move without recentering the list,
+and PgUp/PgDn move one visible list window less one row. Enter sets. Esc clears a typed filter first,
+then closes without setting; clicking `esc cancel` or pressing Ctrl+C closes immediately. `◉` marks the current
 assignment and `›` marks the cursor. A long model ID is shortened in the middle in the list.
 Pi rows mark exhaustion with `✗` and time to reset. `⊘` means off and `?` means an unknown provider.
 One muted line names off providers; their models are not offered. A read-only current model stays
@@ -557,8 +557,9 @@ and `r`) type into the filter; Backspace edits it.
 The bounded list commands (`pi --list-models`, `agy models`, `grok models`) run when Control opens
 with an absent or stale pi list (one-day cache), or on `r` in Control outside the picker or Ctrl+R
 (`^R`) inside it. Overlapping refreshes coalesce; typing, redraws and ticks never run them. The same
-cache under `$HUD_HOME/display` holds the last good results and pi model facts; older caches still open. On failure the picker shows their age; without a
-successful pi list it labels the limited offline catalog. A successful empty pi list is shown as
+cache under `$HUD_HOME/display` holds the last good results and pi model facts; older caches still open.
+The wide picker shows the list age; both widths flag a failed refresh or a stale list. Without a
+successful pi list the picker labels the limited offline catalog. A successful empty pi list is shown as
 empty. Other harnesses' fields use their separate catalogs, merging discovered models where supported,
 then shipped and owner catalog models, then models from owner role files. A chain save updates only its
 owner role file, keeping unrelated fields and presets. `x` writes `$HUD_HOME/exhausted.json`, not the
@@ -710,7 +711,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `N`, `I`, `R`, `D` | Control role row: start a copied or empty draft, rename the selected preset, or preview and confirm deletion |
 | `h` | Control: switch Roles / Harnesses (or click the view heading) |
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
-| `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the pi picker, a second click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
+| `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the pi picker, one click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
@@ -732,7 +733,8 @@ Standalone panels consume their own keys and SGR mouse events directly.
 Mouse clicks select a row/button, a second click on the selected item runs Enter's
 action (Project hub links, Inspector file links and Home progress-block links open
 on one click), clicking the top crumb goes back, clicking a tab switches tabs, and
-wheel scrolling moves the viewport without moving the selection.
+wheel scrolling moves the viewport without moving the selection. The pi picker is an exception:
+one click sets a model and scrolling keeps the selection visible.
 
 ### Split layout
 

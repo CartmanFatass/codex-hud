@@ -1,17 +1,17 @@
-/** The zoomed picker is still one list. Only its left column has input targets. */
+/** The picker owns the panel body. When wide, only its left column is a list. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
 import { placeModels, type PlaceFact } from '../roles/role-control.js';
 import { qualifiedPiProvider } from '../roles/roster.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
-import { pickerAge, pickerCap, pickerFact, pickerListWindow, pickerQuery, presetTag } from './control-view.js';
+import { pickerAge, pickerCap, pickerFact, pickerQuery, pickerRows, presetTag } from './control-view.js';
 import { t } from './i18n.js';
-import { pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
+import { pickerListWindow, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import type { MonitorFrame, MonitorRow } from './monitor.js';
-import { boardCursor, footRow, hintText, mark, section } from './workboard-rows.js';
+import { boardCursor, footerLayout, footRow, mark, section } from './workboard-rows.js';
 
-export const MODEL_PICKER_WIDE = 100;
+const MODEL_PICKER_WIDE = 100;
 const muted = (s: string) => theme.board.muted(s);
 const placeName = (role: string, preset: string | null | undefined) => [monitorText(role), presetTag(preset)].filter(Boolean).join(' ');
 const location = (role: string, preset: string | null | undefined, index: number) => `${placeName(role, preset)} ${t('#{n}', { n: index + 1 })}`;
@@ -67,7 +67,7 @@ function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view:
     : off ? t('pi is off') : t('provider unknown'), off ? muted : theme.board.text);
   const [ctx, out, thinking, images] = capsOf(pick, entry) ?? [];
   const fields = `${monitorText(ctx ?? '?')}    ${t('max out')} ${monitorText(out ?? '?')}`;
-  // The field names are short enough to fit together even at the minimum zoom width.
+  // The field names are short enough to fit together even at the minimum two-column width.
   top.push(`${muted(fit(t('context'), 10))} ${fields}`,
     `${muted(fit(t('features'), 10))} ${t('thinking')} ${pickerCap(thinking)}    ${t('images')} ${pickerCap(images)}`);
   if (entry.value === '' && pick.place.piModel?.defaultSource) top.push(...valueRows('', t(pick.place.piModel.defaultSource), muted));
@@ -106,8 +106,8 @@ function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view:
   return [...header, ...top, ...usage.slice(0, room), ...bottom];
 }
 
-export function paintZoomedPicker(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, height: number, now: number) {
-  const left = Math.floor(width * 7 / 12), rightWidth = width - left - 1, room = height - 2;
+function wideRows(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, room: number, now: number) {
+  const left = Math.floor(width * 7 / 12), rightWidth = width - left - 1;
   const view = pickView(pick, input, true), status = pick.lists.piStatus;
   const age = status?.fetchedAt === undefined ? '' : t('list {age} old', { age: pickerAge(status.fetchedAt, now) });
   const filtered = !!input.text.trim(), count = filtered ? new Set(placeModels(pick.place, pick.lists)).size : view.total;
@@ -118,9 +118,9 @@ export function paintZoomedPicker(frame: MonitorFrame, data: ProjectSnapshot, in
   const offLine = off?.length ? muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.map(monitorText).join(' · ') })}`) : '';
   const offBadge = provider ? `${monitorText(provider)} ${mark('⊘', 'x')}` : '';
   const where = ` ${t('Model')} · ${placeName(input.role, pick.preset)} ${t('place #{n}', { n: input.index + 1 })} · ${monitorText(pick.place.label)}`;
-  const titles = [total, age, offBadge, t('zoomed')].filter(Boolean).join(' · ');
-  const shorter = [total, age, t('zoomed')].filter(Boolean).join(' · ');
-  frame.lines[0] = theme.board.title(fit(pair(where, `${visualLength(where) + visualLength(titles) + 2 <= width ? titles : shorter} `, width), width));
+  const titles = [total, age, offBadge].filter(Boolean).join(' · ');
+  const shorter = [total, age].filter(Boolean).join(' · ');
+  frame.lines[1] = theme.board.title(fit(pair(where, `${visualLength(where) + visualLength(titles) + 2 <= width ? titles : shorter} `, width), width));
 
   const idWidth = left - 38, cols = (ctx: string, out: string, thinking: string, images: string) =>
     ` ${end(ctx, 6)} ${end(out, 5)} ${center(thinking, 5)} ${center(images, 4)}`;
@@ -152,20 +152,49 @@ export function paintZoomedPicker(frame: MonitorFrame, data: ProjectSnapshot, in
   if (pick.lists.piStatus?.runnerOff) list.push({ text: muted(t('pi is off')) });
   else if (pick.lists.piStatus?.empty) list.push({ text: muted(t('No discovered models')) });
   else if (!view.groups.length && !view.selected) list.push({ text: muted(t('No matching models')) });
-  const size = Math.max(0, room - 2 - Number(!!offLine));
-  const window = pickerListWindow(list, input, size);
+  const showColumns = room >= 3, showOff = !!offLine && room >= 4;
+  const size = Math.max(0, room - 1 - Number(showColumns) - Number(showOff));
+  const window = pickerListWindow(list, input, size, true);
   const matches = filtered ? t('{n} / {total} matches', { n: view.total, total: count }) : String(view.total);
-  const rows: MonitorRow[] = [pickerQuery(input, pick, { ...window, wide: true }, matches, left), { text: muted(columns) },
+  const rows: MonitorRow[] = [pickerQuery(input, pick, window, matches, left), ...(showColumns ? [{ text: muted(columns) }] : []),
     ...list.slice(window.first, window.first + size)];
-  if (offLine) rows.push({ text: offLine });
+  if (showOff) rows.push({ text: offLine });
   const details = detail(data, input, pick, view, rightWidth - 1, room, now);
   const divider = theme.board.frame(mark('│', '|'));
   for (let i = 0; i < room; i++) {
     const row = rows[i], l = fit(row?.paint?.() ?? row?.text ?? '', left);
-    frame.lines[i + 1] = theme.board.text((row?.item === 'project:pick' ? boardCursor(l) : l) + divider + fit(` ${details[i] ?? ''}`, rightWidth));
+    frame.lines[i + 2] = theme.board.text((row?.item === 'project:pick' ? boardCursor(l) : l) + divider + fit(` ${details[i] ?? ''}`, rightWidth));
   }
-  const closeHint = input.text ? 'esc clear' : 'esc close and restore';
-  frame.lines[height - 1] = theme.board.text(fit(footRow('', hintText(`type to filter  ↑↓ pick  ⏎ set  click a header: fold  ^R refresh  ${closeHint}`), width), width));
-  frame.panes.push({ id: 'agents', x: 0, y: 1, width: left, height: room, offset: 0, contentLength: rows.length, edge: 0, visible: room, rows });
+  return { rows, listWidth: left };
+}
+
+function narrowRows(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, room: number, now: number) {
+  const where = location(input.role, null, input.index), harness = monitorText(pick.place.label);
+  const right = [presetTag(pick.preset), harness].filter(Boolean).join(' · ');
+  frame.lines[1] = theme.board.text(fit(section(where, width, visualLength(where + right) + 2 <= width ? right : harness).text, width));
+  const rows = room ? pickerRows(data, input, pick, width, room, now) : [];
+  rows.forEach((row, i) => {
+    const line = fit(row.text, width);
+    frame.lines[i + 2] = theme.board.text(row.item === 'project:pick' ? boardCursor(line) : line);
+  });
+  return { rows, listWidth: width };
+}
+
+export function paintModelPicker(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, height: number, now: number) {
+  const room = height - 3, wide = width >= MODEL_PICKER_WIDE;
+  if (room >= 0) {
+    const { rows, listWidth } = wide ? wideRows(frame, data, input, pick, width, room, now)
+      : narrowRows(frame, data, input, pick, width, room, now);
+    frame.panes.push({ id: 'agents', x: 0, y: 2, width: listWidth, height: room, offset: 0, contentLength: rows.length, edge: 0, visible: room, rows });
+  }
+  if (height > 1) {
+    const hints = { modal: ['⏎ set', input.text ? 'esc clear' : 'esc cancel', '^R refresh',
+      ...(wide ? ['type to filter', 'click a header: fold'] : [])] };
+    const y = height - 1;
+    frame.lines[y] = theme.board.text(footRow('', hints, width));
+    const cancel = footerLayout(hints, width).find(({ key }) => key === 'esc cancel');
+    if (cancel) frame.controls.push({ kind: 'model-cancel', x: cancel.x, width: cancel.width, y });
+  }
+  frame.lines[0] = theme.board.text(fit(frame.lines[0]!, width));
   return frame;
 }

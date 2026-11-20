@@ -4,7 +4,7 @@ import { MODEL_ID_MAX } from '../roles/model-discovery.js';
 import { qualifiedPiProvider } from '../roles/roster.js';
 import { placeItem, placeModels, type ModelLists, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
+import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { monitorRowAt } from './monitor-input.js';
 import { t } from './i18n.js';
 
@@ -31,8 +31,6 @@ export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput): Mo
   const role = data?.roles.find((r) => r.role === input.role), place = input.place;
   return data && role && place?.harness === 'pi' && role.source !== 'project' ? { place, lists: data.models, presets: role.presets, preset: role.preset } : undefined;
 }
-
-export const pickerHints = (input: ModelInput) => `↑↓ pick  ⏎ set  ${input.text ? 'esc clear' : 'esc cancel'}  ^R refresh`;
 
 export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
   const { place, lists, presets } = pick, typed = input.text.trim(), needle = typed.toLowerCase();
@@ -92,67 +90,78 @@ export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
   return { entries, pinned, groups: byProvider, fallback, selected, current, total: ids.length };
 }
 
-/** The picker owns keys and its viewport. Outside clicks still go through the existing panel routing. */
-export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | undefined {
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+
+/** One viewport in painted rows (including headers), shared by rendering and input. */
+export function pickerListWindow(list: MonitorRow[], input: ModelInput, size: number, wide = false) {
+  const max = Math.max(0, list.length - size), at = list.findIndex((row) => row.item === 'project:pick');
+  let first = clamp(input.scroll ?? 0, 0, max);
+  if (at >= 0 && size) first = clamp(first, Math.max(0, at - size + 1), at);
+  const entries = list.flatMap(({ modelHit }, row) => modelHit && 'entry' in modelHit ? [{ id: modelHit.entry, row }] : []);
+  return { first, max, size, entries, wide };
+}
+
+/** The picker owns input; only the list and its cancel hint have click targets. */
+export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   const open = state.projectInput!, next: MonitorState = { ...state, projectInput: { ...open } };
   const typed = next.projectInput!, done = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
-  const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
+  const close = () => { next.projectInput = undefined; return done(); };
+  const pane = ctx.frame?.panes.find((p) => p.id === 'agents');
   const query = pane?.rows.find((r) => r.modelPick && r.item === placeItem(open.role, open.index));
   const pick = query?.modelPick, window = query?.modelWindow;
-  if (!pick || !window) {
-    next.projectInput = undefined;
-    return input.type === 'key' ? done() : undefined;
+  const filter = (text: string) => Object.assign(typed, { text, pick: undefined, groups: undefined, scroll: undefined });
+  if (input.type === 'key') {
+    if (input.text !== undefined) { filter([...typed.text, ...input.text].slice(0, MODEL_ID_MAX).join('')); return done(); }
+    if (input.key === 'backspace') { filter([...typed.text].slice(0, -1).join('')); return done(); }
+    if (input.key === 'model-refresh') return done({ type: 'refresh-models' });
+    if (input.key === 'escape' && typed.text) { filter(''); return done(); }
+    if (input.key === 'escape' || input.key === 'close') return close();
   }
-  const view = pickView(pick, typed, window.wide);
-  const set = (entry = view.selected) => {
-    if (entry?.value === undefined) {
-      if (window.wide && entry?.current) next.projectInput = undefined;
-      return done();
-    }
+  if (input.type === 'mouse' && input.button === 'left' &&
+      ctx.frame?.controls.some((c) => c.kind === 'model-cancel' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width)) return close();
+  if (!pane || !pick || !window?.size) return done();
+  const { first, max, size, entries } = window;
+  const view = pickView(pick, typed, window.wide), index = entries.findIndex(({ id }) => id === view.selected?.id);
+  const set = (entry: PickEntry | undefined) => {
+    if (entry?.value === undefined) return window.wide && entry?.current ? close() : done();
     next.projectInput = undefined;
     return done({ type: 'model-picked', value: entry.value });
   };
   if (input.type === 'mouse') {
-    if (input.button !== 'left') {
-      typed.scroll = Math.max(0, Math.min(window.max, window.first + (input.button === 'wheel-down' ? 3 : -3)));
-      typed.clicked = undefined;
-      return done();
-    }
-    if (!pane || input.x < pane.x || input.x >= pane.x + pane.width || input.y < pane.y || input.y >= pane.y + pane.height) {
-      // The wide picker fills the panel, but only the left column has hit targets.
-      if (window.wide) { typed.clicked = undefined; return done(); }
-      return;
-    }
-    const hit = monitorRowAt(pane, input.x, input.y)?.modelHit;
-    if (hit && 'entry' in hit) {
-      const entry = view.entries.find((e) => e.id === hit.entry);
-      if (entry && typed.clicked === entry.id && view.selected?.id === entry.id) return set(entry);
-      typed.pick = typed.clicked = hit.entry;
-      typed.scroll = window.first;
-    } else {
-      typed.clicked = undefined;
+    if (input.button === 'left') {
+      const hit = monitorRowAt(pane, input.x, input.y)?.modelHit;
+      if (hit && 'entry' in hit) return set(view.entries.find((e) => e.id === hit.entry));
       if (hit && 'provider' in hit) {
-        const group = view.groups.find((g) => g.provider === hit.provider);
-        if (!group) return done();
+        const group = view.groups.find((g) => g.provider === hit.provider)!;
         typed.groups = { ...typed.groups, [group.provider]: !group.open };
-        const changed = pickView(pick, typed, window.wide);
-        if (typed.pick && !changed.entries.some((entry) => entry.id === typed.pick)) typed.pick = undefined;
-        typed.scroll = window.first;
+        if (group.open && group.entries.some(({ id }) => id === typed.pick)) typed.pick = undefined;
+        typed.scroll = first;
       }
+    } else if (index >= 0) {
+      typed.scroll = clamp(first + (input.button === 'wheel-down' ? 3 : -3), 0, max);
+      const edge = clamp(entries[index]!.row, typed.scroll, typed.scroll + size - 1);
+      // If there are only headers in the new window, use the nearest selectable row instead.
+      typed.pick = entries.reduce((best, entry) => Math.abs(entry.row - edge) < Math.abs(best.row - edge) ? entry : best).id;
     }
     return done();
   }
-  const filter = (text: string) => Object.assign(typed, { text, pick: undefined, groups: undefined, scroll: undefined, clicked: undefined });
-  if (input.text !== undefined) filter([...typed.text, ...input.text].slice(0, MODEL_ID_MAX).join(''));
-  else if (input.key === 'backspace') filter([...typed.text].slice(0, -1).join(''));
-  else if (['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(input.key)) {
-    const step = input.key === 'up' ? -1 : input.key === 'page-up' ? -5 : input.key === 'page-down' ? 5 : 1;
-    const at = input.key === 'home' ? 0 : input.key === 'end' ? view.entries.length - 1 : view.entries.indexOf(view.selected!) + step;
-    typed.pick = view.entries[Math.max(0, Math.min(view.entries.length - 1, at))]?.id;
-    typed.scroll = typed.clicked = undefined;
-  } else if (input.key === 'enter') return set();
-  else if (input.key === 'model-refresh') return done({ type: 'refresh-models' });
-  else if (input.key === 'escape' && typed.text) filter('');
-  else if (input.key === 'escape' || input.key === 'close') next.projectInput = undefined;
+  if (input.key === 'enter') return set(view.selected);
+  if (index < 0) return done();
+  const step = input.key === 'up' || input.key === 'page-up' ? -1 : 1;
+  let at = clamp(index + step, 0, entries.length - 1);
+  let scroll = first;
+  if (input.key === 'home') at = 0;
+  else if (input.key === 'end') at = entries.length - 1;
+  else if (input.key === 'page-up' || input.key === 'page-down') {
+    const delta = step * Math.max(1, size - 1), target = entries[index]!.row + delta;
+    while (entries[at + step] && step * (entries[at]!.row - target) < 0) at += step;
+    scroll = clamp(first + delta, 0, max);
+  } else if (input.key === 'up' || input.key === 'down') {
+    const row = entries[at]!.row;
+    if (row < first) scroll = Math.max(0, row - 1);
+    if (row >= first + size) scroll = Math.min(max, row - Math.max(0, size - 2));
+  } else return done();
+  typed.scroll = scroll;
+  typed.pick = entries[at]!.id;
   return done();
 }

@@ -211,7 +211,7 @@ test('quick model role, picker and saved notice fit in both layouts and language
     assert.match(frame('row').join('\n'), /^  ◉ imp \[daily\] → xai\/grok-4.7 *$/m);
     assert.match(frame('row').join('\n'), /^  ◉ reviewer → mistral\/mistral-small-4 *$/m);
     assert.match(frame('row').at(-1), zh ? /^ *m 模型/ : /^ *m model/);
-    assert.match(frame('picker').join('\n'), /^› ◉ xai\/grok-4.7 *$/m);
+    assert.match(frame('picker').join('\n'), width < 100 ? /^› ◉ xai\/grok-4\.7 *$/m : /^› ◉ xai\/grok-4\.7 +[^│]*│/m);
     assert.match(frame('saved').join('\n'), zh ? /^✓ imp 第 1 位 → xai\/grok-4.7-fast *$/m : /^✓ imp #1 → xai\/grok-4.7-fast *$/m);
     assert.match(frame('saved').join('\n'), /^  ◉ imp \[daily\] → xai\/grok-4.7-fast *$/m);
     if (layout === 'split') {

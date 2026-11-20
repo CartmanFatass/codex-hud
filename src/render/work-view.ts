@@ -7,9 +7,9 @@ import { homeRows } from './home-view.js';
 import { skillsRows } from './skills-view.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
-import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, hintText, homeDoneCount, mark, type FooterHints } from './workboard-rows.js';
+import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, homeDoneCount, mark, type FooterHints } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
-import { pickOf, pickerHints } from './model-input.js';
+import { pickOf } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -20,11 +20,10 @@ import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 import { controlShown, expShown, mainTabs } from './main-tabs.js';
 import { controlNavigation, storeControlNavigation } from './control-navigation.js';
-import { controlHeader, controlHints, controlPickerScene, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
+import { controlHeader, controlHints, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
 import { chainSheet, inlineModelSheet } from './chain-input.js';
-import { pickerRows } from './control-view.js';
-import { MODEL_PICKER_WIDE, paintZoomedPicker } from './model-picker-view.js';
+import { paintModelPicker } from './model-picker-view.js';
 import { addBackHints, harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
 import { expHints, expRows } from './exp-view.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
@@ -93,7 +92,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
     'With m, Enter saves the model at once, or fills the place if a draft is open.',
     'Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
     'In the Inspector ⏎ opens the file',
-    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click the model field (▾) to open. In the pi picker, click a model to select, again to set; click a provider to fold, wheel scrolls the list.'] : []),
+    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click the model field (▾) to open. In the pi picker, one click sets the model; click a provider to fold or unfold, or Esc cancel to close. The wheel keeps the selection visible.'] : []),
     'Model picker: current and preset models are pinned until you type. Typing opens matching groups.',
     'In Harnesses, remove means off. Add back: type to filter, Enter restores, Esc cancels.',
   ];
@@ -141,13 +140,11 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     }
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
-  if (state.projectInput) {
-    const pick = control && !harnesses && (chain?.sheet || state.controlQuickModel) ? pickOf(input.project, state.projectInput) : undefined;
-    if (!pick) {
-      state.projectInput = undefined;
-      state.controlQuickModel = undefined;
-    } else if (input.modelPickerZoomed && width >= MODEL_PICKER_WIDE && height >= 4)
-      return paintZoomedPicker(frame, input.project!, state.projectInput, pick, width, height, now);
+  const picker = state.projectInput;
+  const pick = picker && control && !harnesses && (chain?.sheet || state.controlQuickModel) ? pickOf(input.project, picker) : undefined;
+  if (picker && !pick) {
+    state.projectInput = undefined;
+    state.controlQuickModel = undefined;
   }
   const experiment = exp ? { ...state.expPage } : undefined;
   if (exp) frame.expData = input.expData;
@@ -162,12 +159,12 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     input = { ...input, project: found.data };
     matches = found.count;
   }
-  const board = inspector ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.cardStallMinutes) : undefined);
+  const board = inspector || pick ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.cardStallMinutes) : undefined);
   if (home && needle) matches = board.workers.length + board.decisions.length;
   const bar = filtering ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
     (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
   ) : undefined;
-  const controlTop = control ? controlHeader(input, state, width) : [];
+  const controlTop = control && !pick ? controlHeader(input, state, width) : [];
   const headers = [...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
     ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
   const top = Math.min(headers.length, Math.max(0, height - 2));
@@ -222,7 +219,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     }
     if (models) frame.controls.push({ kind: 'brief', x: Math.max(0, width - modelsWidth), y: 0, width: Math.min(width, modelsWidth) });
   }
-  const picking = control && !!state.projectInput;
+  if (pick) return paintModelPicker(frame, input.project!, picker!, pick, width, height, now);
   if (control && !harnesses && state.controlPresetInput) {
     const captured = state.controlPresetInput.role;
     const latest = input.project?.roles.find((r) => r.role === captured.role && r.revision === captured.revision);
@@ -252,16 +249,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     const build = (w: number) => home ? homeScene(input, board, state, targets, w, now, doneToday())
       : project ? projectScene(input, state, board, page, w, now) : undefined;
     const notes = [...headers, ...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), !control && input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
-    if (picking && input.project) {
-      // The picker owns its list window; painting it must not replace the chain's saved scroll or reveal.
-      const pickerState = { ...state, splitScroll: 0, boardRevealed: undefined };
-      const picker = controlPickerScene(input.project, pickerState, state.projectInput!, width, now, height, notes.length);
-      if (picker) {
-        const painted = paintSplit({ ...frame, state: pickerState }, picker, board, targets, state.homeTarget, width, height, notes);
-        return { ...painted, state };
-      }
-    }
-    const controlSplit = control && !picking && input.project;
+    const controlSplit = control && input.project;
     const sceneFor = (w: number) => controlSplit ? harnesses ? harnessScene(controlSplit, state, width, w)
       : controlScene(controlSplit, state, width, now, w, height, notes.length) : build(w);
     let scene = sceneFor(width);
@@ -275,7 +263,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     }
   }
   const inline = control && !harnesses && state.controlQuickModel?.choice;
-  const anchorRole = !picking && (inline ? state.controlQuickModel!.role : state.controlChain?.role);
+  const anchorRole = inline ? state.controlQuickModel!.role : state.controlChain?.role;
   const anchor = control && !harnesses && anchorRole && roleRows(anchorRole, width, now);
   const sheetRoom = height - 3 - top - Number(!!input.publicationNotice) - (anchor ? anchor.length : 0);
   const sheet = inline && input.project ? inlineModelSheet(state, input.project.models, width, sheetRoom)
@@ -303,8 +291,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
-          : control ? picking ? pickerRows(input.project!, state.projectInput!, width, height - 2 - top - (input.publicationNotice ? 1 : 0), now)
-            : harnesses && input.project ? addingHarness
+          : control ? harnesses && input.project ? addingHarness
               ? [section(t('Add back'), width), ...harnessAddRows(input.project, state, width)] : harnessRows(input.project, state, width)
             : sheetRows ?? controlRows(input.project, state, width, now)
           : experiment ? expRows(experiment, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.error) - Number(!!input.publicationNotice))) : homeRows(board, state, width, now, input);
@@ -345,26 +332,25 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     state.projectCursor = (!page && !list && state.projectLayout === 'inbox'
       ? rows.find((r) => r.item && r.item !== 'project:switch') || rows.find((r) => r.item)
       : rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
-  if (control && !picking && !addingHarness && !sheet && input.project && !rows.some((r) => r.item && r.item === state.projectCursor))
+  if (control && !addingHarness && !sheet && input.project && !rows.some((r) => r.item && r.item === state.projectCursor))
     state.projectCursor = rows.find((r) => r.item)?.item;
-  // The model picker has its own cursor; the list's scroll and reveal wait.
   if (experiment && !experiment.edit && !rows.some((r) => r.item && r.item === experiment.cursor))
     experiment.cursor = rows.find((r) => r.item)?.item;
   if (experiment?.edit) state.boardRevealed = undefined;
-  const key = picking ? 'project:pick' : addingHarness ? state.controlHarnessAdd?.pick : sheet ? sheet.cursor : project || control ? state.projectCursor : inspector ? state.inspectCursor
+  const key = addingHarness ? state.controlHarnessAdd?.pick : sheet ? sheet.cursor : project || control ? state.projectCursor : inspector ? state.inspectCursor
     : experiment ? experiment.edit ? undefined : experiment.cursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   const room = Math.max(0, height - 2 - top);
   const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(0, rows.length - room);
   const scroll = help
     ? (state.helpScroll ?? 0)
     : sheet ? chainTop + Number(!!input.publicationNotice && !!anchor)
-    : picking || addingHarness ? 0
+    : addingHarness ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
       : project || control ? (state.projectScroll ?? 0) : experiment ? (experiment.scroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
   if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
-  if (!help && !changes && !picking && !sheet && key && (addingHarness || state.boardRevealed !== key) && room) {
+  if (!help && !changes && !sheet && key && (addingHarness || state.boardRevealed !== key) && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
     if (!addingHarness) state.boardRevealed = key;
@@ -373,7 +359,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     state.helpScroll = offset;
     frame.helpPage = { count: room, total: rows.length };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
-  else if (project || control) { if (!picking && !addingHarness && !sheet && (!control || input.project)) state.projectScroll = offset; }
+  else if (project || control) { if (!addingHarness && !sheet && (!control || input.project)) state.projectScroll = offset; }
   else if (experiment) state.expPage = { ...experiment, scroll: offset };
   else state.homeScroll = offset;
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
@@ -393,8 +379,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     ? { modal: ['Esc back'] }
     : inspector ? ['⏎ open', 'Esc back']
       : changes ? ['Esc back']
-        : control ? picking ? hintText(pickerHints(state.projectInput!))
-          : harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state)
+        : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state)
             : sheet ? sheet.hints : controlHints(input.project, state.projectCursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : page === 'progress' ? (state.projectTry ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
@@ -405,7 +390,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
           : ['⏎ open', ...projectSwitch])
         : experiment ? expHints(experiment) : homeKeys(state, source, 'expand');
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
-  if (control && !harnesses && !picking && height > 1) presetFooterControls(frame, hints, width, height - 1);
+  if (control && !harnesses && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1)
     frame.lines[height - 1] = footRow(
       home ? homeDoneCount(done, width) : '',

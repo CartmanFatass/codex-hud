@@ -258,8 +258,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '^R refresh': '^R 刷新',
   'back; confirm discarding a draft; picker: clear then exit': '返回；放弃草稿需确认；选择器：先清空筛选，再关闭',
   'role or place: choose a model': '角色或位置：选择模型',
-  'Control: click the model field (▾) to open. In the pi picker, click a model to select, again to set; click a provider to fold, wheel scrolls the list.':
-    '控制：点模型字段（▾）打开。pi 选择器中，单击模型选中，再点一次设定；点提供方标题折叠或展开，滚轮滚动列表。',
+  'Control: click the model field (▾) to open. In the pi picker, one click sets the model; click a provider to fold or unfold, or Esc cancel to close. The wheel keeps the selection visible.':
+    '控制：点模型字段（▾）打开。pi 选择器中，单击即可设定模型；点提供方标题折叠或展开，点 esc 取消关闭。滚轮滚动时选中项始终可见。',
   'Model picker: current and preset models are pinned until you type. Typing opens matching groups.':
     '模型选择器：未输入时置顶当前模型和预设模型。输入筛选时展开匹配分组。',
   Pinned: '置顶',
@@ -287,7 +287,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '{n} model': '{n} 个模型',
   '{n} models': '{n} 个模型',
   '{n} / {total} matches': '{n} / {total} 个匹配',
-  zoomed: '已放大',
   note: '备注',
   context: '上下文',
   'max out': '最大输出',
@@ -319,7 +318,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'keeps {model}': '保留 {model}',
   'choose a provider row to set a model': '选择提供方下的模型来设定',
   'click a header: fold': '点标题 折叠',
-  'esc close and restore': 'esc 关闭并还原',
   'Enter sets it · not the current model': 'Enter 设定 · 与当前不同',
   provider: '提供方',
   missing: '缺',
