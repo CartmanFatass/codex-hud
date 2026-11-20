@@ -28,5 +28,6 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   report (`report_unchanged: true` otherwise; `full: true` to reread). A report read in idle grace marks it read too.
 - With live events, keep working until notified; the report notice is not a read. Use `hud_peek` for non-consuming
   status and milestones; pass `lines` only for pane output and `detail: true` for launch diagnostics.
+- Give a ledger slice the milestone of the task the owner tries as one (a feature or milestone); the panel can group to-try rows by it.
 - On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong. Never list a `try` slice under Waiting for the owner: the ledger's `try` rows are the to-try list, and Waiting holds only what is not a try (flagged slices, owner decisions). A Waiting item that depends on slices or tickets ends with `(waits on <slice ID>, <feature>/<NN>)`; the panel drops it once every one is accepted, dropped or done (a flagged slice: `(waits on <its ID>)`).
 The main session owns every handoff and decides every next step. HUD does not chain these steps.

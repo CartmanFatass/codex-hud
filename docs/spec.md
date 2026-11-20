@@ -21,7 +21,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    `pi-role-reap`); the MCP opens each job's herdr tab itself; jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles
    is not bundled (owner, 2026-11-10). The main session never manages workers: `hud_create` starts them, the job
    watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
-2. **Show what is happening.** A side panel (Home, Project) shows the main session's jobs and their state; Home is one page: what needs the owner, then the package lanes with their job cards, then the decisions (Home and Work merged, owner, 2026-11-11). Finished jobs and older decisions hide after a short time; `a` shows them again in place (owner, 2026-11-11). The bottom
+2. **Show what is happening.** A side panel (Home, Project) shows the main session's jobs and their state; Home is one page: what needs the owner, then the package lanes with their job cards (Home and Work merged, owner, 2026-11-11; the decisions a worker made for the owner are still collected but no longer shown, owner, 2026-11-20). The owner tries and accepts work as one task (a ledger milestone) by default; a setting shows each slice instead (owner, 2026-11-20). Finished jobs and older decisions hide after a short time; `a` shows them again in place (owner, 2026-11-11). The bottom
    status lines are always on (Claude's statusline, pi's footer; Codex's tmux bar comes with `codexH`); only the side panel is opt-in: it opens only with
    `/hud` (owner, 2026-11-11). One sidebar for every client (owner, 2026-11-17): Codex opens the same standalone herdr
    sidebar with `/hud` as Claude and pi do; Codex's tmux panel (F12/Shift-F12, the prefix keys, the gutter focus lock and
