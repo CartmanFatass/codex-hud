@@ -9,6 +9,10 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
 - Review spec compliance and scope creep separately from simplicity and real defects; findings do not imply new tests.
 - Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.
+- Stopping or closing a worker that is still running (not settled) needs the user's explicit authorization first, whatever
+  the reason; send an adjustment with `hud_send` instead. A settled worker may be closed without asking.
+- Dispatching `oracle` (an expensive model) needs the user's explicit authorization for that job; a general request is
+  not approval for each new or repeated oracle job.
 - Claude Code: run `hud watch` under Monitor and re-arm after expiry; it catches up pending work and prints only
   actionable events. `--verbose` and MCP `changes` retain the fuller change stream; `report` means unread.
 - Codex: quiet events and questions are queued automatically; no Monitor command is needed. Queue delivery
