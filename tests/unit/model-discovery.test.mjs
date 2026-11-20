@@ -336,7 +336,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
 
   // Open Control with Tab -> spawns pi, agy, grok once each.
   child.stdin.write('\t');
-  await until(() => /imp \[default\]/.test(stripAnsi(out)) && spawns().length === 3, 'Control opened & started discovery');
+  await until(() => /◉ imp → /.test(stripAnsi(out)) && spawns().length === 3, 'Control opened & started discovery');
   assert.deepEqual([...spawns()].sort(), ['agy', 'grok', 'pi']);
 
   // Sit through multiple refresh ticks -> still 0 extra spawns.
@@ -349,7 +349,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   await until(() => stripAnsi(out.slice(left)).includes('Progress'), 'back to hub');
   const back = out.length;
   child.stdin.write('\t');
-  await until(() => /imp \[default\]/.test(stripAnsi(out.slice(back))), 'Control re-opened');
+  await until(() => /◉ imp → /.test(stripAnsi(out.slice(back))), 'Control re-opened');
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(spawns().length, 3);
 
