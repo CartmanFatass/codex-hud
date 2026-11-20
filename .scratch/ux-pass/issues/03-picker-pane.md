@@ -1,6 +1,6 @@
 # 03: picker in the panel's own pane, one click sets (M-S3 PICKER-PANE)
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** 02
 
 **What to build:** `docs/design/ux-pass/model-selection.md` §4 S3. No herdr zoom (delete `src/cli/model-picker-zoom.ts`

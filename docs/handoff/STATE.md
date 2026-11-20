@@ -177,9 +177,13 @@ board counts these; update at every landing or decision. -->
 - try · — · UX-PASS-01 · pi footer quota in Claude's style: bar, % used, level colour, reset; ≈ estimate, ? stale, ↻ pending; API grant bar (imp sol) (4bdb9207)
 - try · — · UX-PASS-02 · m on a role row (or place) → pick → saved at once; multi-place edits stay a draft (imp sol) (40fc5585; merge test fix 6401c781)
 - try · — · UX-PASS-06 · one footer rule: row actions, Enter verb, Esc, page actions, ? help last; no movement keys; ? opens Help over Settings (imp sol) (4a0a4d2f)
-- working · — · UX-PASS-03 · picker opens in the panel's own pane, no zoom, one click sets (imp sol j02d733c52f761497, wt/ux-pass-03)
-- working · — · UX-PASS-07 · Project hub, Progress and question slabs say a fact once (imp sol j051c8aff31c0a600, wt/ux-pass-07)
-- working · — · UX-PASS-09 · EXP in the panel's form (imp sol j6572c996b8d699aa, wt/ux-pass-09)
+- try · — · UX-PASS-03 · picker opens in the panel's own pane, no zoom, one click sets, two columns from 100 cols (imp sol) (6598afa1)
+- try · — · UX-PASS-07 · Project hub, Progress and question slabs say a fact once (imp sol) (ca6d86b5; test 339fac37)
+- try · — · UX-PASS-08 · Help grouped by tab (Everywhere, Home, Project, Control, Split, Marks), opens at the current tab (imp sol) (dec80c71; tests ab8c9a2e)
+- try · — · UX-PASS-09 · EXP in the panel's form, choices listed (imp sol) (3c001661)
+- try · — · UX-PASS-10 · Harnesses rows show exceptions only (imp sol) (9b19ec26)
+- working · — · UX-PASS-04 · likely models first, ranked flat filter; in-use = providers named in the Control snapshot (pi's own default only via a place fallback) (imp sol j6c374eca4a0688b4, wt/ux-pass-04)
+- working · — · UX-PASS-11 · top row: no models on / EXP exp, Esc the same on every tab, 分 (imp sol j027d977b74cc2223, wt/ux-pass-11)
 - done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
 - done · — · UX-PASS-OVERALL · overall design: 1 FOOTER, 2 SAY-ONCE, 3 HELP, 4 EXP-FORM, 5 HARNESS-ROWS, 6 TOP-ROW; 4 owner decisions · docs/design/ux-pass/overall.md
 
