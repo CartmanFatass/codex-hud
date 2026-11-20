@@ -1,4 +1,4 @@
-/** Local HUD role tools, newline-delimited JSON-RPC over stdio. */
+/** Local HUD role tools and Codex statusline, newline-delimited JSON-RPC over stdio. */
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -9,6 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { procStat, readTurn, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
+import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
@@ -1593,7 +1594,7 @@ async function receive(line: string): Promise<void> {
     case 'initialize':
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: {} },
         serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
         instructions: 'Call hud_roster before dispatching.',
       };
@@ -1602,7 +1603,24 @@ async function receive(line: string): Promise<void> {
       result = {};
       break;
     case 'tools/list':
-      result = { tools };
+      result = { tools: [...tools, statuslineTool] };
+      break;
+    case 'resources/list':
+      result = { resources: [statuslineResource] };
+      break;
+    case 'resources/templates/list':
+      result = { resourceTemplates: [] };
+      break;
+    case 'resources/read':
+      if (typeof request.params?.uri !== 'string') {
+        rpcError(request.id, -32602, 'Invalid resource URI');
+        return;
+      }
+      if (request.params.uri !== statuslineResource.uri) {
+        rpcError(request.id, -32002, 'Resource not found');
+        return;
+      }
+      result = readCodexStatusline(request.params._meta, hudHome, callerPane);
       break;
     case 'tools/call': {
       const name = request.params?.name;
@@ -1610,6 +1628,10 @@ async function receive(line: string): Promise<void> {
       if (typeof name !== 'string' || !args || typeof args !== 'object' || Array.isArray(args)) {
         rpcError(request.id, -32602, 'Invalid params');
         return;
+      }
+      if (name === statuslineTool.name) {
+        result = { content: [{ type: 'text', text: `Codex statusline resource: ${statuslineResource.uri}` }] };
+        break;
       }
       const invoke = () => call(name, args);
       try {

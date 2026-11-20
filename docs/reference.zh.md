@@ -634,6 +634,15 @@ Stacked 在 Claude/pi 为两行，Codex 回退 line；Tide 底色需 truecolor�
 任务启动时数字保持原样，让出空间的是标题，余下的空间再还给标题。
 pi 顶条跟随样式，其它扩展状态保留。状态行仅英文。
 
+### EXP · Codex 原生状态行（实验性）
+
+使用已注册 `hud` MCP 服务的普通 Codex。在 `/experimental` 启用 **Custom status line**，
+重启 Codex，再打开 `/statusline` → **Choose a status line provider** → **MyHUD**。
+要恢复默认状态行，在同一选择器中选 **Default status line**。
+
+紧凑状态行依次显示模型和推理强度、上下文、额度。若有 HUD 工作提醒，则按当前窗格显示。
+页脚较窄时，Codex 会用 `…` 截断右端；`codexH` 的 tmux 栏仍按宽度调整布局。
+
 ### pi 控制
 
 以下控制只影响当前 pi 会话，不保存为面板偏好：

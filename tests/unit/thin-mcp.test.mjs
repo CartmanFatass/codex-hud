@@ -435,6 +435,7 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
     env[name] = join(root, name.toLowerCase());
     fs.mkdirSync(env[name]);
   }
+  env.HUD_SETTINGS_PATH = join(env.HUD_HOME, 'hud-settings.json');
   // The fake CLI can still show a trust prompt even when these local grants exist.
   const trusted = fs.realpathSync(root);
   const grokDir = join(env.HOME, '.grok');
@@ -1492,7 +1493,166 @@ test('only a one-job read includes a bounded summary of committed and pending wo
 
 test('pi role tools match the real MCP tools/list', async (t) => {
   const f = await fixture(t);
-  assert.deepEqual(PI_ROLE_TOOLS, (await f.rpc('tools/list')).result.tools);
+  assert.deepEqual(PI_ROLE_TOOLS, (await f.rpc('tools/list')).result.tools.filter(({ name }) => name !== 'hud_statusline'));
+});
+
+const statuslineState = 'com.openai/codex-statusline-state';
+const footerUri = 'ui://myhud/codex-statusline';
+const footerMime = 'application/json';
+async function readFooter(f, state) {
+  const params = { uri: footerUri, ...(state === undefined ? {} : { _meta: { [statuslineState]: state } }) };
+  const reply = await f.rpc('resources/read', params);
+  assert.equal(reply.error, undefined);
+  assert.equal(reply.result.contents.length, 1);
+  const [{ uri, mimeType, text }] = reply.result.contents;
+  assert.equal(uri, footerUri);
+  assert.equal(mimeType, footerMime);
+  const tree = JSON.parse(text);
+  assert.equal(tree.type, 'row');
+  assert.deepEqual(tree.props, { gap: 2, wrap: 'nowrap' });
+  return tree;
+}
+const footerText = (tree) => tree.children.map((node) => node.children.join(''));
+const windowOf = (minutes, used, resetsAt = null) => ({ used_percent: used, window_minutes: minutes, resets_at: resetsAt });
+
+test('Codex native footer discovers MyHUD and serves ordered, request-local facts with no width', { timeout: 8000 }, async (t) => {
+  const f = await fixture(t, true, `
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    const readdir = fs.readdirSync;
+    fs.readdirSync = (path, ...args) => {
+      if (fs.existsSync(process.env.HOME + '/footer-reads') && /\\/(jobs|sessions)(\\/|$)/.test(String(path))) {
+        fs.appendFileSync(process.env.HOME + '/footer-scans', String(path) + '\\n');
+      }
+      return readdir(path, ...args);
+    };
+    syncBuiltinESMExports();
+  `);
+  const initialized = await f.rpc('initialize', { protocolVersion: '2025-06-18' });
+  assert.deepEqual(initialized.result.capabilities.resources, {});
+  const { result: { tools } } = await f.rpc('tools/list');
+  const providers = tools.filter((tool) => tool._meta?.['openai/ui']?.entrypoints);
+  assert.deepEqual(providers.map(({ title, _meta }) => [title, _meta['openai/ui'].entrypoints]), [
+    ['MyHUD', [{ type: 'statusline', resourceUri: footerUri }]],
+  ]);
+  assert.deepEqual((await f.rpc('resources/list')).result.resources, [
+    { uri: footerUri, name: 'codex-statusline', mimeType: footerMime },
+  ]);
+  assert.equal((await f.rpc('resources/read', { uri: 'ui://other/footer' })).error.code, -32002);
+  assert.equal((await f.rpc('resources/read')).error.code, -32602);
+
+  const now = Date.now();
+  const pendingJob = (id, pane, role) => {
+    const dir = join(f.env.HUD_HOME, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role, herdr_pane: pane, created_at: new Date(now) }));
+    const file = join(dir, 'STATUS.json');
+    fs.writeFileSync(file, JSON.stringify({ state: 'waiting_orchestrator', harness: 'cli', blocked: true }));
+    return file;
+  };
+  const current = pendingJob('j0000000000000001', 'w4E:p1', 'imp');
+  pendingJob('j0000000000000002', 'w4E:p2', 'other');
+  readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' }, JSON.parse, {});
+  fs.writeFileSync(join(f.env.HOME, 'footer-reads'), '');
+
+  const a = {
+    config: { profile: 'synthetic-a' },
+    thread: { id: 'synthetic-thread-a', model: { id: 'openai/gpt-6.2-sol', reasoning_level: 'high' },
+      usage: { context: { used_percentage: 38 } } },
+    account: { rate_limits: [
+      { limit_id: 'other-bucket', primary_limit: windowOf(1, 99) },
+      { limit_id: 'codex', primary_limit: windowOf(300, 28), secondary_limit: windowOf(10080, 44) },
+    ] },
+  };
+  const b = {
+    config: { profile: 'synthetic-b' },
+    thread: { id: 'synthetic-thread-b', model: { display_name: 'Example B' },
+      usage: { context: { used_tokens: 12, context_window_size: 100 } } },
+    account: { rate_limits: [
+      { limit_id: 'codex', primary_limit: windowOf(300, 115), secondary_limit: windowOf(10080, 99, 1) },
+    ] },
+  };
+  const ordered = ['6.2-sol high', 'ctx 38%', '5h 72% left', '7d 56% left', 'HUD: imp asks'];
+  assert.deepEqual(footerText(await readFooter(f, a)), ordered);
+  assert.deepEqual(footerText(await readFooter(f, b)), ['Example B', 'ctx 12%', '5h 0% left', 'HUD: imp asks']);
+  assert.deepEqual(footerText(await readFooter(f, a)), ordered);
+  assert.deepEqual(footerText(await readFooter(f, {
+    thread: { model: { id: null, display_name: null }, usage: { context: { used_percentage: -1 } } },
+    account: { rate_limits: [{ limit_id: 'codex', primary_limit: windowOf(null, 9) }] },
+  })), ['HUD: imp asks']);
+
+  // Time across stdio with a warmed jobs cache and EXP enabled, including the first last-seen write.
+  const exp = join(f.env.HUD_HOME, 'exp');
+  fs.mkdirSync(exp);
+  fs.writeFileSync(join(exp, 'config.json'), JSON.stringify({ version: 1, codex: { enabled: true } }));
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ experiments: true }));
+  for (let batch = 0; batch < 3; batch++) {
+    const samples = [];
+    for (let i = 0; i < 30; i++) {
+      const start = performance.now();
+      await readFooter(f, a);
+      samples.push(performance.now() - start);
+    }
+    samples.sort((x, y) => x - y);
+    const stats = [15, 29, 30].map((rank) => samples[rank - 1].toFixed(3)).join('/');
+    t.diagnostic(`footer stdio n=30 p50/p95/p99=max ${stats} ms`);
+    assert.ok(samples.at(-1) < 250, `footer RPC too slow: ${stats} ms`);
+  }
+  fs.writeFileSync(current, JSON.stringify({ state: 'done', output_written: true }));
+  assert.deepEqual(footerText(await readFooter(f)), [], 'no cached facts from another pane or stale STATUS');
+  assert.equal(fs.existsSync(join(f.env.HOME, 'footer-scans')), false);
+  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(f.socketRequests, []);
+});
+
+test('Codex footer last-seen is opt-in, private and throttled', { timeout: 8000 }, async (t) => {
+  const f = await fixture(t, false, `
+    import { readFileSync } from 'node:fs';
+    import { join } from 'node:path';
+    const now = Date.now;
+    Date.now = () => {
+      try { return Number(readFileSync(join(process.env.HOME, 'footer-clock'), 'utf8')); }
+      catch { return now(); }
+    };
+  `);
+  const exp = join(f.env.HUD_HOME, 'exp');
+  const seen = join(exp, 'codex-native.json');
+  const clock = (now) => fs.writeFileSync(join(f.env.HOME, 'footer-clock'), String(now));
+  const config = (enabled) => fs.writeFileSync(join(exp, 'config.json'), JSON.stringify({ version: 1, codex: { enabled } }));
+  const master = (experiments) => fs.writeFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ experiments }));
+  const state = { thread: { model: { display_name: 'Example' } } };
+  const firstAt = 1_768_000_000_000;
+  clock(firstAt);
+  master(true);
+  assert.deepEqual(footerText(await readFooter(f, state)), ['Example']);
+  assert.equal(fs.existsSync(exp), false);
+  fs.mkdirSync(exp);
+  config(false);
+  await readFooter(f, state);
+  assert.equal(fs.existsSync(seen), false);
+  config(true);
+  master(false);
+  await readFooter(f, state);
+  assert.equal(fs.existsSync(seen), false);
+  master(true);
+
+  await readFooter(f, state);
+  assert.deepEqual(JSON.parse(fs.readFileSync(seen, 'utf8')), { version: 1, lastSeenAt: firstAt });
+  const first = fs.statSync(seen);
+  assert.equal(first.mode & 0o777, 0o600);
+  clock(firstAt + 59_999);
+  await readFooter(f, state);
+  assert.equal(fs.statSync(seen).ino, first.ino);
+  clock(firstAt + 60_000);
+  await readFooter(f, state);
+  const second = fs.statSync(seen);
+  assert.notEqual(second.ino, first.ino, 'update atomically replaces the file');
+  assert.deepEqual(JSON.parse(fs.readFileSync(seen, 'utf8')), { version: 1, lastSeenAt: firstAt + 60_000 });
+  master(false);
+  clock(firstAt + 120_000);
+  await readFooter(f, state);
+  assert.equal(fs.statSync(seen).ino, second.ino);
+  assert.deepEqual(fs.readdirSync(exp).sort(), ['codex-native.json', 'config.json']);
 });
 
 test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }, async (t) => {
@@ -1781,7 +1941,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const listed = await f.rpc('tools/list');
   assert.deepEqual(
     listed.result.tools.map((tool) => tool.name),
-    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close']
+    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close', 'hud_statusline']
   );
   // The shipped imp splits on demand; an owner role file can still ask for the helper pane up front.
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });

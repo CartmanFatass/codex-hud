@@ -905,6 +905,17 @@ numbers keep their forms while a job starts: it takes room from titles, which ta
 pi's ribbon follows the look;
 other extensions' statuses remain visible. The bars stay English-only apart from a job's own title.
 
+### EXP · Codex native status line (experimental)
+
+In ordinary Codex with the `hud` MCP server registered, open `/experimental`,
+turn on **Custom status line**, then restart Codex. Open `/statusline` →
+**Choose a status line provider** → **MyHUD**. To switch back, select
+**Default status line** from the same picker.
+
+The compact footer puts model and effort, context, then quota first. A HUD work
+reminder, when available, is scoped to the pane. On a narrow footer, Codex cuts
+the right end with `…`; `codexH`'s tmux bar keeps its width-aware layout.
+
 ### pi controls
 
 These controls affect the current pi session, not saved panel preferences:
