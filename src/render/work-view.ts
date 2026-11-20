@@ -299,9 +299,12 @@ export function renderWorkboardFrame(
         ? '↑↓ scroll  esc back'
         : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
           : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  i add  Del remove  x clear  r refresh'
+          : page === 'control' && state.projectCursor?.startsWith('project:fold:role:') ? '↑↓ move  ⏎ places  c C preset  o open file  esc back  ? help  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
-          : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help' : '↑↓ move  ⏎ open  t to try  esc back  ? help')
+          : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help'
+            : state.projectLayout === 'board' && rows.some((r) => r.item === state.projectCursor && r.tryTarget) ? 'Space mark  y accept  n flag  ⏎ details  o open file  t to try  esc back  ? help'
+            : '↑↓ move  ⏎ open  t to try  esc back  ? help')
           : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : homeKeys(state, source, 'expand');
   if (height > 1)

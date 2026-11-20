@@ -598,6 +598,15 @@ Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classi
 Project are laid out; saving switches the open panel at once, no restart. **Classic** is the default described above.
 **Split** puts a list over a preview of the selected row (see [Split layout](#split-layout)).
 
+Settings → Panel → **Project layout** (`projectLayout` in `hud-settings.json`: `timeline`, `board`, `inbox`) arranges
+the Project tab's pages in both Classic and Split without changing Home, Tickets, counts or keys; saving applies live.
+**Timeline** is the default. **Board** draws a milestone map (one row per milestone, one cell per slice with `n/m`, age
+and `+N` when full), a `latest` line, a one-row legend, In flight and gauge page rows on the hub; opens the current
+milestone into its slices in cell order on Progress (older milestones as map rows, jobs outside the ledger, Next); shows
+one fallback chain row per role on the Control plane with its places in the preview (Split) or expanded on Enter
+(Classic), where all place keys act; and draws the Projects list as a one-row-per-project table (`ms`, `ledger`, `?`,
+`◉`, `age`). **Inbox** currently renders as Timeline.
+
 In Classic's to-try view and on Split's to-try rows, Space toggles a mark (`▣`, or `*` with text icons).
 `y` accepts and `n` flags the marked rows, or the current row if nothing is marked. All affected slices go into
 one record in `$HUD_HOME/tries.jsonl` and produce one line in `hud watch` and MCP `changes`. Recording a result

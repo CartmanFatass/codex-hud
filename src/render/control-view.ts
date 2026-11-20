@@ -66,7 +66,7 @@ function placeRow(role: RoleFact, i: number, width: number, now: number, data: P
   const lead = `  ${glyph(place.state)} ${fit(i ? theme.board.muted(mark('↳', '>')) : theme.board.title(roleName(role)), Math.max(name, visualLength(roleName(role))))} `;
   return placeRows(lead, place, width, gap, tag, placeTarget(role, i, data), place.state === 'active' ? undefined : theme.board.muted);
 }
-function placePreview(data: ProjectSnapshot, item: string | undefined, width: number): MonitorRow[] {
+export function placePreview(data: ProjectSnapshot, item: string | undefined, width: number): MonitorRow[] {
   const id = /^project:role:(.+):(\d+)$/.exec(item ?? '');
   if (!id) return [];
   const role = data.roles.find((r) => r.role === id[1]), index = Number(id[2]), place = role?.places[index];

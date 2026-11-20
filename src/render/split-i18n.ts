@@ -22,7 +22,7 @@ export const SPLIT_ZH: Record<string, string> = {
   '⏎ open': '⏎ 打开', '? help': '? 帮助', 'v inspect': 'v 详情', '↑↓ move': '↑↓ 移动', 'a all': 'a 全部', ', settings': ', 设置', '←→ tab': '←→ 切页', '[ ] project': '[ ] 项目',
   'g job tab': 'g 任务页', 'X stop': 'X 停止', 'Space mark': 'Space 勾选', 'y accept': 'y 验收', 'n flag': 'n 标记', 'i add': 'i 添加', 'Del remove': 'Del 删除',
   'K J move': 'K J 移动', 'x clear': 'x 清除', 'p harness': 'p 宿主', 'm model': 'm 模型', 'e thinking': 'e 思考', 'esc back': 'esc 返回', '⏎ details': '⏎ 详情', 'o open file': 'o 打开文件',
-  '⏎ open file': '⏎ 打开文件', '⏎ places': '⏎ 位置', 'c C preset': 'c C 预设', 'r refresh': 'r 刷新', '↑↓ place': '↑↓ 位置', 'PgUp PgDn scroll': 'PgUp PgDn 滚动',
+  '⏎ open file': '⏎ 打开文件', '⏎ places': '⏎ 位置', 'c C preset': 'c C 预设', 'r refresh': 'r 刷新', '↑↓ place': '↑↓ 位置', 'PgUp PgDn scroll': 'PgUp PgDn 滚动', 't to try': 't 待试用',
   'unparseable JSON': 'JSON 无法解析', unreadable: '无法读取', 'missing role': '缺少 role 字段', 'bad instructions': 'instructions 无效', 'bad cli fields': 'cli 字段无效',
   'bad pi fields': 'pi 字段无效', 'bad bro fields': 'bro 字段无效', 'bad can_continue': 'can_continue 无效', 'bad presets': 'presets 无效', 'bad preset name': '预设名无效',
   'bad run places': 'run 位置无效', 'bad model/thinking/effort': 'model/thinking/effort 无效', 'project roles are pi only': '项目角色只能用 pi',

@@ -8,6 +8,7 @@ import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { basename } from 'node:path';
 import { boardRow, itemRow, section, mark, minuteAge, kvRows, pack } from './workboard-rows.js';
 import { controlRows, pickerRows } from './control-view.js';
+import { boardControlRows, boardHubRows, boardListRows, boardProgressRows } from './board-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { pickOf } from './model-input.js';
 import { monitorText, fit, pair, flowLines, cutWords } from './monitor-text.js';
@@ -129,7 +130,7 @@ export const PAGE_WORD: Record<ProjectPage, string> = {
 export const projectPageOf = (state: MonitorState) => [...PROJECT_PAGES, 'waiting' as const].find((p) => p === state.projectPage);
 /** What starts folded: the Control plane's healthy roles, its files and the native-agents list (a page's own header is its crumb). */
 export const projectFoldedSet = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(['agents', 'healthy', 'files']);
-const ticketWorking = (r: ProjectTicket) => !['done', 'dropped', 'blocked'].includes(r.state)
+export const ticketWorking = (r: ProjectTicket) => !['done', 'dropped', 'blocked'].includes(r.state)
   && (r.state === 'working' || (!!r.job && !SETTLED_JOB_STATES.has(r.job.state)));
 const parts = (...p: (string | number | false | null | undefined)[]) =>
   p.filter((s): s is string => typeof s === 'string' && s !== '');
@@ -180,7 +181,7 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
   return parts(limit && theme.board.attention(t('{n} at limit', { n: limit })), `${data.roleCount} ${t('roles')}`, data.keys.length && `${t('keys')} ${data.keys.filter((k) => k[1]).length}/${data.keys.length}`,
     `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`);
 }
-const foldRow = (folded: ReadonlySet<string>, id: string, label: string, width: number, right = ''): MonitorRow => ({
+export const foldRow = (folded: ReadonlySet<string>, id: string, label: string, width: number, right = ''): MonitorRow => ({
   ...section(`${folded.has(id) ? mark('▸', '>') + ' ' : ''}${t(label)}`, width, right), item: `project:fold:${id}`,
 });
 const itemRight = (r: ProjectItem, width: number, now: number) => width < 56 ? '' : r.at !== undefined ? minuteAge(r.at, now)
@@ -356,9 +357,9 @@ function listRows(projects: ProjectChoice[], width: number, now: number): Monito
   }
   return rows;
 }
-const NO_MILESTONE = /^[—–-]*$/;
+export const NO_MILESTONE = /^[—–-]*$/;
 /** Milestones in ledger order, oldest first; STATE's current one is always among them. A ledger naming none falls back to spec §5. */
-function milestoneOrder(data: ProjectSnapshot): string[] {
+export function milestoneOrder(data: ProjectSnapshot): string[] {
   const seen = new Set(data.ledger.map((r) => r.milestone).filter((m) => !NO_MILESTONE.test(m)));
   if (!seen.size) data.ladder.ids.forEach((id) => seen.add(id));
   if (data.ladder.current) seen.add(data.ladder.current);
@@ -368,7 +369,7 @@ function milestoneOrder(data: ProjectSnapshot): string[] {
 export const ledgerText = (r: LedgerSlice) => r.text.replace(/\s*\((?:[0-9a-f]{7,40}(?:[,;]\s*|(?=\))))+\)\s*$/i, '')
   .replace(/^[0-9a-f]{7,40}\s*·\s*/i, '').trim();
 /** `MM-DD`, with the year when it is not this one. */
-function dateText(at: number, now: number): string {
+export function dateText(at: number, now: number): string {
   const day = new Date(at), two = (n: number) => String(n).padStart(2, '0');
   return `${day.getFullYear() === new Date(now).getFullYear() ? '' : day.getFullYear() + '-'}${two(day.getMonth() + 1)}-${two(day.getDate())}`;
 }
@@ -384,7 +385,7 @@ export function clampClean(body: string, room: number, max: number) {
   return { more, lines: more ? [...lines.slice(0, max - 1), last] : lines };
 }
 /** `head` and `text` on one row when they fit beside `right` (and `one`); else `head` with `right`, and the text wrapped under it at `indent`. */
-function stacked(head: string, text: string, right: string, width: number, indent: number, max = 2, one = true): string[] {
+export function stacked(head: string, text: string, right: string, width: number, indent: number, max = 2, one = true): string[] {
   const body = monitorText(text);
   if (!body) return [pair(head, right, width)];
   if (one && visualLength(head) + 2 + visualLength(body) + (right ? visualLength(right) + 1 : 0) <= width) return [pair(`${head}  ${body}`, right, width)];
@@ -412,7 +413,7 @@ export function tryDetailRows(r: LedgerSlice, width: number, indent: number, ope
     ...(open ? original.map((l): MonitorRow => ({ text: fit(`${pad}  ${theme.board.muted(l)}`, width) })) : [])];
 }
 /** A done/total meter `cells` wide, as thin as the panel's other meters; a started one shows at least a cell, an unfinished one never looks full. */
-function meter(done: number, total: number, cells: number): string {
+export function meter(done: number, total: number, cells: number): string {
   const filled = !total ? 0 : Math.min(cells - (done < total ? 1 : 0), Math.max(done ? 1 : 0, Math.round(done / total * cells)));
   return theme.board.success(mark('━', '#').repeat(filled)) + theme.board.muted(mark('─', '-').repeat(cells - filled));
 }
@@ -555,6 +556,8 @@ export function pageRows(
       byMilestone(tries, 'try:m:', true);
       if (room !== undefined && rows.length > room) { rows.length = from; byMilestone(tries, 'try:m:', true, true); }
       return rows;
+    } else if (state.projectLayout === 'board') {
+      return boardProgressRows(data, state, width, now, board, modelEnabled, tryMarks);
     } else {
       if (data.summary) for (const line of clampLines(data.summary, width - 2, 2).lines) fileRow('  ' + line, 'summary');
       // The current milestone: its bar with accepted/total, its counts, and what the earlier ones accepted in all.
@@ -649,7 +652,9 @@ export function pageRows(
     if (unlisted(data).length) rows.push(boardRow(''), section(t('Unlisted worktrees'), width, String(unlisted(data).length)),
       ...unlisted(data).map((r) => boardRow(pair(`  ${theme.board.attention('!')} ${monitorText(r.label)}`, theme.board.muted(t('not in ledger')), width))));
   } else if (page === 'docs') data.docs.forEach((r, i) => item(r, i));
-  else {
+  else if (state.projectLayout === 'board') {
+    rows.push(...boardControlRows(data, state, width, now));
+  } else {
     rows.push(...controlRows(data, width, now, !folded.has('healthy'), state.projectCursor));
     // Files: the role definitions and instruction files, the native agents, keys and browser; one row of keys while folded.
     const files = data.control.filter((r) => r.label !== 'invalid'), open = !folded.has('files'), have = data.keys.filter((k) => k[1]).length;
@@ -678,9 +683,10 @@ export function projectRows(
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
-  if (projectListOpen(state, projects)) return listRows(projects, width, now);
+  if (projectListOpen(state, projects)) return state.projectLayout === 'board' ? boardListRows(projects, width, now) : listRows(projects, width, now);
   if (!data) return [];
   // The model picker is the Control plane while it is open.
   if (page === 'control' && state.projectInput && pickOf(data, state.projectInput)) return pickerRows(data, state.projectInput, width, room ?? 24);
+  if (!page && state.projectLayout === 'board') return boardHubRows(data, state, width, now, name, projects, board, room, tryMarks);
   return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks, room) : hubRows(data, state, width, now, name, projects, board, room);
 }

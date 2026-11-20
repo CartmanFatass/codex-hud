@@ -223,11 +223,14 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         tryOnly();
         return result();
       }
-      const tried = next.projectTry && tryInput(next, key, rows[at]);
+      const tried = (next.projectTry || next.projectLayout === 'board') && tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
     if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });
+    const onFoldRole = /^project:fold:role:(.+)$/.exec(next.projectCursor ?? '');
+    if ((key === 'role-preset' || key === 'role-preset-prev') && onFoldRole && projectPageOf(next) === 'control')
+      return result({ type: 'role-edit', role: onFoldRole[1], index: 0, op: 'preset', ...(key === 'role-preset-prev' ? { step: -1 as const } : {}) });
     const place = PLACE_KEYS[key === 'backspace' ? 'place-remove' : key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');
     // `m` opens the model picker where there is something to pick; elsewhere it is the old key (a Flow place's kind, the project file's refusal).
     const pick = rows[at]?.modelPick;

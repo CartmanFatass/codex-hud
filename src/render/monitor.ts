@@ -96,6 +96,8 @@ export interface MonitorState {
   cardHideMinutes?: number;
   /** Settings → Panel → Layout; unset is Classic. */
   panelLayout?: HudSettings['panelLayout'];
+  /** Settings → Panel → Project layout; unset is Timeline. */
+  projectLayout?: HudSettings['projectLayout'];
   /** Split: the list's cursor (an item id), the preview's cursor while the keys are in the preview, and the preview's scroll. */
   splitCursor?: string;
   splitFocus?: 'preview';
@@ -242,7 +244,7 @@ export function monitorModes(settings: HudSettings): MonitorModes {
   return { agents: 'open', changes: settings.changesPane, details: settings.detailsPane };
 }
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
-  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout };
+  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout, projectLayout: settings.projectLayout };
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return { changesPane: state.modes.changes, detailsPane: state.modes.details };

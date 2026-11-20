@@ -281,5 +281,22 @@ export const WORKBOARD_ZH: Record<string, string> = {
   Split: '分栏',
   'Home and Project: Classic is the default; Split puts a list over a preview of the selected row':
     '首页和项目：默认经典；分栏上方是列表，下方预览所选行',
+  'Project layout': '项目布局',
+  Timeline: '时间线',
+  Board: '看板',
+  Inbox: '收件箱',
+  'Project tab: Timeline is the default; Board shows a milestone map, chains and tables; Inbox puts what needs you first':
+    '项目页：默认时间线；看板展示里程碑图、角色链和项目表；收件箱优先显示待处理项',
+  latest: '最近',
+  now: '现在',
+  Milestones: '里程碑',
+  'Outside the ledger': '台账外任务',
+  '{n} on fallback': '{n} 个备选中',
+  '{n} unavailable': '{n} 个不可用',
+  ms: '阶段',
+  ledger: '进度',
+  age: '时间',
+  'waiting for you': '等你处理',
+  'jobs running': '运行中任务',
   '{n} done': '{n} 已完成',
 };

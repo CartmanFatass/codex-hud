@@ -75,6 +75,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'panelLayout', group: 'Panel', label: 'Layout', values: ['classic', 'split'],
     help: 'Home and Project: Classic is the default; Split puts a list over a preview of the selected row',
     format: (value) => t(({ classic: 'Classic', split: 'Split' } as Record<string, string>)[String(value)] ?? String(value)) },
+  { key: 'projectLayout', group: 'Panel', label: 'Project layout', values: ['timeline', 'board', 'inbox'],
+    help: 'Project tab: Timeline is the default; Board shows a milestone map, chains and tables; Inbox puts what needs you first',
+    format: (value) => t(({ timeline: 'Timeline', board: 'Board', inbox: 'Inbox' } as Record<string, string>)[String(value)] ?? String(value)) },
   {
     key: 'treeWidth',
     group: 'Panel',
@@ -184,7 +187,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['homeMode', 'panelLayout', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
+  Panel: ['homeMode', 'panelLayout', 'projectLayout', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'summaryIntervalMinutes'],
   Codex: ['statusline'],
 };
