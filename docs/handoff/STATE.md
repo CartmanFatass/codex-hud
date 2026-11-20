@@ -159,8 +159,8 @@ board counts these; update at every landing or decision. -->
 - try · 0.2.0 · PANEL-UX-01 · to-try rows read as briefs; counts agree; number keys leave the tabs (f = Changes); direct `1–4`/`d` answers; no divider drag (f287d6e1)
 - try · 0.2.0 · PANEL-UX-02 · one meaning per key (n flag, > < next question, i/Del places, g job tab); state said once; 40-column rows keep model names; zh words (用量, JSON 无法解析) (b1b4c8eb; job-sentence JSON fix 8e384387)
 - working · 0.2.0 · PANEL-UX-TITLES · ticket titles cut at a word, never inside one (imp neon; EN check found it; clamped sentences fixed 9d60eec7)
-- working · 0.2.0 · PROJECT-LAYOUTS-01 · Project layout setting (Timeline | Board | Inbox) and the Board layout (imp neon)
-- todo · 0.2.0 · PROJECT-LAYOUTS-02 · the Inbox layout
+- try · 0.2.0 · PROJECT-LAYOUTS-01 · Settings → Panel → Project layout (Timeline | Board | Inbox); the Board layout (imp neon) (f9aa6dda)
+- working · 0.2.0 · PROJECT-LAYOUTS-02 · the Inbox layout (imp neon)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
