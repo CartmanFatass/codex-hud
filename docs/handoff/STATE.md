@@ -7,6 +7,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
+- UX-PASS: 8 decisions (model-selection D1 drop zoom, D2 one click sets, D3 footer % = used, D4 flat filtered list; overall D1 footers drop movement keys, D2 Split Progress rows show text, D3 ZH 分 not 分钟, D4 normal state silent) — see docs/design/ux-pass/
 
 
 ## Next
@@ -174,8 +175,8 @@ board counts these; update at every landing or decision. -->
 - done · — · REVIEW-CONTROL-EXP · review on 2e4b45d3: changes-required, 5 blocking (EXP-02 native bar never reaches EXP, EXP-03 7d dropped, EXP-04/05 duplicate ledger lines, draft rows lose [model ▾], focused chain lacks provider unknown) · docs/reviews/2026-11-20-control-exp-review.md
 - accepted · — · REVIEW-FIX-CONTROL-EXP · review fixes: native bar seen per Codex profile (EXP switch = tracking), pi footer 5h + 7d (≈ for proxy, second window dropped only when narrow), ledger one line per event ID on disk, draft rows keep [model ▾], focused chain says provider unknown; superseded immediate-edit paths deleted (imp) (5d39de2c; 86+853)
 - try · — · NO-DEFAULT-LABELS · Control drops [default]/[Custom] tags; unset model/thinking show the effective value muted ([▾] / blank when unknown); picker's clear row says role's model (…) / clear; no-selector choice is "file chain" (imp) (aeb74f31; test fix)
-- working · — · UX-PASS-DESIGN · owner 2026-11-20: model selection still unsatisfying (path too long, finding models hard, zoom/mouse feel) + pi footer quota needs the Claude statusline art style; oracle (fable) designs slices, imps build (j7d87697832f924db)
-- working · — · UX-PASS-OVERALL · owner 2026-11-20: whole-HUD UI/UX design (all tabs, Settings, Help, layouts, keys; model selection/pi footer only as notes); the first fable session resumed by hand in herdr tab w51:t1N (claude --resume, report to jobs/je49848d19971c0d8/report.md)
+- done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
+- done · — · UX-PASS-OVERALL · overall design: 1 FOOTER, 2 SAY-ONCE, 3 HELP, 4 EXP-FORM, 5 HARNESS-ROWS, 6 TOP-ROW; 4 owner decisions · docs/design/ux-pass/overall.md
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
