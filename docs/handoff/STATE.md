@@ -184,7 +184,7 @@ board counts these; update at every landing or decision. -->
 - try · UX-PASS · UX-PASS-10 · Harnesses rows show exceptions only (imp sol) (9b19ec26)
 - try · UX-PASS · UX-PASS-04 · likely models first (current, presets, providers the roles name), ranked flat filter, `was` row for the last quick save (imp sol) (808c57ac; tests after it)
 - try · UX-PASS · UX-PASS-11 · top row: no models on / EXP exp, Esc stays on root tabs, 分, Split lane says subagents (imp sol) (123a9b9f)
-- working · — · PROJECT-CLI-PLACES · a project role chain may name CLI places (agent, model, thinking/effort; no args); hud setup plan gains `runs` (imp sol je75ff152c0ee966f, wt/project-cli-places)
+- try · — · PROJECT-CLI-PLACES · a registered project's role chain may name CLI places (agent, model, thinking; no args, no bro); hud setup plan `runs`, skill asks (imp sol) (d13a16a6)
 - working · UX-PASS · UX-PASS-05 · CLI and AI Studio places open the same picker, flat (imp sol j4c2c4cd7ac76a5f7, wt/ux-pass-05)
 - working · — · OWNER-VIEW · hide Decided for you (still collected); to-try rows grouped per milestone task by default, per slice by setting (imp sol j69837f2dc35459ef, wt/owner-view)
 - done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
