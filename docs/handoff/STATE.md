@@ -7,10 +7,6 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
-- Try PANEL-UX-01 and 02 (images: docs/design/panel-ux/png/).
-- Try PROJECT-LAYOUTS 01 (Board) and 02 (Inbox): Settings → Panel → Project layout.
-- Try 0.2.0 (4 slices on the Progress page).
-- Try the 5 older slices still marked to try.
 
 ## Next
 

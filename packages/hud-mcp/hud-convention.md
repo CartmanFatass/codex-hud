@@ -22,5 +22,5 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   Use `view: "recent"` for the newest 20 full rows. Neither list marks items read. A job read returns only an unread
   report (`report_unchanged: true` otherwise; `full: true` to reread). A report read in idle grace marks it read too.
 - Use `hud_peek` to inspect a worker's recent pane and optional `hud-progress` milestones without marking the job read or closing it.
-- On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong.
+- On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong. Never list a `try` slice under Waiting for the owner: the ledger's `try` rows are the to-try list, and Waiting holds only what is not a try (flagged slices, owner decisions).
 The main session owns every handoff and decides every next step. HUD does not chain these steps.
