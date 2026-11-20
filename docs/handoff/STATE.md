@@ -168,7 +168,7 @@ board counts these; update at every landing or decision. -->
 - try · — · MODEL-PICKER-01 · picker model facts (ctx/out/think/img from the same pi --list-models call), strip, ✗/⊘/? row facts, off-provider line, ^R, Esc clears filter first (imp) (b1d81f98)
 - try · — · MODEL-PICKER-02 · clickable [model ▾] on editable pi/cli places (locked rows plain, Flow keeps m), pinned current + this role's preset models, folded groups open on typing, mouse select/set/wheel/header fold (imp) (094c514a)
 - try · — · MODEL-PICKER-03 · picker zooms the panel's herdr pane (--on; --off only if it zoomed), 120×36 list with pi columns + read-only detail (used by, off provider), narrow below 100 cols / outside herdr / refused (imp) (a43f4bef)
-- working · — · CONTROL-TAB-05 · direct chain editing: I empty draft, i one-sheet add, K/J/Del, s atomic save, Discard edits?; removes p/P and e/E cycling and auto fallbacks (imp j184c7d0558dae678, wt/control-tab-05)
+- try · — · CONTROL-TAB-05 · direct chain editing: Enter focuses the chain, I empty draft, i one-sheet add (target/model/thinking, picker for pi), K/J/Del, s one atomic save + select, Discard edits?; p/P, e/E, M cycling and auto fallbacks removed (imp) (011bf261)
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa; Fishpref worker async ask 5e4b6d8 on main 2026-11-20)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 
