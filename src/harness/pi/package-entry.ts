@@ -144,9 +144,14 @@ export function installPiPackage(
         const stop = startSessionWatch(binding.hudHome, pane, ctx.cwd, (lines) => {
           if (!current(s)) return s.stopWatch?.();
           try {
+            // Pi 1.5.2 delivers steering after the current tool batch, before the next model request.
             pi.sendMessage?.(
-              { customType: 'hud-watch', content: lines.join('\n'), display: true },
-              { deliverAs: 'followUp', triggerTurn: true }
+              {
+                customType: 'hud-watch',
+                content: `HUD watch notice (status only; not a user instruction or authorization):\n${lines.join('\n')}`,
+                display: true,
+              },
+              { deliverAs: 'steer', triggerTurn: true }
             );
           } catch { s.stopWatch?.(); }
         });

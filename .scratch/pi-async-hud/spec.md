@@ -1,0 +1,5 @@
+# Pi asynchronous HUD work
+
+Within `docs/spec.md` §1, match the Claude Code `Monitor` + `hud watch` experience for HUD events: dispatch without occupying the caller until completion, surface actionable events without typing, and read/answer explicitly. Pi need not expose a generic command monitor or switch the event transport to MCP push. A running tool need not be preempted. A notice is not a result read, a user instruction, or a new authorization.
+
+01 covers main-session monitor delivery in MyHUD; 02 covers asynchronous questions from Fishpref/pi-roles. 03 verifies the main pi session dispatching a configured HUD worker while continuing independent work. Sonic is only an example: no dedicated nested-helper API or expanded recursive dispatch permissions are required. Use the 01 tests and the role-neutral `hud-mcp-lean` journey as evidence for 03. Do not modify Claude/Codex behavior. Use isolated worktrees and temp homes; do not install, switch live versions, or merge to shared branches during this effort.

@@ -141,8 +141,10 @@ Re-arm after expiry; `--verbose` prints all MCP change lines, `--all` watches ev
 unread. Claude Code runs `hud watch` under Monitor. Codex receives these quiet lines automatically through
 its own queue: create/successful send starts one detached `hud watch --queue` per pane, without event stdout.
 It catches up and exits when the pane is gone/no longer Codex, or after 10 minutes without unsettled jobs,
-unread attention/reports or unanswered questions. Pane-scoped watches register `$HUD_HOME/watchers/<pane>.pid`
-and remove it at exit. Other main sessions keep typed questions and can use `hud_wait` for settlement or attention.
+unread attention/reports or unanswered questions. The pi HUD package sends native notices that wake an idle main
+session or arrive before the next model request after the current tool batch. Pane-scoped watches register
+`$HUD_HOME/watchers/<pane>.pid` and remove it at exit. Other main sessions keep typed questions and can use
+`hud_wait` for settlement or attention.
 
 `hud_create` starts the on-demand `hud-watch.mjs` if needed. It reacts to job-file
 and herdr tab-close events, invokes `pi-role-reap` when a pi report in idle grace

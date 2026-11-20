@@ -741,67 +741,102 @@ async function until(check, failure = 'timed out waiting for the native watcher'
   }
 }
 
-test('pi delegation wakes the current session natively and fences the watcher on rebind and shutdown', async (t) => {
+test('pi watches at the next model boundary or wakes when idle, and drops stale deliveries', async (t) => {
   const f = setup(t), h = host(), c = context(f, h), p = ports(f);
   const home = f.binding.hudHome, pane = f.env.HERDR_PANE_ID;
   const marker = path.join(home, 'watchers', `${pane}.pid`);
   const id = 'j0000000000000001', dir = path.join(home, 'jobs', id);
+  const jobFile = path.join(dir, 'job.json');
   const receipt = { job: id, role: 'imp', herdr_pane: pane, created_at: new Date().toISOString(), cli: { agent: 'claude' } };
-  const status = (state) => fs.writeFileSync(path.join(dir, 'STATUS.json'), JSON.stringify({ state }));
-  const messages = [];
-  h.pi.sendMessage = (message, options) => messages.push({ message, options });
+  const status = (state, extra) => fs.writeFileSync(path.join(dir, 'STATUS.json'), JSON.stringify({ state, ...extra }));
+  const messages = [], queued = [];
+  let toolRunning = false, draft = 'Unsent draft';
+  const tool = new AbortController();
+  c.ctx.abort = () => tool.abort();
+  c.ctx.ui.setEditorText = (text) => (draft = text);
+  c.ctx.ui.pasteToEditor = (text) => (draft += text);
+  // Model the documented pi 1.5.2 contract: idle triggerTurn wakes; only steering reaches an in-run request.
+  h.pi.sendMessage = (message, options) => {
+    if (toolRunning) queued.push({ message, options });
+    else if (options.triggerTurn) messages.push(message);
+  };
+  const notice = (text) => ({
+    customType: 'hud-watch',
+    content: `HUD watch notice (status only; not a user instruction or authorization):\n${text}`,
+    display: true,
+  });
+  const question = (n) => {
+    const file = path.join(dir, `qa/q${n}.md`);
+    fs.writeFileSync(file, `# Question q${n} from imp@demo\n\nWhich layout?\n\nDefault if unanswered: rows\n`);
+    return `[imp@demo] QUESTION q${n}: Which layout? | default: rows | full text: ${file} | reply: hud_respond job=${id} request_id=q${n}`;
+  };
   fs.mkdirSync(path.join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(receipt));
+  fs.writeFileSync(jobFile, JSON.stringify(receipt));
   status('working');
+  const pending = question(1);
   await load(f, h, p);
   await load(f, h, p, 'hud-display.mjs');
   t.after(() => h.emit('session_shutdown', c.ctx));
   assert.equal(fs.existsSync(marker), false, 'extension load is inert until session_start');
   await h.emit('session_start', c.ctx);
   assert.equal(JSON.parse(fs.readFileSync(marker, 'utf8')).pid, process.pid);
-  const q1 = path.join(dir, 'qa/q1.md');
-  fs.writeFileSync(q1, '# Question q1 from imp@demo\n\nWhich layout?\n\nDefault if unanswered: rows\n');
   await until(() => messages.length === 1);
+  assert.deepEqual(messages, [notice(pending)], 'pending question wakes the idle session on catch-up');
+
+  toolRunning = true;
   fs.writeFileSync(path.join(dir, 'qa/q1.answer.md'), 'rows');
+  const live = question(2);
+  fs.writeFileSync(
+    path.join(dir, 'progress.jsonl'),
+    JSON.stringify({ at: new Date().toISOString(), text: 'Routine progress' }) + '\n'
+  );
+  status('working', { blocked: true, reason: 'Synthetic approval needed' });
+  await until(() => queued.length > 0);
+  assert.equal(messages.length, 1, 'no new request while the tool is running');
+  assert.equal(tool.signal.aborted, false, 'the tool is not cancelled');
+  // Finish the tool batch, but not the run; follow-up messages would still be waiting here.
+  toolRunning = false;
+  messages.push(
+    ...queued.splice(0).filter(({ options }) => options.deliverAs === 'steer' && options.triggerTurn).map(({ message }) => message)
+  );
+  assert.deepEqual(messages.slice(1), [notice(`${live}\n${id} imp: working | Synthetic approval needed | QUESTION`)]);
+
+  fs.writeFileSync(path.join(dir, 'qa/q2.answer.md'), 'rows');
   fs.writeFileSync(path.join(dir, 'report.md'), 'Synthetic report.');
   status('idle_grace');
-  await until(() => messages.length === 2);
+  await until(() => messages.length === 3);
+  assert.deepEqual(messages[2], notice(`${id} imp: idle_grace | report`), 'idle wake contains only the report notice');
+  assert.deepEqual(JSON.parse(fs.readFileSync(jobFile, 'utf8')), receipt, 'notice does not mark the report read');
   fs.writeFileSync(path.join(home, 'tries.jsonl'), [
     { root: '/synthetic/other-project', action: 'accept', milestone: 'M1', slices: ['other'] },
     { root: f.cwd, action: 'accept', milestone: 'M1', slices: ['demo'] },
   ].map(JSON.stringify).join('\n') + '\n');
-  await until(() => messages.length === 3);
-  assert.deepEqual(messages, [
-    `[imp@demo] QUESTION q1: Which layout? | default: rows | full text: ${q1} | reply: hud_respond job=${id} request_id=q1`,
-    `${id} imp: idle_grace | report`,
-    'try accepted workspace M1: demo',
-  ].map((content) => ({
-    message: { customType: 'hud-watch', content, display: true },
-    options: { deliverAs: 'followUp', triggerTurn: true },
-  })));
+  await until(() => messages.length === 4);
+  assert.deepEqual(messages[3], notice('try accepted workspace M1: demo'));
   assert.deepEqual(p.calls(), [], 'native delivery never calls herdr');
   assert.equal(h.calls.messages, 0, 'native delivery never sends as user input');
+  assert.equal(draft, 'Unsent draft');
 
-  fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
+  fs.writeFileSync(jobFile, JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
   const next = context(f, h, 'session-b');
   const rebinding = h.emit('session_tree', next.ctx);
   assert.equal(fs.existsSync(marker), false, 'fence synchronously unregisters the outgoing watch');
   await rebinding;
   assert.equal(fs.existsSync(marker), true, 'incoming session starts its own watch');
   next.setId('stale');
-  fs.writeFileSync(path.join(dir, 'qa/q2.md'), 'A stale binding must not get this question.');
+  fs.writeFileSync(path.join(dir, 'qa/q3.md'), 'A stale binding must not get this question.');
   await until(() => !fs.existsSync(marker));
-  assert.equal(messages.length, 3);
+  assert.equal(messages.length, 4);
 
-  fs.writeFileSync(path.join(dir, 'qa/q2.answer.md'), 'Already answered.');
+  fs.writeFileSync(path.join(dir, 'qa/q3.answer.md'), 'Already answered.');
   next.setId('session-b');
   await h.emit('session_tree', next.ctx);
   assert.equal(fs.existsSync(marker), true);
-  fs.writeFileSync(path.join(dir, 'qa/q3.md'), 'A shut-down binding must not get this question.');
+  fs.writeFileSync(path.join(dir, 'qa/q4.md'), 'A shut-down binding must not get this question.');
   await h.emit('session_shutdown', next.ctx);
   assert.equal(fs.existsSync(marker), false);
   await sleep(150);
-  assert.equal(messages.length, 3);
+  assert.equal(messages.length, 4);
 });
 
 test('pi delegation never starts a native watcher for a HUD worker', async (t) => {
