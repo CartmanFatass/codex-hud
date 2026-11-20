@@ -8,12 +8,13 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Waiting for the owner
 
 - Try PANEL-UX-01 and 02 (images: docs/design/panel-ux/png/).
+- Try PROJECT-LAYOUTS 01 (Board) and 02 (Inbox): Settings → Panel → Project layout.
 - Try 0.2.0 (4 slices on the Progress page).
 - Try the 5 older slices still marked to try.
 
 ## Next
 
-- PROJECT-LAYOUTS (`.scratch/project-layouts/`, owner 2026-11-20: PROJECT-UX B and C back as Project layouts, consistent with PANEL-UX): 01 setting + Board → 02 Inbox, imp on neon.
+- PROJECT-LAYOUTS (`.scratch/project-layouts/`, owner 2026-11-20: PROJECT-UX B and C back as Project layouts, consistent with PANEL-UX): 01 Board and 02 Inbox landed; both to try.
 - PANEL-UX (`.scratch/panel-ux/`, from the owner's UI/UX review 2026-11-19): 01 to-try briefs in rows, one count, number keys off the tabs, direct `1–4`/`d` answers, no divider drag (frontend-imp) → 02 one meaning per key, no repeated status, 40-column rows, one language.
 - MCP-NEXT (`.scratch/mcp-next/`, 7 tickets): 01 fine-grained locks + pre-flight trust + parsed quota TTL → 02 `hud_create` preset + 04 pi native silent watch → 03 `hud_wait` → 05 `context_files`/`from_jobs` → 06 `hud-progress` + `hud_peek` → 07 managed `worktree` isolation.
 - PANEL-V2 (`.scratch/panel-v2/`, 7 tickets): 01 micro-actions (`g` tab focus, `1–4`/`d` QA reply, `X` stop) + 05 safe `--numstat` diff bars + 06 Control plane quota/spend radar → 02 Split V2 (working cues, ratio, scrollbar) + 07 static HTML review board (`hud board` / `w`) → 03 global `/` filter → 04 activity sparklines + nested sonic subtrees.
@@ -160,7 +161,7 @@ board counts these; update at every landing or decision. -->
 - try · 0.2.0 · PANEL-UX-02 · one meaning per key (n flag, > < next question, i/Del places, g job tab); state said once; 40-column rows keep model names; zh words (用量, JSON 无法解析) (b1b4c8eb; job-sentence JSON fix 8e384387)
 - try · 0.2.0 · PANEL-UX-TITLES · ticket titles cut at a word, never inside one (imp neon) (1234b2a0; clamped sentences 9d60eec7)
 - try · 0.2.0 · PROJECT-LAYOUTS-01 · Settings → Panel → Project layout (Timeline | Board | Inbox); the Board layout (imp neon) (f9aa6dda)
-- working · 0.2.0 · PROJECT-LAYOUTS-02 · the Inbox layout (imp neon)
+- try · 0.2.0 · PROJECT-LAYOUTS-02 · the Inbox layout: Needs you first, Running, Progress by To try; Project tab only (imp neon) (8b0aba6c)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
