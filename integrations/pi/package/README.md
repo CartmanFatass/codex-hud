@@ -1,15 +1,15 @@
 # Pi packages `hud` and `hud-display`
 
 `./install --with pi` materializes `package.json`, `binding.json`, `binding.mjs`,
-`extensions/hud.mjs` and symlinks to the canonical `skills/hud-delegate` and
-`skills/hud-setup` under `$HUD_HOME/pi-package/`, then registers it with `pi install`:
+`extensions/hud.mjs` and symlinks to the canonical `skills/hud-delegate`, `skills/hud-setup`,
+`skills/hud-handoff` and `skills/to-tickets` under `$HUD_HOME/pi-package/`, then registers it with `pi install`:
 the delegation package, always loaded, holding the six role tools and those skills. It also
 prepares `$HUD_HOME/pi-display/` (same binding files, `extensions/hud-display.mjs`)
 and registers it too: the footer, the Work segment and `/hud`. Do not also load it
 with `pi -e`, or two footers run. The binding names the installed tree (checkout or
 extracted release), HUD home and Node executable directly; there is no release
 manifest, digest or version pin. `./install` builds the tree before registering.
-Each manifest selects only its own extension (plus the skill in the delegation
+Each manifest selects only its own extension (plus the skills in the delegation
 package), never `hud-footer.ts`,
 managed `hud-delegate.ts` or the worker-only `integrations/pi/worker.ts`.
 Host pi libraries are peers, never bundled dependencies. No dotfile is shipped.

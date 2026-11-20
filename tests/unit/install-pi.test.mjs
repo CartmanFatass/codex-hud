@@ -82,10 +82,10 @@ fs.writeFileSync(file, JSON.stringify(settings));
   const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json')));
   assert.deepEqual(manifest.pi, {
     extensions: ['./extensions/hud.mjs'],
-    skills: ['./skills/hud-delegate/SKILL.md', './skills/hud-setup/SKILL.md'],
+    skills: ['./skills/hud-delegate/SKILL.md', './skills/hud-setup/SKILL.md', './skills/hud-handoff/SKILL.md', './skills/to-tickets/SKILL.md'],
   });
   assert.ok(fs.statSync(path.join(pkg, 'extensions/hud.mjs')).isFile());
-  for (const name of ['hud-delegate', 'hud-setup']) {
+  for (const name of ['hud-delegate', 'hud-setup', 'hud-handoff', 'to-tickets']) {
     assert.equal(fs.readlinkSync(path.join(pkg, 'skills', name)), path.join(repo, 'integrations/skills', name));
     assert.ok(fs.statSync(path.join(pkg, 'skills', name, 'SKILL.md')).isFile());
   }

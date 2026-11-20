@@ -102,7 +102,7 @@ export const PI_ROLE_TOOLS = [
   ),
   tool(
     'hud_create',
-    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Uses the first available place in the role's run or named preset; use on instead to override the harness. model and thinking override pi or CLI places; kind is flow-only, idle_grace_s is CLI-only, and launch switches and pi_args are pi-only.",
+    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Uses the first available place in the role's run or named preset; use on instead to override the harness. model and thinking override pi or CLI places; kind is flow-only, idle_grace_s is CLI-only, and launch switches and pi_args are pi-only. Leave preset, on, model and thinking unset unless the user explicitly asks for that override: the role's configured place is the owner's choice.",
     {
       role: text,
       request_key: text,
@@ -122,12 +122,12 @@ export const PI_ROLE_TOOLS = [
       on: {
         ...text,
         description:
-          'Override the harness or browser provider for this job only (pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow).',
+          'Override the harness or browser provider for this job only (pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow). Only when the user explicitly asks; otherwise omit.',
       },
-      preset: { type: 'string', description: 'Select a named role preset for this job without editing role files.' },
+      preset: { type: 'string', description: 'Select a named role preset for this job without editing role files. Only when the user explicitly asks; otherwise omit.' },
       kind: { type: 'string', enum: ['image', 'video'], description: 'Flow output kind: image (default) or video.' },
-      model: { ...text, description: 'Override the pi or cli role model for this job only.' },
-      thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },
+      model: { ...text, description: 'Override the pi or cli role model for this job only. Only when the user explicitly asks; otherwise omit.' },
+      thinking: { ...text, description: 'Override the pi or cli role thinking for this job only. Only when the user explicitly asks; otherwise omit.' },
       lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },
       mcp: { type: 'boolean', description: 'Load MCP adapter (--mcp / --no-mcp).' },
       tps: { type: 'boolean', description: 'Load tokens/s telemetry (--tps / --no-tps).' },

@@ -46,7 +46,7 @@ pi gets the `/hud` command from the display package.
   a backed-up owner statusline, and removes the owned command and any old owned
   `$HUD_HOME/claude.json`. Unrelated settings and files stay.
 - **pi**: prepares and registers both `$HUD_HOME/pi-package` (delegation tools +
-  `hud-delegate` and `hud-setup` skills) and `$HUD_HOME/pi-display` (footer, Work segment, `/hud`)
+  `hud-delegate`, `hud-setup`, `hud-handoff` and `to-tickets` skills, the same set Claude and Codex get) and `$HUD_HOME/pi-display` (footer, Work segment, `/hud`)
   with `pi install`. Registration is idempotent, including hand-registered packages.
   It adds the `-extensions/p10k-footer.ts` filter to pi's settings and imports
   `p10k-footer.json` when present. Workers load the display package too; the panel

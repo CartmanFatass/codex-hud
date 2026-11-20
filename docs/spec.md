@@ -93,14 +93,14 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    decisions): the HUD's own flow is the one in `docs/delegation.md`, slicing with `to-tickets` and one review per
    milestone. Matt Pocock's skills are an inactive collection taken on demand: the upstream plugin is off
    everywhere (Claude, Codex, pi, other harnesses), and only `to-tickets` (adapted to the Project tab's ticket format
-   and `hud tickets sync`) is installed, for Claude and Codex main sessions. The other adapted copies
+   and `hud tickets sync`) is installed, for Claude, Codex and pi main sessions (pi added 2026-11-20 so every harness starts alike; pi workers run with `-ns` and never load it). The other adapted copies
    (`grill-with-docs` with `grilling` and `domain-modeling`, `to-spec`, `hud-build`, `tdd`, `diagnosing-bugs`) and
    verbatim copies of the rest of the collection (`wayfinder`, `triage`, `improve-codebase-architecture`, `wizard`,
    `teach`, `wait-what`, `writing-for-agents`, `to-questionnaire`, `prototype`, `retro`, `pr`, `codebase-design`;
    owner, 2026-11-17) live in `integrations/skills-optional/`: not installed, not linked to workers, not offered by
    `hud setup`, and no role loads one by default, the oracle included; the main session reads one when the owner
    asks, or names one by path in a worker's brief. Each names the upstream commit it came from; we own the adapted
-   text and do not track upstream. `hud-handoff` is installed for Claude and Codex beside
+   text and do not track upstream. `hud-handoff` is installed for Claude, Codex and pi beside
    `hud-delegate` and `hud-setup`. The Skills tab lists the whole inactive collection. Ticket tracking: a project's tracker may be GitHub Issues, mirrored one way into `.scratch/` for the Project
    tab and workers; only the mirror tool writes the mirror. The mirror tool is `hud tickets sync` (owner, 2026-11-17):
    it reads the project's GitHub issues through `gh`, takes each parent issue with sub-issues as a feature (its slug
