@@ -69,15 +69,17 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | Role | Runs on | Used for |
 | --- | --- | --- |
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
-| implementer | role `imp` (skill `hud-delegate`): pi `openai/gpt-6.2-sol` high, fallback pi `xai/grok-4.7` | one slice each |
-| reviewer | role `reviewer`, one per review: pi `openai/gpt-6.2-sol` xhigh, fallback agy `gemini-4-hydrogen-high` | milestone reviews and the risky cases above only |
-| sonic | role `sonic`: pi, DeepSeek V4.1 Flash | small chores for any role; never tests, bug hunting or design |
-| oracle | role `oracle`: claude `fable` high, fallback pi `architect` (`openai/gpt-6.2-astra` high) | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
-| pro | role `pro` (`bro`): ChatGPT 6 Pro, then Gemini web, then AI Studio Argon | a new product direction; research that needs outside sources (primary sources, each claim cited) |
-| frontend-implementer | role `frontend-imp`: claude `claude-sonnet-5-5` xhigh | UI design and frontend development |
+| implementer | role `imp` (skill `hud-delegate`) | one slice each |
+| reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
+| sonic | role `sonic` | small chores for any role; never tests, bug hunting or design |
+| oracle | role `oracle` | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
+| pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |
+| frontend-implementer | role `frontend-imp` | UI design and frontend development |
 | Hermes | Windows, computer use | tests that need human-like interaction |
 
-Codex tests use `codex2` (free account, `gpt-6-luna` medium), never the main `codex` account.
+Where each role runs (harness, model, thinking) is what `hud_roster` reports as `runs_on`: the owner's role files, switched in the Control plane. A dispatch passes no `preset`, `on`, `model` or `thinking` unless the owner asks for it in that request, and an owner's pick for one task does not carry over to the next (owner, 2026-11-20).
+
+Codex tests use `codex2` (the free account), never the main `codex` account.
 
 ## Conventions
 
