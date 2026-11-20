@@ -7,11 +7,12 @@ import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { projectFixture, plain, onPage, onControl, NOW, TREE, MODEL_LISTS } from '../fixtures/project-page.mjs';
+import { projectFixture, pickerFrames, MAVERICK, plain, onPage, onControl, NOW, TREE, MODEL_LISTS } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { editPlaces, placeItem } from '../../dist/roles/role-control.js';
+import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { markExhausted, placeKey, roleRegistry, writeRolePlaces } from '../../dist/roles/roster.js';
 
 const mcpEntry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
@@ -306,103 +307,85 @@ test('browser places: p walks the web models, a second place can be promoted, a 
 });
 
 const lines40 = (s, lang = 'en', height = 20) => plain(s.frame(40, lang, height));
-test('the model picker: curated providers first, then one provider\'s newest models; typing filters, Enter sets through the role file, Esc cancels', async (t) => {
+test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a provider never rewrites a role or filters the cache', async (t) => {
   const s = await setup(t);
+  const config = join(s.hud, 'harnesses.json');
+  const legacy = { catalog: { pi: { include: { openai: ['only-an-obsolete-pattern'] } } } };
+  s.put(config, legacy);
   discover(s);
-  // imp runs `synthetic/model`, a model nothing lists: it is still offered, under its own provider after the curated ones.
+  const cacheFile = join(s.hud, 'display/model-lists.json'), cacheBefore = fs.readFileSync(cacheFile);
   await s.press('m');
-  assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false, 'opening it writes nothing');
+  assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false, 'opening writes nothing');
   let page = lines40(s).join('\n');
-  assert.match(page, /^imp · pi ─+ provider$/m);
-  assert.match(page, /^ {2}model {2}synthetic\/model$/m);
-  assert.match(page, /^ {2}\/ ▌ +5\/5$/m, 'the filter line: nothing typed, the 5th of 5 picked (the current one)');
-  // Include order, each provider with how many models it offers: arena whole, deepseek only, opus only, gpt-6 only, the current one's.
-  assert.match(page, /^ {4}arena +4\n {4}mistral +1\n {4}anthropic +1\n {4}openai +3\n {2}◉ synthetic +1$/m);
-  assert.doesNotMatch(page, /google/);
-  // Typing filters the providers live (substring, any case); Enter opens the one picked.
+  assert.match(page, /Model ─+ pi · list 0m old/);
+  assert.match(page, /default → synthetic\/model\n +from pi role/);
+  assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length} matches`));
   await s.keys('ANTH');
   page = lines40(s).join('\n');
-  assert.match(page, /^ {2}\/ ANTH▌ +1\/1$/m);
-  assert.match(page, /^ {4}anthropic +1$/m);
-  assert.doesNotMatch(page, /arena|openai/);
-  await s.press(ENTER);
-  page = lines40(s).join('\n');
-  assert.match(page, /^imp · pi › anthropic ─+ model$/m);
-  // Opus: of claude-opus-4-5, 4-6, 5, 5-5 and the dated 5-5 only the undated newest. `default` unsets the model.
-  assert.match(page, /^ {4}default\n {4}claude-opus-5-5$/m);
-  assert.doesNotMatch(page, /claude-opus-4|20261101|sonnet|haiku/);
-  // Backspace on an empty filter, or Left, goes back to the providers; the filter starts empty again.
-  await s.press(BACKSPACE);
-  assert.match(lines40(s).join('\n'), /^imp · pi ─+ provider$/m);
-  await s.keys('open', ENTER);
-  assert.match(lines40(s).join('\n'), /^ {4}default\n {4}gpt-6\.1-sol\n {4}gpt-6\.1-luna\n {4}gpt-6-astra$/m);
-  await s.press('\x1b[D');
-  assert.match(lines40(s).join('\n'), /^imp · pi ─+ provider$/m);
-  // Arrows pick, Enter on a model sets `provider/model` through the role file, as `editPlaces` does.
-  await s.keys('openai', ENTER, DOWN, DOWN, ENTER);
+  assert.match(page, /\/ ANTH▌ +8 matches/);
+  assert.match(page, /^anthropic ─+ 7\n[\s\S]*^arena ─+ 1/m);
+  assert.match(page, /claude-opus-5-5-20261101/);
+  assert.doesNotMatch(page, /openai/);
+  await s.keys(ESC, 'm', 'XAI/GROK-4.7', ENTER);
   assert.deepEqual(s.session.done, { ok: true, index: 0 });
-  assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-luna');
-  assert.equal(s.assignment('imp').model, 'openai/gpt-6.1-luna');
+  assert.equal(stored(s, 'imp').run[0].model, 'xai/grok-4.7');
+  assert.equal(s.assignment('imp').model, 'xai/grok-4.7');
   assert.equal(s.session.state.projectInput, undefined);
-  assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 0), 'the cursor is on the place again');
-  // The role's current model is picked when the picker opens, and shown with ◉.
-  await s.press('m');
+  assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 0));
+  assert.deepEqual(JSON.parse(fs.readFileSync(config, 'utf8')), legacy);
+  const roleFile = join(s.hud, 'roles/imp.json'), before = fs.readFileSync(roleFile);
+  setHarnessDisabled(s.hud, 'pi:xai', true);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  assert.equal(s.assignment('imp').places[0].state, 'off');
+  await s.keys('m', 'grok');
   page = lines40(s).join('\n');
-  assert.match(page, /^ {2}model {2}openai\/gpt-6\.1-luna$/m);
-  assert.match(page, /^ {2}◉ openai +3$/m);
-  assert.doesNotMatch(page, /synthetic/, 'a model that is no longer in use is not kept');
-  // Esc cancels at either level and writes nothing; so does Ctrl+C, which does not close the panel.
-  await s.keys(ENTER, DOWN, ESC);
-  assert.equal(s.session.state.projectInput, undefined);
-  assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-luna');
-  await s.press('m');
+  assert.match(page, /current  xai\/grok-4.7/);
+  assert.match(page, /\/ grok▌ +2 matches/);
+  assert.doesNotMatch(page, /^xai ─/m);
+  assert.equal(s.registry().routing(NOW).byId.get('grok-4.7'), null, 'attribution still sees both providers');
+  await s.press(ESC);
+  setHarnessDisabled(s.hud, 'pi:xai', false);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  await s.keys('m', 'grok', DOWN, DOWN, DOWN);
+  page = lines40(s).join('\n');
+  assert.match(page, /\/ grok▌ +5 matches/);
+  assert.match(page, /^arena ─+ 2\n[\s\S]*^xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/m);
   const closed = await s.press('\x03');
   assert.equal(closed.close, false);
   assert.equal(s.session.state.projectInput, undefined);
-  assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-luna');
+  assert.deepEqual(fs.readFileSync(roleFile), before);
+  assert.deepEqual(fs.readFileSync(cacheFile), cacheBefore);
 });
-test('the model picker: Tab shows every provider and model, `default` unsets, a model the lists do not know is set as typed, the keys are all the picker\'s', async (t) => {
+test('pi picker keeps no-match text, owns printable keys, and does not offer an off default', async (t) => {
   const s = await setup(t);
-  discover(s);
-  // Tab: every provider (A to Z) with every model, and Tab again is the curated list.
-  await s.keys('m', TAB);
-  let page = lines40(s).join('\n');
-  assert.match(page, /^imp · pi ─+ provider · all$/m);
-  assert.match(page, /^ {4}anthropic +7\n {4}arena +4\n {4}google +1\n {4}mistral +3\n {4}openai +7\n {2}◉ synthetic +1$/m);
-  await s.keys('openai', ENTER, 'o1');
-  assert.match(lines40(s).join('\n'), /^ {4}o1$/m, 'o1 is there once all are shown');
-  await s.keys(BACKSPACE, BACKSPACE, TAB);
-  page = lines40(s).join('\n');
-  assert.doesNotMatch(page, /o1|gpt-5-mini/);
+  const long = 'new-provider/' + 'a'.repeat(115);
+  assert.equal(long.length, 128);
+  discover(s, [...MODEL_LISTS.pi, long]);
+  await s.keys('m', 'new-provider/aaa', TAB, ENTER);
+  assert.equal(stored(s, 'imp').run[0].model, long, 'the full 128-character ID survives the edit');
+  await s.keys('m', 'custom/pi-next', ENTER);
+  assert.match(lines40(s).join('\n'), /0 matches\n +No matching models/);
+  assert.equal(s.session.state.projectInput.text, 'custom/pi-next');
+  assert.equal(stored(s, 'imp').run[0].model, long);
   await s.press(BACKSPACE);
-  assert.match(lines40(s).join('\n'), /^imp · pi ─+ provider$/m);
-  // Typing something no model has: Enter sets it as typed, within the provider (a full `provider/model` stays as it is).
-  await s.keys('arena', ENTER, 'zz-new');
-  page = lines40(s).join('\n');
-  assert.match(page, /^ {2}\/ zz-new▌ +as typed$/m);
-  assert.match(page, /^ {2}⏎ arena\/zz-new$/m);
-  await s.press(ENTER);
-  assert.equal(stored(s, 'imp').run[0].model, 'arena/zz-new');
-  // At the providers a whole `provider/model` that matches none is set as typed; a word that matches none does nothing.
-  await s.keys('m', 'nobody', ENTER);
-  assert.deepEqual([s.session.state.projectInput.text, stored(s, 'imp').run[0].model], ['nobody', 'arena/zz-new']);
-  await s.keys(BACKSPACE, BACKSPACE, BACKSPACE, BACKSPACE, BACKSPACE, BACKSPACE, 'custom/pi-next', ENTER);
-  assert.equal(stored(s, 'imp').run[0].model, 'custom/pi-next');
-  // `default` leaves the role on its default: the model is dropped from the place.
-  await s.keys('m', ENTER, UP, ENTER);
+  assert.equal(s.session.state.projectInput.text, 'custom/pi-nex');
+  await s.press(ESC);
+  setHarnessDisabled(s.hud, 'pi:synthetic', true);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  await s.keys('m', '\x1b[H');
+  assert.doesNotMatch(lines40(s).join('\n'), /default →|from pi role/);
+  await s.press(ESC);
+  setHarnessDisabled(s.hud, 'pi:synthetic', false);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  await s.keys('m', '\x1b[H', ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
-  assert.equal(s.assignment('imp').model, 'synthetic/model', 'the pi role\'s own model is what the next job gets');
-  assert.match(s.text(), /1 ◉ pi synthetic\/model high\n[\s\S]*source +yours · imp\.json/, 'the detail shows that model and the owner’s file');
-  // While the picker is open every key is its own: q, p, e, i and x type or move, and nothing else happens.
+  assert.equal(s.assignment('imp').model, 'synthetic/model');
   await s.press('m');
-  for (const raw of ['q', 'p', 'e', 'i', 'x', 'K', 'o', 'j']) {
+  for (const raw of ['q', 'p', 'e', 'i', 'r', 'K', 'o', 'j']) {
     const out = await s.press(raw);
     assert.deepEqual([out.action, out.close], [undefined, false], raw);
   }
-  assert.equal(s.session.state.projectInput.text, 'qpeixKoj');
-  assert.equal(stored(s, 'imp').run.length, 2);
-  assert.equal(stored(s, 'imp').run[0].harness, 'pi');
-  // A click leaves it (the page is the same one underneath).
+  assert.equal(s.session.state.projectInput.text, 'qpeirKoj');
   const view = s.frame();
   const click = handleMonitorInput(view.state, { type: 'mouse', button: 'left', x: 3, y: 3 }, { tree: TREE, frame: view, nowMs: NOW, standalone: true });
   assert.equal(click.state.projectInput, undefined);
@@ -416,23 +399,22 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
   await s.press('m');
   let page = lines40(s).join('\n');
   assert.match(page, /^imp · agy ─+ model$/m, 'no provider level for agy: its models at once');
-  assert.match(page, /^ {4}default\n {2}◉ gemini-4-argon-high\n {4}gemini-4-hydrogen-high\n {4}gemini-3\.8-flash-high$/m);
+  assert.match(page, /^ {4}default\n› ◉ gemini-4-argon-high\n {4}gemini-4-hydrogen-high\n {4}gemini-3\.8-flash-high$/m);
   // The list filters on any part of a model; Enter on a match sets it, a miss sets what was typed.
   await s.keys('flash', ENTER);
   assert.equal(stored(s, 'imp').run[0].model, 'gemini-3.8-flash-high');
   await s.keys('m', 'next-one', ENTER);
   assert.equal(stored(s, 'imp').run[0].model, 'next-one');
-  // The panel's frames: every row is the panel's width, in both languages, at each size, for each level and a very long filter.
-  const long = 'x'.repeat(90);
-  const inputs = [{ role: 'imp', index: 0, text: '' }, { role: 'imp', index: 0, text: long }, { role: 'imp', index: 0, text: '', all: true }];
+  // Width and cursor invariants for both languages/layouts, with long Latin and wide queries.
+  const inputs = ['', '探'.repeat(90), 'maverick', 'openai'];
   for (const pi of [false, true]) {
     if (pi) {
       writeRolePlaces(s.hud, 'imp', [{ harness: 'pi', pi_role: 'implementer', split: false, model: 'openai/gpt-6.1-sol' }]);
       s.collector.refreshRoles(s.session.snap, NOW);
       assert.equal(s.assignment('imp').harness, 'pi');
     }
-    for (const input of inputs) for (const extra of [{}, { provider: 'openai' }, { provider: 'arena', text: 'opus' }]) for (const lang of ['en', 'zh']) for (const width of [32, 40, 56, 80, 120]) {
-      s.session.state = select(onControl(undefined, { projectInput: { ...input, ...extra } }), placeItem('imp', 0));
+    for (const text of inputs) for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) for (const width of [32, 40, 56, 80, 120]) {
+      s.session.state = select(onControl(undefined, { panelLayout, projectInput: { role: 'imp', index: 0, text } }), placeItem('imp', 0));
       const view = s.frame(width, lang, 14);
       for (const line of view.lines) assert.equal(visualLength(line), width, stripAnsi(line));
       for (const row of view.workboard.rows) assert.doesNotMatch(row.text, /\n/);
@@ -440,19 +422,59 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
       assert.equal(view.workboard.rows.filter((r) => r.item === 'project:pick').length <= 1, true);
     }
   }
-  s.session.state = select(onControl(undefined, { projectInput: { role: 'imp', index: 0, text: '', provider: 'openai' } }), placeItem('imp', 0));
+  s.session.state = select(onControl(undefined, { projectInput: { role: 'imp', index: 0, text: 'openai' } }), placeItem('imp', 0));
   const zh = plain(s.frame(40, 'zh', 14));
-  assert.match(zh.join('\n'), /^imp · pi › openai ─+ 模型$/m);
+  assert.match(zh.join('\n'), /^模型 ─+ pi · 列表 0分钟前$/m);
   assert.match(zh[0], /首页.*项目.*控制/);
   assert.match(zh.at(-1), /输入筛选 +↑↓ 选择 +⏎ 设置 +esc 取消/);
   assert.match(plain(s.frame(40, 'en', 14)).at(-1), /type filter +↑↓ pick +⏎ set +esc cancel/);
-  assert.match(plain(s.frame(120, 'en', 14)).at(-1), /type filter +↑↓ pick +⏎ set +esc cancel +tab all +← back/);
+  assert.doesNotMatch(plain(s.frame(120, 'en', 14)).at(-1), /tab all|← back/);
   // Help says what m does now, and the key row for p e.
   s.session.state = { ...initialMonitorState(), help: true };
   const help = plain(s.frame(80, 'en', 40)).join('\n').replace(/\n {8}/g, ' ');
   assert.match(help, /^p e +place: harness, thinking \(capitals go back\)/m);
-  assert.match(help, /^m +place: pick a model \(provider, then model; type to filter\)/m);
+  assert.match(help, /^m +pick model; pi groups; type to filter/m);
 });
+test('40-column picker sample: same grouped, filtered and long-ID frames in Classic and Split', async (t) => {
+  const s = await setup(t);
+  const frames = pickerFrames(s);
+  assert.deepEqual(frames, pickerFrames(s, undefined, 'classic'));
+  for (const lang of ['en', 'zh']) {
+    const grouped = frames[`pick-grouped-40-${lang}`].join('\n');
+    assert.match(grouped, /openai\/gpt-6.1-sol\n +(?:来自 pi 设置|from pi settings)/);
+    assert.ok(grouped.indexOf('anthropic ─') < grouped.indexOf('arena ─'));
+    const filtered = frames[`pick-filter-40-${lang}`].join('\n');
+    assert.match(filtered, /\/ grok▌ +5 (?:个匹配|matches)/);
+    assert.match(filtered, /arena ─+ 2[\s\S]*xai ─+ 3\n  ◉ grok-4.7\n›   grok-4.7-fast/);
+    const long = frames[`pick-long-40-${lang}`];
+    assert.match(long.join('\n'), /^› +meta-llama\/.*….*-fp8$/m);
+    const detail = long.findIndex((row) => /full ID under the cursor|所选的完整 ID/.test(row));
+    assert.equal(long.slice(detail + 1, -1).map((row) => row.trim()).join(''), `${MAVERICK}-fp8`);
+  }
+});
+
+test('pi picker distinguishes the aged last-good list, offline catalog, and an authoritative empty result', async (t) => {
+  const s = await setup(t);
+  const file = join(s.hud, 'display/model-lists.json');
+  const collected = (payload) => {
+    s.put(file, { version: 1, fetchedAt: NOW, ...payload });
+    s.collector.refreshRoles(s.session.snap, NOW);
+    return lines40(s).join('\n');
+  };
+  await s.press('m');
+  assert.match(lines40(s).join('\n'), /Limited offline catalog/);
+  setHarnessDisabled(s.hud, 'pi:openai', true);
+  assert.doesNotMatch(collected({ status: { pi: { failed: true } } }), /openai ─/);
+  const age = NOW - 2 * 3600000;
+  const failed = collected({ pi: ['new-provider/new-model'], status: { pi: { failed: true, fetchedAt: age } } });
+  assert.match(failed, /list 2h old\n +Refresh failed/);
+  assert.match(failed, /new-provider ─+ 1/);
+  assert.doesNotMatch(failed, /Limited offline catalog/);
+  const empty = collected({ pi: [] });
+  assert.match(empty, /0 matches[\s\S]*No discovered models/);
+  assert.doesNotMatch(empty, /Limited offline catalog|new-model|Refresh failed/);
+});
+
 test('editPlaces sets a model id exactly as typed, clears it with an empty one, and refuses what is no model id or no model place', async (t) => {
   const s = await setup(t);
   const edit = (role, value, index = 0) => editPlaces(s.hud, s.cwd, s.env, { role, index, op: 'model', value }, NOW);
@@ -462,7 +484,7 @@ test('editPlaces sets a model id exactly as typed, clears it with an empty one, 
   assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-sol');
   assert.deepEqual(edit('imp', ''), { ok: true, index: 0 });
   assert.equal('model' in stored(s, 'imp').run[0], false, 'an empty one drops the model: the role is on its default');
-  for (const bad of ['x'.repeat(121), 'a\nb', 'a\x1b[31mb', 'a\x00b']) {
+  for (const bad of ['x'.repeat(129), 'a\nb', 'a\x1b[31mb', 'a\x00b']) {
     const done = edit('imp', bad);
     assert.deepEqual([done.ok, done.message], [false, 'not a model id'], JSON.stringify(bad));
   }
@@ -524,8 +546,7 @@ test('the first switch of an older single-place role file keeps its instructions
   await s.press('p');
   assert.equal(s.session.done.message, 'launch options are set in the file: o opens it');
   assert.equal(stored(s, 'imp').run, undefined, 'a refused key writes nothing');
-  // The model is picked: provider first (typing filters), then the model.
-  await s.keys('m', 'openai', ENTER, 'sol', ENTER);
+  await s.keys('m', 'openai/gpt-6.1-sol', ENTER);
   const written = stored(s, 'imp');
   assert.equal(written.instructions, 'implementer');
   assert.equal(written.harness, undefined);
@@ -535,7 +556,7 @@ test('the first switch of an older single-place role file keeps its instructions
   assert.deepEqual([imp.instructions, imp.split, imp.model, imp.thinking], ['implementer', true, 'openai/gpt-6.1-sol', 'high']);
   // Keys the owner added to a place survive a model switch.
   fs.writeFileSync(join(s.hud, 'roles/imp.json'), JSON.stringify({ ...written, run: [{ ...written.run[0], note: 'keep-me' }] }));
-  await s.keys('m', 'openai', ENTER, 'astra', ENTER);
+  await s.keys('m', 'openai/gpt-6-astra', ENTER);
   assert.equal(stored(s, 'imp').run[0].note, 'keep-me');
   assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6-astra');
 });
@@ -588,13 +609,11 @@ test('the live panel applies a Control plane key to the role files, and says why
     assert.fail(`${what}: ${err}\n${stripAnsi(out).slice(-2500)}`);
   };
   await until(() => stripAnsi(out).includes('Roles'), 'the migrated Control tab');
-  // m opens the picker (providers first), typing filters, Enter goes in and Enter sets: only then is a file written.
+  // m opens the grouped picker; Enter sets the model and only then writes a file.
   child.stdin.write('m');
-  await until(() => /provider/.test(stripAnsi(out)), 'the picker');
+  await until(() => /Model ─/.test(stripAnsi(out)), 'the picker');
   assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false, 'opening it writes nothing');
-  child.stdin.write('openai\r');
-  await until(() => / model\b/.test(stripAnsi(out)) && /gpt-6\.1-sol/.test(stripAnsi(out)), 'the models of the provider');
-  child.stdin.write('sol\r');
+  child.stdin.write('openai/gpt-6.1-sol\r');
   await until(() => fs.existsSync(join(s.hud, 'roles/imp.json')) && stored(s, 'imp').run[0].model === 'openai/gpt-6.1-sol', 'the model written');
   // Down to the project's own role: imp's fallback, sonic, then frontend; open its chain and attempt an edit.
   const mark = out.length;

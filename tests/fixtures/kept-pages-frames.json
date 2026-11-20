@@ -395,8 +395,8 @@
     "c C     role: next / previous preset",
     "p e     place: harness, thinking",
     "        (capitals go back)",
-    "m       place: pick a model (provider,",
-    "        then model; type to filter)",
+    "m       pick model; pi groups; type to",
+    "        filter",
     "i Del   add / remove place or switch",
     "K J     place: move up, move down",
     "x       place: clear its exhausted",
@@ -864,8 +864,7 @@
     "y n     accept / flag the marked to-try rows",
     "c C     role: next / previous preset",
     "p e     place: harness, thinking (capitals go back)",
-    "m       place: pick a model (provider, then model; type to",
-    "        filter)",
+    "m       pick model; pi groups; type to filter",
     "i Del   add / remove place or switch",
     "K J     place: move up, move down",
     "x       place: clear its exhausted mark",
@@ -899,6 +898,7 @@
     "  hud-build                      Build a spec's tickets as a task graph, one imp per ready ticket",
     "  tdd                            Red-green-refactor at the seams the spec agreed",
     "  diagnosing-bugs                A feedback loop first, then reproduce, hypothesise and fix",
+    "  triage                         Sort issues others filed: reproduce, dedupe, turn into agent-ready briefs",
     "                                                                                                     ↑↓ scroll  esc back"
   ],
   "changes-120-en": [

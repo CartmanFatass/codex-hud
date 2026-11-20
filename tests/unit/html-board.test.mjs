@@ -27,7 +27,7 @@ function inputs(x = XSS) {
   const project = {
     tickets: [{ slug: 'panel-v2', at: NOW, tickets: [ticket('06', 'Other ticket', 'ready'), ticket('07', `Board ${x}`, 'working', [{ done: true, text: 'Generator' }, { done: false, text: x }])] }],
     waiting: [{ label: '', value: `Try ${x}`, text: `Try ${x}\n  second line` }], docs: [{ label: 'review', value: '2026-11-12-review.md' }],
-    control: [], roles: [], harnesses: [], models: { pi: [], include: {}, cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
+    control: [], roles: [], harnesses: [], models: { pi: [], cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
     ladder: { ids: [], current: 'M5' }, next: [], summary: `Closing ${x}`,
     slices: [{ label: 'PAGE-ONE', value: `working ${x}`, ledgerState: 'working', role: 'imp', at: NOW - 40 * 60e3 }],
     active: [{ jobId: 'j0000000000000001', role: 'imp', state: 'working', asking: true }],

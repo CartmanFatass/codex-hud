@@ -42,7 +42,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['y n', 'accept / flag the marked to-try rows'],
       ['c C', 'role: next / previous preset'],
       ['p e', 'place: harness, thinking (capitals go back)'],
-      ['m', 'place: pick a model (provider, then model; type to filter)'],
+      ['m', 'pick model; pi groups; type to filter'],
       ['i Del', 'add / remove place or switch'],
       ['K J', 'place: move up, move down'],
       ['x', 'place: clear its exhausted mark'],
@@ -243,7 +243,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
-          : control ? picking ? pickerRows(input.project!, state.projectInput!, width, height - 2 - top)
+          : control ? picking ? pickerRows(input.project!, state.projectInput!, width, height - 2 - top - (input.publicationNotice ? 1 : 0), now)
             : harnesses && input.project ? addingHarness
               ? [section(t('Add back'), width), ...harnessAddRows(input.project, state, width)] : harnessRows(input.project, state, width)
             : controlRows(input.project, state, width, now)
@@ -331,7 +331,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : control ? picking ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
+        : control ? picking ? 'type filter  ↑↓ pick  ⏎ set  esc cancel'
           : harnesses ? harnessHints(input.project, state) : controlHints(input.project, state.projectCursor)
         : project ? (page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
           : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help'

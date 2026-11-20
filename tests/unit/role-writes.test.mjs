@@ -46,7 +46,7 @@ test('placeCatalog returns shipped defaults and merges HUD_HOME catalog addition
   ]);
   assert.deepEqual(base.pi.thinking, ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
   // Which models the Control plane's picker offers: arena whole, mistral's deepseek, anthropic's opus, openai's gpt-6 series.
-  assert.deepEqual(base.pi.include, { arena: ['*'], mistral: ['deepseek*'], anthropic: ['*opus*'], openai: ['gpt-6*'] });
+  assert.deepEqual(base.pi.offline, base.pi.models);
   assert.deepEqual(base.cli.agents, ['agy', 'claude', 'codex', 'grok']);
   assert.deepEqual(base.cli.models, {
     agy: ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high'],
@@ -74,7 +74,7 @@ test('placeCatalog returns shipped defaults and merges HUD_HOME catalog addition
         pi: {
           models: ['openai/gpt-6.1-sol', 'custom/pi-next'],
           thinking: ['custom-think'],
-          // The owner's list replaces a provider's patterns and adds providers; a bad provider key or pattern is dropped.
+          // A legacy picker preference must not affect catalog models, thinking or harness defaults.
           include: { arena: ['gpt-*'], local: ['*'], 'bad key!': ['*'], mistral: ['ok*', 'bad pattern!', 7], openai: 'gpt-6*' },
         },
         cli: {
@@ -105,12 +105,7 @@ test('placeCatalog returns shipped defaults and merges HUD_HOME catalog addition
     'custom/pi-next',
   ]);
   assert.ok(extended.pi.thinking.includes('custom-think'));
-  assert.deepEqual(extended.pi.include.arena, ['gpt-*']);
-  assert.deepEqual(extended.pi.include.mistral, ['ok*']);
-  assert.deepEqual(extended.pi.include.local, ['*']);
-  assert.deepEqual(extended.pi.include.anthropic, ['*opus*'], 'a provider the owner does not name keeps the shipped patterns');
-  assert.deepEqual(extended.pi.include.openai, ['gpt-6*'], 'a list that is not a list changes nothing');
-  assert.equal('bad key!' in extended.pi.include, false);
+  assert.deepEqual(extended.pi.offline, extended.pi.models);
   assert.deepEqual(extended.cli.agents, ['agy', 'claude', 'codex', 'grok']);
   assert.deepEqual(extended.cli.models.agy, [
     'gemini-4-argon-high',

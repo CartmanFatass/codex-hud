@@ -10,13 +10,16 @@ import {
   MODEL_CACHE_TTL_MS,
   discoverModelLists,
   modelListCachePath,
+  modelSourceStatus,
   parseAgyModels,
   parseGrokModels,
   parsePiModels,
   readModelListCache,
 } from '../../dist/roles/model-discovery.js';
-import { editPlaces } from '../../dist/roles/role-control.js';
-import { placeCatalog, writeRolePlaces } from '../../dist/roles/roster.js';
+import { controlFacts, editPlaces } from '../../dist/roles/role-control.js';
+import { placeCatalog, roleRegistry, writeRolePlaces } from '../../dist/roles/roster.js';
+import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
+import { MODEL_LISTS } from '../fixtures/project-page.mjs';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 
@@ -48,7 +51,10 @@ test('parsers extract model ids from pi, agy and grok output shapes and drop pro
     'openai         gpt-synthetic-1         272K     128K     yes       yes   ',
   ].join('\n');
   assert.deepEqual(parsePiModels(piSample), ['openai/gpt-synthetic-1', 'anthropic/claude-synthetic-1']);
-  assert.deepEqual(parsePiModels('Not logged in or format changed'), []);
+  assert.equal(parsePiModels('Not logged in or format changed'), null);
+  assert.equal(parsePiModels(`${piSample}\nunknown malformed output`), null);
+  assert.deepEqual(parsePiModels('No models available. Use /login to log in.\n  /synthetic/providers.md'), []);
+  assert.deepEqual(parsePiModels('provider model context max-out thinking images\n'), []);
 
   const agySample = [
     'Fetching available models...',
@@ -165,17 +171,15 @@ test('pi/agy/grok discovery caches under $HUD_HOME/display for a day, merges in 
   editPlaces(s.hud, s.cwd, s.env, { role: 'imp', index: 0, op: 'model', step: 1 }, NOW + 60_000, bundled);
   assert.equal(JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model, 'openai/gpt-6.1-sol');
 
-  // Cache expires after 1 day -> falls back to catalog (+ typed).
+  // Expiring the day cache triggers refresh on open, but does not discard the last-good data.
   assert.ok(readModelListCache(s.hud, NOW + MODEL_CACHE_TTL_MS - 1));
   assert.equal(readModelListCache(s.hud, NOW + MODEL_CACHE_TTL_MS), null);
   const expired = placeCatalog(s.hud, bundled, undefined, NOW + MODEL_CACHE_TTL_MS);
-  assert.equal(expired.pi.models[0], 'openai/gpt-6.1-sol');
-  assert.equal(expired.pi.models.includes('arena/arena-fresh-1'), false);
-  assert.equal(expired.cli.models.agy.includes('agy-fresh-1'), false);
-  assert.equal(expired.cli.models.grok.includes('grok-fresh-1'), false);
+  assert.deepEqual(expired.pi.models, catalog.pi.models.filter((id) => id !== 'custom/typed-pi'));
+  assert.deepEqual(expired.cli, catalog.cli);
 });
 
-test('failed, missing, slow, oversized or symlinked model discovery falls back silently to catalog', async (t) => {
+test('failed, missing, slow, oversized or symlinked model discovery without a last-good list uses catalog', async (t) => {
   const s = sandbox(t);
   // pi missing, agy exits non-zero, grok emits garbage.
   writeFakeCli(s.bin, 'agy', 'console.log("agy-should-not-stick\\tIgnored"); process.exit(1);');
@@ -192,7 +196,7 @@ test('failed, missing, slow, oversized or symlinked model discovery falls back s
   assert.deepEqual(catalog.cli.models.agy, ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high']);
   assert.deepEqual(catalog.cli.models.grok, ['grok-4.7']);
 
-  // Timeout and output cap fall back silently.
+  // Timeout and output cap preserve the absence of any successful discovery.
   writeFakeCli(s.bin, 'pi', 'setTimeout(() => console.log("provider model\\na b"), 2000);');
   writeFakeCli(s.bin, 'agy', 'console.log("x\\tX\\n".repeat(500));');
   await discoverModelLists(s.hud, s.env, NOW + 1, { timeoutMs: 80, maxBytes: 256 });
@@ -209,12 +213,64 @@ test('failed, missing, slow, oversized or symlinked model discovery falls back s
   assert.equal(readModelListCache(s.hud, NOW), null);
 });
 
-test('live panel spawns list commands only on Control plane open and r refresh, never on refresh ticks', { timeout: 20000 }, async (t) => {
+test('a full synthetic pi table survives discovery exactly, off/restore, failure, and then a successful empty reply', async (t) => {
   const s = sandbox(t);
-  const log = join(s.root, 'spawns.log');
+  const ids = [...MODEL_LISTS.pi, 'new-provider/new-provider/nested', 'new-provider/' + 'b'.repeat(115)];
+  const header = 'provider model context max-out thinking images';
+  const table = [header, ...[...ids, ids[0]].map((id) => {
+    const slash = id.indexOf('/');
+    return `${id.slice(0, slash)}  ${id.slice(slash + 1)}  272K  128K  yes  no`;
+  })].join('\n');
+  writeFakeCli(s.bin, 'pi', `console.log(${JSON.stringify(table)});`);
+  writeFakeCli(s.bin, 'agy', `console.log('agy-before\\tAgy Before');`);
+  writeFakeCli(s.bin, 'grok', `console.log('Available models:\\n * grok-before');`);
+  assert.deepEqual((await discoverModelLists(s.hud, s.env, NOW)).pi, ids);
+  s.env.PI_CODING_AGENT_DIR = join(s.root, 'pi');
+  fs.mkdirSync(s.env.PI_CODING_AGENT_DIR);
+  fs.writeFileSync(join(s.env.PI_CODING_AGENT_DIR, 'settings.json'), JSON.stringify({ defaultProvider: 'xai', defaultModel: 'grok-4.7' }));
+  const collect = (now) => controlFacts(roleRegistry(s.hud, s.cwd, s.env), s.hud, now);
+  const imp = (now) => collect(now).roles.find((role) => role.role === 'imp').places[0];
+  assert.deepEqual(imp(NOW).piModel, { current: 'xai/grok-4.7', isDefault: true, defaultId: 'xai/grok-4.7', defaultSource: 'from pi settings', defaultOff: false });
+  assert.deepEqual(collect(NOW).models.pi, ids);
+  assert.equal(collect(NOW).harnessSwitches.find((item) => item.id === 'pi:new-provider').off, false);
+  setHarnessDisabled(s.hud, 'pi:xai', true);
+  assert.deepEqual(collect(NOW).models.pi, ids.filter((id) => !id.startsWith('xai/')));
+  assert.equal(imp(NOW).piModel.defaultOff, true);
+  assert.equal(imp(NOW).piModel.current, 'xai/grok-4.7');
+  setHarnessDisabled(s.hud, 'pi:xai', false);
+  assert.deepEqual(collect(NOW).models.pi, ids);
+  setHarnessDisabled(s.hud, 'pi', true);
+  assert.deepEqual(collect(NOW).models.pi, []);
+  setHarnessDisabled(s.hud, 'pi', false);
+
+  const later = NOW + 2 * 3600000;
+  writeFakeCli(s.bin, 'pi', 'process.exit(1);');
+  writeFakeCli(s.bin, 'agy', `console.log('agy-after\\tAgy After');`);
+  writeFakeCli(s.bin, 'grok', 'console.log("unexpected output without model IDs");');
+  await discoverModelLists(s.hud, s.env, later);
+  writeFakeCli(s.bin, 'pi', 'console.log("unexpected output without a table");');
+  await discoverModelLists(s.hud, s.env, later + 1);
+  assert.equal(readModelListCache(s.hud, later + 1), null, 'a fresh agy success cannot hide the failed pi refresh');
+  const failure = readModelListCache(s.hud, later + 1, undefined, true);
+  assert.deepEqual(failure.pi, ids);
+  assert.deepEqual(failure.cli, { agy: ['agy-after'], grok: ['grok-before'] });
+  assert.deepEqual(modelSourceStatus(failure, 'grok'), { fetchedAt: NOW, failed: true });
+  assert.deepEqual(collect(later + 1).models.piStatus, { fetchedAt: NOW, failed: true, offline: false, empty: false, runnerOff: false });
+
+  writeFakeCli(s.bin, 'pi', 'console.log("No models available.");');
+  await discoverModelLists(s.hud, s.env, later + 2);
+  assert.deepEqual(readModelListCache(s.hud, later + 2).pi, []);
+  assert.deepEqual(collect(later + 2).models.pi, []);
+  assert.deepEqual(collect(later + 2).models.piStatus, { fetchedAt: later + 2, failed: false, offline: false, empty: true, runnerOff: false });
+});
+
+test('live panel coalesces Control refreshes and starts no discovery on picker input or ticks', { timeout: 20000 }, async (t) => {
+  const s = sandbox(t);
+  const log = join(s.root, 'spawns.log'), hold = join(s.root, 'hold-pi');
   fs.mkdirSync(join(s.cwd, '.git'), { recursive: true });
   for (const [cmd, body] of [
-    ['pi', `console.log('provider model context max-out thinking images\\nopenai gpt-live-1 1M 128K yes yes');`],
+    ['pi', `while (fs.existsSync(${JSON.stringify(hold)})) await new Promise((resolve) => setTimeout(resolve, 10));
+      console.log('provider model context max-out thinking images\\nopenai gpt-live-1 1M 128K yes yes');`],
     ['agy', `console.log('agy-live-1\\tAgy Live');`],
     ['grok', `console.log('Available models:\\n  * grok-live-1 (default)');`],
   ]) {
@@ -284,7 +340,7 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
 
   // Open Control with Tab -> spawns pi, agy, grok once each.
   child.stdin.write('\t');
-  await until(() => /1 ◉ pi/.test(stripAnsi(out)) && spawns().length === 3, 'Control opened & discovered');
+  await until(() => /1 ◉ pi/.test(stripAnsi(out)) && spawns().length === 3, 'Control opened & started discovery');
   assert.deepEqual([...spawns()].sort(), ['agy', 'grok', 'pi']);
 
   // Sit through multiple refresh ticks -> still 0 extra spawns.
@@ -301,20 +357,25 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(spawns().length, 3);
 
-  // Press r on Control plane -> forced refresh spawns pi, agy, grok again.
-  child.stdin.write('r');
-  await until(() => spawns().length === 6, 'r refreshed model lists');
+  // An r burst is one refresh; send more r keys after the commands have started but pi is still pending.
+  const firstList = readModelListCache(s.hud).fetchedAt;
+  fs.writeFileSync(hold, 'hold');
+  child.stdin.write('rrr');
+  await until(() => spawns().length === 6, 'r started a single refresh');
+  child.stdin.write('rrm');
+  await until(() => /gpt-live-1/.test(stripAnsi(out)), 'picker shows the last-good list during the refresh');
+  fs.unlinkSync(hold);
+  await until(() => readModelListCache(s.hud)?.fetchedAt > firstList, 'refresh finished');
   assert.equal(spawns().filter((c) => c === 'pi').length, 2);
   assert.equal(spawns().filter((c) => c === 'agy').length, 2);
   assert.equal(spawns().filter((c) => c === 'grok').length, 2);
 
-  // Press m on imp -> the picker lists the freshly discovered pi model (Tab shows every model: the shipped curation keeps only
-  // gpt-6 for openai), and Enter on it writes it.
-  child.stdin.write('m');
-  await until(() => /provider/.test(stripAnsi(out)), 'the model picker');
-  child.stdin.write('\topenai\r');
-  await until(() => /gpt-live-1/.test(stripAnsi(out)), 'the discovered model is listed');
-  child.stdin.write('live\r');
+  // The picker owns even r, q and Tab; none may spawn a command. A full ID selects directly.
+  child.stdin.write('rqq\t');
+  await until(() => /rqq▌/.test(stripAnsi(out)), 'refresh/quit keys typed into the picker');
+  await new Promise((r) => setTimeout(r, 350));
+  assert.equal(spawns().length, 6);
+  child.stdin.write('\x7f\x7f\x7fOPENAI/GPT-LIVE\r');
   await until(
     () => fs.existsSync(join(s.hud, 'roles/imp.json')) && JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model === 'openai/gpt-live-1',
     'm selects discovered model'

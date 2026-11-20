@@ -8,7 +8,9 @@ import * as fs from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliAgents } from './cli-kinds.js';
+import { isModelToken, MODEL_ID_MAX, modelSourceStatus } from './model-discovery.js';
 import {
+  attributePiModel,
   clearExhausted,
   currentPreset,
   harnessDefaults,
@@ -43,6 +45,13 @@ export interface PlaceFact {
   missing?: string;
   /** null = an unattributable pi provider; undefined = not a pi place. */
   provider?: string | null;
+  piModel?: {
+    current: string | null;
+    isDefault: boolean;
+    defaultId: string | null;
+    defaultSource?: 'from pi role' | 'from pi settings';
+    defaultOff: boolean;
+  };
 }
 export interface RoleFact {
   role: string;
@@ -71,10 +80,11 @@ export interface HarnessSwitchFact {
   sites?: readonly string[];
   uses: { role: string; preset: string | null; index: number; next: string | null; switchedNext: string | null }[];
 }
-/** The merged model lists the picker works from: pi's (with the include list that curates them), each CLI agent's, each browser provider's or tool's. */
+/** The enabled pi groups, and the separate CLI/browser catalogs the picker works from. */
 export interface ModelLists {
   pi: string[];
-  include: Record<string, string[]>;
+  piStatus?: { fetchedAt?: number; failed: boolean; offline: boolean; empty: boolean; runnerOff: boolean };
+  cliStatus?: Partial<Record<'agy' | 'grok', ReturnType<typeof modelSourceStatus>>>;
   cli: Record<string, string[]>;
   bro: Record<string, string[]>;
 }
@@ -128,8 +138,24 @@ export function controlFacts(
       const { place, model, thinking, provider, state, until, missing, off_by } = entry;
       if (entry.pi_role_file) piRoleFiles.add(entry.pi_role_file);
       if (provider) referenced.add(provider);
+      let piModel: PlaceFact['piModel'];
+      if (place.harness === 'pi') {
+        const fallback = place.model === undefined ? model : registry.placeDetails(role, { ...place, model: undefined }).model;
+        const { effective, provider: defaultProvider } = attributePiModel(fallback.value, context);
+        const id = (value: string | null, provider?: string | null) =>
+          value && provider && !qualifiedPiProvider(value) ? `${provider}/${value}` : value;
+        const defaultId = id(effective, defaultProvider);
+        piModel = {
+          current: place.model === undefined ? defaultId : id(model.value, provider),
+          isDefault: place.model === undefined,
+          defaultId,
+          ...(defaultId ? { defaultSource: fallback.value ? 'from pi role' : 'from pi settings' } : {}),
+          defaultOff: disabled.has('pi') || (!!defaultProvider && disabled.has(`pi:${defaultProvider}`)),
+        };
+      }
       return {
         harness: place.harness, label: placeLabel(place), model: model.value, thinking: thinking.value, state,
+        ...(piModel ? { piModel } : {}),
         ...(place.kind ? { kind: place.kind } : {}),
         ...(provider === undefined ? {} : { provider }),
         ...(until ? { until: Date.parse(until) } : {}),
@@ -162,7 +188,8 @@ export function controlFacts(
     });
   }
   roles.sort((a, b) => rank(a.role) - rank(b.role) || a.role.localeCompare(b.role));
-  const catalog = placeCatalog(hudHome, BUNDLED, readJson, now, list);
+  const { modelLists } = context;
+  const catalog = placeCatalog(hudHome, BUNDLED, readJson, now, list, modelLists);
   const sites = { 'jev-ask': ['chatgpt', 'gemini'], 'jev-aistudio': ['argon'], 'jev-flow': ['flow'] };
   const ids = new Set(['pi', ...[...cliAgents].sort().map((id) => `cli:${id}`), ...BRO_TOOLS.map((id) => `bro:${id}`),
     ...[...referenced].sort().map((id) => `pi:${id}`), ...disabled]);
@@ -179,7 +206,16 @@ export function controlFacts(
   });
   return {
     roles,
-    models: { pi: catalog.pi.models, include: catalog.pi.include, cli: catalog.cli.models, bro: catalog.bro.models },
+    models: {
+      pi: disabled.has('pi') ? [] : (modelLists?.pi ?? catalog.pi.offline).filter((id) => {
+        const provider = qualifiedPiProvider(id);
+        return !!provider && isModelToken(id) && !disabled.has(`pi:${provider}`);
+      }),
+      piStatus: { ...modelSourceStatus(modelLists, 'pi'), offline: modelLists?.pi === undefined,
+        empty: modelLists?.pi?.length === 0, runnerOff: disabled.has('pi') },
+      cliStatus: { agy: modelSourceStatus(modelLists, 'agy'), grok: modelSourceStatus(modelLists, 'grok') },
+      cli: catalog.cli.models, bro: catalog.bro.models,
+    },
     piRoleFiles: [...piRoleFiles],
     harnessSwitches,
     harnesses: [
@@ -196,8 +232,6 @@ export function placeModels(place: PlaceFact, lists: ModelLists): string[] | und
   if (place.harness === 'cli') return lists.cli[place.label] ?? [];
   return place.label === 'flow' ? undefined : lists.bro[place.label === 'aistudio' ? 'jev-aistudio' : place.label] ?? [];
 }
-/** The longest model id the picker sets. */
-export const MODEL_ID_MAX = 120;
 
 /** A place's row id on the Control plane page: the role and the place's index in its run list. */
 export const placeItem = (role: string, index: number) => `project:role:${role}:${index}`;
@@ -322,7 +356,8 @@ export function editPlaces(
     } else if (edit.op === 'model' && edit.value !== undefined) {
       const value = edit.value.trim(), place: Record<string, unknown> = { ...here };
       if (modelField(here, catalog).field !== 'model') return refuse('no model for this place');
-      if (value.length > MODEL_ID_MAX || /[\x00-\x1f\x7f]/.test(value)) return refuse('not a model id');
+      const max = here.harness === 'pi' ? MODEL_ID_MAX : 120;
+      if (value.length > max || /[\x00-\x1f\x7f]/.test(value)) return refuse('not a model id');
       if (value) place.model = value;
       else delete place.model;
       run[i] = place as unknown as RolePlace;

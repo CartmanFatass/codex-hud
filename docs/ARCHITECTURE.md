@@ -230,10 +230,11 @@ The model is chosen in a picker (`MonitorState.projectInput`, `render/model-inpu
 in `render/control-view.ts`): the place and the merged model lists ride on the place rows
 (`MonitorRow.modelPick`, from `ControlFacts.models`) so the handler does no I/O, typing
 reaches it as `text` on the decoder's key input (the panel's own keyboard only), and
-Enter returns the same `role-edit` action with the model id as `value`. What the picker
-offers is `roles/model-curation.ts`, a pure function over discovery's list and
-`catalog.pi.include` (providers and patterns, the newest model of each family, the current
-model always kept); discovery and the merge are unchanged. What is on screen needs no new
+Enter returns the same `role-edit` action with the model id as `value`. Pi's picker groups
+one list of exact IDs from the unfiltered discovery cache, skipping off providers for display only.
+Discovery keeps the last successful list and timestamp per source; the same snapshot still supplies
+unfiltered provider attribution. A successful empty pi list supersedes the previous list; only the
+absence of any successful pi result uses the limited offline catalog. What is on screen needs no new
 data: the hub's Latest and Progress's History order by the commit dates the ledger read
 already carries, and the Projects list's second row is `ProjectOverview.latest`.
 The next `hud_create` reads the same files. Keys are reduced

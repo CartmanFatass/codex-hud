@@ -17,7 +17,7 @@ import {
   type RolePlace,
 } from './exhausted.js';
 import { registeredProject } from './projects.js';
-import { readModelListCache } from './model-discovery.js';
+import { readModelListCache, type ModelListCache } from './model-discovery.js';
 import { HarnessSwitchError, piProviderId, readHarnessSwitches } from './harness-switches.js';
 
 export {
@@ -421,7 +421,8 @@ export function evaluatePlaces<P extends { place: RolePlace; switch_ids: string[
 
 function routingContext(hudHome: string, env: NodeJS.ProcessEnv, now: number) {
   const disabled = readHarnessSwitches(hudHome);
-  const models = readModelListCache(hudHome, now, undefined, true)?.pi ?? [];
+  const modelLists = readModelListCache(hudHome, now, undefined, true);
+  const models = modelLists?.pi ?? [];
   const providers = new Map<string, number>();
   const byId = new Map<string, string | null>();
   for (const id of models) {
@@ -437,8 +438,16 @@ function routingContext(hudHome: string, env: NodeJS.ProcessEnv, now: number) {
     return commands.get(cmd)!;
   };
   let settings: { value: PiSettings | undefined } | undefined;
-  return { disabled, providers, byId, has, exhausted: readExhausted(hudHome, now),
+  return { disabled, modelLists, providers, byId, has, exhausted: readExhausted(hudHome, now),
     settings: () => (settings ??= { value: piSettings(env) }).value };
+}
+
+export function attributePiModel(model: string | null, context: ReturnType<typeof routingContext>) {
+  const settings = model === null ? context.settings() : undefined;
+  const effective = model ?? settings?.model ?? null;
+  const fromSettings = settings?.provider ?? qualifiedPiProvider(settings?.model);
+  const provider = qualifiedPiProvider(model) ?? fromSettings ?? context.byId.get(effective ?? '') ?? null;
+  return { effective, provider, fromSettings };
 }
 /** Project injects bounded signature-cached readers; the MCP keeps its original readers. */
 export function roleRegistry(
@@ -546,13 +555,10 @@ export function roleRegistry(
       const overridden = overrideModel !== undefined && configured.harness !== 'bro';
       const place = overridden ? { ...configured, model: overrideModel } : configured;
       const details = placeDetails(role, place);
-      const settings = place.harness === 'pi' && details.model.value === null ? context.settings() : undefined;
-      const explicit = place.harness === 'pi' ? qualifiedPiProvider(details.model.value) : undefined;
-      const provider = place.harness === 'pi' ? explicit ?? (details.model.value === null
-        ? settings?.provider ?? qualifiedPiProvider(settings?.model) ?? context.byId.get(settings?.model ?? '') ?? null
-        : context.byId.get(details.model.value) ?? null) : undefined;
-      const provider_source = !provider ? undefined : explicit ? (place.model === undefined ? 'pi_role' : 'model')
-        : settings?.provider || qualifiedPiProvider(settings?.model) ? 'pi_settings' : 'cache';
+      const pi = place.harness === 'pi' ? attributePiModel(details.model.value, context) : undefined;
+      const provider = pi?.provider;
+      const provider_source = !provider ? undefined : qualifiedPiProvider(details.model.value) ? (place.model === undefined ? 'pi_role' : 'model')
+        : pi?.fromSettings ? 'pi_settings' : 'cache';
       if (overridden) details.model.source = 'hud_create';
       // Pi settings attribute an external default; they do not change the HUD's model argument or its existing quota key.
       const key = placeKey(place, details.model.value);
@@ -685,8 +691,7 @@ export function recordFailureExhaustion(
 }
 
 export interface PlaceCatalog {
-  /** `include`: which providers' models the Control plane's picker offers by default (`catalog.pi.include`, the owner's `harnesses.json` over the shipped one). */
-  pi: { models: string[]; thinking: string[]; include: Record<string, string[]> };
+  pi: { models: string[]; thinking: string[]; offline: string[] };
   cli: { agents: CliAgent[]; models: Record<CliAgent, string[]>; thinking: string[] };
   bro: {
     tools: ('jev-ask' | 'jev-aistudio' | 'jev-flow')[];
@@ -721,15 +726,6 @@ function mergeStrings<T extends string>(base: T[], extra: unknown, allow?: reado
 function mergeLists<T extends string>(sources: unknown[], allow?: readonly T[]): T[] {
   let out: T[] = [];
   for (const source of sources) out = mergeStrings(out, source, allow);
-  return out;
-}
-/** Provider -> patterns; a later source replaces a provider's patterns whole. Names and patterns are plain tokens with `*` and `?`. */
-function mergeInclude(sources: unknown[]): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const source of sources)
-    for (const [provider, patterns] of Object.entries(asRecord(source)))
-      if (/^[A-Za-z0-9._-]{1,64}$/.test(provider) && Array.isArray(patterns))
-        out[provider] = patterns.filter((p): p is string => typeof p === 'string' && /^[A-Za-z0-9._*?:-]{1,64}$/.test(p));
   return out;
 }
 function mergeModelMaps(sources: Record<string, unknown>[], keys: readonly string[]): Record<string, string[]> {
@@ -776,7 +772,8 @@ export function placeCatalog(
   bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url)),
   readJson: (file: string) => unknown = json,
   now = Date.now(),
-  list: (directory: string) => string[] = entries
+  list: (directory: string) => string[] = entries,
+  discovered: ModelListCache | null = readModelListCache(hudHome, now, readJson, true)
 ): PlaceCatalog {
   const safe = (file: string) => {
     try {
@@ -785,7 +782,6 @@ export function placeCatalog(
       return {};
     }
   };
-  const discovered = readModelListCache(hudHome, now, readJson);
   const shipped = safe(join(bundled, 'catalog.json'));
   const extra = asRecord(safe(join(hudHome, 'harnesses.json')).catalog);
   const typed = typedRoleModels(hudHome, safe, list);
@@ -801,11 +797,12 @@ export function placeCatalog(
   const sBroModels = asRecord(sBro.models),
     eBroModels = asRecord(eBro.models);
   const broModelKeys = [...new Set([...Object.keys(sBroModels), ...Object.keys(eBroModels), ...Object.keys(typed.bro)])];
+  const offline = mergeLists<string>([sPi.models, ePi.models]);
   return {
     pi: {
-      models: mergeLists([discovered?.pi, sPi.models, ePi.models, typed.pi]),
+      models: mergeLists([discovered?.pi, offline, typed.pi]),
       thinking: mergeLists([sPi.thinking, ePi.thinking]),
-      include: mergeInclude([sPi.include, ePi.include]),
+      offline,
     },
     cli: {
       agents: mergeLists<CliAgent>([sCli.agents, eCli.agents], cliAgents),

@@ -303,7 +303,7 @@ export class ProjectCollector {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
-      waiting: [], docs: [], control: [], roles: [], harnesses: [], models: { pi: [], include: {}, cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
+      waiting: [], docs: [], control: [], roles: [], harnesses: [], models: { pi: [], cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
       ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: [],
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };

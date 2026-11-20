@@ -139,15 +139,16 @@ export function richControl(data) {
   ];
   return { ...data, roles, roleCount: roles.length, models: MODEL_LISTS };
 }
-/** What the harnesses list for the model picker, all synthetic but shaped like the real ids: versions (4-5, 5-5, 6.1), a dated
- *  snapshot beside its undated id, a family that ended (o1), a provider the include list does not name, a CLI's short list. */
+/** Synthetic lists with old versions, timestamps, repeated suffixes across providers and nested model IDs. */
+export const MAVERICK = 'arena/meta-llama/llama-4-maverick-17b-128e-instruct';
 export const MODEL_LISTS = {
-  pi: ['arena/gpt-6.1-sol', 'arena/claude-opus-5-5', 'arena/deepseek-v4-1-flash-1017', 'arena/qwen-4-coder',
+  pi: ['arena/gpt-6.1-sol', 'arena/claude-opus-5-5', 'arena/anthropic.claude-opus-5-5', 'arena/deepseek-v4-1-flash-1017', 'arena/qwen-4-coder',
     'anthropic/claude-opus-4-5', 'anthropic/claude-opus-4-6', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5-5', 'anthropic/claude-opus-5-5-20261101',
     'anthropic/claude-sonnet-5', 'anthropic/claude-haiku-5',
     'openai/gpt-6-sol', 'openai/gpt-6.1-sol', 'openai/gpt-6-luna', 'openai/gpt-6.1-luna', 'openai/gpt-6-astra', 'openai/gpt-5-mini', 'openai/o1',
-    'mistral/deepseek-v4-1-flash-1017', 'mistral/deepseek-v4-1-flash-0912', 'mistral/mistral-large-3', 'google/gemini-4-argon'],
-  include: { arena: ['*'], mistral: ['deepseek*'], anthropic: ['*opus*'], openai: ['gpt-6*'] },
+    'mistral/deepseek-v4-1-flash-1017', 'mistral/deepseek-v4-1-flash-0912', 'mistral/mistral-large-3', 'google/gemini-4-argon',
+    'arena/grok-4.6', 'arena/grok-4.7', 'xai/grok-4.7', 'xai/grok-4.7-fast', 'xai/grok-4.7-mini', MAVERICK, `${MAVERICK}-fp8`, 'new-provider/new-model'],
+  piStatus: { fetchedAt: NOW - 2 * 3600000, failed: false, offline: false, empty: false, runnerOff: false },
   cli: { agy: ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high'], claude: ['opus', 'sonnet', 'haiku'], codex: ['gpt-6.1-sol', 'gpt-6-luna'], grok: ['grok-4.7'] },
   bro: { chatgpt: ['6 Pro'], 'jev-aistudio': ['gemini-4-argon'] },
 };
@@ -187,18 +188,28 @@ export function projectFrames(f) {
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
-  // The model picker over the page: providers, one provider's models, a filter, every model, a short CLI list.
-  const pick = (role, index, input) => onControl({ projectCursor: placeItem(role, index) }, { projectInput: { role, index, text: '', ...input } });
-  for (const lang of ['en', 'zh']) {
-    frames[`pick-provider-40-${lang}`] = plain(f.render(40, lang, pick('imp', 0), 16, control));
-    frames[`pick-model-40-${lang}`] = plain(f.render(40, lang, pick('imp', 0, { provider: 'openai' }), 16, control));
-  }
-  frames['pick-filter-40-en'] = plain(f.render(40, 'en', pick('imp', 0, { provider: 'arena', text: 'opus' }), 16, control));
-  frames['pick-typed-40-en'] = plain(f.render(40, 'en', pick('imp', 0, { provider: 'arena', text: 'zz-new' }), 16, control));
-  frames['pick-all-40-en'] = plain(f.render(40, 'en', pick('imp', 0, { all: true }), 16, control));
-  frames['pick-cli-40-en'] = plain(f.render(40, 'en', pick('imp', 1), 16, control));
-  frames['pick-model-120-en'] = plain(f.render(120, 'en', pick('imp', 0, { provider: 'openai' }), 20, control));
+  Object.assign(frames, pickerFrames(f, control));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
+  return frames;
+}
+
+export function pickerFrames(f, control = richControl(f.data), layout = 'split') {
+  const frames = {};
+  const pick = (index, text = '', pick) => onControl({ projectCursor: placeItem('imp', index) }, {
+    panelLayout: layout, projectInput: { role: 'imp', index, text, pick },
+  });
+  const scenario = (isDefault) => ({ ...control, roles: control.roles.map((role) => role.role !== 'imp' ? role : {
+    ...role, preset: 'daily', places: [{ ...role.places[0], model: isDefault ? null : 'xai/grok-4.7', piModel: {
+      current: isDefault ? 'openai/gpt-6.1-sol' : 'xai/grok-4.7', isDefault, defaultId: 'openai/gpt-6.1-sol', defaultSource: 'from pi settings', defaultOff: false,
+    } }, ...role.places.slice(1)],
+  }) });
+  for (const lang of ['en', 'zh']) {
+    frames[`pick-grouped-40-${lang}`] = plain(f.render(40, lang, pick(0, '', 4), 24, scenario(true)));
+    frames[`pick-filter-40-${lang}`] = plain(f.render(40, lang, pick(0, 'grok', 3), 16, scenario(false)));
+    frames[`pick-long-40-${lang}`] = plain(f.render(40, lang, pick(0, 'maverick', 1), 16, scenario(false)));
+  }
+  frames['pick-no-match-40-en'] = plain(f.render(40, 'en', pick(0, 'zz-new'), 16, scenario(false)));
+  frames['pick-cli-40-en'] = plain(f.render(40, 'en', pick(1), 16, control));
   return frames;
 }

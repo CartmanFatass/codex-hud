@@ -11,11 +11,27 @@ export const MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const MODEL_DISCOVERY_TIMEOUT_MS = 5000;
 export const MODEL_DISCOVERY_MAX_BYTES = 256 * 1024;
 
+export const MODEL_ID_MAX = 128;
+
+type ModelSource = 'pi' | 'agy' | 'grok';
+interface SourceStatus {
+  fetchedAt?: number;
+  failed: boolean;
+}
 export interface ModelListCache {
   version: 1;
   fetchedAt: number;
   pi?: string[];
   cli?: Partial<Record<'agy' | 'grok', string[]>>;
+  /** Separate success times let a failed source retain its list without borrowing another source's freshness. */
+  status?: Partial<Record<ModelSource, SourceStatus>>;
+}
+
+function sourceList(cache: ModelListCache | null, source: ModelSource) {
+  return source === 'pi' ? cache?.pi : cache?.cli?.[source];
+}
+export function modelSourceStatus(cache: ModelListCache | null, source: ModelSource): SourceStatus {
+  return cache?.status?.[source] ?? { fetchedAt: sourceList(cache, source) === undefined ? undefined : cache?.fetchedAt, failed: false };
 }
 
 export interface DiscoverOptions {
@@ -32,7 +48,7 @@ export function modelListCachePath(hudHome: string): string {
 
 export function isModelToken(value: string): boolean {
   return (
-    /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(value) &&
+    value.length <= MODEL_ID_MAX && /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value) &&
     !value.includes('..') &&
     !value.endsWith(':') &&
     !value.endsWith('.')
@@ -50,27 +66,25 @@ function uniqueTokens(items: Iterable<string>): string[] {
   return out;
 }
 
-/** `pi --list-models`: `provider  model  context  max-out  thinking  images` table -> `provider/model`. */
-export function parsePiModels(stdout: string): string[] {
+/** `pi --list-models`: a table of raw model IDs. A model ID may itself contain slashes. */
+export function parsePiModels(stdout: string): string[] | null {
+  const lines = stdout.replace(ANSI_CSI, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (/^No models available\.(?:$| Use \/login\b)/.test(lines[0] ?? '')) return [];
+  const header = lines.findIndex((line) => /^provider\s+model(?:\s+context\s+max-out\s+thinking\s+images)?$/i.test(line));
+  if (header < 0) return null;
+  const columns = lines[header]!.split(/\s+/).length;
   const models: string[] = [];
-  let sawHeader = false;
-  for (const raw of stdout.split(/\r?\n/)) {
-    const line = raw.replace(ANSI_CSI, '').trim();
-    if (!line || /^[-=─]+$/.test(line)) continue;
-    const parts = line.split(/\s+/);
-    if (parts.length >= 2 && parts[0]!.toLowerCase() === 'provider' && parts[1]!.toLowerCase() === 'model') {
-      sawHeader = true;
-      continue;
-    }
-    if (sawHeader && parts.length >= 2 && isModelToken(parts[0]!) && isModelToken(parts[1]!)) {
-      models.push(parts[1]!.startsWith(`${parts[0]!}/`) ? parts[1]! : `${parts[0]!}/${parts[1]!}`);
-    } else if (!sawHeader && parts.length >= 4 && isModelToken(parts[0]!) && isModelToken(parts[1]!) && /^\d+(?:\.\d+)?[KMG]?$/i.test(parts[2]!)) {
-      models.push(parts[1]!.startsWith(`${parts[0]!}/`) ? parts[1]! : `${parts[0]!}/${parts[1]!}`);
-    } else if (!sawHeader && parts.length === 1 && parts[0]!.includes('/') && isModelToken(parts[0]!)) {
-      models.push(parts[0]!);
-    }
+  for (const line of lines.slice(header + 1)) {
+    if (/^[-=─]+$/.test(line)) continue;
+    const parts = line.split(/\s+/), [provider, model] = parts;
+    if (parts.length !== columns || !provider || !model || !isModelToken(provider) || provider.includes('/') || !isModelToken(model)) return null;
+    if (columns === 6 && (!parts.slice(2, 4).every((part) => /^\d+(?:\.\d+)?[KM]?$/i.test(part)) ||
+      !parts.slice(4).every((part) => /^(yes|no)$/i.test(part)))) return null;
+    const id = `${provider}/${model}`;
+    if (!isModelToken(id)) return null;
+    models.push(id);
   }
-  return uniqueTokens(models);
+  return [...new Set(models)];
 }
 
 /** `agy models`: `<id>\t<Display Name>` (after optional status prose). */
@@ -120,7 +134,7 @@ function defaultReadJson(file: string): unknown {
 function cleanList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const cleaned = uniqueTokens(value.filter((item): item is string => typeof item === 'string'));
-  return cleaned.length ? cleaned : undefined;
+  return value.length && !cleaned.length ? undefined : cleaned;
 }
 
 export function readModelListCache(
@@ -134,8 +148,14 @@ export function readModelListCache(
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const obj = raw as Record<string, unknown>;
     if (obj.version !== 1 || typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) return null;
-    if (!includeStale && now - obj.fetchedAt >= MODEL_CACHE_TTL_MS) return null;
     const pi = cleanList(obj.pi);
+    const status: NonNullable<ModelListCache['status']> = {};
+    const rawStatus = obj.status as Record<string, Partial<SourceStatus>> | undefined;
+    for (const source of ['pi', 'agy', 'grok'] as const) {
+      const entry = rawStatus?.[source];
+      if (typeof entry?.failed !== 'boolean') continue;
+      status[source] = { failed: entry.failed, ...(Number.isFinite(entry.fetchedAt) ? { fetchedAt: entry.fetchedAt } : {}) };
+    }
     const cliObj = obj.cli && typeof obj.cli === 'object' && !Array.isArray(obj.cli) ? (obj.cli as Record<string, unknown>) : {};
     const agy = cleanList(cliObj.agy);
     const grok = cleanList(cliObj.grok);
@@ -143,12 +163,16 @@ export function readModelListCache(
       ...(agy ? { agy } : {}),
       ...(grok ? { grok } : {}),
     };
-    return {
+    const cache: ModelListCache = {
       version: 1,
       fetchedAt: obj.fetchedAt,
       ...(pi ? { pi } : {}),
       ...(Object.keys(cli).length ? { cli } : {}),
+      ...(Object.keys(status).length ? { status } : {}),
     };
+    const piStatus = modelSourceStatus(cache, 'pi');
+    return !includeStale && (pi === undefined || piStatus.failed || piStatus.fetchedAt === undefined ||
+      now - piStatus.fetchedAt >= MODEL_CACHE_TTL_MS) ? null : cache;
   } catch {
     return null;
   }
@@ -265,19 +289,22 @@ export async function discoverModelLists(
     runBoundedCommand('grok', ['models'], env, timeoutMs, maxBytes, signal),
   ]);
   if (signal?.aborted) return null;
-  const pi = piRaw !== null ? parsePiModels(piRaw) : [];
-  const agy = agyRaw !== null ? parseAgyModels(agyRaw) : [];
-  const grok = grokRaw !== null ? parseGrokModels(grokRaw) : [];
-  const cli: Partial<Record<'agy' | 'grok', string[]>> = {
-    ...(agy.length ? { agy } : {}),
-    ...(grok.length ? { grok } : {}),
+  const previous = readModelListCache(hudHome, now, undefined, true);
+  const cache: ModelListCache = { version: 1, fetchedAt: now, status: {}, cli: {} };
+  const keep = (source: ModelSource, result: string[] | null) => {
+    if (result !== null) {
+      cache.status![source] = { fetchedAt: now, failed: false };
+      return result;
+    }
+    cache.status![source] = { ...modelSourceStatus(previous, source), failed: true };
+    return sourceList(previous, source);
   };
-  const cache: ModelListCache = {
-    version: 1,
-    fetchedAt: now,
-    ...(pi.length ? { pi } : {}),
-    ...(Object.keys(cli).length ? { cli } : {}),
-  };
+  cache.pi = keep('pi', piRaw === null ? null : parsePiModels(piRaw));
+  // The CLI parsers only recognize nonempty listings; an unrecognized reply is not authoritative.
+  const agy = agyRaw === null ? [] : parseAgyModels(agyRaw);
+  const grok = grokRaw === null ? [] : parseGrokModels(grokRaw);
+  cache.cli!.agy = keep('agy', agy.length ? agy : null);
+  cache.cli!.grok = keep('grok', grok.length ? grok : null);
   try {
     writeModelListCache(hudHome, cache);
   } catch {

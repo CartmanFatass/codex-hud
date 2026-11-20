@@ -80,7 +80,7 @@ export interface MonitorState {
    * The Control plane's model picker, open on the place `role`/`index`: what is typed to filter, which entry is picked (the
    * default one until the arrows move it), the provider it has opened (pi: providers first), and whether it lists all.
    */
-  projectInput?: { role: string; index: number; text: string; pick?: number; provider?: string; all?: boolean };
+  projectInput?: { role: string; index: number; text: string; pick?: number };
   /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
   confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
