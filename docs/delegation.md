@@ -51,13 +51,12 @@ Every brief states:
   performance tests in the default suite, no real-process tests unless the slice is about processes;
 - `no self-review` unless it is one of the risky cases above.
 
-Design previews (owner, 2026-11-18; images, owner 2026-11-20): a UI job's preview is PNG images the owner can look
-at, committed under `docs/design/<name>/png/`, with their paths in the report; the orchestrator passes the paths on.
-For the panel, `npm run preview:png -- docs/design/<name>/png` renders the real frames in colour from the synthetic
-Split fixture (extend `scripts/preview-png.mjs` when a new frame matters). A `screens.txt` or an HTML page with
-synthetic data may come with the images, never instead of them. A dedicated UI/UX optimisation pass shows its
-images first; the owner settles them before the build (owner, 2026-11-14). No claude.ai Artifacts (owner,
-2026-11-20: they do not fit the workflow).
+Design samples (owner, 2026-11-20): UI design starts with one self-contained HTML sample under `docs/design/<name>/`
+(synthetic data, no outside fetches; terminal frames drawn on the real grid, every row exactly the panel's width, as
+`docs/design/panel-v8/gen/` does). The worker commits it and reports its path; the owner looks at it and settles
+it; the build then takes that HTML as its template. One artifact, no screenshots, no separate preview after the
+build: the owner tries the real panel. A plain feature slice with no design question goes straight to the build.
+No claude.ai Artifacts.
 
 ## Questions
 
