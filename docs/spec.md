@@ -65,7 +65,10 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    selected row, a milestone row meaning all its slices still to try and a slice row that slice; the panel writes only a
    record under `$HUD_HOME` (never a project file) and shows the mark at once, the main session hears it through
    `hud watch` and MCP `changes` and updates STATE (accepted slices become `accepted`; a flagged one goes under
-   Waiting for the owner and the main session asks the owner what is wrong); the owner can mark several rows first and
+   Waiting for the owner and the main session asks the owner what is wrong). A waiting item may end with
+   `(waits on <slice ID>, <feature>/<NN>)`; once every named slice is accepted or dropped and every named ticket done or
+   dropped, the panel no longer shows or counts it, with no STATE edit needed; a try slice is never also a waiting item
+   (owner, 2026-11-20); the owner can mark several rows first and
    `y`/`n` then records them as one record, so the main session hears one line (owner, 2026-11-18). What the owner
    tries is never cut to a name (owner, 2026-11-18): a waiting item shows its whole text, wrapped, wherever the panel
    has the rows. With the model on, a to-try slice gets a short brief (what changed, in plain words) and acceptance

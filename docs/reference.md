@@ -369,7 +369,7 @@ what is happening, what landed, then where each page stands. Top to bottom the h
 
 - the project's name row (the panel's directory name; see Switching projects below) with the
   current milestone;
-- **Waiting for you**: STATE's waiting items, folding with Enter; the header says how many there are
+- **Waiting for you**: STATE's waiting items, folding with Enter (an item ending `(waits on ID, feature/NN)` drops out by itself once those slices are accepted or dropped and those tickets done); the header says how many there are
   and how many slices are still to try (`4 · 5 to try`: the ledger's slices in state `try`, whatever the milestone; the Progress row and the Projects list say the same number). An item whose text does not
   fit one row flows on under its first word, whole, into the hub's spare rows, top down (what the owner tries is
   never cut to a name); a panel too short for that cuts it to one row, before Latest or the page rows give way,

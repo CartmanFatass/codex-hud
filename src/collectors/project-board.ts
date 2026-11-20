@@ -73,6 +73,22 @@ export interface ProjectSnapshot {
 }
 /** A job in one of these has ended; Project shows only the others as running (the view reads the same list for tickets). */
 export const SETTLED_JOB_STATES: ReadonlySet<string> = new Set(['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace']);
+/**
+ * A waiting item that ends with `(waits on ID, feature/NN)` is settled once every reference is: a ledger slice
+ * `accepted` or `dropped`, a ticket done or dropped. Unknown references keep the item; so does an item naming none.
+ */
+export function waitSettled(text: string, ledger: ReadonlyMap<string, { state: string }>, tickets: readonly TicketFeature[]): boolean {
+  const refs = [...text.matchAll(/\(waits on ([^()]+)\)/gi)].at(-1)?.[1].split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
+  return refs.length > 0 && refs.every((ref) => {
+    const ticket = ref.match(/^([\w.-]+)[/#](\d+)$/);
+    if (ticket) {
+      const found = tickets.find((f) => f.slug === ticket[1])?.tickets.find((t) => Number(t.number) === Number(ticket[2]));
+      return !!found && (found.state === 'done' || found.state === 'dropped');
+    }
+    const slice = ledger.get(ref);
+    return !!slice && (slice.state === 'accepted' || slice.state === 'dropped');
+  });
+}
 const canonicalPath = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
 export const insideRoot = (root: string, path: string) => {
   const rel = relative(root, path);
@@ -252,6 +268,7 @@ export class ProjectCollector {
         label: id, value: text, path: statePath, ledgerState: state,
       });
     }
+    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
     out.ladder.current = milestone?.split(/\s+/)[0];
     if (shown === 'home') {
