@@ -56,7 +56,8 @@ export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput, pre
     const chains = new Set([r.places, r.fileChain, ...(r.presets ?? []).map((p) => p.places)]);
     for (const chain of chains) for (const p of chain ?? []) {
       if (p.harness !== 'pi') continue;
-      const provider = qualifiedPiProvider((p.piModel?.isDefault ?? !p.model) ? p.piModel?.defaultId : p.model);
+      const id = (p.piModel?.isDefault ?? !p.model) ? p.piModel?.defaultId : p.piModel?.current ?? p.model;
+      const provider = qualifiedPiProvider(id);
       if (provider) inUse.set(provider, (inUse.get(provider) ?? 0) + 1);
     }
   }
@@ -85,6 +86,8 @@ function matchRank(id: string, parts: string[]) {
 export function pickView(pick: ModelPick, input: ModelInput) {
   const { place, lists, presets, inUse = new Map<string, number>(), previous } = pick, needle = input.text.trim().toLowerCase();
   const currentId = place.piModel?.current ?? place.model;
+  const currentProvider = qualifiedPiProvider(currentId);
+  const isUsed = (provider: string) => provider === currentProvider || inUse.has(provider);
   const isDefault = place.piModel?.isDefault ?? !place.model;
   const flat = place.harness !== 'pi';
   const flatOff = flat && (lists.editor?.off.includes(place.harness === 'cli' ? `cli:${place.label}` : 'bro:jev-aistudio') ?? place.state === 'off');
@@ -134,7 +137,7 @@ export function pickView(pick: ModelPick, input: ModelInput) {
 
   const groups = new Map<string, PickEntry[]>(), parts = needle ? needle.split(/\s+/) : [];
   const ids = new Set(placeModels(place, lists) ?? []);
-  const matches: { entry: PickEntry; used: boolean; rank: number }[] = [];
+  const matches: { entry: PickEntry; used: boolean; current: boolean; rank: number }[] = [];
   const pinned = flat && !needle ? new Set(top.map((entry) => entry.model)) : undefined;
   for (const value of ids) {
     if (pinned?.has(value)) continue;
@@ -144,25 +147,25 @@ export function pickView(pick: ModelPick, input: ModelInput) {
     const slash = value.indexOf('/'), provider = value.slice(0, slash);
     if (needle || flat) {
       const rank = matchRank(value.toLowerCase(), parts);
-      if (rank >= 0) matches.push({ entry, rank, used: !flat && inUse.has(provider) });
+      if (rank >= 0) matches.push({ entry, rank, used: !flat && isUsed(provider), current: !flat && provider === currentProvider });
     } else {
       const group = groups.get(provider) ?? [];
       group.push({ ...entry, label: value.slice(slash + 1) });
       groups.set(provider, group);
     }
   }
-  const currentProvider = qualifiedPiProvider(currentId);
   const useCount = (p: string) => inUse.get(p) ?? 0;
   const groupRows = (providers: string[]) => providers.flatMap((provider) => {
     const entries = groups.get(provider)!.sort((a, b) => alphabetical(a.label, b.label));
     return [{ provider, count: entries.length }, ...entries];
   });
   const providers = [...groups.keys()].sort(alphabetical);
-  const used = providers.filter((p) => !inUse.size || inUse.has(p)).sort((a, b) =>
+  const hasUsed = !!currentProvider || inUse.size > 0;
+  const used = providers.filter((p) => !hasUsed || isUsed(p)).sort((a, b) =>
     Number(b === currentProvider) - Number(a === currentProvider) || useCount(b) - useCount(a) || alphabetical(a, b));
-  const other = inUse.size ? providers.filter((p) => !inUse.has(p)) : [];
-  const ranked = () => matches.sort((a, b) => Number(b.used) - Number(a.used) || b.rank - a.rank || alphabetical(a.entry.label, b.entry.label))
-    .map(({ entry }) => entry);
+  const other = hasUsed ? providers.filter((p) => !isUsed(p)) : [];
+  const ranked = () => matches.sort((a, b) => Number(b.used) - Number(a.used) || b.rank - a.rank ||
+    Number(b.current) - Number(a.current) || alphabetical(a.entry.label, b.entry.label)).map(({ entry }) => entry);
   const rows: PickRow[] = needle ? ranked() : flat ? [...top, ...ranked()] : [
       ...top, ...groupRows(used), ...(other.length ? [
         { id: OTHER_PROVIDERS, label: '', providers: other, count: other.reduce((n, p) => n + groups.get(p)!.length, 0) },

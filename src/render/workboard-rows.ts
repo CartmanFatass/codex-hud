@@ -53,25 +53,22 @@ export const itemRow = (glyph: string, left: string, right: string, width: numbe
   boardRow(pair(`${glyph || ' '} ${left}`, theme.board.muted(right), width));
 export const subTopRow = (crumb: string, right: string, width: number): string =>
   theme.board.title(pair(`${mark('‹', '<')} ${crumb}`, right, width));
-/** The legacy model picker's hint translation. Its footer is unchanged. */
-export const hintText = (hints: string): string => { const whole = t(hints); return whole !== hints ? whole : hints.split('  ').map((h) => t(h)).join('  '); };
 export function footHints(hints: string, room: number): string {
   const parts = hints.split('  ');
   while (parts.length && visualLength(parts.join('  ')) > room) parts.pop();
   return parts.join('  ');
 }
 // A normal footer supplies the row's hints in priority order. A modal owns the keys
-// and supplies its own hints; the legacy picker supplies its already translated text.
-export type FooterHints = readonly string[] | { modal: readonly string[] } | string;
+// and supplies its own hints.
+export type FooterHints = readonly string[] | { modal: readonly string[] };
 export function footerLayout(hints: FooterHints, width: number, left = '') {
-  const legacy = typeof hints === 'string';
-  const keys = legacy ? hints.split('  ').filter(Boolean) : 'modal' in hints ? hints.modal : hints;
+  const keys = 'modal' in hints ? hints.modal : hints;
   const localize = (key: string) => {
-    const label = legacy ? key : t(key);
+    const label = t(key);
     return { key, label, width: visualLength(label) };
   };
   const parts = keys.map(localize);
-  const help = !legacy && !('modal' in hints) ? localize('? help') : undefined;
+  const help = 'modal' in hints ? undefined : localize('? help');
   const room = Math.max(help?.width ?? 0, width - (left ? visualLength(left) + 2 : 0));
   // Include a trailing gap in the budget for each hint, then remove the last gap.
   let cells = parts.reduce((n, part) => n + part.width + 2, help ? help.width + 2 : 0);

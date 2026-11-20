@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
-import { NOW, TREE, plain, onPage } from '../fixtures/project-page.mjs';
+import { NOW, TREE, plain, onControl, onPage } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -134,6 +134,59 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
       }
     }
   } finally { setDisplayConfig(display); }
+});
+
+test('Help scrolls over a Control draft and closes back to the same place without a write or discard', async (t) => {
+  const { busy } = await fixtures(t);
+  for (const panelLayout of ['classic', 'split']) {
+    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout });
+    const d = driver(busy, { state, data: busy.control, height: 24 });
+    const press = (raw) => d.run(decode(raw)[0]);
+    press('N');
+    assert.equal(press('?').state.controlPresetInput.text, '?');
+    assert.equal(d.state.help, false);
+    press('\x1b');
+    press('\r');
+    press('J');
+    const { controlChain: chain, controlNav: nav } = d.state;
+    const original = d.lines();
+    assert.ok(chain.draft);
+    assert.equal(chain.at, 1);
+    assert.match(original.at(-1), /\? help$/);
+
+    for (const back of ['\x1b', '?', '\r']) {
+      const opened = press('?');
+      assert.equal(opened.action, undefined);
+      assert.equal(d.state.help, true);
+      assert.equal(d.state.controlChain.leave, undefined);
+      assert.match(d.lines()[1], /^Control ─/);
+      press('\x1b[H');
+      assert.match(d.lines()[2], /^Everywhere ─/);
+      assert.equal(d.state.controlChain.at, chain.at);
+      const returned = press(back);
+      assert.equal(returned.action, undefined);
+      assert.equal(d.state.help, false);
+      assert.deepEqual(d.state.controlChain, chain);
+      assert.deepEqual(d.state.controlNav, nav);
+      assert.deepEqual(d.lines(), original);
+    }
+
+    press('i');
+    press('\r');
+    assert.equal(press('?').state.controlChain.sheet.choice.text, '?');
+    assert.equal(d.state.help, false);
+    press('\x1b');
+    press('\x1b');
+    for (const [raw, key] of [['\t', 'tab'], [']', 'project-next'], ['q', 'close']]) {
+      if (key === 'close') press('?');
+      const leaving = press(raw);
+      assert.equal(leaving.close, false);
+      assert.equal(leaving.action, undefined);
+      assert.equal(leaving.state.controlChain.leave.key, key);
+      assert.match(d.lines().join('\n'), /Discard edits\?/);
+      press('\x1b');
+    }
+  }
 });
 
 test('top row names each tab once and shows a model-text switch only when off and it fits', () => {

@@ -8,7 +8,7 @@ import { effectiveModel, glyph, modelFieldRows, needsAttention, placeRows, place
   radarFacts, radarRows, radarSummary, roleModelDestination, roleName, roleToday, sourceLabel } from './control-view.js';
 import { projectItem } from './project-view.js';
 import { projectSplitScene, type Shown } from './split-project.js';
-import { boardRow, footerLayout, hintText, kvRows, mark, pack, section, type FooterHints } from './workboard-rows.js';
+import { boardRow, footerLayout, kvRows, mark, pack, section, type FooterHints } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';

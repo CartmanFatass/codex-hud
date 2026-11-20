@@ -183,8 +183,10 @@ export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: M
       : options.findIndex((o) => o.value === form.place?.raw[field]));
     return out({ sheet: { ...fieldState, choice: { text: '', at } } });
   };
+  if (key === 'help' && !sheet?.choice)
+    return draft ? { state: { ...state, help: true }, close: false } : route(finishChain(state), input, ctx);
   const leave = (!sheet || (!sheet.choice && !cancelKey)) && (
-    ['escape', 'close', 'tab', 'shift-tab', 'left', 'right', 'project-prev', 'project-next', 'settings', 'help', 'changes'].includes(key) ||
+    ['escape', 'close', 'tab', 'shift-tab', 'left', 'right', 'project-prev', 'project-next', 'settings', 'changes'].includes(key) ||
     hit?.kind.startsWith('board-') || hit?.kind === 'control-harnesses' || (!sheet && hit?.kind === 'chain-back'));
   if (leave) {
     const destination = hit?.kind === 'chain-back' ? { type: 'key' as const, key: 'escape' } : input;

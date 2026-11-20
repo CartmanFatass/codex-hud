@@ -28,6 +28,34 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   return out;
 }
 function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
+  const key =
+    input.type === 'key'
+      ? input.key
+      : input.type === 'mouse' && input.button !== 'left'
+        ? input.button === 'wheel-down'
+          ? 'down'
+          : 'up'
+        : '';
+  if (state.help) {
+    // Quitting still needs the chain's discard confirmation, visible after Help closes.
+    if (key === 'close') return state.controlChain ? route({ ...state, help: false }, input, ctx) : { state, close: true };
+    const next = { ...state };
+    const back =
+      input.type === 'mouse' &&
+      input.button === 'left' &&
+      ctx.frame?.controls.some(
+        (c) => c.kind === 'help' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width
+      );
+    if (back || ['escape', 'help', 'enter'].includes(key)) next.help = false;
+    else if (input.type === 'key' || (input.type === 'mouse' && input.button !== 'left')) {
+      const page = Math.max(1, ctx.frame?.helpPage?.count ?? 1);
+      const delta = key === 'down' ? 1 : key === 'up' ? -1 : key === 'page-down' ? page : key === 'page-up' ? -page : 0;
+      const max = ctx.frame?.helpPage?.maxOffset ?? 0;
+      next.helpScroll =
+        key === 'home' ? 0 : key === 'end' ? max : Math.max(0, Math.min(max, (next.helpScroll ?? 0) + delta));
+    }
+    return { state: next, close: false };
+  }
   if (expShown(state) && state.expPage?.edit) return expInput(state, input, ctx)!;
   if (state.controlPresetInput) return presetInputKey(state, input, ctx);
   if (state.controlQuickModel) return quickModelKey(state, input, ctx);
@@ -39,36 +67,9 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   if (filter) return filter;
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
   const result = (action?: MonitorOutcome['action'], close = false): MonitorOutcome => ({ state: next, close, action });
-  const key =
-    input.type === 'key'
-      ? input.key
-      : input.type === 'mouse' && input.button !== 'left'
-        ? input.button === 'wheel-down'
-          ? 'down'
-          : 'up'
-        : '';
   if (key === 'close') return result(undefined, true);
   const modal = jobModalInput(state, input);
   if (modal) return modal;
-  if (next.help) {
-    const back =
-      input.type === 'mouse' &&
-      input.button === 'left' &&
-      ctx.frame?.controls.some(
-        (c) => c.kind === 'help' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width
-      );
-    if (back || ['escape', 'help', 'enter'].includes(key)) next.help = false;
-    else if (input.type === 'key' || (input.type === 'mouse' && input.button !== 'left')) {
-      const direction = input.type === 'mouse' ? (input.button === 'wheel-down' ? 'down' : 'up') : key;
-      const page = Math.max(1, ctx.frame?.helpPage?.count ?? 1);
-      const delta =
-        direction === 'down' ? 1 : direction === 'up' ? -1 : key === 'page-down' ? page : key === 'page-up' ? -page : 0;
-      const max = ctx.frame?.helpPage?.maxOffset ?? 0;
-      next.helpScroll =
-        key === 'home' ? 0 : key === 'end' ? max : Math.max(0, Math.min(max, (next.helpScroll ?? 0) + delta));
-    }
-    return result();
-  }
   if (key === 'export-board' && next.focus === 'agents' && !expShown(next)) return result({ type: 'export-board' });
   if (key === 'help' || key === 'settings') next.trySelection = undefined;
   const board = workboardInput(next, input, ctx);

@@ -70,7 +70,7 @@ export function filterRow(state: MonitorState, count: number | undefined, width:
 }
 /** `/ filter` is a page action; while typing only the filter's own keys are relevant. */
 export function filterHints(state: MonitorState, hints: FooterHints): FooterHints {
-  if (typeof hints === 'string' || 'modal' in hints || !filterScope(state)) return hints;
+  if ('modal' in hints || !filterScope(state)) return hints;
   if (state.filterOpen) return { modal: ['type to filter', '⏎ keep', 'Esc stop'] };
   const at = hints.indexOf('a all');
   return at < 0 ? [...hints, '/ filter'] : [...hints.slice(0, at), '/ filter', ...hints.slice(at)];

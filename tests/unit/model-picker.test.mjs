@@ -132,7 +132,8 @@ test('S4 first screen, flat filters and aggregate have the same order in both wi
 test('provider evidence comes only from Control places; match quality prefers starts over boundaries over interior', async (t) => {
   const f = await fixture(t), { data, open } = pickerOrderSample(f);
   const input = open(40, 'en').state.projectInput, role = data.roles[0], pi = input.place;
-  const noModel = { ...pi, model: null, piModel: undefined }, explicit = { ...pi, model: 'xai/old' };
+  const noModel = { ...pi, model: null, piModel: undefined };
+  const explicit = { ...pi, model: 'xai/old', piModel: { ...pi.piModel, current: 'xai/old' } };
   const unset = { ...pi, model: 'arena/inherited', piModel: { isDefault: true, defaultId: 'arena/inherited' } };
   const get = (place, places = [], presets = []) => pickOf({ ...data, roles: [{ ...role, places, presets }] }, { ...input, place });
   const none = get(noModel, [noModel]);
@@ -141,12 +142,38 @@ test('provider evidence comes only from Control places; match quality prefers st
   assert.deepEqual(providers(none), ['anthropic', 'arena', 'google', 'mistral', 'openai', 'xai']);
   assert.ok(!rows(none).some((r) => r.id === 'other'));
   // A fallback for an overridden place remains available to clear to, but does not count as a provider use.
-  const current = [explicit], preset = [unset, unset, { ...pi, model: 'mistral/old' }];
+  const current = [explicit], preset = [unset, unset, { ...pi, model: 'mistral/old', piModel: undefined }];
   const used = get(explicit, current, [{ name: 'daily', places: current }, { name: 'other', places: preset }]);
   assert.deepEqual([...used.inUse], [['xai', 1], ['arena', 2], ['mistral', 1]]);
   assert.deepEqual(providers(used), ['xai', 'arena', 'mistral']);
   const rank = { ...used, lists: { ...used.lists, pi: ['xai/aafoo', 'xai/ab-foo', 'xai/foo', 'xai/aafoo:foo', 'foop/aa'] } };
   assert.deepEqual(rows(rank, 'foo').map((r) => r.label), ['xai/foo', 'xai/aafoo:foo', 'xai/ab-foo', 'xai/aafoo', 'foop/aa']);
+});
+
+test('resolved bare pi models open and rank their provider; ambiguous bare models do not', async (t) => {
+  const f = await fixture(t);
+  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen'],
+    run: ['gpt-current', 'arena/gpt-other', 'shared'].map((model) => ({ harness: 'pi', pi_role: 'implementer', model })) });
+  f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW,
+    pi: ['openai/gpt-current', 'openai/gpt-next', 'arena/gpt-other', 'anthropic/shared', 'mistral/shared'] });
+  const snapshot = await f.collector.collect('control', f.board, NOW);
+  const role = snapshot.roles.find((r) => r.role === 'imp'), [resolved, , ambiguous] = role.places;
+  assert.equal(resolved.model, 'gpt-current');
+  assert.equal(resolved.piModel.current, 'openai/gpt-current');
+  assert.equal(ambiguous.piModel.current, 'shared');
+  assert.equal(ambiguous.provider, null);
+
+  const data = { ...snapshot, roles: [role] };
+  const draw = (state) => f.render(40, 'en', state, 24, data);
+  const chain = draw(onControl({ projectCursor: 'project:role:imp' }, { controlChain: { role, at: 0 } }));
+  const browse = draw(send(chain, 'place-model').state);
+  const input = browse.state.projectInput, pick = pickOf(data, input), { rows } = pickView(pick, input);
+  assert.deepEqual([...pick.inUse], [['openai', 1], ['arena', 1]]);
+  assert.deepEqual(rows.filter((row) => 'provider' in row).map((row) => row.provider), ['openai', 'arena']);
+  assert.deepEqual(rows.find((row) => row.id === 'other').providers, ['anthropic', 'mistral']);
+  const filtered = draw(type(browse, 'gpt').state);
+  const models = plain(filtered).filter((row) => /(?:openai|arena)\/gpt-/.test(row));
+  assert.deepEqual(models.map((row) => row.trim().split(/\s+/).at(-1)), ['openai/gpt-current', 'openai/gpt-next', 'arena/gpt-other']);
 });
 
 test('draft reorder keeps clickable pi and CLI model fields in the in-memory chain', async (t) => {

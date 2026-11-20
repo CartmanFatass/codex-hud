@@ -324,7 +324,7 @@ A key has one meaning per page (`n` is only `try-flag`; `>` `<` move between Hom
 add and remove a place, `+` `=` `-` are only `list-grow` / `list-shrink`; the decoder names each once and
 `tests/unit/panel-keys-rows.test.mjs` checks Help lists each key once per section). A footer's keys come from the selected row
 (`homeKeys` in `job-actions.ts`, the `hints` a split scene returns): per-hint words are in `split-i18n.ts`, and
-`hintText` translates a footer hint by hint, so a new hint is one entry, not one whole line per combination.
+`footerLayout` translates a footer hint by hint, so a new hint is one entry, not one whole line per combination.
 Rows that have to fit 40 columns keep what identifies them: `cutWords` cuts at a word, `briefStack` gives a briefed
 row's sentence its own line when the id is long, and `placeRows` (`control-view.ts`) shows a place's model by short name
 on the row, or on a second line before it cuts the name.
