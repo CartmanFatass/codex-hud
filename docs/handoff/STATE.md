@@ -7,6 +7,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
+- Settle the model picker sample `docs/design/model-picker/index.html` (ca82c3fa): 11 frames EN/ZH, nine To-settle items (zoom on open, pinned sections, folded groups, cached pi columns, no price source, ^R/Esc); CONTROL-TAB-05 waits on it
 
 
 ## Next
@@ -164,7 +165,6 @@ board counts these; update at every landing or decision. -->
 - try · — · CONTROL-TAB-02 · harness switches end to end: Harnesses view (h), disabled IDs in harnesses.json, one shared chain evaluation for panel/roster/create; off overrides refused (imp) (74810834)
 - try · — · CONTROL-TAB-03 · full pi model picker (m on a place): every model of the providers that are on, grouped, typed filter, discovery on open/r only; include curation removed (imp) (550da5a8; flake fix hud-watch)
 - working · — · CONTROL-TAB-04 · presets on the role row: c/C switch, p list, N/R/D, active_preset/hidden_presets (imp j63a2d6038c881c4f)
-- working · — · MODEL-PICKER-DESIGN · HTML sample for an upgraded terminal picker: visible entry, pinned models, zoomed pane with model details; no web console (owner 2026-11-20) (frontend-imp j2412234aeed022bb)
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa; Fishpref worker async ask 5e4b6d8 on main 2026-11-20)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 
