@@ -2,7 +2,7 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { placeDestination, type RoleFact } from '../roles/role-control.js';
 import { validPresetName, type PresetChange } from '../roles/roster.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import { glyph } from './control-view.js';
+import { glyph, placeRows, presetTag, withDestination } from './control-view.js';
 import { monitorRowAt } from './monitor-input.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
@@ -20,7 +20,7 @@ const nextOf = (places: RoleFact['places']) => {
   const next = places.find((p) => p.state === 'active');
   return next ? placeDestination(next) : null;
 };
-const nameOf = (name: string | null) => name === null ? t('Custom') : monitorText(name);
+const nameOf = (name: string | null) => name === null ? t('file chain') : monitorText(name);
 const nextText = (next: string | null) => next === null ? theme.board.attention(t('none')) : monitorText(next);
 const matches = (sheet: Extract<PresetInput, { mode: 'list' }>) => [
   ...(sheet.role.presets ?? []),
@@ -101,15 +101,16 @@ export function presetSheet(sheet: PresetInput, width: number, room: number): {
   ));
   const lines = (text: string) => flowLines(text, width).map((line) => boardRow(fit(line, width)));
   const saved = (preset: string | null, next: string | null = nextOf(sheet.role.places)) =>
-    `[${nameOf(preset)}] ${mark('→', '>')} ${nextText(next)}`;
+    [presetTag(preset), mark('→', '>'), nextText(next)].filter(Boolean).join(' ');
   if (sheet.mode === 'list') {
     const found = matches(sheet);
     const entries = found.map(({ name: n, next, offBy }, at) => {
       const target = nextText(next), prefix = `  ${n === name ? theme.board.active(mark('◉', '@')) : ' '} `;
       const col = Math.max(4, width - visualLength(prefix + target) - 4);
-      const shown = fit(squeeze(nameOf(n), col), Math.min(9, col));
+      const caption = nameOf(n);
+      const shown = fit(squeeze(caption, col), Math.min(n === null ? Math.max(9, visualLength(caption)) : 9, col));
       const row = `${prefix}${shown} ${muted(mark('→', '>'))} ${target}`;
-      const extra = n === null ? t('file chain') : offBy ? t('{id} off', { id: monitorText(offBy) }) : '';
+      const extra = offBy ? t('{id} off', { id: monitorText(offBy) }) : '';
       return { item: item(at), text: fit(row + (extra && visualLength(`${row}  ${extra}`) <= width ? `  ${muted(extra)}` : ''), width) };
     });
     const hints = 'type to filter  ↑↓ pick  ⏎ apply  esc cancel';
@@ -126,12 +127,7 @@ export function presetSheet(sheet: PresetInput, width: number, room: number): {
     const chain = sheet.role.fileChain ?? sheet.role.places;
     const header = [...lines(t('Delete {name}?', { name: nameOf(name) })),
       ...lines(t('Use file chain next')), ...lines(saved(null, nextOf(chain))), boardRow('')];
-    const places = chain.flatMap((p, i) => {
-      const token = (p.provider && p.model?.startsWith(`${p.provider}/`) ? p.model.slice(p.provider.length + 1) : p.model) ?? p.kind;
-      const place = monitorText([placeDestination(p), token, p.thinking].filter(Boolean).join('  '));
-      const lead = `  ${i + 1} ${glyph(p.state)} `, indent = ' '.repeat(visualLength(lead));
-      return flowLines(place, width - indent.length).map((line, n) => boardRow(fit((n ? indent : lead) + line, width)));
-    });
+    const places = chain.flatMap((p, i) => placeRows(`  ${i + 1} ${glyph(p.state)} `, withDestination(p), width, ' ', '', {}));
     const available = Math.max(1, room - header.length - error.length);
     const scroll = Math.min(sheet.scroll ?? 0, Math.max(0, places.length - available));
     const hints = '⏎ delete  esc cancel';

@@ -6,6 +6,7 @@ import { boardRow, footHints, kvRows, mark, section } from './workboard-rows.js'
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
+import { presetTag } from './control-view.js';
 
 const GROUPS = [['runner', 'Runner'], ['cli', 'CLI agents'], ['browser', 'Browser tools'], ['provider', 'Pi providers']] as const;
 const muted = theme.board.muted;
@@ -66,7 +67,7 @@ function harnessDetail(h: HarnessSwitchFact, width: number): MonitorRow[] {
   // Prefer a role whose Next would move; for the rest, show where the first referenced place sits.
   const uses = h.uses.slice().sort((a, b) => Number(b.next !== b.switchedNext) - Number(a.next !== a.switchedNext));
   const first = uses[0];
-  detail.push(...kvRows('used by', first ? `${first.role} [${first.preset ?? t('Custom')}] ${t('place #{n}', { n: first.index + 1 })}` : t('none'), width));
+  detail.push(...kvRows('used by', first ? [first.role, presetTag(first.preset), t('place #{n}', { n: first.index + 1 })].filter(Boolean).join(' ') : t('none'), width));
   if (first) {
     if (h.off) detail.push(...kvRows('next job', `${first.role} → ${target(first.next)}`, width));
     detail.push(...kvRows(h.off ? 'if on' : 'if off', `${first.role} → ${target(first.switchedNext)}`, width));

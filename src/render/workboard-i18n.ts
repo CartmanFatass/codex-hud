@@ -197,9 +197,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'click selects · again expands · wheel scrolls': '点击选中 · 再点展开 · 滚轮滚动',
   // Control plane: where each role runs.
   Roles: '角色',
-  Custom: '自定义',
   Chain: '备选链',
   source: '来源',
+  shipped: '内置',
   'Project roles': '项目角色',
   'Browser tasks': '浏览器任务',
   Harnesses: '宿主',
@@ -263,9 +263,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '^R refresh': '^R 刷新',
   'back; confirm discarding a draft; picker: clear then exit': '返回；放弃草稿需确认；选择器：先清空筛选，再关闭',
   'place: open the model field; type to filter': '位置：打开模型字段；输入筛选',
-  'click [model ▾] or press m to choose': '点 [模型 ▾] 或按 m：选择模型',
-  'Control: click [model ▾] to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.':
-    '控制：点 [模型 ▾] 打开。单击模型选中，再点一次设定；点提供方标题折叠或展开，滚轮滚动列表。',
+  'click ▾ or press m to choose a model': '点 ▾ 或按 m：选择模型',
+  'Control: click the model field (▾) to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.':
+    '控制：点模型字段（▾）打开。单击模型选中，再点一次设定；点提供方标题折叠或展开，滚轮滚动列表。',
   'Model picker: current and preset models are pinned until you type. Typing opens matching groups.':
     '模型选择器：未输入时置顶当前模型和预设模型。输入筛选时展开匹配分组。',
   Pinned: '置顶',
@@ -276,6 +276,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'No discovered models': '未发现模型',
   'No matching models': '没有匹配的模型',
   'pi is off': 'pi 已停用',
+  "role's model ({model})": '角色自带模型（{model}）',
+  "pi's model ({model})": 'pi 自带模型（{model}）',
+  clear: '清除',
   'from pi role': '来自 pi 角色',
   'from pi settings': '来自 pi 设置',
   Selected: '所选',
@@ -318,7 +321,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'discovered {age} ago · ^R refreshes': '{age}前发现 · ^R 刷新',
   "{provider}'s models are not listed: the provider is off": '{provider} 的模型不在列表里：提供方已停用',
   'sets {place} to this model': '把 {place}设为它',
-  'sets {place} to default': '把 {place}设为默认',
+  'clears the model override for {place}': '清除{place}的模型覆盖',
   'keeps {model}': '保留 {model}',
   'choose a provider row to set a model': '选择提供方下的模型来设定',
   'click a header: fold': '点标题 折叠',

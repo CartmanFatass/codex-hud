@@ -28,7 +28,7 @@ export const SPLIT_ZH: Record<string, string> = {
   'bad active_preset': 'active_preset 无效', 'bad hidden_presets': 'hidden_presets 无效',
   'preset name already exists': '预设名称已存在', 'Role changed on disk; reopen the action': '角色文件已更改，请重新打开此操作',
   'Preset {name} missing; using file chain': '预设 {name} 不存在，使用文件链',
-  '{role} → preset {name}': '{role} → 预设 {name}',
+  '{role} → preset {name}': '{role} → 预设 {name}', '{role} · preset applied': '{role} · 已应用预设',
   'pinned': '锁定', 'project file · read-only here': '项目文件 · 这里只读', 'chain source': '链来源',
   'choose preset': '选择预设', 'new · from current chain': '新建 · 从当前链复制', 'rename preset': '重命名预设',
   'delete preset': '删除预设', 'Not saved': '未保存', 'saved': '已保存', 'name': '名称',

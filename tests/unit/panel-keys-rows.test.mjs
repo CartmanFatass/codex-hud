@@ -154,17 +154,17 @@ test('a row says its state once: Home’s lane rows, its cards and their model m
   assert.match(plain(idle.render(40, 'en', 40, split(), idle.data)).find((l) => /^✓ NATIVE-TREE/.test(l)), /^✓ NATIVE-TREE +2 jobs +done \d+m$/);
 });
 
-test('at 40 columns the role row retains the preset and next target; detail retains full place names', async (t) => {
+test('at 40 columns the role row retains the next target without a placeholder tag; detail retains full place names', async (t) => {
   const { busy } = await fixtures(t);
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
     const state = split({ mainTab: 'control', panelLayout, controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'usage', 'files']) },
       ...(panelLayout === 'classic' ? { controlChain: { role: control.roles.find((r) => r.role === 'imp'), at: 0 } } : {}) });
     const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
-    assert.match(text, lang === 'en' ? /imp \[Custom\] → agy/ : /imp \[自定义\] → agy/);
+    assert.match(text, /imp → agy/);
     assert.match(text, /pi\/openai +\[gpt-6\.1-sol ▾\]/);
     assert.match(text, /agy +\[gemini-4-hydrogen-high ▾\]/);
-    assert.match(text, lang === 'en' ? /fro\S*nd \[Custom\] → pi\/project +project/ : /frontend \[自定义\] → pi\/project +项目/);
+    assert.match(text, lang === 'en' ? /frontend → pi\/project +project/ : /frontend → pi\/project +项目/);
     for (const line of frame.lines) assert.equal(visualLength(line), 40);
   }
 });

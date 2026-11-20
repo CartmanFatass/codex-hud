@@ -54,10 +54,10 @@ test('40-column entry, pinned and typed frames follow the sample in EN/ZH and bo
     assert.equal(cli.controlChain.sheet.field, 'model');
     const pinned = draw(lang, open.state);
     compare(pinned, '2a', /^(?:\/|▸|⊘)/);
-    assert.match(plain(pinned).join('\n'), en ? /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42m \[default\]\n +grok-4.7 +\? unknown \[lab\]/
+    assert.match(plain(pinned).join('\n'), en ? /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42m\n +grok-4.7 +\? unknown \[lab\]/
       : /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42分钟\n +grok-4.7 +\? 未知 \[lab\]/);
     const backup = click(pinned, 3, rowY(pinned, /^ +openai\/gpt-6.1-sol +✗/));
-    assert.match(plain(draw(lang, backup.state)).join('\n'), /^  \[default\]$/m, 'the selected strip also shows preset names');
+    assert.doesNotMatch(plain(draw(lang, backup.state)).join('\n'), /\[default\]/, 'the selected strip also omits the default preset tag');
     assert.doesNotMatch(plain(pinned).join('\n'), /Recent|最近|claude-opus|mistral-small/);
     let filtered = draw(lang, type(pinned, 'grok').state);
     const y = rowY(filtered, /grok-4.7-fast$/);
@@ -160,7 +160,10 @@ test('the picker uses real collected preset chains, and locked and Flow places s
     controlChain: { role: snapshot.roles.find((r) => r.role === role), at: i },
   });
   const opened = f.render(40, 'en', placeState('imp', 1), 32, data);
-  assert.match(opened.lines[field(opened, 1).y], /\[default ▾\]/);
+  const blank = field(opened, 1);
+  assert.equal(blank.width, 3);
+  assert.match(opened.lines[blank.y], /\[▾\]/);
+  assert.deepEqual(click(opened, blank.x + 1, blank.y).state.controlChain.sheet, send(opened, 'place-model').state.controlChain.sheet);
   const pick = f.render(40, 'en', click(opened, field(opened).x, field(opened).y).state, 32, data);
   assert.match(plain(pick).join('\n'), /Pinned ─+ 2\n› ◉ xai\/current\n +openai\/backup +\[backup\] \[shared\]/);
   assert.doesNotMatch(plain(pick).join('\n'), /xai\/other|\[other\]/);

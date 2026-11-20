@@ -39,6 +39,7 @@ export interface PlaceFact {
   label: string;
   model: string | null;
   thinking: string | null;
+  inheritedThinking?: boolean;
   kind?: 'image' | 'video';
   /** `active` is where the next `hud_create` runs. A real quota mark can coexist with `off`. */
   state: PlaceState;
@@ -185,6 +186,7 @@ export function controlFacts(
       }
       return {
         harness: place.harness, label: placeLabel(place), model: model.value, thinking: thinking.value, state,
+        ...(thinking.value && place.thinking === undefined ? { inheritedThinking: true } : {}),
         ...(piModel ? { piModel } : {}),
         ...(place.kind ? { kind: place.kind } : {}),
         ...(provider === undefined ? {} : { provider }),

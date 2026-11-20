@@ -52,7 +52,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.next[0].value, 'NATIVE-TREE: native subagents on Home beside package lanes');
   assert.match(f.data.docs[1].path, /2026-11-12-review.md$/);
   const first = (name) => f.data.roles.find((r) => r.role === name);
-  assert.deepEqual(first('imp').places, [{ harness: 'pi', label: 'pi', model: 'synthetic/model', thinking: 'high', state: 'active', provider: 'synthetic',
+  assert.deepEqual(first('imp').places, [{ harness: 'pi', label: 'pi', model: 'synthetic/model', thinking: 'high', inheritedThinking: true, state: 'active', provider: 'synthetic',
     piModel: { current: 'synthetic/model', isDefault: true, defaultId: 'synthetic/model', defaultSource: 'from pi role', defaultOff: false } }]);
   assert.deepEqual(
     f.data.control.find((r) => r.label === 'invalid'),
@@ -185,7 +185,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   let text = plain(frame).join('\n');
   // flow has nowhere to run and bad.json does not load: they come first; the other roles are one folded row of names.
   assert.match(text, /^Needs attention ─+ 2$/m);
-  assert.match(text, /^ {2}− flow \[Custom\] → none$/m);
+  assert.match(text, /^ {2}− flow → none$/m);
   assert.match(text, /^ {2}! bad\.json +unparseable JSON$/m);
   assert.match(text, /^▸ Healthy ─+ 6$/m);
   assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general {2}pro$/m);
@@ -194,7 +194,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   frame.state.controlNav.projectCursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^Healthy ─+ 6$/m);
-  assert.match(plain(frame).join('\n'), /imp \[Custom\] → pi\/synthetic/);
+  assert.match(plain(frame).join('\n'), /imp → pi\/synthetic/);
   frame.state.controlNav.projectCursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ agents/);

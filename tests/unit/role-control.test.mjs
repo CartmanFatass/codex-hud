@@ -91,9 +91,9 @@ test('Control plane: what needs the owner first with the place the next job uses
   const at = (re) => lines.findIndex((l) => re.test(l));
   assert.deepEqual([...new Set(s.rows().map((r) => r.item))], ['project:role:pro', 'project:role:flow']);
   assert.match(lines[at(/^Needs attention ─/)], / 3$/);
-  assert.match(lines[at(/ pro /)], /^ {2}✗ pro \[Custom\] → gemini$/);
+  assert.match(lines[at(/ pro /)], /^ {2}✗ pro → gemini$/);
   assert.match(lines[at(/ pro /) + 1], /^ {6}chatgpt exhausted 60m$/);
-  assert.match(lines[at(/ flow /)], /^ {2}− flow \[Custom\] → none$/);
+  assert.match(lines[at(/ flow /)], /^ {2}− flow → none$/);
   assert.match(lines[at(/bad\.json/)], /^ {2}! bad\.json +unparseable JSON$/);
   assert.match(lines[at(/^▸ Healthy ─/)], / 5$/);
   assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/);
@@ -111,7 +111,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   s.session.state = onControl();
   const narrow = plain(s.frame(40, 'zh', 64)).join('\n');
   assert.match(narrow, /^需要处理 ─+ 3$/m);
-  assert.match(narrow, /^ {2}✗ pro \[自定义\] → gemini$/m);
+  assert.match(narrow, /^ {2}✗ pro → gemini$/m);
   assert.match(narrow, /^ {6}chatgpt 已耗尽 60分钟$/m);
   assert.match(narrow, /^▸ 正常 ─+ 5$/m);
   s.session.state = select(s.session.state, 'project:fold:healthy');
@@ -167,13 +167,13 @@ test('Classic expands only the selected role’s numbered chain; o opens a role�
   await s.press(DOWN); // Healthy
   await s.press(ENTER);
   await s.press(DOWN); // imp
-  assert.match(s.text(), /imp \[default\] → pi\/synthetic/);
+  assert.match(s.text(), /imp → pi\/synthetic/);
   assert.doesNotMatch(s.text(), /^› 1 ◉/m);
   assert.deepEqual((await s.press('o')).action, { type: 'open-files', files: [resolve('packages/hud-mcp/roles/imp.json')] });
   await s.press(ENTER);
-  assert.match(s.text(), /^› 1 ◉ pi\/synthetic +\[default ▾\] +high$/m);
+  assert.match(s.text(), /^› 1 ◉ pi\/synthetic +\[model ▾\] +high$/m);
   assert.match(s.text(), /^ {2}2 ○/m);
-  assert.match(s.text(), /source +default · imp\.json/);
+  assert.match(s.text(), /source +shipped · imp\.json/);
   await s.press(ESC);
   assert.doesNotMatch(s.text(), /^› 1 ◉/m);
 });
@@ -230,7 +230,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
   const s = await setup(t), item = 'project:role:imp';
   const raw = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles/imp.json'), 'utf8')).run;
   s.session.state = select(s.session.state, item);
-  assert.match(s.text(), /imp \[default\]/);
+  assert.match(s.text(), /imp → pi\/synthetic/);
   assert.match(plain(s.frame(120)).at(-1), /c C preset/);
   await s.press('c');
   assert.deepEqual(s.session.done, { ok: true, index: 0, preset: 'grok' });
@@ -246,7 +246,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
   await s.press('C');
   assert.equal(s.frame().state.controlNav.projectCursor, item);
   assert.equal(s.assignment('imp').preset, 'default');
-  assert.match(s.text(), /sonic \[Custom\]/);
+  assert.match(s.text(), /sonic → pi/);
   s.session.state = select(s.session.state, 'project:role:sonic');
   await s.press('c');
   assert.equal(fs.existsSync(join(s.hud, 'roles/sonic.json')), false, 'no presets writes nothing');
@@ -259,7 +259,7 @@ test('browser fields use the actual adapter: site/effort, AI Studio model/thinki
   assert.match(s.text(), /target +chatgpt\n +Effort +6 Pro/);
   assert.doesNotMatch(s.text(), /thinking/);
   await s.keys(ENTER, 'aistudio', ENTER);
-  assert.match(s.text(), /target +aistudio\n +model +gemini-4-argon\n +thinking +default/);
+  assert.match(s.text(), /target +aistudio\n +model +\[gemini-4-argon ▾\]\n +thinking$/m);
   assert.equal(s.assignment('pro').runs_on.provider, 'chatgpt');
   await s.keys(ESC, DOWN, 'Ks');
   assert.equal(s.assignment('pro').runs_on.provider, 'gemini');
@@ -272,6 +272,36 @@ test('browser fields use the actual adapter: site/effort, AI Studio model/thinki
 });
 
 const lines40 = (s, lang = 'en', height = 20) => plain(s.frame(40, lang, height));
+test('Control uses inherited model and thinking when known and a clickable arrow when unknown', async (t) => {
+  const s = await setup(t, { shippedImp: false });
+  for (const known of [true, false]) {
+    s.put(join(s.root, 'roles/implementer.md'), known ? '---\nmodel: xai/gpt-6.2-sol\nthinking: high\n---\nSynthetic role\n' : 'Synthetic role\n');
+    s.collector.refreshRoles(s.session.snap, NOW);
+    for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+      s.session.state = onControl(undefined, { panelLayout });
+      focus(s);
+      const draw = () => s.frame(40, lang, 32);
+      const hit = (frame) => frame.controls.find((c) => c.kind === 'control-model' && c.item);
+      const label = lang === 'en' ? 'thinking' : '思考';
+      const button = known ? '[gpt-6.2-sol ▾]' : '[▾]';
+      let view = draw();
+      assert.ok(plain(view)[hit(view).y].includes(button), plain(view).join('\n'));
+      await s.press(ENTER);
+      view = draw();
+      assert.ok(plain(view)[hit(view).y].includes(button));
+      assert.equal(plain(view).find((row) => row.trimStart().startsWith(label)).trim().split(/ +/).join(' '), known ? `${label} high` : label);
+      const { x, y } = hit(view);
+      s.session.state = handleMonitorInput(view.state, { type: 'mouse', button: 'left', x, y }, { tree: TREE, frame: view }).state;
+      assert.ok(s.session.state.projectInput);
+      const clear = lang === 'en' ? (known ? "role's model (gpt-6.2-sol)" : 'clear') : (known ? '角色自带模型（gpt-6.2-sol）' : '清除');
+      assert.ok(plain(draw()).some((row) => row.startsWith(`› ◉ ${clear}`)));
+      const zoom = s.render(120, lang, s.session.state, 36, s.session.snap, true, 'unicode', 'none', { modelPickerZoomed: true });
+      assert.ok(plain(zoom).some((row) => row.startsWith(`› ◉ ${clear}`)));
+      assert.match(plain(zoom).join('\n'), lang === 'en' ? /clears the model override/ : /清除imp/);
+      assert.equal(stored(s, 'imp').model, undefined);
+    }
+  }
+});
 test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a provider never rewrites a role or filters the cache', async (t) => {
   const s = await setup(t);
   const config = join(s.hud, 'harnesses.json');
@@ -283,7 +313,7 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false, 'opening writes nothing');
   let page = lines40(s).join('\n');
   assert.match(page, /Model ─+ pi · list 0m old/);
-  assert.match(page, /default → synthetic\/model\n +from pi role/);
+  assert.match(page, /role's model \(model\)\n +from pi role/);
   assert.match(page, /\? ctx {2}\? out {2}think \? {2}img \?/, 'legacy caches still populate the picker, without invented facts');
   assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length}$`, 'm'));
   await s.keys('ANTH');
@@ -351,7 +381,7 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   setHarnessDisabled(s.hud, 'pi:synthetic', true);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.keys('m', '\x1b[H');
-  assert.doesNotMatch(lines40(s).join('\n'), /default →|from pi role/);
+  assert.doesNotMatch(lines40(s).join('\n'), /role's model|from pi role/);
   await s.keys(ESC, ESC);
   setHarnessDisabled(s.hud, 'pi:synthetic', false);
   s.collector.refreshRoles(s.session.snap, NOW);
@@ -431,7 +461,7 @@ test('40-column picker preserves defaults, full IDs and capability strips in Cla
   for (const layout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
     const frames = pickerFrames(s, undefined, layout);
     const grouped = frames[`pick-grouped-40-${lang}`].join('\n');
-    assert.match(grouped, /openai\/gpt-6.1-sol\n +(?:来自 pi 设置|from pi settings)/);
+    assert.match(grouped, lang === 'en' ? /pi's model \(gpt-6.1-sol\)\n +from pi settings/ : /pi 自带模型（gpt-6.1-sol）\n +来自 pi 设置/);
     assert.ok(grouped.indexOf('anthropic ─') < grouped.indexOf('arena ─'));
     const filtered = frames[`pick-filter-40-${lang}`].join('\n');
     assert.match(filtered, /\/ grok▌ +5 (?:个匹配|matches)/);
@@ -559,8 +589,8 @@ test('a project role file in force is shown apart and never written past', async
   s.session.snap = await s.collector.collect(true, s.board, NOW + 1);
   const lines = plain(s.frame(80));
   assert.ok(lines.findIndex((l) => /frontend.*project$/.test(l)) > lines.findIndex((l) => / sonic /.test(l)));
-  assert.match(s.text(), /◉ frontend \[Custom\] → pi\/project +project/);
-  assert.match(s.text(), /◉ imp \[[^\]]+\] → pi\/project +project/);
+  assert.match(s.text(), /◉ frontend → pi\/project +project/);
+  assert.match(s.text(), /◉ imp → pi\/project +project/);
   const before = fs.readFileSync(join(s.cwd, '.hud/roles/imp.json'), 'utf8');
   s.session.state = select(s.session.state, 'project:role:imp');
   for (const raw of ['c', 'C', 'p', 'N', 'I', 'R', 'D']) {
@@ -672,7 +702,8 @@ test('40-col EN/ZH frames 5a–5e follow the Control sample; Classic and Split u
         const actual = body(plain(view));
         // The original diagram predates clickable draft fields. Keep its layout/content checks,
         // but require the newer model affordance on its editable rows.
-        const wanted = body(expected).map((row) => id === '5e' ? row.replace(/\b(grok-4\.7|gemini-4-hydrogen-high)\b/, '[$1 ▾]') : row);
+        const wanted = body(expected).map((row) => id === '5e' ? row.replace(/\b(grok-4\.7|gemini-4-hydrogen-high)\b/, '[$1 ▾]')
+          : row.replace(/^(thinking|思考) (?:default|默认)$/, '$1'));
         if (panelLayout === 'split') assert.deepEqual(actual, wanted, `${id} ${lang}`);
         else assert.deepEqual(actual.slice(0, wanted.length), wanted, `${id} ${lang} Classic sheet`);
         if (panelLayout === 'split' && process.env.HUD_CHAIN_REPORT_FRAMES) console.log(`${lang} ${id}\n${view.lines.map(stripAnsi).join('\n')}\n`);

@@ -24,38 +24,52 @@ export const needsAttention = (role: RoleFact) =>
 export const roleName = (role: RoleFact) => monitorText(role.role);
 /** A model as it reads: no snapshot date (`-20261101`, `-2026-11-01`, `-1017`), which the picker and the selected place still show whole. */
 export const shortModel = (model: string) => monitorText(model).replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2}|\d{4})$/, '');
-const placeJoin = (p: PlaceFact, model: string, gap: string) => [p.label, p.model ? model : model && theme.board.muted(model), monitorText(p.thinking ?? p.kind ?? '')].filter(Boolean).join(gap);
-const modelOf = (p: PlaceFact) => (p.model ? shortModel(p.model) : p.harness === 'bro' ? '' : t('default'));
-/** `pi  model  thinking`, the model short when the row is short of room: the vendor goes first (`openai/gpt-6.1-sol`), then the middle of the name. */
-export function placeText(p: PlaceFact, room: number, gap: string): string {
-  let model = modelOf(p);
-  if (p.model && visualLength(placeJoin(p, model, gap)) > room) model = model.replace(/^[^/]+\//, '');
-  if (p.model && visualLength(placeJoin(p, model, gap)) > room) model = squeeze(model, Math.max(4, visualLength(model) - (visualLength(placeJoin(p, model, gap)) - room)));
-  return placeJoin(p, model, gap);
-}
+export const presetName = (name?: string | null) => name && name !== 'default' ? monitorText(name) : '';
+export const presetTag = (name?: string | null) => {
+  const shown = presetName(name);
+  return shown ? `[${shown}]` : '';
+};
+export const sourceLabel = (source: RoleFact['source']) => t(source === 'default' ? 'shipped' : source);
+export const effectiveModel = (p: PlaceFact) => p.model ?? (p.piModel?.isDefault ? p.piModel.defaultId : null);
+export const unsetModel = (p: PlaceFact) => p.piModel?.isDefault ?? !p.model;
+export const withDestination = (p: PlaceFact): PlaceFact => {
+  const model = effectiveModel(p), prefix = `${p.provider}/`;
+  return p.provider ? { ...p, label: placeDestination(p), model: model?.startsWith(prefix) ? model.slice(prefix.length) : model } : p;
+};
+const mute = (text: string, muted: boolean) => text && muted ? theme.board.muted(text) : text;
+const placeJoin = (p: PlaceFact, model: string, gap: string, control: boolean) => [monitorText(p.label),
+  mute(model, control ? unsetModel(p) : !p.model), mute(monitorText(p.thinking ?? p.kind ?? ''), control && !!p.inheritedThinking)].filter(Boolean).join(gap);
 /**
  * A place as one row, or as two when its model does not fit whole: `lead  pi  xhigh` and the model under it, cut in the middle only
  * when even a row of its own is too short. `tag` sits at the right of the first row; `ink` paints the place (standby ones are dim).
  */
-export function placeRows(lead: string, p: PlaceFact, width: number, gap: string, tag: string, extra: Partial<MonitorRow>, ink: (s: string) => string = (s) => s): MonitorRow[] {
-  const room = width - visualLength(lead) - (tag ? visualLength(tag) + 1 : 0), model = modelOf(p).replace(/^[^/]+\//, '');
-  const two = !!p.model && visualLength(placeJoin(p, model, gap)) > room;
-  const first = lead + ink(two ? placeJoin({ ...p, model: null }, '', gap) : placeText(p, room, gap));
+export function placeRows(lead: string, p: PlaceFact, width: number, gap: string, tag: string, extra: Partial<MonitorRow>, ink: (s: string) => string = (s) => s, control = true): MonitorRow[] {
+  const room = width - visualLength(lead) - (tag ? visualLength(tag) + 1 : 0), value = control ? effectiveModel(p) : p.model;
+  let model = value ? shortModel(value) : control || p.harness === 'bro' ? '' : t('default');
+  const join = (m: string) => placeJoin(p, m, gap, control);
+  if (value && visualLength(join(model)) > room) model = model.replace(/^[^/]+\//, '');
+  const two = !!value && visualLength(join(model)) > room;
+  const first = lead + ink(join(two ? '' : model));
   return [{ ...extra, text: tag ? pair(first, tag, width) : fit(first, width) },
-    ...(two ? [{ ...extra, text: fit('    ' + ink(squeeze(model, width - 5)), width) }] : [])];
+    ...(two ? [{ ...extra, text: fit('    ' + ink(mute(squeeze(model, width - 5), control && unsetModel(p))), width) }] : [])];
+}
+export function modelButton(place: PlaceFact, room: number): string {
+  const model = squeeze(shortModel(effectiveModel(place) ?? '').replace(/^[^/]+\//, ''), room - 4);
+  const tail = `${mark('▾', 'v')}]`, accent = theme.board.identifier;
+  return unsetModel(place) && model ? accent('[') + theme.board.muted(model) + accent(` ${tail}`)
+    : accent(`[${model ? `${model} ` : ''}${tail}`);
 }
 export function modelFieldRows(place: PlaceFact, prefix: string, width: number, extra: Pick<MonitorRow, 'item' | 'files' | 'modelPick'>, ink: (s: string) => string): MonitorRow[] {
-  const current = place.piModel?.isDefault || !place.model ? t('default') : shortModel(place.model).replace(/^[^/]+\//, '');
-  const arrow = mark('▾', 'v'), label = monitorText(placeDestination(place)), effort = monitorText(place.thinking ?? '');
-  const normal = `[${current} ${arrow}]`, aligned = prefix + ink(fit(label, Math.max(7, visualLength(label)))) + ' ';
+  const label = monitorText(placeDestination(place)), effort = mute(monitorText(place.thinking ?? ''), true);
+  const normal = modelButton(place, Infinity), aligned = prefix + ink(fit(label, Math.max(7, visualLength(label)))) + ' ';
   const lead = visualLength(aligned + normal) <= width ? aligned : prefix + ink(label) + ' ';
   const two = visualLength(lead + normal) > width;
   const fieldLead = two ? ' '.repeat(visualLength(prefix)) : lead;
   const x = visualLength(fieldLead);
-  const field = `[${squeeze(current, width - x - 4)} ${arrow}]`;
+  const field = modelButton(place, width - x);
   const control = { kind: 'control-model' as const, item: extra.item, x, width: visualLength(field) };
-  return [...(two ? [{ ...extra, text: pair(prefix + ink(label), theme.board.muted(effort), width) }] : []),
-    { ...extra, text: pair(fieldLead + theme.board.identifier(field), !two && visualLength(lead + field + effort) < width ? theme.board.muted(effort) : '', width), controls: [control] }];
+  return [...(two ? [{ ...extra, text: pair(prefix + ink(label), effort, width) }] : []),
+    { ...extra, text: pair(fieldLead + field, !two && visualLength(lead + field + effort) < width ? effort : '', width), controls: [control] }];
 }
 
 /** What a row of a place carries for the keys: its id, its role file, and what the model picker needs when the place can have a model. */
@@ -119,28 +133,30 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
     if (fact || !detail) return fact;
     if (!entry.current) return theme.board.muted(t('Enter sets it · not the current model'));
     const label = t('current');
-    const extra = `${where}${role?.preset ? ` [${monitorText(role.preset)}]` : ''} ${t('place #{n}', { n: input.index + 1 })}`;
+    const extra = [where, presetTag(role?.preset), t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' ');
     return `${theme.board.active(mark('◉', '@'))} ${theme.board.muted(visualLength(label + ' · ' + extra) + 4 <= width ? `${label} · ${extra}` : label)}`;
   };
   const selected = view.selected;
-  const full = selected ? monitorText(selected.model ?? '') || t('default') : '';
+  const full = selected ? monitorText(selected.model ?? selected.label) : '';
   const detail = [section(theme.board.muted(t('Selected')), width)];
   const detailLine = (line: string) => boardRow(fit('  ' + line, width));
   if (full) {
     detail.push(...flowLines(full, width - 2).map(detailLine));
-    const id = selected?.model, facts = id ? lists.piFacts?.[id] : undefined;
-    const [ctx, out, thinking, images] = facts ?? [];
-    const muted = theme.board.muted;
-    const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${pickerCap(thinking)}`, `${muted(t('img'))} ${pickerCap(images)}`];
-    let line = '';
-    for (const field of fields) {
-      if (line && visualLength(`${line}  ${field}`) > width - 2) {
-        detail.push(detailLine(line));
-        line = '';
+    const id = selected?.model;
+    if (id) {
+      const [ctx, out, thinking, images] = lists.piFacts?.[id] ?? [];
+      const muted = theme.board.muted;
+      const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${pickerCap(thinking)}`, `${muted(t('img'))} ${pickerCap(images)}`];
+      let line = '';
+      for (const field of fields) {
+        if (line && visualLength(`${line}  ${field}`) > width - 2) {
+          detail.push(detailLine(line));
+          line = '';
+        }
+        line += (line ? '  ' : '') + field;
       }
-      line += (line ? '  ' : '') + field;
+      detail.push(detailLine(line));
     }
-    detail.push(detailLine(line));
     if (selected) {
       detail.push(detailLine(stateOf(selected, true)));
       if (selected.tags?.length) {
@@ -167,8 +183,7 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   const add = (entry: PickEntry) => {
     const cursor = selected?.id === entry.id;
     const lead = `${cursor ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
-    const defaultId = entry.value === '' && entry.model ? ` → ${monitorText(entry.model)}` : '';
-    const name = (entry.value === '' ? entry.label : monitorText(entry.label)) + defaultId;
+    const name = monitorText(entry.label);
     const fact = stateOf(entry), tags = entry.tags?.map((name) => `[${monitorText(name)}]`) ?? [];
     const available = (side: string) => width - 4 - (side ? visualLength(side) + 2 : 0);
     // Keep whole tags when they fit, preserving the status and as much of the model ID as possible.
@@ -202,7 +217,7 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   return rows;
 }
 export const pickerPlace = (input: ModelInput, preset?: string | null) =>
-  [preset ? `[${monitorText(preset)}]` : '', t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' · ');
+  [presetTag(preset), t('place #{n}', { n: input.index + 1 })].filter(Boolean).join(' · ');
 
 export function radarFacts(radar: ControlRadar | undefined) {
   const quotas = (['codex', 'claude'] as const).flatMap((client) => {

@@ -47,7 +47,11 @@ export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
   const current = currentId ? { ...reference(currentId, place), current: true } : undefined;
   const canUnset = !place.piModel?.defaultOff && !lists.piStatus?.runnerOff;
   const defaultId = place.piModel?.defaultId ?? undefined;
-  const unset: PickEntry = { id: 'default', label: t('default'), model: defaultId, value: '', current: isDefault,
+  const provider = qualifiedPiProvider(defaultId);
+  const unsetLabel = defaultId ? t(place.piModel?.defaultSource === 'from pi role' ? "role's model ({model})" : "pi's model ({model})", {
+    model: provider ? defaultId.slice(provider.length + 1) : defaultId,
+  }) : t('clear');
+  const unset: PickEntry = { id: 'default', label: unsetLabel, model: defaultId, value: '', current: isDefault,
     fact: defaultId && !qualifiedPiProvider(defaultId) ? 'unknown' : undefined, until: place.piModel?.defaultUntil };
   const pins = new Map<string, PickEntry>();
   if (!needle && current) pins.set(current.model!, isDefault && canUnset ? unset : current);
@@ -58,7 +62,7 @@ export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
     const pin = pins.get(id) ?? reference(id, p);
     if (pin.fact === 'off' && !pin.current) continue;
     // The current row already names the selected place's own preset in its detail strip.
-    if (!pin.current || preset.name !== pick.preset) {
+    if (preset.name !== 'default' && (!pin.current || preset.name !== pick.preset)) {
       pin.tags ??= [];
       if (!pin.tags.includes(preset.name)) pin.tags.push(preset.name);
     }

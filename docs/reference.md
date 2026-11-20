@@ -469,7 +469,7 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 **Control tab.** Control is a main tab after Project. It names and follows the project selected in Project; `[`/`]` change that same selection without changing Home's root. Control reads that root's role and file facts without collecting its Git status, worktrees or tickets. The Roles view starts with:
 
 - **Needs attention**: roles with exhausted places that are enabled, with no available place, or with a missing selected preset, plus invalid role files. A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath. An invalid file opens with Enter or `o`.
-- **Healthy**: folded to role names. Enter shows one row per role, with its active preset or `Custom`, the next target, and a `project` tag on project-owned roles.
+- **Healthy**: folded to role names. Enter shows one row per role with its next target and, on project-owned roles, a `project` tag. Only named presets other than `default` get a preset tag; a file chain without a selector has no tag either.
 - **Usage** and **Files**: both folded. Usage opens quota windows, pi spend and dispatch health. Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
 
 Split previews the selected role's next model, thinking, source and numbered chain; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed. `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
@@ -499,9 +499,9 @@ The same policy applies to a requested `preset` and to resolved `on` and `model`
 off target is refused, not silently rerouted. If no place can run, `hud_create` returns
 `no_available_place` before creating a job.
 
-Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → registered project. At each layer, `hidden_presets` removes inherited names, then local definitions replace or append names. The winning role file's `active_preset` selects a name; `null` selects **Custom** (the file's own `run`). Without this field, the file chain still runs and the first exact normalized match still supplies the displayed name. If an explicitly selected name is missing, the file chain runs and Control and the roster report the missing name. A detailed `hud_roster` returns the effective `run`, `preset` and merged `presets`. `hud_create(preset: …)` uses that named chain for one job without saving it.
+Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → registered project. At each layer, `hidden_presets` removes inherited names, then local definitions replace or append names. The winning role file's `active_preset` selects a name; `null` selects the file's own `run`. Without this field, the file chain still runs and the first exact normalized match still identifies the preset. If an explicitly selected name is missing, the file chain runs and Control and the roster report the missing name. A detailed `hud_roster` returns the effective `run`, `preset` and merged `presets`. `hud_create(preset: …)` uses that named chain for one job without saving it.
 
-On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from Custom, first/last). `p` opens one list including Custom: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` starts a draft copied from the current chain; `I` starts empty. Enter a unique name and press Enter to open the draft. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
+On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from the file chain, first/last). `p` opens one list including the file chain and any preset named `default`: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` starts a draft copied from the current chain; `I` starts empty. Enter a unique name and press Enter to open the draft. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
 
 Only explicit edits write the global owner role file (`$HUD_HOME/roles`, atomically, mode 0600), even when viewing a registered project. An inherited rename or deletion hides the old name in the owner layer instead of changing a shipped file. Project-pinned roles show the source and a lock; `o` opens the file but the panel offers no preset or place edits there. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 
@@ -519,11 +519,13 @@ or the write fails, or if the role changed on disk, the draft stays open. To lea
 confirm **Discard edits?** with Enter or resume with Esc. Panel reload waits until the draft is closed.
 Outside a draft, `x` clears the selected place's quota mark and `o` opens the role file. `r` refreshes model lists.
 
-Click `[model ▾]` (or `[default ▾]` when unset), or press `m` on a focused editable place, to open
-its Model field. The pi Model field uses the picker below. Enter fills the field; choose Done to
-put the place in the draft and `s` in the chain to save it. Project-locked places show plain text.
+Click the model field (`[model ▾]`), or press `m` on a focused editable place, to open it. When unset,
+the field shows the effective model in muted text if known, or just `[▾]`. Unset thinking likewise
+shows the known value in muted text or stays blank. The pi Model field uses the picker below. Enter
+fills the field; choose Done to put the place in the draft and `s` in the chain to save it.
+Project-locked places show plain text.
 With an empty query, the picker pins the current model and compatible models from this role's named
-presets, tagged by preset. No recent history is kept. Pinned models also stay in their provider groups.
+presets, tagged except for `default`. No recent history is kept. Pinned models also stay in their provider groups.
 Opening the picker asks herdr to zoom the panel's own pane. Closing restores the split only if this
 picker zoomed it; an already zoomed pane stays zoomed. At 100 columns or more after a confirmed zoom,
 pi provider groups start open. Their rows show context, max output, thinking, images and HUD state.
@@ -541,8 +543,8 @@ Pi rows mark exhaustion with `✗` and time to reset. `⊘` means off and `?` me
 One muted line names off providers; their models are not offered. A read-only current model stays
 visible; if its provider is off, the wide detail explains why the place is skipped. Enter on a read-only
 current row in the wide view closes the picker without writing; in the narrow view it does nothing.
-The default row, when eligible, removes the explicit model and shows the effective default and its
-source when known. No pi match writes nothing; manual model IDs in role files and
+The clear row, when eligible, removes the explicit model. It is labelled by the resulting model and its
+source when known (for example, `role's model (gpt-6.2-sol)`), or `clear` otherwise. No pi match writes nothing; manual model IDs in role files and
 one-job overrides still work. The old `catalog.pi.include` key no longer filters the picker and is
 left untouched in existing configuration. While the picker is open, printable keys (including `q`
 and `r`) type into the filter; Backspace edits it.

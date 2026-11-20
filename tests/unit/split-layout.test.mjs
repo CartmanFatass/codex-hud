@@ -296,7 +296,7 @@ test('Control plane: roles on top, the cursor role’s places below; Enter takes
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control }).at(control());
   assert.match(d.state.controlNav.projectCursor ?? '', /^project:role:imp$/);
-  assert.match(rule(d), /^imp ─+ \[Custom\]$/);
+  assert.match(rule(d), /^imp ─+$/);
   const preset = d.run('role-preset');
   assert.deepEqual([preset.action.type, preset.action.role, preset.action.op], ['role-edit', 'imp', 'preset']);
   const list = d.run('preset-list');

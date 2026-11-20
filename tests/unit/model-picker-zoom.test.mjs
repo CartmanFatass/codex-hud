@@ -123,7 +123,8 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     assert.equal(bSelected.action, undefined);
     const b = draw(bSelected.state);
     assert.match(right(b), zh ? /✗ 已耗尽 · 42分钟后恢复/ : /✗ exhausted · resets in 42m/);
-    for (const role of ['imp \\[default\\]', 'reviewer \\[pi\\]', 'oracle \\[fable\\][\\s\\S]*\\[architect\\]']) assert.match(right(b), new RegExp(role));
+    for (const role of ['imp +(?:#1|第 1 位)', 'reviewer \\[pi\\]', 'oracle \\[fable\\][\\s\\S]*\\[architect\\]']) assert.match(right(b), new RegExp(role));
+    assert.doesNotMatch(right(b), /\[default\]/);
     assert.match(right(b), zh ? /2小时前发现/ : /discovered 2h ago/);
     assert.equal(click(b, 75, yOf(b, /openai\/gpt-6.1-sol/)).state.projectInput.pick, b.state.projectInput.pick, 'detail is not a second list');
     const picked = click(b, 5, yOf(b, /openai\/gpt-6.1-sol/));
@@ -209,7 +210,7 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
     }
     assert.fail(`missing ${re}: ${stderr}\n${stripAnsi(output)}`);
   };
-  await waitFor(/imp \[Custom\]/);
+  await waitFor(/imp → pi\/synthetic/);
   child.stdin.write('\rm');
   await waitFor(/1 model · list .* old · zoomed/);
   output = '';

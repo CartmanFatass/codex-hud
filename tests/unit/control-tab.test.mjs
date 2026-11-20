@@ -174,14 +174,16 @@ test('40-column preset row, successful switch and chooser text match the sample 
   for (const lang of ['en', 'zh']) {
     const sample = (id) => build(lang).frames.find((frame) => frame.id === id).frame.rows.map((r) => r.segs.map((s) => s.t).join('').trimEnd());
     const role = /^  ◉ imp \[/;
-    const listEntry = /^ *(?:◉ )?(?:default |grok |daily |Custom |自定义 )+.*→/;
+    const listEntry = /^ *(?:◉ )?(?:default |grok |daily |file chain |文件链 )+.*→/;
     const list = (rows) => rows.filter((line) => line.startsWith('/ ') || listEntry.test(line));
+    const wanted = list(sample('4c').map((row) => row.replace(/(?:Custom|自定义) +→ (\S+) +(?:file chain|文件链)$/, lang === 'en' ? 'file chain → $1' : '文件链    → $1')));
     for (const layout of ['classic', 'split']) {
       assert.equal(rendered[`preset-row-40-${layout}-${lang}`].find((line) => role.test(line)), sample('4a').find((line) => role.test(line)));
-      assert.deepEqual(list(rendered[`preset-list-40-${layout}-${lang}`]), list(sample('4c')));
+      assert.deepEqual(list(rendered[`preset-list-40-${layout}-${lang}`]), wanted);
     }
     const switched = rendered[`preset-switched-40-split-${lang}`];
-    for (const row of sample('4b').filter((line) => role.test(line) || line.startsWith('✓ imp'))) assert.ok(switched.includes(row), row);
+    assert.ok(switched.includes('  ◉ imp → pi/openai'));
+    assert.ok(switched.includes(lang === 'en' ? '✓ imp · preset applied' : '✓ imp · 已应用预设'));
   }
 });
 
@@ -243,7 +245,8 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     click('preset-list');
     assert.match(text(), zh ? /选择预设/ : /choose preset/);
     assert.match(text(), zh ? /daily +→ 无/ : /daily +→ none/);
-    assert.match(text(), zh ? /自定义 +→ pi\/openai +文件链/ : /Custom +→ pi\/openai +file chain/);
+    assert.match(text(), zh ? /文件链 +→ pi\/openai/ : /file chain +→ pi\/openai/);
+    assert.match(text(), /default +→/);
     keys('qjk7\r');
     assert.match(text(), zh ? /没有匹配的预设/ : /No matching presets/);
     assert.equal(frame.state.controlPresetInput.text, 'qjk7');
@@ -269,7 +272,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     assert.equal(read().active_preset, 'night');
     keys('D');
     assert.match(text(), zh ? /删除 night？[\s\S]*下次使用文件链/ : /Delete night\?[\s\S]*Use file chain next/);
-    assert.match(text(), /\[.*\] → pi\/openai/);
+    assert.match(text(), /^→ pi\/openai$/m);
     assert.equal(read().active_preset, 'night');
     keys('\x03');
     keys('D\r');
@@ -277,6 +280,8 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     assert.deepEqual(read().run, run);
     assert.deepEqual(read().presets, original.presets);
     assert.equal(frame.state.controlNav.projectCursor, cursor);
+    keys('pdefault\r');
+    assert.equal(read().active_preset, 'default');
   }
 });
 

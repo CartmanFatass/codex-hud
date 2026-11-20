@@ -4,7 +4,7 @@ import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
 import { placeModels, type PlaceFact } from '../roles/role-control.js';
 import { qualifiedPiProvider } from '../roles/roster.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
-import { pickerAge, pickerCap, pickerFact, pickerListWindow, pickerQuery } from './control-view.js';
+import { pickerAge, pickerCap, pickerFact, pickerListWindow, pickerQuery, presetTag } from './control-view.js';
 import { t } from './i18n.js';
 import { pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
@@ -13,7 +13,7 @@ import { boardCursor, footRow, hintText, mark, section } from './workboard-rows.
 
 export const MODEL_PICKER_WIDE = 100;
 const muted = (s: string) => theme.board.muted(s);
-const placeName = (role: string, preset: string | null | undefined) => monitorText(role) + (preset ? ` [${monitorText(preset)}]` : '');
+const placeName = (role: string, preset: string | null | undefined) => [monitorText(role), presetTag(preset)].filter(Boolean).join(' ');
 const location = (role: string, preset: string | null | undefined, index: number) => `${placeName(role, preset)} ${t('#{n}', { n: index + 1 })}`;
 const capsOf = (pick: ModelPick, entry: PickEntry) => entry.model ? pick.lists.piFacts?.[entry.model] : undefined;
 const end = (s: string, n: number) => ' '.repeat(Math.max(0, n - visualLength(s))) + truncateAnsi(s, n);
@@ -31,7 +31,7 @@ function uses(data: ProjectSnapshot, model: string, place: PlaceFact, bare?: str
       if (p.harness !== place.harness || p.label !== place.label) return;
       const id = p.piModel?.current ?? p.model;
       const hits = id === model ? found : bare && id === bare ? unresolved : undefined;
-      hits?.push(`${preset ? `[${monitorText(preset)}] ` : ''}${t('#{n}', { n: i + 1 })}`);
+      hits?.push([presetTag(preset), t('#{n}', { n: i + 1 })].filter(Boolean).join(' '));
     });
     const presets = role.presets ?? [];
     if (!presets.some((p) => p.name === role.preset && p.places)) scan(role.places, role.preset);
@@ -46,8 +46,10 @@ function uses(data: ProjectSnapshot, model: string, place: PlaceFact, bare?: str
 function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view: ReturnType<typeof pickView>, width: number, height: number, now: number) {
   const entry = view.selected;
   if (!entry) return [muted(t('No selection'))];
-  const model = entry.model, full = model ? monitorText(model) : t('default');
+  const model = entry.model, full = monitorText(model ?? entry.label);
   const target = location(input.role, pick.preset, input.index);
+  const clear = () => t('clears the model override for {place}', { place: target });
+  if (!model && entry.value === '') return [theme.board.identifier(full), '', ...flowLines(`⏎ ${clear()}`, width)];
   const provider = qualifiedPiProvider(model);
   const off = entry.fact === 'off', offBy = pick.lists.piStatus?.runnerOff ? 'pi' : provider;
   const status = pick.lists.piStatus;
@@ -94,7 +96,7 @@ function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view:
   if (status?.failed) bottom.push(...valueRows('', t('Refresh failed'), muted));
   else if (status?.fetchedAt !== undefined && now - status.fetchedAt >= MODEL_CACHE_TTL_MS) bottom.push(...valueRows('', t('List is stale'), muted));
   const canSet = entry.value !== undefined;
-  const action = canSet ? entry.value === '' ? t('sets {place} to default', { place: target }) : t('sets {place} to this model', { place: target })
+  const action = canSet ? entry.value === '' ? clear() : t('sets {place} to this model', { place: target })
     : entry.current ? t('keeps {model}', { model: full }) : t('choose a provider row to set a model');
   const actionLead = canSet || entry.current ? `${muted('⏎')} ` : '';
   bottom.push('', ...flowLines(action, width - (actionLead ? 2 : 0)).map((line, i) => (i && actionLead ? '  ' : actionLead) + line));
@@ -128,7 +130,7 @@ export function paintZoomedPicker(frame: MonitorFrame, data: ProjectSnapshot, in
     const selected = view.selected?.id === entry.id;
     list.push({ text: '', modelHit: { entry: entry.id }, ...(selected ? { item: 'project:pick' } : {}), paint: () => {
       const lead = `${selected ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
-      const name = entry.value === '' ? entry.label + (entry.model ? ` → ${monitorText(entry.model)}` : '') : monitorText(entry.label);
+      const name = monitorText(entry.label);
       const [ctx, out, thinking, images] = capsOf(pick, entry) ?? [];
       const fact = note(entry, now), tag = entry.tags?.map((s) => `[${monitorText(s)}]`).join(' ') ?? '';
       const prefix = lead + fit(squeeze(name, idWidth), idWidth)

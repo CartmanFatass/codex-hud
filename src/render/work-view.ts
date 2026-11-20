@@ -93,7 +93,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
     'In a Control chain, Enter edits a place. Choose Target, Model or Flow kind, Thinking where offered, then Done. Nothing changes on disk until Save.',
     'Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
     'In the Inspector ⏎ opens the file',
-    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click [model ▾] to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.'] : []),
+    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click the model field (▾) to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.'] : []),
     'Model picker: current and preset models are pinned until you type. Typing opens matching groups.',
     'In Harnesses, remove means off. Add back: type to filter, Enter restores, Esc cancels.',
   ];

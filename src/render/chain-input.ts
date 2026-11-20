@@ -6,7 +6,7 @@ import { placeDestination, placeItem, placeModels, placeSwitch, previewDraft, re
 import { MODEL_ID_MAX } from '../roles/model-discovery.js';
 import { qualifiedPiProvider, type RolePlace } from '../roles/roster.js';
 import { controlRoleItem } from './control-navigation.js';
-import { glyph, modelFieldRows, placeRows } from './control-view.js';
+import { glyph, modelButton, modelFieldRows, placeRows, presetName, presetTag, sourceLabel, withDestination } from './control-view.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
@@ -58,7 +58,10 @@ function fill(place: DraftPlace, field: 'model' | 'kind' | 'thinking' | 'effort'
   if (value === undefined) delete raw[field];
   else Object.assign(raw, { [field]: value });
   if (field === 'kind') fact.kind = raw.kind ?? 'image';
-  if (field === 'thinking') fact.thinking = raw.thinking ?? place.defaultThinking ?? null;
+  if (field === 'thinking') {
+    fact.thinking = raw.thinking ?? place.defaultThinking ?? null;
+    fact.inheritedThinking = value === undefined && !!fact.thinking;
+  }
   if (field === 'effort') fact.thinking = raw.effort ?? null;
   if (field === 'model') {
     fact.model = raw.model ?? place.defaultModel ?? null;
@@ -81,12 +84,11 @@ function choices(chain: ChainInput, sheet: Sheet, lists: ModelLists): Option[] {
   const values = field === 'kind' ? catalog?.flowKinds : field === 'model' || field === 'effort' ? placeModels(sheet.place.fact, lists)
     : p.harness === 'pi' ? catalog?.piThinking : p.harness === 'cli' ? catalog?.cliThinking : ['Low', 'High'];
   const current = field === 'done' ? undefined : p[field];
-  return [{ label: t('default') }, ...[...new Set([...(values ?? []), ...(current ? [current] : [])])].map((value) => ({ label: value, value }))];
+  return [{ label: t('clear') }, ...[...new Set([...(values ?? []), ...(current ? [current] : [])])].map((value) => ({ label: value, value }))];
 }
 function matching(chain: ChainInput, sheet: Sheet, lists: ModelLists) {
   const needle = sheet.choice?.text.trim().toLowerCase() ?? '';
-  return choices(chain, sheet, lists).filter((option) => option.label.toLowerCase().includes(needle) ||
-    (option.value === undefined && !option.target && 'default'.includes(needle)));
+  return choices(chain, sheet, lists).filter((option) => option.label.toLowerCase().includes(needle));
 }
 
 export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext,
@@ -181,7 +183,7 @@ export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: M
     }
     const all = fields(sheet), selected = all.find((field) => fieldItem(field) === item);
     if (key === 'enter' || hit?.kind === 'chain-edit' || selected === sheet.field) return openField(sheet, sheet.field);
-    if (key === 'place-model' && all.includes('model')) return openField(sheet, 'model');
+    if ((key === 'place-model' || hit?.kind === 'control-model') && all.includes('model')) return openField(sheet, 'model');
     const field = selected ?? all[select(all.indexOf(sheet.field), all.length)]!;
     return out({ sheet: { ...sheet, field, error: field !== sheet.field ? undefined : sheet.error } });
   }
@@ -228,7 +230,7 @@ export function chainSheet(chain: ChainInput, models: ModelLists, width: number,
   rule: { label: string; right: string }; cursor?: string; hints: string; rows: MonitorRow[];
 } {
   const { role, draft, sheet } = chain, name = draft?.name ?? role.preset;
-  const rule = { label: monitorText(role.role), right: [name ? draft ? monitorText(name) : `[${monitorText(name)}]` : t('Custom'),
+  const rule = { label: monitorText(role.role), right: [draft ? presetName(name) : presetTag(name),
     draft ? t('Not saved') : ''].filter(Boolean).join(' · ') };
   const line = (text: string) => boardRow(fit(text, width));
   const error = (word?: string) => word ? flowLines(t(word), width).map((part) => line(theme.board.attention(part))) : [];
@@ -238,16 +240,21 @@ export function chainSheet(chain: ChainInput, models: ModelLists, width: number,
     const at = sheet.choice?.at ?? 0;
     const caption = section(t(sheet.index < (draft?.run.length ?? role.places.length) ? 'Edit place' : 'Add place'), width, t('#{n}', { n: sheet.index + 1 }));
     const messages = error(sheet.error);
-    const row = (field: Field) => {
-      const { place } = sheet, p = place?.raw;
-      const val = field === 'target' ? place?.fact.label : field === 'done' ? ''
-        : p?.[field] ?? (p || field === 'thinking' ? t('default') : undefined);
+    const row = (field: Field): MonitorRow => {
+      const { place } = sheet, p = place?.raw, fact = place?.fact;
+      const val = field === 'target' ? fact?.label : field === 'done' ? '' : field === 'thinking' ? fact?.thinking ?? ''
+        : field === 'kind' ? fact?.kind ?? '' : p?.[field] ?? (p ? '' : undefined);
       const lead = !sheet.choice && field === sheet.field ? `${mark('›', '>')} ` : '  ';
-      const label = lead + fit(t(fieldLabel[field]), 10) + ' ';
+      const label = lead + fit(t(fieldLabel[field]), 10) + ' ', x = visualLength(label);
       const query = sheet.choice && field === sheet.field ? `/ ${textOf(sheet.choice.text)}${mark('▌', '_')}` : undefined;
       const right = query !== undefined ? String(list.length) : field === 'done' && !p && !sheet.choice ? t('after target and model') : '';
-      return { item: fieldItem(field), text: pair(label + squeeze(query ?? (val === undefined ? t('choose…') : textOf(val)),
-        width - visualLength(label) - (right ? visualLength(right) + 1 : 0)), muted(right), width) };
+      const item = fieldItem(field);
+      if (query === undefined && field === 'model' && fact) {
+        const button = modelButton(fact, width - x);
+        return { item, text: fit(label + button, width), ...(!sheet.choice ? { controls: [{ kind: 'control-model', item, x, width: visualLength(button) }] } : {}) };
+      }
+      const value = squeeze(query ?? (val === undefined ? t('choose…') : textOf(val)), width - x - (right ? visualLength(right) + 1 : 0));
+      return { item, text: pair(label + (field === 'thinking' && fact?.inheritedThinking && !query && value ? muted(value) : value), muted(right), width) };
     };
     const all = fields(sheet), cursor = sheet.choice ? optItem(at) : fieldItem(sheet.field);
     const size = Math.max(1, room - 1 - all.length - messages.length - Number(sheet.field === 'target'));
@@ -263,9 +270,9 @@ export function chainSheet(chain: ChainInput, models: ModelLists, width: number,
   const places = draft ? previewDraft(draft.run, models, now) : role.places;
   const cursor = places[chain.at] ? placeItem(role.role, chain.at) : undefined;
   const header = draft ? [line(theme.board.attention(t('Not saved')) + ' · ' + t(places.length ? 's saves and selects' : EMPTY)),
-    ...kvRows('saved', `[${role.preset ?? t('Custom')}] ${mark('→', '>')} ${nextLabel(savedNext(role))}`, width),
+    ...kvRows('saved', [presetTag(role.preset), mark('→', '>'), nextLabel(savedNext(role))].filter(Boolean).join(' '), width),
     ...kvRows('draft', nextLabel(places.find((p) => p.state === 'active')) + (places.length ? ' ' + t('(unsaved)') : ''), width)]
-    : [...kvRows('next job', nextLabel(savedNext(role)), width), ...kvRows('source', `${t(role.source)} · ${role.source === 'project' ? '.hud/roles/' : ''}${role.path.split('/').at(-1)}`, width),
+    : [...kvRows('next job', nextLabel(savedNext(role)), width), ...kvRows('source', `${sourceLabel(role.source)} · ${role.source === 'project' ? '.hud/roles/' : ''}${role.path.split('/').at(-1)}`, width),
       ...(role.source === 'project' ? kvRows('pinned', t('project file · read-only here'), width) : kvRows('scope', t('Global role · all projects'), width))];
   const rows = places.flatMap((p, i) => {
     const extra = { item: placeItem(role.role, i), files: [role.path] };
@@ -273,8 +280,7 @@ export function chainSheet(chain: ChainInput, models: ModelLists, width: number,
     const unknown = p.provider === null ? t('provider unknown') : '';
     const lead = `${i === chain.at ? mark('›', '>') : ' '} ${i + 1} ${glyph(p.state)} `;
     if (!role.editor || role.source === 'project' || p.harness === 'bro') {
-      const shown = p.provider ? { ...p, label: placeDestination(p), model: p.model?.replace(`${p.provider}/`, '') ?? null } : p;
-      return [...placeRows(lead, shown, width, '  ', muted(status), extra),
+      return [...placeRows(lead, withDestination(p), width, '  ', muted(status), extra),
         ...(unknown ? [{ ...extra, text: fit('      ' + muted(unknown), width) }] : [])];
     }
     const note = [status, unknown].filter(Boolean).join(' · ');
