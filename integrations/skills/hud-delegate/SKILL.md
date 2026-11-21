@@ -9,7 +9,7 @@ The user names a role and a task in plain words; you do the rest. Never ask them
 
 1. Use `hud_roster` with the job's `cwd` on first use or when project dispatch context is stale. It returns availability, effective assignments, continuation and the applicable convention. If you still have valid context, go straight to `hud_create`. If refreshing the roster and you still have its convention text, pass its `convention_version`; a matching version omits only that text, not availability.
 2. Write the brief as the convention says. Do not add report paths or worker protocol commands; HUD supplies the worker interface.
-3. `hud_create` with `role`, the brief as `task`, `cwd`, and a short, stable `request_key`. Keys are global: include the project and task slug and any ticket ID. A retry returns the same job even if options differ. Do not pass `preset`, `on`, `model` or `thinking` unless the user asks for the override in this request. For advanced options use the tool schema and `hud_roster({cwd, detail:true})`.
+3. `hud_create` with `role`, the brief as `task`, and `cwd`. The HUD derives a key so an identical call returns the same job. Pass an explicit `request_key` only when you intend to launch a duplicate. Do not pass `preset`, `on`, `model` or `thinking` unless the user asks for the override in this request. For advanced options use the tool schema and `hud_roster({cwd, detail:true})`.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
 5. Claude Code: run `hud watch` under Monitor and re-arm after expiry. Codex: events are queued automatically;
    no Monitor command is needed, and drafts stay untouched (missing thread id or queue failure falls back to typing).
@@ -58,8 +58,6 @@ Any non-sonic worker may use `hud_sonic` to start a fully specified sub-task and
 
 ### Repairs
 
-Use `hud_send` with `job`, a stable `message_key` and `text` to add to a pi or CLI job: while it works (STATUS `working`, `waiting_helper`, `waiting_orchestrator`) the message is queued and the worker reads it after its current step (`queued: true`); while it is in `idle_grace` it continues only if the role allows it and the report is still unread. Duplicate message keys are not sent again. A closed job returns `not_continuable`; after reading a settled report, create a new job for the repair. CLI workers ask through the same `QUESTION` / `hud_respond` flow.
+Use `hud_send` with `job` and `text` to add to a pi or CLI job. While the worker is working, it reads the queued message after its current step (`queued: true`). During idle grace it can continue if the role allows and the report is still unread. If the worker closed because its report was read, the same call starts a repair, references the earlier brief and report, and returns the new job as `continued_as`. Use `jobs` instead of `job` to send to several working jobs at once without creating repairs. Pass `message_key` only for an intentional duplicate.
 
-Keep request keys stable; never blindly re-create an uncertain launch.
-
-HUD uses the locally installed pi-roles, browser CLIs (`bro`) and interactive CLIs; it does not chain or choose another backend automatically on failure. When a job fails with a quota or rate limit error, HUD marks that place exhausted for one hour (`$HUD_HOME/exhausted.json`) so the next `hud_create` uses the next available place, and names it in `exit_reason`. Browser (`bro`) roles cannot continue with `hud_send`.
+Use `hud_create({retry_of: job})` to run a failed or stopped job's brief again on an available place. The original options carry over unless overridden. Never blindly re-create an uncertain launch. The HUD falls through to another available place only on a confirmed pre-input launch failure; it does not chain jobs.

@@ -1094,7 +1094,7 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
   const f = await fixture(t);
   writeCliRole(f, 'read-close-cli', 8);
   for (const role of ['read-close-cli', 'imp']) {
-    const job = await f.call('hud_create', { role, request_key: `close-on-read-${role}`, task: 'Synthetic task.' });
+    const job = await f.call('hud_create', { role, request_key: `close-on-read-${role}`, task: 'Synthetic task.', package: 'Original package' });
     if (role === 'imp') await publishPiGrace(job); // Fake pi settles only after the initial prompt.
     await until(() => cliState(job.task_dir)?.state === 'idle_grace');
     const grace = cliState(job.task_dir), queries = statusQueries(f, job);
@@ -1111,7 +1111,17 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
     if (role !== 'imp') assert.ok(readCloseQuit(f, job));
     await until(() => readCloseReaped(job));
     assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
-    assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic repair.' })).code, 'not_continuable');
+    const send = { job: job.job, text: 'Synthetic repair.' };
+    const repair = await f.call('hud_send', send);
+    assert.equal(repair.continued_as, repair.job);
+    assert.notEqual(repair.job, job.job);
+    assert.equal(repair.role, role);
+    assert.equal(repair.package, 'Original package');
+    const brief = fs.readFileSync(join(repair.task_dir, 'brief.md'), 'utf8');
+    assert.ok(brief.startsWith(`${send.text}\n\n## Context References\n`));
+    assert.ok(brief.includes(`${job.job} brief: ${JSON.stringify(join(job.task_dir, 'brief.md'))}`));
+    assert.ok(brief.includes(`${job.job} report: ${JSON.stringify(join(job.task_dir, 'report.md'))}`));
+    assert.equal((await f.call('hud_send', send)).continued_as, repair.job);
   }
 });
 
@@ -1914,6 +1924,31 @@ test('hud_create closes a pre-input failure and starts the next place in the sam
   const exhausted = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'exhausted.json'))).places;
   assert.deepEqual(Object.keys(exhausted), ['cli:grok:synthetic-first']);
   assert.equal(exhausted['cli:grok:synthetic-first'].reason, reason);
+});
+
+test('hud_create retry_of reuses a failed job brief and options on an available place', async (t) => {
+  const f = await fixture(t);
+  const places = ['synthetic/primary', 'synthetic/fallback'].map((model) => ({ harness: 'pi', pi_role: 'implementer', model }));
+  fallbackRole(f, 'retry-check', places, [{ name: 'two', run: places }]);
+  const cwd = join(f.root, 'retry-project');
+  fs.mkdirSync(cwd);
+  fs.writeFileSync(join(cwd, 'notes.md'), 'Synthetic notes.');
+  const original = await f.call('hud_create', {
+    role: 'retry-check', preset: 'two', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false,
+  });
+  const statusFile = join(original.task_dir, 'STATUS.json');
+  fs.writeFileSync(statusFile, JSON.stringify({ state: 'failed', exit_reason: 'rate limit reached; retry after 5m' }));
+  const retry = { retry_of: original.job };
+  const next = await f.call('hud_create', retry);
+  assert.notEqual(next.job, original.job);
+  assert.equal(next.used_place, 'pi (synthetic/fallback)');
+  assert.equal(next.role, original.role);
+  assert.equal(fs.readFileSync(join(next.task_dir, 'brief.md'), 'utf8'), fs.readFileSync(join(original.task_dir, 'brief.md'), 'utf8'));
+  const receipt = JSON.parse(fs.readFileSync(join(next.task_dir, 'job.json'), 'utf8'));
+  assert.equal(receipt.cwd, cwd);
+  assert.equal(receipt.preset, 'two');
+  assert.equal(receipt.tps, false);
+  assert.equal((await f.call('hud_create', retry)).job, next.job);
 });
 
 test('hud_create retains every pre-input cause on one failed job and stays within the requested preset', async (t) => {
@@ -3033,6 +3068,39 @@ syncBuiltinESMExports();`
   receipt.dispatch_exit_code = 1;
   save();
   assert.deepEqual(await read(), { ...question, questions: [], state: 'failed', display_state: 'failed', dispatch_exit_code: 1 });
+});
+
+test('hud_create and hud_send derive keys for concurrent identical calls', async (t) => {
+  const f = await fixture(t);
+  const create = { role: 'imp', task: 'Synthetic task without a key.' };
+  const [job, duplicate] = await Promise.all([f.call('hud_create', create), f.call('hud_create', create)]);
+  assert.equal(duplicate.job, job.job);
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job.job]);
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  const send = { job: job.job, text: 'Synthetic message without a key.' };
+  const [first, second] = await Promise.all([f.call('hud_send', send), f.call('hud_send', send)]);
+  assert.equal(first.sent, true);
+  assert.equal(second.sent, false);
+  assert.equal(second.ok, true);
+  assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[3] === send.text).length, 1);
+});
+
+test('hud_send to several jobs sends once per working job and skips read-closed jobs', async (t) => {
+  const f = await fixture(t);
+  await f.startCliSocket();
+  const create = (task) => f.call('hud_create', { role: 'imp', task });
+  const working = await create('Synthetic working task.');
+  const closed = await create('Synthetic settled task.');
+  fs.writeFileSync(join(working.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  await publishPiGrace(closed);
+  await f.call('hud_read', { job: closed.job });
+  await until(() => cliState(closed.task_dir)?.exit_reason === 'closed after report read');
+  const text = 'Synthetic shared message.';
+  const result = await f.call('hud_send', { jobs: [closed.job, working.job, working.job], text });
+  assert.deepEqual(result.sent, [working.job]);
+  assert.deepEqual(result.skipped, [{ job: closed.job, reason: 'not_continuable' }]);
+  assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[3] === text).length, 1);
+  assert.equal(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).length, 2);
 });
 
 test('thin send queues a message for a working pi job and refuses a finished one', { timeout: 10000 }, async (t) => {

@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { cliWorkerTools, procStat, readTurn, reportSignature, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
+import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
@@ -63,6 +63,9 @@ interface Job extends PiOptions {
   preset?: string;
   context_files?: string[];
   from_jobs?: string[];
+  repair_of?: string;
+  task_length?: number;
+  create_options?: Args;
   model?: string | null;
   thinking?: string | null;
   model_source?: string | null;
@@ -96,6 +99,9 @@ type Args = Record<string, unknown>;
 function required(args: Args, key: string): string {
   if (typeof args[key] !== 'string' || !args[key]) throw new Error(`invalid_arguments: ${key}`);
   return args[key] as string;
+}
+function derivedKey(kind: string, ...parts: unknown[]): string {
+  return `${kind}:${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`;
 }
 function json<T>(file: string): T | null {
   try {
@@ -153,6 +159,9 @@ function jobs(): Job[] {
     .filter((id) => /^j[0-9a-f]{16}$/.test(id))
     .map((id) => json<Job>(join(directory(id), 'job.json')))
     .filter((job): job is Job => job !== null);
+}
+function findJob(id: string): Job | null {
+  return /^j[0-9a-f]{16}$/.test(id) ? json<Job>(join(directory(id), 'job.json')) : null;
 }
 function primary(dir: string): string | null {
   return (
@@ -993,30 +1002,37 @@ async function readContextFile(path: string, limit: number | undefined) {
   }
 }
 
-async function assembleContext(args: Args, cwd: string, inline: boolean) {
+async function assembleContext(args: Args, cwd: string, inline: boolean, repairOf?: string) {
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
   let remaining = 256 * 1024;
   for (const [key, root, max] of [['context_files', cwd, 32], ['from_jobs', jobsRoot, 16]] as const) {
-    const values = args[key];
-    if (values === undefined) continue;
+    const given = args[key];
+    const repair = key === 'from_jobs' ? repairOf : undefined;
+    if (given === undefined && !repair) continue;
+    const values = given === undefined ? [] : given;
     if (!Array.isArray(values) || values.length > max || values.some((v) =>
       typeof v !== 'string' || !v || v.includes('\0') || (key === 'from_jobs' && !/^j[0-9a-f]{16}$/.test(v)))) {
       return { ok: false, code: 'invalid_arguments', error: `invalid ${key} (maximum ${max} entries)` } as const;
     }
     const recorded: string[] = metadata[key] = [];
-    if (!values.length) continue;
+    if (!values.length && !repair) continue;
     let source: string = key;
     try {
       const base = await fs.promises.realpath(root);
-      for (const value of values) {
+      const files = values.map((value) => ({ value, name: key === 'from_jobs' ? 'report' : '' }));
+      if (repair) {
+        if (!values.includes(repair)) files.push({ value: repair, name: 'report' });
+        files.push({ value: repair, name: 'brief' });
+      }
+      for (const { value, name } of files) {
         source = `${key}: ${JSON.stringify(value)}`;
-        const path = await fs.promises.realpath(resolve(root, key === 'from_jobs' ? join(value, 'report.md') : value));
+        const path = await fs.promises.realpath(resolve(root, name ? join(value, `${name}.md`) : value));
         const rel = relative(base, path);
         if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
         const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
         if (!file) return { ok: false, code: 'context_too_large', error: source } as const;
-        const label = `${key === 'from_jobs' ? `${value} report: ` : ''}${JSON.stringify(path)}`;
+        const label = `${name ? `${value} ${name}: ` : ''}${JSON.stringify(path)}`;
         if (inline) {
           remaining -= file.bytes;
           let length = 3;
@@ -1024,7 +1040,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean) {
           const fence = '`'.repeat(length);
           sections.push(`### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
         } else sections.push(`- ${label}`);
-        recorded.push(key === 'from_jobs' ? value : path);
+        if (!name || (name === 'report' && (value !== repair || values.includes(value)))) recorded.push(name ? value : path);
       }
     } catch {
       return { ok: false, code: 'invalid_arguments', error: `${source} must resolve to a readable UTF-8 text file inside ${root}` } as const;
@@ -1079,7 +1095,51 @@ function placeOptions(args: Args, configured: RolePlace) {
   return { place, options };
 }
 
-export async function dispatchJob(args: Args, pane: string | undefined, parentJob?: string) {
+const piOptionKeys = [...piSwitches, 'pi_args'] as const;
+const replayOptions = ['on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
+function jobOptions(job: Job): Args {
+  return {
+    role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, preset: job.preset,
+    context_files: job.context_files, from_jobs: job.from_jobs,
+    ...(job.create_options ?? {
+      isolation: job.worktree ? 'worktree' : undefined,
+      model: job.model_source === 'hud_create' ? job.model : undefined,
+      thinking: job.thinking ?? undefined, idle_grace_s: job.cli?.idle_grace_s, kind: job.bro?.kind,
+      ...Object.fromEntries(piOptionKeys.map((key) => [key, job[key]])),
+    }),
+  };
+}
+function originalTask(job: Job): string {
+  const brief = fs.readFileSync(join(directory(job.job), 'brief.md'), 'utf8');
+  if (job.task_length !== undefined) return brief.slice(0, job.task_length);
+  // Old receipts only have the assembled brief. Strip HUD-generated context and instructions.
+  return brief.split(/\n## Context References\n\nRead these files for task context:\n|\n## Context\n\n### |\nFinish with `hud_report`\.\n$|\nThis harness uses the commands below instead of the worker tools named in your role\./, 1)[0].trimEnd();
+}
+
+export async function dispatchJob(input: Args, pane: string | undefined, parentJob?: string, repairOf?: string) {
+  const retryOf = input.retry_of === undefined ? undefined : required(input, 'retry_of');
+  let args = input;
+  if (retryOf) {
+    const source = findJob(retryOf);
+    if (!source) return { ok: false, code: 'job_not_found' };
+    const { row } = readRow(source);
+    if (row.state !== 'failed' && row.state !== 'stopped') return { ok: false, code: 'not_retryable' };
+    const inherited = jobOptions(source);
+    delete inherited.on; // Retry through the role's chain instead of pinning the previous harness.
+    if (input.on !== undefined) delete inherited.preset;
+    args = { ...inherited, task: input.task === undefined ? originalTask(source) : input.task, ...input };
+    repairOf = input.from_jobs === undefined ? source.repair_of : undefined;
+  }
+  const role = required(args, 'role');
+  const cwd = jobCwd(args);
+  // An explicit key can retrieve a prior job even when other arguments in the retry differ.
+  const requestKey = args.request_key === undefined
+    ? derivedKey(retryOf ? 'retry' : 'create', pane, role, cwd, required(args, 'task'), retryOf)
+    : required(args, 'request_key');
+  return keyLock(`request:${requestKey}`, () => dispatchWithKey(args, pane, requestKey, parentJob, repairOf, retryOf ? input : undefined));
+}
+
+async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, parentJob?: string, repairOf?: string, retryInput?: Args) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
@@ -1090,7 +1150,6 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     const invalid = found.invalidRole(role);
     return { ok: false, code: 'role_unavailable', reason: `Role ${asked} is not configured or is hidden in this project`, ...invalid };
   }
-  const request_key = required(args, 'request_key');
   const existing = jobs().find((job) => job.request_key === request_key);
   if (existing) {
     ensureWatcher();
@@ -1130,12 +1189,21 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
   const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
     : presetName !== undefined ? { preset: presetName } : undefined;
-  const effective = found.assignment(definition, now, modelOverride, routing, choice);
+  const effective = found.assignment(definition, now, modelOverride, routing, choice, !!retryInput && retryInput.model === undefined);
   const details = effective.places.find((p) => p.state === 'active');
   if (!details) {
     return { ok: false, code: 'no_available_place', reason: effective.reason, places: effective.places, exhausted: effective.exhausted };
   }
-  const initial = placeOptions(args, details.place);
+  const argsFor = (place: RolePlace) => {
+    if (!retryInput) return args;
+    const compatible = { ...args };
+    const unused = [...(place.harness === 'pi' ? [] : piOptionKeys),
+      ...(place.harness === 'cli' ? [] : ['idle_grace_s']),
+      ...(place.harness === 'bro' && place.tool === 'jev-flow' ? [] : ['kind'])];
+    for (const key of unused) if (retryInput[key] === undefined) delete compatible[key];
+    return compatible;
+  };
+  const initial = placeOptions(argsFor(details.place), details.place);
   if ('code' in initial) return initial;
   if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
   const id = 'j' + randomBytes(8).toString('hex');
@@ -1145,7 +1213,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
   }
   const inline = initial.place.harness === 'bro';
-  const context = await assembleContext(args, cwd, inline);
+  const context = await assembleContext(args, cwd, inline, repairOf);
   if ('code' in context) return context;
   let overrideHarnesses: Record<string, { model?: string }> | null = null;
   if (onName) {
@@ -1167,6 +1235,8 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     cwd,
     herdr_pane: pane,
     created_at: new Date().toISOString(),
+    task_length: task.length,
+    ...(repairOf ? { repair_of: repairOf } : {}),
     ...(parentJob ? { parent_job: parentJob } : {}),
     ...(args.package === undefined ? {} : { package: args.package as string }),
     ...(presetName === undefined ? {} : { preset: presetName }),
@@ -1184,7 +1254,8 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     let result: DispatchResult = launchError('no launch attempted');
     let reason = '';
     for (const candidate of candidates) {
-      const prepared = candidate === details ? initial : placeOptions(args, candidate.place);
+      const launchArgs = argsFor(candidate.place);
+      const prepared = candidate === details ? initial : placeOptions(launchArgs, candidate.place);
       if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
       if (attempts.length) {
         const exhausted = readExhausted(hudHome);
@@ -1199,6 +1270,9 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
+        create_options: {
+          cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
+        },
         ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
         ...(place.harness === 'bro' ? { bro: place } : {
           model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
@@ -1210,7 +1284,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
-      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro');
+      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro', repairOf);
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
         writeBrief(job, dir, task, briefContext.block, attempts.length === 0);
@@ -1373,6 +1447,99 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
 function ticketGuide(args: Args): boolean {
   return args.op === undefined || args.op === 'guide';
 }
+async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean) {
+  const key = explicitKey ?? derivedKey('send', id, message);
+  const current = findJob(id);
+  if (!current) return { ok: false, code: 'job_not_found' };
+  const dir = directory(current.job);
+  if (current.message_keys.includes(key)) {
+    const outcome = current.send_outcomes?.find((outcome) => outcome.key === key);
+    if (outcome?.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+    return outcome?.exit_code === 0
+      ? { ok: true, sent: false }
+      : { ok: false, sent: false, code: 'send_failed', ...outcome };
+  }
+  const { row, status } = readRow(current);
+  const state = row.state ?? '';
+  if (!workingOnly && state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) {
+    const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: derivedKey('repair', id, key) },
+      process.env.HERDR_PANE_ID, undefined, id);
+    return 'job' in repair && repair.job ? { ...repair, continued_as: repair.job } : repair;
+  }
+  const agent = primary(dir);
+  // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
+  // continues in its idle grace when the role allows (owner, 2026-11-11).
+  const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
+  const readReport = row.report_mtime !== null && !row.report_unread;
+  if (
+    current.bro ||
+    current.jev ||
+    !agent ||
+    !(queued || (!workingOnly && state === 'idle_grace' && !readReport && registry(current.worktree?.main_root ?? current.cwd).roles().get(current.role)?.can_continue))
+  )
+    return { ok: false, code: 'not_continuable' };
+  // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
+  current.message_keys.push(key);
+  const outcome = { key, exit_code: null as number | null, stderr_tail: '' };
+  (current.send_outcomes ??= []).push(outcome);
+  if (!current.cli) current.pi_sent_at = new Date().toISOString();
+  save(current);
+  // Read the rollback baseline at mutation time, with no pane query between it and the write.
+  const prior = current.cli ? readTurn(dir) : null;
+  const turn = current.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
+  const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
+  if (turn && refusedBeforeInput(result)) {
+    const active = readTurn(dir);
+    if (active?.seq === turn.seq && active.send?.key === key && active.send.pid === process.pid) {
+      if (prior) saveTurn(dir, prior);
+      else fs.unlinkSync(join(dir, 'turn.json'));
+    }
+  }
+  const latest = json<Job>(join(dir, 'job.json')) ?? current;
+  const attempted = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
+  attempted.exit_code = result.exit_code;
+  attempted.stderr_tail = result.stderr;
+  save(latest);
+  if (result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+  if (result.exit_code === 0 && current.cli) {
+    const supPid = supervisorPid(dir, status);
+    if (
+      supPid &&
+      !supervisorAlive(supPid) &&
+      workerAlive(
+        typeof status?.pid === 'number' ? status.pid : null,
+        typeof status?.pid_start_time === 'string' ? status.pid_start_time : null
+      ) === true
+    ) {
+      spawnCliSupervisor(dir);
+    }
+  }
+  return {
+    ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
+    ok: result.exit_code === 0,
+    sent: result.exit_code === 0,
+    ...(queued ? { queued: true } : {}),
+    exit_code: result.exit_code,
+    stderr_tail: result.stderr,
+  };
+}
+
+async function sendJobs(args: Args) {
+  const text = required(args, 'text');
+  const key = args.message_key === undefined ? undefined : required(args, 'message_key');
+  const send = (id: string, workingOnly: boolean) => keyLock(`job:${id}`, () => sendJob(id, text, key, workingOnly));
+  if (args.jobs === undefined) return send(required(args, 'job'), false);
+  if (args.job !== undefined || !Array.isArray(args.jobs) || !args.jobs.length ||
+      args.jobs.some((id) => typeof id !== 'string' || !id)) throw new Error('invalid_arguments: jobs');
+  const results = await Promise.all([...new Set<string>(args.jobs)].map(async (job) => ({ job, result: await send(job, true) })));
+  const sent: string[] = [], skipped: { job: string; reason: string }[] = [];
+  for (const { job, result } of results) {
+    if ('sent' in result && result.sent) sent.push(job);
+    else skipped.push({ job, reason: ('code' in result && result.code) || 'already_sent' });
+  }
+  return { sent, skipped };
+}
+
 async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_tickets') {
     if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
@@ -1414,6 +1581,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
   }
   if (name === 'hud_create') return dispatchJob(args, process.env.HERDR_PANE_ID);
+  if (name === 'hud_send') return sendJobs(args);
   if (name === 'hud_wait') return waitJobs(args);
   if (name === 'hud_read') {
     const { view } = args;
@@ -1428,7 +1596,7 @@ async function call(name: string, args: Args): Promise<unknown> {
   }
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
   const id = required(args, 'job');
-  const job = /^j[0-9a-f]{16}$/.test(id) ? json<Job>(join(directory(id), 'job.json')) : null;
+  const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
   if (name === 'hud_peek') return job.job === id ? peekJob(job, args) : { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
@@ -1475,76 +1643,6 @@ async function call(name: string, args: Args): Promise<unknown> {
       }
       await sleep(Math.min(500, end - Date.now()));
     }
-  }
-  if (name === 'hud_send') {
-    const key = required(args, 'message_key');
-    const message = required(args, 'text');
-    const current = json<Job>(join(dir, 'job.json')) ?? job;
-    if (current.message_keys.includes(key)) {
-      const outcome = current.send_outcomes?.find((outcome) => outcome.key === key);
-      if (outcome?.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-      return outcome?.exit_code === 0
-        ? { ok: true, sent: false }
-        : { ok: false, sent: false, code: 'send_failed', ...outcome };
-    }
-    const agent = primary(dir);
-    const { row, status } = readRow(current);
-    const state = row.state ?? '';
-    // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
-    // continues in its idle grace when the role allows (owner, 2026-11-11).
-    const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
-    const readReport = row.report_mtime !== null && !row.report_unread;
-    if (
-      current.bro ||
-      current.jev ||
-      !agent ||
-      !(queued || (state === 'idle_grace' && !readReport && registry(current.worktree?.main_root ?? current.cwd).roles().get(current.role)?.can_continue))
-    )
-      return { ok: false, code: 'not_continuable' };
-    // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
-    current.message_keys.push(key);
-    const outcome = { key, exit_code: null as number | null, stderr_tail: '' };
-    (current.send_outcomes ??= []).push(outcome);
-    if (!current.cli) current.pi_sent_at = new Date().toISOString();
-    save(current);
-    // Read the rollback baseline at mutation time, with no pane query between it and the write.
-    const prior = current.cli ? readTurn(dir) : null;
-    const turn = current.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
-    const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
-    if (turn && refusedBeforeInput(result)) {
-      const active = readTurn(dir);
-      if (active?.seq === turn.seq && active.send?.key === key && active.send.pid === process.pid) {
-        if (prior) saveTurn(dir, prior);
-        else fs.unlinkSync(join(dir, 'turn.json'));
-      }
-    }
-    const latest = json<Job>(join(dir, 'job.json')) ?? current;
-    const attempted = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
-    attempted.exit_code = result.exit_code;
-    attempted.stderr_tail = result.stderr;
-    save(latest);
-    if (result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-    if (result.exit_code === 0 && current.cli) {
-      const supPid = supervisorPid(dir, status);
-      if (
-        supPid &&
-        !supervisorAlive(supPid) &&
-        workerAlive(
-          typeof status?.pid === 'number' ? status.pid : null,
-          typeof status?.pid_start_time === 'string' ? status.pid_start_time : null
-        ) === true
-      ) {
-        spawnCliSupervisor(dir);
-      }
-    }
-    return {
-      ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
-      ok: result.exit_code === 0,
-      sent: result.exit_code === 0,
-      ...(queued ? { queued: true } : {}),
-      exit_code: result.exit_code,
-      stderr_tail: result.stderr,
-    };
   }
   if (name === 'hud_respond') {
     const request = required(args, 'request_id');
@@ -1619,12 +1717,11 @@ async function keyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 function mutationKey(name: string, args: Args): string | null {
   if (name === 'hud_tickets' && !ticketGuide(args))
     return isWorker ? 'tickets' : `tickets:${fs.realpathSync(jobCwd(args))}`;
-  const create = name === 'hud_create';
-  if (!create && name !== 'hud_send' && name !== 'hud_respond' && name !== 'hud_close') return null;
-  const id = create ? args.request_key : args.job;
+  if (name !== 'hud_respond' && name !== 'hud_close') return null;
+  const id = args.job;
   // Leave validation to the tool, without making invalid calls wait for one another.
   if (typeof id !== 'string' || !id) return `invalid:${randomBytes(8).toString('hex')}`;
-  return `${create ? 'request' : 'job'}:${id}`;
+  return `job:${id}`;
 }
 const write = (value: unknown) => process.stdout.write(JSON.stringify(value) + '\n');
 const rpcError = (id: unknown, code: number, message: string) =>

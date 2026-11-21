@@ -80,8 +80,10 @@ MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud
 已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
 见[项目工作者](#项目工作者)。
 
-`hud_create` 接收 `role`、`request_key`、`task`，可选 `cwd` 和仅用于显示的 `package`。
-默认在角色的首个可用位置（`runs_on`）启动。传入 `preset` 可使用指定预设中首个可用且未耗尽的位置，
+`hud_create` 接收 `role`、`task`，可选 `cwd` 和仅用于显示的 `package`。
+省略 `request_key` 时，根据调用窗格、角色、cwd 和任务正文生成去重键。默认在角色的首个可用位置（`runs_on`）启动。
+`hud_create({retry_of: job})` 使用失败或停止任务的简报和选项开启新任务，显式传入的字段优先。
+若未传入 `on`，则从角色或预设的执行链选择可用位置。传入 `preset` 可使用指定预设中首个可用且未耗尽的位置，
 仅对本次任务生效，不修改角色文件。也可用 `on` 覆盖执行环境或浏览器服务商（默认值见内置
 `harnesses.json` 与 `$HUD_HOME/harnesses.json`）。`preset` 和 `on` 不能同时传入。
 重复键返回原任务，不再次启动。只在用户要求时覆盖预设、执行环境、模型或推理强度；带 `detail: true` 的任务读取或查看会显示所选 `preset`。
@@ -136,7 +138,10 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 返回报告正文时记录 `read_at`（包括工作中和空闲宽限期），不代表验收。已结算的 pi 或 CLI 工作者在当前回合的报告被读取后关闭
 （`closed after report read`）；续写后读取上一回合的报告不会关闭工作者，未读报告仍保留原有的空闲期限。读取失败或受阻状态会单独标记为已查看。
 工作者写完报告后只回复 `report written: <path>`，不在对话中重复正文。
-`hud_send` 给工作中的 pi 或 CLI 任务排队消息；角色允许继续且报告未读时，也可在空闲宽限期内续写。读取已结算的报告后，修正须另开任务；`message_key` 去重。
+`hud_send` 给工作中的 pi 或 CLI 任务排队消息；角色允许继续且报告未读时，也可在空闲宽限期内续写。
+若任务因报告已读而关闭，单发会开启修正任务，引用原简报和报告，并在 `continued_as` 返回新任务 ID。
+用 `jobs` 代替 `job` 时，只发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不启动修正任务。
+省略 `message_key` 时，根据任务 ID 和消息正文生成去重键。
 CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
 CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得知。
 `hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收，正常清理由 watcher 负责。主人也可在面板里回答未答的问题

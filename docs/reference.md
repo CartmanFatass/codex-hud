@@ -116,8 +116,10 @@ back to typing that line, which can touch a draft or fire prompt hooks. Stale PI
 MCP `changes` stays the fuller, query-only stream; a `report` token always means unread. With live events, keep
 working until notified instead of polling or waiting. A report-ready notice leaves the report unread; collect it explicitly.
 
-`hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
-`package`. By default it dispatches on the role's first available place (`runs_on`).
+`hud_create` takes `role`, `task`, optional `cwd` and display-only `package`. The optional `request_key`
+defaults to a hash of the caller pane, role, cwd and task. By default it dispatches on the role's first available place (`runs_on`).
+`hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields
+can override them. It selects an available place through the role or preset chain unless you supply `on`.
 Pass `preset` to use the first available, non-exhausted place in a named role preset
 without editing role files. Alternatively, pass `on` to override the harness/provider
 (defaults from shipped `harnesses.json` overridden by `$HUD_HOME/harnesses.json`).
@@ -202,8 +204,10 @@ use their HUD MCP and pass the token from the prompt they are answering; pi has 
 Antigravity and Grok Build use the fallback commands in their briefs. Workers use `hud_sonic` to start sonic
 sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
 `hud_send` queues a message for a working pi or CLI job, or continues an eligible role during idle grace while
-its report is still unread. Use a new job for a repair after reading a settled report; `message_key` deduplicates sends. CLI
-workers ask with `hud_ask` through the `QUESTION` line and `hud_respond` flow. The synchronous question waits
+its report is still unread. A single send to a job closed by reading its report starts a repair with references to its
+brief and report, returning the new job ID as `continued_as`. Use `jobs` instead of `job` to send only to working
+jobs; the response lists `sent` job IDs and `skipped` entries with reasons. `message_key` deduplicates sends and
+is derived from the job and text if omitted. CLI workers ask with `hud_ask` through the `QUESTION` line and `hud_respond` flow. The synchronous question waits
 up to 20 minutes; pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner;
 the session learns it through `changes`, Claude's `hud watch`, Codex's automatic queue or pi's native HUD notices. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer

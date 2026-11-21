@@ -20,11 +20,12 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Dispatch a role with a stable request_key (retry returns the same job). Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for role options.',
+    'Dispatch a role (requires role and task), or retry a failed or stopped job with retry_of, inheriting its task and options unless overridden. An identical call returns the same job; pass request_key for an intentional duplicate. Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for role options.',
     {
       role: text,
-      request_key: text,
+      request_key: { ...text, description: 'Optional idempotency key. Defaults to a hash of the caller, role, cwd and task.' },
       task: text,
+      retry_of: { ...text, description: 'Failed or stopped job ID. Reuses its brief and options and selects an available place.' },
       cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
       package: { ...text, description: 'Display label.' },
       context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths within cwd.' },
@@ -58,8 +59,7 @@ export const ROLE_TOOLS = [
         maxItems: 128,
         description: 'Pi argv after --; --orchestrator and --notify are reserved.',
       },
-    },
-    ['role', 'request_key', 'task']
+    }
   ),
   tool(
     'hud_read',
@@ -97,9 +97,14 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_send',
-    'Queue a message or continue an eligible worker in idle grace before reading its report. message_key deduplicates sends.',
-    { job: text, message_key: text, text },
-    ['job', 'message_key', 'text']
+    'Send text to one job, or use jobs to send only to working jobs and get sent and skipped lists. A single send to a job closed by reading its report starts a repair and returns continued_as. Use either job or jobs.',
+    {
+      job: text,
+      jobs: { type: 'array', items: text, minItems: 1 },
+      message_key: { ...text, description: 'Optional idempotency key. Defaults to a hash of the job and text.' },
+      text,
+    },
+    ['text']
   ),
   tool('hud_respond', 'Write a question answer once.', { job: text, request_id: text, answer: text }, [
     'job',

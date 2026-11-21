@@ -618,7 +618,7 @@ export function roleRegistry(
     return { pi_role_file: piInfo.pi_role_file, model, thinking, state_trust };
   }
   const routing = (now = Date.now()) => routingContext(hudHome, env, now);
-  function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs), choice?: ChainChoice) {
+  function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs), choice?: ChainChoice, inheritedModel = false) {
     const stored = sources.get(role);
     const layer = stored?.layers.at(-1);
     let run = role.run, preset = currentPreset(role), source = chainSource(role), canContinue = role.can_continue;
@@ -648,7 +648,7 @@ export function roleRegistry(
         : place.harness === 'cli' ? [`cli:${place.agent}`] : [`bro:${place.tool}`];
       return { index, place, ...details, key, until: mark?.until, quota_reason: mark?.reason,
         missing: missingCommand(place, context.has), switch_ids, provider, provider_source };
-    }), context.disabled, overrideModel !== undefined);
+    }), context.disabled, overrideModel !== undefined && !inheritedModel);
     const chosen = evaluated.find((entry) => entry.state === 'active') ?? null;
     const activeEntry = chosen ?? evaluated[0]!;
     const active = activeEntry.place;
