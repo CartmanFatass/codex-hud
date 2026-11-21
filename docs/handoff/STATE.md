@@ -24,8 +24,8 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
-- working · MCP-ORCH · MCPORCH-07 · verify how Claude Code handles MCP tasks (wake, /tasks, cancel) before building (mcp-orch/07)
-- working · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (mcp-orch/06)
+- working · MCP-ORCH · MCPORCH-07b · Claude Code main sessions get one MCP task per worker turn (2026-07-28 tasks extension, verified on 2.1.330): woken at report, question or failure without hud watch; /tasks cancel stops the worker (mcp-orch/07)
+- try · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (6f1bef38)
 - try · MCP-ORCH · MCPORCH-05 · hud_read({}) scoped to the project (linked worktrees included); a new session adopts jobs whose pane is gone, and their questions follow; restart recovery deferred (ticket 05 comment) (7accf14c)
 - try · MCP-ORCH · MCPORCH-03 · project .hud/brief.md referenced after the task in every brief; per-harness delivery text moves from the convention into tool results; convention sent once per session; panel titles come from the task part of the brief (4fa7b531)
 - try · MCP-ORCH · MCPORCH-04 · hud_lease: named lease per project in both modes, waits inside the caller's turn, reclaims ended holders; Control lease row; leases shared by a checkout and its linked worktrees (45933319, ea9c4a19)
