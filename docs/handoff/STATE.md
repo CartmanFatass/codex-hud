@@ -7,6 +7,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
+- Restart recovery: herdr 0.9.5 resume keeps a worker's `agent_session`, name and tab but strips `HUD_JOB_DIR` and the HUD launch flags, so adopting the resumed process cannot settle it. Build an HUD-driven resume (relaunch the recognised session with its bindings in the job's tab), or leave restarts manual? (findings: ticket mcp-orch/05 comments)
 
 
 ## Next
@@ -15,8 +16,6 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
   first a live Claude Code task (ticket 07): after `/mcp`, dispatch from Claude Code and see the session wake at the
   report without `hud watch`. If task mode works, a small slice delivers non-job events (try accepted/flagged) to task
   clients with the next tool reply.
-- RESTART-RECOVERY (owner 2026-11-21): resumed workers recognised by herdr `agent_session` + `HUD_JOB_DIR`; CLI effort
-  table gaps; legacy `tmp/tasks` admitted newest first.
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
 ## Slices
@@ -25,7 +24,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
-- working · MCP-ORCH · RESTART-RECOVERY · workers herdr resumed after a restart are kept (agent_session + HUD_JOB_DIR proof); CLI effort gaps; newest legacy task dirs first (mcp-orch/05)
+- try · MCP-ORCH · RESTART-RECOVERY · CLI effort facts for haiku, claude-*-5-x ids and gemini-3.8-flash-high; legacy tmp/tasks admitted newest first; restart recovery itself not built (herdr resume strips HUD bindings; owner decision under Waiting) (bca6e312)
 - try · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions (c1572b5d; Fishpref d5e2a98 cherry-picked)
 - try · MCP-ORCH · MCPORCH-07b · Claude Code main sessions get one MCP task per worker turn (2026-07-28 tasks extension, verified on 2.1.330): woken at report, question or failure without hud watch; /tasks cancel stops the worker (69da49a1)
 - try · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (6f1bef38)
@@ -206,7 +205,21 @@ board counts these; update at every landing or decision. -->
 - done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
 - done · — · UX-PASS-OVERALL · overall design: 1 FOOTER, 2 SAY-ONCE, 3 HELP, 4 EXP-FORM, 5 HARNESS-ROWS, 6 TOP-ROW; 4 owner decisions · docs/design/ux-pass/overall.md
 
-## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
+## Now (2026-11-21, session handoff)
+
+- MCP-ORCH is complete and pushed: WORKER-MCP, tickets 01–08, review (docs/reviews/2026-11-21-mcp-orch-milestone.md)
+  and MCPORCH-FIX; then RESTART-RECOVERY (items 2–3 only; restart recovery is an owner decision above). No slice is
+  working. The owner tries MCP-ORCH next: `/mcp` reconnect first (sessions started before today run old MCP code), then
+  a live Claude Code task (ticket 07: dispatch, see `/tasks`, wake at the report without `hud watch`). If that works, a
+  small slice delivers non-job events (try accepted/flagged) to task clients with the next tool reply.
+- MyHUD is registered (`.hud/project.json`, all shipped roles inherited) with a standing brief `.hud/brief.md`; briefs
+  here no longer need to repeat tmp/env.sh, the full-suite timeout, worktrees or the public-repo rule.
+- Sonic runs at `thinking: max` (owner role file `~/.hud/roles/sonic.json`, 2026-11-21); watch its durations
+  (2–8 min at high). Sonic briefs ask for facts, not recommendations; split wide surveys (convention, role texts).
+- Noted 2026-11-21: a sonic ran `agy models` despite offline instructions (network access, writes to Antigravity's local
+  CLI state; job under RESTART-RECOVERY jed235679bed45e93). Not reverted.
+
+## Earlier Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
 State on 2026-11-18, checked against the ledger below (no working, blocked or todo slice), herdr (only the main session's tab) and origin (in sync).
 
