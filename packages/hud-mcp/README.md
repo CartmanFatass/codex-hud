@@ -72,6 +72,15 @@ recorded process is gone. Lease operations require util-linux `flock` on `PATH`;
 the next available place. This does not create a new job. An explicit `on` selects one place; an explicit `preset`
 limits attempts to its chain.
 
+Pass `checks` to `hud_create` for commands the main session would otherwise rerun itself (at most five nonempty
+strings, each up to 4096 characters). They are stored on the job and inherited by `retry_of` and closed-job repairs.
+After a declared pi or CLI settlement the watcher starts a short-lived helper; it runs the commands in order with
+`bash -lc` in the job's actual `cwd` (including its managed worktree), with a ten-minute timeout per command.
+It writes `checks.json` with the turn, report signature, state and each command's exit code, duration and last
+2 KiB of combined output. `hud_read({job})` shows pass/fail, failure tails and whether the results are stale (the turn
+or report changed). `hud watch` appends `checks 2/3` at settlement if ready, or in a follow-up notice. The watcher
+waits for the helper before reaping; check results never settle, accept or fail a job and are not sent to the worker.
+
 For `hud_create` context, pass `context_files` (up to 32 paths resolved against the job's `cwd`) or `from_jobs`
 (up to 16 job IDs `j[0-9a-f]{16}`, each referring to `$HUD_HOME/jobs/<id>/report.md`), not file bodies.
 Missing files, non-text files, and paths or symlinks resolving outside their respective roots return

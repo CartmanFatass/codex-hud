@@ -35,6 +35,7 @@ import {
 } from '../../../src/roles/roster.js';
 import { HarnessSwitchError } from '../../../src/roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../../../src/roles/tool-definitions.js';
+import { jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS } from '../../../src/roles/job-checks.js';
 import { takeLease } from '../../../src/roles/lease.js';
 import { adoptProjectJobs, projectJobFilter } from '../../../src/roles/job-project.js';
 import { sharedRoot } from '../../../src/roles/projects.js';
@@ -67,6 +68,7 @@ interface Job extends PiOptions {
   preset?: string;
   context_files?: string[];
   from_jobs?: string[];
+  checks?: string[];
   repair_of?: string;
   task_length?: number;
   create_options?: Args;
@@ -966,6 +968,7 @@ function observation(job: Job, full: boolean, detail: boolean) {
     text: slice(join(dir, 'qa', name), 2048)?.text ?? '',
   }));
   const progress = readJobProgress(dir);
+  const checks = jobChecks(dir, { ...job });
   const exit_reason = typeof status?.exit_reason === 'string' ? status.exit_reason : null;
   return {
     job: job.job,
@@ -983,6 +986,7 @@ function observation(job: Job, full: boolean, detail: boolean) {
     report_exists: row.report_present,
     ...(detail || row.report_unread ? { report_unread: row.report_unread } : {}),
     ...(detail || progress.latest_progress ? progress : {}),
+    ...(checks ? { checks } : {}),
     ...(row.report_present && !report ? { report_unchanged: true } : {
       ...(detail || report ? { report: report?.text ?? null } : {}),
       ...(detail || report?.truncated ? { report_truncated: report?.truncated ?? false } : {}),
@@ -1145,7 +1149,7 @@ const replayOptions = ['on', 'model', 'thinking', 'isolation', 'idle_grace_s', '
 function jobOptions(job: Job): Args {
   return {
     role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, preset: job.preset,
-    context_files: job.context_files, from_jobs: job.from_jobs,
+    context_files: job.context_files, from_jobs: job.from_jobs, checks: job.checks,
     ...(job.create_options ?? {
       isolation: job.worktree ? 'worktree' : undefined,
       model: job.model_source === 'hud_create' ? job.model : undefined,
@@ -1209,6 +1213,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
   const task = required(args, 'task');
+  const { checks } = args;
+  if (checks !== undefined && (!Array.isArray(checks) || checks.length > MAX_CHECKS || checks.some((command) =>
+    typeof command !== 'string' || !command.trim() || command.length > MAX_CHECK_COMMAND || command.includes('\0')))) {
+    throw new Error('invalid_arguments: checks');
+  }
   if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
   if (args.preset !== undefined && args.on !== undefined) {
     return { ok: false, code: 'invalid_arguments', error: 'preset and on are mutually exclusive' };
@@ -1287,6 +1296,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     herdr_pane: pane,
     created_at: new Date().toISOString(),
     task_length: task.length,
+    ...(checks?.length ? { checks } : {}),
     ...(repairOf ? { repair_of: repairOf } : {}),
     ...(parentJob ? { parent_job: parentJob } : {}),
     ...(args.package === undefined ? {} : { package: args.package as string }),

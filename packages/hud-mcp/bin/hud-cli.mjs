@@ -174,6 +174,7 @@ function write(result) {
   const iso = (time) => time === null ? null : new Date(time).toISOString();
   const row = { ...current, state: result.state, blocked: result.blocked, reason: result.reason,
     output_written: result.outputWritten, settled_at: iso(result.settledAt), idle_deadline_at: iso(result.deadline),
+    ...(job.checks?.length ? { declared_report_sig: result.declared ? result.reportSig : null } : {}),
     ended_at: terminal ? current.ended_at ?? iso(Date.now()) : null, exit_reason: result.exitReason,
     error: result.state === 'failed' ? result.exitReason : null };
   const changed = JSON.stringify(row);
@@ -248,7 +249,8 @@ async function run() {
     }
     // Settlement is independent of /quit delivery; the global watcher owns cleanup and retries.
     let deferredQuit = false;
-    if (next.action === 'quit' && observed.alive !== false) {
+    // For a declared turn with checks, publish settlement and let the watcher reap after the helper exits.
+    if (next.action === 'quit' && observed.alive !== false && !(job.checks?.length && next.declared && !observed.close)) {
       const { issue } = rememberWorkerTree(dir, current);
       // On capture failure let the reaper try again with the root still in place.
       if (issue) {

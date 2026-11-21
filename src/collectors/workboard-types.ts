@@ -46,6 +46,7 @@ export interface JobProgress {
   readonly latest_progress: ProgressEntry | null;
 }
 export interface OwnerWorker extends Partial<JobProgress> {
+  readonly checks?: Pick<import('../roles/job-checks.js').CheckSummary, 'state' | 'stale' | 'passed' | 'total'>;
   readonly diffStat?: import('./diff-stat.js').DiffStatSummary;
   readonly homeRank?: number;
   readonly homeFolded?: boolean;

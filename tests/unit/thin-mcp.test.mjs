@@ -1102,6 +1102,100 @@ async function publishPiGrace(job, worker, writeReport = true) {
   await until(() => Date.now() > mtime); // hud_read records integer milliseconds.
 }
 
+const checkFile = (job) => join(job.task_dir, 'checks.json');
+const checkReceipt = (job) => fs.existsSync(checkFile(job)) ? JSON.parse(fs.readFileSync(checkFile(job), 'utf8')) : null;
+
+test('HUD checks: CLI declaration starts ordered checks, delays reap and announces results', { timeout: 18000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  const worker = fakeCliWithChild(t, f);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'hud-check-cli', 15, false);
+  const job = await f.call('hud_create', { role: 'hud-check-cli', task: 'Synthetic check job.', checks: [
+    'echo "$BASHPID" > check-shell; for ((i=0; i<300; i++)); do [[ -f release-check ]] && break; sleep .05; done; test -f release-check',
+    'test -f check-shell || exit 9; printf "%4096s failure tail" x >&2; exit 7',
+  ] });
+  const dir = job.task_dir, pidFile = join(f.env.HUD_HOME, 'watch.pid');
+  fs.writeFileSync(join(dir, 'reap-worker'), '');
+  const lines = [], ac = new AbortController();
+  const watching = watchCommand([], { env: f.env, stdout: (s) => lines.push(...s.trim().split('\n')), stderr: () => {} },
+    { signal: ac.signal, rescanMs: 100 });
+  try {
+    fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report without a declaration yet.\n');
+    await new Promise((done) => setTimeout(done, 120));
+    assert.equal(checkReceipt(job), null);
+    declareDone(f, job);
+    await until(() => checkReceipt(job)?.state === 'running' && fs.existsSync(join(f.root, 'check-shell')));
+    const { pid: helper } = checkReceipt(job);
+    const shell = Number(fs.readFileSync(join(f.root, 'check-shell'), 'utf8'));
+    const watchPid = Number(fs.readFileSync(pidFile, 'utf8'));
+    await until(() => lines.some((line) => line.includes('closed') && line.includes('report')), 6500);
+    assert.ok(procStat(watchPid) && procStat(helper) && procStat(worker.pid));
+    assert.equal(reapAttempts(f, job), 0);
+    assert.equal(readCloseQuit(f, job), false);
+    assert.equal((await f.call('hud_read', { job: job.job })).checks.state, 'running');
+    assert.match(cardText(workerFor(f, job.job)), /\[↻0\/2\]/);
+    fs.writeFileSync(join(f.root, 'release-check'), '');
+    await until(() => checkReceipt(job)?.state === 'done' && !fs.existsSync(pidFile));
+    const receipt = checkReceipt(job);
+    assert.equal(receipt.turn, cliToken(dir));
+    assert.equal(receipt.report_sig, reportSignature(dir));
+    assert.equal(fs.statSync(checkFile(job)).mode & 0o777, 0o600);
+    assert.deepEqual(receipt.results.map((r) => r.exit_code), [0, 7]);
+    assert.ok(receipt.results.every((r) => r.duration_ms >= 0 && Buffer.byteLength(r.output_tail) <= 2048));
+    const read = await f.call('hud_read', { job: job.job });
+    assert.equal(read.state, 'closed', 'the failing check does not fail the job');
+    assert.equal(read.checks.stale, false);
+    assert.deepEqual(read.checks.results.map((r) => r.passed), [true, false]);
+    assert.equal(read.checks.results[0].output_tail, undefined);
+    assert.match(read.checks.results[1].output_tail, /failure tail$/);
+    assert.match(cardText(workerFor(f, job.job)), /\[✗1\/2\]/);
+    assert.match(workInspectorRows(workerFor(f, job.job), initialMonitorState(), 56, Date.now()).map((r) => stripAnsi(r.text)).join('\n'), /\[✗1\/2\]/);
+    await until(() => lines.some((line) => line.endsWith(' | checks 1/2')), 6500);
+    assert.equal(lines.filter((line) => line.includes(' | checks ')).length, 1);
+    assert.equal(reapAttempts(f, job), 1);
+    assert.ok([helper, shell, watchPid, worker.pid].every((pid) => !procStat(pid) || procStat(pid)?.state === 'Z'));
+  } finally {
+    fs.writeFileSync(join(f.root, 'release-check'), '');
+    ac.abort(); await watching;
+  }
+});
+
+test('HUD checks: Pi continuation and report rewrite make results stale; read-close repair inherits commands', { timeout: 14000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  await f.startCliSocket();
+  const checks = ['echo ran >> check-count'];
+  const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic checks and repair.', checks });
+  assert.equal(checkReceipt(job), null);
+  await publishPiGrace(job);
+  await until(() => checkReceipt(job)?.state === 'done');
+  const previous = checkReceipt(job);
+  assert.equal(previous.report_sig, reportSignature(job.task_dir));
+  assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic continuation.' })).sent, true);
+  assert.equal((await f.call('hud_read', { job: job.job })).checks.stale, true);
+  assert.equal(checkReceipt(job).turn, previous.turn);
+  const oldRead = Date.now();
+  // Keep the synthetic report newer than the previous report's read receipt, even on coarse file clocks.
+  await until(() => Date.now() > oldRead + 5);
+  await publishPiGrace(job);
+  await until(() => checkReceipt(job)?.state === 'done' && checkReceipt(job).turn !== previous.turn);
+  const next = checkReceipt(job);
+  assert.notEqual(next.report_sig, previous.report_sig);
+  assert.equal(readCloseReaped(job), undefined);
+  const report = join(job.task_dir, 'report.md');
+  fs.writeFileSync(report, 'Synthetic rewritten Pi report.\n');
+  await until(() => Date.now() > fs.statSync(report).mtimeMs);
+  assert.equal((await f.call('hud_read', { job: job.job })).checks.stale, true);
+  assert.equal(checkReceipt(job).report_sig, next.report_sig);
+  await publishPiGrace(job, undefined, false);
+  await until(() => readCloseReaped(job));
+  assert.equal(checkReceipt(job).report_sig, reportSignature(job.task_dir));
+  const actual = fs.readFileSync(join(f.root, 'check-count'), 'utf8');
+  assert.equal(actual, 'ran\nran\nran\n');
+  const repair = await f.call('hud_send', { job: job.job, text: 'Synthetic closed-job repair.' });
+  assert.equal(repair.continued_as, repair.job);
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'), 'utf8')).checks, checks);
+});
+
 test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'read-close-cli', 8);
@@ -1946,7 +2040,7 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   fs.mkdirSync(cwd);
   fs.writeFileSync(join(cwd, 'notes.md'), 'Synthetic notes.');
   const original = await f.call('hud_create', {
-    role: 'retry-check', preset: 'two', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false,
+    role: 'retry-check', preset: 'two', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false, checks: ['true'],
   });
   const statusFile = join(original.task_dir, 'STATUS.json');
   fs.writeFileSync(statusFile, JSON.stringify({ state: 'failed', exit_reason: 'rate limit reached; retry after 5m' }));
@@ -1960,6 +2054,7 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   assert.equal(receipt.cwd, cwd);
   assert.equal(receipt.preset, 'two');
   assert.equal(receipt.tps, false);
+  assert.deepEqual(receipt.checks, ['true']);
   assert.equal((await f.call('hud_create', retry)).job, next.job);
 });
 

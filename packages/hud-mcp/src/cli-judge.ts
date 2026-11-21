@@ -1,60 +1,17 @@
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { QuietDecision } from './quiet-decision.js';
 import { procStat } from '../../../src/roles/worker-tree.js';
+import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../../../src/roles/cli-turn.js';
 export { procStat };
-
-export interface Turn {
-  seq: number;
-  sent_at: string;
-  report_sig: string | null;
-  report_prompt_sent?: boolean;
-  first_sent_at?: string;
-  send?: { key: string; pid: number; start: string | null };
-}
+export { DONE_FILE, readDone, readTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../../../src/roles/cli-turn.js';
 
 export const firstInput = (turn: Turn) => turn.first_sent_at ?? (turn.seq === 1 ? turn.sent_at : undefined);
-
-export function reportSignature(dir: string): string | null {
-  try {
-    const file = join(dir, 'report.md');
-    const body = fs.readFileSync(file);
-    if (!body.toString('utf8').trim()) return null;
-    return `${fs.statSync(file).mtimeMs}:${body.length}:${createHash('sha256').update(body).digest('hex')}`;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-export function readTurn(dir: string): Turn | null {
-  try {
-    return JSON.parse(fs.readFileSync(join(dir, 'turn.json'), 'utf8')) as Turn;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-export const DONE_FILE = 'done.json';
-export type DoneReceipt = Pick<Turn, 'seq' | 'sent_at'> & { report_sig: string; at: string };
-export const turnToken = (turn: Turn) => `${turn.seq}@${turn.sent_at}`;
 export const cliWorkerTools = (agent: string) => agent === 'claude' || agent === 'codex';
 export const withDonePrompt = (text: string, bundled: string, dir: string, turn: Turn, agent: string) =>
   `${text}\n\n${cliWorkerTools(agent)
     ? `Finish with hud_report. Use the token in the prompt you are answering, not a newer turn. turn: ${turnToken(turn)}`
     : `After writing the report for this turn, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${turnToken(turn)}\nUse the command from the prompt you are answering, not a newer turn.`}\n`;
-
-export function readDone(dir: string): DoneReceipt | null {
-  try {
-    const fd = fs.openSync(join(dir, DONE_FILE), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-    try {
-      const st = fs.fstatSync(fd);
-      return st.isFile() && st.size <= 1024 ? JSON.parse(fs.readFileSync(fd, 'utf8')) as DoneReceipt : null;
-    } finally { fs.closeSync(fd); }
-  } catch { return null; } // Missing or unreadable evidence does not authorize a close.
-}
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
 export function writeTurn(dir: string, reportPromptSent?: boolean, send?: Turn['send']): Turn {
@@ -246,8 +203,7 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   const readReport = report && facts.reportRead;
   const reportChanged = next.reportSig !== facts.reportSig;
   const done = facts.done;
-  const receipt = done?.seq === facts.turn.seq && done.sent_at === facts.turn.sent_at &&
-    typeof done.report_sig === 'string' && done.report_sig !== facts.turn.report_sig && Number.isFinite(Date.parse(done.at));
+  const receipt = receiptForTurn(facts.turn, done);
   const declared = report && receipt && done.report_sig === facts.reportSig;
   // A stale receipt for this turn is evidence that it declared, not permission to settle as a legacy turn.
   const awaitingReceipt = receipt && !declared;

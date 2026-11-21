@@ -121,6 +121,14 @@ working until notified instead of polling or waiting. A report-ready notice leav
 defaults to a hash of the caller pane, role, cwd and task. By default it dispatches on the role's first available place (`runs_on`).
 `hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields
 can override them. It selects an available place through the role or preset chain unless you supply `on`.
+
+Pass `checks` for up to five shell commands you would otherwise run yourself in the job's `cwd`. The HUD runs them
+in order with `bash -lc` after a declared pi or CLI settlement, with a ten-minute timeout per command. Retries and
+closed-job repairs inherit them. `hud_read({job})` shows pass/fail and a bounded failure tail; a new turn or rewritten
+report marks the previous results stale. `hud watch` adds `checks 2/3` on settlement or in a follow-up notice when the
+results arrive. The job card and Inspector show the same count of passed/total checks (`✓` pass, `✗` fail, `↻` running,
+`~` stale). Checks do not settle jobs or decide acceptance.
+
 Pass `preset` to use the first available, non-exhausted place in a named role preset
 without editing role files. Alternatively, pass `on` to override the harness/provider
 (defaults from shipped `harnesses.json` overridden by `$HUD_HOME/harnesses.json`).

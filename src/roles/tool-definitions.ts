@@ -1,5 +1,6 @@
 /** Shared MCP and native pi declarations; importing them never starts a server. */
 import { LEASE_TOOL } from './lease.js';
+import { MAX_CHECK_COMMAND, MAX_CHECKS } from './job-checks.js';
 
 const text = { type: 'string' };
 const bool = { type: 'boolean' };
@@ -31,6 +32,8 @@ export const ROLE_TOOLS = [
       cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
       package: { ...text, description: 'Display label.' },
       context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths within cwd.' },
+      checks: { type: 'array', maxItems: MAX_CHECKS, items: { ...text, minLength: 1, maxLength: MAX_CHECK_COMMAND },
+        description: 'Commands the HUD runs in the job cwd after a declared pi or CLI settlement.' },
       from_jobs: {
         type: 'array',
         items: { ...text, pattern: '^j[0-9a-f]{16}$' },

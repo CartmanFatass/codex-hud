@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** On-demand file-event reaper. Pi owns grace; pi-role-reap owns tab safety. */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { createConnection } from 'node:net';
@@ -11,6 +11,7 @@ import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roste
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../dist/src/roles/worker-tree.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
+import { checkBinding, readCheckReceipt, sameChecks } from '../dist/src/roles/job-checks.js';
 import { reapWorktree } from '../dist/packages/hud-mcp/src/managed-worktree.js';
 import { request } from './herdr-request.mjs';
 
@@ -75,6 +76,24 @@ let watcher, timer,
   stopped = false;
 const closedTabs = new Set();
 const reapRetries = new Map();
+const checking = new Set();
+function checksOpen(id, dir, job, status) {
+  if (!job?.checks?.length) return false;
+  if (checking.has(id)) return true;
+  const previous = readCheckReceipt(dir);
+  if (previous?.state === 'running' && workerAlive(previous.pid, previous.start) === true) return true;
+  const binding = checkBinding(dir, job, status);
+  if (!binding || (previous?.state === 'done' && sameChecks(binding, previous))) return false;
+  const child = spawn(process.execPath, [join(bundled, 'bin', 'hud-check.mjs'), dir, JSON.stringify(binding)], { stdio: 'ignore' });
+  checking.add(id);
+  child.once('error', (error) => { checking.delete(id); warn(`checks ${id}`, `checks ${id}: ${error.message}`); });
+  child.once('exit', (code) => {
+    checking.delete(id);
+    if (code === 0) schedule();
+    else warn(`checks ${id}`, `checks ${id}: helper exit=${code}`);
+  });
+  return true;
+}
 function subscribe() {
   if (subscribed) return;
   subscribed = true;
@@ -258,6 +277,7 @@ async function scan(retryWatch = false) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
         continue;
       }
+      if (checksOpen(id, dir, job, status)) { open = safetyCheck = true; continue; }
       const ownership = JSON.stringify([session, status.pid, status.pid_start_time]);
       const previous = reapRetries.get(id);
       const retry = !job?.reaped_at && previous?.ownership === ownership ? previous : null;
@@ -384,7 +404,7 @@ function startWatch() {
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
       const path = filename?.toString();
-      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json|SESSION\.txt|job\.json)$/.test(path)) schedule();
+      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json|SESSION\.txt|job\.json|checks\.json|report\.md|done\.json|turn\.json)$/.test(path)) schedule();
     }).on('error', (error) => {
       warn('watch error', `watch error: ${error.message}`);
       watcher?.close(); watcher = undefined;

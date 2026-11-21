@@ -1,7 +1,7 @@
 /** `hud watch`: push only actionable events; --verbose retains the MCP change stream. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { checksJustFinished, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
@@ -59,13 +59,14 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
     const pending = (!row.parent_job && settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
     const escalation = row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason);
-    const event = (row.blocked && !old?.blocked) || (row.state !== 'working' && (
+    const checks = checksJustFinished(row, old);
+    const event = checks || (row.blocked && !old?.blocked) || (row.state !== 'working' && (
       (!old && row.state !== null && !questions.length) ||
       (old && settled(row) && !settled(old)) || report || escalation ||
       (row.parent_job && row.display_state === 'failed' && old?.display_state !== 'failed')
     ));
     if (!(catchup ? pending : event)) return questions;
-    const defer = !row.blocked && row.display_state !== 'failed' && !escalation && (settled(row) || report);
+    const defer = !row.blocked && row.display_state !== 'failed' && !escalation && (settled(row) || report || checks);
     return [...questions, { line: formatJobChange(row), defer }];
   });
 }
@@ -285,7 +286,7 @@ export async function watchCommand(
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)))];
       if (queue) {
-        const pending = notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions) ||
+        const pending = notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions || row.checks?.state === 'running') ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {

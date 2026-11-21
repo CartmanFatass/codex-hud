@@ -191,11 +191,21 @@ export function labelSummary(labels: WorkCard['worker']['labels']): string {
   return [labels?.outcome ? `[${t(labels.outcome.value)}]` : '',
     ...(labels?.severity ?? []).map((n, i) => n ? `${n} ${t(['must fix', 'should fix', 'optional'][i])}` : '')].filter(Boolean).join(' · ');
 }
+function checkChip(checks: WorkCard['worker']['checks']): string {
+  if (!checks) return '';
+  const { stale, state, passed, total } = checks;
+  const [glyph, ink] = stale ? [mark('~', '~'), theme.board.muted]
+    : state === 'running' ? [mark('↻', '@'), theme.board.active]
+    : passed === total ? [mark('✓', '+'), theme.board.success] : [mark('✗', 'x'), theme.board.danger];
+  return ink(`[${glyph}${passed}/${total}]`);
+}
 function workCardName(card: WorkCard, _state: MonitorState, width: number, badge = '') {
   const labels = card.worker.labels;
   // The model's outcome mark joins the state word only when it says something else (`[partial] done`, not `[done] done`).
   const word = workStateWord(card), outcome = labels?.outcome && t(labels.outcome.value) !== word ? `[${t(labels.outcome.value)}]` : '';
-  const right = [badge, labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '', outcome, word, ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
+  const state = [badge, labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '', outcome, word, ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
+  const chip = checkChip(card.worker.checks), ink = workStateInk(card);
+  const right = chip ? `${chip} ${ink(state)}` : ink(state);
   const role = monitorText(card.role),
     x = 2 + visualLength(role) + 2;
   return {
@@ -217,7 +227,7 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
   const ink = workStateInk(card),
     name = workCardName(card, state, width, badge);
   const rows = [
-    theme.board.title(pair(`${ink(workStateGlyph(card))} ${name.role}  ${name.text}`, ink(name.right), width)),
+    theme.board.title(pair(`${ink(workStateGlyph(card))} ${name.role}  ${name.text}`, name.right, width)),
   ];
   // Open questions have their complete expandable slab above the lanes on Home.
   const generated = card.worker.modelSentence;

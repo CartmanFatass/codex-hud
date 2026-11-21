@@ -95,6 +95,11 @@ split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 
 split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
 浏览器（`bro`）位置拒绝这些 pi 选项。
 
+可传入 `checks`，指定原本要亲自复跑的检查命令，最多五条。Pi 或 CLI 工作者声明本轮完成后，HUD 在任务的 `cwd` 中
+用 `bash -lc` 依次运行命令，每条限时十分钟。重试和关闭后新建的修复任务会继承这些命令。`hud_read({job})` 显示
+每项是否通过及失败输出的末尾；开始新一轮或重写报告会让旧结果过期。`hud watch` 在结算行或检查完成后的通知中附上
+`checks 2/3`。任务卡片和检查器也显示通过数／总数（`✓` 通过、`✗` 失败、`↻` 运行中、`~` 过期）。检查不会结算任务，也不决定是否验收。
+
 可用 `context_files`（最多 32 个路径，以任务的 `cwd` 为基准解析）和 `from_jobs`（最多 16 个任务 ID，
 各自指向 `$HUD_HOME/jobs` 中该任务的 `report.md`）传递上下文。文件须为可读的 UTF-8 文本，解析后的路径须分别位于
 `cwd` 或 `$HUD_HOME/jobs` 内；无效引用会在启动前返回 `invalid_arguments`。Pi 和 CLI 工作者按简报中任务之后列出的路径读取文件；
