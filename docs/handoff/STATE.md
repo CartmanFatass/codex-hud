@@ -11,6 +11,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Next
 
+- MCP-TASK (owner 2026-11-20, spec §2 delivery): clients that declare MCP task support (Claude Code) get one task per worker turn; hud_wait/hud watch/changes hidden for them. Slices proposed: 01 hud_create as a task + live Claude Code check (wake, cancel, /tasks) → 02 hud_send/hud_respond as tasks, hide the old paths, hud-delegate skill text. Waiting for the owner to approve the slices.
 - EXP (`.scratch/exp/`, owner 2026-11-20): experimental top-level tab behind Settings → Panel → Experiments; 01 tab + settings, 02 Codex native status line, 03 pi subscription proxy (refresh while used, no timer) ← 01, 04 oapi grant ledger (JSONL) ← 01, 05 Anthropic ledger ← 04. 01 and 02 landed (to try); all five landed; owner try (real accounts) is the EXP-05 joint check of the plan.
 - MODEL-PICKER (`.scratch/model-picker/`, owner 2026-11-20: sample settled with the recommended answers): 01 model facts + keys → 02 visible entry, pinned rows, folds, mouse (← control-tab/04) → 03 zoomed picker; CONTROL-TAB-05 waits on 03.
 - CONTROL-TAB (owner 2026-11-20): Control plane becomes its own main tab; harness on/off at CLI and pi-provider level (off = skipped like exhausted, files untouched); full pi model list for providers that are on; per-role presets created, reordered and switched from the panel. Sample settled 2026-11-20 as drawn; tickets .scratch/control-tab/ 01 tab → 02 harness switches, 03 pi picker, 04 role-row presets → 05 chain editing.
