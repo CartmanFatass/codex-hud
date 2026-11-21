@@ -24,8 +24,10 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
-- working · MCP-ORCH · MCPORCH-05 · hud_read({}) scoped to the project (linked worktrees included); a new session adopts jobs whose pane is gone; a worker herdr resumed after a restart is kept (mcp-orch/05)
-- working · MCP-ORCH · MCPORCH-03 · project .hud/brief.md referenced after the task in every brief; per-harness delivery text moves from the convention into tool results; convention sent once per session (mcp-orch/03)
+- working · MCP-ORCH · MCPORCH-07 · verify how Claude Code handles MCP tasks (wake, /tasks, cancel) before building (mcp-orch/07)
+- working · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (mcp-orch/06)
+- try · MCP-ORCH · MCPORCH-05 · hud_read({}) scoped to the project (linked worktrees included); a new session adopts jobs whose pane is gone, and their questions follow; restart recovery deferred (ticket 05 comment) (7accf14c)
+- try · MCP-ORCH · MCPORCH-03 · project .hud/brief.md referenced after the task in every brief; per-harness delivery text moves from the convention into tool results; convention sent once per session; panel titles come from the task part of the brief (4fa7b531)
 - try · MCP-ORCH · MCPORCH-04 · hud_lease: named lease per project in both modes, waits inside the caller's turn, reclaims ended holders; Control lease row; leases shared by a checkout and its linked worktrees (45933319, ea9c4a19)
 - try · MCP-ORCH · MCPORCH-02 · keys derived when omitted; hud_send to a read-closed job creates the repair job (continued_as); jobs:[...] fan-out; hud_create retry_of; a keyless identical call counts as a retry only within 10 minutes (623905b4, 80f1906b)
 - try · MCP-ORCH · MCPORCH-01 · a launch that fails before input falls through to the next place in one call; worker HUD home from the job directory (48809c12)
