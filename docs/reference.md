@@ -370,7 +370,8 @@ eligible regardless of age. Build reload preserves the original opening time.
 Native agents and Project's STATE slice lookup keep their own scope.
 
 **Card lifetimes.** Settled HUD/native cards fold to one row after 5 minutes and
-hide after 15 by default; failed/stopped cards stay at least 30. Settings → Panel
+hide after 15 by default; failed/stopped cards stay at least 30, and a failure the
+model ranking protects leaves Home after a day unless it still asks. Settings → Panel
 changes both. A hide time below fold time counts as fold time. Running/asking cards
 stay. `a` reveals hidden cards in place as muted one-row titles; Enter
 expands them. The job scan considers the newest 200 directories.

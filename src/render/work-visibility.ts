@@ -3,6 +3,7 @@ import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-typ
 import type { MonitorData, MonitorState } from './monitor.js';
 
 const FAILED_HIDE_MS = 30 * 60000;
+const FAILED_STALE_MS = 24 * 3600000;
 export type CardTimes = Pick<MonitorState, 'cardFoldMinutes' | 'cardHideMinutes'>;
 /** Fold and hide times in ms; a hide time before the fold time is the fold time. */
 function cardTimes(times?: CardTimes) {
@@ -14,10 +15,12 @@ export const foldedWorker = (w: OwnerWorker, now: number, times?: CardTimes): bo
   w.settledAt !== null && !w.homeNeedsHuman && w.homeRank !== 100 && now - w.settledAt >= cardTimes(times).fold;
 const jobTime = (w: OwnerWorker) => w.settledAt ?? w.startedAt ?? 0;
 export function currentWorker(w: OwnerWorker, now: number, times?: CardTimes): boolean {
+  const failed = w.work?.failed || ['failed', 'error', 'stopped'].includes(w.state);
+  // A failure that nobody acted on for a day is history, not attention, even when ranked protected (owner, 2026-11-21).
+  if (failed && w.settledAt !== null && !w.homeNeedsHuman && !w.work?.request && now - w.settledAt >= FAILED_STALE_MS) return false;
   if (w.homeRank === 100) return true;
   if (w.homeFolded) return false;
   if (w.homeNeedsHuman || w.settledAt === null) return true;
-  const failed = w.work?.failed || ['failed', 'error', 'stopped'].includes(w.state);
   const { hide } = cardTimes(times);
   return now - w.settledAt < (failed ? Math.max(hide, FAILED_HIDE_MS) : hide);
 }

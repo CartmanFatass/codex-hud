@@ -128,4 +128,8 @@ test('a hide time before the fold time is the fold time; failed and protected ca
   assert.ok(!foldedWorker(worker({ homeNeedsHuman: true }), NOW + 60 * MIN), 'a card needing the owner never folds');
   assert.ok(!foldedWorker(worker({ homeRank: 100 }), NOW + 60 * MIN), 'a protected card never folds');
   assert.ok(!foldedWorker(worker({ settledAt: null }), NOW + 60 * MIN), 'a running card never folds');
+  const ranked = worker({ state: 'failed', homeRank: 100 });
+  assert.ok(currentWorker(ranked, NOW + 24 * 60 * MIN - 1), 'a protected failure stays for a day');
+  assert.ok(!currentWorker(ranked, NOW + 24 * 60 * MIN), 'a protected failure older than a day leaves Home');
+  assert.ok(currentWorker(worker({ state: 'failed', homeRank: 100, homeNeedsHuman: true }), NOW + 48 * 60 * MIN), 'unless it still needs the owner');
 });
