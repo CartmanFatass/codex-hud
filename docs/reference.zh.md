@@ -86,7 +86,7 @@ MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud
 若未传入 `on`，则从角色或预设的执行链选择可用位置。传入 `preset` 可使用指定预设中首个可用且未耗尽的位置，
 仅对本次任务生效，不修改角色文件。也可用 `on` 覆盖执行环境或浏览器服务商（默认值见内置
 `harnesses.json` 与 `$HUD_HOME/harnesses.json`）。`preset` 和 `on` 不能同时传入。
-重复键返回原任务，不再次启动。只在用户要求时覆盖预设、执行环境、模型或推理强度；带 `detail: true` 的任务读取或查看会显示所选 `preset`。
+重复使用显式键会返回原任务；派生键仅复用最近 10 分钟内创建的任务。只在用户要求时覆盖预设、执行环境、模型或推理强度；带 `detail: true` 的任务读取或查看会显示所选 `preset`。
 `model` 和 `thinking` 可覆盖所选 `pi` 或 `cli` 位置的模型和推理强度；`kind` 为 `flow` 选择 `image`（默认）或 `video`。
 仅 `pi` 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
 （最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；
@@ -141,7 +141,7 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 `hud_send` 给工作中的 pi 或 CLI 任务排队消息；角色允许继续且报告未读时，也可在空闲宽限期内续写。
 若任务因报告已读而关闭，单发会开启修正任务，引用原简报和报告，并在 `continued_as` 返回新任务 ID。
 用 `jobs` 代替 `job` 时，只发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不启动修正任务。
-省略 `message_key` 时，根据任务 ID 和消息正文生成去重键。
+显式 `message_key` 始终用于去重；省略时，只有 10 分钟内发给同一任务的相同消息才视为重试。
 CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
 CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得知。
 `hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收，正常清理由 watcher 负责。主人也可在面板里回答未答的问题

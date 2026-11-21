@@ -22,10 +22,10 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Dispatch a role (requires role and task), or retry a failed or stopped job with retry_of, inheriting its task and options unless overridden. An identical call returns the same job; pass request_key for an intentional duplicate. Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for role options.',
+    'Dispatch a role (requires role and task), or retry a failed or stopped job with retry_of, inheriting its task and options unless overridden. An identical call within 10 minutes returns the same job; pass a fresh request_key for an intentional duplicate. Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for role options.',
     {
       role: text,
-      request_key: { ...text, description: 'Optional idempotency key. Defaults to a hash of the caller, role, cwd and task.' },
+      request_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same caller, role, cwd and task match for 10 minutes.' },
       task: text,
       retry_of: { ...text, description: 'Failed or stopped job ID. Reuses its brief and options and selects an available place.' },
       cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
@@ -103,7 +103,7 @@ export const ROLE_TOOLS = [
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1 },
-      message_key: { ...text, description: 'Optional idempotency key. Defaults to a hash of the job and text.' },
+      message_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same job and text match for 10 minutes.' },
       text,
     },
     ['text']

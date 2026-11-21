@@ -3164,6 +3164,35 @@ test('hud_create and hud_send derive keys for concurrent identical calls', async
   assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[3] === send.text).length, 1);
 });
 
+test('hud_create starts a new job after the derived key window expires', async (t) => {
+  const f = await fixture(t);
+  const create = { role: 'imp', task: 'Synthetic task to run again later.' };
+  const first = await f.call('hud_create', create);
+  const file = join(first.task_dir, 'job.json');
+  const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+  receipt.created_at = new Date(Date.now() - 11 * 60_000).toISOString();
+  fs.writeFileSync(file, JSON.stringify(receipt));
+  const second = await f.call('hud_create', create);
+  assert.notEqual(second.job, first.job);
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [first.job, second.job].sort());
+  assert.equal((await f.call('hud_create', create)).job, second.job);
+});
+
+test('hud_send sends again after the derived key window expires', async (t) => {
+  const f = await fixture(t);
+  const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic working task.' });
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  const send = { job: job.job, text: 'Synthetic message to send again later.' };
+  assert.equal((await f.call('hud_send', send)).sent, true);
+  const file = join(job.task_dir, 'job.json');
+  const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+  receipt.send_outcomes[0].recorded_at = new Date(Date.now() - 11 * 60_000).toISOString();
+  fs.writeFileSync(file, JSON.stringify(receipt));
+  assert.equal((await f.call('hud_send', send)).sent, true);
+  assert.deepEqual(await f.call('hud_send', send), { ok: true, sent: false });
+  assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[3] === send.text).length, 2);
+});
+
 test('hud_send to several jobs sends once per working job and skips read-closed jobs', async (t) => {
   const f = await fixture(t);
   await f.startCliSocket();

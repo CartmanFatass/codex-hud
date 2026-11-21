@@ -123,8 +123,8 @@ can override them. It selects an available place through the role or preset chai
 Pass `preset` to use the first available, non-exhausted place in a named role preset
 without editing role files. Alternatively, pass `on` to override the harness/provider
 (defaults from shipped `harnesses.json` overridden by `$HUD_HOME/harnesses.json`).
-`preset` and `on` are mutually exclusive. A repeated key returns the original job
-unchanged, not a second launch. Use these overrides only on user request. A detailed job read or peek shows the selected `preset`.
+`preset` and `on` are mutually exclusive. A repeated explicit key returns the original job; a derived key
+only reuses a job created within the last 10 minutes. Use these overrides only on user request. A detailed job read or peek shows the selected `preset`.
 `model` and `thinking` override the selected `pi` or `cli` place for this job;
 `kind` selects `image` (default) or `video` for `flow`. Optional `idle_grace_s` (integer 60–3600) overrides
 CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
@@ -213,8 +213,8 @@ sub-tasks without waiting, then collect their reports; HUD prompts once if they 
 `hud_send` queues a message for a working pi or CLI job, or continues an eligible role during idle grace while
 its report is still unread. A single send to a job closed by reading its report starts a repair with references to its
 brief and report, returning the new job ID as `continued_as`. Use `jobs` instead of `job` to send only to working
-jobs; the response lists `sent` job IDs and `skipped` entries with reasons. `message_key` deduplicates sends and
-is derived from the job and text if omitted. CLI workers ask with `hud_ask` through the `QUESTION` line and `hud_respond` flow. The synchronous question waits
+jobs; the response lists `sent` job IDs and `skipped` entries with reasons. An explicit `message_key` deduplicates sends;
+if omitted, the same job and text are treated as a retry only within 10 minutes. CLI workers ask with `hud_ask` through the `QUESTION` line and `hud_respond` flow. The synchronous question waits
 up to 20 minutes; pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner;
 the session learns it through `changes`, Claude's `hud watch`, Codex's automatic queue or pi's native HUD notices. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer

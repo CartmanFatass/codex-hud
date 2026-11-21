@@ -91,7 +91,7 @@ interface Job extends PiOptions {
   dispatch_path?: string;
   stderr_tail: string;
   message_keys: string[];
-  send_outcomes?: { key: string; exit_code: number | null; stderr_tail: string }[];
+  send_outcomes?: { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string }[];
   role_skills?: { name: string; path: string }[];
   skipped_skills?: { name: string; reason: string }[];
   worker_prompt?: string | null;
@@ -103,6 +103,11 @@ function required(args: Args, key: string): string {
 }
 function derivedKey(kind: string, ...parts: unknown[]): string {
   return `${kind}:${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`;
+}
+const DERIVED_KEY_WINDOW_MS = 10 * 60_000;
+function withinRetryWindow(recordedAt: string | undefined, now: number): boolean {
+  const age = now - Date.parse(recordedAt ?? '');
+  return age >= 0 && age < DERIVED_KEY_WINDOW_MS;
 }
 function json<T>(file: string): T | null {
   try {
@@ -1117,9 +1122,10 @@ function originalTask(job: Job): string {
   return brief.split(/\n## Context References\n\nRead these files for task context:\n|\n## Context\n\n### |\nFinish with `hud_report`\.\n$|\nThis harness uses the commands below instead of the worker tools named in your role\./, 1)[0].trimEnd();
 }
 
-export async function dispatchJob(input: Args, pane: string | undefined, parentJob?: string, repairOf?: string) {
+export async function dispatchJob(input: Args, pane: string | undefined, parentJob?: string, repair?: { job: string; derived: boolean }) {
   const retryOf = input.retry_of === undefined ? undefined : required(input, 'retry_of');
   let args = input;
+  let repairOf = repair?.job;
   if (retryOf) {
     const source = findJob(retryOf);
     if (!source) return { ok: false, code: 'job_not_found' };
@@ -1137,10 +1143,12 @@ export async function dispatchJob(input: Args, pane: string | undefined, parentJ
   const requestKey = args.request_key === undefined
     ? derivedKey(retryOf ? 'retry' : 'create', pane, role, cwd, required(args, 'task'), retryOf)
     : required(args, 'request_key');
-  return keyLock(`request:${requestKey}`, () => dispatchWithKey(args, pane, requestKey, parentJob, repairOf, retryOf ? input : undefined));
+  const windowedKey = args.request_key === undefined || repair?.derived === true;
+  return keyLock(`request:${requestKey}`, () =>
+    dispatchWithKey(args, pane, requestKey, windowedKey, parentJob, repairOf, retryOf ? input : undefined));
 }
 
-async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, parentJob?: string, repairOf?: string, retryInput?: Args) {
+async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean, parentJob?: string, repairOf?: string, retryInput?: Args) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
@@ -1151,7 +1159,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     const invalid = found.invalidRole(role);
     return { ok: false, code: 'role_unavailable', reason: `Role ${asked} is not configured or is hidden in this project`, ...invalid };
   }
-  const existing = jobs().find((job) => job.request_key === request_key);
+  const now = Date.now();
+  const existing = jobs().find((job) =>
+    job.request_key === request_key && (!windowedKey || withinRetryWindow(job.created_at, now)));
   if (existing) {
     ensureWatcher();
     ensureQueueWatcher(pane, hudHome);
@@ -1169,7 +1179,6 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (presetName !== undefined && !preset) {
     return { ok: false, code: 'invalid_arguments', error: `unknown preset: ${presetName}` };
   }
-  const now = Date.now();
   let routing;
   try { routing = found.routing(now); }
   catch (error) {
@@ -1449,22 +1458,26 @@ function ticketGuide(args: Args): boolean {
   return args.op === undefined || args.op === 'guide';
 }
 async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean) {
-  const key = explicitKey ?? derivedKey('send', id, message);
+  const matchKey = explicitKey ?? derivedKey('send', id, message);
   const current = findJob(id);
   if (!current) return { ok: false, code: 'job_not_found' };
   const dir = directory(current.job);
-  if (current.message_keys.includes(key)) {
-    const outcome = current.send_outcomes?.find((outcome) => outcome.key === key);
-    if (outcome?.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-    return outcome?.exit_code === 0
+  const now = Date.now();
+  const duplicate = explicitKey === undefined
+    ? current.send_outcomes?.find((attempt) => attempt.derived_key === matchKey && withinRetryWindow(attempt.recorded_at, now))
+    : current.send_outcomes?.find((attempt) => attempt.key === explicitKey);
+  if (duplicate || (explicitKey !== undefined && current.message_keys.includes(explicitKey))) {
+    if (duplicate?.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+    return duplicate?.exit_code === 0
       ? { ok: true, sent: false }
-      : { ok: false, sent: false, code: 'send_failed', ...outcome };
+      : { ok: false, sent: false, code: 'send_failed',
+          ...(duplicate && { key: duplicate.key, exit_code: duplicate.exit_code, stderr_tail: duplicate.stderr_tail }) };
   }
   const { row, status } = readRow(current);
   const state = row.state ?? '';
   if (!workingOnly && state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) {
-    const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: derivedKey('repair', id, key) },
-      process.env.HERDR_PANE_ID, undefined, id);
+    const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: derivedKey('repair', id, matchKey) },
+      process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined });
     return 'job' in repair && repair.job ? { ...repair, continued_as: repair.job } : repair;
   }
   const agent = primary(dir);
@@ -1479,11 +1492,14 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     !(queued || (!workingOnly && state === 'idle_grace' && !readReport && registry(current.worktree?.main_root ?? current.cwd).roles().get(current.role)?.can_continue))
   )
     return { ok: false, code: 'not_continuable' };
-  // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
+  // Record the attempt first. A fresh derived send needs its own key for CLI turn tracking.
+  const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
+  const recorded_at = new Date().toISOString();
+  const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}), recorded_at,
+    exit_code: null as number | null, stderr_tail: '' };
   current.message_keys.push(key);
-  const outcome = { key, exit_code: null as number | null, stderr_tail: '' };
   (current.send_outcomes ??= []).push(outcome);
-  if (!current.cli) current.pi_sent_at = new Date().toISOString();
+  if (!current.cli) current.pi_sent_at = recorded_at;
   save(current);
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
   const prior = current.cli ? readTurn(dir) : null;
