@@ -25,7 +25,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 - working · MCP-ORCH · MCPORCH-08 · settlement notices within 3 s coalesce into one; questions immediate (mcp-orch/08)
-- working · — · WORKER-MCP · worker protocol in the MCP: hud_report, hud_ask, hud_sonic, hud_progress; role texts lose protocol paths, say when to use sonic (spec 57f3754f; routing a06d8c92)
+- try · MCP-ORCH · WORKER-MCP · workers get hud_report, hud_ask, hud_sonic, hud_progress (MCP and native pi); briefs and role texts carry no protocol paths; per-role sonic timing; unsupported thinking maps to the nearest level; failed pre-start launches close their tab and name the cause (64534c2c; Fishpref 66e24dc)
 - try · — · HUD-TICKETS · to-tickets becomes the hud_tickets MCP tool (method, add, update, sync); skill links removed on ./install (48c9589d, 19d3fbd1)
 - accepted · M3 · BAR-UNIFY · one-line bars on all three clients (d8945e22, 6f641d82)
 - accepted · M3 · PANEL-POLISH · Enter opens a report, whole key hints, readable tab labels (e60d5bb7)
