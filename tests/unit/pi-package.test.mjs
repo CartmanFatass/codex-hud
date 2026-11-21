@@ -741,8 +741,8 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false, 'no native sendMessage API');
 });
 
-async function until(check, failure = 'timed out waiting for the native watcher') {
-  const deadline = performance.now() + 3000;
+async function until(check, failure = 'timed out waiting for the native watcher', timeoutMs = 3000) {
+  const deadline = performance.now() + timeoutMs;
   while (!check()) {
     assert.ok(performance.now() < deadline, failure);
     await sleep(20);
@@ -816,7 +816,7 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   fs.writeFileSync(path.join(dir, 'qa/q2.answer.md'), 'rows');
   fs.writeFileSync(path.join(dir, 'report.md'), 'Synthetic report.');
   status('idle_grace');
-  await until(() => messages.length === 3);
+  await until(() => messages.length === 3, 'timed out waiting for the settlement window', 6000);
   assert.deepEqual(messages[2], notice(`${id} imp: idle_grace | report`), 'idle wake contains only the report notice');
   assert.deepEqual(JSON.parse(fs.readFileSync(jobFile, 'utf8')), receipt, 'notice does not mark the report read');
   fs.writeFileSync(path.join(home, 'tries.jsonl'), [

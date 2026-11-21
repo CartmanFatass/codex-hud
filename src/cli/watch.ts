@@ -19,6 +19,7 @@ export const WATCH_HELP =
 // Woken by file changes under jobs/; the slow rescan only covers a watch lost or not yet attachable.
 const DEFAULT_RESCAN_MS = 30_000;
 const DEBOUNCE_MS = 50;
+const SETTLEMENT_WINDOW_MS = 3000;
 
 const isBrokenPipe = (error: unknown): boolean => {
   const code = (error as NodeJS.ErrnoException | null)?.code;
@@ -26,7 +27,8 @@ const isBrokenPipe = (error: unknown): boolean => {
 };
 
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
-function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup = false): string[] {
+type Notice = { line: string; defer?: boolean };
+function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup = false): Notice[] {
   return rows.flatMap((row) => {
     const old = prev.get(row.job);
     const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
@@ -41,7 +43,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
           const tag = body.match(/^# Question q\d+ from (.+)$/m)?.[1] ?? row.role ?? row.job;
           const question = body.replace(/^# Question q\d+ from .*\n/, '')
             .split(/^(?:Options:\s*$|Default if unanswered:|Context:|Answer:)/m, 1)[0];
-          return `[${one(tag)}] QUESTION ${id}: ${one(question)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)}${q.context ? ` | context: ${one(q.context)}` : ''} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}`;
+          return { line: `[${one(tag)}] QUESTION ${id}: ${one(question)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)}${q.context ? ` | context: ${one(q.context)}` : ''} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}` };
         });
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     let attentionUnread = true;
@@ -55,15 +57,45 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
       } catch { /* unread */ }
     }
     const pending = (!row.parent_job && settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));
+    const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
+    const escalation = row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason);
     const event = (row.blocked && !old?.blocked) || (row.state !== 'working' && (
       (!old && row.state !== null && !questions.length) ||
-      (old && settled(row) && !settled(old)) ||
-      (!row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime)) ||
-      (row.parent_job && row.display_state === 'failed' && old?.display_state !== 'failed') ||
-      (row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason))
+      (old && settled(row) && !settled(old)) || report || escalation ||
+      (row.parent_job && row.display_state === 'failed' && old?.display_state !== 'failed')
     ));
-    return [...questions, ...((catchup ? pending : event) ? [formatJobChange(row)] : [])];
+    if (!(catchup ? pending : event)) return questions;
+    const defer = !row.blocked && row.display_state !== 'failed' && !escalation && (settled(row) || report);
+    return [...questions, { line: formatJobChange(row), defer }];
   });
+}
+
+// A fixed window from the first settlement, not a debounce that slides with each arrival.
+function settlementNotices() {
+  let held: string[] = [], deadline = Infinity;
+  return {
+    get pending() { return held.length > 0; },
+    get delay() { return Math.max(0, Math.ceil(deadline - performance.now())); },
+    collect(events: Notice[], other: string[]): string[] {
+      const ready: string[] = [], now = performance.now();
+      const flush = (lines: string[] = []) => {
+        ready.push(held.concat(lines).join('\n'));
+        held = [];
+        deadline = Infinity;
+      };
+      if (now >= deadline) flush();
+      const lines = events.map((event) => event.line).concat(other);
+      if (!lines.length) return ready;
+      if (other.length || events.some((event) => !event.defer)) {
+        if (held.length || events.some((event) => event.defer)) flush(lines);
+        else ready.push(...lines);
+      } else {
+        if (!held.length) deadline = now + SETTLEMENT_WINDOW_MS;
+        held.push(...lines);
+      }
+      return ready;
+    },
+  };
 }
 
 // The CLI and pi both watch the same inputs, including atomic replacements of tries.jsonl.
@@ -113,16 +145,17 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
   let prev = new Map<string, JobRow>();
   let first = true, stopped = false;
   let timer: ReturnType<typeof setTimeout>;
+  const notices = settlementNotices();
   const inputs = watchInputs(home, () => schedule(DEBOUNCE_MS), false);
   function schedule(ms: number) {
     if (stopped) return;
     clearTimeout(timer);
-    timer = setTimeout(scan, ms).unref();
+    timer = setTimeout(scan, Math.min(ms, notices.delay)).unref();
   }
   function scan() {
     inputs.attach();
     const rows = readThinJobRows(home, { pane });
-    const lines = [...actionable(home, prev, rows, first), ...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)))];
+    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)))]);
     first = false;
     prev = new Map(rows.map((row) => [row.job, row]));
     schedule(DEFAULT_RESCAN_MS);
@@ -173,12 +206,13 @@ export async function watchCommand(
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
   let idleSince: number | null = null;
+  const notices = settlementNotices();
   const inputs = watchInputs(home, () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;
     if (wakeWait === undefined) return;
     if (timer !== undefined) clearTimeout(timer);
-    timer = setTimeout(fire, DEBOUNCE_MS);
+    timer = setTimeout(fire, Math.min(DEBOUNCE_MS, notices.delay));
   });
 
   let stopped = Boolean(options.signal?.aborted);
@@ -217,7 +251,7 @@ export async function watchCommand(
       if (stopped) return resolve();
       wakeWait = resolve;
       inputs.attach();
-      timer = setTimeout(fire, dirty ? DEBOUNCE_MS : rescanMs);
+      timer = setTimeout(fire, Math.min(dirty ? DEBOUNCE_MS : rescanMs, notices.delay));
     });
 
   const pidFile = !all && callerPane ? join(home, 'watchers', `${callerPane}.pid`) : null;
@@ -245,7 +279,7 @@ export async function watchCommand(
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)))];
       if (queue) {
-        const pending = tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions) ||
+        const pending = notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -253,8 +287,10 @@ export async function watchCommand(
           if (Date.now() - idleSince >= queueIdleMs) break;
         }
       }
-      const lines = first ? actionable(home, prev, rows, true) : verbose ? jobChanges(prev, rows) : actionable(home, prev, rows);
-      lines.push(...tryLines);
+      const events = first || !verbose ? actionable(home, prev, rows, first) : [];
+      const lines = verbose
+        ? (first ? events.map((event) => event.line) : jobChanges(prev, rows)).concat(tryLines)
+        : notices.collect(events, tryLines);
       first = false;
       prev = new Map(rows.map((row) => [row.job, row]));
       for (const line of lines) {
