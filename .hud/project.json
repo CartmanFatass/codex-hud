@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "roles": [
+    "flow",
+    "frontend-imp",
+    "general",
+    "imp",
+    "oracle",
+    "pro",
+    "reviewer",
+    "sonic"
+  ],
+  "links": [],
+  "role_files": [],
+  "agents": [],
+  "convention": false
+}
