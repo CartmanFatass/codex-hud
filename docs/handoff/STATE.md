@@ -24,6 +24,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
+- working · MCP-ORCH · MCPORCH-08 · settlement notices within 3 s coalesce into one; questions immediate (mcp-orch/08)
 - working · — · WORKER-MCP · worker protocol in the MCP: hud_report, hud_ask, hud_sonic, hud_progress; role texts lose protocol paths, say when to use sonic (spec 57f3754f; routing a06d8c92)
 - try · — · HUD-TICKETS · to-tickets becomes the hud_tickets MCP tool (method, add, update, sync); skill links removed on ./install (48c9589d, 19d3fbd1)
 - accepted · M3 · BAR-UNIFY · one-line bars on all three clients (d8945e22, 6f641d82)
