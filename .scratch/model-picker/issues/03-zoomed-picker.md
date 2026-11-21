@@ -1,6 +1,6 @@
 # 03: Zoomed picker
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** 02
 
 **What to build:** Opening the picker zooms the panel's own herdr pane (`herdr pane zoom --on` on the panel pane) and

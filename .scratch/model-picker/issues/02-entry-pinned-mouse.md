@@ -1,6 +1,6 @@
 # 02: Visible entry, pinned rows, folds and mouse
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** 01, control-tab/04
 
 **What to build:** Every place row in the Control role chain shows a clickable model field (`[model ▾]`, `[default ▾]`

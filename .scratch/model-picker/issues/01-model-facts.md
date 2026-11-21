@@ -1,6 +1,6 @@
 # 01: Model facts and picker keys
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** none
 
 **What to build:** Keep `pi --list-models`'s context, max-out, thinking and images per model in the existing discovery

@@ -1,6 +1,6 @@
 # 01: To-try rows read as briefs, counts agree, number keys leave the tabs, direct answers, no divider drag
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** none
 
 **What to build:** `docs/spec.md` §2.2 (to-try sentence and micro-actions sentence, both changed by the owner on

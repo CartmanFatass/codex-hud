@@ -1,6 +1,6 @@
 # 02: The Inbox layout
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** 01
 
 **What to build:** `.scratch/project-layouts/spec.md` (the Inbox column, the consistency rules); design

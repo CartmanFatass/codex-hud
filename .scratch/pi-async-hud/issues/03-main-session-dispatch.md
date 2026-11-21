@@ -1,6 +1,6 @@
 # 03: Verify asynchronous worker dispatch from the pi main session
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** none
 
 **What to demonstrate:** A pi main session dispatches an available HUD role, receives the job handle after launch (not after the report), and continues independent work. The role is data: sonic is an example, not a dedicated worker API. Reuse `hud_create`, native watch, `hud_respond` and `hud_read`; do not expand nested-worker permissions.

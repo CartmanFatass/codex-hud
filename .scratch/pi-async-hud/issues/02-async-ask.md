@@ -1,6 +1,6 @@
 # 02: Ask the orchestrator without occupying the worker
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** none
 
 **What to build:** A pi worker on the HUD role path can post a question and receive its ID without waiting for the decision. Keep the existing synchronous path available for genuine dependencies. Do not change the separate managed protocol or CLI workers.

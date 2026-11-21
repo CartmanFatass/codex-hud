@@ -11,11 +11,12 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Next
 
-- MCP-ORCH (`.scratch/mcp-orch/`, owner 2026-11-21: every recommendation of the oracle proposal accepted): after WORKER-MCP lands, 01 launch facts → 06 checks; 02 keys and repair, 03 standing brief and convention trim, 04 leases, 05 project scope and restart recovery, 07 MCP tasks for Claude (verify first); 08 coalesced notices is independent and may run beside WORKER-MCP. Not now: chaining, resident server, project notes.
-- EXP (`.scratch/exp/`, owner 2026-11-20): experimental top-level tab behind Settings → Panel → Experiments; 01 tab + settings, 02 Codex native status line, 03 pi subscription proxy (refresh while used, no timer) ← 01, 04 oapi grant ledger (JSONL) ← 01, 05 Anthropic ledger ← 04. 01 and 02 landed (to try); all five landed; owner try (real accounts) is the EXP-05 joint check of the plan.
-- MODEL-PICKER (`.scratch/model-picker/`, owner 2026-11-20: sample settled with the recommended answers): 01 model facts + keys → 02 visible entry, pinned rows, folds, mouse (← control-tab/04) → 03 zoomed picker; CONTROL-TAB-05 waits on 03.
-- CONTROL-TAB (owner 2026-11-20): Control plane becomes its own main tab; harness on/off at CLI and pi-provider level (off = skipped like exhausted, files untouched); full pi model list for providers that are on; per-role presets created, reordered and switched from the panel. Sample settled 2026-11-20 as drawn; tickets .scratch/control-tab/ 01 tab → 02 harness switches, 03 pi picker, 04 role-row presets → 05 chain editing.
-- UX-PASS (owner 2026-11-20, .scratch/ux-pass/): all 8 decisions settled as recommended, S5 too; 11 tickets, up to 3 imps in parallel, imp on Sol (not fast). Lanes: 01 footer-quota → (free); 02 quick-model → 03 → 04 → 05; 06 footer-rule → 07 → 08 → 11, 06 → 09, 06 → 10; then M5 (owner: may proceed). M5 candidates (docs/spec.md §5: retention periods, tail-first transcript read, Advanced settings).
+- MCP-ORCH (`.scratch/mcp-orch/`): every ticket landed; milestone review fixes integrated (MCPORCH-FIX). Owner tries it,
+  first a live Claude Code task (ticket 07): after `/mcp`, dispatch from Claude Code and see the session wake at the
+  report without `hud watch`. If task mode works, a small slice delivers non-job events (try accepted/flagged) to task
+  clients with the next tool reply.
+- RESTART-RECOVERY (owner 2026-11-21): resumed workers recognised by herdr `agent_session` + `HUD_JOB_DIR`; CLI effort
+  table gaps; legacy `tmp/tasks` admitted newest first.
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
 ## Slices
@@ -24,6 +25,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
+- working · MCP-ORCH · RESTART-RECOVERY · workers herdr resumed after a restart are kept (agent_session + HUD_JOB_DIR proof); CLI effort gaps; newest legacy task dirs first (mcp-orch/05)
 - working · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions
 - try · MCP-ORCH · MCPORCH-07b · Claude Code main sessions get one MCP task per worker turn (2026-07-28 tasks extension, verified on 2.1.330): woken at report, question or failure without hud watch; /tasks cancel stops the worker (69da49a1)
 - try · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (6f1bef38)

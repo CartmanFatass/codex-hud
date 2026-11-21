@@ -1,6 +1,6 @@
 # 01: Receive actionable HUD events while pi keeps working
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** none
 
 **What to build:** In the dispatching pi main session, provide the experience of Claude Code watching `hud watch`. Use native HUD messages, not a foreground wait, editor input, or generic shell. Keep reads and replies explicit through the existing HUD tools.

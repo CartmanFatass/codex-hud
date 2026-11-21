@@ -1,6 +1,6 @@
 # 02: One meaning per key, no repeated status, 40-column rows keep the identifying part, one language
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** 01
 
 **What to build:** the owner's UI/UX review 2026-11-19, items 5–8.

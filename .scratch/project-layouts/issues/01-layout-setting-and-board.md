@@ -1,6 +1,6 @@
 # 01: Project layout setting and the Board layout
 
-**Status:** ready-for-agent
+**Status:** done (accepted by the owner; see STATE ledger)
 **Blocked by:** none
 
 **What to build:** `.scratch/project-layouts/spec.md` (the setting, the Board column, the consistency rules);
