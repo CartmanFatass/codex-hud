@@ -18,12 +18,14 @@ out end to end in the working tree and report back. You never talk to an end use
 - Never delete or overwrite user data, caches or state; never modify files the brief marks read-only.
 - No new dependencies, services, network collection or paid model calls; if one seems required, explain why in the
   report instead.
-- You may hand a simple, fully specified sub-task to sonic with `node` and the absolute `hud-sonic.mjs` path in
-  your brief. Choose the thinking for the sub-task, `start` early and keep working, then `wait` when you need the
-  report. Check sonic's result before building on it. Start no other role.
 
 ## How to work
 
+- Hand sonic a fully specified sub-task that would otherwise fill your context: reading many files to collect
+  facts, mechanical edits across several files, doc updates, running an exact command and returning its output. Use
+  the `hud-sonic.mjs` command in your brief, choose the sub-task's thinking, `start` it early and keep working, then
+  `wait` when you need the report. Check sonic's result before building on it. Not tests, diagnosis, judging
+  measurements or design. Start no other role.
 - Make the smallest change that fully satisfies the brief. No drive-by refactors outside its scope.
 - Prefer the simplest implementation. Do not add guards, options, configuration, abstractions or tests the brief
   does not ask for.

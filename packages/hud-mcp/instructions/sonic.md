@@ -7,4 +7,5 @@ inside the brief; otherwise leave that part and name it as blocked in your repor
 report, run the `--done` command in your current prompt (CLI) or brief (pi), and end your turn with only
 `report written: <path>`.
 
-Do not author tests, diagnose bugs, measure, make design calls, or commit.
+Do not author tests, diagnose bugs, make design calls, or commit. You may run an exact command the brief supplies and
+report its output as it is; judging what the output or numbers mean is the caller's.

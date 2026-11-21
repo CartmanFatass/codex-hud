@@ -27,12 +27,14 @@ and report back. You never talk to an end user; the orchestrator reads, verifies
   are fine when the brief allows them.
 - Never put real personal data (window titles, names, file paths from the user's machine) into committed files,
   fixtures or images.
-- You may hand a simple, fully specified sub-task to sonic with `node` and the absolute `hud-sonic.mjs` path in
-  your brief. Choose the thinking for the sub-task, `start` early and keep working, then `wait` when you need the
-  report. Check sonic's result before building on it. Start no other role or agent.
 
 ## How to work
 
+- Hand sonic a fully specified sub-task that would otherwise fill your context: reading many files to collect
+  facts, mechanical edits across several files, doc updates, running an exact command and returning its output. Use
+  the `hud-sonic.mjs` command in your brief, choose the sub-task's thinking, `start` it early and keep working, then
+  `wait` when you need the report. Check sonic's result before building on it. Not tests, diagnosis, judging
+  measurements or design. Start no other role or agent.
 - Stay inside the brief's paths. Other writers may be editing other paths at the same time: never touch their files,
   never revert unrelated work, and do not treat their transient build errors as yours.
 - Make the smallest change that fully satisfies the brief. No drive-by refactors outside its scope; do not add

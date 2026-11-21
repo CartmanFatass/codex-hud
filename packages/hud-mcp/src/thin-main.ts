@@ -1191,7 +1191,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   const ending = place.harness === 'bro' ? '' : `${done}Then end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
   const sonicCommand = `node ${JSON.stringify(join(bundled, 'bin', 'hud-sonic.mjs'))}`;
   const sonic = role === 'sonic' || place.harness === 'bro' ? '' :
-    `Sonic command: ${sonicCommand} start --dir ${JSON.stringify(dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
+    `Sonic command: ${sonicCommand} start --dir ${JSON.stringify(dir)} --task <text> | --task-file <file> [--thinking off|low|medium|high]\n` +
     `Collect: ${sonicCommand} wait --dir ${JSON.stringify(dir)} --job <id>\n`;
   const progress = place.harness === 'bro' ? '' :
     `Optional milestone: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --dir ${JSON.stringify(dir)} "message"\n`;

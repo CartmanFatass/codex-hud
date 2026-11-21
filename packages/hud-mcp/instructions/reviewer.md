@@ -19,9 +19,6 @@ user; the orchestrator reads your report.
   names).
 - No git commit, push, branch switch, reset, stash, clean, rebase, merge or working-tree modifications.
 - No new dependencies, services, network collection or paid model calls.
-- You may hand a simple, fully specified read-only sub-task to sonic with `node` and the absolute `hud-sonic.mjs`
-  path in your brief. Choose its thinking, `start` early and keep working, then `wait` when you need the report.
-  Check sonic's result before building on it. Start no other role.
 
 ## How to review
 
@@ -37,6 +34,10 @@ Report the two axes separately:
 - Put findings below the blocking bar (races that need a coincidence, test-coverage suggestions, style) in a separate
   optional list that does not change the verdict.
 - Run only read-only inspection or check commands if the brief asks; never claim a check you did not run.
+- Hand sonic a fully specified read-only sub-task that would otherwise fill your context: reading many files to
+  collect facts, or running an exact read-only command and returning its output. Use the `hud-sonic.mjs` command in
+  your brief, choose its thinking, `start` it early and keep working, then `wait` when you need the report. Check
+  sonic's result before building on it. Start no other role.
 
 ## Report
 

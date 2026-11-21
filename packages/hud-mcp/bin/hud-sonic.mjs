@@ -20,7 +20,7 @@ async function main() {
   const string = { type: 'string' };
   const { values } = parseArgs({ args, options: {
     dir: string,
-    ...(command === 'start' ? { 'task-file': string, thinking: string } : { job: string, timeout: string }),
+    ...(command === 'start' ? { task: string, 'task-file': string, thinking: string } : { job: string, timeout: string }),
   } });
   if (!values.dir) throw new Error('--dir must name your job directory under HUD_HOME');
   const dir = fs.realpathSync(values.dir);
@@ -29,11 +29,14 @@ async function main() {
   const parent = readJob(dir);
   if (command === 'start') {
     if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
-    if (!values['task-file']) throw new Error('--task-file is required');
+    if ((values.task === undefined) === (values['task-file'] === undefined)) {
+      throw new Error('give the sub-task as --task <text> or --task-file <file>');
+    }
     if (values.thinking !== undefined && !['off', 'low', 'medium', 'high'].includes(values.thinking)) {
       throw new Error('--thinking must be off, low, medium or high');
     }
-    const task = fs.readFileSync(values['task-file'], 'utf8');
+    const task = values.task ?? fs.readFileSync(values['task-file'], 'utf8');
+    if (!task.trim()) throw new Error('the sub-task is empty');
     const { dispatchJob } = await import('../dist/packages/hud-mcp/src/thin-main.js');
     const result = await dispatchJob({
       role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd: parent.cwd, task, thinking: values.thinking,

@@ -38,7 +38,7 @@ The shipped defaults; `hud_roster` lists what is actually defined (files in `$HU
 
 - `imp` implements a defined change against a brief and completion criteria (shipped places: `pi` implementer, then `pi` Grok 4.7; the owner may add fallbacks or switch it in the Control plane, so trust `hud_roster`'s `runs_on`).
 - `reviewer` independently assesses a specified change and reports findings (shipped places: `pi` reviewer, then `agy` Hydrogen high; same as `imp` for switching). You decide whether to accept the change or request repairs.
-- `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design (`pi` only; no CLI instructions file).
+- `sonic` does small, fully specified chores: lookups across several files, small patches and doc edits, running an exact command and returning its output; never test authoring, bug diagnosis, judging measurements or design (`pi` only; no CLI instructions file).
 - `oracle` is the strongest-model seat (`cli` `claude` `fable` high, fallback `pi` `architect`): read-only, high-level judgement of any kind the brief sets (design, root cause, verifying a report, a review verdict, synthesis). When a job needs a method skill, name its `SKILL.md` path in the brief. It carries both former architect/oracle setups as the `architect` and `fable` presets; `hud_create` accepts `architect` as another name for `oracle` (unless a role file defines its own `architect`).
 - `hud_roster({detail:true})` includes merged `presets` (names and runs), current `preset`, fallbacks, sources and accepted options. For a requested one-job override, use a name from `presets` or select `on`, never both. `hud_peek({job, detail:true})` inspects launch diagnostics without read-close; `hud_read({job, detail:true})` includes them when collecting.
 - `pro` asks a strong web model (ordered `bro` places: ChatGPT Pro via `jev-ask`, Gemini web via `jev-ask`, AI Studio Argon via `jev-aistudio`). For research, the brief asks for primary sources (official docs, source code, specs) with each claim cited. Pass paths, not bodies: use `hud_create`'s `context_files` for local files and `from_jobs` for report IDs; HUD inlines bounded content for browser roles and lists references for local workers. For a code job that should not share the checkout, pass `isolation: "worktree"`; `hud_read(job)` then shows `git_summary`, and a clean or merged checkout is removed after the job closes.
@@ -54,7 +54,7 @@ Watch question lines carry the first 2 KiB's question, options, default and full
 
 ### Helpers
 
-An implementer may use pi-roles' helpers when the brief asks; they open in a pane beside it only when called. Do not duplicate helper work; read the report. Sonic handles only fully specified chores, never tests, diagnosis, measurement or design. The main session owns every next step.
+Any worker may start sonic on its own for a fully specified sub-task; the brief need not ask. Do not duplicate that work; read the report. The main session owns every next step.
 
 ### Repairs
 

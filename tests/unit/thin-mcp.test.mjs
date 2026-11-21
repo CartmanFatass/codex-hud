@@ -849,6 +849,14 @@ test('hud-sonic start returns two independent child jobs; wait follows STATUS, s
   const sonicParent = await runSonic(f, 'start', dir(first), '--task-file', task);
   assert.equal(sonicParent.status, 1);
   assert.match(sonicParent.stderr, /a sonic worker cannot start sonic/);
+  const inline = await runSonic(f, 'start', parent.task_dir, '--task', 'Synthetic inline sub-task.');
+  assert.equal(inline.status, 0, inline.stderr);
+  assert.match(fs.readFileSync(join(dir(inline.stdout.trim()), 'brief.md'), 'utf8'), /^Synthetic inline sub-task\./);
+  for (const opts of [[], ['--task', 'Synthetic.', '--task-file', task], ['--task', ' ']]) {
+    const bad = await runSonic(f, 'start', parent.task_dir, ...opts);
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /--task <text> or --task-file <file>|the sub-task is empty/);
+  }
   const foreignDir = join(f.root, first);
   fs.mkdirSync(foreignDir);
   fs.copyFileSync(join(dir(first), 'job.json'), join(foreignDir, 'job.json'));
@@ -2194,7 +2202,7 @@ esac
   assert.equal(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\n` +
-    `Sonic command: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} start --dir ${JSON.stringify(job.task_dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
+    `Sonic command: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} start --dir ${JSON.stringify(job.task_dir)} --task <text> | --task-file <file> [--thinking off|low|medium|high]\n` +
     `Collect: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} wait --dir ${JSON.stringify(job.task_dir)} --job <id>\n` +
     `Optional milestone: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-progress.mjs'))} --dir ${JSON.stringify(job.task_dir)} "message"\n` +
     `After writing the report, run: node ${JSON.stringify(progressCommand)} --done --dir ${JSON.stringify(job.task_dir)}\n` +

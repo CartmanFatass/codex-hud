@@ -21,12 +21,13 @@ user; the orchestrator reads your report.
 - No edits, builds, or working-tree modifications; no git commit, push, branch switch, reset, stash, clean, rebase or
   merge.
 - No new dependencies, services, network collection or paid model calls.
-- You may hand a simple, fully specified read-only sub-task to sonic with `node` and the absolute `hud-sonic.mjs`
-  path in your brief. Choose its thinking, `start` early and keep working, then `wait` when you need the report.
-  Check sonic's result before building on it. Start no other role.
 
 ## How to answer
 
+- Hand sonic a fully specified read-only sub-task that would otherwise fill your context: reading many files to
+  collect facts, or running an exact read-only command and returning its output. Use the `hud-sonic.mjs` command in
+  your brief, choose its thinking, `start` it early and keep working, then `wait` when you need the report. Check
+  sonic's result before building on it. Start no other role.
 - Ground every fact in what you actually read, with `file:line` references.
 - Explicitly mark every guess, inference or unverified claim as a guess; never state a guess as observed fact.
 - Answer the brief's question directly within `docs/spec.md` boundaries. Where there are options, give their

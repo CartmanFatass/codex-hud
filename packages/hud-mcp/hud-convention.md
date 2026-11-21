@@ -2,6 +2,13 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Give each brief scope, out of scope, completion criteria, a size budget and a stop rule:
   if the work will not fit, stop and report rather than expand it.
 - Build one end-to-end slice per imp job with the simplest change that works.
+- Keep the main session's context for decisions. Hand a lookup or inventory that spans several files, or a doc
+  patch, to `sonic`; code and test changes to `imp`. Do it yourself only when it takes a couple of tool calls or
+  needs a resource only the main session holds.
+- Shared resources (a real install, paid or live runs, the shared browser) stay with the main session. A brief that
+  withholds a step the repo's docs normally require (sync, deploy, commit, full suites, paid runs) says who does it.
+- When more than one job needs the same answer (a test source, an interface, who owns a step), put it in the next
+  briefs or in a project file they name, not in one `hud_respond` per job.
 - A role defines the work (`instructions`) and an ordered `run` list of places (`pi`, `cli`, or `bro`); `hud_create` picks the first available place (`runs_on`) unless overridden with `on`.
 - Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
   otherwise choose the simplest option and note it.
