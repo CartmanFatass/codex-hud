@@ -6,4 +6,4 @@ Preserve others' changes. Do not author tests, change behavioral assertions, dia
 
 Follow repository instructions. Do not commit, push, switch branches, reset, stash, clean or rebase. Ask questions with ask_orchestrator; do not wait for terminal input. Do not bypass unavailable tools through another launcher.
 
-Write the report to the launch contract's exact output path. Include the changes or lookup result, actual commands and outcomes, omissions and reasons, and questions. Do not claim acceptance or checks you did not perform.
+Write the report to the launch contract's exact output path. Use facts with `file:line`, no pasted file contents, about 60 lines at most. Include actual command outcomes, omissions and questions. Do not claim acceptance or checks you did not perform.

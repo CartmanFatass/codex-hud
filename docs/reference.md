@@ -184,8 +184,8 @@ report or question bodies, mark anything seen or close workers; use `hud_read` w
 
 `hud_peek({ job })` returns compact `status` and progress without fetching the pane. Request `lines` (1–120) to
 fetch the pane tail as `pane_lines`; if unavailable, that field is `null` with a `pane_reason`. `detail: true` adds
-launch `diagnostics`. Peeking does not read the report, mark the job seen or close the worker. Pi and CLI workers
-can use the optional `hud-progress.mjs` command in their briefs to log milestones (one line, up to 240 characters;
+launch `diagnostics`. Peeking does not read the report, mark the job seen or close the worker. Workers
+can use `hud_progress` to log milestones (one line, up to 240 characters;
 newest 50 stored). Peek and single-job read show the newest 10 as `progress` and the last as `latest_progress`;
 ordinary reads omit empty progress, and list/wait rows omit all progress. Milestones do not emit watch events.
 
@@ -197,12 +197,14 @@ question or timeout. Every returned report body stamps `read_at` (including duri
 acceptance. A settled pi or CLI worker closes when its current turn's report is read (`closed after report read`);
 reading an earlier turn's report after a continuation does not close the worker. An unread report keeps the usual
 idle deadline. Reading a failure/block separately marks that attention as seen.
-Workers write the report file, run the `hud-progress --done` command named in their brief or prompt,
-then finish with just `report written: <path>`, not a second copy in chat.
+Workers finish with `hud_report`, which publishes the report without repeating it in chat. Claude and Codex
+use their HUD MCP and pass the token from the prompt they are answering; pi has native tools and needs no token.
+Antigravity and Grok Build use the fallback commands in their briefs. Workers use `hud_sonic` to start sonic
+sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
 `hud_send` queues a message for a working pi or CLI job, or continues an eligible role during idle grace while
 its report is still unread. Use a new job for a repair after reading a settled report; `message_key` deduplicates sends. CLI
-workers ask through the same `QUESTION` line and `hud_respond` flow (`hud-ask`,
-20 minutes, then the default). A blocked CLI marks the job as needing the owner;
+workers ask with `hud_ask` through the `QUESTION` line and `hud_respond` flow. The synchronous question waits
+up to 20 minutes; pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner;
 the session learns it through `changes`, Claude's `hud watch`, Codex's automatic queue or pi's native HUD notices. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer
 an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line,
@@ -224,7 +226,7 @@ working directory; pass the project directory to target another project.
 - **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
 
 The default status is `ready-for-agent`; other allowed labels are `needs-triage`, `needs-info`, `ready-for-human`,
-and `wontfix`. Workers can only read the guide. For GitHub-mirrored `.scratch/`, `add` and `update` refuse:
+and `wontfix`. This is a main-session tool. For GitHub-mirrored `.scratch/`, `add` and `update` refuse:
 edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
@@ -234,7 +236,7 @@ worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected
 `closed` when a new report is on disk). Each dispatch and `hud_send` starts a turn (`turn.json`). With `advisory`
 trust, on a turn that never issued a receipt, a new report settles the turn when herdr is not `working` and the report
 has been stable for 10 s, provided there is no live in-turn child. Such children also defer quiet decisions and
-automatic close. `hud-progress --done` binds the CLI report's signature to the turn in the worker's prompt.
+automatic close. `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
 A continuation invalidates the old receipt; rewriting a declared report requires a fresh receipt for that turn.
 If the turn stays quiet for the role's grace period without a fresh matching receipt, it goes to
 `waiting_orchestrator` without settling or calling the Decision API. The main session can use `hud_send`

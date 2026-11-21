@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
@@ -82,7 +83,13 @@ import * as fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { basename, join } from 'node:path';
 const command = basename(process.argv[1]), args = process.argv.slice(2);
-fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\\n');
+if (command === 'pi') {
+  const caps = join(process.env.HOME, 'pi-model-caps.json');
+  if (!fs.existsSync(caps)) process.exit(1);
+  const model = JSON.parse(fs.readFileSync(caps, 'utf8'))[args[args.indexOf('--model') + 1]];
+  if (!model) process.exit(1);
+  process.stdin.once('data', () => console.log(JSON.stringify({ id: 'hud-thinking', data: { model } })));
+} else fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\\n');
 function waitToReply() {
   const end = Date.now() + 5000;
   while (Date.now() < end && !fs.existsSync(join(process.env.HOME, 'release-prompt-result'))) {
@@ -103,7 +110,8 @@ if (command === 'pi-dispatch') {
     console.log(JSON.stringify({ error: { code: 'agent_not_ready', message: 'agent synthetic is blocked during startup and is not ready for prompts' } }));
     process.exit(1);
   }
-  if (fs.existsSync(join(process.env.HOME, 'fail-start'))) { console.error('synthetic start failed'); process.exit(1); }
+  const failure = join(process.env.HOME, 'fail-start');
+  if (fs.existsSync(failure)) { console.error(fs.readFileSync(failure, 'utf8') || 'synthetic start failed'); process.exit(1); }
   const at = args.indexOf('--task-dir');
   if (at >= 0) {
     const dir = args[at + 1];
@@ -365,7 +373,7 @@ if (command === 'pi-dispatch') {
   console.log('Synthetic reap complete');
 }
 `;
-  for (const command of ['pi-role', 'pi-dispatch', 'pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex']) {
+  for (const command of ['pi', 'pi-role', 'pi-dispatch', 'pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex']) {
     fs.writeFileSync(join(bin, command), fake, { mode: 0o700 });
   }
   fs.mkdirSync(join(root, 'roles'));
@@ -456,20 +464,11 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
   const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
   const child = spawn(process.execPath, [...preload, entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
-  let next = 0,
-    stderr = '';
+  let stderr = '';
   child.stderr.setEncoding('utf8').on('data', (data) => {
     stderr += data;
   });
-  const pending = new Map();
-  createInterface({ input: child.stdout }).on('line', (line) => {
-    const response = JSON.parse(line);
-    const callback = pending.get(response.id);
-    if (callback) {
-      pending.delete(response.id);
-      callback(response);
-    }
-  });
+  const rpc = rpcClient(child);
   t.after(async () => {
     const panePid = join(env.HUD_HOME, 'watchers/w4E:p1.pid');
     try {
@@ -497,13 +496,6 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
     fs.rmSync(root, { recursive: true, force: true });
     assert.equal(stderr, '');
   });
-  function rpc(method, params = {}) {
-    const id = ++next;
-    return new Promise((done) => {
-      pending.set(id, done);
-      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-    });
-  }
   let cliSocket, piStatus = () => 'idle';
   const socketRequests = [];
   const subscribers = new Set();
@@ -633,6 +625,46 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
         : [],
   };
 }
+
+function rpcClient(child) {
+  let next = 0;
+  const pending = new Map();
+  createInterface({ input: child.stdout }).on('line', (line) => {
+    const response = JSON.parse(line);
+    const callback = pending.get(response.id);
+    if (callback) {
+      pending.delete(response.id);
+      callback(response);
+    }
+  });
+  return (method, params = {}) => new Promise((done) => {
+    const id = ++next;
+    pending.set(id, done);
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+  });
+}
+
+function workerClient(t, f, dir) {
+  const child = spawn(process.execPath, [entry], {
+    cwd: f.root, env: { ...f.env, HUD_JOB_DIR: dir, HUD_ASK_TIMEOUT: '30' }, stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  const exited = once(child, 'exit');
+  t.after(async () => {
+    child.stdin.end();
+    assert.deepEqual(await exited, [0, null]);
+  });
+  const rpc = rpcClient(child);
+  const call = async (name, args = {}) => {
+    const { result, error } = await rpc('tools/call', { name, arguments: args });
+    assert.equal(error, undefined);
+    return result;
+  };
+  return Object.assign(call, { rpc });
+}
+const resultValue = (result) => {
+  assert.equal(result.isError, undefined, JSON.stringify(result));
+  return JSON.parse(result.content[0].text);
+};
 
 async function until(check, timeout = 4000) {
   const end = Date.now() + timeout;
@@ -794,16 +826,13 @@ function publishSonic(dir, status) {
   fs.renameSync(tmp, join(dir, 'STATUS.json'));
 }
 
-test('hud-sonic start returns two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 10000 }, async (t) => {
+test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', request_key: 'sonic-parent', task: 'Synthetic parent.' });
-  const start = (...opts) => runSonic(f, 'start', parent.task_dir, '--task-file', task, ...opts);
-  const results = await Promise.all([start('--thinking', 'high'), start()]);
-  const [first, second] = results.map(({ status, stdout, stderr }) => {
-    assert.equal(status, 0, stderr);
-    return stdout.trim();
-  });
+  const call = workerClient(t, f, parent.task_dir);
+  const start = async (thinking) => resultValue(await call('hud_sonic', { task: fs.readFileSync(task, 'utf8'), thinking })).job;
+  const [first, second] = await Promise.all([start('high'), start()]);
   assert.notEqual(first, second);
   const dir = (id) => join(f.env.HUD_HOME, 'jobs', id);
   for (const [id, thinking] of [[first, 'high'], [second, 'low']]) {
@@ -824,23 +853,23 @@ test('hud-sonic start returns two independent child jobs; wait follows STATUS, s
   const stillWorking = { status: 3, stdout: 'still working: run wait again\n', stderr: '' };
   assert.deepEqual(await wait(first), stillWorking, 'a report file alone does not settle a child');
   assert.deepEqual(await wait(second, '0.2'), stillWorking);
+  assert.deepEqual(resultValue(await call('hud_sonic', { timeout_s: 0 })), { reports: [], working: [first, second].sort(), failed: [] });
   const qa = join(dir(first), 'qa');
   fs.mkdirSync(qa, { recursive: true });
   fs.writeFileSync(join(qa, 'q1.md'), 'Synthetic child question.');
   const changes = async () => (await f.call('hud_read')).changes ?? [];
   assert.ok((await changes()).some((line) => line.startsWith(first) && line.includes('QUESTION') && !line.includes(' | report')));
-  const waiting = wait(first, '2');
+  const waiting = call('hud_sonic', { timeout_s: 2 });
   fs.writeFileSync(join(qa, 'q1.answer.md'), 'Answer.');
   publishSonic(dir(first), { state: 'closed', output_written: true });
   assert.ok(!(await changes()).some((line) => line.startsWith(first)), 'child settlement stays quiet');
-  assert.deepEqual(await waiting, { status: 0, stdout: `${dir(first)}/report.md\nSynthetic implementation report.`, stderr: '' });
+  publishSonic(dir(second), { state: 'closed', output_written: true });
+  assert.deepEqual(resultValue(await waiting), { working: [], failed: [], reports: [first, second].sort().map((id) => ({
+    id, path: `${dir(id)}/report.md`, body: 'Synthetic implementation report.',
+  })) });
+  assert.deepEqual(resultValue(await call('hud_sonic', { timeout_s: 0 })), { reports: [], working: [], failed: [] });
   assert.equal((await f.call('hud_read')).jobs.find((job) => job.job === first).report_unread, true);
   assert.match((await f.call('hud_read', { job: first, full: true })).report, /Synthetic implementation report/);
-  publishSonic(dir(second), { state: 'failed', exit_reason: 'synthetic child failed' });
-  assert.ok((await changes()).some((line) => line.startsWith(second) && line.endsWith('failed | synthetic child failed')));
-  const failed = await wait(second);
-  assert.equal(failed.status, 1);
-  assert.match(failed.stderr, /synthetic child failed/);
 
   const other = await f.call('hud_create', { role: 'imp', request_key: 'not-the-parent', task: 'Synthetic other job.' });
   const refused = await wait(first, '0', other.task_dir);
@@ -852,6 +881,10 @@ test('hud-sonic start returns two independent child jobs; wait follows STATUS, s
   const inline = await runSonic(f, 'start', parent.task_dir, '--task', 'Synthetic inline sub-task.');
   assert.equal(inline.status, 0, inline.stderr);
   assert.match(fs.readFileSync(join(dir(inline.stdout.trim()), 'brief.md'), 'utf8'), /^Synthetic inline sub-task\./);
+  publishSonic(dir(inline.stdout.trim()), { state: 'failed', exit_reason: 'synthetic child failed' });
+  const failed = await wait(inline.stdout.trim());
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /synthetic child failed/);
   for (const opts of [[], ['--task', 'Synthetic.', '--task-file', task], ['--task', ' ']]) {
     const bad = await runSonic(f, 'start', parent.task_dir, ...opts);
     assert.equal(bad.status, 1);
@@ -863,6 +896,30 @@ test('hud-sonic start returns two independent child jobs; wait follows STATUS, s
   const outside = await runSonic(f, 'start', foreignDir, '--task-file', task);
   assert.equal(outside.status, 1);
   assert.match(outside.stderr, /under HUD_HOME/);
+});
+
+test('launch thinking facts narrow sonic schema and map sonic, script and hud_create to the supported level', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  const task = sonicTask(f);
+  fs.writeFileSync(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
+    'synthetic/sonic': { provider: 'synthetic', id: 'sonic', reasoning: true,
+      thinkingLevelMap: { minimal: null, low: null, medium: null } },
+  }));
+  const parent = await f.call('hud_create', { role: 'imp', request_key: 'cap-parent', task: 'Synthetic parent.' });
+  const call = workerClient(t, f, parent.task_dir);
+  const { tools } = (await call.rpc('tools/list')).result;
+  assert.deepEqual(tools.find(({ name }) => name === 'hud_sonic').inputSchema.properties.thinking.enum, ['off', 'high']);
+  const sonic = resultValue(await call('hud_sonic', { task: 'Synthetic child.', thinking: 'medium' }));
+  assert.equal(sonic.thinking, 'high');
+  const script = await runSonic(f, 'start', parent.task_dir, '--task-file', task, '--thinking', 'medium');
+  assert.equal(script.status, 0, script.stderr);
+  assert.match(script.stderr, /^thinking: high/m);
+  const main = await f.call('hud_create', { role: 'sonic', request_key: 'cap-main', task: 'Synthetic task.', thinking: 'medium' });
+  assert.equal(main.thinking, 'high');
+  for (const id of [sonic.job, script.stdout.trim(), main.job]) {
+    const launch = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${id}-primary`).args;
+    assert.equal(launch[launch.indexOf('--thinking') + 1], 'high');
+  }
 });
 
 test('every bundled role uses the same unanswered-question policy', () => {
@@ -1016,10 +1073,10 @@ function declareDone(f, job, cli = true) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-async function publishPiGrace(job, worker) {
+async function publishPiGrace(job, worker, writeReport = true) {
   const dir = job.task_dir;
   const report = join(dir, 'report.md');
-  fs.writeFileSync(report, 'Synthetic settled pi report.\n');
+  if (writeReport) fs.writeFileSync(report, 'Synthetic settled pi report.\n');
   const now = Date.now();
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({
     version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', output_written: true,
@@ -1250,10 +1307,27 @@ test('read-close: a settled Pi with a fresh report closes and reaps a current-tu
   const f = await fixture(t, true, '', 200);
   const worker = fakeCliWithChild(t, f);
   await f.startCliSocket();
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-new-child', task: 'Synthetic task.' });
   const child = await worker.start();
-  await publishPiGrace(job, worker);
-  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({
+    slot: 'primary', task_dir: job.task_dir, state: 'working', pid: worker.pid, pid_start_time: procStat(worker.pid).start,
+  }));
+  const report = 'Synthetic native Pi tool report.\n';
+  const native = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import hud from ${JSON.stringify(pathToFileURL(resolve('integrations/pi/package/extensions/hud.mjs')).href)};
+    process.argv.push('--hud-worker-tools');
+    const tools = new Map();
+    await hud({ registerTool(tool) { tools.set(tool.name, tool); } });
+    console.log(JSON.stringify(await tools.get('hud_report').execute('report', { text: ${JSON.stringify(report)} })));
+  `], { env: { ...f.env, HUD_JOB_DIR: job.task_dir }, encoding: 'utf8' });
+  assert.equal(native.status, 0, native.stderr);
+  const result = JSON.parse(native.stdout);
+  assert.equal(result.details.path, join(job.task_dir, 'report.md'));
+  assert.equal(result.terminate, true);
+  assert.equal(cliState(job.task_dir).state, 'working', 'publication alone does not declare pi settlement');
+  await publishPiGrace(job, worker, false); // Synthetic pi-roles native turn end.
+  assert.equal((await f.call('hud_read', { job: job.job })).report, report);
   await until(() => readCloseReaped(job));
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
   await until(() => procStat(child) === null);
@@ -1284,14 +1358,14 @@ test('read-close: the CLI receipt survives a shell-counter change and needs no p
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'child-read-cli', 8);
+  writeCliRole(f, 'child-read-cli', 8, true, 'claude');
   const job = await f.call('hud_create', { role: 'child-read-cli', request_key: 'child-read-close', task: 'Synthetic task.' });
   await until(() => cliState(job.task_dir)?.pid === worker.pid);
   const child = await worker.start();
   const report = join(job.task_dir, 'report.md'), pane = join(f.env.HOME, 'pane-read');
   fs.writeFileSync(pane, `⏺ report written: ${report}\n2 shells still running\n`);
-  fs.writeFileSync(report, 'Synthetic report.\n');
-  declareDone(f, job);
+  const call = workerClient(t, f, job.task_dir);
+  assert.deepEqual(resultValue(await call('hud_report', { text: 'Synthetic report.\n', turn: cliToken(job.task_dir) })), { path: report });
   await until(() => cliState(job.task_dir)?.state === 'idle_grace');
   assert.ok(procStat(child));
   fs.writeFileSync(pane, `⏺ report written: ${report}\n1 shell still running\n`);
@@ -1817,9 +1891,10 @@ test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }
   assert.equal((await f.call('hud_read', { job: job.job })).state, 'working');
 });
 
-test('dispatch failure writes a reason for the panel and is reaped', { timeout: 7000 }, async (t) => {
+test('startup failure closes the tab, reports the pi-roles cause instead of the timeout, and is reaped', { timeout: 7000 }, async (t) => {
   const f = await fixture(t);
-  fs.writeFileSync(join(f.env.HOME, 'fail-start'), '');
+  fs.writeFileSync(join(f.env.HOME, 'fail-start'), 'timed out waiting for agent startup');
+  fs.writeFileSync(join(f.env.HOME, 'pane-read'), '[roles] synthetic start failed: unsupported thinking\n');
   const job = await f.call('hud_create', { role: 'imp', request_key: 'failed-launch', task: 'Synthetic task.' });
   assert.equal(job.ok, false);
   assert.equal(job.code, 'dispatch_failed');
@@ -1829,6 +1904,9 @@ test('dispatch failure writes a reason for the panel and is reaped', { timeout: 
   assert.match(status.exit_reason, /synthetic start failed/);
   assert.ok(Number.isFinite(Date.parse(status.ended_at)));
   assert.match(cardText(workerFor(f, job.job)), /synthetic start failed/);
+  assert.deepEqual(f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'close')?.args,
+    ['tab', 'close', 'w4E:t2']);
+  assert.equal(f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt'), false);
   await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
   assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
@@ -2172,11 +2250,10 @@ esac
   assert.deepEqual(await ticketCall({ op: 'sync', cwd: mirror }), { ok: true, output: ['synced 0 features, 0 tickets'] });
 
   const worker = await fixture(t, false, '', undefined, true);
-  const guide = await worker.rpc('tools/call', { name: 'hud_tickets', arguments: {} });
-  assert.equal(guide.result.isError, undefined);
-  assert.match(guide.result.content[0].text, /^# Ticket method[\s\S]+tracer-bullet[\s\S]+<local-ticket-template>/);
-  for (const args of [{ op: 'add', feature, tickets: drafts }, { op: 'update', feature, ticket: 1, tick: [1] }, { op: 'sync' }]) {
-    assert.deepEqual(await worker.call('hud_tickets', args), { ok: false, code: 'worker_cannot_dispatch' });
+  for (const args of [{}, { op: 'add', feature, tickets: drafts }, { op: 'sync' }]) {
+    const rejected = await worker.rpc('tools/call', { name: 'hud_tickets', arguments: args });
+    assert.equal(rejected.result.isError, true);
+    assert.equal(JSON.parse(rejected.result.content[0].text).code, 'worker_cannot_dispatch');
   }
   assert.equal(fs.existsSync(join(worker.root, '.scratch')), false);
   // The shipped imp splits on demand; an owner role file can still ask for the helper pane up front.
@@ -2198,16 +2275,7 @@ esac
   assert.equal(job.task_dir, join(f.env.HUD_HOME, 'jobs', job.job));
   assert.equal(job.agent, `${job.job}-primary`);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).herdr_pane, 'w4E:p1');
-  // Breaks if hud_create stops naming the report path: workers then answer in the pane and the job fails.
-  assert.equal(
-    fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
-    `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\n` +
-    `Sonic command: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} start --dir ${JSON.stringify(job.task_dir)} --task <text> | --task-file <file> [--thinking off|low|medium|high]\n` +
-    `Collect: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} wait --dir ${JSON.stringify(job.task_dir)} --job <id>\n` +
-    `Optional milestone: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-progress.mjs'))} --dir ${JSON.stringify(job.task_dir)} "message"\n` +
-    `After writing the report, run: node ${JSON.stringify(progressCommand)} --done --dir ${JSON.stringify(job.task_dir)}\n` +
-    `Then end your turn with the single line \`report written: ${join(job.task_dir, 'report.md')}\` and do not repeat the report in your final message.\n`
-  );
+  assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), `${args.task}\n\nFinish with \`hud_report\`.\n`);
   assert.deepEqual(f.commands()[0].args, ['pane', 'get', 'w4E:p1']);
   const commands = f.commands().filter((c) => c.args[1] !== 'get');
   assert.deepEqual(
@@ -2244,6 +2312,9 @@ esac
     '--',
     '--tui-mode',
     'regular',
+    '--hud-worker-tools',
+    '-e',
+    resolve('integrations/pi/package/extensions/hud.mjs'),
   ]);
   assert.equal(commands.find((c) => c.args[1] === 'start').args.includes('--session-dir'), false);
   const session = Object.fromEntries(
@@ -2375,7 +2446,7 @@ test('a slow CLI launch blocks only retries with the same request key, not other
   assert.equal(grokStarts().length, 1);
 });
 
-test('marked worker MCP refuses all dispatch tools but still answers roster and read', async (t) => {
+test('worker MCP lists only the four worker tools and refuses main-session calls', async (t) => {
   const f = await fixture(t, true, '', undefined, true);
   const dir = f.env.HUD_JOB_DIR;
   const job = basename(dir);
@@ -2396,23 +2467,21 @@ test('marked worker MCP refuses all dispatch tools but still answers roster and 
   fs.writeFileSync(join(dir, 'SESSION.txt'), `PRIMARY=${job}-primary\n`);
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
-  assert.ok((await f.call('hud_roster')).roles.some((role) => role.role === 'imp'));
-  const read = await f.call('hud_read', { job });
-  assert.equal(read.state, 'working');
-  assert.deepEqual(read.questions, [{ id: 'q1', text: 'Synthetic question.' }]);
-  await publishPiGrace({ task_dir: dir });
-  assert.match((await f.call('hud_read', { job })).report, /^Synthetic settled pi report/);
-  assert.equal((await f.call('hud_read')).jobs[0].report_unread, true);
-  assert.deepEqual(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')), receipt);
-
-  const refused = { ok: false, code: 'worker_cannot_dispatch' };
-  assert.deepEqual(await f.call('hud_send', { job, message_key: 'worker-send', text: 'Synthetic message.' }), refused);
-  assert.deepEqual(await f.call('hud_respond', { job, request_id: 'q1', answer: 'Synthetic answer.' }), refused);
-  assert.deepEqual(await f.call('hud_close', { job }), refused);
-  // A quota failure in a session row must not be recorded as a side effect of the refusal.
+  const listed = await f.rpc('tools/list');
+  assert.deepEqual(listed.result.tools.map(({ name }) => name), ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress']);
+  const call = (name, args) => f.rpc('tools/call', { name, arguments: args });
+  assert.equal(resultValue((await call('hud_progress', { message: 'Synthetic milestone' })).result).ok, true);
+  assert.equal(JSON.parse(fs.readFileSync(join(dir, 'progress.jsonl'), 'utf8')).text, 'Synthetic milestone');
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'quota exceeded' }));
-  assert.deepEqual(await f.call('hud_create', args), refused);
-  assert.equal((await f.call('hud_read', { job })).exit_reason, 'quota exceeded');
+  for (const [name, payload] of [
+    ['hud_roster', {}], ['hud_read', { job }], ['hud_create', args], ['hud_close', { job }],
+    ['hud_send', { job, message_key: 'worker-send', text: 'Synthetic message.' }],
+    ['hud_respond', { job, request_id: 'q1', answer: 'Synthetic answer.' }],
+  ]) {
+    const { result } = await call(name, payload);
+    assert.equal(result.isError, true);
+    assert.equal(JSON.parse(result.content[0].text).code, 'worker_cannot_dispatch');
+  }
   assert.deepEqual(f.commands(), []);
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job]);
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
@@ -2538,20 +2607,24 @@ test('hud-progress validates the job directory, normalizes text, and retains the
   assert.deepEqual(read().map((r) => r.text), [...seed.map((r) => r.text), '进'.repeat(240)]);
 });
 
-test('hud-progress --done binds a fresh report to the turn token in the current CLI prompt', async (t) => {
+test('hud_report binds a fresh report to the turn token in the current CLI prompt', async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'done-command', 20);
+  writeCliRole(f, 'done-command', 20, true, 'claude');
   const job = await f.call('hud_create', { role: 'done-command', request_key: 'done-command', task: 'Synthetic task.' });
   const dir = job.task_dir, file = join(dir, 'done.json'), report = join(dir, 'report.md');
+  const call = workerClient(t, f, dir);
+  const finish = (text, turn) => call('hud_report', { text, turn });
   const first = cliToken(dir);
   const prompts = () => f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'prompt');
-  assert.ok(prompts()[0].args[3].includes(`--turn ${first}`));
-  assert.notEqual(runProgress(f, dir, '--done', '--turn', first).status, 0, 'missing report');
+  assert.match(prompts()[0].args[3], /Finish with hud_report/);
+  assert.ok(prompts()[0].args[3].includes(`turn: ${first}`));
+  assert.equal(fs.readFileSync(join(dir, 'brief.md'), 'utf8').trim(), 'Synthetic task.');
+  assert.equal((await finish(' ', first)).isError, true, 'missing report');
+  assert.equal((await finish('Synthetic first turn.\n')).isError, true, 'must supply the prompt token');
   assert.equal(fs.existsSync(file), false);
-  fs.writeFileSync(report, 'Synthetic first turn.\n');
-  assert.notEqual(runProgress(f, dir, '--done').status, 0, 'must supply the prompt token');
-  declareDone(f, job);
+  assert.equal(fs.existsSync(report), false);
+  assert.deepEqual(resultValue(await finish('Synthetic first turn.\n', first)), { path: report });
   const done = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(turnToken(done), first);
   assert.equal(done.report_sig, reportSignature(dir));
@@ -2561,12 +2634,12 @@ test('hud-progress --done binds a fresh report to the turn token in the current 
   assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).sent, true);
   const second = cliToken(dir);
   assert.notEqual(first, second);
-  assert.ok(prompts().at(-1).args[3].includes(`--turn ${second}`));
-  assert.notEqual(runProgress(f, dir, '--done', '--turn', second).status, 0, 'unchanged baseline report');
-  fs.writeFileSync(report, 'Synthetic second turn.\n');
-  assert.notEqual(runProgress(f, dir, '--done', '--turn', first).status, 0, 'old turn cannot declare the new one');
+  assert.ok(prompts().at(-1).args[3].includes(`turn: ${second}`));
+  assert.notEqual(runProgress(f, dir, '--done', '--turn', second).status, 0, 'fallback rejects unchanged baseline report');
+  assert.equal((await finish('Late report for first turn.\n', first)).isError, true, 'old turn cannot declare the new one');
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), done, 'rejection leaves the previous receipt untouched');
-  declareDone(f, job);
+  assert.equal(fs.readFileSync(report, 'utf8'), 'Synthetic first turn.\n', 'stale call does not replace the report');
+  assert.deepEqual(resultValue(await finish('Synthetic second turn.\n', second)), { path: report });
   assert.equal(turnToken(JSON.parse(fs.readFileSync(file, 'utf8'))), second);
 });
 
@@ -2797,7 +2870,8 @@ test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses inv
     assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).cli.idle_grace_s, value);
     assert.equal((await f.call('hud_read', { job: job.job, detail: true })).idle_grace_s, value);
     const brief = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
-    assert.match(brief, /end your turn with the single line `report written:/);
+    assert.match(brief, /run the --done command from the prompt/);
+    assert.doesNotMatch(brief, /report written:/);
     assert.match(brief, /^Optional milestone: node .*\/hud-progress\.mjs" --dir /m);
   }
 });
@@ -3227,7 +3301,7 @@ test('hud_create prepends resolved local references and does not revalidate an e
   const job = await f.call('hud_create', args);
   const briefPath = join(job.task_dir, 'brief.md');
   const brief = fs.readFileSync(briefPath, 'utf8');
-  assert.ok(brief.startsWith(`${args.task}\n\n## Context References\n\nRead these files for task context:\n\n- ${JSON.stringify(path)}\n\nWrite your`));
+  assert.equal(brief, `${args.task}\n\n## Context References\n\nRead these files for task context:\n\n- ${JSON.stringify(path)}\n\nFinish with \`hud_report\`.\n`);
   assert.ok(!brief.includes(line));
   const receiptPath = join(job.task_dir, 'job.json');
   const receipt = fs.readFileSync(receiptPath, 'utf8');
@@ -3955,11 +4029,11 @@ test('a grok trust dialog is declined and the job fails naming the directory', {
   assert.ok(commands.some((c) => c.args[0] === 'tab' && c.args[1] === 'close' && c.args[2] === 'w4E:t2'));
 });
 
-function writeCliRole(f, role, idle_grace_s = 1, can_continue = true) {
+function writeCliRole(f, role, idle_grace_s = 1, can_continue = true, agent = 'grok') {
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   fs.writeFileSync(
     join(f.env.HUD_HOME, 'roles', `${role}.json`),
-    JSON.stringify({ role, harness: 'cli', agent: 'grok', model: 'grok-4.7', thinking: 'high', can_continue, idle_grace_s: idle_grace_s * 20 })
+    JSON.stringify({ role, harness: 'cli', agent, ...(agent === 'grok' ? { model: 'grok-4.7' } : {}), thinking: 'high', can_continue, idle_grace_s: idle_grace_s * 20 })
   );
 }
 
@@ -4273,17 +4347,17 @@ function runAsk(env, args) {
   });
 }
 
-test('implementer instructions tell a CLI worker to ask through hud-ask', () => {
+test('implementer instructions tell workers to ask through hud_ask', () => {
   const text = fs.readFileSync(resolve('packages/hud-mcp/instructions/implementer.md'), 'utf8');
-  assert.match(text, /hud-ask/);
-  assert.match(text, /absolute `hud-ask` path/);
-  assert.match(text, /Never use a terminal prompt/i);
+  assert.match(text, /hud_ask/);
+  assert.doesNotMatch(text, /hud-ask|ask_orchestrator/);
+  assert.match(text, /never a terminal prompt/i);
   assert.match(text, /Keep working/);
   assert.doesNotMatch(text, /write the question in your report and stop/);
 });
 
 test(
-  'hud-ask round trip notifies the orchestrator and prints the hud_respond answer',
+  'hud_ask round trip notifies the orchestrator and returns the hud_respond answer',
   { timeout: 15000 },
   async (t) => {
     const f = await fixture(t);
@@ -4303,22 +4377,8 @@ test(
     fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', harness: 'cli', agent: 'grok' }));
     fs.writeFileSync(join(dir, 'brief.md'), '# Synthetic ask\n');
     fs.writeFileSync(join(dir, 'SESSION.txt'), 'LEFT=w4E:p2\nORCH=w4E:p1\n');
-    const pending = runAsk(f.env, [
-      '--dir',
-      dir,
-      '--question',
-      'Which layout?',
-      '--option',
-      'rows',
-      '--option',
-      'columns',
-      '--default',
-      'rows',
-      '--context',
-      'card width',
-      '--timeout',
-      '30',
-    ]);
+    const call = workerClient(t, f, dir);
+    const pending = call('hud_ask', { question: 'Which layout?', options: ['rows', 'columns'], default: 'rows', context: 'card width' });
     await until(() => fs.existsSync(join(dir, 'qa', 'q1.md')));
     const body = fs.readFileSync(join(dir, 'qa', 'q1.md'), 'utf8');
     assert.match(body, /^# Question q1 from grok-imp@MyHUD\n/);
@@ -4342,8 +4402,8 @@ test(
     assert.equal(asking.ask, 'Which layout?');
     await f.call('hud_respond', { job: id, request_id: 'q1', answer: 'columns' });
     const result = await pending;
-    assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stdout, /ANSWER from the orchestrator \(q1, after \d+s\):\n\ncolumns/);
+    assert.equal(result.isError, undefined);
+    assert.match(result.content[0].text, /ANSWER from the orchestrator \(q1, after \d+s\):\n\ncolumns/);
     assert.equal((await f.call('hud_read', { job: id })).questions, undefined);
   }
 );

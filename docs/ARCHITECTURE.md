@@ -19,7 +19,7 @@ client transcripts + HUD job files + project files
   ─► panel collectors ─► WorkboardSnapshot / ProjectSnapshot
   ─► optional stored model overlays ─► renderMonitor ─► terminal frame
 
-main session ─► six-tool MCP ─► job files + herdr tab
+main session ─► HUD MCP ─► job files + herdr tab
   ├─► external pi-roles + pi
   ├─► interactive CLI (grok / agy / claude / codex) + per-job supervisor
   └─► external jev-* browser CLIs
@@ -38,7 +38,11 @@ trust-dialog text and decline keys, and startup quirks are the table in
 local trust grant for Grok, Antigravity and Claude; missing, unreadable, malformed
 or symlinked trust files do not grant trust. Codex skips this check, and the
 other CLIs' screen-dialog checks remain in place. `packages/hud-mcp/bin/hud-cli.mjs` is the per-job
-supervisor; `hud-ask.mjs` writes the question. The HUD passes only model, effort,
+supervisor. Claude and Codex workers use the HUD MCP's worker-only surface; pi
+loads the HUD extension explicitly and retains pi-roles' native async ask. The
+shared worker protocol writes reports, check-ins and CLI questions and dispatches
+only sonic children. Antigravity and Grok Build use the fallback scripts in
+place of MCP tools. The HUD passes only model, effort,
 the bypass flag and role `args`. Harness behaviour and session places are untouched.
 `hud_create` validates explicit context file and report references before dispatch.
 Local briefs list resolved paths; browser briefs include those paths and bounded file
@@ -55,8 +59,9 @@ No panel opens at launch.
 |---|---|
 | `bin/` | Public launchers and Codex tmux helpers |
 | `install`, `install.d/` | Core installer and selected client/prerequisite extensions |
-| `packages/hud-mcp/src/thin-main.ts` | Six stdio MCP tools and job dispatch |
-| `packages/hud-mcp/bin/hud-watch.mjs`, `hud-cli.mjs`, `hud-ask.mjs`, `hud-jev.mjs` | On-demand reaper, CLI supervisor, CLI questions, browser-CLI wrapper |
+| `packages/hud-mcp/src/thin-main.ts` | Main and worker stdio MCP surfaces; job dispatch |
+| `packages/hud-mcp/bin/worker-tools.mjs` | Worker tools shared by MCP, pi and fallback commands; CLI report receipts bind the prompt's token to the fresh disk report |
+| `packages/hud-mcp/bin/hud-watch.mjs`, `hud-cli.mjs`, `hud-jev.mjs` | On-demand reaper, CLI supervisor, browser-CLI wrapper |
 | `src/roles/roster.ts` | Role definitions, assignments and convention, shared by MCP/Project |
 | `src/cli/` | Panel, statusline, import and Codex compatibility commands |
 | `src/index.ts`, `src/tree-page.ts` | Codex bar and shared panel loops |
@@ -218,8 +223,10 @@ Control is a top-level tab. It follows Project's selected root, but has its own 
 each role's active/standby/off/exhausted/missing places and the machine's Harnesses inventory) and
 `editPlaces` (role and quota edits). `roleRegistry.assignment` resolves the chain for Control, roster and create;
 Control's Harnesses preview also uses that evaluation to show what a switch would change. Local pi
-settings (bounded, signature-cached) and the unfiltered discovery cache only supply provider attribution;
-there is no new outbound input or discovery on dispatch. The `harness-switch` action updates only
+settings (bounded, signature-cached) and the unfiltered discovery cache supply provider attribution.
+Dispatch checks the selected place's thinking support before opening its tab. For pi, the picker cache can
+establish that only `off` is supported; an offline, sessionless Pi metadata probe supplies exact levels when available.
+This does not refresh the picker or make a model request. The `harness-switch` action updates only
 `$HUD_HOME/harnesses.json` (`disabled`) via `roles/harness-switches.ts`, by private atomic replacement. Machine switches never rewrite role files. The in-place chain editor
 (`render/chain-input.ts`) works on an in-memory draft of raw places and uses snapshot facts for
 its preview. The field sheet feeds the existing pi picker (`MonitorState.projectInput`,

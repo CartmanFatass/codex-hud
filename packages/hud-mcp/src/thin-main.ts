@@ -8,9 +8,10 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { procStat, readTurn, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
+import { cliWorkerTools, procStat, readTurn, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
+import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
@@ -36,6 +37,7 @@ const jobsRoot = join(hudHome, 'jobs');
 const isWorker = process.env.HUD_JOB_DIR !== undefined;
 const { ensureQueueWatcher, watching } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
 const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
+const worker = isWorker ? await import(new URL('../../../../bin/worker-tools.mjs', import.meta.url).href) : undefined;
 function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
 }
@@ -153,6 +155,7 @@ function created(job: Job) {
   const task_dir = directory(job.job);
   const { report_unread: _unread, report_mtime: _mtime, question_ids: _questions, ...row } = readRow(job).row;
   const watch = callerPane ? { watcher_alive: watching(callerPane, hudHome) } : {};
+  const thinking = job.thinking == null ? {} : { thinking: job.thinking };
   if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
     return {
       ok: false,
@@ -161,11 +164,11 @@ function created(job: Job) {
       reason: row.reason ?? (job.stderr_tail.trim() || `launch exited ${job.dispatch_exit_code}`),
       task_dir,
       agent: primary(task_dir),
-      ...watch,
+      ...thinking, ...watch,
     };
   }
   return {
-    ...row, task_dir, agent: primary(task_dir), ...watch,
+    ...row, task_dir, agent: primary(task_dir), ...thinking, ...watch,
     ...(watch.watcher_alive ? {} : { hint: 'Claude Code: run `hud watch` under Monitor' }),
   };
 }
@@ -319,6 +322,11 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   return args;
 }
 async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) {
+  let openedTab: string | undefined;
+  const reject = async (result: DispatchResult) => {
+    if (openedTab) await runHerdr(['tab', 'close', openedTab], process.env, { budgetMs: 3000 });
+    return result;
+  };
   try {
     const resources = piSkillArgs(job, role, place);
     const launcher = executable('pi-role');
@@ -358,7 +366,8 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
     if (job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
-    argv.push('--', '--tui-mode', 'regular');
+    argv.push('--', '--tui-mode', 'regular', '--hud-worker-tools', '-e',
+      join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
     for (const key of ['model', 'thinking'] as const) if (place[key] !== undefined) argv.push(`--${key}`, place[key]);
     argv.push(...resources, ...(job.pi_args ?? []));
     const built = await run(launcher, argv, job.cwd);
@@ -384,8 +393,9 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
     ]);
     if (result.exit_code !== 0) return result;
     const { tab, root_pane } = JSON.parse(result.stdout).result;
-    const left = root_pane.pane_id;
-    if (!herdrId(tab.tab_id) || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+    if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
+    const left = root_pane?.pane_id;
+    if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
     let right = '';
     const record = () => {
       const fields = {
@@ -421,13 +431,14 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
         job.cwd,
         '--no-focus',
       ]);
-      if (split.exit_code !== 0) return split;
+      if (split.exit_code !== 0) return reject(split);
       right = JSON.parse(split.stdout).result.pane.pane_id;
       if (!herdrId(right)) throw new Error('split did not return a pane id');
       record();
     }
     const started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
-    if (started.exit_code !== 0) return started;
+    if (started.exit_code !== 0) return reject(await startupFailure(started, left));
+    openedTab = undefined; // After readiness, a live worker owns this tab even if the prompt stalls.
     const prompt = `Read ${join(dir, 'brief.md')} and do exactly what it asks.`;
     job.pi_sent_at = new Date().toISOString();
     save(job);
@@ -454,7 +465,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
     }
     return { ...submitted, exit_code: 0 };
   } catch (error) {
-    return { exit_code: 1, stdout: '', stderr: String(error) };
+    return reject({ exit_code: 1, stdout: '', stderr: String(error) });
   }
 }
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
@@ -501,6 +512,13 @@ function paneText(stdout: string): string {
     /* A plain-text screen is the text itself. */
   }
   return stdout;
+}
+async function startupFailure(result: DispatchResult, pane: string): Promise<DispatchResult> {
+  if (result.stderr.trim() && !/timed? out|timeout/i.test(result.stderr)) return result;
+  const read = await runHerdr(['pane', 'read', pane, '--source', 'recent'], process.env, { budgetMs: 2000 });
+  const reason = read.ok && paneText(read.stdout).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').split('\n')
+    .reverse().map((line) => line.trim()).find((line) => /^(?:\[roles\]|(?:\w*Error|fatal):)\s+\S/i.test(line));
+  return reason ? { ...result, stderr: reason } : result;
 }
 function agentStatus(stdout: string): string | null {
   try {
@@ -655,7 +673,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
     );
     const started = await run('herdr', argv);
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
-    if (started.exit_code !== 0 && !notReady) return reject(started);
+    if (started.exit_code !== 0 && !notReady) return reject(await startupFailure(started, left));
     if (kind.trust?.text) {
       const read = await run('herdr', ['pane', 'read', left, '--source', 'recent']);
       if (read.exit_code !== 0) return reject(notReady ? started : read);
@@ -671,7 +689,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       const settled = await settlePhantomWorking(name);
       if (settled) return reject(settled);
     }
-    const prompt = withDonePrompt(`Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`, bundled, dir, writeTurn(dir));
+    const prompt = withDonePrompt(`Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`, bundled, dir, writeTurn(dir), place.agent!);
     const submitted = await run('herdr', [
       'agent',
       'prompt',
@@ -998,6 +1016,14 @@ async function assembleContext(args: Args, cwd: string, inline: boolean) {
   return { metadata, block };
 }
 
+export async function sonicThinking(cwd: string) {
+  const found = registry(cwd);
+  const role = found.roles().get('sonic');
+  if (!role) return;
+  const active = found.assignment(role).places.find((place) => place.state === 'active');
+  if (active) return launchThinking(hudHome, active.place.harness, active.model.value);
+}
+
 export async function dispatchJob(args: Args, pane: string | undefined, parentJob?: string) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
@@ -1083,7 +1109,16 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   }
   if (place.harness === 'bro' && (modelOverride !== undefined || args.thinking !== undefined))
     return { ok: false, code: 'invalid_arguments' };
-  if (args.thinking !== undefined) place = { ...place, thinking: required(args, 'thinking') };
+  const requestedThinking = args.thinking === undefined ? details.thinking.value : required(args, 'thinking');
+  if (args.thinking !== undefined) place.thinking = requestedThinking!;
+  if (requestedThinking !== null) {
+    const supported = await launchThinking(hudHome, place.harness, details.model.value);
+    if (supported && !supported.includes(requestedThinking)) {
+      const thinking = nearestThinking(requestedThinking, supported);
+      if (!thinking) return { ok: false, code: 'invalid_arguments', error: `no supported thinking level for ${details.model.value}` };
+      place.thinking = thinking;
+    }
+  }
   const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: place.pi_args ?? [] } : {};
   for (const key of piSwitches) {
     const value = args[key];
@@ -1178,25 +1213,21 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   };
   const dir = directory(job.job);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  // Pi and CLI workers write the report; the Jev CLI saves the browser's answer locally.
-  const hudAsk = fileURLToPath(new URL('../../../../bin/hud-ask.mjs', import.meta.url));
-  const brief =
-    place.harness === 'bro'
-      ? `${task}\n${context.block}`
-      : place.harness === 'cli'
-        ? `${task}\n\n${context.block}Write your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
-        : `${task}\n\n${context.block}Write your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
-  const done = place.harness === 'cli' ? 'After writing the report, run the --done command from the prompt you are answering.\n' :
-    `After writing the report, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)}\n`;
-  const ending = place.harness === 'bro' ? '' : `${done}Then end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
-  const sonicCommand = `node ${JSON.stringify(join(bundled, 'bin', 'hud-sonic.mjs'))}`;
-  const sonic = role === 'sonic' || place.harness === 'bro' ? '' :
-    `Sonic command: ${sonicCommand} start --dir ${JSON.stringify(dir)} --task <text> | --task-file <file> [--thinking off|low|medium|high]\n` +
-    `Collect: ${sonicCommand} wait --dir ${JSON.stringify(dir)} --job <id>\n`;
-  const progress = place.harness === 'bro' ? '' :
-    `Optional milestone: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --dir ${JSON.stringify(dir)} "message"\n`;
+  let brief = `${task}${place.harness === 'bro' ? '\n' : '\n\n'}${context.block}`;
+  if (place.harness === 'pi') brief += 'Finish with `hud_report`.\n';
+  else if (place.harness === 'cli' && !cliWorkerTools(place.agent!)) {
+    const command = (bin: string) => `node ${JSON.stringify(join(bundled, 'bin', `${bin}.mjs`))}`;
+    const own = `--dir ${JSON.stringify(dir)}`;
+    brief += 'This harness uses the commands below instead of the worker tools named in your role.\n' +
+      `Write your report to ${join(dir, 'report.md')}; then run the --done command from the prompt you are answering.\n` +
+      `Ask the orchestrator with: ${command('hud-ask')} ${own} --question "..." --default "..."\n`;
+    if (role !== 'sonic') brief +=
+      `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file> [--thinking off|low|medium|high]\n` +
+      `Collect: ${command('hud-sonic')} wait ${own} --job <id>\n`;
+    brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
+  }
   // References follow the task: the panel title, sentence goal and decision labels read the brief's opening lines.
-  fs.writeFileSync(join(dir, 'brief.md'), brief + sonic + progress + ending, { flag: 'wx', mode: 0o600 });
+  fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
   // Persist before dispatch: an interrupted launch must not dispatch again on retry.
   save(job);
   if (parentJob) {
@@ -1429,7 +1460,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     // Read the rollback baseline at mutation time, with no pane query between it and the write.
     const prior = current.cli ? readTurn(dir) : null;
     const turn = current.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
-    const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn) : message]);
+    const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
     if (turn && refusedBeforeInput(result)) {
       const active = readTurn(dir);
       if (active?.seq === turn.seq && active.send?.key === key && active.send.pid === process.pid) {
@@ -1573,17 +1604,18 @@ async function receive(line: string): Promise<void> {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
-        instructions: 'Call hud_roster when project dispatch context is missing or stale. With live watch, keep working until notified, then collect with hud_read.',
+        instructions: worker ? 'Use the worker tools for your own HUD job. Finish with hud_report.' :
+          'Call hud_roster when project dispatch context is missing or stale. With live watch, keep working until notified, then collect with hud_read.',
       };
       break;
     case 'ping':
       result = {};
       break;
     case 'tools/list':
-      result = { tools: [...tools, statuslineTool] };
+      result = { tools: worker ? await worker.listWorkerTools(true) : [...tools, statuslineTool] };
       break;
     case 'resources/list':
-      result = { resources: [statuslineResource] };
+      result = { resources: worker ? [] : [statuslineResource] };
       break;
     case 'resources/templates/list':
       result = { resourceTemplates: [] };
@@ -1593,7 +1625,7 @@ async function receive(line: string): Promise<void> {
         rpcError(request.id, -32602, 'Invalid resource URI');
         return;
       }
-      if (request.params.uri !== statuslineResource.uri) {
+      if (worker || request.params.uri !== statuslineResource.uri) {
         rpcError(request.id, -32002, 'Resource not found');
         return;
       }
@@ -1606,6 +1638,19 @@ async function receive(line: string): Promise<void> {
         rpcError(request.id, -32602, 'Invalid params');
         return;
       }
+      if (worker) {
+        if (!worker.workerTools(true).some((tool: { name: string }) => tool.name === name)) {
+          result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'worker_cannot_dispatch' }) }], isError: true };
+        } else {
+          try {
+            const value = await worker.callWorkerTool(name, args);
+            result = { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] };
+          } catch (error) {
+            result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'tool_error', error: String(error) }) }], isError: true };
+          }
+        }
+        break;
+      }
       if (name === statuslineTool.name) {
         result = { content: [{ type: 'text', text: `Codex statusline resource: ${statuslineResource.uri}` }] };
         break;
@@ -1613,20 +1658,15 @@ async function receive(line: string): Promise<void> {
       const invoke = () => call(name, args);
       try {
         const key = mutationKey(name, args);
-        // Refuse before invocation or reporting changes, which can record quota exhaustion.
-        if (isWorker && key !== null) {
-          result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'worker_cannot_dispatch' }) }] };
+        const value = key === null ? await invoke() : await keyLock(key, invoke);
+        const markExhaustion = name !== 'hud_peek';
+        if (typeof value === 'string') {
+          const content = [{ type: 'text', text: value }];
+          const delta = withChanges({}, markExhaustion) as { changes?: unknown[] };
+          if (delta.changes) content.push({ type: 'text', text: JSON.stringify(delta) });
+          result = { content };
         } else {
-          const value = key === null ? await invoke() : await keyLock(key, invoke);
-          const markExhaustion = !isWorker && name !== 'hud_peek';
-          if (typeof value === 'string') {
-            const content = [{ type: 'text', text: value }];
-            const delta = withChanges({}, markExhaustion) as { changes?: unknown[] };
-            if (delta.changes) content.push({ type: 'text', text: JSON.stringify(delta) });
-            result = { content };
-          } else {
-            result = { content: [{ type: 'text', text: JSON.stringify(withChanges(value, markExhaustion)) }] };
-          }
+          result = { content: [{ type: 'text', text: JSON.stringify(withChanges(value, markExhaustion)) }] };
         }
       } catch (error) {
         result = {
@@ -1652,7 +1692,7 @@ async function receive(line: string): Promise<void> {
   write({ jsonrpc: '2.0', id: request.id, result });
 }
 export function serveMcp() {
-  cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
+  if (!worker) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
   createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
     void receive(line);
   });

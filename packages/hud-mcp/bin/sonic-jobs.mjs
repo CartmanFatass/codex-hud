@@ -31,8 +31,10 @@ export function sonicChildren(dir) {
   return { open, uncollected };
 }
 
-export function sonicCollectPrompt(dir, output, ids) {
+export function sonicCollectPrompt(dir, output, ids, tools = true) {
   // Record the input attempt before sending. Collection itself uses a separate receipt.
   for (const id of ids) fs.writeFileSync(join(dirname(dir), id, 'sonic-prompted'), '', { mode: 0o600 });
-  return `Collect these sonic reports with hud-sonic wait: ${ids.join(', ')}. Then finish your work and write your report to ${output}.`;
+  return tools
+    ? `Collect these sonic reports with hud_sonic (wait: ${JSON.stringify(ids)}). Then finish with hud_report.`
+    : `Collect these sonic reports with the Collect command from your brief: ${ids.join(', ')}. Then finish your work and write your report to ${output}.`;
 }

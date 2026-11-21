@@ -77,8 +77,22 @@ Compact rows show `job`, `role` and `state`, plus `report_unread: true`, `blocke
 and a block, wait or failure `reason` when applicable. Closed jobs with unread reports still appear; use `recent`
 for history or fields such as `open_questions`. The per-session `changes` stream is independent of the snapshot.
 
-Pi and CLI briefs include the optional `node <package>/bin/hud-progress.mjs [--dir <job-dir>] "Milestone text"`
-command (`--dir` defaults to `HUD_JOB_DIR`). It stores one line of up to 240 characters as `{at,text}` in the
+## Worker tools
+
+With `HUD_JOB_DIR` set, only the four worker tools are exposed, scoped to that job. Claude and Codex use MCP;
+pi loads the native worker extension and uses pi-roles' native ask. Antigravity and Grok Build get the
+fallback `hud-ask.mjs`, `hud-sonic.mjs` and `hud-progress.mjs` commands in their briefs.
+
+- `hud_report({text, turn})` on CLI, `hud_report({text})` on pi: atomically publishes `report.md` and returns its path.
+  Use the turn token from the CLI prompt you are answering. No final chat marker is needed.
+- `hud_ask({question, default, options?, context?})`: asks the orchestrator. Pi also accepts `mode: "async"`;
+  continue only unrelated work until the native answer arrives.
+- `hud_sonic({task, thinking?})`: starts one sonic child without waiting for its report. Collect with
+  `hud_sonic({wait: [ids], timeout_s?})`; omit the ids for all uncollected children. It returns report paths and bodies,
+  still-working ids and any failures. `timeout_s: 0` checks once. Sonic cannot start sonic. When known, the schema
+  shows the selected sonic model's supported thinking levels. Both `hud_sonic` and `hud_create` return the effective
+  thinking level; an unsupported level maps to the nearest known choice, and unknown capabilities pass through.
+- `hud_progress({message})` publishes a milestone. It stores one line of up to 240 characters as `{at,text}` in the
 job's `progress.jsonl`, retaining the newest 50. `hud_read({ job })` and `hud_peek` return the latest 10 in
 append order as `progress` and the newest entry as `latest_progress`. Ordinary reads omit these fields when empty. Milestones do not appear in
 list/wait rows or trigger `changes` / `hud watch` events.
@@ -128,11 +142,10 @@ nor a particular role's responsibilities.
 
 `$HUD_HOME/jobs/<job>/` holds `job.json`, `brief.md`, `STATUS.json`, `SESSION.txt`,
 `report.md` and `qa/` pairs. Pi-roles owns pi lifecycle and grace; the browser
-wrapper records browser-job STATUS and saves the CLI result. Mutations serialize
+wrapper records browser-job STATUS and saves the CLI result. A pre-start failure closes the launch tab and
+uses a startup error from the pane if herdr gave only a timeout. Mutations serialize
 within an MCP process; waiting reads do not block answers. A report is unread when its mtime is newer than
-`read_at` (or no stamp exists). Workers write the report, run the `hud-progress --done` command named
-in the prompt (CLI) or brief (pi), then end with only `report written: <path>`. HUD readers use the report file,
-not that final chat line.
+`read_at` (or no stamp exists). HUD readers use the on-disk report, not the worker's final chat message.
 
 Every MCP response carries the session's `changes` since its last call (omitted when empty).
 `hud watch` under a command monitor pushes less: full one-line questions, settlements/unread reports,
@@ -154,7 +167,7 @@ The read-close reason is `closed after report read`. Pi declares completion nati
 with a report changed since `before_agent_start`. Pi's pending-message and turn-start signals are internal to
 Pi; the watcher's pi-roles STATUS and herdr checks do not identify delivery of a queued `hud_send`. A prior
 turn can settle before the queued prompt reaches Pi, even after HUD recorded the send time. Unread pi reports
-keep the pi-roles deadline. Pi's `--done` captures descendants before native shutdown; it does not declare pi
+keep the pi-roles deadline. Pi's `hud_report` captures descendants before native shutdown; pi-roles still declares
 settlement. A snapshot write failure returns nonzero; a complete staged snapshot is recoverable if only the
 final rename failed. If the recorded root is gone and no matching proof can be recovered, cleanup remains
 unresolved and the slow retry stays armed. After a partial read-close, cleanup of captured descendants of a
@@ -171,7 +184,7 @@ A CLI job has one supervisor (`hud-cli.mjs`); it only observes, and its one pure
 recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 (`failed`, or `closed` when a new report is on disk). Dispatch and every non-duplicate
 `hud_send` write `turn.json` before the prompt (internal continuations also start a new turn).
-The worker's `--done --turn` command writes a private `done.json` receipt with the prompt's turn sequence and
+The worker's `hud_report` call (or fallback `--done --turn` command) writes a private `done.json` receipt with the prompt's turn sequence and
 send time, the current report signature, and the receipt time. A matching receipt for a fresh report settles
 without waiting for leftover children or herdr idle. A new turn invalidates the old receipt; a report rewrite
 on a declared turn reopens it. If the turn stays quiet for the role's grace period without a fresh matching
@@ -195,8 +208,8 @@ plus a 30 s tick that re-reads the status once, and writes STATUS only on change
 `agent_session_id` is that CLI's own session id, refreshed when the supervisor sees
 a transition; STATUS never carries pi's `session_id`.
 
-The worker asks with `hud-ask` (the brief names it by absolute path). That writes
-`qa/qN.md` and blocks until `qa/qN.answer.md` or 20 minutes, then prints the answer or the default.
+A synchronous `hud_ask` writes `qa/qN.md` and waits for `qa/qN.answer.md` for up to 20 minutes,
+then returns the answer or the proposed default.
 CLI and pi questions use a live pane-scoped `hud watch` first; without one, a Codex main session receives
 one queued line via `codex queue --thread … --message …`, using `CODEX_HOME` from its pane's Codex process
 (default `~/.codex`), never a shell function. Other agents, a missing thread id or any queue failure fall back

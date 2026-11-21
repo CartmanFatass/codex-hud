@@ -33,7 +33,7 @@ function setup(t) {
     path.join(release, 'dist/harness/pi/package-entry.js'),
     `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b,deps,mode) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')] ?? deps,mode); }`
   );
-  for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs']) {
+  for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs', 'packages/hud-mcp/bin/worker-tools.mjs', 'packages/hud-mcp/dist']) {
     fs.mkdirSync(path.dirname(path.join(release, entry)), { recursive: true });
     fs.symlinkSync(path.resolve(entry), path.join(release, entry));
   }
@@ -857,12 +857,23 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   assert.equal(messages.length, 4);
 });
 
-test('pi delegation never starts a native watcher for a HUD worker', async (t) => {
-  const f = setup(t), h = host(), c = context(f, h), p = ports(f);
-  f.env.HUD_JOB_DIR = path.join(f.binding.hudHome, 'jobs/j0000000000000001');
-  h.pi.sendMessage = () => assert.fail('a worker must not be woken by the main watcher');
-  await load(f, h, p);
-  await h.emit('session_start', c.ctx);
-  assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false);
-  await h.emit('session_shutdown', c.ctx);
+test('pi delegation registers only worker tools in a HUD worker and none of them in a main session', async (t) => {
+  const f = setup(t), main = host(), worker = host(), c = context(f, worker);
+  await load(f, main, ports(f));
+  assert.deepEqual([...main.tools.keys()], PI_ROLE_TOOLS.map(({ name }) => name));
+
+  const oldDir = process.env.HUD_JOB_DIR;
+  process.env.HUD_JOB_DIR = path.join(f.binding.hudHome, 'jobs/j0000000000000001');
+  try {
+    worker.pi.sendMessage = () => assert.fail('a worker must not be woken by the main watcher');
+    await load(f, worker);
+    assert.deepEqual([...worker.tools.keys()], ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress']);
+    assert.deepEqual(worker.tools.get('hud_report').parameters.required, ['text']);
+    await worker.emit('session_start', c.ctx);
+    assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false);
+    await worker.emit('session_shutdown', c.ctx);
+  } finally {
+    if (oldDir === undefined) delete process.env.HUD_JOB_DIR;
+    else process.env.HUD_JOB_DIR = oldDir;
+  }
 });

@@ -40,8 +40,11 @@ export function readTurn(dir: string): Turn | null {
 export const DONE_FILE = 'done.json';
 export type DoneReceipt = Pick<Turn, 'seq' | 'sent_at'> & { report_sig: string; at: string };
 export const turnToken = (turn: Turn) => `${turn.seq}@${turn.sent_at}`;
-export const withDonePrompt = (text: string, bundled: string, dir: string, turn: Turn) =>
-  `${text}\n\nAfter writing the report for this turn, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${turnToken(turn)}\nThen end with only \`report written: ${join(dir, 'report.md')}\`. Use the command from the prompt you are answering, not a newer turn.\n`;
+export const cliWorkerTools = (agent: string) => agent === 'claude' || agent === 'codex';
+export const withDonePrompt = (text: string, bundled: string, dir: string, turn: Turn, agent: string) =>
+  `${text}\n\n${cliWorkerTools(agent)
+    ? `Finish with hud_report. Use the token in the prompt you are answering, not a newer turn. turn: ${turnToken(turn)}`
+    : `After writing the report for this turn, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${turnToken(turn)}\nUse the command from the prompt you are answering, not a newer turn.`}\n`;
 
 export function readDone(dir: string): DoneReceipt | null {
   try {

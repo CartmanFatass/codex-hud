@@ -8,7 +8,7 @@ description: Hand work to a local HUD role in its own herdr tab - imp (implement
 The user names a role and a task in plain words; you do the rest. Never ask them to name a tool.
 
 1. Use `hud_roster` with the job's `cwd` on first use or when project dispatch context is stale. It returns availability, effective assignments, continuation and the applicable convention. If you still have valid context, go straight to `hud_create`. If refreshing the roster and you still have its convention text, pass its `convention_version`; a matching version omits only that text, not availability.
-2. Write the brief as the convention says. Do not name a report file; HUD adds it.
+2. Write the brief as the convention says. Do not add report paths or worker protocol commands; HUD supplies the worker interface.
 3. `hud_create` with `role`, the brief as `task`, `cwd`, and a short, stable `request_key`. Keys are global: include the project and task slug and any ticket ID. A retry returns the same job even if options differ. Do not pass `preset`, `on`, `model` or `thinking` unless the user asks for the override in this request. For advanced options use the tool schema and `hud_roster({cwd, detail:true})`.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
 5. Claude Code: run `hud watch` under Monitor and re-arm after expiry. Codex: events are queued automatically;
@@ -26,7 +26,7 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    report flags when applicable; use `view: "recent"` (without `job`) for the newest 20 full rows. A `report` token
    in `changes` means unread. A job read omits an already-read report (`report_unchanged: true`; use `full: true`
    to reread). Reading a settled pi or CLI report closes the worker; an unread report keeps its idle deadline.
-   Workers finish chat with only `report written: <path>`. Settled means finished, not accepted.
+   Workers publish with `hud_report` (or the provided fallback); no final chat marker is needed. Settled means finished, not accepted.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
@@ -54,7 +54,7 @@ Watch question lines carry the first 2 KiB's question, options, default and full
 
 ### Helpers
 
-Any worker may start sonic on its own for a fully specified sub-task; the brief need not ask. Do not duplicate that work; read the report. The main session owns every next step.
+Any non-sonic worker may use `hud_sonic` to start a fully specified sub-task and collect its report separately; the brief need not ask. The main session owns every next step.
 
 ### Repairs
 

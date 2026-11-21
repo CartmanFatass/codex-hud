@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
-import { firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { cliWorkerTools, firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { rememberWorkerTree } from '../dist/src/roles/worker-tree.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
@@ -23,6 +23,7 @@ const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'ut
   return at > 0 ? [[line.slice(0, at), line.slice(at + 1)]] : [];
 }));
 const name = session.PRIMARY, pane = session.LEFT, cli = job.cli;
+const tools = cliWorkerTools(cli.agent);
 const output = join(dir, 'report.md'), graceMs = (cli.idle_grace_s ?? 600) * 1000;
 fs.writeFileSync(join(dir, 'supervisor.pid'), `${process.pid}\n`, { mode: 0o600 });
 function effect(args) {
@@ -208,7 +209,7 @@ async function run() {
     if (next.action === 'collect-sonic') {
       const { open, uncollected } = sonicChildren(dir);
       if (open || !uncollected.length) { wake(); return; }
-      const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected), bundled, dir, writeTurn(dir));
+      const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, writeTurn(dir), cli.agent);
       if (!effect(['agent', 'prompt', name, prompt]).ok) throw new Error('sonic collect prompt failed');
       diskDirty = true; wake(); return;
     }
@@ -232,7 +233,8 @@ async function run() {
       if (decision.action === 'prompt-report') {
         reportPromptSent = true;
         const sent = writeTurn(dir, true);
-        const prompt = withDonePrompt(`Write your report to ${output} now; if work remains, finish it first.`, bundled, dir, sent);
+        const prompt = withDonePrompt(tools ? 'If work remains, finish it first.' :
+          `Write your report to ${output} now; if work remains, finish it first.`, bundled, dir, sent, cli.agent);
         if (!effect(['agent', 'prompt', name, prompt]).ok) {
           decision.action = 'needs-human'; decision.reason = 'prompt-failed';
           current.quiet_decision = { ...current.quiet_decision, action: 'needs-human', reason: 'prompt-failed' };
