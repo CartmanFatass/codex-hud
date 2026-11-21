@@ -6,11 +6,12 @@ const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 type Model = { provider: string; id: string; reasoning: boolean; thinkingLevelMap?: Record<string, string | null> };
 const probes = new Map<string, Promise<string[] | undefined>>();
 
-// Claude 2.1.330 and agy --help list these --effort values. Only map known models.
+// Claude Code 2.1.330 and Antigravity CLI 1.5.14 --help list these --effort values.
+// Only map known models; the help advertises the flag, not per-model overrides.
 const cliLevels = ['low', 'medium', 'high', 'xhigh', 'max'];
 const cliModels: Record<string, { models: string[]; thinking: string[] }[]> = {
-  claude: [{ models: ['fable', 'opus', 'sonnet'], thinking: cliLevels }],
-  agy: [{ models: ['gemini-4-argon-high', 'gemini-4-hydrogen-high'], thinking: cliLevels }],
+  claude: [{ models: ['fable', 'opus', 'sonnet', 'haiku', 'claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5'], thinking: cliLevels }],
+  agy: [{ models: ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high'], thinking: cliLevels }],
   // Codex 0.171.0's bundled model catalog documents the levels accepted by
   // model_reasoning_effort per model (the config schema itself accepts strings).
   codex: [

@@ -1106,8 +1106,11 @@ test('launch thinking facts map CLI efforts before opening the worker; unknown m
   fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
   for (const [on, model, thinking, expected] of [
     ['claude', 'opus', 'ultra', 'max'], ['agy', 'gemini-4-hydrogen-high', 'minimal', 'low'],
+    ['claude', 'haiku', 'minimal', 'low'], ['claude', 'claude-fable-5-2', 'ultra', 'max'],
+    ['claude', 'claude-opus-5-5', 'ultra', 'max'], ['claude', 'claude-sonnet-5-5', 'ultra', 'max'],
+    ['agy', 'gemini-3.8-flash-high', 'minimal', 'low'],
     ['codex', 'gpt-5.5', 'max', 'xhigh'], ['codex', 'gpt-6.1-sol', 'ultra', 'ultra'],
-    ['claude', 'synthetic-unknown', 'ultra', 'ultra'], ['grok', 'grok-4.7', 'minimal', 'minimal'],
+    ['claude', 'hud-unknown', 'ultra', 'ultra'], ['grok', 'grok-4.7', 'minimal', 'minimal'],
   ]) {
     const job = await f.call('hud_create', { role: 'imp', task: `Synthetic ${on} ${model}.`, on, model, thinking });
     assert.equal(job.thinking, expected, JSON.stringify(job));

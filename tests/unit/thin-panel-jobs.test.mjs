@@ -13,6 +13,7 @@ import { Notifier } from '../../dist/notify.js';
 import { frameDiff } from '../../dist/render/frame-diff.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { TaskObservationCollector } from '../../dist/collectors/task-observations.js';
 const now = new Date().setHours(12, 0, 0, 0);
 const question =
   'Where should the model chip go on a card whose phase strip is longer than one complete line at 56 columns, without hiding any of the important results?';
@@ -113,6 +114,35 @@ function fixture(t) {
     renderMonitor({ tree, workboard: board, state, width, height, nowMs: now });
   return { env, pipeline, tree, render, put, job, askDir, ready };
 }
+test('legacy task admission keeps the newest 200 directories, including new arrivals', (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'hud-legacy-tasks-'));
+  const collector = new TaskObservationCollector(home);
+  t.after(() => { collector.dispose(); rmSync(home, { recursive: true, force: true }); });
+  const task = (name, age) => {
+    const directory = join(home, 'tmp', 'tasks', name);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'brief.md'), `# ${name}`);
+    const time = new Date(now - age * 60_000);
+    utimesSync(directory, time, time);
+    return directory;
+  };
+  const oldest = task('a000', 300);
+  const boundary = task('a001', 299);
+  for (let i = 2; i < 200; i++) task(`a${String(i).padStart(3, '0')}`, 300 - i);
+  const newest = task('z-newest', 1);
+  const collect = () => {
+    let snapshot;
+    for (let i = 0; i < 150; i++) snapshot = collector.refresh();
+    return new Set(snapshot.lanes.map((lane) => lane.identity.directory));
+  };
+  let lanes = collect();
+  assert.equal(lanes.size, 200);
+  assert.ok(lanes.has(newest) && lanes.has(boundary) && !lanes.has(oldest));
+  const newcomer = task('z-second', 0);
+  lanes = collect();
+  assert.equal(lanes.size, 200);
+  assert.ok(lanes.has(newcomer) && lanes.has(newest) && !lanes.has(boundary));
+});
 const plain = (frame) => frame.lines.map(stripAnsi);
 // Everything starts collapsed; this is the state of a panel where every card was expanded with Enter.
 const expandAll = (board, from = initialMonitorState()) => ({

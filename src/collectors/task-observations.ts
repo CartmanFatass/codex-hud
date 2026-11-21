@@ -41,6 +41,7 @@ interface Directory {
   identity: string;
   names: string[];
   pending: string[];
+  mtimes?: Map<string, number>;
   handle?: fs.Dir;
   complete: boolean;
   unavailable?: boolean;
@@ -103,7 +104,7 @@ export class TaskObservationCollector {
   private revision = 0;
   private turn = 0;
   private discoveryCursor = 0;
-  private discoveryStamp = '';
+  private discoveryNames?: string[];
   private candidates = new Map<string, 'ignored' | 'unavailable'>();
   private cost = emptyCost();
   private slice: Required<ArtifactSlice> = { deadline: Infinity, maxBytes: 256 * 1024, maxFiles: 8, maxEntries: 16 };
@@ -131,7 +132,7 @@ export class TaskObservationCollector {
     this.sources.clear();
     this.pins.clear();
     this.candidates.clear();
-    this.discoveryStamp = '';
+    this.discoveryNames = undefined;
     this.discoveryCursor = 0;
     this.turn = 0;
     this.lastLanes = [];
@@ -169,7 +170,7 @@ export class TaskObservationCollector {
     return s;
   }
   /** Membership is committed only at EOF; an unfinished scan never means deletion. */
-  private members(path: string): string[] | null {
+  private members(path: string, newestDirectories = false): string[] | null {
     let d = this.directories.get(path);
     try {
       const s = this.safe(path);
@@ -183,6 +184,7 @@ export class TaskObservationCollector {
           /* Closed. */
         }
         d = { stamp: signature, identity: idOf(s), names: d?.names ?? [], pending: [], complete: false };
+        if (newestDirectories) d.mtimes = new Map();
         this.directories.set(path, d);
       }
       if (!d.complete) {
@@ -205,14 +207,31 @@ export class TaskObservationCollector {
               this.fail('directory_changed');
               return d.names;
             }
-            d.names = d.pending.sort();
+            const mtimes = d.mtimes;
+            d.names = d.pending.sort(mtimes ? (a, b) => mtimes.get(b)! - mtimes.get(a)! || a.localeCompare(b) : undefined);
             d.pending = [];
+            d.mtimes = undefined;
             d.complete = true;
             break;
           }
           this.cost.entries++;
-          if (d.pending.length < 2048) d.pending.push(entry.name);
-          else this.fail('directory_capacity');
+          if (d.pending.length >= 2048) {
+            this.fail('directory_capacity');
+            continue;
+          }
+          if (d.mtimes) {
+            if (!entry.isDirectory()) continue;
+            this.cost.probes++;
+            try {
+              const child = fs.lstatSync(join(path, entry.name));
+              if (!child.isDirectory()) continue;
+              d.mtimes.set(entry.name, child.mtimeMs);
+            } catch (error) {
+              this.fail((error as NodeJS.ErrnoException).code ?? 'directory_unavailable');
+              continue;
+            }
+          }
+          d.pending.push(entry.name);
         }
         if (!d.complete) this.fail('discovery_pending');
       }
@@ -769,14 +788,22 @@ export class TaskObservationCollector {
     const admitted = new Set<string>();
     if (this.workspace) {
       const base = join(this.workspace, 'tmp', 'tasks'),
-        names = this.members(base);
-      if (names) {
-        const stamp = this.directories.get(base)?.stamp ?? '';
-        if (stamp !== this.discoveryStamp) {
+        ranked = this.members(base, true);
+      if (ranked) {
+        if (ranked !== this.discoveryNames) {
           this.candidates.clear();
-          this.discoveryStamp = stamp;
+          this.discoveryCursor = 0;
+          this.discoveryNames = ranked;
         }
+        if (ranked.length > 200) this.fail('lane_capacity');
+        const names = ranked.slice(0, 200);
         for (const name of names) admitted.add(`task:${JSON.stringify([this.workspace, name])}`);
+        if (this.directories.get(base)?.complete || ranked.length === 0)
+          for (const [id, s] of this.sources)
+            if (s.identity.kind === 'task-directory' && !admitted.has(id)) {
+              this.sources.delete(id);
+              this.revision++;
+            }
         // Reserve metadata room for already admitted sources. A persistent discovery cursor
         // also prevents an unsafe/non-directory prefix from starving later candidates.
         let attempts = 0;
@@ -805,13 +832,6 @@ export class TaskObservationCollector {
           this.fail('discovery_pending');
         for (const id of this.candidates.keys()) if (!admitted.has(id)) this.candidates.delete(id);
       } else this.fail('workspace_unavailable');
-      const directory = this.directories.get(base);
-      if (directory?.complete || names?.length === 0)
-        for (const [id, s] of this.sources)
-          if (s.identity.kind === 'task-directory' && !admitted.has(id)) {
-            this.sources.delete(id);
-            this.revision++;
-          }
     } else this.diagnostics.push('workspace_not_bound');
     if (home)
       for (const job of invocations)
