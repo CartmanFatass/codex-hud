@@ -2314,7 +2314,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const listed = await f.rpc('tools/list');
   assert.deepEqual(
     listed.result.tools.map((tool) => tool.name),
-    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close', 'hud_tickets', 'hud_statusline']
+    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close', 'hud_lease', 'hud_tickets', 'hud_statusline']
   );
   const feature = 'synthetic-feature';
   const drafts = [
@@ -2564,7 +2564,7 @@ test('a slow CLI launch blocks only retries with the same request key, not other
   assert.equal(grokStarts().length, 1);
 });
 
-test('worker MCP lists only the four worker tools and refuses main-session calls', async (t) => {
+test('worker MCP lists only the worker tools and refuses main-session calls', async (t) => {
   const f = await fixture(t, true, '', undefined, true);
   const dir = f.env.HUD_JOB_DIR;
   const job = basename(dir);
@@ -2586,7 +2586,7 @@ test('worker MCP lists only the four worker tools and refuses main-session calls
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
   const listed = await f.rpc('tools/list');
-  assert.deepEqual(listed.result.tools.map(({ name }) => name), ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress']);
+  assert.deepEqual(listed.result.tools.map(({ name }) => name), ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
   const call = (name, args) => f.rpc('tools/call', { name, arguments: args });
   assert.equal(resultValue((await call('hud_progress', { message: 'Synthetic milestone' })).result).ok, true);
   assert.equal(JSON.parse(fs.readFileSync(join(dir, 'progress.jsonl'), 'utf8')).text, 'Synthetic milestone');
@@ -2605,6 +2605,85 @@ test('worker MCP lists only the four worker tools and refuses main-session calls
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
   assert.equal(fs.existsSync(join(dir, 'qa', 'q1.answer.md')), false);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')), receipt);
+});
+
+function leaseWorker(t, f, number, cwd = f.root, pid = process.pid) {
+  const job = `j${String(number).padStart(16, '0')}`, dir = join(f.env.HUD_HOME, 'jobs', job);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job, cwd, role: 'imp', herdr_pane: 'w4E:p2', created_at: new Date().toISOString() }));
+  const status = (state) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, pid }));
+  status('working');
+  const rpc = workerClient(t, f, dir);
+  return { job, dir, status, lease: async (args) => resultValue(await rpc('hud_lease', { name: 'install', ...args })) };
+}
+
+test('hud_lease grants one worker per Git root, then wakes a waiter after release', async (t) => {
+  const f = await fixture(t);
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: f.root, env: f.env }).status, 0);
+  const sub = join(f.root, 'sub');
+  fs.mkdirSync(sub);
+  const workers = [leaseWorker(t, f, 1), leaseWorker(t, f, 2, sub)];
+  const results = await Promise.all(workers.map((w) => w.lease({ wait_s: 0 })));
+  const winner = results.findIndex((r) => r.granted), loser = 1 - winner;
+  assert.equal(results.filter((r) => r.granted).length, 1);
+  const held_by = results[loser].held_by;
+  assert.equal(held_by.holder, workers[winner].job);
+  assert.ok(Number.isFinite(Date.parse(held_by.since)));
+  assert.deepEqual(await workers[loser].lease({ release: true }), { released: false, held_by });
+  const waiting = workers[loser].lease({ wait_s: 3 });
+  assert.deepEqual(await workers[winner].lease({ release: true }), { released: true });
+  assert.deepEqual(await waiting, { granted: true });
+  assert.deepEqual(await workers[loser].lease({ release: true }), { released: true });
+});
+
+test('hud_lease reclaims terminal jobs and dead processes without granting twice', async (t) => {
+  const f = await fixture(t);
+  const main = (args = {}) => f.call('hud_lease', { name: 'install', wait_s: 0, ...args });
+  const closed = leaseWorker(t, f, 1);
+  assert.deepEqual(await closed.lease({ wait_s: 0 }), { granted: true });
+  closed.status('closed');
+  assert.deepEqual(await main(), { granted: true });
+  assert.deepEqual(await main({ release: true }), { released: true });
+
+  const proc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  const exited = once(proc, 'exit');
+  t.after(() => proc.kill());
+  const dead = leaseWorker(t, f, 2, f.root, proc.pid);
+  // The fallback command must record the worker's PID, not its own short-lived PID.
+  const fallback = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-lease.mjs'), '--dir', dead.dir, '--wait-s', '0', 'install'],
+    { cwd: f.root, env: f.env, encoding: 'utf8' });
+  assert.equal(fallback.status, 0, fallback.stderr);
+  assert.deepEqual(JSON.parse(fallback.stdout), { granted: true });
+  assert.equal((await main()).held_by.holder, dead.job);
+  proc.kill();
+  await exited;
+  const other = leaseWorker(t, f, 3);
+  const results = await Promise.all([main(), other.lease({ wait_s: 0 })]);
+  assert.equal(results.filter((r) => r.granted).length, 1);
+  assert.equal(results.find((r) => !r.granted).held_by.holder, results[0].granted ? 'w4E:p1' : other.job);
+});
+
+test('main sessions can hold and release a lease by pane', async (t) => {
+  const f = await fixture(t);
+  const name = 'shared install';
+  assert.ok((await f.rpc('tools/list')).result.tools.some((tool) => tool.name === 'hud_lease'));
+  assert.deepEqual(await f.call('hud_lease', { name }), { granted: true });
+  const folder = join(f.env.HUD_HOME, 'leases'), [file] = fs.readdirSync(folder);
+  const lease = JSON.parse(fs.readFileSync(join(folder, file), 'utf8'));
+  assert.equal(lease.project, f.root);
+  assert.equal(lease.name, name);
+  assert.equal(lease.holder, f.env.HERDR_PANE_ID);
+  assert.deepEqual(await f.call('hud_lease', { name, release: true }), { released: true });
+  assert.deepEqual(await f.call('hud_lease', { name, release: true }), { released: false });
+  const missing = spawnSync(process.execPath, [entry], { cwd: f.root, env: { ...f.env, PATH: join(f.root, 'empty') },
+    encoding: 'utf8', input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+      name: 'hud_lease', arguments: { name },
+    } }) + '\n' });
+  assert.equal(missing.status, 0, missing.stderr);
+  const reply = JSON.parse(missing.stdout).result;
+  assert.equal(reply.isError, true);
+  assert.match(JSON.parse(reply.content[0].text).error, /requires util-linux flock/);
+  assert.deepEqual(fs.readdirSync(folder), []);
 });
 
 test('hud_read compact lists actionable jobs without losing unread reports or hidden changes', async (t) => {

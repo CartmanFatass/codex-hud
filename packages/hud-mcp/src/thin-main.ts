@@ -35,6 +35,7 @@ import {
 } from '../../../src/roles/roster.js';
 import { HarnessSwitchError } from '../../../src/roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../../../src/roles/tool-definitions.js';
+import { takeLease } from '../../../src/roles/lease.js';
 
 const jobDir = process.env.HUD_JOB_DIR;
 const isWorker = jobDir !== undefined;
@@ -1541,6 +1542,7 @@ async function sendJobs(args: Args) {
 }
 
 async function call(name: string, args: Args): Promise<unknown> {
+  if (name === 'hud_lease') return takeLease(args, { home: hudHome, cwd: process.cwd(), holder: callerPane });
   if (name === 'hud_tickets') {
     if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
     return editTickets(jobCwd(args), args);

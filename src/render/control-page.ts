@@ -10,6 +10,7 @@ import { projectItem } from './project-view.js';
 import { projectSplitScene, type Shown } from './split-project.js';
 import { boardRow, footerLayout, kvRows, mark, pack, section, type FooterHints } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
+import { age } from './monitor-labels.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { HARNESS_OFF, harnessErrorRow } from './harness-page.js';
@@ -139,6 +140,13 @@ function controlList(data: ProjectSnapshot, state: MonitorState, width: number, 
     ...(folded.has('healthy') ? pack(healthy.map(roleName), width - 2).map((line, i) => ({
       item: 'project:fold:healthy', text: fit(`${i ? '    ' : `  ${glyph('active')} `}${line.trimStart()}`, width),
     })) : healthy.flatMap(entries)),
+    ...(data.leases?.length ? [boardRow(''), section(t('Leases'), width), ...data.leases.map((lease) => {
+      const elapsed = age(new Date(lease.since), now);
+      const holder = squeeze(monitorText(lease.holder), Math.max(1, width - visualLength(elapsed) - 12));
+      const detail = `${holder} · ${elapsed}`;
+      const name = squeeze(monitorText(lease.name), Math.max(1, width - visualLength(detail) - 4));
+      return boardRow(pair(`  ${name}`, muted(detail), width));
+    })] : []),
     boardRow(''), fold('usage', 'Usage', usage),
     ...(folded.has('usage') ? [] : radarRows(radar, width, true).map((row, i) => ({ ...row, item: `control:usage:${i}` }))),
     fold('files', 'Files', [...(data.keys.length ? [`${t('keys')} ${have}/${data.keys.length}`] : []), `${t('browser')} ${ok(data.browser)}`]),

@@ -8,6 +8,7 @@ talk to an end user; the orchestrator reads your report.
 ## Before you start
 
 - Read the brief fully, then every file it names.
+- Take the lease named in the brief before using that shared resource.
 - Follow the repository's own agent docs (AGENTS.md / CLAUDE.md and the docs they point to).
 - Ask the orchestrator with `hud_ask`, never a terminal prompt. Keep working on unaffected parts. If unanswered
   after 20 minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part

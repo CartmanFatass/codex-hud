@@ -10,6 +10,7 @@ import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
+import { readActiveLeases, type LeaseRecord } from './thin-jobs.js';
 export interface ProjectItem {
   label: string;
   value: string;
@@ -58,6 +59,7 @@ export interface ProjectSnapshot {
   browser: boolean;
   roleCount: number;
   radar?: ControlRadar;
+  leases?: LeaseRecord[];
   git?: WorktreeStatus;
   gitDiff?: DiffStatSummary;
   /** Linked worktrees besides the main one; with `git`, one Git read per five seconds. */
@@ -237,10 +239,11 @@ export class ProjectCollector {
     if (error instanceof HarnessSwitchError)
       Object.assign(snapshot, { roles: [], harnessSwitches: [], roleCount: 0, harnessSwitchError: error.path });
   }
-  private collectControl(out: ProjectSnapshot, now: number): void {
+  private collectControl(out: ProjectSnapshot, now: number, showLeases = false): void {
     const radar = collectControlRadar(this.hudHome, this.env, now);
     if (radar) out.radar = radar;
     const registry = this.registry();
+    if (showLeases) out.leases = readActiveLeases(this.hudHome, registry.project().root);
     try {
       const facts = controlFacts(registry, this.hudHome, now, this.readJson, this.names);
       out.roles = facts.roles;
@@ -329,7 +332,7 @@ export class ProjectCollector {
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
     if (shown === 'control') {
-      this.collectControl(out, now);
+      this.collectControl(out, now, true);
       // This narrow read shares a collector with Project; keep its signature cache for the next Project visit.
       return out;
     }

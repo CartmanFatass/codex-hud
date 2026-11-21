@@ -52,6 +52,14 @@ collect once with `hud_read`; the notice itself does not read the report. Withou
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
 | `hud_close` | Required `job`. Calls `pi-role-reap` for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
 
+`hud_lease({name, release?, wait_s?})` is available in both main sessions (identified by their herdr pane) and workers
+(identified by job ID). Use the shared resource only after `{granted:true}`. Contention returns
+`{granted:false, held_by:{holder,since}}` after waiting inside the current turn (default 120 seconds, capped at 300;
+`0` checks once). Use `release:true` when done: this returns `{released:true}` for the holder and `{released:false}`
+for anyone else, with `held_by` if another live holder has it. The same name is independent in each Git top level
+(or cwd outside Git). The next acquisition reclaims a lease when its worker is closed, failed or stopped, or its
+recorded process is gone. Lease operations require util-linux `flock` on `PATH`; there is no background process or expiry.
+
 `on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. `idle_grace_s` is CLI-only; pi overrides refuse because pi grace follows the model's cache lifetime inside pi-roles, and browser jobs have no idle grace. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Omitted switches keep pi-role defaults; `split` defaults to the place. `ui_ext: false` disables UI extensions; `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), else `hud_create` returns `unsupported_harness`.
 
 `hud_create` and `hud_sonic` start report the ordered `attempts` (`index`, `place`, and `reason` on failure) and
@@ -84,10 +92,12 @@ for history or fields such as `open_questions`. The per-session `changes` stream
 
 ## Worker tools
 
-With `HUD_JOB_DIR` set, only the four worker tools are exposed, scoped to that job. The HUD home is inferred
+With `HUD_JOB_DIR` set, only worker tools are exposed, scoped to that job. The HUD home is inferred
 from that directory, so `HUD_HOME` need not be forwarded. Claude and Codex use MCP;
 pi loads the native worker extension and uses pi-roles' native ask. Antigravity and Grok Build get the
-fallback `hud-ask.mjs`, `hud-sonic.mjs` and `hud-progress.mjs` commands in their briefs.
+fallback `hud-ask.mjs`, `hud-sonic.mjs` and `hud-progress.mjs` commands in their briefs. For leases without MCP,
+run `node packages/hud-mcp/bin/hud-lease.mjs [--dir <own job dir>] [--release] [--wait-s N] <name>` from the
+HUD release, or use the script's absolute path. `--dir` defaults to `HUD_JOB_DIR`.
 
 - `hud_report({text, turn})` on CLI, `hud_report({text})` on pi: atomically publishes `report.md` and returns its path.
   Use the turn token from the CLI prompt you are answering. No final chat marker is needed.
@@ -102,6 +112,8 @@ fallback `hud-ask.mjs`, `hud-sonic.mjs` and `hud-progress.mjs` commands in their
 job's `progress.jsonl`, retaining the newest 50. `hud_read({ job })` and `hud_peek` return the latest 10 in
 append order as `progress` and the newest entry as `latest_progress`. Ordinary reads omit these fields when empty. Milestones do not appear in
 list/wait rows or trigger `changes` / `hud watch` events.
+- `hud_lease({name, release?, wait_s?})` takes or releases a project-local lease as described above. Take the lease
+  named in the brief before using that resource.
 
 ## Roles and convention
 

@@ -14,6 +14,7 @@ import { finishChain } from '../../dist/render/chain-input.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { editPreset } from '../../dist/roles/role-control.js';
+import { takeLease } from '../../dist/roles/lease.js';
 
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'control-tab-'));
@@ -52,6 +53,25 @@ test('Control is the third whole tab at 40 columns, with arrows, Tab, click and 
     const again = draw(send(project, tabClick(project, 'control')).state);
     assert.deepEqual(again.state.controlNav, ctrl.state.controlNav);
   }
+});
+
+test('Control shows active lease name, holder and age for the selected project', async (t) => {
+  const f = await fixture(t);
+  const caller = { home: f.hud, cwd: f.cwd, holder: 'w4E:p1' };
+  await takeLease({ name: 'shared install', wait_s: 0 }, caller);
+  await takeLease({ name: 'other project', wait_s: 0 }, { ...caller, cwd: f.linked[0] });
+  const now = Date.now() + 10_000;
+  const snapshot = await f.collector.collect('control', f.board, now);
+  for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+    const frame = f.render(40, lang, onControl({}, { panelLayout }), 38, snapshot, true, 'unicode', 'none', { nowMs: now });
+    const rendered = plain(frame).join('\n');
+    assert.match(rendered, lang === 'zh' ? /资源租约/ : /Leases/);
+    assert.match(rendered, /shared install +w4E:p1 · 1\ds/);
+    assert.doesNotMatch(rendered, /other project/);
+    assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+  }
+  await takeLease({ name: 'shared install', release: true }, caller);
+  assert.deepEqual((await f.collector.collect('control', f.board, now)).leases, []);
 });
 
 test('Project hubs have no Control row; Inbox alert links to its role on the same root in both layouts', async (t) => {

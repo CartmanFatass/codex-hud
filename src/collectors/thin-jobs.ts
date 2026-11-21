@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId } from '../roles/herdr-run.js';
+import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkLane } from './workboard-types.js';
 
@@ -85,7 +86,7 @@ function read(path: string, max = 65536, store: typeof cache | null = cache): Sn
     if (fd !== undefined) fs.closeSync(fd);
   }
 }
-function json(path: string, parse: (text: string) => unknown, store = cache): { v: Record<string, unknown>; at: number } | null {
+function json(path: string, parse: (text: string) => unknown, store: typeof cache | null = cache): { v: Record<string, unknown>; at: number } | null {
   const file = read(path, 65536, store);
   if (!file?.whole) complete = false;
   if (!file?.whole) return null;
@@ -257,6 +258,42 @@ export function jobRow(
     ...extras?.progress,
   };
 }
+export interface LeaseRecord {
+  project: string;
+  name: string;
+  holder: string;
+  kind: 'main' | 'worker';
+  since: string;
+  pid: number;
+  pid_start_time?: string;
+}
+export function readLease(file: string): LeaseRecord | null {
+  const v = json(file, JSON.parse, null)?.v;
+  return v && typeof v.project === 'string' && typeof v.name === 'string' && typeof v.holder === 'string' &&
+    (v.kind === 'main' || (v.kind === 'worker' && /^j[0-9a-f]{16}$/.test(v.holder))) && when(v.since) !== null &&
+    typeof v.pid === 'number' && Number.isSafeInteger(v.pid) && v.pid > 1 ? v as unknown as LeaseRecord : null;
+}
+export function leaseJob(home: string, holder: string) {
+  const dir = join(home, 'jobs', holder);
+  const status = json(join(dir, 'STATUS.json'), JSON.parse, null)?.v;
+  const job = status ? {} : json(join(dir, 'job.json'), JSON.parse, null)?.v ?? {};
+  const state = jobRow(job, status).state;
+  return { status, terminal: state === 'closed' || state === 'failed' || state === 'stopped' };
+}
+export function leaseActive(home: string, lease: LeaseRecord): boolean {
+  if (lease.kind === 'worker' && leaseJob(home, lease.holder).terminal) return false;
+  if (workerTreeRootGone(lease.pid, lease.pid_start_time)) return false;
+  try { process.kill(lease.pid, 0); } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
+  return true;
+}
+export function readActiveLeases(home: string, project: string): LeaseRecord[] {
+  const dir = join(home, 'leases');
+  return entries(dir, true).filter((name) => /^[a-f0-9]{64}\.json$/.test(name)).flatMap((name) => {
+    const lease = readLease(join(dir, name));
+    return lease?.project === project && leaseActive(home, lease) ? [lease] : [];
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const rowState = (row: JobRow) => row.state ?? row.display_state;
 export function formatJobChange(row: JobRow): string {
   const head = [row.job, row.role, row.package].filter(Boolean).join(' ');

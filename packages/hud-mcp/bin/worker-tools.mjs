@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { notify } from './hud-notify.mjs';
 import { sonicState } from './sonic-jobs.mjs';
+import { LEASE_TOOL, takeLease } from '../dist/src/roles/lease.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
 const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -143,6 +144,9 @@ export async function waitSonic({ dir, root, job: parent }, ids, seconds = 480, 
   }
 }
 
+export const workerLease = ({ job, root }, args, signal, fallback = false) => takeLease(args,
+  { home: dirname(root), cwd: job.cwd, holder: job.job, worker: true, fallback }, signal);
+
 export async function callWorkerTool(name, args, signal) {
   const context = workerJob();
   const string = (key, value = args[key]) => {
@@ -159,6 +163,7 @@ export async function callWorkerTool(name, args, signal) {
   switch (name) {
     case 'hud_report': return finishReport(context, args.turn, string('text'));
     case 'hud_progress': return progress(context, string('message'));
+    case 'hud_lease': return workerLease(context, args, signal);
     case 'hud_ask': return ask(context, { question: string('question'), default: string('default'), options: strings('options'),
       context: args.context === undefined ? undefined : string('context') }, undefined, signal);
     case 'hud_sonic':
@@ -200,6 +205,7 @@ export function workerTools(cli, supported) {
       { task: string, thinking: { ...string, ...(supported?.length ? { enum: supported } : { description: thinkingLevels.join(', ') }) },
         wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
+    LEASE_TOOL,
   ];
 }
 

@@ -6,6 +6,8 @@ user; the orchestrator reads your report.
 
 ## Before you inspect anything
 
+Take the lease named in the brief before using that shared resource.
+
 - Read the brief fully, then every file, diff and the spec or brief the review brief names.
 - Follow the repository's own agent docs (`AGENTS.md` / `CLAUDE.md` and the docs they point to).
 - Ask the orchestrator with `hud_ask`, never a terminal prompt. Keep working on unaffected parts. If unanswered

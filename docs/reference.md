@@ -85,7 +85,7 @@ Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pa
 Unavailable evidence leaves the jobs view unbound to a native session.
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
-**hud_send**, **hud_respond**, **hud_close**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
+**hud_send**, **hud_respond**, **hud_close**, **hud_lease**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
 It returns role availability, continuation, effective `runs_on` and the convention. For presets, fallbacks,
 model/thinking sources and accepted options, pass `detail: true`. When refreshing, pass the prior
 `convention_version` only if you still have its text; a match omits the convention, never the fresh role rows.
@@ -183,6 +183,13 @@ unsettled jobs at the start of the call. `mode: "any"` (default) returns when on
 `wait_ms` is an integer from 0 to 120000 (default 60000; `0` checks once). The response includes `ready`, `timed_out`,
 `triggered` job IDs and compact `jobs` rows. No targets returns ready with empty lists. Waiting does not read
 report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID for the full result.
+
+Main sessions in herdr and workers use `hud_lease({name, release?, wait_s?})` before using a named shared resource.
+Waits stay inside the caller's turn (120 seconds by default, capped at 300; `0` checks once). Use the resource
+only on `granted: true`; otherwise `held_by` gives the holder and acquisition time. Release with `release: true`
+when done; releasing someone else's lease is a no-op. Leases are scoped to the caller's Git top level (cwd outside
+Git), and the next acquisition reclaims a lease left by a terminal worker or an exited process. No background process
+or time expiry is involved; the tool uses util-linux `flock`.
 
 `hud_peek({ job })` returns compact `status` and progress without fetching the pane. Request `lines` (1–120) to
 fetch the pane tail as `pane_lines`; if unavailable, that field is `null` with a `pane_reason`. `detail: true` adds
@@ -508,6 +515,7 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 
 - **Needs attention**: roles with exhausted places that are enabled, with no available place, or with a missing selected preset, plus invalid role files. A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath. An invalid file opens with Enter or `o`.
 - **Healthy**: folded to role names. Enter shows one row per role with its next target and, on project-owned roles, a `project` tag. Only named presets other than `default` get a preset tag; a file chain without a selector has no tag either.
+- **Leases**: when the selected project has active leases, one read-only row per lease shows its name, holder and age.
 - **Usage** and **Files**: both folded. Usage opens quota windows, pi spend and dispatch health. Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
 
 The role row names the next model when it fits whole; otherwise it shows the harness (and provider for pi, when known). A known inherited model is muted. Split previews the selected role's numbered chain and source; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed. `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.

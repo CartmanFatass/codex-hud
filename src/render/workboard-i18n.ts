@@ -332,6 +332,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   Ready: '就绪',
   Blocked: '受阻',
   'Needs attention': '需要处理',
+  'Leases': '资源租约',
   Healthy: '正常',
   'next job': '下个任务',
   'place: clear its exhausted mark': '位置：清除耗尽标记',

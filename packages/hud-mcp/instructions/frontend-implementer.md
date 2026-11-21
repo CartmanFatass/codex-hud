@@ -6,6 +6,8 @@ and report back. You never talk to an end user; the orchestrator reads, verifies
 
 ## Before you change anything
 
+Take the lease named in the brief before using that shared resource.
+
 - Read the brief fully, then every file it names and the repo docs it points to (README, AGENTS.md / CLAUDE.md, the
   UI design doc). Their coding and design rules apply. Slash commands, skills or workflows written for another harness
   or for the main session do not apply to you; do not invoke skills that spawn agents or ask the user.

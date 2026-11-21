@@ -719,6 +719,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   assert.deepEqual([...h.tools.keys()].sort(), [
     'hud_close',
     'hud_create',
+    'hud_lease',
     'hud_peek',
     'hud_read',
     'hud_respond',
@@ -857,7 +858,7 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   assert.equal(messages.length, 4);
 });
 
-test('pi delegation registers only worker tools in a HUD worker and none of them in a main session', async (t) => {
+test('pi delegation registers the native worker tools and leases in both modes', async (t) => {
   const f = setup(t), main = host(), worker = host(), c = context(f, worker);
   await load(f, main, ports(f));
   assert.deepEqual([...main.tools.keys()], PI_ROLE_TOOLS.map(({ name }) => name));
@@ -867,8 +868,13 @@ test('pi delegation registers only worker tools in a HUD worker and none of them
   try {
     worker.pi.sendMessage = () => assert.fail('a worker must not be woken by the main watcher');
     await load(f, worker);
-    assert.deepEqual([...worker.tools.keys()], ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress']);
+    assert.deepEqual([...worker.tools.keys()], ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
     assert.deepEqual(worker.tools.get('hud_report').parameters.required, ['text']);
+    fs.mkdirSync(process.env.HUD_JOB_DIR, { recursive: true });
+    fs.writeFileSync(path.join(process.env.HUD_JOB_DIR, 'job.json'), JSON.stringify({ job: path.basename(process.env.HUD_JOB_DIR), cwd: f.cwd }));
+    const lease = worker.tools.get('hud_lease');
+    assert.deepEqual((await lease.execute('synthetic', { name: 'install', wait_s: 0 })).details, { granted: true });
+    assert.deepEqual((await lease.execute('synthetic', { name: 'install', release: true })).details, { released: true });
     await worker.emit('session_start', c.ctx);
     assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false);
     await worker.emit('session_shutdown', c.ctx);

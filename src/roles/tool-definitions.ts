@@ -1,4 +1,6 @@
 /** Shared MCP and native pi declarations; importing them never starts a server. */
+import { LEASE_TOOL } from './lease.js';
+
 const text = { type: 'string' };
 const bool = { type: 'boolean' };
 const detail = { ...bool, description: 'Include diagnostics.' };
@@ -112,6 +114,7 @@ export const ROLE_TOOLS = [
     'answer',
   ]),
   tool('hud_close', 'Reap a job early; safe to repeat.', { job: text }, ['job']),
+  LEASE_TOOL,
   tool(
     'hud_tickets',
     'Read the ticket method (default), add or update local tickets, or sync a GitHub mirror. Only the main session can write.',
