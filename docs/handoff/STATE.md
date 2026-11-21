@@ -26,7 +26,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 - working · MCP-ORCH · RESTART-RECOVERY · workers herdr resumed after a restart are kept (agent_session + HUD_JOB_DIR proof); CLI effort gaps; newest legacy task dirs first (mcp-orch/05)
-- working · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions
+- try · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions (c1572b5d; Fishpref d5e2a98 cherry-picked)
 - try · MCP-ORCH · MCPORCH-07b · Claude Code main sessions get one MCP task per worker turn (2026-07-28 tasks extension, verified on 2.1.330): woken at report, question or failure without hud watch; /tasks cancel stops the worker (69da49a1)
 - try · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (6f1bef38)
 - try · MCP-ORCH · MCPORCH-05 · hud_read({}) scoped to the project (linked worktrees included); a new session adopts jobs whose pane is gone, and their questions follow; restart recovery deferred (ticket 05 comment) (7accf14c)
