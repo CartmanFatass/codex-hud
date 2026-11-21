@@ -298,8 +298,8 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     assert.equal(frame.state.controlNav.projectCursor, cursor);
     keys('pG\x1b[F\x7f\x1b[F\r'); // printable G is text; Home/End escapes are navigation.
     assert.equal(read().active_preset, null);
-    keys('pgroK\r');
-    assert.equal(read().active_preset, 'grok', 'the all-off named chain can be chosen');
+    keys('pdailY\r');
+    assert.equal(read().active_preset, 'daily', 'the all-off named chain can be chosen');
     keys('NNO!\r');
     assert.match(text(), zh ? /预设名无效/ : /bad preset name/);
     keys('\x03');
@@ -308,7 +308,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     keys('\x03');
     keys('Nqjk7\r');
     assert.match(text(), zh ? /未保存/ : /Not saved/);
-    assert.equal(read().active_preset, 'grok');
+    assert.equal(read().active_preset, 'daily');
     keys('s');
     assert.equal(read().active_preset, 'qjk7');
     keys('Rnight\r');

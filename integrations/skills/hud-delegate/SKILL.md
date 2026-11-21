@@ -36,7 +36,7 @@ Dispatch requires a herdr pane.
 
 The shipped defaults; `hud_roster` lists what is actually defined (files in `$HUD_HOME/roles/` add or override).
 
-- `imp` implements a defined change against a brief and completion criteria (shipped places: `pi` implementer, then `pi` Grok 4.7; the owner may add fallbacks or switch it in the Control plane, so trust `hud_roster`'s `runs_on`).
+- `imp` implements a defined change against a brief and completion criteria (shipped place: `pi` implementer; the owner may add fallbacks or switch it in the Control plane, so trust `hud_roster`'s `runs_on`).
 - `reviewer` independently assesses a specified change and reports findings (shipped places: `pi` reviewer, then `agy` Hydrogen high; same as `imp` for switching). You decide whether to accept the change or request repairs.
 - `sonic` does small, fully specified chores: lookups across several files, small patches and doc edits, running an exact command and returning its output; never test authoring, bug diagnosis, judging measurements or design (`pi` only; no CLI instructions file).
 - `oracle` is the strongest-model seat (`cli` `claude` `fable` high, fallback `pi` `architect`): read-only, high-level judgement of any kind the brief sets (design, root cause, verifying a report, a review verdict, synthesis). When a job needs a method skill, name its `SKILL.md` path in the brief. It carries both former architect/oracle setups as the `architect` and `fable` presets; `hud_create` accepts `architect` as another name for `oracle` (unless a role file defines its own `architect`).

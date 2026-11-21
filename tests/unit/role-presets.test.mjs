@@ -41,15 +41,15 @@ test('presets validate names, duplicates and every run like the role run', (t) =
 test('presets merge shipped, owner, registered project by name; omission inherits', (t) => {
   const f = fixture(t);
   f.put(f.file, f.own);
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'grok', 'hydrogen']);
-  const override = { name: 'grok', run: [{ ...pi, model: 'owner/model' }] };
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'hydrogen']);
+  const override = { name: 'hydrogen', run: [{ ...pi, model: 'owner/model' }] };
   f.put(f.file, { ...f.own, presets: [override, { name: 'mine._-1', run: [pi] }] });
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'grok', 'hydrogen', 'mine._-1']);
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'hydrogen', 'mine._-1']);
   assert.deepEqual(f.role().presets[1], override);
   f.put(join(f.hud, 'projects.json'), { version: 1, projects: [{ root: fs.realpathSync(f.cwd), registered_at: '2026-11-17T00:00:00Z' }] });
-  f.put(join(f.cwd, '.hud/roles/imp.json'), { ...f.own, presets: [{ name: 'grok', run: [{ ...pi, model: 'project/model' }] }] });
+  f.put(join(f.cwd, '.hud/roles/imp.json'), { ...f.own, presets: [{ name: 'hydrogen', run: [{ ...pi, model: 'project/model' }] }] });
   assert.equal(f.role().presets[1].run[0].model, 'project/model');
-  assert.equal(f.role().presets.length, 4);
+  assert.equal(f.role().presets.length, 3);
   const before = fs.readFileSync(f.file, 'utf8');
   assert.deepEqual(editPlaces(f.hud, f.cwd, { PATH: '' }, { role: 'imp', index: 0, op: 'preset' }), { ok: false, message: 'the project file is in force: o opens it' });
   assert.equal(fs.readFileSync(f.file, 'utf8'), before);
@@ -68,7 +68,7 @@ test('presets merge shipped, owner, registered project by name; omission inherit
 });
 
 test('switch writes a selector, not its run; legacy equality ignores key order but not place order', (t) => {
-  const f = fixture(t), preset = { name: 'mine', run: [{ ...pi, model: 'owner/model', lens: false, pi_args: ['--verbose'] }] };
+  const f = fixture(t), preset = { name: 'mine', run: [{ ...pi, model: 'owner/model', lens: false, pi_args: ['--verbose'] }, { ...pi, model: 'synthetic/backup' }] };
   f.put(f.file, { ...f.own, presets: [preset] });
   const edit = (step) => editPlaces(f.hud, f.cwd, { PATH: '' }, { role: 'imp', index: 0, op: 'preset', step });
   assert.deepEqual(edit(-1), { ok: true, index: 0, preset: 'mine' }, 'custom goes back to last');
@@ -76,11 +76,11 @@ test('switch writes a selector, not its run; legacy equality ignores key order b
   assert.deepEqual(stored, { ...f.own, presets: [preset], active_preset: 'mine' });
   assert.equal(fs.statSync(f.file).mode & 0o777, 0o600);
   assert.equal(currentPreset(f.role()), 'mine');
+  const { preset: _, ...r } = f.role();
+  assert.equal(currentPreset({ ...r, run: r.run.map((p) => Object.fromEntries(Object.entries(p).reverse())) }), 'mine');
+  assert.equal(currentPreset({ ...r, run: [...r.run].reverse() }), null);
   assert.deepEqual(edit(1), { ok: true, index: 0, preset: 'default' }, 'last wraps to default');
   assert.equal(currentPreset(f.role()), 'default');
-  const { preset: _, ...r } = f.role();
-  assert.equal(currentPreset({ ...r, run: r.run.map((p) => Object.fromEntries(Object.entries(p).reverse())) }), 'default');
-  assert.equal(currentPreset({ ...r, run: [...r.run].reverse() }), null);
   assert.equal(currentPreset({ ...r, run: [{ ...pi, thinking: 'high' }] }), null);
   assert.equal(currentPreset({ run: [pi] }), null);
 });
@@ -119,40 +119,40 @@ test('rename and delete inherited presets persist on the actual owner path; proj
   const f = fixture(t), owner = join(f.hud, 'roles/renamed-filename.json');
   const shipped = join(bundled, 'roles/imp.json'), shippedBefore = fs.readFileSync(shipped, 'utf8');
   const local = { name: 'local', run: [{ ...pi, pi_args: ['--verbose'], advanced: { keep: true } }] };
-  f.put(owner, { ...f.own, presets: [local], active_preset: 'grok' });
+  f.put(owner, { ...f.own, presets: [local], active_preset: 'hydrogen' });
   const registry = f.registry(), imported = registry.roles().get('imp');
-  assert.equal(imported.run[0].model, 'xai/grok-4.7');
+  assert.equal(imported.run[0].model, 'gemini-4-hydrogen-high');
   assert.equal(registry.assignment(imported).model_source, shipped);
   assert.equal(edit(f, { op: 'rename', name: 'local' }).message, 'preset name already exists');
   assert.equal(edit(f, { op: 'rename', name: 'night._-1' }).ok, true);
   assert.equal(f.role().preset, 'night._-1');
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'hydrogen', 'local', 'night._-1']);
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'local', 'night._-1']);
   assert.deepEqual(stored(owner).presets[0], local);
-  assert.deepEqual(stored(owner).hidden_presets, ['grok']);
+  assert.deepEqual(stored(owner).hidden_presets, ['hydrogen']);
   assert.deepEqual(stored(owner).run, f.own.run);
   assert.equal(fs.statSync(owner).mode & 0o777, 0o600);
   assert.equal(fs.existsSync(f.file), false);
-  assert.equal(edit(f, { op: 'select', name: 'hydrogen' }).ok, true);
+  assert.equal(edit(f, { op: 'select', name: 'default' }).ok, true);
   assert.equal(edit(f, { op: 'delete' }).ok, true);
   const after = f.role();
-  assert.deepEqual([after.preset, after.run, after.presets.map((p) => p.name)], [null, f.own.run, ['default', 'local', 'night._-1']]);
-  assert.deepEqual(stored(owner).hidden_presets, ['grok', 'hydrogen']);
+  assert.deepEqual([after.preset, after.run, after.presets.map((p) => p.name)], [null, f.own.run, ['local', 'night._-1']]);
+  assert.deepEqual(stored(owner).hidden_presets, ['hydrogen', 'default']);
   assert.equal(fs.readFileSync(shipped, 'utf8'), shippedBefore);
   assert.equal(edit(f, { op: 'select', name: 'night._-1' }).ok, true);
   assert.equal(edit(f, { op: 'delete' }).ok, true);
-  assert.deepEqual(stored(owner).hidden_presets, ['grok', 'hydrogen'], 'a local-only name needs no hide');
+  assert.deepEqual(stored(owner).hidden_presets, ['hydrogen', 'default'], 'a local-only name needs no hide');
 
   f.put(join(f.hud, 'projects.json'), { version: 1, projects: [{ root: fs.realpathSync(f.cwd) }] });
   const project = join(f.cwd, '.hud/roles/imp.json'), run = [{ ...pi, model: 'synthetic/project' }];
-  f.put(project, { ...f.own, run, presets: [{ name: 'grok', run }] });
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'local', 'grok']);
-  assert.deepEqual([f.role().preset, f.role().run], ['grok', run], 'the project infers its own selector, not the owner null');
+  f.put(project, { ...f.own, run, presets: [{ name: 'hydrogen', run }] });
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['local', 'hydrogen']);
+  assert.deepEqual([f.role().preset, f.role().run], ['hydrogen', run], 'the project infers its own selector, not the owner null');
   assert.equal(edit(f, { op: 'select', name: null }).message, 'the project file is in force: o opens it');
 });
 
 test('cycling one already active preset does not rewrite the role file', (t) => {
   const f = fixture(t), chain = [{ ...pi, model: 'synthetic/one' }];
-  f.put(f.file, { ...f.own, run: chain, hidden_presets: ['default', 'grok', 'hydrogen'], presets: [{ name: 'one', run: chain }] });
+  f.put(f.file, { ...f.own, run: chain, hidden_presets: ['default', 'hydrogen'], presets: [{ name: 'one', run: chain }] });
   const text = fs.readFileSync(f.file, 'utf8'), inode = fs.statSync(f.file).ino;
   for (const step of [1, -1]) assert.deepEqual(editPlaces(f.hud, f.cwd, { PATH: '' }, { role: 'imp', index: 0, op: 'preset', step }), { ok: true, index: 0 });
   assert.equal(fs.readFileSync(f.file, 'utf8'), text);
@@ -161,8 +161,8 @@ test('cycling one already active preset does not rewrite the role file', (t) => 
 
 test('create and whole-chain saves only materialize the changed named chain and preserve raw options', (t) => {
   const f = fixture(t), { presets: _, ...shipped } = stored(join(bundled, 'roles/imp.json'));
-  assert.equal(edit(f, { op: 'select', name: 'grok' }).ok, true);
-  assert.deepEqual(stored(f.file), { ...shipped, active_preset: 'grok' });
+  assert.equal(edit(f, { op: 'select', name: 'hydrogen' }).ok, true);
+  assert.deepEqual(stored(f.file), { ...shipped, active_preset: 'hydrogen' });
   const authored = { name: 'own', run: [{ harness: 'pi', pi_args: ['--verbose'], extra: { nested: true } }] };
   f.put(f.file, { ...f.own, presets: [authored], active_preset: 'own' });
   const old = f.registry(), original = old.roles().get('imp'), revision = old.revision(original);

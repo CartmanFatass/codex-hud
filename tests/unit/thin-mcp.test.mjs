@@ -3179,7 +3179,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     assert.equal(r.preset, 'default');
     assert.deepEqual(r.presets[0].run, r.run);
   }
-  assert.deepEqual(roster.roles.find((r) => r.role === 'imp').presets.map((p) => p.name), ['default', 'grok', 'hydrogen']);
+  assert.deepEqual(imp.presets.map((p) => p.name), ['default', 'hydrogen']);
   for (const name of ['sonic', 'pro', 'flow', 'general']) {
     const r = roster.roles.find((r) => r.role === name);
     if (r) assert.deepEqual([r.presets, r.preset], [[], null]);
@@ -3311,7 +3311,7 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   assert.equal(receipt(override).place_key, 'pi:synthetic/override');
   assert.equal(receipt(override).model_source, 'hud_create');
   assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/override', '--thinking', 'low']);
-  assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'grok' })).job, fallback.job);
+  assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'hydrogen' })).job, fallback.job);
 
   markExhausted(f.env.HUD_HOME, 'pi:synthetic/backup', 'rate limit');
   const unavailable = await f.call('hud_create', { ...args, request_key: 'preset-unavailable' });
@@ -3777,7 +3777,7 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
   assert.deepEqual(role.accepts_options, ['on', 'model', 'thinking']);
   assert.equal(role.pi_role_file, null);
   const imp = roster.find((entry) => entry.role === 'imp');
-  assert.deepEqual(imp.run.map((place) => place.harness), ['pi', 'pi']);
+  assert.deepEqual(imp.run.map((place) => place.harness), ['pi']);
   const reviewer = roster.find((entry) => entry.role === 'reviewer');
   assert.deepEqual(reviewer.run.map((place) => place.harness), ['pi', 'cli']);
   fs.unlinkSync(customCli);
