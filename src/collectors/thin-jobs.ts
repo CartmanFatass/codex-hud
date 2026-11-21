@@ -261,6 +261,24 @@ export function jobRow(
     ...extras?.progress,
   };
 }
+export function failureUnobserved(dir: string, observedAt: unknown): boolean {
+  const observed = when(observedAt);
+  if (observed === null) return true;
+  try {
+    const status = fs.statSync(join(dir, 'STATUS.json'), { throwIfNoEntry: false });
+    return status !== undefined && Math.floor(status.mtimeMs) > observed;
+  } catch { return true; }
+}
+
+export function jobOwesCaller(dir: string, job: Record<string, unknown>): boolean {
+  let status = null;
+  try { status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8')); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  const row = jobRow(job, status, { dir });
+  return row.display_state === 'working' || row.state === 'idle_grace' || row.report_unread || row.open_questions > 0 ||
+    (row.display_state === 'failed' && failureUnobserved(dir, job.observed_at));
+}
+
 export interface LeaseRecord {
   project: string;
   name: string;
@@ -393,7 +411,7 @@ export async function readSessionJobRows(home: string, pane: string, cwd: string
   const receipts = watchReceipts(home);
   // Capture the initial pane state before yielding, so writes just after watch starts are changes, not catch-up.
   const rows = watchRows(home, pane, receipts);
-  if (await adoptProjectJobs(home, pane, cwd, receipts.map(({ job }) => job), env)) {
+  if (await adoptProjectJobs(home, pane, cwd, receipts.map(({ job }) => job), env, jobOwesCaller)) {
     return readThinJobRows(home, { pane });
   }
   return rows;

@@ -12,10 +12,11 @@ import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, 
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
+import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
 import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
-import { jobChanges, jobRow, readJobProgress, type JobRow } from '../../../src/collectors/thin-jobs.js';
+import { failureUnobserved, jobChanges, jobOwesCaller, jobRow, readJobProgress, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { questionFields } from '../../../src/collectors/work-artifacts.js';
 import { PanelActionLog } from '../../../src/collectors/panel-actions.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
@@ -96,8 +97,8 @@ interface Job extends PiOptions {
   dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments';
   dispatch_path?: string;
   stderr_tail: string;
-  message_keys: string[];
-  send_outcomes?: { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string }[];
+  message_keys?: string[]; // Legacy receipts only.
+  send_outcomes?: SendOutcome[];
   role_skills?: { name: string; path: string }[];
   skipped_skills?: { name: string; reason: string }[];
   worker_prompt?: string | null;
@@ -753,7 +754,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
 function readRow(job: Job, markExhaustion = true) {
   const dir = directory(job.job);
   const file = join(dir, 'STATUS.json');
-  let status = json<Record<string, unknown> & { state?: string; exit_reason?: string | null; error?: string | null }>(file);
+  let status = json<Record<string, unknown> & { state?: string; output_written?: boolean; settled_at?: string; exit_reason?: string | null; error?: string | null }>(file);
   let row = jobRow(job, status, { dir });
   if (markExhaustion && row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, row.reason);
@@ -775,15 +776,6 @@ function readRow(job: Job, markExhaustion = true) {
     }
   }
   return { row, status };
-}
-
-function failureUnobserved(job: Job): boolean {
-  const observed = Date.parse(job.observed_at ?? '');
-  if (!Number.isFinite(observed)) return true;
-  try {
-    const status = fs.statSync(join(directory(job.job), 'STATUS.json'), { throwIfNoEntry: false });
-    return status !== undefined && Math.floor(status.mtimeMs) > observed;
-  } catch { return true; }
 }
 
 function compactRow(row: JobRow) {
@@ -851,7 +843,7 @@ function listJobs(recent: boolean) {
       !row.blocked &&
       !row.report_unread &&
       !row.question_ids.length &&
-      !(failed && failureUnobserved(job))
+      !(failed && failureUnobserved(directory(job.job), job.observed_at))
     ) return [];
     return [compactRow(row)];
   });
@@ -1022,7 +1014,7 @@ async function readContextFile(path: string, limit: number | undefined) {
   }
 }
 
-async function assembleContext(args: Args, cwd: string, inline: boolean, projectRoot: string, repairOf?: string) {
+async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean }, repairOf?: string) {
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
   let remaining = 256 * 1024;
@@ -1042,24 +1034,26 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
     } else sections.push(`- ${label}`);
     return true;
   };
-  const standingPath = join(projectRoot, '.hud', 'brief.md');
   let standing: string | undefined;
   let reference = '';
-  try {
-    const path = await fs.promises.realpath(standingPath);
-    inside(projectRoot, path);
-    if (inline) {
-      if (!(await append(path, JSON.stringify(standingPath))))
-        return { ok: false, code: 'context_too_large', error: standingPath } as const;
-    } else {
-      if (!(await fs.promises.stat(path)).isFile()) throw new Error('not a regular file');
-      // A heading here could replace the title of a task written without one.
-      reference = `Read the project standing brief: ${JSON.stringify(standingPath)}.\n\n`;
+  if (project.registered) {
+    const standingPath = join(project.root, '.hud', 'brief.md');
+    try {
+      const path = await fs.promises.realpath(standingPath);
+      inside(project.root, path);
+      if (inline) {
+        if (!(await append(path, JSON.stringify(standingPath))))
+          return { ok: false, code: 'context_too_large', error: standingPath } as const;
+      } else {
+        if (!(await fs.promises.stat(path)).isFile()) throw new Error('not a regular file');
+        // A heading here could replace the title of a task written without one.
+        reference = `Read the project standing brief: ${JSON.stringify(standingPath)}.\n\n`;
+      }
+      standing = path;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+        return { ok: false, code: 'invalid_arguments', error: `${standingPath} must resolve to a readable text file inside ${project.root}` } as const;
     }
-    standing = path;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
-      return { ok: false, code: 'invalid_arguments', error: `${standingPath} must resolve to a readable text file inside ${projectRoot}` } as const;
   }
   for (const [key, root, max] of [['context_files', cwd, 32], ['from_jobs', jobsRoot, 16]] as const) {
     const given = args[key];
@@ -1107,7 +1101,7 @@ export async function sonicThinking(cwd: string) {
   const role = found.roles().get('sonic');
   if (!role) return;
   const active = found.assignment(role).places.find((place) => place.state === 'active');
-  if (active) return launchThinking(hudHome, active.place.harness, active.model.value);
+  if (active) return launchThinking(hudHome, active.place, active.model.value);
 }
 
 function placeOptions(args: Args, configured: RolePlace) {
@@ -1135,12 +1129,14 @@ function placeOptions(args: Args, configured: RolePlace) {
       options[key] = value;
     } else if (key !== 'skills' && place.harness === 'pi' && place[key] !== undefined) options[key] = place[key];
   }
-  if (args.pi_args !== undefined) {
-    if (place.harness !== 'pi' || !Array.isArray(args.pi_args) || args.pi_args.length > 128 ||
-      args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)) return invalid();
-    if (args.pi_args.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
+  if (args.pi_args !== undefined && place.harness !== 'pi') return invalid();
+  const piArgs = args.pi_args === undefined ? options.pi_args : args.pi_args;
+  if (piArgs !== undefined) {
+    if (!Array.isArray(piArgs) || piArgs.length > 128 ||
+      piArgs.some((value) => typeof value !== 'string' || value.length > 4096)) return invalid();
+    if (piArgs.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
       return invalid('pi_args cannot override --orchestrator or --notify caller binding');
-    options.pi_args = args.pi_args;
+    options.pi_args = piArgs;
   }
   return { place, options };
 }
@@ -1272,8 +1268,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
   }
   const inline = initial.place.harness === 'bro';
-  const projectRoot = found.project().root;
-  const context = await assembleContext(args, cwd, inline, projectRoot, repairOf);
+  const project = found.project();
+  const context = await assembleContext(args, cwd, inline, project, repairOf);
   if ('code' in context) return context;
   let overrideHarnesses: Record<string, { model?: string }> | null = null;
   if (onName) {
@@ -1305,7 +1301,6 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     attempts,
     dispatch_exit_code: null,
     stderr_tail: '',
-    message_keys: [],
   };
   const dir = directory(id);
   const selected = definition.presets?.some((p) => p.run === definition.run);
@@ -1347,7 +1342,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
-      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro', projectRoot, repairOf);
+      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro', project, repairOf);
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
         writeBrief(job, dir, task, briefContext.block, attempts.length === 0);
@@ -1374,8 +1369,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (!result.preInput || result.cleanupFailed) break;
       save(job);
     }
-    const value = finishLaunch(job, dir, result, reason);
-    return finishTask(taskEntry, job, value, result.exit_code === 0);
+    finishLaunch(job, dir, result, reason);
+    return finishTask(taskEntry, job, result.exit_code === 0, taskEntry && launchSummary(job)) ?? created(job);
   });
 }
 
@@ -1401,10 +1396,8 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
 async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree): Promise<DispatchResult> {
   let instructionsPath = '';
   try {
-    if (job.pi_args?.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
-      return rejectLaunch(launchError('pi_args cannot override --orchestrator or --notify caller binding', 'invalid_arguments'));
     if (job.thinking != null) {
-      const supported = await launchThinking(hudHome, place.harness, job.model ?? null);
+      const supported = await launchThinking(hudHome, place, job.model ?? null);
       if (supported && !supported.includes(job.thinking)) {
         const thinking = nearestThinking(job.thinking, supported);
         if (!thinking) return rejectLaunch(launchError(`no supported thinking level for ${job.model}`, 'invalid_arguments'));
@@ -1476,9 +1469,7 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
     fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
   }
   save(job);
-  const out = created(job);
   if (!job.parent_job) cursor.set(job.job, readRow(job).row);
-  return out;
 }
 
 function harnessSwitchFailure(error: HarnessSwitchError) {
@@ -1520,17 +1511,19 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   const now = Date.now();
   const duplicate = explicitKey === undefined
     ? current.send_outcomes?.find((attempt) => attempt.derived_key === matchKey && withinRetryWindow(attempt.recorded_at, now))
-    : current.send_outcomes?.find((attempt) => attempt.key === explicitKey);
-  if (duplicate || (explicitKey !== undefined && current.message_keys.includes(explicitKey))) {
-    if (duplicate?.exit_code === 0 && !taskClient) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-    return duplicate?.exit_code === 0
+    : sendHistory(current).find((attempt) => attempt.key === explicitKey);
+  if (duplicate) {
+    const outcome = 'legacy' in duplicate ? undefined : duplicate;
+    if (outcome?.exit_code === 0 && !taskClient) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+    return outcome?.exit_code === 0
       ? { ok: true, sent: false }
       : { ok: false, sent: false, code: 'send_failed',
-          ...(duplicate && { key: duplicate.key, exit_code: duplicate.exit_code, stderr_tail: duplicate.stderr_tail }) };
+          ...(outcome && { key: outcome.key, exit_code: outcome.exit_code, stderr_tail: outcome.stderr_tail }) };
   }
   const { row, status } = readRow(current);
   const state = row.state ?? '';
-  if (!workingOnly && state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) {
+  if (!workingOnly && ((state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) ||
+      ((state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) && piReadSettlement(dir, current, status)))) {
     const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: derivedKey('repair', id, matchKey) },
       process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined });
     return 'job' in repair && repair.job ? { ...repair, continued_as: repair.job } : repair;
@@ -1554,14 +1547,13 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   const recorded_at = new Date().toISOString();
   const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}), recorded_at,
     exit_code: null as number | null, stderr_tail: '' };
-  current.message_keys.push(key);
   (current.send_outcomes ??= []).push(outcome);
   if (!current.cli) current.pi_sent_at = recorded_at;
   save(current);
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
   const prior = current.cli ? readTurn(dir) : null;
-  const turn = current.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
-  const taskEntry = taskClient && !workingOnly ? beginTask(current, row.report_mtime) : undefined;
+  const turn = current.cli ? writeTurn(dir, { send: { key, pid: process.pid, start: procStat(process.pid)?.start ?? null } }) : null;
+  const taskEntry = taskClient && !workingOnly ? beginTask(current, row.report_mtime, undefined, row) : undefined;
   const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
   if (turn && refusedBeforeInput(result)) {
     const active = readTurn(dir);
@@ -1590,17 +1582,16 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     }
   }
   if (oldTask && !taskEntry) sampleTask(oldTask);
-  const value = {
-    ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
-    ok: result.exit_code === 0,
-    sent: result.exit_code === 0,
+  const ok = result.exit_code === 0;
+  const response = finishTask(taskEntry, latest, ok);
+  if (!ok && oldTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
+  return response ?? {
+    ...(ok ? {} : { code: 'send_failed' }),
+    ok, sent: ok,
     ...(queued ? { queued: true } : {}),
     exit_code: result.exit_code,
     stderr_tail: result.stderr,
   };
-  const response = finishTask(taskEntry, latest, value, value.ok);
-  if (!value.ok && oldTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
-  return response;
 }
 
 async function sendJobs(args: Args) {
@@ -1668,9 +1659,8 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_create') {
     const result = await dispatchJob(args, process.env.HERDR_PANE_ID);
     if (sentCreateHint) return result;
-    const task = TASK_HANDLE in result ? result[TASK_HANDLE] as ReturnType<typeof wireTask> : undefined;
-    if (task) task.statusMessage += ` — ${deliveryHint(false)}`;
     sentCreateHint = true;
+    if (isTaskReply(result)) return { ...result, statusMessage: `${result.statusMessage} — ${deliveryHint(false)}` };
     const watcherAlive = !taskClient && ('watcher_alive' in result ? result.watcher_alive === true : !!callerPane && watching(callerPane, hudHome));
     return { ...result, hint: deliveryHint(watcherAlive) };
   }
@@ -1744,11 +1734,11 @@ async function call(name: string, args: Args): Promise<unknown> {
     fs.mkdirSync(join(dir, 'qa'), { recursive: true, mode: 0o700 });
     const oldTask = activeTasks.get(id);
     if (oldTask) sampleTask(oldTask);
-    const task = taskClient && readRow(job, false).row.question_ids.includes(request)
-      ? beginTask(job, oldTask?.reportBefore, request) : undefined;
+    const row = taskClient ? readRow(job, false).row : undefined;
+    const task = row?.question_ids.includes(request) ? beginTask(job, oldTask?.reportBefore, request, row) : undefined;
     try {
       fs.writeFileSync(join(dir, 'qa', `${request}.answer.md`), answer, { flag: 'wx', mode: 0o600 });
-      return finishTask(task, job, { ok: true, written: true }, true);
+      return finishTask(task, job, true) ?? { ok: true, written: true };
     } catch (error) {
       if (task) releaseTask(task);
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -1812,7 +1802,7 @@ function deliveryHint(watcherAlive: boolean): string {
 }
 const createdJobs = new Set<string>();
 async function adoptSessionJobs() {
-  if (!callerPane || !await adoptProjectJobs(hudHome, callerPane, process.cwd(), jobs(), process.env)) return false;
+  if (!callerPane || !await adoptProjectJobs(hudHome, callerPane, process.cwd(), jobs(), process.env, jobOwesCaller)) return false;
   if (!taskClient) ensureQueueWatcher(callerPane, hudHome);
   return true;
 }
@@ -1859,7 +1849,6 @@ function mutationKey(name: string, args: Args): string | null {
   return `job:${id}`;
 }
 const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
-const TASK_HANDLE = Symbol('task handle');
 const TASK_TTL = 3 * 60 * 60_000;
 const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
 const taskContent = (text: string) => ({ content: [{ type: 'text', text }] });
@@ -1867,7 +1856,7 @@ type TaskStatus = 'working' | 'completed' | 'failed' | 'cancelled';
 type TaskView = { status: TaskStatus; statusMessage: string; lastUpdatedAt: string; result?: ReturnType<typeof taskContent> };
 type HudTask = {
   id: string; job: string; role: string; pane: string; createdAt: string; fence?: string;
-  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView;
+  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; launch?: string; attentionBefore?: number;
 };
 const tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
 const markerFile = (task: HudTask) => join(directory(task.job), 'mcp-task.json');
@@ -1888,11 +1877,14 @@ function releaseTask(task: HudTask) {
 }
 const questionFiles = (dir: string) => entries(join(dir, 'qa')).filter((name) => /^q\d+\.md$/.test(name)).sort();
 const taskLabel = (task: HudTask, state: string) => `${task.job} (${task.role}) — ${state}`;
-function beginTask(job: Job, reportBefore: number | null = null, answer?: string): HudTask {
+const needsAttention = (row: JobRow) => row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator';
+const statusMtime = (dir: string) => fs.statSync(join(dir, 'STATUS.json'), { throwIfNoEntry: false })?.mtimeMs;
+function beginTask(job: Job, reportBefore: number | null = null, answer?: string, prior?: JobRow): HudTask {
   const createdAt = new Date().toISOString(), dir = directory(job.job);
   const task: HudTask = {
     id: `${job.job}:${randomBytes(8).toString('hex')}`, job: job.job, role: job.role, pane: job.herdr_pane, createdAt,
-    reportBefore, seenQuestions: new Set(questionFiles(dir).filter((name) =>
+    reportBefore, attentionBefore: prior && needsAttention(prior) ? statusMtime(dir) : undefined,
+    seenQuestions: new Set(questionFiles(dir).filter((name) =>
       !answer || name === `${answer}.md` || fs.existsSync(join(dir, 'qa', name.replace('.md', '.answer.md'))))),
     view: { status: 'working', statusMessage: `${job.job} (${job.role}) — working`, lastUpdatedAt: createdAt },
   };
@@ -1901,7 +1893,7 @@ function beginTask(job: Job, reportBefore: number | null = null, answer?: string
 }
 function taskFence(job: Job) {
   const turn = job.cli ? readTurn(directory(job.job)) : null;
-  if (turn) return turnToken(turn);
+  if (turn) return turn.caller_token ?? turnToken(turn);
   const sends = job.send_outcomes ?? [];
   for (let i = sends.length - 1; i >= 0; i--) if (!sends[i].exit_code) return sends[i].key;
   return job.created_at;
@@ -1909,18 +1901,30 @@ function taskFence(job: Job) {
 function wireTask(task: HudTask) {
   return { taskId: task.id, createdAt: task.createdAt, ttlMs: TASK_TTL, pollIntervalMs: 5000, ...task.view };
 }
-function finishTask<T extends object>(task: HudTask | undefined, job: Job, value: T, ok: boolean): T & { [TASK_HANDLE]?: ReturnType<typeof wireTask> } {
-  if (!task) return value;
-  if (!ok) { releaseTask(task); return value; }
+type TaskReply = ReturnType<typeof wireTask> & { resultType: 'task' };
+const isTaskReply = (value: unknown): value is TaskReply =>
+  !!value && typeof value === 'object' && 'resultType' in value && value.resultType === 'task';
+function launchSummary(job: Job) {
+  const facts = [job.used_place && `used_place: ${job.used_place}`, job.thinking && `thinking: ${job.thinking}`,
+    job.repair_of && `continued_as: ${job.job}`];
+  if (job.attempts && job.attempts.length > 1) facts.push(`attempts: ${job.attempts.map(({ place, reason }) =>
+    reason ? `${place} (${reason.replace(/\s+/g, ' ').slice(0, 160)})` : place).join(' → ')}`);
+  return facts.filter(Boolean).join('; ');
+}
+function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: string): TaskReply | undefined {
+  if (!task) return;
+  if (!ok) { releaseTask(task); return; }
   task.fence = taskFence(job);
+  task.launch = launch;
+  if (launch) task.view.statusMessage += ` — ${launch}`;
   tasks.set(task.id, task);
   activeTasks.set(task.job, task);
   setTimeout(() => { tasks.delete(task.id); releaseTask(task); }, TASK_TTL).unref();
-  return { ...value, [TASK_HANDLE]: wireTask(task) };
+  return { resultType: 'task', ...wireTask(task) };
 }
 function updateTask(task: HudTask, status: TaskStatus, statusMessage: string, text?: string): TaskView {
   if (task.view.status !== status || task.view.statusMessage !== statusMessage) {
-    task.view = { status, statusMessage, lastUpdatedAt: new Date().toISOString(), ...(text ? { result: taskContent(text) } : {}) };
+    task.view = { status, statusMessage, lastUpdatedAt: new Date().toISOString(), ...(text ? { result: taskContent(task.launch ? `${text}\nLaunch: ${task.launch}` : text) } : {}) };
   }
   if (status !== 'working') releaseTask(task);
   return task.view;
@@ -1947,6 +1951,12 @@ function sampleTask(task: HudTask): TaskView {
     const message = taskLabel(task, 'waiting_orchestrator');
     const choices = [...fields.options, ...(fields.suggested ? [`Default: ${fields.suggested}`] : [])];
     return updateTask(task, 'completed', `${message} — ${id}`, `${message}\nQuestion ${id}: ${fields.question}${choices.length ? `\n${choices.join(' | ')}` : ''}`);
+  }
+  // A send or answer may not have reached the worker when Claude first polls.
+  if (!row.open_questions && needsAttention(row) &&
+      (task.attentionBefore === undefined || statusMtime(dir) !== task.attentionBefore)) {
+    const message = `${taskLabel(task, row.blocked ? 'blocked' : state)} — ${row.reason ?? 'worker needs attention'}`;
+    return updateTask(task, 'completed', message, `${message}. Use hud_read/hud_peek for details.`);
   }
   const report = join(dir, 'report.md');
   const currentSettlement = typeof status?.settled_at !== 'string' || status.settled_at >= task.createdAt;
@@ -2089,8 +2099,8 @@ async function receive(line: string): Promise<void> {
         const key = mutationKey(name, args);
         const value = key === null ? await invoke() : await keyLock(key, invoke);
         const markExhaustion = name !== 'hud_peek';
-        if (value && typeof value === 'object' && TASK_HANDLE in value) {
-          result = { resultType: 'task', ...(value[TASK_HANDLE] as ReturnType<typeof wireTask>) };
+        if (isTaskReply(value)) {
+          result = value;
         } else if (typeof value === 'string') {
           const content = [{ type: 'text', text: value }];
           const delta = withChanges({}, markExhaustion) as { changes?: unknown[] };

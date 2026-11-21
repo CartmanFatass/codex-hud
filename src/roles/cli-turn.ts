@@ -8,6 +8,7 @@ export interface Turn {
   report_sig: string | null;
   report_prompt_sent?: boolean;
   first_sent_at?: string;
+  caller_token?: string; // HUD follow-ups keep the caller task but advance the report token.
   send?: { key: string; pid: number; start: string | null };
 }
 

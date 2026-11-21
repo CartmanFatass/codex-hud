@@ -159,7 +159,7 @@ each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text 
 or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch. Pi and CLI
 workers read the paths listed after the task in their briefs. Browser (`bro`) briefs send the labeled file contents
 to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`). The optional
-project-root `.hud/brief.md` is included automatically, even in an unregistered project: a reference after the task
+project-root `.hud/brief.md` is included automatically only for registered projects: a reference after the task
 for local workers, or its contents within the same byte limits for browser jobs. Keep it safe to send to the selected
 browser service. Attaching an upstream report does not mark it read or close its worker.
 
@@ -343,8 +343,8 @@ pi place. It prints `removed`, `wrote`, `linked`,
 nothing. A file or link apply did not make is left in place and reported as skipped.
 
 Applying records the root in `$HUD_HOME/projects.json`. Project config loads only
-after that. `--remove` drops the registration and leaves `.hud/` alone. The standing
-brief is independent of registration and remains in use.
+after that, including the standing brief. `--remove` drops the registration and
+leaves `.hud/` alone; the standing brief is no longer used.
 
 A registered project's role file may list pi and CLI places in `run` and in
 `presets[].run`. A CLI place accepts only `harness: "cli"`, `agent`, `model` and

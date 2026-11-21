@@ -734,8 +734,11 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const done = await get();
   assert.equal(done.resultType, 'complete');
   assert.equal(done.status, 'completed');
-  assert.equal(done.result.content[0].text,
-    `${job.job} (imp) — idle_grace\nReport: ${join(job.task_dir, 'report.md')}\nSummary: Synthetic settled pi report.`);
+  const [label, path, summary, launch] = done.result.content[0].text.split('\n');
+  assert.equal(label, `${job.job} (imp) — idle_grace`);
+  assert.equal(path, `Report: ${join(job.task_dir, 'report.md')}`);
+  assert.equal(summary, 'Summary: Synthetic settled pi report.');
+  assert.match(launch, /^Launch: used_place: pi/);
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), done);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
   assert.equal(f.commands().some(({ command }) => command === 'pi-role-reap'), false);
@@ -746,6 +749,25 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const repair = taskJob(f, await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic repair.' }));
   assert.notEqual(repair.job, job.job);
   assert.equal(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'))).repair_of, job.job);
+});
+
+test('MCP tasks: launch fall-through and effective effort are in the initial and final text', async (t) => {
+  const f = await fixture(t);
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  fallbackRole(f, 'fallback-task');
+  fs.writeFileSync(join(f.env.HOME, 'fail-start-grok'), 'Synthetic start failure');
+  fs.writeFileSync(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
+    'synthetic/second': { provider: 'synthetic', id: 'second', reasoning: false },
+  }));
+  const task = await taskCall(rpc, 'hud_create', { role: 'fallback-task', task: 'Synthetic fallback.', thinking: 'high' });
+  const job = taskJob(f, task);
+  const launch = /used_place: pi \(synthetic\/second\); thinking: off; attempts: cli\/grok \(synthetic-first\) \(Synthetic start failure\) → pi \(synthetic\/second\)/;
+  assert.match(task.statusMessage, launch);
+  await publishPiGrace(job);
+  const done = await rpc('tasks/get', { taskId: task.taskId });
+  assert.equal(done.status, 'completed');
+  assert.match(done.result.content[0].text, launch);
 });
 
 test('MCP tasks: a question completes the task; an answer starts another task', { timeout: 10000 }, async (t) => {
@@ -1079,6 +1101,22 @@ test('launch thinking facts narrow sonic schema and map sonic, script and hud_cr
   }
 });
 
+test('launch thinking facts map CLI efforts before opening the worker; unknown models pass through', async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
+  for (const [on, model, thinking, expected] of [
+    ['claude', 'opus', 'ultra', 'max'], ['agy', 'gemini-4-hydrogen-high', 'minimal', 'low'],
+    ['codex', 'gpt-5.5', 'max', 'xhigh'], ['codex', 'gpt-6.1-sol', 'ultra', 'ultra'],
+    ['claude', 'synthetic-unknown', 'ultra', 'ultra'], ['grok', 'grok-4.7', 'minimal', 'minimal'],
+  ]) {
+    const job = await f.call('hud_create', { role: 'imp', task: `Synthetic ${on} ${model}.`, on, model, thinking });
+    assert.equal(job.thinking, expected, JSON.stringify(job));
+    const { args } = f.commands().find(({ args }) => args[1] === 'start' && args[2] === job.agent);
+    if (on === 'codex') assert.ok(args.includes(`model_reasoning_effort=${expected}`));
+    else assert.equal(args[args.indexOf(on === 'grok' ? '--reasoning-effort' : '--effort') + 1], expected);
+  }
+});
+
 test('every bundled role uses the same unanswered-question policy', () => {
   const dir = resolve('packages/hud-mcp/instructions');
   for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.md'))) {
@@ -1094,7 +1132,12 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   writeCliRole(f, 'sonic-parent-cli', 0.25, false);
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
   configureFakeDecision(f, server.baseUrl);
-  const parent = await f.call('hud_create', { role: 'sonic-parent-cli', request_key: 'sonic-parent-cli', task: 'Synthetic CLI parent.' });
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  await f.startCliSocket();
+  const handle = await taskCall(rpc, 'hud_create', { role: 'sonic-parent-cli', request_key: 'sonic-parent-cli', task: 'Synthetic CLI parent.' });
+  const parent = taskJob(f, handle);
+  parent.agent = `${parent.job}-primary`;
   await until(() => cliState(parent.task_dir)?.agent_session_id);
   const start = () => runSonic(f, 'start', parent.task_dir, '--task-file', task);
   const [child, alreadyCollected] = await Promise.all([start(), start()]);
@@ -1122,8 +1165,16 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   await until(() => prompts().length === 1, 5000);
   assert.ok(prompts()[0].args[3].includes(id));
   assert.ok(!prompts()[0].args[3].includes(collectedId));
+  assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'working');
+  const next = await taskCall(rpc, 'hud_send', { job: parent.job, text: 'Synthetic caller turn after collection.' });
+  assert.equal(taskJob(f, next).job, parent.job);
+  const superseded = await rpc('tasks/cancel', { taskId: handle.taskId });
+  assert.equal(superseded.status, 'failed');
+  assert.match(superseded.statusMessage, /no longer current/);
+  assert.equal(reapAttempts(f, parent), 0);
   fs.writeFileSync(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
   await until(() => cliState(parent.task_dir)?.state === 'closed', 5000);
+  assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'completed');
   assert.equal(prompts().length, 1, 'the same report is not prompted for again');
   assert.equal(server.requests.length, 0);
 });
@@ -1302,10 +1353,10 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
   }
 });
 
-test('HUD checks: Pi continuation and report rewrite make results stale; read-close repair inherits commands', { timeout: 14000 }, async (t) => {
+test('HUD checks: Pi continuation and report rewrite make results stale; a running check does not block repair', { timeout: 14000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
   await f.startCliSocket();
-  const checks = ['echo ran >> check-count'];
+  const checks = ['echo ran >> check-count; if [[ -f hold-check ]]; then for ((i=0; i<100; i++)); do [[ -f release-check ]] && break; sleep .05; done; test -f release-check; fi'];
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic checks and repair.', checks });
   assert.equal(checkReceipt(job), null);
   await publishPiGrace(job);
@@ -1328,14 +1379,24 @@ test('HUD checks: Pi continuation and report rewrite make results stale; read-cl
   await until(() => Date.now() > fs.statSync(report).mtimeMs);
   assert.equal((await f.call('hud_read', { job: job.job })).checks.stale, true);
   assert.equal(checkReceipt(job).report_sig, next.report_sig);
+  fs.writeFileSync(join(f.root, 'hold-check'), '');
   await publishPiGrace(job, undefined, false);
-  await until(() => readCloseReaped(job));
-  assert.equal(checkReceipt(job).report_sig, reportSignature(job.task_dir));
-  const actual = fs.readFileSync(join(f.root, 'check-count'), 'utf8');
-  assert.equal(actual, 'ran\nran\nran\n');
-  const repair = await f.call('hud_send', { job: job.job, text: 'Synthetic closed-job repair.' });
-  assert.equal(repair.continued_as, repair.job);
-  assert.deepEqual(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'), 'utf8')).checks, checks);
+  const send = { job: job.job, text: 'Synthetic repair during a check hold.' };
+  try {
+    await until(() => checkReceipt(job)?.state === 'running');
+    const repair = await f.call('hud_send', send);
+    assert.equal(repair.continued_as, repair.job);
+    assert.notEqual(repair.job, job.job);
+    assert.deepEqual(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'), 'utf8')).checks, checks);
+    assert.equal(readCloseReaped(job), undefined);
+    assert.equal(reapAttempts(f, job), 0);
+    assert.equal(cliState(job.task_dir).state, 'idle_grace');
+    fs.writeFileSync(join(f.root, 'release-check'), '');
+    await until(() => readCloseReaped(job));
+    assert.equal(checkReceipt(job).report_sig, reportSignature(job.task_dir));
+    assert.equal(fs.readFileSync(join(f.root, 'check-count'), 'utf8'), 'ran\nran\nran\n');
+    assert.equal((await f.call('hud_send', send)).continued_as, repair.job);
+  } finally { fs.writeFileSync(join(f.root, 'release-check'), ''); }
 });
 
 test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 10000 }, async (t) => {
@@ -1385,6 +1446,7 @@ test('read-close: reading the old Pi report after an admitted continuation does 
   await new Promise((done) => setTimeout(done, 450));
   assert.equal(reapAttempts(f, job), 0);
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
+  assert.equal((await f.call('hud_send', { job: job.job, text: 'Do not repair the already continued report.' })).code, 'not_continuable');
 
   await publishPiGrace(job);
   assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
@@ -2509,7 +2571,7 @@ test('thin roster returns the convention and its path with whole-file overrides'
   assert.deepEqual((await refresh(capped.convention_version)).convention, capped.convention);
 });
 
-test('model-supplied pi_args cannot override the inherited caller notification binding', async (t) => {
+test('request and place pi_args cannot override the inherited caller notification binding', async (t) => {
   const f = await fixture(t);
   for (const pi_args of [
     ['--orchestrator', 'wBAD:p99'],
@@ -2527,6 +2589,9 @@ test('model-supplied pi_args cannot override the inherited caller notification b
     assert.equal(result.code, 'invalid_arguments');
     assert.match(result.error, /caller binding/);
   }
+  fallbackRole(f, 'reserved-place', [{ harness: 'pi', pi_role: 'implementer', pi_args: ['--notify=fake command'] }]);
+  const place = { role: 'reserved-place', task: 'Synthetic configured binding.' };
+  assert.match((await f.call('hud_create', place)).error, /caller binding/);
   assert.deepEqual(withoutCallerLookups(f.commands()), [], 'no launcher or herdr mutation for a rejected binding');
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'jobs')), false);
 });
@@ -3051,6 +3116,16 @@ test('MCP adopts same-project orphan jobs in one scan and pushes questions to th
   const adopted = [waitFixtureJob(f, 1, 'working', 'w4E:p8'), waitFixtureJob(f, 2, 'working', 'w4E:p7')];
   const live = waitFixtureJob(f, 3, 'working', 'wOTHER:p1');
   const foreign = waitFixtureJob(f, 4, 'working', 'w4E:p8', initRepo(f.root));
+  const unread = waitFixtureJob(f, 5, 'closed', 'w4E:p8');
+  const unseen = waitFixtureJob(f, 6, 'failed', 'w4E:p8');
+  const read = waitFixtureJob(f, 7, 'closed', 'w4E:p8');
+  const observed = waitFixtureJob(f, 8, 'failed', 'w4E:p8');
+  const question = waitFixtureJob(f, 9, 'closed', 'w4E:p8');
+  for (const { dir } of [unread, read]) fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report.');
+  fs.writeFileSync(join(question.dir, 'qa/q1.md'), 'Synthetic question.');
+  const at = new Date(Date.now() + 1000).toISOString();
+  fs.writeFileSync(join(read.dir, 'job.json'), JSON.stringify({ ...read.receipt, read_at: at }));
+  fs.writeFileSync(join(observed.dir, 'job.json'), JSON.stringify({ ...observed.receipt, observed_at: at }));
   fs.writeFileSync(join(adopted[0].dir, 'SESSION.txt'), 'ORCH=w4E:p8\n');
   fs.writeFileSync(join(f.env.HOME, 'pane-list.json'), '{"result":{"panes":[{"pane_id":"w4E:p1"},{}]}}');
   await f.call('hud_read');
@@ -3061,8 +3136,10 @@ test('MCP adopts same-project orphan jobs in one scan and pushes questions to th
   paneList(f, 'w4E:p1', 'wOTHER:p1');
   const handoff = await f.call('hud_read');
   assert.equal(lists() - before, 1);
-  assert.deepEqual(handoff.changes, adopted.toReversed().map(({ job }) => `${job} imp: working`));
-  assert.deepEqual(adopted.map(ownerOf), ['w4E:p1', 'w4E:p1']);
+  const owed = [...adopted, unread, unseen, question];
+  assert.deepEqual(handoff.changes.map((line) => line.split(' ')[0]).sort(), owed.map(({ job }) => job).sort());
+  assert.ok(owed.every((job) => ownerOf(job) === 'w4E:p1'));
+  assert.deepEqual([read, observed].map(ownerOf), ['w4E:p8', 'w4E:p8']);
   assert.equal(ownerOf(live), 'wOTHER:p1');
   assert.equal(ownerOf(foreign), 'w4E:p8');
 
@@ -3476,6 +3553,12 @@ test('hud_create and hud_send derive keys for concurrent identical calls', async
   assert.equal(first.sent, true);
   assert.equal(second.sent, false);
   assert.equal(second.ok, true);
+  const file = join(job.task_dir, 'job.json');
+  const receipt = JSON.parse(fs.readFileSync(file));
+  assert.equal(receipt.message_keys, undefined);
+  assert.equal(receipt.send_outcomes.length, 1);
+  fs.writeFileSync(file, JSON.stringify({ ...receipt, message_keys: ['legacy-key'] }));
+  assert.deepEqual(await f.call('hud_send', { ...send, message_key: 'legacy-key' }), { ok: false, sent: false, code: 'send_failed' });
   assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[3] === send.text).length, 1);
 });
 
@@ -3888,7 +3971,7 @@ test('hud_create prepends resolved local references and does not revalidate an e
     .map(({ args }) => args[args.indexOf('--label') + 1]), ['imp Synthetic task']);
 });
 
-test('local dispatch references the unregistered project standing brief without changing its labels', async (t) => {
+test('local dispatch uses standing briefs only in registered projects without changing task labels', async (t) => {
   const f = await fixture(t);
   git(f.root, 'init', '-q');
   const cwd = join(f.root, 'workspace'), hud = join(f.root, '.hud');
@@ -3897,7 +3980,10 @@ test('local dispatch references the unregistered project standing brief without 
   const standing = join(hud, 'brief.md');
   fs.writeFileSync(standing, '# Standing rules\nSynthetic project-wide instructions.\n');
   const task = 'Synthetic task title.';
-  const job = await f.call('hud_create', { role: 'imp', cwd, task });
+  const unregistered = await f.call('hud_create', { role: 'imp', cwd, task });
+  assert.equal(fs.readFileSync(join(unregistered.task_dir, 'brief.md'), 'utf8'), `${task}\n\nFinish with \`hud_report\`.\n`);
+  registerBriefProject(f);
+  const job = await f.call('hud_create', { role: 'imp', cwd, task, request_key: 'registered' });
   assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     `${task}\n\nRead the project standing brief: ${JSON.stringify(standing)}.\n\nFinish with \`hud_report\`.\n`);
   assert.equal(workerFor(f, job.job).task, task);
@@ -3905,12 +3991,21 @@ test('local dispatch references the unregistered project standing brief without 
   assert.equal(tab[tab.indexOf('--label') + 1], `imp ${task}`);
 });
 
-test('browser dispatch inlines the standing brief once through the bounded context block', async (t) => {
+function registerBriefProject(f) {
+  fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
+    version: 1, projects: [{ root: fs.realpathSync(f.root), registered_at: new Date().toISOString() }],
+  }));
+}
+
+test('browser dispatch inlines the registered standing brief once through the bounded context block', async (t) => {
   const f = await fixture(t);
   const hud = join(f.root, '.hud'), standing = join(hud, 'brief.md');
   fs.mkdirSync(hud);
   const args = { role: 'pro', task: 'Synthetic browser task' };
   fs.writeFileSync(standing, 'é'.repeat(32 * 1024) + 'x');
+  const unregistered = await f.call('hud_create', { ...args, request_key: 'unregistered' });
+  assert.equal(fs.readFileSync(join(unregistered.task_dir, 'brief.md'), 'utf8'), `${args.task}\n`);
+  registerBriefProject(f);
   assert.equal((await f.call('hud_create', args)).code, 'context_too_large');
   const body = 'Synthetic standing instructions.\n';
   fs.writeFileSync(standing, body);
@@ -6027,8 +6122,15 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
   fs.writeFileSync(join(f.env.HOME, 'write-on-report-prompt'), '');
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
   configureFakeDecision(f, server.baseUrl);
-  const job = await f.call('hud_create', { role: 'qd-prompt', request_key: 'qd-prompt-1', task: 'Synthetic report prompt.' });
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  await f.startCliSocket();
+  const handle = await taskCall(rpc, 'hud_create', { role: 'qd-prompt', request_key: 'qd-prompt-1', task: 'Synthetic report prompt.' });
+  const job = taskJob(f, handle);
   await until(() => cliState(job.task_dir)?.state === 'closed', 10000);
+  const done = await rpc('tasks/get', { taskId: handle.taskId });
+  assert.equal(done.status, 'completed');
+  assert.match(done.result.content[0].text, /Summary: Synthetic report after prompt\./);
   const expectedPrompt = `Write your report to ${join(job.task_dir, 'report.md')} now; if work remains, finish it first.`;
   const prompts = f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === expectedPrompt);
   assert.equal(prompts.length, 1);
@@ -6430,8 +6532,17 @@ test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeo
   fs.writeFileSync(join(f.env.HOME, 'fail-report-prompt'), '');
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
   configureFakeDecision(f, server.baseUrl);
-  const job = await f.call('hud_create', { role: 'qd-prompt-fail', request_key: 'qd-prompt-fail', task: 'Synthetic failed report prompt.' });
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  await f.startCliSocket();
+  const handle = await taskCall(rpc, 'hud_create', { role: 'qd-prompt-fail', request_key: 'qd-prompt-fail', task: 'Synthetic failed report prompt.' });
+  const job = taskJob(f, handle);
   await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 10000);
+  const attention = await rpc('tasks/get', { taskId: handle.taskId });
+  assert.equal(attention.status, 'completed');
+  assert.match(attention.result.content[0].text, /waiting_orchestrator — quiet without a report; .*Use hud_read\/hud_peek/);
+  assert.deepEqual(await rpc('tasks/cancel', { taskId: handle.taskId }), attention);
+  assert.equal(reapAttempts(f, job), 0);
   const status = cliState(job.task_dir);
   assert.equal(status.quiet_decision.action, 'needs-human');
   assert.equal(status.quiet_decision.reason, 'prompt-failed');

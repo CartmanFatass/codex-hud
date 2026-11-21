@@ -97,9 +97,8 @@ Missing files, non-text files, and paths or symlinks resolving outside their res
 `invalid_arguments` before launch. Pi and CLI briefs carry a `## Context References` block right after the task; the worker reads
 those files directly. `job.json` records the resolved `context_files` and the `from_jobs` IDs. Browser (`bro`)
 briefs instead inline the labeled file bodies and send them to the selected browser service (64 KiB per file,
-256 KiB total; exceeding either returns `context_too_large`). The optional project-root `.hud/brief.md` needs no
-setup or registration: local briefs reference it after the task, and browser briefs inline its contents in the
-same bounded context block. Keep it safe to send to the selected browser service. Attaching a report does not
+256 KiB total; exceeding either returns `context_too_large`). For a registered project, local briefs reference its
+optional `.hud/brief.md` after the task, and browser briefs inline its contents in the same bounded context block. Keep it safe to send to the selected browser service. Attaching a report does not
 mark it read or close its worker. A repeated request key does not revalidate attachments.
 
 `isolation: "worktree"` (default `"none"`) runs the job in a fresh linked checkout of `cwd`'s Git repository:

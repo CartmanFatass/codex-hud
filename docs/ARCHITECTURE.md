@@ -45,8 +45,8 @@ only sonic children. Antigravity and Grok Build use the fallback scripts in
 place of MCP tools. The HUD passes only model, effort,
 the bypass flag and role `args`. Harness behaviour and session places are untouched.
 `hud_create` validates explicit context file and report references before dispatch.
-Local briefs list resolved paths and reference the optional project-root `.hud/brief.md`.
-Browser briefs include the paths and bounded file bodies, including the standing brief
+Local briefs list resolved paths and reference a registered project's optional `.hud/brief.md`.
+Browser briefs include the paths and bounded file bodies, including that standing brief
 if present, in the prompt sent to the selected browser service.
 
 Claude's statusline, pi's footer and Codex's tmux bar (`src/index.ts`) are the client

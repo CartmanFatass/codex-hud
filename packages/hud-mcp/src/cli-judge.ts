@@ -14,16 +14,17 @@ export const withDonePrompt = (text: string, bundled: string, dir: string, turn:
     : `After writing the report for this turn, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${turnToken(turn)}\nUse the command from the prompt you are answering, not a newer turn.`}\n`;
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string, reportPromptSent?: boolean, send?: Turn['send']): Turn {
+export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?: boolean; send?: Turn['send'] } = {}): Turn {
   const prev = readTurn(dir);
-  const sent = reportPromptSent || prev?.report_prompt_sent;
+  const sent = options.reportPromptSent || prev?.report_prompt_sent;
   const turn: Turn = {
     seq: (prev?.seq ?? 0) + 1,
     sent_at: new Date().toISOString(),
     report_sig: reportSignature(dir),
     ...(sent ? { report_prompt_sent: true } : {}),
     ...(prev && firstInput(prev) ? { first_sent_at: firstInput(prev) } : {}),
-    ...(send ? { send } : {}),
+    ...(options.by === 'hud' && prev ? { caller_token: prev.caller_token ?? turnToken(prev) } : {}),
+    ...(options.send ? { send: options.send } : {}),
   };
   saveTurn(dir, turn);
   return turn;

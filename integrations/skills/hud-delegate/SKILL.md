@@ -8,7 +8,7 @@ description: Hand work to a local HUD role in its own herdr tab - imp (implement
 The user names a role and a task in plain words; you do the rest. Never ask them to name a tool.
 
 1. Use `hud_roster` with the job's `cwd` on first use or when project dispatch context is stale. It returns availability, effective assignments, continuation and the applicable convention. Later calls omit the text if unchanged. If you still have valid context, go straight to `hud_create`.
-2. Write the task as the convention says. HUD adds the project's `.hud/brief.md` if present and supplies the worker interface; do not copy the standing brief or add report paths or worker protocol commands.
+2. Write the task as the convention says. HUD adds a registered project's `.hud/brief.md` if present and supplies the worker interface; do not copy the standing brief or add report paths or worker protocol commands.
 3. `hud_create` with `role`, the brief as `task`, and `cwd`. The HUD derives a key so an identical call returns the same job. Pass an explicit `request_key` only when you intend to launch a duplicate. Do not pass `preset`, `on`, `model` or `thinking` unless the user asks for the override in this request. For advanced options use the tool schema and `hud_roster({cwd, detail:true})`.
    Pass `checks` for the commands you would otherwise rerun yourself after the worker finishes.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.

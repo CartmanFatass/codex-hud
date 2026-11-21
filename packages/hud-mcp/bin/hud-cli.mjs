@@ -210,7 +210,7 @@ async function run() {
     if (next.action === 'collect-sonic') {
       const { open, uncollected } = sonicChildren(dir);
       if (open || !uncollected.length) { wake(); return; }
-      const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, writeTurn(dir), cli.agent);
+      const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, writeTurn(dir, { by: 'hud' }), cli.agent);
       if (!effect(['agent', 'prompt', name, prompt]).ok) throw new Error('sonic collect prompt failed');
       diskDirty = true; wake(); return;
     }
@@ -233,7 +233,7 @@ async function run() {
         ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
       if (decision.action === 'prompt-report') {
         reportPromptSent = true;
-        const sent = writeTurn(dir, true);
+        const sent = writeTurn(dir, { by: 'hud', reportPromptSent: true });
         const prompt = withDonePrompt(tools ? 'If work remains, finish it first.' :
           `Write your report to ${output} now; if work remains, finish it first.`, bundled, dir, sent, cli.agent);
         if (!effect(['agent', 'prompt', name, prompt]).ok) {

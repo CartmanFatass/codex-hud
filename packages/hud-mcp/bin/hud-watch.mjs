@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../dist/src/roles/worker-tree.js';
-import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
+import { piReadSettlement } from '../dist/packages/hud-mcp/src/pi-read-settlement.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../dist/src/roles/job-checks.js';
 import { reapWorktree } from '../dist/packages/hud-mcp/src/managed-worktree.js';
 import { request } from './herdr-request.mjs';
@@ -189,19 +189,7 @@ function supervisorAlive(pid) {
   }
 }
 function readCloseTurn(dir, job, status) {
-  if (status?.state !== 'idle_grace' || status.output_written !== true ||
-      !job?.read_at || job.reaped_at || job.cli || job.bro || job.jev || job.send_outcomes?.at(-1)?.exit_code === null) return null;
-  // Legacy jobs with sends have no reliable turn boundary.
-  const sentAt = job.pi_sent_at ?? (job.message_keys?.length ? null : job.created_at);
-  const sent = Date.parse(sentAt);
-  // Reading the previous turn's report after a send is not a receipt for the new turn.
-  const settled = Date.parse(status.settled_at);
-  if (!(settled >= sent && Date.parse(job.read_at) > sent)) return null;
-  const report = fs.statSync(join(dir, 'report.md'), { throwIfNoEntry: false });
-  if (!report?.isFile() || Math.floor(report.mtimeMs) <= sent || Math.floor(report.mtimeMs) > settled ||
-      !reportWasRead(job.read_at, report.mtimeMs)) return null;
-  const sig = reportSignature(dir);
-  return sig ? JSON.stringify([sentAt, status.settled_at, sig]) : null;
+  return status?.state === 'idle_grace' && job && !job.reaped_at ? piReadSettlement(dir, job, status) : null;
 }
 function saveJob(file, job) {
   const temp = `${file}.${process.pid}.tmp`;

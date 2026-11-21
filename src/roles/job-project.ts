@@ -22,7 +22,8 @@ export function projectJobFilter(cwd: string) {
 }
 
 /** Missing/malformed herdr evidence cannot transfer ownership. Never use a workspace-filtered list. */
-export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv) {
+export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv,
+  owesCaller: (dir: string, job: Record<string, unknown>) => boolean) {
   const other = jobs.filter((job) => herdrId(job.herdr_pane) && job.herdr_pane !== pane);
   if (!other.length) return false;
   const matches = projectJobFilter(cwd);
@@ -47,11 +48,11 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
     if (lock.status !== 0) return false;
     for (const job of orphans) {
       if (typeof job.job !== 'string' || !/^j[0-9a-f]{16}$/.test(job.job)) continue;
-      const file = join(root, job.job, 'job.json');
+      const dir = join(root, job.job), file = join(dir, 'job.json');
       const temp = `${file}.${randomUUID()}.tmp`;
       try {
         const latest = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (latest?.job !== job.job || latest.herdr_pane !== job.herdr_pane || !matches(latest)) continue;
+        if (latest?.job !== job.job || latest.herdr_pane !== job.herdr_pane || !matches(latest) || !owesCaller(dir, latest)) continue;
         fs.writeFileSync(temp, JSON.stringify({ ...latest, herdr_pane: pane }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
         fs.renameSync(temp, file);
         adopted = true;
