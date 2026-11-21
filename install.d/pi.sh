@@ -91,7 +91,10 @@ hud_ext_uninstall() {
     printf 'Warning: pi is not on PATH; skipping pi package removal.\n' >&2
   fi
   hud_pi_settings uninstall
-  # Do not remove the package directory if it contains an owner's to-tickets skill.
-  if hud_pi_drop_ticket_skill; then rm -rf -- "$HUD_HOME/pi-package"; fi
+  # Keep the package directory if it holds an owner's to-tickets skill (2); a failed unlink (1) fails uninstall.
+  local status=0
+  hud_pi_drop_ticket_skill || status=$?
+  if [[ "$status" == 1 ]]; then return 1; fi
+  if [[ "$status" == 0 ]]; then rm -rf -- "$HUD_HOME/pi-package"; fi
   rm -rf -- "$HUD_HOME/pi-display"
 }
