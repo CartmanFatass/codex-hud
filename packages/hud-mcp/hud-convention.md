@@ -5,6 +5,8 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Keep the main session's context for decisions. Hand a lookup or inventory that spans several files, or a doc
   patch, to `sonic`; code and test changes to `imp`. Do it yourself only when it takes a couple of tool calls or
   needs a resource only the main session holds.
+- A sonic brief asks for facts, not a recommendation, and fits one report of about 60 lines; split a wide survey
+  across several sonics started together.
 - Shared resources (a real install, paid or live runs, the shared browser) stay with the main session. A brief that
   withholds a step the repo's docs normally require (sync, deploy, commit, full suites, paid runs) says who does it.
 - When more than one job needs the same answer (a test source, an interface, who owns a step), put it in the next
