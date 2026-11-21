@@ -24,6 +24,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
+- working · MCP-ORCH · MCPORCH-01 · a launch that fails before input falls through to the next place in one call; worker HUD home from the job directory (mcp-orch/01)
 - working · MCP-ORCH · MCPORCH-08 · settlement notices within 3 s coalesce into one; questions immediate (mcp-orch/08)
 - try · MCP-ORCH · WORKER-MCP · workers get hud_report, hud_ask, hud_sonic, hud_progress (MCP and native pi); briefs and role texts carry no protocol paths; per-role sonic timing; unsupported thinking maps to the nearest level; failed pre-start launches close their tab and name the cause (64534c2c; Fishpref 66e24dc)
 - try · — · HUD-TICKETS · to-tickets becomes the hud_tickets MCP tool (method, add, update, sync); skill links removed on ./install (48c9589d, 19d3fbd1)
