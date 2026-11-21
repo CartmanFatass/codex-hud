@@ -293,7 +293,9 @@ export function installPiPackage(
         signal?.throwIfAborted();
         const result = await s.client.call(tool.name, args);
         try {
-          return { ...result, details: JSON.parse(result.content[0].text) };
+          // The ticket guide is plain Markdown, with changes (if any) in a separate text block.
+          const guide = tool.name === 'hud_tickets' && !result.isError && (args.op === undefined || args.op === 'guide');
+          return { ...result, details: JSON.parse(guide ? result.content[1]?.text ?? '{}' : result.content[0].text) };
         } catch {
           throw Error('invalid_mcp_response');
         }

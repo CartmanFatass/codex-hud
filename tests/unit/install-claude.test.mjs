@@ -57,10 +57,15 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       const result = spawnSync('./install', [...args, '--with', 'claude'], { cwd: root, env, encoding: 'utf8' });
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.doesNotMatch(result.stdout, /claudeH|piH/);
+      return result;
     };
     const json = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
     const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+    const retired = path.join(config, 'skills/to-tickets');
+    fs.mkdirSync(path.dirname(retired));
+    fs.symlinkSync(path.join(root, 'integrations/skills/to-tickets'), retired);
     run('--skip-build');
+    assert.throws(() => fs.lstatSync(retired), { code: 'ENOENT' });
     // An owner's own statusLine is kept rather than replaced.
     assert.deepEqual(json(settings), original, 'the owner statusLine stays');
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes);
@@ -71,7 +76,7 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       ['mcp', 'remove', '-s', 'user', 'hud'],
       ['mcp', 'add', '-s', 'user', 'hud', '-e', 'HUD_MCP_SURFACE=roles', '--', path.join(bin, 'hud-mcp')],
     ]);
-    const skills = ['hud-delegate', 'hud-setup', 'hud-handoff', 'to-tickets'];
+    const skills = ['hud-delegate', 'hud-setup', 'hud-handoff'];
     for (const name of skills) {
       assert.equal(fs.readlinkSync(path.join(config, 'skills', name)), path.join(root, 'integrations/skills', name));
     }
@@ -90,7 +95,9 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       added: 42,
     };
     fs.writeFileSync(settings, JSON.stringify(earlier, null, 2) + '\n');
-    run('--skip-build');
+    fs.mkdirSync(retired);
+    assert.match(run('--skip-build').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
+    assert.ok(fs.statSync(retired).isDirectory());
     assert.deepEqual(
       json(settings),
       { statusLine: hudLine, unrelated: { changed: true }, added: 42 },
@@ -99,7 +106,8 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes, 'reinstall keeps the original backup');
 
     fs.writeFileSync(legacy, JSON.stringify({ statusLine: hudLine }));
-    run('--uninstall');
+    assert.match(run('--uninstall').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
+    assert.ok(fs.statSync(retired).isDirectory());
     assert.deepEqual(json(settings), { statusLine: original.statusLine, unrelated: { changed: true }, added: 42 });
     assert.equal(fs.existsSync(backup), false, 'the backed-up owner statusLine was restored');
     assert.equal(fs.readlinkSync(settings), target);

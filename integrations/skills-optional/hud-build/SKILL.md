@@ -10,7 +10,7 @@ Adapted from mattpocock/skills `skills/engineering/implement-spec` @5863806 (MIT
 upstream. The executors are HUD roles (`hud-delegate`), never native or background subagents; the main session is the
 only writer of tickets and of the integration branch.
 
-You have a spec and its tickets (from `/to-spec` and `/to-tickets`, published as `docs/agents/issue-tracker.md` says).
+You have a spec and its tickets (from `/to-spec` and the `hud_tickets` method, published as `docs/agents/issue-tracker.md` says).
 If either is missing, stop and say which. The goal: the whole spec on one **integration branch**, every ticket closed
 the way the tracker closes work, the owner trying the result.
 
@@ -35,8 +35,9 @@ The tickets are not a list of steps. They are a **task graph**: the tickets whos
    - "work only in this worktree, never the main checkout; do not commit" (the worker leaves its changes in the
      worktree's working tree; the main session commits them).
 5. **Integrate as each job settles.** Read the report and the diff, run the ticket's checks, commit the worktree's
-   changes on its branch yourself, then cherry-pick or merge that branch onto the integration branch. Tick the ticket's acceptance (on GitHub, then
-   `hud tickets sync`), remove the worktree and its branch. A job that stopped on its stop rule gets a repair brief to
+   changes on its branch yourself, then cherry-pick or merge that branch onto the integration branch. Tick acceptance with
+   `hud_tickets` (`op: update` locally, or edit the GitHub issue with `gh` and then use `op: sync`), then remove the
+   worktree and its branch. A job that stopped on its stop rule gets a repair brief to
    the same job (`hud_send`, while it can continue) or a re-sliced ticket, never a wider brief.
 6. **Advance the frontier.** When an integration unblocks tickets, dispatch them (step 4). Keep the project's slice
    ledger (if it has one) current at every dispatch and landing.

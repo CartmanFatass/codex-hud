@@ -15,8 +15,9 @@ agent proposes.
 2. **Slice.** The orchestrator splits the milestone into small vertical slices: each runs end to end, can be shown
    working on its own, and fits one implementer session. The owner approves the list (size, order, dependencies).
    Tickets only when the work needs several implementer sessions: too big for one, parallel on different files, or
-   spread over days. Then it is sliced with the `to-tickets` skill (adapted from Matt Pocock's; the only one installed) into `.scratch/<slug>/issues/`
-   (docs/agents/issue-tracker.md); the Project tab tracks those tickets. Several small features one implementer can
+   spread over days. Call `hud_tickets` without arguments for the slicing method adapted from Matt Pocock's, then
+   use `op: add` to publish approved drafts into `.scratch/<slug>/issues/` (see `docs/agents/issue-tracker.md`).
+   The Project tab tracks those tickets. Several small features one implementer can
    finish in one session are one slice with one brief and its acceptance list, no tickets (owner, 2026-11-12: "没有拆的
    必要"). STATE.md's `## Slices` ledger keeps one line per work package either way.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per

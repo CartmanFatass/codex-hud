@@ -1,7 +1,7 @@
 {
   "name": "hud",
   "version": "0.0.0",
-  "description": "Universal HUD delegation: six role tools and the hud-delegate, hud-setup, hud-handoff and to-tickets skills",
+  "description": "Universal HUD delegation and ticket tools, with the hud-delegate, hud-setup and hud-handoff skills",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -15,8 +15,7 @@
     "skills": [
       "./skills/hud-delegate/SKILL.md",
       "./skills/hud-setup/SKILL.md",
-      "./skills/hud-handoff/SKILL.md",
-      "./skills/to-tickets/SKILL.md"
+      "./skills/hud-handoff/SKILL.md"
     ]
   }
 }

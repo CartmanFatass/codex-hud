@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { procStat, readTurn, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
+import { editTickets } from './local-tickets.js';
 import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
@@ -1288,7 +1289,14 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
   };
 }
 
+function ticketGuide(args: Args): boolean {
+  return args.op === undefined || args.op === 'guide';
+}
 async function call(name: string, args: Args): Promise<unknown> {
+  if (name === 'hud_tickets') {
+    if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
+    return editTickets(jobCwd(args), args);
+  }
   if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
   const detail = args.detail === true;
   if (name === 'hud_roster') {
@@ -1528,6 +1536,8 @@ async function keyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 function mutationKey(name: string, args: Args): string | null {
+  if (name === 'hud_tickets' && !ticketGuide(args))
+    return isWorker ? 'tickets' : `tickets:${fs.realpathSync(jobCwd(args))}`;
   const create = name === 'hud_create';
   if (!create && name !== 'hud_send' && name !== 'hud_respond' && name !== 'hud_close') return null;
   const id = create ? args.request_key : args.job;
@@ -1604,11 +1614,20 @@ async function receive(line: string): Promise<void> {
       try {
         const key = mutationKey(name, args);
         // Refuse before invocation or reporting changes, which can record quota exhaustion.
-        const value =
-          isWorker && key !== null
-            ? { ok: false, code: 'worker_cannot_dispatch' }
-            : withChanges(key === null ? await invoke() : await keyLock(key, invoke), !isWorker && name !== 'hud_peek');
-        result = { content: [{ type: 'text', text: JSON.stringify(value) }] };
+        if (isWorker && key !== null) {
+          result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'worker_cannot_dispatch' }) }] };
+        } else {
+          const value = key === null ? await invoke() : await keyLock(key, invoke);
+          const markExhaustion = !isWorker && name !== 'hud_peek';
+          if (typeof value === 'string') {
+            const content = [{ type: 'text', text: value }];
+            const delta = withChanges({}, markExhaustion) as { changes?: unknown[] };
+            if (delta.changes) content.push({ type: 'text', text: JSON.stringify(delta) });
+            result = { content };
+          } else {
+            result = { content: [{ type: 'text', text: JSON.stringify(withChanges(value, markExhaustion)) }] };
+          }
+        }
       } catch (error) {
         result = {
           content: [

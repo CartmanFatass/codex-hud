@@ -16,12 +16,16 @@ test('Codex registers roles, backs up config before rewrites, warns on comment l
     const codexHome = path.join(temp, 'codex home');
     const fakeBin = path.join(temp, 'fake-bin');
     const log = path.join(temp, 'codex-argv.jsonl');
-    const skills = ['hud', 'hud-delegate', 'hud-setup', 'hud-handoff', 'to-tickets'];
+    const skills = ['hud', 'hud-delegate', 'hud-setup', 'hud-handoff'];
     const skillPaths = skills.map((name) => [path.join(repo, 'integrations/skills', name), path.join(codexHome, 'skills', name)]);
     fs.mkdirSync(path.join(repo, 'install.d'), { recursive: true });
     for (const [target] of skillPaths) fs.mkdirSync(target, { recursive: true });
     fs.mkdirSync(fakeBin);
     fs.mkdirSync(codexHome);
+    const retired = path.join(codexHome, 'skills/to-tickets');
+    const foreign = path.join(temp, 'owner-skill');
+    fs.mkdirSync(path.dirname(retired));
+    fs.symlinkSync(path.join(repo, 'integrations/skills/to-tickets'), retired);
     const config = path.join(codexHome, 'config.toml');
     const configTarget = path.join(temp, 'dotfiles-config.toml');
     const backup = configTarget + '.hud-backup';
@@ -89,11 +93,20 @@ fs.writeFileSync(config, sections.join(''));
       const envVars = `env_vars = [${[...oldEnv, 'HUD_JOB_DIR'].map((name) => JSON.stringify(name)).join(', ')}]\n`;
       assert.equal(fs.readFileSync(config, 'utf8'), unrelated + hudEntry.replace('\n', '\n' + envVars));
       for (const [target, link] of skillPaths) assert.equal(fs.readlinkSync(link), target);
+      if (content === null) {
+        assert.throws(() => fs.lstatSync(retired), { code: 'ENOENT' });
+        fs.symlinkSync(foreign, retired);
+      } else {
+        assert.match(result.stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
+        assert.equal(fs.readlinkSync(retired), foreign);
+      }
       if (content === 'Owner prompt.\n') assert.equal(fs.readFileSync(prompt, 'utf8'), content);
       else assert.equal(fs.existsSync(prompt), false);
     }
     fs.appendFileSync(config, '# Later owner comment\n');
     const removed = run('--uninstall', '--with', 'codex');
+    assert.match(removed.stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
+    assert.equal(fs.readlinkSync(retired), foreign);
     assert.equal((removed.stderr.match(/Warning: Codex/g) ?? []).length, 1);
     assert.ok(removed.stderr.includes(backup));
     assert.equal(fs.readFileSync(backup, 'utf8'), original);

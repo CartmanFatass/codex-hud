@@ -6,8 +6,8 @@
 # HUD
 
 One HUD for **Claude Code, Codex and pi**, on Linux/WSL inside herdr:
-shared bottom status lines, an opt-in Home/Project panel, and six MCP tools for
-local role delegation. Lightweight observation and thin execution adapters, not a
+shared bottom status lines, an opt-in Home/Project panel, and MCP tools for
+local role delegation and tickets. Lightweight observation and thin execution adapters, not a
 workflow engine. The main session decides every next step.
 
 Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud).
@@ -106,7 +106,7 @@ The panel has **Home** and **Project** tabs:
   file, `v` inspects, `a` reveals older items. Settled cards fold after five minutes
   and hide after fifteen by default; a newly opened panel excludes already-settled
   HUD jobs. Model text is optional and display-only.
-- **Project:** STATE/spec progress, local to-tickets issues, working trees, docs and
+- **Project:** STATE/spec progress, local tickets managed with `hud_tickets`, working trees, docs and
   the effective roles/convention/key availability. It reads project files, not a
   project-management service, and never changes their state.
 - **Settings, Help, Inspector and Changes:** settings edit a draft, Inspector opens
@@ -122,7 +122,8 @@ build, keeping their place and waiting for unsaved Settings.
 ## Delegation
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_send**,
-**hud_respond**, **hud_close**. Start with the roster for roles, model assignments,
+**hud_respond**, **hud_close** and other tools. Use `hud_tickets` for the ticket method.
+Start with the roster for roles, model assignments,
 accepted launch options and the dispatch convention. Pi roles use external pi-roles
 and herdr; browser jobs use `jev-ask`, `jev-aistudio` or `jev-flow`. There is no
 automatic role chaining. See [hud-mcp](./packages/hud-mcp/README.md).

@@ -1,14 +1,10 @@
----
-name: to-tickets
-description: Break a spec or plan into tracer-bullet tickets with blocking edges when the work spans several implementer sessions.
-disable-model-invocation: true
----
+# Ticket method
 
 Adapted from mattpocock/skills `skills/engineering/to-tickets` @5863806 (MIT). Owned here; not tracked against upstream.
 
 Break a plan, spec, or conversation into **tickets**: tracer-bullet vertical slices, each declaring its blocking edges. Create tickets only when the work needs several implementer sessions; work one implementer can finish in one session needs only a single brief, no tickets.
 
-Publish as `docs/agents/issue-tracker.md` says. If it is missing, ask the owner where to publish (there is no tracker-setup skill). When the tracker is GitHub with a `.scratch/` mirror, write to GitHub only, never write `.scratch/`, and run `hud tickets sync` in the repo root to update the mirror.
+Publish as `docs/agents/issue-tracker.md` says. If it is missing, ask the owner where to publish (there is no tracker-setup skill). When the tracker is GitHub with a `.scratch/` mirror, use `gh` to write to GitHub only, never write `.scratch/`, and call `hud_tickets` with `op: sync` for the project to update the mirror.
 
 ## Process
 
@@ -33,15 +29,15 @@ A ticket whose acceptance cannot be written, or whose boundary depends on someth
 
 Publish blockers first in dependency order. Do not close or rewrite a parent issue. Open items in the spec keep derived tickets from `ready-for-agent`; otherwise label `ready-for-agent`.
 
-- **Local markdown:** write one file per ticket at `.scratch/<feature>/issues/NN-<slug>.md` from the local template below; the heading number equals the `NN` filename prefix, and `**Blocked by:**` is `none` or `NN, NN`.
-- **GitHub with `.scratch/` mirror:** publish the spec as the parent issue (if not already published), then create each ticket as a GitHub sub-issue of that parent (`gh issue create --parent N` or `gh issue edit N --add-sub-issue M`). Express blocking as native blocked-by edges or a single body line `Blocked by: #N, #M`. Never write `.scratch/`. After publishing, run `hud tickets sync` in the repo root; sync prints the `<slug>` derived from the parent title and writes each mirrored ticket file to `.scratch/<slug>/issues/<N>-<slug>.md` (where `N` is the GitHub issue number).
+- **Local markdown:** call `hud_tickets` with `op: add`, the `feature` slug, and a `tickets` list. Give each draft a `title`, `blocked_by` (ticket numbers in this feature, or `[]`), `what`, `acceptance` (a list of items), and optional `status` (default `ready-for-agent`). The tool numbers the drafts after the existing tickets in list order, writes `.scratch/<feature>/issues/NN-<slug>.md` from the local template below, and returns the paths and numbers.
+- **GitHub with `.scratch/` mirror:** publish the spec as the parent issue (if not already published), then create each ticket as a GitHub sub-issue of that parent (`gh issue create --parent N` or `gh issue edit N --add-sub-issue M`). Express blocking as native blocked-by edges or a single body line `Blocked by: #N, #M`. Never write `.scratch/`. After publishing, call `hud_tickets` with `op: sync`; sync reports the `<slug>` derived from the parent title and writes each mirrored ticket file to `.scratch/<slug>/issues/<N>-<slug>.md` (where `N` is the GitHub issue number).
 
 ### 5. Ownership and HUD dispatch
 
-- **Single writer:** the main session is the only ticket writer and ticks acceptance checkboxes after checking results; workers never edit ticket files or issues. For GitHub with a `.scratch/` mirror, tick acceptance on the GitHub issue, then run `hud tickets sync` in the repo root again—never edit mirror files.
+- **Single writer:** the main session is the only ticket writer and ticks acceptance checkboxes after checking results; workers never edit ticket files or issues. For local tickets, call `hud_tickets` with `op: update`, `feature`, `ticket` (number), and `status` and/or `tick` (1-based acceptance item numbers). For GitHub with a `.scratch/` mirror, tick acceptance on the GitHub issue, then call `hud_tickets` with `op: sync` again—never edit mirror files.
 - **Dispatching:**
   - **Local markdown:** pass `package: "<feature>"` to `hud_create` and name the ticket file path in the brief so the Project tab links the job.
-  - **GitHub with `.scratch/` mirror:** pass `package: "<slug>"` (the slug `hud tickets sync` prints from the parent title) to `hud_create` and name `.scratch/<slug>/issues/<N>-<slug>.md` or `#N` in the brief.
+  - **GitHub with `.scratch/` mirror:** pass `package: "<slug>"` (the slug that sync reports from the parent title) to `hud_create` and name `.scratch/<slug>/issues/<N>-<slug>.md` or `#N` in the brief.
 
 <local-ticket-template>
 

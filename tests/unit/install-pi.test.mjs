@@ -70,8 +70,13 @@ fs.writeFileSync(file, JSON.stringify(settings));
     const result = spawnSync('./install', args, { cwd: repo, env, encoding: 'utf8' });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.doesNotMatch(result.stdout, /claudeH|piH/);
+    return result;
   };
+  const retired = path.join(pkg, 'skills/to-tickets');
+  fs.mkdirSync(path.dirname(retired), { recursive: true });
+  fs.symlinkSync(path.join(repo, 'integrations/skills/to-tickets'), retired);
   run('--skip-build', '--with', 'pi');
+  assert.throws(() => fs.lstatSync(retired), { code: 'ENOENT' });
   assert.equal(fs.readFileSync(backup, 'utf8'), before, 'backup precedes even pi registration');
   // Hand-registered packages stay registered exactly once.
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)), {
@@ -82,10 +87,10 @@ fs.writeFileSync(file, JSON.stringify(settings));
   const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json')));
   assert.deepEqual(manifest.pi, {
     extensions: ['./extensions/hud.mjs'],
-    skills: ['./skills/hud-delegate/SKILL.md', './skills/hud-setup/SKILL.md', './skills/hud-handoff/SKILL.md', './skills/to-tickets/SKILL.md'],
+    skills: ['./skills/hud-delegate/SKILL.md', './skills/hud-setup/SKILL.md', './skills/hud-handoff/SKILL.md'],
   });
   assert.ok(fs.statSync(path.join(pkg, 'extensions/hud.mjs')).isFile());
-  for (const name of ['hud-delegate', 'hud-setup', 'hud-handoff', 'to-tickets']) {
+  for (const name of ['hud-delegate', 'hud-setup', 'hud-handoff']) {
     assert.equal(fs.readlinkSync(path.join(pkg, 'skills', name)), path.join(repo, 'integrations/skills', name));
     assert.ok(fs.statSync(path.join(pkg, 'skills', name, 'SKILL.md')).isFile());
   }
@@ -104,7 +109,9 @@ fs.writeFileSync(file, JSON.stringify(settings));
     node: process.execPath,
   });
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(hudHome, 'config.json'))).piFooter, imported);
-  run('--skip-build', '--with', 'pi');
+  fs.writeFileSync(retired, 'Synthetic owner skill');
+  assert.match(run('--skip-build', '--with', 'pi').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
+  assert.equal(fs.readFileSync(retired, 'utf8'), 'Synthetic owner skill');
   assert.equal(fs.readFileSync(backup, 'utf8'), before, 'reinstall never overwrites the backup');
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)).extensions, [...original.extensions, filter]);
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)).packages, original.packages);
@@ -112,7 +119,9 @@ fs.writeFileSync(file, JSON.stringify(settings));
   changed.laterKey = 'keep too';
   changed.extensions.push('extensions/later.ts');
   fs.writeFileSync(settingsFile, JSON.stringify(changed));
-  run('--uninstall', '--with', 'pi');
+  assert.match(run('--uninstall', '--with', 'pi').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
+  assert.equal(fs.readFileSync(retired, 'utf8'), 'Synthetic owner skill');
+  fs.unlinkSync(retired);
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)), {
     ...original,
     extensions: [...original.extensions, 'extensions/later.ts'],
@@ -120,9 +129,9 @@ fs.writeFileSync(file, JSON.stringify(settings));
     laterKey: 'keep too',
   });
   assert.equal(fs.existsSync(backup), false);
-  assert.equal(fs.existsSync(pkg), false);
   assert.equal(fs.existsSync(display), false);
   run('--uninstall', '--with', 'pi'); // not-installed pi remove is harmless
+  assert.equal(fs.existsSync(pkg), false);
   assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse), [
     ['install', pkg],
     ['install', display],

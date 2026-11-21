@@ -85,7 +85,7 @@ Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pa
 Unavailable evidence leaves the jobs view unbound to a native session.
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
-**hud_send**, **hud_respond**, **hud_close**. Call `hud_roster` when project dispatch context is missing or stale.
+**hud_send**, **hud_respond**, **hud_close**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
 It returns role availability, continuation, effective `runs_on` and the convention. For presets, fallbacks,
 model/thinking sources and accepted options, pass `detail: true`. When refreshing, pass the prior
 `convention_version` only if you still have its text; a match omits the convention, never the fresh role rows.
@@ -208,8 +208,24 @@ the session learns it through `changes`, Claude's `hud watch`, Codex's automatic
 an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line,
 `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the
 reader runs; a question answered earlier is simply gone).
-The main session chooses all next steps; the MCP knows no workflow.
-See [the MCP README](../packages/hud-mcp/README.md) for the tool arguments.
+The main session chooses all next steps; the MCP never chains work.
+See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool arguments.
+
+`hud_tickets` provides the ticket method in every client without a separate skill. `cwd` defaults to the server's
+working directory; pass the project directory to target another project.
+
+- **`guide`** (or no `op`): returns the slicing method and local ticket template as Markdown.
+- **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?}]`.
+  `blocked_by` lists numbers from existing tickets in the feature or earlier drafts in this call; use `[]` for no blockers.
+  An unknown blocker rejects the entire batch without writing. `acceptance` is a list of checklist item strings.
+  The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
+- **`update`**: pass `feature`, `ticket` (number), and `status` and/or `tick` (1-based checklist item numbers).
+  Unknown tickets or items are refused; other lines are unchanged.
+- **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
+
+The default status is `ready-for-agent`; other allowed labels are `needs-triage`, `needs-info`, `ready-for-human`,
+and `wontfix`. Workers can only read the guide. For GitHub-mirrored `.scratch/`, `add` and `update` refuse:
+edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to

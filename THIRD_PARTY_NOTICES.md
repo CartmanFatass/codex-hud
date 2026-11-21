@@ -75,20 +75,20 @@ SOFTWARE.
 
 ## Matt Pocock Skills
 
-The skills under `integrations/skills/` (`to-tickets`, installed) and `integrations/skills-optional/` (the rest, not installed) are derived from **mattpocock/skills**: adapted copies are owned here without tracking upstream, verbatim copies carry only a one-line source note:
+The ticket method at `integrations/tickets/method.md` (served by `hud_tickets`) and the uninstalled skills under `integrations/skills-optional/` are derived from **mattpocock/skills**: adapted copies are owned here without tracking upstream, verbatim copies carry only a one-line source note:
 
 - Upstream: https://github.com/mattpocock/skills
 - Commit: `5863806dd4e15c63174bee4e7515a4256792ecfa`
 - License: MIT
 - Copyright (c) 2026 Matt Pocock
 
-Adapted skills:
+Adapted method and skills:
 
 - `grill-with-docs` (`skills/engineering/grill-with-docs`)
 - `grilling` (`skills/productivity/grilling`)
 - `domain-modeling` (`skills/engineering/domain-modeling`)
 - `to-spec` (`skills/engineering/to-spec`)
-- `to-tickets` (`skills/engineering/to-tickets`)
+- `integrations/tickets/method.md` (`skills/engineering/to-tickets`)
 - `tdd` (`skills/engineering/tdd`)
 - `diagnosing-bugs` (`skills/engineering/diagnosing-bugs`)
 

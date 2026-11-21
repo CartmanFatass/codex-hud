@@ -1,5 +1,6 @@
 /** `hud tickets sync [--cwd DIR]`: one-way GitHub Issues -> `.scratch/` mirror. */
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { HudIO } from './hud.js';
@@ -169,13 +170,16 @@ function readMarkerIfFile(path: string): { exists: boolean; symlink: boolean; fi
   }
 }
 
-/** Refuse immediately if `.scratch/` contains non-generated ticket files; return generated spec markers by slug. */
-function scanScratch(scratchDir: string): Map<string, string> {
+/** Return the mirror's spec markers; refuse files belonging to the other kind of tracker. */
+export function scanScratch(scratchDir: string, local = false): Map<string, string> {
+  const refuseMirror = () => {
+    throw new CliError('refusing local ticket edits: .scratch is a GitHub mirror; edit issues with gh, then call hud_tickets with op: sync', 1);
+  };
   const specs = new Map<string, string>();
   let entries: fs.Dirent[];
   try {
     const st = fs.lstatSync(scratchDir);
-    if (!st.isDirectory()) throw new CliError('refusing to sync: .scratch is not a directory', 1);
+    if (!st.isDirectory()) throw new CliError(`${local ? 'refusing local ticket edits' : 'refusing to sync'}: .scratch is not a directory`, 1);
     entries = fs.readdirSync(scratchDir, { withFileTypes: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return specs;
@@ -190,7 +194,9 @@ function scanScratch(scratchDir: string): Map<string, string> {
         for (const name of fs.readdirSync(issuesDir)) {
           if (!name.endsWith('.md')) continue;
           const info = readMarkerIfFile(join(issuesDir, name));
-          if (info.symlink || !isGeneratedContent(info.firstLine)) {
+          const generated = !info.symlink && isGeneratedContent(info.firstLine);
+          if (local && generated) refuseMirror();
+          if (!local && !generated) {
             throw new CliError(`refusing to sync: non-generated ticket file at .scratch/${slug}/issues/${name}`, 1);
           }
         }
@@ -200,7 +206,10 @@ function scanScratch(scratchDir: string): Map<string, string> {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
     const specInfo = readMarkerIfFile(join(scratchDir, slug, 'spec.md'));
-    if (specInfo.exists && !specInfo.symlink && isGeneratedContent(specInfo.firstLine)) specs.set(slug, specInfo.firstLine);
+    if (specInfo.exists && !specInfo.symlink && isGeneratedContent(specInfo.firstLine)) {
+      if (local) refuseMirror();
+      specs.set(slug, specInfo.firstLine);
+    }
   }
   return specs;
 }
@@ -334,10 +343,10 @@ function validateWriteSafety(plans: FeaturePlan[]): void {
   }
 }
 
-function writeFileAtomic(filePath: string, content: string): void {
-  const tmpPath = join(dirname(filePath), `.${basename(filePath)}.tmp-${process.pid}`);
+export function writeFileAtomic(filePath: string, content: string, mode?: number): void {
+  const tmpPath = join(dirname(filePath), `.${basename(filePath)}.tmp-${randomUUID()}`);
   try {
-    fs.writeFileSync(tmpPath, content, 'utf8');
+    fs.writeFileSync(tmpPath, content, { flag: 'wx', mode });
     fs.renameSync(tmpPath, filePath);
   } catch (err) {
     fs.rmSync(tmpPath, { force: true });
@@ -357,7 +366,7 @@ function withSlugSuffix(slug: string, suffix: string): string {
   return `${slug.slice(0, Math.max(1, MAX_SLUG - suffix.length)).replace(/-+$/, '')}${suffix}`;
 }
 
-function slugify(title: string, issueNumber: number): string {
+export function slugify(title: string, issueNumber: number): string {
   const ascii = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return ascii.slice(0, MAX_SLUG).replace(/-+$/, '') || `issue-${issueNumber}`;
 }

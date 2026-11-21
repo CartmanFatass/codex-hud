@@ -302,6 +302,7 @@ test('combined pi packages retain delegation after canceled navigation and displ
   t.after(() => h.emit('session_shutdown', c.ctx));
   await h.emit('session_start', c.ctx);
   const roster = () => h.tools.get('hud_roster').execute('synthetic', {}, undefined, undefined, c.ctx);
+  const toolCount = h.tools.size;
   assert.ok((await roster()).details.roles.length);
   for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree']) {
     await h.emit(event, c.ctx); // No successful transition follows: navigation was canceled.
@@ -309,7 +310,7 @@ test('combined pi packages retain delegation after canceled navigation and displ
     assert.equal(h.calls.notices.at(-1), 'HUD: reconnected; panel_not_open');
     assert.ok((await roster()).details.roles.length);
   }
-  assert.equal(h.tools.size, 8);
+  assert.equal(h.tools.size, toolCount);
   assert.equal(h.commands.size, 1);
   assert.equal(p.counts().splits, 0);
 });
@@ -723,6 +724,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
     'hud_respond',
     'hud_roster',
     'hud_send',
+    'hud_tickets',
     'hud_wait',
   ]);
   assert.deepEqual([...h.tools.values()].map(({ name, description, parameters }) => ({
@@ -730,11 +732,13 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   })), PI_ROLE_TOOLS);
   assert.equal(h.commands.size, 0, 'no /hud command');
   await h.emit('session_start', c.ctx);
+  t.after(() => h.emit('session_shutdown', c.ctx));
+  const guide = await h.tools.get('hud_tickets').execute('synthetic', { op: 'guide' }, undefined, undefined, c.ctx);
+  assert.match(guide.content[0].text, /^# Ticket method/);
   assert.equal(p.counts().splits, 0, 'the settings-registered package a worker could load opens no panel');
   assert.equal(h.calls.footer, 0, 'no footer');
   assert.equal(h.calls.status.length, 0, 'no Work segment');
   assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false, 'no native sendMessage API');
-  await h.emit('session_shutdown', c.ctx);
 });
 
 async function until(check, failure = 'timed out waiting for the native watcher') {

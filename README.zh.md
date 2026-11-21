@@ -6,7 +6,7 @@
 # HUD
 
 在 Linux/WSL、herdr 内，为 **Claude Code、Codex 与 pi** 提供同一套底部状态行、
-按需打开的首页／项目面板，以及六个本地角色委派 MCP 工具。
+按需打开的首页／项目面板，以及本地角色委派和工单管理的 MCP 工具。
 轻量观测与薄执行适配，不是工作流引擎；主会话决定所有下一步。
 
 灵感来自 [claude-hud](https://github.com/jarrodwatts/claude-hud)。
@@ -88,7 +88,7 @@ Stacked 在 Claude/pi 为两行，Codex 一行窗格回退 line。pi 右上条�
 - **首页：** 需要你回答的问题、包泳道中的紧凑任务卡片、Claude/Codex 原生子代理泳道和决定。
   Enter 原地展开，`o` 打开文件，`v` 查看详情，`a` 显示较早项目。
   已结束卡片默认五分钟折叠、十五分钟隐藏；新开面板排除已结束的 HUD 任务。模型文字可选、仅用于显示。
-- **项目：** STATE/spec 进度、本地 to-tickets 工单、工作树、文档、生效角色／约定／密钥可用性。
+- **项目：** STATE/spec 进度、通过 `hud_tickets` 管理的本地工单、工作树、文档、生效角色／约定／密钥可用性。
   读项目文件，不调用项目管理服务，不改变其状态。
 - **设置、帮助、详情、改动：** 设置修改草稿，详情打开工作流文件／转写，改动仅 Git／工作树摘要。
   没有时间线、代理日志页、布局选项、背景图或底部状态卡。
@@ -99,7 +99,8 @@ Claude、Codex 与 pi 都用 `/hud` 打开独立侧面板（`hud panel --here` �
 
 ## 委派
 
-MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_send**、**hud_respond**、**hud_close**。
+MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_send**、**hud_respond**、**hud_close** 等工具。
+调用 `hud_tickets` 可查看工单拆分方法。
 先看 roster，取得角色、模型、可用启动选项和约定。pi 角色使用外部 pi-roles 与 herdr；
 浏览器任务使用 `jev-ask`、`jev-aistudio` 或 `jev-flow`，没有自动串联角色。
 见 [hud-mcp](./packages/hud-mcp/README.md)。

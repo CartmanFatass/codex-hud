@@ -8,6 +8,10 @@ const tool = (name: string, description: string, properties: Record<string, unkn
   inputSchema: { type: 'object', properties, required, additionalProperties: false },
 });
 
+export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix'] as const;
+const ticketStatus = { ...text, enum: TICKET_STATUSES };
+const ticketNumber = { type: 'integer', minimum: 1 };
+
 export const ROLE_TOOLS = [
   tool('hud_roster', 'Get role availability, effective assignments and the project dispatch convention.', {
     cwd: { ...text, description: 'Project directory (default: server cwd).' },
@@ -103,4 +107,33 @@ export const ROLE_TOOLS = [
     'answer',
   ]),
   tool('hud_close', 'Reap a job early; safe to repeat.', { job: text }, ['job']),
+  tool(
+    'hud_tickets',
+    'Read the ticket method (default), add or update local tickets, or sync a GitHub mirror. Only the main session can write.',
+    {
+      op: { ...text, enum: ['guide', 'add', 'update', 'sync'], default: 'guide' },
+      cwd: { ...text, description: 'Project directory (default: server cwd).' },
+      feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Feature slug for add and update.' },
+      tickets: {
+        type: 'array',
+        minItems: 1,
+        description: 'For add: drafts, blockers first.',
+        items: {
+          type: 'object',
+          properties: {
+            title: text,
+            blocked_by: { type: 'array', items: ticketNumber },
+            what: text,
+            acceptance: { type: 'array', items: text },
+            status: { ...ticketStatus, default: 'ready-for-agent' },
+          },
+          required: ['title', 'blocked_by', 'what', 'acceptance'],
+          additionalProperties: false,
+        },
+      },
+      ticket: { ...ticketNumber, description: 'Ticket number for update.' },
+      status: { ...ticketStatus, description: 'New status for update.' },
+      tick: { type: 'array', items: ticketNumber, description: 'For update: 1-based acceptance items to check.' },
+    }
+  ),
 ];

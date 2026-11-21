@@ -55,17 +55,23 @@ hud_ext_install() {
     printf 'Warning: codex is not on PATH; skipping Codex MCP registration.\n' >&2
   fi
 
-  local name skill
-  for name in hud hud-delegate hud-setup hud-handoff to-tickets; do
+  local name
+  for name in hud hud-delegate hud-setup hud-handoff; do
     hud_codex_skill "$name"
   done
-  # Optional skills are no longer installed; drop the links earlier installs made.
-  for name in grill-with-docs to-spec hud-build; do
-    skill="${CODEX_HOME:-$HOME/.codex}/skills/$name"
-    if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
-      rm -- "$skill"
-    fi
+  # Drop links earlier installs made for retired and optional skills.
+  for name in to-tickets grill-with-docs to-spec hud-build; do
+    hud_codex_drop_skill "$name"
   done
+}
+
+hud_codex_drop_skill() {
+  local skill="${CODEX_HOME:-$HOME/.codex}/skills/$1"
+  if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
+    rm -- "$skill"
+  elif [[ "$1" == to-tickets && ( -L "$skill" || -e "$skill" ) ]]; then
+    printf 'Warning: keeping existing skill not owned by HUD: %s\n' "$skill" >&2
+  fi
 }
 
 hud_ext_uninstall() {
@@ -75,12 +81,9 @@ hud_ext_uninstall() {
     printf 'Warning: codex is not on PATH; skipping Codex MCP removal.\n' >&2
   fi
 
-  local name skill
+  local name
   for name in hud hud-delegate hud-setup hud-handoff to-tickets grill-with-docs to-spec hud-build; do
-    skill="${CODEX_HOME:-$HOME/.codex}/skills/$name"
-    if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
-      rm -- "$skill"
-    fi
+    hud_codex_drop_skill "$name"
   done
   local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
   if [[ -f "$prompt" && "$(cat -- "$prompt")" == "$hud_codex_prompt_line" ]]; then

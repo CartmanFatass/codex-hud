@@ -36,8 +36,18 @@ if (!install) fs.rmSync(backup, { force: true });
 NODE
 }
 
+hud_pi_drop_ticket_skill() {
+  local skill="$HUD_HOME/pi-package/skills/to-tickets"
+  if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
+    rm -- "$skill" || return 1
+  elif [[ -L "$skill" || -e "$skill" ]]; then
+    printf 'Warning: keeping existing skill not owned by HUD: %s\n' "$skill" >&2
+    return 2
+  fi
+}
+
 hud_ext_install() {
-  local package="$HUD_HOME/pi-package" display="$HUD_HOME/pi-display"
+  local package="$HUD_HOME/pi-package" display="$HUD_HOME/pi-display" status=0
   mkdir -p -- "$package/extensions" "$package/skills" "$display/extensions"
   cp -- "$REPO/integrations/pi/package/package.template.json" "$package/package.json"
   cp -- "$REPO/integrations/pi/package/binding.mjs" "$package/binding.mjs"
@@ -45,7 +55,8 @@ hud_ext_install() {
   ln -sfn -- "$REPO/integrations/skills/hud-delegate" "$package/skills/hud-delegate"
   ln -sfn -- "$REPO/integrations/skills/hud-setup" "$package/skills/hud-setup"
   ln -sfn -- "$REPO/integrations/skills/hud-handoff" "$package/skills/hud-handoff"
-  ln -sfn -- "$REPO/integrations/skills/to-tickets" "$package/skills/to-tickets"
+  hud_pi_drop_ticket_skill || status=$?
+  if [[ "$status" == 1 ]]; then return 1; fi
   cp -- "$REPO/integrations/pi/package/display.template.json" "$display/package.json"
   cp -- "$REPO/integrations/pi/package/binding.mjs" "$display/binding.mjs"
   cp -- "$REPO/integrations/pi/package/extensions/hud-display.mjs" "$display/extensions/hud-display.mjs"
@@ -80,5 +91,7 @@ hud_ext_uninstall() {
     printf 'Warning: pi is not on PATH; skipping pi package removal.\n' >&2
   fi
   hud_pi_settings uninstall
-  rm -rf -- "$HUD_HOME/pi-package" "$HUD_HOME/pi-display"
+  # Do not remove the package directory if it contains an owner's to-tickets skill.
+  if hud_pi_drop_ticket_skill; then rm -rf -- "$HUD_HOME/pi-package"; fi
+  rm -rf -- "$HUD_HOME/pi-display"
 }

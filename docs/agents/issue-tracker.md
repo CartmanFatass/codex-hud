@@ -12,7 +12,12 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+For implementation tickets, call `hud_tickets` with no arguments for the method and template. The main session
+publishes with `op: add` and changes status or ticks acceptance items with `op: update`. Specs and wayfinding
+notes are separate markdown files under `.scratch/<feature-slug>/`.
+
+If a project tracks tickets on GitHub and mirrors them into `.scratch/`, edit the issues with `gh` and then call
+`hud_tickets` with `op: sync`; never edit the mirror directly.
 
 ## When a skill says "fetch the relevant ticket"
 

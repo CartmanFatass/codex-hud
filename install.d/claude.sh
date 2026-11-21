@@ -61,7 +61,7 @@ hud_ext_install() {
   fi
 
   mkdir -p -- "$config/skills" "$BIN_DIR"
-  for name in hud-delegate hud-setup hud-handoff to-tickets; do
+  for name in hud-delegate hud-setup hud-handoff; do
     skill="$config/skills/$name"
     if [[ -L "$skill" || ! -e "$skill" ]]; then
       ln -sfn -- "$REPO/integrations/skills/$name" "$skill"
@@ -69,11 +69,13 @@ hud_ext_install() {
       printf 'Warning: keeping existing non-symlink skill: %s\n' "$skill" >&2
     fi
   done
-  # Optional skills are no longer installed; drop the links earlier installs made.
-  for name in grill-with-docs to-spec hud-build; do
+  # Drop links earlier installs made for retired and optional skills.
+  for name in to-tickets grill-with-docs to-spec hud-build; do
     skill="$config/skills/$name"
     if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
       rm -- "$skill"
+    elif [[ "$name" == to-tickets && ( -L "$skill" || -e "$skill" ) ]]; then
+      printf 'Warning: keeping existing skill not owned by HUD: %s\n' "$skill" >&2
     fi
   done
   link="$BIN_DIR/hud-statusline"
@@ -119,6 +121,8 @@ hud_ext_uninstall() {
     "$BIN_DIR/hud-statusline"; do
     if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* ]]; then
       rm -- "$link"
+    elif [[ "${link##*/}" == to-tickets && ( -L "$link" || -e "$link" ) ]]; then
+      printf 'Warning: keeping existing skill not owned by HUD: %s\n' "$link" >&2
     fi
   done
 }
