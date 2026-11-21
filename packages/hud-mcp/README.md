@@ -42,6 +42,10 @@ go straight to `hud_create`. Follow the caller-specific `hint` in `hud_roster` o
 result. With live delivery, keep working until the report-ready notice, then collect with `hud_read`; the notice
 itself does not read the report. Without live delivery, use `hud_wait`.
 
+Both `hud_read` list views use the caller's project root (the main checkout for linked worktrees).
+A read by job ID can still collect a job from any project. A main-session MCP call or `hud watch` scan
+adopts same-project jobs whose previous caller pane is gone, redirecting their events and questions to the new pane.
+
 | Tool | Arguments and behaviour |
 |---|---|
 | `hud_roster` | Optional `cwd` (default: server cwd). Returns role availability and reasons, effective `runs_on` (including model/thinking when known), continuation, invalid role files, convention and project. `detail: true` adds the full role definitions, sources, fallbacks, presets, exhausted marks and accepted options. The server omits the unchanged convention (`convention_unchanged: true`) on later calls in the same session; roles are always refreshed. The optional `convention_version` input remains supported for older clients. |

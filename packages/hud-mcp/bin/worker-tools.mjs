@@ -257,8 +257,9 @@ export async function ask({ dir, job }, input, timeoutRaw = process.env.HUD_ASK_
   fs.mkdirSync(qa, { recursive: true, mode: 0o700 });
   const published = publishQuestion(qa, { ...input, tag });
   let pushed = 'not pushed (no --notify / --orchestrator)';
-  const orch = orchestrator(dir);
-  if (orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
+  // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
+  const orch = readJob(dir).herdr_pane || orchestrator(dir);
+  if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
     const ran = notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))));
     const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
     pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;

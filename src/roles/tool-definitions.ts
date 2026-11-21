@@ -65,7 +65,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_read',
-    'List active jobs or collect one job’s report. Reading a settled report closes the worker. For inspection use hud_peek.',
+    'List the caller project’s active jobs or collect any job by ID. Reading a settled report closes the worker. For inspection use hud_peek.',
     {
       job: text,
       wait_ms: { type: 'integer', minimum: 0, maximum: 120000, description: 'Wait for settlement or attention.' },

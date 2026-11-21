@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId } from '../roles/herdr-run.js';
+import { adoptProjectJobs } from '../roles/job-project.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkLane } from './workboard-types.js';
@@ -336,17 +337,10 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   }
   return lines;
 }
-/**
- * Lightweight signature-cached reader for `hud watch`: reads only `job.json`, `STATUS.json`, `qa/` filenames,
- * and `report.md` mtime (no artifact body reads, no disk writes). `scope.pane === null` matches every job;
- * `scope.pane === undefined` matches none.
- */
-export function readThinJobRows(home: string, scope: { pane?: string | null }): JobRow[] {
-  if (scope.pane === undefined) return [];
-  if (scope.pane !== null && !herdrId(scope.pane)) return [];
+function watchReceipts(home: string) {
   seen.clear();
   const root = join(home, 'jobs');
-  const candidates = entries(root)
+  return entries(root)
     .filter((id) => /^j[0-9a-f]{16}$/.test(id))
     .flatMap((id) => {
       try {
@@ -357,13 +351,18 @@ export function readThinJobRows(home: string, scope: { pane?: string | null }): 
       }
     })
     .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id))
-    .slice(0, 200);
+    .flatMap(({ id }) => {
+      const job = json(join(root, id, 'job.json'), JSON.parse, watchCache)?.v;
+      return job?.job === id && typeof job.role === 'string' ? [{ id, job }] : [];
+    });
+}
+
+function watchRows(home: string, pane: string | null, receipts: ReturnType<typeof watchReceipts>): JobRow[] {
   const rows: JobRow[] = [];
-  for (const { id } of candidates) {
-    const dir = join(root, id);
-    const job = json(join(dir, 'job.json'), JSON.parse, watchCache)?.v;
-    if (!job || job.job !== id || typeof job.role !== 'string') continue;
-    if (scope.pane !== null && job.herdr_pane !== scope.pane) continue;
+  for (const { id, job } of receipts) {
+    if (rows.length === 200) break;
+    if (pane !== null && job.herdr_pane !== pane) continue;
+    const dir = join(home, 'jobs', id);
     const status = json(join(dir, 'STATUS.json'), JSON.parse, watchCache)?.v ?? null;
     try {
       rows.push(jobRow(job, status, { dir }));
@@ -372,6 +371,22 @@ export function readThinJobRows(home: string, scope: { pane?: string | null }): 
     }
   }
   for (const path of watchCache.keys()) if (!seen.has(path)) watchCache.delete(path);
+  return rows;
+}
+
+/** Lightweight, read-only watch rows. A null pane matches every job, undefined matches none. */
+export function readThinJobRows(home: string, scope: { pane?: string | null }): JobRow[] {
+  if (scope.pane !== null && !herdrId(scope.pane)) return [];
+  return watchRows(home, scope.pane, watchReceipts(home));
+}
+
+export async function readSessionJobRows(home: string, pane: string, cwd: string, env: NodeJS.ProcessEnv) {
+  const receipts = watchReceipts(home);
+  // Capture the initial pane state before yielding, so writes just after watch starts are changes, not catch-up.
+  const rows = watchRows(home, pane, receipts);
+  if (await adoptProjectJobs(home, pane, cwd, receipts.map(({ job }) => job), env)) {
+    return readThinJobRows(home, { pane });
+  }
   return rows;
 }
 /**

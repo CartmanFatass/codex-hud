@@ -343,6 +343,10 @@ if (command === 'pi-dispatch') {
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'split') {
   if (fs.existsSync(join(process.env.HOME, 'fail-split'))) { console.error('synthetic split failed'); process.exit(1); }
   console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p3'}}}));
+} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'list') {
+  const file = join(process.env.HOME, 'pane-list.json');
+  if (!fs.existsSync(file)) process.exit(1);
+  console.log(fs.readFileSync(file, 'utf8'));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') {
   const agentFile = join(process.env.HOME, 'main-agent');
   const agent = fs.existsSync(agentFile) ? fs.readFileSync(agentFile, 'utf8') : 'claude';
@@ -650,9 +654,9 @@ function rpcClient(child) {
   });
 }
 
-function workerClient(t, f, dir) {
+function workerClient(t, f, dir, askTimeout = '30') {
   const child = spawn(process.execPath, [entry], {
-    cwd: f.root, env: { ...f.env, HUD_JOB_DIR: dir, HUD_ASK_TIMEOUT: '30' }, stdio: ['pipe', 'pipe', 'inherit'],
+    cwd: f.root, env: { ...f.env, HUD_JOB_DIR: dir, HUD_ASK_TIMEOUT: askTimeout }, stdio: ['pipe', 'pipe', 'inherit'],
   });
   const exited = once(child, 'exit');
   t.after(async () => {
@@ -2707,7 +2711,7 @@ test('hud_read compact lists actionable jobs without losing unread reports or hi
     const dir = join(f.env.HUD_HOME, 'jobs', job);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
-      job, role, created_at, herdr_pane: 'w4E:p1',
+      job, role, created_at, cwd: f.root, herdr_pane: 'w4E:p1',
       ...(n === 1 ? { parent_job: 'j0000000000000002' } : {}),
       ...(n > 5 ? { read_at: created_at } : {}),
     }));
@@ -2768,10 +2772,10 @@ test('hud_read rejects invalid views and views on single-job reads', async (t) =
   }
 });
 
-function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1') {
+function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1', cwd = f.root) {
   const job = `j${n.toString(16).padStart(16, '0')}`;
   const dir = join(f.env.HUD_HOME, 'jobs', job);
-  const receipt = { job, role: 'imp', herdr_pane, created_at: new Date(n * 1000).toISOString() };
+  const receipt = { job, role: 'imp', herdr_pane, cwd, created_at: new Date(n * 1000).toISOString() };
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
   fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
   const status = (state) => {
@@ -2782,6 +2786,72 @@ function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1') {
   status(state);
   return { job, dir, receipt, status };
 }
+
+test('hud_read lists only the caller project, including its linked worktrees', async (t) => {
+  const f = await fixture(t);
+  git(f.root, 'init', '-qb', 'trunk');
+  git(f.root, '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', 'commit', '--allow-empty', '-qm', 'base');
+  const linked = join(f.root, 'linked');
+  git(f.root, 'worktree', 'add', '-qb', 'linked', linked);
+  const foreign = waitFixtureJob(f, 1, 'working', 'w4E:p1', initRepo(f.root));
+  const legacy = waitFixtureJob(f, 2, 'working', 'w4E:p8', linked);
+  const created = await f.call('hud_create', { role: 'imp', on: 'pi', cwd: linked, task: 'Synthetic worktree job.' });
+  assert.equal(JSON.parse(fs.readFileSync(join(created.task_dir, 'job.json'))).project_root, fs.realpathSync(f.root));
+  assert.equal(created.changes, undefined, 'foreign project changes do not ride on this pane’s response');
+  for (const args of [{}, { view: 'recent' }]) {
+    assert.deepEqual((await f.call('hud_read', args)).jobs.map(({ job }) => job), [created.job, legacy.job]);
+  }
+  assert.equal((await f.call('hud_read', { job: foreign.job })).job, foreign.job);
+});
+
+const ownerOf = ({ dir }) => JSON.parse(fs.readFileSync(join(dir, 'job.json'))).herdr_pane;
+const paneList = (f, ...ids) => fs.writeFileSync(join(f.env.HOME, 'pane-list.json'), JSON.stringify({
+  result: { panes: ids.map((pane_id) => ({ pane_id })) },
+}));
+
+test('MCP adopts same-project orphan jobs in one scan and pushes questions to the new pane', async (t) => {
+  const f = await fixture(t);
+  const adopted = [waitFixtureJob(f, 1, 'working', 'w4E:p8'), waitFixtureJob(f, 2, 'working', 'w4E:p7')];
+  const live = waitFixtureJob(f, 3, 'working', 'wOTHER:p1');
+  const foreign = waitFixtureJob(f, 4, 'working', 'w4E:p8', initRepo(f.root));
+  fs.writeFileSync(join(adopted[0].dir, 'SESSION.txt'), 'ORCH=w4E:p8\n');
+  fs.writeFileSync(join(f.env.HOME, 'pane-list.json'), '{"result":{"panes":[{"pane_id":"w4E:p1"},{}]}}');
+  await f.call('hud_read');
+  assert.deepEqual(adopted.map(ownerOf), ['w4E:p8', 'w4E:p7'], 'incomplete pane list cannot transfer ownership');
+
+  const lists = () => f.commands().filter(({ args }) => args[0] === 'pane' && args[1] === 'list').length;
+  const before = lists();
+  paneList(f, 'w4E:p1', 'wOTHER:p1');
+  const handoff = await f.call('hud_read');
+  assert.equal(lists() - before, 1);
+  assert.deepEqual(handoff.changes, adopted.toReversed().map(({ job }) => `${job} imp: working`));
+  assert.deepEqual(adopted.map(ownerOf), ['w4E:p1', 'w4E:p1']);
+  assert.equal(ownerOf(live), 'wOTHER:p1');
+  assert.equal(ownerOf(foreign), 'w4E:p8');
+
+  const ask = workerClient(t, f, adopted[0].dir, '0');
+  const answer = await ask('hud_ask', { question: 'Which synthetic layout?', default: 'Rows.' });
+  assert.equal(answer.isError, undefined, JSON.stringify(answer));
+  const pi = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), f.env.HUD_HOME, 'w4E:p8',
+    adopted[0].job, '[imp@demo] QUESTION q99: Another question'], { env: f.env, encoding: 'utf8' });
+  assert.equal(pi.status, 0, pi.stderr);
+  assert.deepEqual(f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'prompt')
+    .map(({ args }) => args[2]), ['w4E:p1', 'w4E:p1']);
+});
+
+test('hud watch adopts on catch-up and delivers an already pending question', async (t) => {
+  const f = await fixture(t);
+  const orphan = waitFixtureJob(f, 1, 'working', 'w4E:p8');
+  paneList(f, 'w4E:p1');
+  fs.writeFileSync(join(orphan.dir, 'qa/q1.md'), '# Question q1 from imp@demo\n\nWhich layout?\n\nDefault if unanswered: Rows.\n');
+  const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'inherit'] });
+  const exited = once(child, 'exit');
+  t.after(async () => { child.kill(); await exited; });
+  let output = '';
+  child.stdout.setEncoding('utf8').on('data', (text) => { output += text; });
+  await until(() => output.includes(`reply: hud_respond job=${orphan.job} request_id=q1`));
+  assert.equal(ownerOf(orphan), 'w4E:p1');
+});
 
 const progressRecord = (text) => ({ at: '2026-11-18T12:00:00.000Z', text });
 const jsonLines = (rows) => rows.map((row) => JSON.stringify(row) + '\n').join('');
@@ -2997,7 +3067,7 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   const f = await fixture(t), id = 'j0000000000000099';
   const dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', created_at: '2026-01-01', herdr_pane: 'w4E:p1', cli: { idle_grace_s: 120 } }));
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, created_at: '2026-01-01', herdr_pane: 'w4E:p1', cli: { idle_grace_s: 120 } }));
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   fs.writeFileSync(join(dir, 'report.md'), 'First report.');
   fs.writeFileSync(join(dir, 'qa/q1.md'), 'Question?');
@@ -3028,7 +3098,7 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
 test('failed job without a report catches up once, then hud_read marks attention seen without marking a report read', async (t) => {
   const f = await fixture(t), id = 'j0000000000000098', dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', herdr_pane: 'w4E:p1', created_at: '2026-01-01' }));
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, herdr_pane: 'w4E:p1', created_at: '2026-01-01' }));
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', reason: 'worker gone' }));
   const catchup = async () => {
     const lines = [], ac = new AbortController();
@@ -3099,7 +3169,7 @@ syncBuiltinESMExports();`
   const job = 'j0000000000000001',
     dir = join(f.env.HUD_HOME, 'jobs', job);
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  const receipt = { job, role: 'imp', created_at: '2026-01-01', dispatch_exit_code: 0, stderr_tail: '' };
+  const receipt = { job, role: 'imp', cwd: f.root, created_at: '2026-01-01', dispatch_exit_code: 0, stderr_tail: '' };
   const save = () => fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
   const status = (state) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, exit_reason: null }));
   const reads = () =>
@@ -5409,6 +5479,7 @@ test('STATUS table matches across the panel reader and hud_read', async (t) => {
         job: id,
         role: 'imp',
         herdr_pane: 'w4E:p1',
+        cwd: f.root,
         created_at: new Date(1000 + idx * 1000).toISOString(),
         dispatch_exit_code: entry.dispatch_exit_code ?? 0,
         stderr_tail: '',
@@ -5471,6 +5542,7 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
         job: id,
         role: 'imp',
         package: pkg,
+        cwd: f.root,
         herdr_pane: pane,
         created_at: new Date().toISOString(),
         cli: { agent: 'grok' },
@@ -5526,7 +5598,7 @@ test('an answer the owner gives from the panel rides on the next response as one
   const f = await fixture(t);
   const dir = join(f.env.HUD_HOME, 'jobs', 'j00000000000001b1');
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: 'j00000000000001b1', role: 'imp', package: '03-ask', herdr_pane: 'w4E:p1', created_at: new Date().toISOString(),
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: 'j00000000000001b1', role: 'imp', package: '03-ask', cwd: f.root, herdr_pane: 'w4E:p1', created_at: new Date().toISOString(),
     cli: { agent: 'grok' }, dispatch_exit_code: 0, stderr_tail: '' }));
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   fs.writeFileSync(join(dir, 'qa/q1.md'), '# Question q1 from imp@demo\n\nKeep it?\n\nOptions:\n- keep it\n- drop it\n\nDefault if unanswered: keep it\n');

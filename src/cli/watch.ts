@@ -1,7 +1,7 @@
 /** `hud watch`: push only actionable events; --verbose retains the MCP change stream. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { formatJobChange, jobChanges, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
@@ -143,22 +143,29 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
 export function startSessionWatch(home: string, pane: string, cwd: string, deliver: (lines: string[]) => void) {
   const tries = new TryLog(home), answers = new PanelActionLog(home);
   let prev = new Map<string, JobRow>();
-  let first = true, stopped = false;
+  let first = true, stopped = false, scanning = false, dirty = false;
   let timer: ReturnType<typeof setTimeout>;
   const notices = settlementNotices();
-  const inputs = watchInputs(home, () => schedule(DEBOUNCE_MS), false);
+  const inputs = watchInputs(home, () => {
+    if (scanning) dirty = true;
+    else schedule(DEBOUNCE_MS);
+  }, false);
   function schedule(ms: number) {
     if (stopped) return;
     clearTimeout(timer);
     timer = setTimeout(scan, Math.min(ms, notices.delay)).unref();
   }
-  function scan() {
+  async function scan() {
     inputs.attach();
-    const rows = readThinJobRows(home, { pane });
+    scanning = true;
+    dirty = false;
+    const rows = await readSessionJobRows(home, pane, cwd, process.env);
+    scanning = false;
+    if (stopped) return;
     const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)))]);
     first = false;
     prev = new Map(rows.map((row) => [row.job, row]));
-    schedule(DEFAULT_RESCAN_MS);
+    schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
     if (lines.length) deliver(lines);
   }
   inputs.attach();
@@ -200,7 +207,6 @@ export async function watchCommand(
     io.stderr('no pane found (HERDR_PANE_ID unset); pass --all to watch all jobs\n');
     return 1;
   }
-  const scope = { pane: all ? null : callerPane };
   const home = getHudHome(io.env), tries = new TryLog(home), answers = new PanelActionLog(home);
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
@@ -275,7 +281,7 @@ export async function watchCommand(
       if (stopped) break;
       dirty = false;
       if (queue && delivery!.paneInfo(callerPane, io.env)?.agent !== 'codex') break;
-      const rows = readThinJobRows(home, scope);
+      const rows = all ? readThinJobRows(home, { pane: null }) : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)))];
       if (queue) {

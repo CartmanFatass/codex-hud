@@ -36,6 +36,8 @@ import {
 import { HarnessSwitchError } from '../../../src/roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../../../src/roles/tool-definitions.js';
 import { takeLease } from '../../../src/roles/lease.js';
+import { adoptProjectJobs, projectJobFilter } from '../../../src/roles/job-project.js';
+import { sharedRoot } from '../../../src/roles/projects.js';
 
 const jobDir = process.env.HUD_JOB_DIR;
 const isWorker = jobDir !== undefined;
@@ -58,6 +60,7 @@ interface Job extends PiOptions {
   role: string;
   request_key: string;
   cwd: string;
+  project_root?: string;
   herdr_pane: string;
   created_at: string;
   package?: string;
@@ -147,7 +150,10 @@ function directory(job: string): string {
 function save(job: Job, newAttempt = false): void {
   const file = join(directory(job.job), 'job.json');
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
-  const existing = newAttempt ? null : json<Job>(file);
+  const receipt = json<Job>(file);
+  // A session watch can adopt the receipt while this process awaits a launch or send.
+  if (receipt?.herdr_pane) job.herdr_pane = receipt.herdr_pane;
+  const existing = newAttempt ? null : receipt;
   for (const key of ['read_at', 'observed_at', 'pi_sent_at'] as const) {
     const at = existing?.[key];
     if (at && (!job[key] || at > job[key])) job[key] = at;
@@ -814,7 +820,7 @@ async function peekJob(job: Job, { lines, detail }: Args) {
 }
 
 function listJobs(recent: boolean) {
-  const newest = jobs().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const newest = jobs().filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const recentLimit = 20;
   if (recent) {
     return newest.slice(0, recentLimit).map((job) => {
@@ -858,10 +864,16 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
   const readJob = (id: string) => json<Job>(join(directory(id), 'job.json'));
   let initial: JobRow[];
   if (ids === undefined) {
-    initial = jobs().filter(isSessionJob).map((job) => readRow(job, false).row).filter((row) => !settled(row.state));
+    // Existing session jobs may settle while herdr is listing panes; keep the call-start targets.
+    const atStart = new Map(sessionJobs().map((job) => [job.job, readRow(job, false).row]));
+    if (await adoptSessionJobs()) {
+      for (const job of sessionJobs()) if (!atStart.has(job.job)) atStart.set(job.job, readRow(job, false).row);
+    }
+    initial = [...atStart.values()].filter((row) => !settled(row.state));
   } else {
     if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string' || !/^j[0-9a-f]{16}$/.test(id)))
       throw new Error('invalid_arguments: jobs');
+    await adoptSessionJobs();
     initial = [...new Set<string>(ids)].map((id) => {
       const job = readJob(id);
       if (!job) throw new Error(`invalid_arguments: unknown job ${id}`);
@@ -877,7 +889,11 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
     const ready = targets.size === 0 || triggered.length > 0;
     return { ready, timed_out: !ready && performance.now() >= deadline, triggered, jobs: rows.map(compactRow) };
   }
-  const current = result(initial);
+  const sample = () => [...targets].flatMap((id) => {
+    const job = readJob(id);
+    return job ? [readRow(job, false).row] : [];
+  });
+  const current = result(ids === undefined ? sample() : initial);
   if (current.ready || current.timed_out) return current;
 
   let watcher: fs.FSWatcher | undefined;
@@ -886,11 +902,7 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
     return await new Promise<ReturnType<typeof result>>((resolve, reject) => {
       function check() {
         try {
-          const rows = [...targets].flatMap((id) => {
-            const job = readJob(id);
-            return job ? [readRow(job, false).row] : [];
-          });
-          const next = result(rows);
+          const next = result(sample());
           if (!next.ready && !next.timed_out) return false;
           resolve(next);
         } catch (error) {
@@ -1271,6 +1283,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     role,
     request_key,
     cwd,
+    project_root: sharedRoot(cwd),
     herdr_pane: pane,
     created_at: new Date().toISOString(),
     task_length: task.length,
@@ -1763,10 +1776,17 @@ function deliveryHint(watcherAlive: boolean): string {
   }
 }
 const createdJobs = new Set<string>();
-const isSessionJob = (job: Job) => (callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
+async function adoptSessionJobs() {
+  if (!callerPane || !await adoptProjectJobs(hudHome, callerPane, process.cwd(), jobs(), process.env)) return false;
+  ensureQueueWatcher(callerPane, hudHome);
+  return true;
+}
+function sessionJobs() {
+  const own = jobs().filter((job) => callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
+  return own.length ? own.filter(projectJobFilter(process.cwd())) : own;
+}
 function sessionRows(markExhaustion: boolean): JobRow[] {
-  return jobs()
-    .filter(isSessionJob)
+  return sessionJobs()
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.job.localeCompare(b.job))
     .slice(0, 200)
     .map((job) => readRow(job, markExhaustion).row);
@@ -1885,6 +1905,7 @@ async function receive(line: string): Promise<void> {
       }
       const invoke = () => call(name, args);
       try {
+        if (name !== 'hud_wait') await adoptSessionJobs();
         const key = mutationKey(name, args);
         const value = key === null ? await invoke() : await keyLock(key, invoke);
         const markExhaustion = name !== 'hud_peek';
