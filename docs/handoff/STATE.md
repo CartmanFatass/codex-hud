@@ -23,6 +23,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
+- working · — · HUD-TICKETS · to-tickets becomes the hud_tickets MCP tool (method, add, update, sync); skill links removed
 - accepted · M3 · BAR-UNIFY · one-line bars on all three clients (d8945e22, 6f641d82)
 - accepted · M3 · PANEL-POLISH · Enter opens a report, whole key hints, readable tab labels (e60d5bb7)
 - accepted · M3b · AI-CORE-THIN · one master switch, one model, the call cap; consent layer gone (76bbf4c0)
