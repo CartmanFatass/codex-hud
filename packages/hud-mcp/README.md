@@ -54,6 +54,11 @@ collect once with `hud_read`; the notice itself does not read the report. Withou
 
 `on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. `idle_grace_s` is CLI-only; pi overrides refuse because pi grace follows the model's cache lifetime inside pi-roles, and browser jobs have no idle grace. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Omitted switches keep pi-role defaults; `split` defaults to the place. `ui_ext: false` disables UI extensions; `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), else `hud_create` returns `unsupported_harness`.
 
+`hud_create` and `hud_sonic` start report the ordered `attempts` (`index`, `place`, and `reason` on failure) and
+`used_place` (the chosen place, or `null` when none started). Only a confirmed pre-input failure falls through to
+the next available place. This does not create a new job. An explicit `on` selects one place; an explicit `preset`
+limits attempts to its chain.
+
 For `hud_create` context, pass `context_files` (up to 32 paths resolved against the job's `cwd`) or `from_jobs`
 (up to 16 job IDs `j[0-9a-f]{16}`, each referring to `$HUD_HOME/jobs/<id>/report.md`), not file bodies.
 Missing files, non-text files, and paths or symlinks resolving outside their respective roots return
@@ -79,7 +84,8 @@ for history or fields such as `open_questions`. The per-session `changes` stream
 
 ## Worker tools
 
-With `HUD_JOB_DIR` set, only the four worker tools are exposed, scoped to that job. Claude and Codex use MCP;
+With `HUD_JOB_DIR` set, only the four worker tools are exposed, scoped to that job. The HUD home is inferred
+from that directory, so `HUD_HOME` need not be forwarded. Claude and Codex use MCP;
 pi loads the native worker extension and uses pi-roles' native ask. Antigravity and Grok Build get the
 fallback `hud-ask.mjs`, `hud-sonic.mjs` and `hud-progress.mjs` commands in their briefs.
 
@@ -103,7 +109,7 @@ Bundled JSON files in `roles/` define logical roles: `role`, `instructions`, `ca
 
 A `pi` place names `pi_role` (defaults to `instructions`), `split`, optional `skills` (non-empty strings), and optional `model`/`thinking`; absent model/thinking comes from the pi-roles role file. Each skill name resolves to `<root>/.hud/skills/<name>` (a symlink apply made); an absolute path is used as given. Each resolved directory is passed as `--skill` after pi-role's `--`. A missing or broken link is skipped and recorded on the job; the launch continues. When `.hud/agents/<role>.md` exists, it is passed as `--append-system-prompt`. `hud_read({job, detail:true})` and `hud_peek({job, detail:true})` show `role_skills`, `skipped_skills` and `worker_prompt` for that job. A `cli` or `bro` place that names `skills` is invalid and skipped.
 
-A `bro` place names its `tool` (`jev-ask`, `jev-aistudio`, `jev-flow`) and applicable `provider`, `kind`, `model`, `thinking` or `effort`. Shipped browser roles: `pro` (`chatgpt`, `gemini`, `argon` in order) and `flow` (`jev-flow`, default `kind: "image"`). `hud_roster` checks executable availability on `PATH` and active `$HUD_HOME/exhausted.json` marks (1 hour TTL on quota/rate-limit failure; HUD does not auto-retry, and failure reasons name the next available place).
+A `bro` place names its `tool` (`jev-ask`, `jev-aistudio`, `jev-flow`) and applicable `provider`, `kind`, `model`, `thinking` or `effort`. Shipped browser roles: `pro` (`chatgpt`, `gemini`, `argon` in order) and `flow` (`jev-flow`, default `kind: "image"`). `hud_roster` checks executable availability on `PATH` and active `$HUD_HOME/exhausted.json` marks (quota/rate-limit failures expire at the reported reset, or after 1 hour if no reset is known).
 
 A `cli` place sets `harness` to `cli` and names `agent` (`grok`, `agy`, `claude` or `codex`), optional `model` and `thinking` (omitted: that CLI's own default), and optional `args` (extra CLI arguments appended verbatim, never a shell string). Top-level `can_continue` and optional `idle_grace_s` (default 600) control continuation. An invalid file is skipped and listed (`invalid`: path and a short reason). It does not hide the other roles or remove an earlier valid role of the same name. Shipped local roles: `imp` (`pi` implementer -> `pi` Grok 4.7), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, and `oracle` (`cli` `claude` `fable` high -> `pi` `architect`).
 

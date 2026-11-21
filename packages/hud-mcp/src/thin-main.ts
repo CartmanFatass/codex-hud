@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { cliWorkerTools, procStat, readTurn, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
+import { cliWorkerTools, procStat, readTurn, reportSignature, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
@@ -24,6 +24,10 @@ import {
   roleRegistry,
   harnessDefaults,
   recordFailureExhaustion,
+  describePlace,
+  isQuotaFailure,
+  markExhausted,
+  readExhausted,
   executable,
   piSwitches,
   type Role,
@@ -32,9 +36,11 @@ import {
 import { HarnessSwitchError } from '../../../src/roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../../../src/roles/tool-definitions.js';
 
-const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
+const jobDir = process.env.HUD_JOB_DIR;
+const isWorker = jobDir !== undefined;
+const hudHome = isWorker ? dirname(dirname(fs.realpathSync(jobDir))) : resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
+if (isWorker) process.env.HUD_HOME = hudHome; // The watcher and other subprocesses inherit the worker's HUD home.
 const jobsRoot = join(hudHome, 'jobs');
-const isWorker = process.env.HUD_JOB_DIR !== undefined;
 const { ensureQueueWatcher, watching } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
 const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
 const worker = isWorker ? await import(new URL('../../../../bin/worker-tools.mjs', import.meta.url).href) : undefined;
@@ -45,6 +51,7 @@ function jobCwd(args: Args): string {
   return resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
 }
 type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
+type LaunchAttempt = { index: number; place: string; reason?: string };
 interface Job extends PiOptions {
   job: string;
   role: string;
@@ -73,8 +80,11 @@ interface Job extends PiOptions {
   bro?: RolePlace;
   jev?: Role;
   cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory' };
+  attempts?: LaunchAttempt[];
+  used_place?: string;
   dispatch_exit_code: number | null;
-  dispatch_code?: 'untrusted_cwd';
+  dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments';
+  dispatch_path?: string;
   stderr_tail: string;
   message_keys: string[];
   send_outcomes?: { key: string; exit_code: number | null; stderr_tail: string }[];
@@ -122,10 +132,10 @@ function slice(file: string, limit: number): { text: string; truncated: boolean 
 function directory(job: string): string {
   return join(jobsRoot, job);
 }
-function save(job: Job): void {
+function save(job: Job, newAttempt = false): void {
   const file = join(directory(job.job), 'job.json');
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
-  const existing = json<Job>(file);
+  const existing = newAttempt ? null : json<Job>(file);
   for (const key of ['read_at', 'observed_at', 'pi_sent_at'] as const) {
     const at = existing?.[key];
     if (at && (!job[key] || at > job[key])) job[key] = at;
@@ -156,19 +166,24 @@ function created(job: Job) {
   const { report_unread: _unread, report_mtime: _mtime, question_ids: _questions, ...row } = readRow(job).row;
   const watch = callerPane ? { watcher_alive: watching(callerPane, hudHome) } : {};
   const thinking = job.thinking == null ? {} : { thinking: job.thinking };
+  const launch = { attempts: job.attempts, used_place: job.used_place ?? null };
   if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
     return {
       ok: false,
       code: job.dispatch_code ?? 'dispatch_failed',
+      ...(job.dispatch_path ? { path: job.dispatch_path } : {}),
+      ...(job.dispatch_code === 'unsupported_harness' || job.dispatch_code === 'invalid_arguments' ? { error: job.stderr_tail } : {}),
       ...row,
-      reason: row.reason ?? (job.stderr_tail.trim() || `launch exited ${job.dispatch_exit_code}`),
+      reason: job.attempts && job.attempts.length > 1 && !job.used_place
+        ? job.attempts.map((a) => `${a.place}: ${a.reason}`).join('; ')
+        : row.reason ?? (job.stderr_tail.trim() || `launch exited ${job.dispatch_exit_code}`),
       task_dir,
       agent: primary(task_dir),
-      ...thinking, ...watch,
+      ...launch, ...thinking, ...watch,
     };
   }
   return {
-    ...row, task_dir, agent: primary(task_dir), ...thinking, ...watch,
+    ...row, task_dir, agent: primary(task_dir), ...launch, ...thinking, ...watch,
     ...(watch.watcher_alive ? {} : { hint: 'Claude Code: run `hud watch` under Monitor' }),
   };
 }
@@ -321,12 +336,10 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   job.worker_prompt = worker_prompt;
   return args;
 }
-async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) {
+async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string): Promise<DispatchResult> {
   let openedTab: string | undefined;
-  const reject = async (result: DispatchResult) => {
-    if (openedTab) await runHerdr(['tab', 'close', openedTab], process.env, { budgetMs: 3000 });
-    return result;
-  };
+  let mayHaveInput = false;
+  const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
   try {
     const resources = piSkillArgs(job, role, place);
     const launcher = executable('pi-role');
@@ -371,7 +384,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
     for (const key of ['model', 'thinking'] as const) if (place[key] !== undefined) argv.push(`--${key}`, place[key]);
     argv.push(...resources, ...(job.pi_args ?? []));
     const built = await run(launcher, argv, job.cwd);
-    if (built.exit_code !== 0) return built;
+    if (built.exit_code !== 0) return reject(built);
     const piArgs: string[] = JSON.parse(built.stdout);
     fs.mkdirSync(join(dir, 'qa'), { recursive: true });
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
@@ -391,7 +404,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
       `HUD_HOME=${hudHome}`,
       '--no-focus',
     ]);
-    if (result.exit_code !== 0) return result;
+    if (result.exit_code !== 0) return reject(result);
     const { tab, root_pane } = JSON.parse(result.stdout).result;
     if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
     const left = root_pane?.pane_id;
@@ -438,10 +451,10 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
     }
     const started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
     if (started.exit_code !== 0) return reject(await startupFailure(started, left));
-    openedTab = undefined; // After readiness, a live worker owns this tab even if the prompt stalls.
     const prompt = `Read ${join(dir, 'brief.md')} and do exactly what it asks.`;
     job.pi_sent_at = new Date().toISOString();
     save(job);
+    mayHaveInput = true;
     const submitted = await run('herdr', [
       'agent',
       'prompt',
@@ -456,20 +469,20 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
     const status = json<{ task_dir?: string; slot?: string; state?: string; output_written?: boolean }>(
       join(dir, 'STATUS.json')
     );
-    if (
-      submitted.exit_code !== 0 &&
-      !(status?.task_dir === dir && status.slot === 'primary' && status.state === 'closed' && status.output_written)
-    ) {
+    const completed = status?.task_dir === dir && status.slot === 'primary' && status.state === 'closed' && status.output_written;
+    if (submitted.exit_code !== 0 && !completed) {
+      if (refusedBeforeInput(submitted)) return reject(submitted);
       if (!(submitted.stderr + submitted.stdout).includes('agent_prompt_stalled')) return submitted;
       return run(process.execPath, [join(dirname(launcher), 'prompt-stall.mjs'), dir, name, left, prompt, '120000']);
     }
     return { ...submitted, exit_code: 0 };
   } catch (error) {
-    return reject({ exit_code: 1, stdout: '', stderr: String(error) });
+    const result = launchError(String(error));
+    return mayHaveInput ? result : reject(result);
   }
 }
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-async function dispatchBro(job: Job, task: string) {
+async function dispatchBro(job: Job, task: string): Promise<DispatchResult> {
   const dir = directory(job.job),
     tabName = tabLabel(job, task);
   const result = await run('herdr', [
@@ -486,7 +499,7 @@ async function dispatchBro(job: Job, task: string) {
     `HUD_HOME=${hudHome}`,
     '--no-focus',
   ]);
-  if (result.exit_code !== 0) return result;
+  if (result.exit_code !== 0) return rejectLaunch(result);
   let created;
   try {
     created = JSON.parse(result.stdout).result;
@@ -514,10 +527,11 @@ function paneText(stdout: string): string {
   return stdout;
 }
 async function startupFailure(result: DispatchResult, pane: string): Promise<DispatchResult> {
-  if (result.stderr.trim() && !/timed? out|timeout/i.test(result.stderr)) return result;
+  if (result.stderr.trim() && !/timed? out|timeout|agent_not_ready/i.test(result.stderr)) return result;
   const read = await runHerdr(['pane', 'read', pane, '--source', 'recent'], process.env, { budgetMs: 2000 });
   const reason = read.ok && paneText(read.stdout).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').split('\n')
-    .reverse().map((line) => line.trim()).find((line) => /^(?:\[roles\]|(?:\w*Error|fatal):)\s+\S/i.test(line));
+    .reverse().map((line) => line.trim()).find((line) =>
+      /^(?:\[roles\]|(?:\w*Error|fatal):)\s+\S/i.test(line) || isQuotaFailure(line));
   return reason ? { ...result, stderr: reason } : result;
 }
 function agentStatus(stdout: string): string | null {
@@ -577,7 +591,7 @@ function spawnCliSupervisor(dir: string): number | null {
   child.unref();
   return child.pid ?? null;
 }
-/** Trust refusal is the one STATUS write before the supervisor starts. Same keys as hud-cli.mjs. */
+/** Trust refusals use the same STATUS keys as hud-cli.mjs if this is the last attempt. */
 function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
   const now = new Date().toISOString();
   const status = {
@@ -603,24 +617,27 @@ function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
     error: reason,
     updated_at: now,
   };
-  const file = join(dir, 'STATUS.json');
-  fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
-  fs.renameSync(`${file}.${process.pid}.tmp`, file);
-  return { exit_code: 1, stdout: '', stderr: reason };
+  return { ...launchError(reason), status };
 }
-type DispatchResult = { exit_code: number; stdout: string; stderr: string; code?: 'untrusted_cwd' };
+type DispatchResult = {
+  exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
+  preInput?: boolean; cleanupFailed?: boolean; status?: object; path?: string;
+};
+const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });
+async function rejectLaunch(result: DispatchResult, tab?: string): Promise<DispatchResult> {
+  const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
+  return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok) };
+}
 async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string): Promise<DispatchResult> {
-  let openedTab: string | null = null;
-  const reject = async (result: DispatchResult) => {
-    if (openedTab) await run('herdr', ['tab', 'close', openedTab]);
-    return result;
-  };
+  let openedTab: string | undefined;
+  let mayHaveInput = false;
+  const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
   try {
     const kind = cliKinds[place.agent as CliAgent];
     const dir = directory(job.job);
     const untrusted = `${place.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`;
     if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
-      return { ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' };
+      return reject({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
     }
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
@@ -639,11 +656,11 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       `HUD_HOME=${hudHome}`,
       '--no-focus',
     ]);
-    if (result.exit_code !== 0) return result;
+    if (result.exit_code !== 0) return reject(result);
     const { tab, root_pane } = JSON.parse(result.stdout).result;
-    const left = root_pane.pane_id;
-    if (!herdrId(tab.tab_id) || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-    openedTab = tab.tab_id;
+    if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
+    const left = root_pane?.pane_id;
+    if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
     const fields = {
       TASK: job.job,
       TAB: tab.tab_id,
@@ -684,12 +701,14 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
         return reject(failCli(dir, job, place, untrusted));
       }
     }
-    if (notReady) return reject(started);
+    if (notReady) return reject(await startupFailure(started, left));
     if (kind.startupQuirk === 'phantom-working') {
       const settled = await settlePhantomWorking(name);
       if (settled) return reject(settled);
     }
-    const prompt = withDonePrompt(`Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`, bundled, dir, writeTurn(dir), place.agent!);
+    const turn = writeTurn(dir);
+    const prompt = withDonePrompt(`Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`, bundled, dir, turn, place.agent!);
+    mayHaveInput = true;
     const submitted = await run('herdr', [
       'agent',
       'prompt',
@@ -701,13 +720,13 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       '--timeout',
       '30000',
     ]);
-    if (submitted.exit_code !== 0 && !/agent_prompt_stalled|timeout|timed out/i.test(submitted.stdout + submitted.stderr)) return reject(submitted);
-    // A stall after submission still needs supervision; it is not worker death.
-    openedTab = null;
+    if (refusedBeforeInput(submitted) && reportSignature(dir) === turn.report_sig) return reject(submitted);
+    // An ambiguous submission still needs supervision; it is not worker death.
     if (!spawnCliSupervisor(dir)) return { exit_code: 1, stdout: '', stderr: 'hud-cli did not start' };
     return { exit_code: 0, stdout: '', stderr: '' };
   } catch (error) {
-    return reject({ exit_code: 1, stdout: '', stderr: String(error) });
+    const result = launchError(String(error));
+    return mayHaveInput ? result : reject(result);
   }
 }
 function readRow(job: Job, markExhaustion = true) {
@@ -895,6 +914,7 @@ function openQuestions(dir: string): string[] {
 function jobDiagnostics(job: Job) {
   return {
     cwd: job.cwd,
+    ...(job.attempts ? { attempts: job.attempts, used_place: job.used_place ?? null } : {}),
     place: job.place,
     ...(job.preset !== undefined ? { preset: job.preset } : {}),
     model: job.model,
@@ -1024,6 +1044,41 @@ export async function sonicThinking(cwd: string) {
   if (active) return launchThinking(hudHome, active.place.harness, active.model.value);
 }
 
+function placeOptions(args: Args, configured: RolePlace) {
+  const place = { ...configured };
+  const invalid = (error?: string) => ({ ok: false, code: 'invalid_arguments', error } as const);
+  if (args.idle_grace_s !== undefined) {
+    if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
+      return invalid('idle_grace_s must be an integer from 60 to 3600');
+    if (place.harness !== 'cli') return invalid(place.harness === 'pi'
+      ? "idle_grace_s is CLI-only; pi grace follows the model's cache lifetime inside pi-roles"
+      : 'idle_grace_s is CLI-only; browser jobs have no idle grace');
+  }
+  if (args.kind !== undefined) {
+    if (place.harness !== 'bro' || place.tool !== 'jev-flow' || (args.kind !== 'image' && args.kind !== 'video')) return invalid();
+    place.kind = args.kind;
+  } else if (place.harness === 'bro' && place.tool === 'jev-flow' && !place.kind) place.kind = 'image';
+  if (place.harness === 'bro' && (args.model !== undefined || args.thinking !== undefined || args.isolation === 'worktree'))
+    return invalid(args.isolation === 'worktree' ? 'worktree isolation is local-only' : undefined);
+  if (args.thinking !== undefined) place.thinking = required(args, 'thinking');
+  const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: place.pi_args ?? [] } : {};
+  for (const key of piSwitches) {
+    const value = args[key];
+    if (value !== undefined) {
+      if (place.harness !== 'pi' || typeof value !== 'boolean') return invalid();
+      options[key] = value;
+    } else if (key !== 'skills' && place.harness === 'pi' && place[key] !== undefined) options[key] = place[key];
+  }
+  if (args.pi_args !== undefined) {
+    if (place.harness !== 'pi' || !Array.isArray(args.pi_args) || args.pi_args.length > 128 ||
+      args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)) return invalid();
+    if (args.pi_args.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
+      return invalid('pi_args cannot override --orchestrator or --notify caller binding');
+    options.pi_args = args.pi_args;
+  }
+  return { place, options };
+}
+
 export async function dispatchJob(args: Args, pane: string | undefined, parentJob?: string) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
@@ -1080,82 +1135,17 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   if (!details) {
     return { ok: false, code: 'no_available_place', reason: effective.reason, places: effective.places, exhausted: effective.exhausted };
   }
-  let place: RolePlace = { ...details.place };
+  const initial = placeOptions(args, details.place);
+  if ('code' in initial) return initial;
+  if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
   const id = 'j' + randomBytes(8).toString('hex');
   let worktree: ManagedWorktree | undefined;
   if (isolation === 'worktree') {
-    if (place.harness === 'bro') return { ok: false, code: 'invalid_arguments', error: 'worktree isolation is local-only' };
     try { worktree = await planWorktree(cwd, id, (args.package as string | undefined) || role); }
     catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
-    if (place.harness === 'cli' && !isCliDirTrusted(place.agent!, worktree.main_root))
-      return { ok: false, code: 'untrusted_cwd', reason: `${place.agent} has not trusted ${worktree.main_root}; run hud trust ${worktree.main_root}` };
   }
-  if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
-  if (args.idle_grace_s !== undefined) {
-    if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
-      return { ok: false, code: 'invalid_arguments', error: 'idle_grace_s must be an integer from 60 to 3600' };
-    if (place.harness !== 'cli')
-      return { ok: false, code: 'invalid_arguments', error: place.harness === 'pi'
-        ? "idle_grace_s is CLI-only; pi grace follows the model's cache lifetime inside pi-roles"
-        : 'idle_grace_s is CLI-only; browser jobs have no idle grace' };
-  }
-  if (args.kind !== undefined) {
-    if (place.harness !== 'bro' || place.tool !== 'jev-flow' || (args.kind !== 'image' && args.kind !== 'video')) {
-      return { ok: false, code: 'invalid_arguments' };
-    }
-    place = { ...place, kind: args.kind };
-  } else if (place.harness === 'bro' && place.tool === 'jev-flow' && !place.kind) {
-    place = { ...place, kind: 'image' };
-  }
-  if (place.harness === 'bro' && (modelOverride !== undefined || args.thinking !== undefined))
-    return { ok: false, code: 'invalid_arguments' };
-  const requestedThinking = args.thinking === undefined ? details.thinking.value : required(args, 'thinking');
-  if (args.thinking !== undefined) place.thinking = requestedThinking!;
-  if (requestedThinking !== null) {
-    const supported = await launchThinking(hudHome, place.harness, details.model.value);
-    if (supported && !supported.includes(requestedThinking)) {
-      const thinking = nearestThinking(requestedThinking, supported);
-      if (!thinking) return { ok: false, code: 'invalid_arguments', error: `no supported thinking level for ${details.model.value}` };
-      place.thinking = thinking;
-    }
-  }
-  const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: place.pi_args ?? [] } : {};
-  for (const key of piSwitches) {
-    const value = args[key];
-    if (value !== undefined) {
-      if (place.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
-      options[key] = value;
-    } else if (key !== 'skills' && place.harness === 'pi' && place[key] !== undefined) options[key] = place[key];
-  }
-  if (args.pi_args !== undefined) {
-    if (
-      place.harness !== 'pi' ||
-      !Array.isArray(args.pi_args) ||
-      args.pi_args.length > 128 ||
-      args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)
-    )
-      return { ok: false, code: 'invalid_arguments' };
-    options.pi_args = args.pi_args;
-  }
-  if (options.pi_args?.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
-    return { ok: false, code: 'invalid_arguments', error: 'pi_args cannot override --orchestrator or --notify caller binding' };
-  let instructionsPath = '';
-  if (place.harness === 'cli') {
-    const instructionsName = definition.instructions ?? definition.role;
-    if (!plainSkillName(instructionsName)) {
-      return { ok: false, code: 'unsupported_harness', error: `invalid instructions name: ${instructionsName}` };
-    }
-    instructionsPath = join(bundled, 'instructions', `${instructionsName}.md`);
-    if (!fs.existsSync(instructionsPath)) {
-      return {
-        ok: false,
-        code: 'unsupported_harness',
-        path: instructionsPath,
-        error: `missing CLI instructions file: ${instructionsPath}`,
-      };
-    }
-  }
-  const context = await assembleContext(args, cwd, place.harness === 'bro');
+  const inline = initial.place.harness === 'bro';
+  const context = await assembleContext(args, cwd, inline);
   if ('code' in context) return context;
   let overrideHarnesses: Record<string, { model?: string }> | null = null;
   if (onName) {
@@ -1169,13 +1159,8 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     onName && overrideHarnesses?.[onName]?.model !== undefined
       ? join(hudHome, 'harnesses.json')
       : join(bundled, 'harnesses.json');
-  const modelSource =
-    args.model !== undefined
-      ? 'hud_create'
-      : onEntry && onEntry.model !== undefined
-        ? harnessesSource
-        : details.model.source;
-  const job: Job = {
+  const attempts: LaunchAttempt[] = [];
+  const base: Job = {
     job: id,
     role,
     request_key,
@@ -1183,37 +1168,81 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     herdr_pane: pane,
     created_at: new Date().toISOString(),
     ...(parentJob ? { parent_job: parentJob } : {}),
-    ...options,
-    ...context.metadata,
     ...(args.package === undefined ? {} : { package: args.package as string }),
     ...(presetName === undefined ? {} : { preset: presetName }),
-    place,
-    place_key: details.key,
-    ...(place.harness === 'bro' ? { bro: place } : {}),
-    ...(place.harness === 'cli'
-      ? {
-          cli: {
-            agent: place.agent as CliAgent,
-            can_continue: effective.can_continue === true,
-            idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition.idle_grace_s ?? 600,
-            state_trust: details.state_trust ?? 'advisory',
-          },
-        }
-      : {}),
-    ...(place.harness === 'pi' || place.harness === 'cli'
-      ? {
-          model: details.model.value,
-          thinking: place.thinking ?? details.thinking.value,
-          model_source: modelSource,
-        }
-      : {}),
+    attempts,
     dispatch_exit_code: null,
     stderr_tail: '',
     message_keys: [],
   };
-  const dir = directory(job.job);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  let brief = `${task}${place.harness === 'bro' ? '\n' : '\n\n'}${context.block}`;
+  const dir = directory(id);
+  const selected = definition.presets?.some((p) => p.run === definition.run);
+  const candidates = effective.places.filter((p) => p === details || p.state === 'standby');
+  // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
+  return keyLock(`job:${id}`, async () => {
+    let job = base;
+    let result: DispatchResult = launchError('no launch attempted');
+    let reason = '';
+    for (const candidate of candidates) {
+      const prepared = candidate === details ? initial : placeOptions(args, candidate.place);
+      if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
+      if (attempts.length) {
+        const exhausted = readExhausted(hudHome);
+        const quota = isQuotaFailure(reason);
+        if ((quota && candidate.key === job.place_key) || exhausted.has(candidate.key)) continue;
+        if (quota && !exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
+        // The previous tab is closed. Keep the job, but do not carry its launch/turn state into a new worker.
+        for (const file of ['SESSION.txt', 'STATUS.json', 'turn.json']) fs.rmSync(join(dir, file), { force: true });
+      } else fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+
+      const { place, options } = prepared;
+      const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
+      job = {
+        ...base, ...options, place, place_key: candidate.key,
+        ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
+        ...(place.harness === 'bro' ? { bro: place } : {
+          model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
+          model_source: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
+        }),
+        ...(place.harness === 'cli' ? { cli: {
+          agent: place.agent!, can_continue: (effective.harness === 'bro' ? definition.can_continue : effective.can_continue) === true,
+          idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition.idle_grace_s ?? 600,
+          state_trust: candidate.state_trust ?? 'advisory',
+        } } : {}),
+      };
+      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro');
+      if (!('code' in briefContext)) {
+        Object.assign(job, briefContext.metadata);
+        writeBrief(job, dir, task, briefContext.block, attempts.length === 0);
+      }
+      // Persist before dispatch: an interrupted launch must not dispatch again on retry.
+      save(job, attempts.length > 0);
+      if (attempts.length === 0) {
+        if (parentJob) {
+          const children = join(directory(parentJob), '.sonic');
+          fs.mkdirSync(children, { recursive: true, mode: 0o700 });
+          fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
+        } else createdJobs.add(id);
+        ensureWatcher();
+        ensureQueueWatcher(pane, hudHome);
+      }
+      const launchRole = preset || selected ? { ...definition, skills: place.skills } : definition;
+      if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
+      else result = await launchPlace(job, launchRole, place, dir, task, worktree);
+      reason = result.exit_code === 0 ? '' : launchReason(result);
+      if (reason) attempt.reason = reason;
+      attempts.push(attempt);
+      if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, 'STATUS.json')))) job.used_place = attempt.place;
+      if (!result.preInput || result.cleanupFailed) break;
+      save(job);
+    }
+    return finishLaunch(job, dir, result, reason);
+  });
+}
+
+function writeBrief(job: Job, dir: string, task: string, block: string, first: boolean) {
+  const place = job.place!;
+  let brief = `${task}${place.harness === 'bro' ? '\n' : '\n\n'}${block}`;
   if (place.harness === 'pi') brief += 'Finish with `hud_report`.\n';
   else if (place.harness === 'cli' && !cliWorkerTools(place.agent!)) {
     const command = (bin: string) => `node ${JSON.stringify(join(bundled, 'bin', `${bin}.mjs`))}`;
@@ -1221,64 +1250,85 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     brief += 'This harness uses the commands below instead of the worker tools named in your role.\n' +
       `Write your report to ${join(dir, 'report.md')}; then run the --done command from the prompt you are answering.\n` +
       `Ask the orchestrator with: ${command('hud-ask')} ${own} --question "..." --default "..."\n`;
-    if (role !== 'sonic') brief +=
+    if (job.role !== 'sonic') brief +=
       `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file> [--thinking off|low|medium|high]\n` +
       `Collect: ${command('hud-sonic')} wait ${own} --job <id>\n`;
     brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
   // References follow the task: the panel title, sentence goal and decision labels read the brief's opening lines.
-  fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
-  // Persist before dispatch: an interrupted launch must not dispatch again on retry.
-  save(job);
-  if (parentJob) {
-    // Index children locally so supervising one parent need not scan every HUD job.
-    const children = join(directory(parentJob), '.sonic');
-    fs.mkdirSync(children, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(join(children, job.job), '', { mode: 0o600, flag: 'wx' });
-  } else createdJobs.add(job.job);
-  // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
-  const selected = definition.presets?.some((p) => p.run === definition.run);
-  const launchRole = preset || selected ? { ...definition, skills: effective.skills } : definition;
-  return keyLock(`job:${job.job}`, () => launchJob(job, launchRole, place, dir, instructionsPath, task, worktree));
+  fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: first ? 'wx' : 'w', mode: 0o600 });
 }
 
-async function launchJob(job: Job, definition: Role, place: RolePlace, dir: string, instructionsPath: string, task: string, worktree?: ManagedWorktree) {
-  ensureWatcher();
-  ensureQueueWatcher(job.herdr_pane, hudHome);
-  let result: DispatchResult;
+async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree): Promise<DispatchResult> {
+  let instructionsPath = '';
   try {
-    if (worktree) {
+    if (job.pi_args?.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
+      return rejectLaunch(launchError('pi_args cannot override --orchestrator or --notify caller binding', 'invalid_arguments'));
+    if (job.thinking != null) {
+      const supported = await launchThinking(hudHome, place.harness, job.model ?? null);
+      if (supported && !supported.includes(job.thinking)) {
+        const thinking = nearestThinking(job.thinking, supported);
+        if (!thinking) return rejectLaunch(launchError(`no supported thinking level for ${job.model}`, 'invalid_arguments'));
+        job.thinking = place.thinking = thinking;
+      }
+    }
+    if (place.harness === 'cli') {
+      const name = definition.instructions ?? definition.role;
+      if (!plainSkillName(name)) return rejectLaunch(launchError(`invalid instructions name: ${name}`, 'unsupported_harness'));
+      instructionsPath = join(bundled, 'instructions', `${name}.md`);
+      if (!fs.existsSync(instructionsPath))
+        return rejectLaunch({ ...launchError(`missing CLI instructions file: ${instructionsPath}`, 'unsupported_harness'), path: instructionsPath });
+      if (worktree && !isCliDirTrusted(place.agent!, worktree.main_root)) {
+        const reason = `${place.agent} has not trusted ${worktree.main_root}; run hud trust ${worktree.main_root}`;
+        return rejectLaunch({ ...failCli(dir, job, place, reason), code: 'untrusted_cwd' });
+      }
+    }
+    if (worktree && !job.worktree) {
       await addWorktree(worktree);
       job.worktree = worktree;
       job.cwd = worktree.root;
       save(job);
       await populateWorktree(worktree);
-      if (place.harness === 'cli') propagateCliTrust(place.agent!, worktree.main_root, worktree.root);
     }
-    if (place.harness === 'bro') result = await dispatchBro(job, task);
-    else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath, task);
-    else result = await dispatchPi(job, definition, place, task);
+    if (worktree && place.harness === 'cli') propagateCliTrust(place.agent!, worktree.main_root, worktree.root);
+    save(job);
   } catch (error) {
-    result = { exit_code: 1, stdout: '', stderr: String(error) };
+    // Worktree setup is shared; another place cannot repair it.
+    return launchError(String(error));
   }
+  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task);
+  if (place.harness === 'pi') return dispatchPi(job, definition, place, task);
+  try { return await dispatchBro(job, task); }
+  catch (error) { return launchError(String(error)); }
+}
+
+function launchReason(result: DispatchResult) {
+  let detail = result.stderr.trim();
+  if (!detail) {
+    try {
+      const error = JSON.parse(result.stdout)?.error;
+      if (typeof error?.message === 'string') detail = [error.code, error.message].filter(Boolean).join(': ');
+    } catch { /* The command may return plain text. */ }
+  }
+  return (detail || result.stdout.trim().split(/\r?\n/, 1)[0] || `launch exited ${result.exit_code}`).slice(0, 500);
+}
+
+function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string) {
   job.dispatch_exit_code = result.exit_code;
   if (result.code) job.dispatch_code = result.code;
+  if (result.path) job.dispatch_path = result.path;
   job.stderr_tail = result.stderr;
   const statusFile = join(dir, 'STATUS.json');
-  if (result.exit_code !== 0 && !fs.existsSync(statusFile)) {
-    const rawReason = (
-      result.stderr.trim() ||
-      result.stdout.trim().split(/\r?\n/, 1)[0] ||
-      `launch exited ${result.exit_code}`
-    ).slice(0, 500);
-    const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, rawReason);
+  if (result.exit_code !== 0 && (result.preInput || !fs.existsSync(statusFile))) {
+    const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reason);
     if (outcome.marked) job.exhaustion_marked = true;
     fs.writeFileSync(
       `${statusFile}.${process.pid}.tmp`,
       JSON.stringify({
+        ...result.status,
         state: 'failed',
-        harness: place.harness,
-        ...(place.harness === 'bro' ? { provider: place.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
+        harness: job.place?.harness,
+        ...(job.bro ? { provider: job.bro.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
         exit_reason: outcome.reason,
         ended_at: new Date().toISOString(),
       }) + '\n',

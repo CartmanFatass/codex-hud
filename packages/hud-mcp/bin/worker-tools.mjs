@@ -19,8 +19,10 @@ function readJob(dir) {
 
 export function workerJob(path = process.env.HUD_JOB_DIR) {
   const dir = path && fs.realpathSync(path);
-  const root = join(fs.realpathSync(process.env.HUD_HOME || join(homedir(), '.hud')), 'jobs');
-  if (!dir || dirname(dir) !== root || !idPattern.test(basename(dir))) {
+  const own = process.env.HUD_JOB_DIR;
+  const root = own !== undefined ? dirname(fs.realpathSync(own))
+    : join(fs.realpathSync(process.env.HUD_HOME || join(homedir(), '.hud')), 'jobs');
+  if (!dir || basename(root) !== 'jobs' || dirname(dir) !== root || !idPattern.test(basename(dir))) {
     throw new Error('--dir must name a job directory under HUD_HOME');
   }
   return { dir, root, job: readJob(dir) };
@@ -95,7 +97,8 @@ export async function startSonic({ job: parent }, task, thinking) {
   }, parent.herdr_pane, parent.job);
   if (!result.job) throw new Error(result.error ?? result.code);
   // A launch failure with a job receipt is also collectable via wait.
-  return { job: result.job, thinking: result.thinking ?? null, ...(result.ok === false ? { error: result.reason } : {}) };
+  return { job: result.job, thinking: result.thinking ?? null, attempts: result.attempts, used_place: result.used_place,
+    ...(result.ok === false ? { error: result.reason } : {}) };
 }
 
 export async function waitSonic({ dir, root, job: parent }, ids, seconds = 480, signal) {

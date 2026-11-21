@@ -23,6 +23,9 @@ try {
     console.log(launched.job); // Keep the standalone command's machine-readable id on stdout.
     if (launched.thinking !== null) console.error(`thinking: ${launched.thinking}`);
     if (launched.error) console.error(launched.error);
+    else if (launched.attempts?.length > 1) {
+      for (const { place, reason } of launched.attempts) console.error(`${place}: ${reason ?? 'started'}`);
+    }
   } else {
     if (!values.job) throw new Error('--job must be a sonic child job id');
     const { reports, working, failed } = await waitSonic(context, [values.job], values.timeout?.trim() === '' ? NaN : Number(values.timeout ?? '480'));

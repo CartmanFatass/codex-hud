@@ -110,8 +110,9 @@ if (command === 'pi-dispatch') {
     console.log(JSON.stringify({ error: { code: 'agent_not_ready', message: 'agent synthetic is blocked during startup and is not ready for prompts' } }));
     process.exit(1);
   }
-  const failure = join(process.env.HOME, 'fail-start');
-  if (fs.existsSync(failure)) { console.error(fs.readFileSync(failure, 'utf8') || 'synthetic start failed'); process.exit(1); }
+  const kind = args[args.indexOf('--kind') + 1];
+  const failure = ['fail-start-' + kind, 'fail-start'].map((name) => join(process.env.HOME, name)).find((file) => fs.existsSync(file));
+  if (failure) { console.error(fs.readFileSync(failure, 'utf8') || 'synthetic start failed'); process.exit(1); }
   const at = args.indexOf('--task-dir');
   if (at >= 0) {
     const dir = args[at + 1];
@@ -459,8 +460,10 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
   fs.writeFileSync(join(env.CLAUDE_CONFIG_DIR, '.claude.json'), JSON.stringify({ projects: { [trusted]: { hasTrustDialogAccepted: true } } }));
   if (inHerdr) env.HERDR_PANE_ID = 'w4E:p1';
   else delete env.HERDR_PANE_ID;
-  if (worker) env.HUD_JOB_DIR = join(env.HUD_HOME, 'jobs', 'j0000000000000001');
-  else delete env.HUD_JOB_DIR;
+  if (worker) {
+    env.HUD_JOB_DIR = join(env.HUD_HOME, 'jobs', 'j0000000000000001');
+    fs.mkdirSync(env.HUD_JOB_DIR, { recursive: true });
+  } else delete env.HUD_JOB_DIR;
   const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
   const child = spawn(process.execPath, [...preload, entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
@@ -1636,7 +1639,7 @@ test('worktree isolation validates before dispatch, links dependencies and carri
   const original = fs.readFileSync(trust, 'utf8');
   const claudeFile = join(f.env.CLAUDE_CONFIG_DIR, '.claude.json');
   const claude = fs.readFileSync(claudeFile, 'utf8');
-  assert.equal((await f.call('hud_create', { ...args, on: 'grok', cwd })).code, 'untrusted_cwd');
+  assert.equal((await f.call('hud_create', { ...args, request_key: 'isolated-untrusted', on: 'grok', cwd })).code, 'untrusted_cwd');
   assert.equal(fs.readFileSync(trust, 'utf8'), original);
   assert.ok(!fs.existsSync(join(f.root, 'demo-wt')));
   fs.appendFileSync(trust, `\n[folders.${JSON.stringify(cwd)}]\ntrusted = true\n`);
@@ -1877,6 +1880,85 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
   assert.equal(fs.readFileSync(join(other, 'config.toml'), 'utf8'), '# synthetic\n');
 });
 
+const fallbackPlaces = [
+  { harness: 'cli', agent: 'grok', model: 'synthetic-first' },
+  { harness: 'pi', pi_role: 'implementer', model: 'synthetic/second' },
+];
+function fallbackRole(f, role, run = fallbackPlaces, presets) {
+  const root = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(join(root, `${role}.json`), JSON.stringify({ role, instructions: 'implementer', can_continue: false, run, presets }));
+}
+
+test('hud_create closes a pre-input failure and starts the next place in the same job', async (t) => {
+  const f = await fixture(t);
+  fallbackRole(f, 'fallback-check');
+  const reason = 'rate limit reached; retry after 5m';
+  fs.writeFileSync(join(f.env.HOME, 'fail-start-grok'), reason);
+  const job = await f.call('hud_create', { role: 'fallback-check', request_key: 'fallback', task: 'Synthetic fallback.' });
+  assert.equal(job.state, 'working');
+  assert.deepEqual(job.attempts, [
+    { index: 0, place: 'cli/grok (synthetic-first)', reason },
+    { index: 1, place: 'pi (synthetic/second)' },
+  ]);
+  assert.equal(job.used_place, 'pi (synthetic/second)');
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job.job]);
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+  assert.deepEqual(receipt.attempts, job.attempts);
+  assert.equal(receipt.cli, undefined);
+  const launches = f.commands().filter(({ args }) =>
+    (args[0] === 'agent' && args[1] === 'start') || (args[0] === 'tab' && args[1] === 'close'));
+  assert.deepEqual(launches.map(({ args }) => [args[1], args[2]]), [
+    ['start', `${job.job}-primary`], ['close', 'w4E:t2'], ['start', `${job.job}-primary`],
+  ]);
+  const exhausted = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'exhausted.json'))).places;
+  assert.deepEqual(Object.keys(exhausted), ['cli:grok:synthetic-first']);
+  assert.equal(exhausted['cli:grok:synthetic-first'].reason, reason);
+});
+
+test('hud_create retains every pre-input cause on one failed job and stays within the requested preset', async (t) => {
+  const f = await fixture(t);
+  fallbackRole(f, 'fallback-check', [{ harness: 'cli', agent: 'codex' }], [{ name: 'two', run: fallbackPlaces }]);
+  const cwd = join(f.root, 'untrusted');
+  fs.mkdirSync(cwd);
+  const trust = `grok has not trusted ${cwd}; run hud trust ${cwd}`;
+  fs.writeFileSync(join(f.env.HOME, 'fail-start-pi'), 'synthetic Pi launcher failure');
+  const args = { role: 'fallback-check', preset: 'two', request_key: 'all-fail', task: 'Synthetic fallback.', cwd };
+  const job = await f.call('hud_create', args);
+  assert.equal(job.ok, false);
+  assert.equal(job.state, 'failed');
+  assert.equal(job.used_place, null);
+  assert.deepEqual(job.attempts, [
+    { index: 0, place: 'cli/grok (synthetic-first)', reason: trust },
+    { index: 1, place: 'pi (synthetic/second)', reason: 'synthetic Pi launcher failure' },
+  ]);
+  assert.ok(job.reason.includes(trust) && job.reason.includes('synthetic Pi launcher failure'));
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job.job]);
+  assert.deepEqual(await f.call('hud_create', args), job);
+  assert.equal(f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'start').length, 1);
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+});
+
+test('worker MCP resolves its non-default HUD home and starts sonic with fallback without HUD_HOME', async (t) => {
+  const f = await fixture(t);
+  const parent = await f.call('hud_create', { role: 'imp', request_key: 'no-home-parent', task: 'Synthetic parent.' });
+  const call = workerClient(t, { ...f, env: { ...f.env, HUD_HOME: undefined } }, parent.task_dir);
+  assert.equal(resultValue(await call('hud_progress', { message: 'Synthetic milestone.' })).ok, true);
+  assert.match(fs.readFileSync(join(parent.task_dir, 'progress.jsonl'), 'utf8'), /Synthetic milestone/);
+  fallbackRole(f, 'sonic');
+  fs.writeFileSync(join(f.env.HOME, 'fail-start-grok'), 'synthetic sonic startup failure');
+  const sonic = resultValue(await call('hud_sonic', { task: 'Synthetic child.' }));
+  assert.deepEqual(sonic.attempts, [
+    { index: 0, place: 'cli/grok (synthetic-first)', reason: 'synthetic sonic startup failure' },
+    { index: 1, place: 'pi (synthetic/second)' },
+  ]);
+  assert.equal(sonic.used_place, 'pi (synthetic/second)');
+  assert.deepEqual(fs.readdirSync(join(parent.task_dir, '.sonic')), [sonic.job]);
+  const child = join(f.env.HUD_HOME, 'jobs', sonic.job);
+  assert.equal(JSON.parse(fs.readFileSync(join(child, 'job.json'))).parent_job, parent.job);
+  assert.equal(cliState(child).state, 'working');
+});
+
 test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-prompt'), '');
@@ -1884,6 +1966,7 @@ test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
   assert.equal(receipt.dispatch_exit_code, 1);
   assert.match(receipt.stderr_tail, /synthetic prompt timeout/);
+  assert.equal(job.attempts.length, 1, 'uncertain input must not be retried on another place');
   assert.equal(
     fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'),
     JSON.stringify({ state: 'working', exit_reason: null })
@@ -1895,7 +1978,7 @@ test('startup failure closes the tab, reports the pi-roles cause instead of the 
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-start'), 'timed out waiting for agent startup');
   fs.writeFileSync(join(f.env.HOME, 'pane-read'), '[roles] synthetic start failed: unsupported thinking\n');
-  const job = await f.call('hud_create', { role: 'imp', request_key: 'failed-launch', task: 'Synthetic task.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'pi', request_key: 'failed-launch', task: 'Synthetic task.' });
   assert.equal(job.ok, false);
   assert.equal(job.code, 'dispatch_failed');
   assert.match(job.reason, /synthetic start failed/);
@@ -4855,7 +4938,7 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
     places: [{ index: 0, state: 'active' }, { index: 1, state: 'standby', provider: 'synthetic', provider_source: 'pi_role' }],
   });
   const untrusted = await f.call('hud_create', {
-    role: 'local-cli', request_key: 'project-cli-untrusted', task: 'Synthetic CLI task.', cwd: proj,
+    role: 'local-cli', on: 'grok', request_key: 'project-cli-untrusted', task: 'Synthetic CLI task.', cwd: proj,
   });
   assert.equal(untrusted.code, 'untrusted_cwd');
   assert.equal(roster.convention.path, join(root, '.hud/hud-convention.md'));
