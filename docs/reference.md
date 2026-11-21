@@ -94,14 +94,23 @@ registered project's `.hud/roles`. The first `hud-convention.md` in a registered
 project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
 
-Every MCP response also carries `changes`: one line per state change of the jobs this pane dispatched since
+Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
+`hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
+question, failure or stop without Monitor. The notification names the job, role and state, with a report path and
+one-line summary or the question ID and text. It does not mark a report read; collect it with `hud_read({job})`.
+Cancelling a still-current task stops the worker like `hud_close`; repeating cancel or cancelling an old task does
+nothing. Dispatch failures, duplicates and fan-out sends return immediately. Use `hud_read` for jobs without a
+task and to recover after an MCP restart. Task clients do not get `hud_wait`, `changes`, `watcher_alive`, or the
+`hud watch` delivery hint.
+
+For other clients, MCP tool responses carry `changes`: one line per state change of the jobs this pane dispatched since
 the last response (omitted when there is none). Panel, statusline, pi footer, MCP and `hud watch` derive a job's
 state through one shared `jobRow`, so they agree. `hud watch` defaults to actionable events: new questions
 (with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker
 reasons. It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps
 all MCP change lines. On start it catches up pending questions, unread settled reports and unread failures/blocks.
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
-runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
+without tasks runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
 `codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
 It exits when the pane is gone/no longer Codex, or after 10 minutes with no unsettled job, unread attention/report
 or unanswered question. The pi HUD package delivers actionable notices natively, waking an idle main session
@@ -110,7 +119,7 @@ No Monitor or panel is needed; pi workers do not start this watch. A pane-scoped
 while active. `hud_roster` and `hud_create` report `watcher_alive` when the caller has a pane; a live watch
 suppresses direct pushes. `hud_roster` and the first `hud_create` result in a session give a delivery hint
 for the caller's harness (or general guidance when the harness is unknown).
-Without a live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions
+Without an active MCP task or live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions
 receive typed questions and can use `hud_wait` for settlement. Queue delivery uses the pane's Codex
 process `CODEX_HOME` (default `~/.codex`), not the MCP account. A missing thread id or any queue failure falls
 back to typing that line, which can touch a draft or fire prompt hooks. Stale PIDs never suppress delivery.
@@ -225,9 +234,10 @@ sub-tasks without waiting, then collect their reports; HUD prompts once if they 
 its report is still unread. A single send to a job closed by reading its report starts a repair with references to its
 brief and report, returning the new job ID as `continued_as`. Use `jobs` instead of `job` to send only to working
 jobs; the response lists `sent` job IDs and `skipped` entries with reasons. An explicit `message_key` deduplicates sends;
-if omitted, the same job and text are treated as a retry only within 10 minutes. CLI workers ask with `hud_ask` through the `QUESTION` line and `hud_respond` flow. The synchronous question waits
-up to 20 minutes; pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner;
-the session learns it through `changes`, Claude's `hud watch`, Codex's automatic queue or pi's native HUD notices. `hud_respond` writes a
+if omitted, the same job and text are treated as a retry only within 10 minutes. Workers ask with `hud_ask`; the question arrives through
+an active MCP task or the `QUESTION` notice, and `hud_respond` answers it. A synchronous question waits up to 20 minutes;
+pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner; task clients can see it
+in `hud_read`, and other clients receive it through `changes` or their live job notices. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer
 an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line,
 `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the

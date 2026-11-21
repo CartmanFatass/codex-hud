@@ -156,9 +156,16 @@ CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得�
 取自 `$HUD_HOME/panel-actions.jsonl`（读取方运行期间作出的回答；更早回答的问题只是不再出现）。
 主会话决定所有下一步，MCP 不知道工作流。工具参数见 [MCP README](../packages/hud-mcp/README.md)。
 
-每个 MCP 响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
+协商了 MCP tasks 扩展的 Claude Code 会话中，新派发的 `hud_create`、单任务的 `hud_send`（包括修复）和恢复工作的
+`hud_respond` 会在 `/tasks` 中显示为后台任务。工作者的回合结算、提问、失败或停止时，Claude Code 无需 Monitor 就会收到通知。
+通知包含任务 ID、角色和状态，以及报告路径和一行摘要，或问题编号和正文。通知不标记已读，仍需用 `hud_read({job})` 收取报告。
+取消当前回合的任务与 `hud_close` 一样会停止工作者；重复取消或取消旧任务不会产生影响。派发失败、重复调用和批量发送直接返回。
+没有后台任务的工作，以及 MCP 重启后无法识别的任务，仍可用 `hud_read` 查询。这类会话不提供 `hud_wait`、`changes`、
+`watcher_alive` 或 `hud watch` 提示。
+
+其他客户端的 MCP 工具响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
 与 `hud watch` 用同一个 `jobRow` 推导任务状态，所以结论一致。`hud watch` 默认只打印需要关注的事件，如提问、结算、受阻或新的静置原因；
-`--verbose` 才打印所有变化。范围是调用者窗格（`HERDR_PANE_ID`），`--all` 为所有任务；空闲时只每 30 秒重扫一次。Claude Code 用 Monitor 运行它。
+`--verbose` 才打印所有变化。范围是调用者窗格（`HERDR_PANE_ID`），`--all` 为所有任务；空闲时只每 30 秒重扫一次。未协商 MCP tasks 的 Claude Code 可用 Monitor 运行它。
 Codex 通过 `codex queue` 自动静默接收；pi 的 HUD 扩展用原生消息唤醒空闲的主会话，或在当前批工具调用完成后、下次模型请求前送达通知，不改编辑器草稿，也不需要打开面板或 Monitor。
 pi 工作者不会启动此监听。调用者有窗格时，`hud_roster` 和 `hud_create` 返回 `watcher_alive`；监听有效时不会直接向窗格输入，也不会显示 Monitor 提示。
 未启用监听时，问题仍可通过 Codex 队列发送；若无法排队或没有队列，则回退为直接输入。

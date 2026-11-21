@@ -40,7 +40,17 @@ Stdout is newline-delimited JSON-RPC; diagnostics go to stderr.
 On first dispatch (or when project context is stale), call `hud_roster` with the job's `cwd`. With valid context,
 go straight to `hud_create`. Follow the caller-specific `hint` in `hud_roster` or the session's first `hud_create`
 result. With live delivery, keep working until the report-ready notice, then collect with `hud_read`; the notice
-itself does not read the report. Without live delivery, use `hud_wait`.
+itself does not read the report. Without live delivery, use `hud_wait` where available.
+
+Claude Code sessions that negotiate the `2026-07-28` MCP tasks extension receive a task for each new
+`hud_create`, single-job `hud_send` (including repairs), or `hud_respond` that resumes work. Dispatch errors,
+duplicate calls that start no work, and `hud_send({jobs:[…]})` still return immediately. Claude polls the task
+and notifies the session when the turn settles, asks a question, fails, or stops. A task result gives the job ID,
+role, state, and a report path with a one-line summary or the question ID and text. The report remains unread;
+collect it with `hud_read`. Cancel from `/tasks` to stop a still-current worker turn, like `hud_close`; repeating
+cancel or cancelling a finished or superseded task does nothing. After MCP restarts, unknown tasks fail with a
+`hud_read` hint; jobs are not stopped. Use `hud_read` for jobs without a task. These sessions do not get
+`hud_wait`, `changes`, `watcher_alive`, or a Monitor hint.
 
 Both `hud_read` list views use the caller's project root (the main checkout for linked worktrees).
 A read by job ID can still collect a job from any project. A main-session MCP call or `hud watch` scan
@@ -181,12 +191,12 @@ uses a startup error from the pane if herdr gave only a timeout. Mutations seria
 within an MCP process; waiting reads do not block answers. A report is unread when its mtime is newer than
 `read_at` (or no stamp exists). HUD readers use the on-disk report, not the worker's final chat message.
 
-Every MCP response carries the session's `changes` since its last call (omitted when empty).
+For clients without MCP tasks, MCP tool responses carry the session's `changes` since its last call (omitted when empty).
 `hud watch` under a command monitor pushes less: full one-line questions, settlements/unread reports,
 new blocks and new quiet-worker reasons, not working starts/resumes, question-count drops or already-reported
 closure. On start it catches up pending questions, unread settled reports and unread failures/blocks.
 Re-arm after expiry; `--verbose` prints all MCP change lines, `--all` watches every pane. A `report` token means
-unread. Claude Code runs `hud watch` under Monitor. Codex receives these quiet lines automatically through
+unread. Claude Code without MCP tasks can run `hud watch` under Monitor. Codex receives these quiet lines automatically through
 its own queue: create/successful send starts one detached `hud watch --queue` per pane, without event stdout.
 It catches up and exits when the pane is gone/no longer Codex, or after 10 minutes without unsettled jobs,
 unread attention/reports or unanswered questions. The pi HUD package sends native notices that wake an idle main
@@ -244,7 +254,8 @@ a transition; STATUS never carries pi's `session_id`.
 
 A synchronous `hud_ask` writes `qa/qN.md` and waits for `qa/qN.answer.md` for up to 20 minutes,
 then returns the answer or the proposed default.
-CLI and pi questions use a live pane-scoped `hud watch` first; without one, a Codex main session receives
+CLI and pi questions for an active MCP task are delivered through task completion instead of typing into the pane.
+Other questions use a live pane-scoped `hud watch` first; without one, a Codex main session receives
 one queued line via `codex queue --thread … --message …`, using `CODEX_HOME` from its pane's Codex process
 (default `~/.codex`), never a shell function. Other agents, a missing thread id or any queue failure fall back
 to typing. A queue failure reports that fallback; the queue watcher keeps running. Successful queue delivery

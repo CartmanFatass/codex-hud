@@ -12,8 +12,9 @@ The user names a role and a task in plain words; you do the rest. Never ask them
 3. `hud_create` with `role`, the brief as `task`, and `cwd`. The HUD derives a key so an identical call returns the same job. Pass an explicit `request_key` only when you intend to launch a duplicate. Do not pass `preset`, `on`, `model` or `thinking` unless the user asks for the override in this request. For advanced options use the tool schema and `hud_roster({cwd, detail:true})`.
    Pass `checks` for the commands you would otherwise rerun yourself after the worker finishes.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
-5. Follow the delivery `hint` in `hud_roster` or the session's first `hud_create` result. With live delivery,
-   keep working until notified; do not poll or foreground-wait. Without it, use `hud_wait` (`mode: "any"` or `"all"`).
+5. Follow the delivery `hint` in `hud_roster` or the session's first `hud_create` result. With MCP tasks or other live delivery,
+   keep working until notified; do not poll or foreground-wait. Use `hud_read` for jobs without a task in a task session.
+   If neither task nor live delivery is available, use `hud_wait` (`mode: "any"` or `"all"`).
    Answer questions within 20 minutes using the line's `hud_respond` reply.
    To inspect without collecting, use `hud_peek` for status and milestones; request `lines` only when you need pane output.
 6. A report-ready notice leaves the report unread. Collect it explicitly with `hud_read({job})`, check it (for code: the diff and named checks), then decide: accept,

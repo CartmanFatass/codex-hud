@@ -50,6 +50,14 @@ export function watching(pane, home = process.env.HUD_HOME || join(homedir(), '.
       resolve(env.HUD_HOME || join(env.HOME || homedir(), '.hud')) === resolve(home);
   } catch { return false; } // Stale or reused PID: never suppress a question.
 }
+// Only jobs with a live, pane-bound MCP task suppress their direct question push.
+export function taskDelivery(dir, pane) {
+  try {
+    const task = JSON.parse(fs.readFileSync(join(dir, 'mcp-task.json'), 'utf8'));
+    return task.pane === pane && task.expires > Date.now() && Number.isInteger(task.pid) && task.pid > 1 &&
+      typeof task.start === 'string' && startTime(task.pid) === task.start;
+  } catch { return false; }
+}
 export function paneInfo(pane, env = process.env) {
   try {
     const got = spawnSync('herdr', ['pane', 'get', pane], { env, encoding: 'utf8', timeout: 2000 });
@@ -104,10 +112,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   let pane = launchPane;
   if (/^j[0-9a-f]{16}$/.test(job)) {
     try {
-      const receipt = JSON.parse(fs.readFileSync(join(home, 'jobs', job, 'job.json'), 'utf8'));
+      const dir = join(home, 'jobs', job);
+      const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
       // An opt-in Pi DONE push must also leave child reports to their parent.
       if (receipt.parent_job && /^\[.*\] DONE /.test(message)) process.exit(0);
       if (typeof receipt.herdr_pane === 'string' && receipt.herdr_pane && !/[\x00-\x1f\x7f-\x9f]/.test(receipt.herdr_pane)) pane = receipt.herdr_pane;
+      if (taskDelivery(dir, pane)) process.exit(0);
     } catch { /* No receipt: keep the launch delivery path. */ }
   }
   // pi-roles builds a file-write reply; the HUD main session answers through its MCP.

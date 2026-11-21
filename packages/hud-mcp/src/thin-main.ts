@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
+import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
@@ -16,6 +16,7 @@ import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
 import { jobChanges, jobRow, readJobProgress, type JobRow } from '../../../src/collectors/thin-jobs.js';
+import { questionFields } from '../../../src/collectors/work-artifacts.js';
 import { PanelActionLog } from '../../../src/collectors/panel-actions.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
@@ -187,7 +188,7 @@ function primary(dir: string): string | null {
 function created(job: Job) {
   const task_dir = directory(job.job);
   const { report_unread: _unread, report_mtime: _mtime, question_ids: _questions, ...row } = readRow(job).row;
-  const watch = callerPane ? { watcher_alive: watching(callerPane, hudHome) } : {};
+  const watch = callerPane && !taskClient ? { watcher_alive: watching(callerPane, hudHome) } : {};
   const thinking = job.thinking == null ? {} : { thinking: job.thinking };
   const launch = { attempts: job.attempts, used_place: job.used_place ?? null };
   if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
@@ -1207,7 +1208,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     job.request_key === request_key && (!windowedKey || withinRetryWindow(job.created_at, now)));
   if (existing) {
     ensureWatcher();
-    ensureQueueWatcher(pane, hudHome);
+    if (!taskClient) ensureQueueWatcher(pane, hudHome);
     return created(existing);
   }
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
@@ -1314,6 +1315,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     let job = base;
     let result: DispatchResult = launchError('no launch attempted');
     let reason = '';
+    let taskEntry: HudTask | undefined;
     for (const candidate of candidates) {
       const launchArgs = argsFor(candidate.place);
       const prepared = candidate === details ? initial : placeOptions(launchArgs, candidate.place);
@@ -1359,7 +1361,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
         } else createdJobs.add(id);
         ensureWatcher();
-        ensureQueueWatcher(pane, hudHome);
+        if (taskClient && !parentJob) taskEntry = beginTask(job);
+        else ensureQueueWatcher(pane, hudHome);
       }
       const launchRole = preset || selected ? { ...definition, skills: place.skills } : definition;
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
@@ -1371,7 +1374,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (!result.preInput || result.cleanupFailed) break;
       save(job);
     }
-    return finishLaunch(job, dir, result, reason);
+    const value = finishLaunch(job, dir, result, reason);
+    return finishTask(taskEntry, job, value, result.exit_code === 0);
   });
 }
 
@@ -1518,7 +1522,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     ? current.send_outcomes?.find((attempt) => attempt.derived_key === matchKey && withinRetryWindow(attempt.recorded_at, now))
     : current.send_outcomes?.find((attempt) => attempt.key === explicitKey);
   if (duplicate || (explicitKey !== undefined && current.message_keys.includes(explicitKey))) {
-    if (duplicate?.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+    if (duplicate?.exit_code === 0 && !taskClient) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
     return duplicate?.exit_code === 0
       ? { ok: true, sent: false }
       : { ok: false, sent: false, code: 'send_failed',
@@ -1543,6 +1547,8 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     !(queued || (!workingOnly && state === 'idle_grace' && !readReport && registry(current.worktree?.main_root ?? current.cwd).roles().get(current.role)?.can_continue))
   )
     return { ok: false, code: 'not_continuable' };
+  const oldTask = activeTasks.get(id);
+  if (oldTask) sampleTask(oldTask);
   // Record the attempt first. A fresh derived send needs its own key for CLI turn tracking.
   const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
   const recorded_at = new Date().toISOString();
@@ -1555,6 +1561,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
   const prior = current.cli ? readTurn(dir) : null;
   const turn = current.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
+  const taskEntry = taskClient && !workingOnly ? beginTask(current, row.report_mtime) : undefined;
   const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
   if (turn && refusedBeforeInput(result)) {
     const active = readTurn(dir);
@@ -1568,7 +1575,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   attempted.exit_code = result.exit_code;
   attempted.stderr_tail = result.stderr;
   save(latest);
-  if (result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+  if (!taskClient && result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
   if (result.exit_code === 0 && current.cli) {
     const supPid = supervisorPid(dir, status);
     if (
@@ -1582,7 +1589,8 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
       spawnCliSupervisor(dir);
     }
   }
-  return {
+  if (oldTask && !taskEntry) sampleTask(oldTask);
+  const value = {
     ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
     ok: result.exit_code === 0,
     sent: result.exit_code === 0,
@@ -1590,6 +1598,9 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     exit_code: result.exit_code,
     stderr_tail: result.stderr,
   };
+  const response = finishTask(taskEntry, latest, value, value.ok);
+  if (!value.ok && oldTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
+  return response;
 }
 
 async function sendJobs(args: Args) {
@@ -1640,7 +1651,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       const assignment = found.assignment(role, now, undefined, routing);
       return detail ? assignment : compactAssignment(assignment);
     });
-    const watcherAlive = !!callerPane && watching(callerPane, hudHome);
+    const watcherAlive = !taskClient && !!callerPane && watching(callerPane, hudHome);
     const unchanged = (args.convention_version ?? sentConventionVersion) === convention_version;
     if (!unchanged) sentConventionVersion = convention_version;
     return {
@@ -1649,7 +1660,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       convention_version,
       ...(unchanged ? { convention_unchanged: true } : { convention }),
       project,
-      ...(callerPane ? { watcher_alive: watcherAlive } : {}),
+      ...(callerPane && !taskClient ? { watcher_alive: watcherAlive } : {}),
       hint: deliveryHint(watcherAlive),
       ...(ignored ? { project_config_ignored: ignored } : {}),
     };
@@ -1657,8 +1668,10 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_create') {
     const result = await dispatchJob(args, process.env.HERDR_PANE_ID);
     if (sentCreateHint) return result;
+    const task = TASK_HANDLE in result ? result[TASK_HANDLE] as ReturnType<typeof wireTask> : undefined;
+    if (task) task.statusMessage += ` — ${deliveryHint(false)}`;
     sentCreateHint = true;
-    const watcherAlive = 'watcher_alive' in result ? result.watcher_alive === true : !!callerPane && watching(callerPane, hudHome);
+    const watcherAlive = !taskClient && ('watcher_alive' in result ? result.watcher_alive === true : !!callerPane && watching(callerPane, hudHome));
     return { ...result, hint: deliveryHint(watcherAlive) };
   }
   if (name === 'hud_send') return sendJobs(args);
@@ -1729,20 +1742,30 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
     const answer = required(args, 'answer');
     fs.mkdirSync(join(dir, 'qa'), { recursive: true, mode: 0o700 });
+    const oldTask = activeTasks.get(id);
+    if (oldTask) sampleTask(oldTask);
+    const task = taskClient && readRow(job, false).row.question_ids.includes(request)
+      ? beginTask(job, oldTask?.reportBefore, request) : undefined;
     try {
       fs.writeFileSync(join(dir, 'qa', `${request}.answer.md`), answer, { flag: 'wx', mode: 0o600 });
-      return { ok: true, written: true };
+      return finishTask(task, job, { ok: true, written: true }, true);
     } catch (error) {
+      if (task) releaseTask(task);
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       return { ok: true, written: false };
     }
   }
+  return closeJob(job);
+}
+
+async function closeJob(job: Job, stop = false) {
+  const dir = directory(job.job);
   const { row, status } = readRow(job);
   const { result, complete, issue } = await reapWorkerTree(dir, status, () => {
     // Idle grace already finished: reap quits and the supervisor closes. A working job is stopped.
-    if (job.cli && row.state === 'idle_grace') {
+    if (row.state === 'idle_grace' && (stop || job.cli)) {
       try {
-        fs.writeFileSync(join(dir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 });
+        fs.writeFileSync(join(dir, `STATUS.json.${stop ? 'stop' : 'close'}-requested`), '', { flag: 'wx', mode: 0o600 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
@@ -1765,7 +1788,9 @@ const callerPane = herdrId(process.env.HERDR_PANE_ID) ? process.env.HERDR_PANE_I
 let callerHarness: 'claude' | 'codex' | 'pi' | undefined;
 let sentConventionVersion: string | undefined;
 let sentCreateHint = false;
+let discovered = false, taskClient = false;
 function deliveryHint(watcherAlive: boolean): string {
+  if (taskClient) return 'Worker-turn events arrive as MCP task completions. Use `hud_read` to collect reports and check jobs without a task.';
   if (!callerHarness && callerPane) {
     const agent = paneInfo(callerPane)?.agent;
     if (agent === 'claude' || agent === 'codex' || agent === 'pi') callerHarness = agent;
@@ -1788,7 +1813,7 @@ function deliveryHint(watcherAlive: boolean): string {
 const createdJobs = new Set<string>();
 async function adoptSessionJobs() {
   if (!callerPane || !await adoptProjectJobs(hudHome, callerPane, process.cwd(), jobs(), process.env)) return false;
-  ensureQueueWatcher(callerPane, hudHome);
+  if (!taskClient) ensureQueueWatcher(callerPane, hudHome);
   return true;
 }
 function sessionJobs() {
@@ -1805,7 +1830,7 @@ let cursor: Map<string, JobRow>;
 const tries = new TryLog(hudHome), answers = new PanelActionLog(hudHome);
 function withChanges(value: unknown, markExhaustion: boolean): unknown {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (taskClient || !value || typeof value !== 'object' || Array.isArray(value)) return value;
   const rows = sessionRows(markExhaustion);
   const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)))];
   cursor = new Map(rows.map((row) => [row.job, row]));
@@ -1833,6 +1858,126 @@ function mutationKey(name: string, args: Args): string | null {
   if (typeof id !== 'string' || !id) return `invalid:${randomBytes(8).toString('hex')}`;
   return `job:${id}`;
 }
+const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
+const TASK_HANDLE = Symbol('task handle');
+const TASK_TTL = 3 * 60 * 60_000;
+const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
+const taskContent = (text: string) => ({ content: [{ type: 'text', text }] });
+type TaskStatus = 'working' | 'completed' | 'failed' | 'cancelled';
+type TaskView = { status: TaskStatus; statusMessage: string; lastUpdatedAt: string; result?: ReturnType<typeof taskContent> };
+type HudTask = {
+  id: string; job: string; role: string; pane: string; createdAt: string; fence?: string;
+  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView;
+};
+const tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
+const markerFile = (task: HudTask) => join(directory(task.job), 'mcp-task.json');
+function claimTask(task: HudTask, job: Job) {
+  if (!callerPane || job.herdr_pane !== callerPane) return;
+  const file = markerFile(task), temp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temp, JSON.stringify({ id: task.id, pane: callerPane, pid: process.pid,
+      start: procStat(process.pid)?.start, expires: Date.parse(task.createdAt) + TASK_TTL }), { mode: 0o600 });
+    fs.renameSync(temp, file);
+  } catch { /* If not recorded, question delivery keeps its ordinary fallback. */ }
+}
+function releaseTask(task: HudTask) {
+  if (activeTasks.get(task.job) === task) activeTasks.delete(task.job);
+  try {
+    if (json<{ id: string }>(markerFile(task))?.id === task.id) fs.unlinkSync(markerFile(task));
+  } catch { /* Stale delivery markers expire and cannot authorize cancellation. */ }
+}
+const questionFiles = (dir: string) => entries(join(dir, 'qa')).filter((name) => /^q\d+\.md$/.test(name)).sort();
+const taskLabel = (task: HudTask, state: string) => `${task.job} (${task.role}) — ${state}`;
+function beginTask(job: Job, reportBefore: number | null = null, answer?: string): HudTask {
+  const createdAt = new Date().toISOString(), dir = directory(job.job);
+  const task: HudTask = {
+    id: `${job.job}:${randomBytes(8).toString('hex')}`, job: job.job, role: job.role, pane: job.herdr_pane, createdAt,
+    reportBefore, seenQuestions: new Set(questionFiles(dir).filter((name) =>
+      !answer || name === `${answer}.md` || fs.existsSync(join(dir, 'qa', name.replace('.md', '.answer.md'))))),
+    view: { status: 'working', statusMessage: `${job.job} (${job.role}) — working`, lastUpdatedAt: createdAt },
+  };
+  claimTask(task, job);
+  return task;
+}
+function taskFence(job: Job) {
+  const turn = job.cli ? readTurn(directory(job.job)) : null;
+  if (turn) return turnToken(turn);
+  const sends = job.send_outcomes ?? [];
+  for (let i = sends.length - 1; i >= 0; i--) if (!sends[i].exit_code) return sends[i].key;
+  return job.created_at;
+}
+function wireTask(task: HudTask) {
+  return { taskId: task.id, createdAt: task.createdAt, ttlMs: TASK_TTL, pollIntervalMs: 5000, ...task.view };
+}
+function finishTask<T extends object>(task: HudTask | undefined, job: Job, value: T, ok: boolean): T & { [TASK_HANDLE]?: ReturnType<typeof wireTask> } {
+  if (!task) return value;
+  if (!ok) { releaseTask(task); return value; }
+  task.fence = taskFence(job);
+  tasks.set(task.id, task);
+  activeTasks.set(task.job, task);
+  setTimeout(() => { tasks.delete(task.id); releaseTask(task); }, TASK_TTL).unref();
+  return { ...value, [TASK_HANDLE]: wireTask(task) };
+}
+function updateTask(task: HudTask, status: TaskStatus, statusMessage: string, text?: string): TaskView {
+  if (task.view.status !== status || task.view.statusMessage !== statusMessage) {
+    task.view = { status, statusMessage, lastUpdatedAt: new Date().toISOString(), ...(text ? { result: taskContent(text) } : {}) };
+  }
+  if (status !== 'working') releaseTask(task);
+  return task.view;
+}
+function sampleTask(task: HudTask): TaskView {
+  if (task.view.status !== 'working') return task.view;
+  const job = findJob(task.job);
+  if (!job || job.herdr_pane !== task.pane || taskFence(job) !== task.fence) {
+    const message = `${taskLabel(task, 'no longer current')}. Use hud_read for the job's current state.`;
+    return updateTask(task, 'failed', message, message);
+  }
+  const dir = directory(job.job), { row, status } = readRow(job, false);
+  const state = row.state ?? row.display_state;
+  const label = taskLabel(task, state);
+  if (state === 'failed' || state === 'stopped' || fs.existsSync(join(dir, 'STATUS.json.stop-requested'))) {
+    const stopped = state !== 'failed';
+    const message = `${taskLabel(task, stopped ? 'stopped' : state)} — ${row.reason ?? (stopped ? 'stop requested' : 'worker failed')}`;
+    return updateTask(task, stopped ? 'cancelled' : 'failed', message, message);
+  }
+  // An answer can arrive between polls (for example from the panel). That question still ended this task.
+  const question = questionFiles(dir).find((name) => !task.seenQuestions.has(name));
+  if (question) {
+    const id = question.slice(0, -3), fields = questionFields(slice(join(dir, 'qa', question), 2048)?.text ?? '');
+    const message = taskLabel(task, 'waiting_orchestrator');
+    const choices = [...fields.options, ...(fields.suggested ? [`Default: ${fields.suggested}`] : [])];
+    return updateTask(task, 'completed', `${message} — ${id}`, `${message}\nQuestion ${id}: ${fields.question}${choices.length ? `\n${choices.join(' | ')}` : ''}`);
+  }
+  const report = join(dir, 'report.md');
+  const currentSettlement = typeof status?.settled_at !== 'string' || status.settled_at >= task.createdAt;
+  if (settled(state) && currentSettlement && row.report_mtime !== null && row.report_mtime !== task.reportBefore) {
+    const lines = (slice(report, 2048)?.text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const summary = (lines.find((line) => !line.startsWith('#')) ?? lines[0]?.replace(/^#+\s*/, '') ?? 'Report ready').slice(0, 240);
+    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}`);
+  }
+  if (state === 'closed' || state === 'done') {
+    const message = `${label} — no report for this turn`;
+    return updateTask(task, 'failed', message, message);
+  }
+  const progress = readJobProgress(dir).latest_progress;
+  const message = (progress && progress.at >= task.createdAt ? progress.text : null) ?? row.reason;
+  return updateTask(task, 'working', `${taskLabel(task, settled(state) ? 'working' : state)}${message ? ` — ${message}` : ''}`);
+}
+async function taskRequest(taskId: string, cancel: boolean) {
+  const task = tasks.get(taskId);
+  if (!task) {
+    const now = new Date().toISOString(), statusMessage = 'Unknown or expired task. Use hud_read to find the job and collect its report.';
+    return { taskId, status: 'failed', statusMessage, createdAt: now, lastUpdatedAt: now, ttlMs: TASK_TTL, pollIntervalMs: 5000 };
+  }
+  return keyLock(`job:${task.job}`, async () => {
+    if (sampleTask(task).status === 'working' && cancel) {
+      const closed = await closeJob(findJob(task.job)!, true);
+      const message = closed.exit_code === 0 ? taskLabel(task, 'stopped') : `${taskLabel(task, 'stop failed')} — ${closed.last_line}`;
+      updateTask(task, closed.exit_code === 0 ? 'cancelled' : 'failed', message, message);
+    }
+    return wireTask(task);
+  });
+}
 const write = (value: unknown) => process.stdout.write(JSON.stringify(value) + '\n');
 const rpcError = (id: unknown, code: number, message: string) =>
   write({ jsonrpc: '2.0', id, error: { code, message } });
@@ -1856,7 +2001,17 @@ async function receive(line: string): Promise<void> {
   if (request.id === undefined) return; // Includes notifications/initialized.
   let result: unknown;
   switch (request.method) {
+    case 'server/discover': {
+      const meta = request.params?._meta;
+      discovered = true;
+      taskClient = !worker && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
+        Object.hasOwn(meta?.['io.modelcontextprotocol/clientCapabilities']?.extensions ?? {}, TASK_EXTENSION);
+      result = { supportedVersions: ['2026-07-28'], ...privateCache,
+        capabilities: { tools: {}, ...(!worker ? { extensions: { [TASK_EXTENSION]: {} } } : {}) } };
+      break;
+    }
     case 'initialize':
+      discovered = taskClient = false;
       if (request.params?.clientInfo?.name === 'hud-pi') callerHarness = 'pi';
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
@@ -1870,7 +2025,21 @@ async function receive(line: string): Promise<void> {
       result = {};
       break;
     case 'tools/list':
-      result = { tools: worker ? await worker.listWorkerTools(true) : [...tools, statuslineTool] };
+      result = { ...(discovered ? privateCache : {}), tools: worker ? await worker.listWorkerTools(true) :
+        [...tools, statuslineTool].filter((tool) => !taskClient || tool.name !== 'hud_wait').map((tool) =>
+          taskClient && ['hud_create', 'hud_send', 'hud_respond'].includes(tool.name)
+            ? { ...tool, execution: { taskSupport: 'optional' } } : tool) };
+      break;
+    case 'tasks/get':
+    case 'tasks/cancel':
+      if (!taskClient) { rpcError(request.id, -32601, 'Method not found'); return; }
+      if (typeof request.params?.taskId !== 'string') { rpcError(request.id, -32602, 'Invalid task id'); return; }
+      try {
+        result = await taskRequest(request.params.taskId, request.method === 'tasks/cancel');
+      } catch (error) {
+        rpcError(request.id, -32603, String(error));
+        return;
+      }
       break;
     case 'resources/list':
       result = { resources: worker ? [] : [statuslineResource] };
@@ -1915,11 +2084,14 @@ async function receive(line: string): Promise<void> {
       }
       const invoke = () => call(name, args);
       try {
+        if (taskClient && name === 'hud_wait') throw new Error('unknown_tool');
         if (name !== 'hud_wait') await adoptSessionJobs();
         const key = mutationKey(name, args);
         const value = key === null ? await invoke() : await keyLock(key, invoke);
         const markExhaustion = name !== 'hud_peek';
-        if (typeof value === 'string') {
+        if (value && typeof value === 'object' && TASK_HANDLE in value) {
+          result = { resultType: 'task', ...(value[TASK_HANDLE] as ReturnType<typeof wireTask>) };
+        } else if (typeof value === 'string') {
           const content = [{ type: 'text', text: value }];
           const delta = withChanges({}, markExhaustion) as { changes?: unknown[] };
           if (delta.changes) content.push({ type: 'text', text: JSON.stringify(delta) });
@@ -1948,7 +2120,7 @@ async function receive(line: string): Promise<void> {
       rpcError(request.id, -32601, 'Method not found');
       return;
   }
-  write({ jsonrpc: '2.0', id: request.id, result });
+  write({ jsonrpc: '2.0', id: request.id, result: discovered ? { resultType: 'complete', ...result as object } : result });
 }
 export function serveMcp() {
   if (!worker) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
