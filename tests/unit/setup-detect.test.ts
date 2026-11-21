@@ -345,31 +345,31 @@ test('detect marks skills that disable model invocation', async (t) => {
 
 test('detect includes bundled skills with and without setup.json skill_roots', async (t) => {
   const f = fixture(t);
-  const expectedTickets = {
-    name: 'to-tickets',
-    path: join(bundledSkills, 'to-tickets'),
+  const expectedHandoff = {
+    name: 'hud-handoff',
+    path: join(bundledSkills, 'hud-handoff'),
     root: bundledSkills,
-    model_invocable: false,
+    model_invocable: true,
   };
   const optional = (doc: { skills: { name: string }[] }) =>
     doc.skills.filter((item) => ['tdd', 'diagnosing-bugs', 'grill-with-docs', 'to-spec', 'hud-build'].includes(item.name));
 
   const withoutSetup = await detect(f, f.project);
   assert.deepEqual(
-    withoutSetup.skills.find((item: { name: string }) => item.name === 'to-tickets'),
-    expectedTickets
+    withoutSetup.skills.find((item: { name: string }) => item.name === 'hud-handoff'),
+    expectedHandoff
   );
   assert.deepEqual(optional(withoutSetup), [], 'optional skills are not bundled');
 
   const customRoot = join(f.root, 'custom-skills');
-  const userTickets = skill(customRoot, 'to-tickets', '---\nname: to-tickets\n---\n');
+  const userHandoff = skill(customRoot, 'hud-handoff', '---\nname: hud-handoff\n---\n');
   fs.writeFileSync(join(f.hud, 'setup.json'), JSON.stringify({ skill_roots: [customRoot] }));
   f.reset();
 
   const withSetup = await detect(f, f.project);
   assert.deepEqual(
-    withSetup.skills.filter((item: { name: string }) => item.name === 'to-tickets'),
-    [{ name: 'to-tickets', path: userTickets, root: customRoot, model_invocable: true }, expectedTickets]
+    withSetup.skills.filter((item: { name: string }) => item.name === 'hud-handoff'),
+    [{ name: 'hud-handoff', path: userHandoff, root: customRoot, model_invocable: true }, expectedHandoff]
   );
 });
 
