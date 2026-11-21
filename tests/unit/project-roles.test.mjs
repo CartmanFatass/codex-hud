@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { projectRoot, registeredProject } from '../../dist/roles/projects.js';
+import { projectRoot, registeredProject, sharedRoot } from '../../dist/roles/projects.js';
 import { roleRegistry } from '../../dist/roles/roster.js';
 
 function pi(role, extra = {}) {
@@ -63,6 +63,26 @@ test('project root is the git toplevel, including from a subdirectory', () => {
   register(hud, project);
   assert.equal(registeredProject(hud, sub).root, top);
   assert.equal(registeredProject(hud, sub).registered, true);
+  rm();
+});
+
+test('shared root is the main checkout for a linked worktree', () => {
+  const { root, project, rm } = layout();
+  gitInit(project);
+  const git = (...args) => {
+    const result = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], { cwd: project, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  git('commit', '--allow-empty', '-qm', 'base');
+  const linked = join(root, 'linked');
+  git('worktree', 'add', '-q', linked);
+  const top = fs.realpathSync(project);
+  assert.equal(projectRoot(linked), fs.realpathSync(linked));
+  assert.equal(sharedRoot(linked), top);
+  assert.equal(sharedRoot(join(project, '.')), top);
+  const plain = join(root, 'plain');
+  fs.mkdirSync(plain);
+  assert.equal(sharedRoot(plain), projectRoot(plain));
   rm();
 });
 

@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { leaseActive, leaseJob, readLease, type LeaseRecord } from '../collectors/thin-jobs.js';
-import { projectRoot } from './projects.js';
+import { sharedRoot } from './projects.js';
 import { executable } from './roster.js';
 import { procStat } from './worker-tree.js';
 
@@ -55,7 +55,7 @@ export async function takeLease(args: Record<string, unknown>, caller: Caller, s
   if (!holder) throw new Error('hud_lease needs the main session’s HERDR_PANE_ID');
   const flock = executable('flock');
   if (!flock) throw new Error('hud_lease requires util-linux flock on PATH');
-  const project = projectRoot(cwd), kind = worker ? 'worker' : 'main';
+  const project = sharedRoot(cwd), kind = worker ? 'worker' : 'main';
   const dir = join(home, 'leases');
   const file = join(dir, createHash('sha256').update(JSON.stringify([project, name])).digest('hex') + '.json');
   const own = (lease: LeaseRecord) => lease.kind === kind && lease.holder === holder;

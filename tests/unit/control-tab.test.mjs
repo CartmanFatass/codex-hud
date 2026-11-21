@@ -59,7 +59,11 @@ test('Control shows active lease name, holder and age for the selected project',
   const f = await fixture(t);
   const caller = { home: f.hud, cwd: f.cwd, holder: 'w4E:p1' };
   await takeLease({ name: 'shared install', wait_s: 0 }, caller);
-  await takeLease({ name: 'other project', wait_s: 0 }, { ...caller, cwd: f.linked[0] });
+  // A linked worktree shares its main checkout's leases; another directory does not.
+  await takeLease({ name: 'from worktree', wait_s: 0 }, { ...caller, cwd: f.linked[0] });
+  const elsewhere = fs.mkdtempSync(join(tmpdir(), 'lease-other-'));
+  t.after(() => fs.rmSync(elsewhere, { recursive: true, force: true }));
+  await takeLease({ name: 'other project', wait_s: 0 }, { ...caller, cwd: elsewhere });
   const now = Date.now() + 10_000;
   const snapshot = await f.collector.collect('control', f.board, now);
   for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
@@ -67,10 +71,12 @@ test('Control shows active lease name, holder and age for the selected project',
     const rendered = plain(frame).join('\n');
     assert.match(rendered, lang === 'zh' ? /资源租约/ : /Leases/);
     assert.match(rendered, /shared install +w4E:p1 · 1\ds/);
+    assert.match(rendered, /from worktree +w4E:p1/);
     assert.doesNotMatch(rendered, /other project/);
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
   }
   await takeLease({ name: 'shared install', release: true }, caller);
+  await takeLease({ name: 'from worktree', release: true }, caller);
   assert.deepEqual((await f.collector.collect('control', f.board, now)).leases, []);
 });
 

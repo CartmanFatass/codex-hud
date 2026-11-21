@@ -42,6 +42,23 @@ export function projectRoot(cwd: string): string {
   return cwd;
 }
 
+/** The main checkout's root for cwd (shared by its linked worktrees), else projectRoot(cwd). Never throws. */
+export function sharedRoot(cwd: string): string {
+  try {
+    const git = spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd,
+      encoding: 'utf8',
+      env: safeGitEnv(process.env),
+      timeout: 5000,
+    });
+    const common = git.status === 0 ? git.stdout.trim() : '';
+    if (common && basename(common) === '.git') return fs.realpathSync(resolve(common, '..'));
+  } catch {
+    /* Not a usable checkout: fall back. */
+  }
+  return projectRoot(cwd);
+}
+
 function sameRoot(stored: string, root: string): boolean {
   if (stored === root) return true;
   try {
