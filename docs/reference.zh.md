@@ -74,7 +74,8 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 
 MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**。
 首次分派或项目上下文失效时，调用 `hud_roster` 获取角色可用性、能否继续、生效的 `runs_on` 和约定；上下文仍有效时直接调用 `hud_create`。
-刷新角色列表时，只有手头仍有约定正文才传入其 `convention_version`；匹配则省略正文，角色信息仍会刷新。
+同一 MCP 会话再次调用时，若约定未变则省略正文，角色信息仍会刷新。
+`hud_roster` 和该会话的首个 `hud_create` 结果会按调用者的运行环境给出通知提示；无法识别时给出通用提示。
 传入 `detail: true` 可查看预设、后备位置、来源及可用选项。
 `$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON，已注册项目的 `.hud/roles` 再覆盖。
 已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
@@ -98,7 +99,8 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 各自指向 `$HUD_HOME/jobs` 中该任务的 `report.md`）传递上下文。文件须为可读的 UTF-8 文本，解析后的路径须分别位于
 `cwd` 或 `$HUD_HOME/jobs` 内；无效引用会在启动前返回 `invalid_arguments`。Pi 和 CLI 工作者按简报中任务之后列出的路径读取文件；
 浏览器（`bro`）会把标明来源的文件内容随简报发给浏览器服务（单个文件最多 64 KiB，合计最多 256 KiB，超限返回 `context_too_large`）。
-引用上游报告不会将其标为已读，也不会关闭其工作者。
+项目根目录下可选的 `.hud/brief.md` 会自动纳入简报，即使项目未注册：本地任务在正文后附上引用，浏览器任务按同样的大小限制内联其内容。
+请确保该文件内容可发送给所选浏览器服务。引用上游报告不会将其标为已读，也不会关闭其工作者。
 
 `isolation: "worktree"` 让任务在仓库旁自己的 Git 链接检出中运行（`<repo>-wt/<slug>-<id6>`，分支 `wt/<slug>-<id6>` 取自 HEAD，
 链接 `node_modules`，并复制该 CLI 对主检出的信任）。浏览器角色和非 Git 目录会被拒绝。对该任务的 `hud_read` 会附带 `worktree`（含检出路径）及 `git_summary`。
@@ -201,6 +203,7 @@ hud setup --remove [--cwd DIR]
 .hud/skills/<name>         指向技能目录的符号链接（仅工作者）
 .hud/agents/<role>.md      可选的仅工作者提示
 .hud/hud-convention.md     可选，内置约定的副本
+.hud/brief.md              可选，手动添加的常设简报（setup 不管理）
 ```
 
 计划为 version 1：`roles`（启用的名字）、`pi_roles`（只调 pi：`from`、`pi_role`、`model`、
@@ -212,7 +215,7 @@ hud setup --remove [--cwd DIR]
 不是本命令创建的文件或链接会留下，并报 `skipped (exists)`。
 
 apply 把项目根记入 `$HUD_HOME/projects.json`。项目配置只有注册之后才加载。
-`--remove` 去掉注册，留下 `.hud/`。克隆来的 `.hud/` 在该克隆里跑过 setup 之前不起作用。
+`--remove` 去掉注册，留下 `.hud/`。常设简报不依赖注册，仍会使用。
 
 已注册项目的角色文件可在 `run` 和 `presets[].run` 中列出 pi 与 CLI 位置。CLI 位置只接受
 `harness: "cli"`、`agent`、`model` 和 `thinking`，不接受额外参数；不允许浏览器（`bro`）位置。

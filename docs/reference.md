@@ -87,8 +87,8 @@ Unavailable evidence leaves the jobs view unbound to a native session.
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
 **hud_send**, **hud_respond**, **hud_close**, **hud_lease**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
 It returns role availability, continuation, effective `runs_on` and the convention. For presets, fallbacks,
-model/thinking sources and accepted options, pass `detail: true`. When refreshing, pass the prior
-`convention_version` only if you still have its text; a match omits the convention, never the fresh role rows.
+model/thinking sources and accepted options, pass `detail: true`. The MCP omits an unchanged convention on
+subsequent roster calls in the same session; role rows are always refreshed.
 Bundled role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a
 registered project's `.hud/roles`. The first `hud-convention.md` in a registered
 project's `.hud/`, the cwd, HUD home, then the package wins whole.
@@ -108,7 +108,8 @@ or unanswered question. The pi HUD package delivers actionable notices natively,
 or delivering before the next model request after the current tool batch, without touching the editor draft.
 No Monitor or panel is needed; pi workers do not start this watch. A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid`
 while active. `hud_roster` and `hud_create` report `watcher_alive` when the caller has a pane; a live watch
-suppresses direct pushes and the `hud_create` Monitor hint.
+suppresses direct pushes. `hud_roster` and the first `hud_create` result in a session give a delivery hint
+for the caller's harness (or general guidance when the harness is unknown).
 Without a live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions
 receive typed questions and can use `hud_wait` for settlement. Queue delivery uses the pane's Codex
 process `CODEX_HOME` (default `~/.codex`), not the MCP account. A missing thread id or any queue failure falls
@@ -140,8 +141,10 @@ Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `fro
 each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
 or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch. Pi and CLI
 workers read the paths listed after the task in their briefs. Browser (`bro`) briefs send the labeled file contents
-to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`). Attaching
-an upstream report does not mark it read or close its worker.
+to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`). The optional
+project-root `.hud/brief.md` is included automatically, even in an unregistered project: a reference after the task
+for local workers, or its contents within the same byte limits for browser jobs. Keep it safe to send to the selected
+browser service. Attaching an upstream report does not mark it read or close its worker.
 
 `isolation: "worktree"` runs the job in its own linked Git checkout beside the repository (`<repo>-wt/<slug>-<id6>`,
 branch `wt/<slug>-<id6>` from HEAD, `node_modules` linked, the CLI's trust of the main checkout copied). It is
@@ -308,6 +311,7 @@ be committed:
 .hud/skills/<name>         symlink to the skill directory (workers only)
 .hud/agents/<role>.md      optional worker-only prompt
 .hud/hud-convention.md     optional copy of the shipped convention
+.hud/brief.md              optional standing brief (add manually; not managed by setup)
 ```
 
 The plan is version 1: `roles` (enabled names), `pi_roles` (pi tuning only: `from`,
@@ -321,8 +325,8 @@ pi place. It prints `removed`, `wrote`, `linked`,
 nothing. A file or link apply did not make is left in place and reported as skipped.
 
 Applying records the root in `$HUD_HOME/projects.json`. Project config loads only
-after that. `--remove` drops the registration and leaves `.hud/` alone. A clone's
-`.hud/` does nothing until the owner runs setup there.
+after that. `--remove` drops the registration and leaves `.hud/` alone. The standing
+brief is independent of registration and remains in use.
 
 A registered project's role file may list pi and CLI places in `run` and in
 `presets[].run`. A CLI place accepts only `harness: "cli"`, `agent`, `model` and

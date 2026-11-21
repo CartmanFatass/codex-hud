@@ -298,7 +298,9 @@ test('machine switches: panel, roster and create use the same daily chain, witho
     assert.equal(res.places[0].state, 'off');
     assert.ok(!fs.existsSync(jobs) || fs.readdirSync(jobs).length === 0, 'no job created for a refused override');
   }
-  assert.deepEqual(f.commands(), [], 'roster and refusals run no commands or discovery');
+  assert.deepEqual(f.commands().filter(({ command, args }) =>
+    !(command === 'herdr' && args[0] === 'pane' && args[1] === 'get' && args[2] === f.env.HERDR_PANE_ID)),
+  [], 'roster and refusals only look up the caller; no launch or discovery');
   const fallback = await create('daily');
   assert.equal(JSON.parse(fs.readFileSync(join(fallback.task_dir, 'job.json'), 'utf8')).place.agent, 'agy');
   const enabledOverride = await create('model-on', { model: 'other/new-model' });

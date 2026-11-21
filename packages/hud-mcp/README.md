@@ -38,12 +38,13 @@ Stdout is newline-delimited JSON-RPC; diagnostics go to stderr.
 ## Tools
 
 On first dispatch (or when project context is stale), call `hud_roster` with the job's `cwd`. With valid context,
-go straight to `hud_create`. With a live Monitor or native watch, keep working until the report-ready notice, then
-collect once with `hud_read`; the notice itself does not read the report. Without a watch, use `hud_wait`.
+go straight to `hud_create`. Follow the caller-specific `hint` in `hud_roster` or the session's first `hud_create`
+result. With live delivery, keep working until the report-ready notice, then collect with `hud_read`; the notice
+itself does not read the report. Without live delivery, use `hud_wait`.
 
 | Tool | Arguments and behaviour |
 |---|---|
-| `hud_roster` | Optional `cwd` (default: server cwd). Returns role availability and reasons, effective `runs_on` (including model/thinking when known), continuation, invalid role files, convention and project. `detail: true` adds the full role definitions, sources, fallbacks, presets, exhausted marks and accepted options. Pass `convention_version` only if you still have its text: a match returns `convention_unchanged: true` without the body, but roles are always refreshed. |
+| `hud_roster` | Optional `cwd` (default: server cwd). Returns role availability and reasons, effective `runs_on` (including model/thinking when known), continuation, invalid role files, convention and project. `detail: true` adds the full role definitions, sources, fallbacks, presets, exhausted marks and accepted options. The server omits the unchanged convention (`convention_unchanged: true`) on later calls in the same session; roles are always refreshed. The optional `convention_version` input remains supported for older clients. |
 | `hud_create` | Normally requires `role` and `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, `idle_grace_s` (CLI-only integer 60–3600, overrides the role for this job), `on` (harness/provider override), `kind` (`image` or `video` for `flow`), and `model`/`thinking` for a `pi` or `cli` place. Pi launch switches are below. Uses the role's first available place (`runs_on`) unless overridden by `on`. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. A key is derived from the caller pane, role, cwd and task unless you pass `request_key`. Repeating an explicit key returns the original job, even if options differ; a derived key only reuses a job created within the last 10 minutes. `retry_of` instead dispatches a failed or stopped job's brief and options as a new job. Supplied fields override the originals; unless you supply `on`, retry uses the role or preset chain rather than pinning the previous harness. |
 | `hud_read` | Without a `job`, defaults to `view: "compact"` (running jobs and jobs that need attention); use `view: "recent"` for the newest 20 full rows. `view` is list-only. With a `job`, optional `wait_ms` (0–120000) and `full` (boolean); returns status, any progress and unanswered questions, and the unread report (up to 64 KiB). `detail: true` includes launch details (e.g. preset, model source, CLI `idle_grace_s`, pi switches and diagnostics); it still collects the report. Already read: `report_unchanged: true`, no body (`full: true` includes it again). Waiting stops at settlement, a question or the deadline. Every returned report body stamps `read_at` (including during work/idle grace), not acceptance. Reading a settled pi or CLI report closes its worker. Reading a failure/block separately marks that attention seen. |
 | `hud_wait` | Optional `jobs` (job IDs; omitted: the caller session's jobs that are unsettled when the call starts), `mode` (`any` by default, or `all`), and integer `wait_ms` (0–120000; default 60000; `0` checks once). Watches job files without blocking other calls. `any` wakes on settlement or attention; `all` waits for every target to settle but wakes early on a question, block, orchestrator wait or failure. Returns `ready`, `timed_out`, `triggered` (job IDs that met the wake condition) and compact `jobs` rows. No targets returns ready with empty lists. It does not read bodies, mark anything seen or close workers. |
@@ -73,8 +74,10 @@ Missing files, non-text files, and paths or symlinks resolving outside their res
 `invalid_arguments` before launch. Pi and CLI briefs carry a `## Context References` block right after the task; the worker reads
 those files directly. `job.json` records the resolved `context_files` and the `from_jobs` IDs. Browser (`bro`)
 briefs instead inline the labeled file bodies and send them to the selected browser service (64 KiB per file,
-256 KiB total; exceeding either returns `context_too_large`). Attaching a report does not mark it read or close
-its worker. A repeated request key does not revalidate attachments.
+256 KiB total; exceeding either returns `context_too_large`). The optional project-root `.hud/brief.md` needs no
+setup or registration: local briefs reference it after the task, and browser briefs inline its contents in the
+same bounded context block. Keep it safe to send to the selected browser service. Attaching a report does not
+mark it read or close its worker. A repeated request key does not revalidate attachments.
 
 `isolation: "worktree"` (default `"none"`) runs the job in a fresh linked checkout of `cwd`'s Git repository:
 `<repo>-wt/<slug>-<id6>` beside the main checkout, branch `wt/<slug>-<id6>` from `cwd`'s HEAD, `node_modules` linked
@@ -117,7 +120,7 @@ list/wait rows or trigger `changes` / `hud watch` events.
 
 ## Roles and convention
 
-Bundled JSON files in `roles/` define logical roles: `role`, `instructions`, `can_continue`, optional `idle_grace_s`, and `run`, an ordered list of places (`pi`, `cli`, or `bro`). Legacy single-place role files still load (`run[0]`), and `"harness": "jev"` loads as `"bro"`. `$HUD_HOME/roles/*.json` overrides by role name. A project registered in `$HUD_HOME/projects.json` may add `<root>/.hud/roles/*.json` after those (project wins by name; pi only) and hide roles with `.hud/project.json`. An unregistered `.hud/` is ignored (`project_config_ignored`). A registered project's `.hud/hud-convention.md` is the first convention file.
+Bundled JSON files in `roles/` define logical roles: `role`, `instructions`, `can_continue`, optional `idle_grace_s`, and `run`, an ordered list of places (`pi`, `cli`, or `bro`). Legacy single-place role files still load (`run[0]`), and `"harness": "jev"` loads as `"bro"`. `$HUD_HOME/roles/*.json` overrides by role name. A project registered in `$HUD_HOME/projects.json` may add `<root>/.hud/roles/*.json` after those (project wins by name; pi only) and hide roles with `.hud/project.json`. An unregistered project's config is ignored (`project_config_ignored`), but its standing brief still applies. A registered project's `.hud/hud-convention.md` is the first convention file.
 
 A `pi` place names `pi_role` (defaults to `instructions`), `split`, optional `skills` (non-empty strings), and optional `model`/`thinking`; absent model/thinking comes from the pi-roles role file. Each skill name resolves to `<root>/.hud/skills/<name>` (a symlink apply made); an absolute path is used as given. Each resolved directory is passed as `--skill` after pi-role's `--`. A missing or broken link is skipped and recorded on the job; the launch continues. When `.hud/agents/<role>.md` exists, it is passed as `--append-system-prompt`. `hud_read({job, detail:true})` and `hud_peek({job, detail:true})` show `role_skills`, `skipped_skills` and `worker_prompt` for that job. A `cli` or `bro` place that names `skills` is invalid and skipped.
 

@@ -209,9 +209,10 @@ export class ProjectCollector {
       } catch { return []; }
     }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 64);
   }
-  /** A job's short factual title: its brief's first heading, else its first line, on one line. Signature-cached, size-bounded. */
-  private briefTitle(path: string): string | undefined {
-    const lines = (this.read(path, 4096)?.text ?? '').split(/\r?\n/);
+  /** A job's short factual title: the task's first heading, else its first line. Signature-cached, size-bounded. */
+  private briefTitle(path: string, taskLength: unknown): string | undefined {
+    const brief = this.read(path, 4096)?.text ?? '';
+    const lines = (typeof taskLength === 'number' ? brief.slice(0, taskLength) : brief).split(/\r?\n/);
     const line = lines.find((l) => /^#{1,6}\s/.test(l)) ?? lines.find((l) => l.trim()) ?? '';
     const title = line.replace(/^#{1,6}\s+/, '').replace(/\s+/g, ' ').trim();
     return title ? (title.length > 120 ? title.slice(0, 119) + '…' : title) : undefined;
@@ -486,7 +487,7 @@ export class ProjectCollector {
           worker?.task && worker.task !== id.slice(-6) ? worker.task : undefined,
           job.title, job.task,
         ].find((v): v is string => typeof v === 'string' && v.trim().length > 0)?.replace(/\s+/g, ' ').trim()
-          ?? this.briefTitle(join(dir, 'brief.md'));
+          ?? this.briefTitle(join(dir, 'brief.md'), job.task_length);
         const file = firstFile(join(dir, 'report.md'), join(dir, 'brief.md'));
         active.push({
           created,

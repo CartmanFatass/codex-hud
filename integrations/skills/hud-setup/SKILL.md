@@ -69,7 +69,7 @@ hud setup --apply "$plan"
 
 Report the printed lines: `wrote`, `linked`, `removed`, `skipped (exists)`, `registered`, or `no changes`. Exit 1 means a file or link this command did not make was left in place. Exit 2 means the plan was invalid and nothing was written; fix the plan and apply again. Do not repair `.hud/` by hand.
 
-`.hud/` is meant to be committed. A clone still ignores it until the owner runs setup or `--apply` there: registration lives in `$HUD_HOME/projects.json`, not in the repo.
+`.hud/` is meant to be committed. Project config loads only after the owner runs setup or `--apply` in the clone: registration lives in `$HUD_HOME/projects.json`, not in the repo. The optional `.hud/brief.md` is separate: the owner may add a standing brief manually without registering, and setup does not manage it. Browser jobs send its contents to the selected browser service.
 
 ## Rules
 

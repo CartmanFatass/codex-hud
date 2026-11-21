@@ -443,9 +443,10 @@ export function readThinJobs(
     const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
     if (settledAt !== null && settledAt < (options?.openedAt ?? -Infinity)) return [];
     const briefFile = read(join(directory, 'brief.md')),
-      brief = briefFile?.text ?? '';
-    const briefTitle = first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? '');
-    const title = briefTitle || first(brief) || first(word(job.title) ?? '') || id.slice(-6);
+      brief = briefFile?.text ?? '',
+      task = typeof job.task_length === 'number' ? brief.slice(0, job.task_length) : brief;
+    const briefTitle = first(task.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? '');
+    const title = briefTitle || first(task) || first(word(job.title) ?? '') || id.slice(-6);
     const label = word(job.package) ?? (title.includes(':') ? title.split(':', 1)[0] : title);
     return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, label }];
   });

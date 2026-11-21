@@ -15,9 +15,9 @@ const ticketStatus = { ...text, enum: TICKET_STATUSES };
 const ticketNumber = { type: 'integer', minimum: 1 };
 
 export const ROLE_TOOLS = [
-  tool('hud_roster', 'Get role availability, effective assignments and the project dispatch convention.', {
+  tool('hud_roster', 'Get role availability, effective assignments and the project dispatch convention when new or changed.', {
     cwd: { ...text, description: 'Project directory (default: server cwd).' },
-    convention_version: { ...text, description: 'Pass the version only if you still have its convention text.' },
+    convention_version: text,
     detail: { ...bool, description: 'Include presets, fallbacks, sources and accepted options.' },
   }),
   tool(

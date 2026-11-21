@@ -7,19 +7,13 @@ description: Hand work to a local HUD role in its own herdr tab - imp (implement
 
 The user names a role and a task in plain words; you do the rest. Never ask them to name a tool.
 
-1. Use `hud_roster` with the job's `cwd` on first use or when project dispatch context is stale. It returns availability, effective assignments, continuation and the applicable convention. If you still have valid context, go straight to `hud_create`. If refreshing the roster and you still have its convention text, pass its `convention_version`; a matching version omits only that text, not availability.
-2. Write the brief as the convention says. Do not add report paths or worker protocol commands; HUD supplies the worker interface.
+1. Use `hud_roster` with the job's `cwd` on first use or when project dispatch context is stale. It returns availability, effective assignments, continuation and the applicable convention. Later calls omit the text if unchanged. If you still have valid context, go straight to `hud_create`.
+2. Write the task as the convention says. HUD adds the project's `.hud/brief.md` if present and supplies the worker interface; do not copy the standing brief or add report paths or worker protocol commands.
 3. `hud_create` with `role`, the brief as `task`, and `cwd`. The HUD derives a key so an identical call returns the same job. Pass an explicit `request_key` only when you intend to launch a duplicate. Do not pass `preset`, `on`, `model` or `thinking` unless the user asks for the override in this request. For advanced options use the tool schema and `hud_roster({cwd, detail:true})`.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
-5. Claude Code: run `hud watch` under Monitor and re-arm after expiry. Codex: events are queued automatically;
-   no Monitor command is needed, and drafts stay untouched (missing thread id or queue failure falls back to typing).
-   pi: keep working; native HUD notices wake an idle session or arrive before the next model request after the
-   current tool batch, without touching the draft. No Monitor or foreground wait is needed in pi.
-   These watches catch up pending work and deliver full questions, settlements/unread reports, new blocks and quiet-worker
-   reasons—not working starts/resumes, answered questions or already-reported closure. `--verbose` and MCP
-   `changes` retain the fuller stream. With a live watch, queue or pi's native notices, keep working until notified;
-   do not poll or foreground-wait. Without one, use `hud_wait` (`mode: "any"` or `"all"`) and answer typed questions
-   within 20 minutes using the line's `hud_respond` reply. A live pane-scoped watch suppresses direct pushes.
+5. Follow the delivery `hint` in `hud_roster` or the session's first `hud_create` result. With live delivery,
+   keep working until notified; do not poll or foreground-wait. Without it, use `hud_wait` (`mode: "any"` or `"all"`).
+   Answer questions within 20 minutes using the line's `hud_respond` reply.
    To inspect without collecting, use `hud_peek` for status and milestones; request `lines` only when you need pane output.
 6. A report-ready notice leaves the report unread. Collect it explicitly with `hud_read({job})`, check it (for code: the diff and named checks), then decide: accept,
    repair, review or stop. `hud_read({})` lists running jobs and pending attention, with question IDs and unread

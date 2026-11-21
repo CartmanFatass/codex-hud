@@ -73,6 +73,9 @@ const cardText = (worker) =>
     .join('\n');
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
+const withoutHint = ({ hint, ...result }) => result;
+const withoutCallerLookups = (commands) => commands.filter(({ command, args }) =>
+  !(command === 'herdr' && args[0] === 'pane' && args[1] === 'get' && args[2] === 'w4E:p1'));
 async function fixture(t, inHerdr = true, probe = '', watcherTickMs, worker = false) {
   const root = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-'));
   const bin = join(root, 'bin');
@@ -677,19 +680,23 @@ async function until(check, timeout = 4000) {
   }
 }
 
-test('roster and create report pane watcher liveness, omitting the Monitor hint only while live', async (t) => {
+test('roster and create report pane watcher liveness, with Claude delivery guidance', async (t) => {
   const f = await fixture(t);
   const create = () => f.call('hud_create', { role: 'imp', request_key: 'watcher-live', task: 'Synthetic task.' });
-  assert.equal((await f.call('hud_roster')).watcher_alive, false);
+  const roster = await f.call('hud_roster');
+  assert.equal(roster.watcher_alive, false);
+  assert.match(roster.hint, /^Claude Code: run `hud watch` under Monitor; re-arm after expiry\./);
   const initial = await create();
   assert.equal(initial.watcher_alive, false);
-  assert.equal(initial.hint, 'Claude Code: run `hud watch` under Monitor');
+  assert.equal(initial.hint, roster.hint);
 
   const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env: f.env, stdio: 'ignore' });
   const exited = once(child, 'exit');
   t.after(() => child.kill('SIGKILL'));
   await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers/w4E:p1.pid')));
-  assert.equal((await f.call('hud_roster')).watcher_alive, true);
+  const live = await f.call('hud_roster');
+  assert.equal(live.watcher_alive, true);
+  assert.match(live.hint, /^Claude Code: `hud watch` is live under Monitor;/);
   const retry = await create();
   assert.equal(retry.job, initial.job);
   assert.equal(retry.watcher_alive, true);
@@ -755,6 +762,7 @@ try {
     await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers', 'w4E:p1.pid')));
     const roster = await call('hud_roster', { cwd: f.root });
     assert.equal(roster.watcher_alive, true);
+    assert.match(roster.hint, /^pi: native HUD notices/);
     assert.equal(roster.roles.length, 7);
     assert.equal(roster.convention.text, convention);
     const imp = roster.roles.find((r) => r.role === 'imp' && r.available);
@@ -765,7 +773,7 @@ try {
       const created = await call('hud_create', { role: imp.role, cwd: f.root, request_key, task: 'Synthetic task: 新 report.' });
       repeated = created.job;
       assert.equal(created.watcher_alive, true);
-      assert.equal(created.hint, undefined);
+      assert.equal(created.hint, request_key === 'lean-first' ? roster.hint : undefined);
       assert.equal(created.role, 'imp');
       assert.equal(cliState(created.task_dir).state, 'working');
       assert.ok(f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === created.agent));
@@ -784,7 +792,7 @@ try {
     const normal = calls.splice(0);
     assert.deepEqual(normal.map(([name]) => name), ['hud_roster', 'hud_create', 'hud_read', 'hud_create', 'hud_read']);
     t.diagnostic(`monitored replies (B): cold ${JSON.stringify(normal.slice(0, 3))}; repeat ${JSON.stringify(normal.slice(3))}`);
-    const refresh = await call('hud_roster', { cwd: f.root, convention_version: roster.convention_version });
+    const refresh = await call('hud_roster', { cwd: f.root });
     assert.equal(refresh.convention_unchanged, true);
     assert.equal(refresh.convention, undefined);
     assert.ok([...(collected.changes ?? []), ...(refresh.changes ?? [])].some((line) => line.startsWith(`${repeated} imp: closed`)));
@@ -1640,7 +1648,7 @@ test('worktree isolation validates before dispatch, links dependencies and carri
   const args = { role: 'imp', task: 'Synthetic task.', request_key: 'isolated', isolation: 'worktree', package: 'Demo Slice' };
   assert.equal((await f.call('hud_create', { ...args, on: 'pi', cwd: f.root })).code, 'invalid_arguments');
   assert.equal((await f.call('hud_create', { ...args, on: 'chatgpt', cwd })).code, 'invalid_arguments');
-  assert.equal(f.commands().length, 0);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
   assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
   assert.ok(!fs.existsSync(join(f.root, 'demo-wt')));
 
@@ -1969,7 +1977,7 @@ test('hud_create retains every pre-input cause on one failed job and stays withi
   ]);
   assert.ok(job.reason.includes(trust) && job.reason.includes('synthetic Pi launcher failure'));
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job.job]);
-  assert.deepEqual(await f.call('hud_create', args), job);
+  assert.deepEqual(await f.call('hud_create', args), withoutHint(job));
   assert.equal(f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'start').length, 1);
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
 });
@@ -2248,7 +2256,7 @@ test('thin roster returns the convention and its path with whole-file overrides'
   const failure = await f.call('hud_create', { role: 'flow', request_key: 'unavailable-flow', task: 'Synthetic.' });
   assert.equal(failure.code, 'no_available_place');
   assert.equal(failure.reason, flow.reason);
-  assert.deepEqual(f.commands(), [], 'unavailable roles do not launch');
+  assert.deepEqual(withoutCallerLookups(f.commands()), [], 'unavailable roles do not launch');
   fs.writeFileSync(project, 'x'.repeat(20001));
   const capped = await f.call('hud_roster');
   assert.deepEqual(capped.convention, {
@@ -2278,7 +2286,7 @@ test('model-supplied pi_args cannot override the inherited caller notification b
     assert.equal(result.code, 'invalid_arguments');
     assert.match(result.error, /caller binding/);
   }
-  assert.deepEqual(f.commands(), [], 'no launcher or herdr mutation for a rejected binding');
+  assert.deepEqual(withoutCallerLookups(f.commands()), [], 'no launcher or herdr mutation for a rejected binding');
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'jobs')), false);
 });
 
@@ -2488,7 +2496,7 @@ esac
     '--timeout',
     '30000',
   ]);
-  assert.deepEqual(await f.call('hud_create', args), job);
+  assert.deepEqual(await f.call('hud_create', args), withoutHint(job));
   assert.equal(f.commands().filter((c) => c.args[1] !== 'get').length, commands.length, 'retry does not dispatch again');
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
   assert.equal(receipt.dispatch_exit_code, 0);
@@ -3360,7 +3368,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     const r = roster.roles.find((r) => r.role === name);
     if (r) assert.deepEqual([r.presets, r.preset], [[], null]);
   }
-  assert.deepEqual(await f.call('hud_create', { role: 'unknown', request_key: 'unknown', task: 'Synthetic task.' }), {
+  assert.deepEqual(withoutHint(await f.call('hud_create', { role: 'unknown', request_key: 'unknown', task: 'Synthetic task.' })), {
     ok: false,
     code: 'role_unavailable',
     reason: 'Role unknown is not configured or is hidden in this project',
@@ -3414,7 +3422,7 @@ test(
       assert.equal(value.model_source, 'hud_create');
     }
     const launches = () => f.commands().filter((c) => c.command === 'pi-role').length;
-    assert.deepEqual(await f.call('hud_create', { ...args, model: '', thinking: 'low' }), job);
+    assert.deepEqual(await f.call('hud_create', { ...args, model: '', thinking: 'low' }), withoutHint(job));
     assert.equal(launches(), 1);
     assert.equal(receipt().model, args.model);
     const defaults = await f.call('hud_create', { role: 'imp', request_key: 'model-default', task: 'Synthetic task.' });
@@ -3532,7 +3540,7 @@ test('roster and default create route the active selector, while explicit preset
 test('hud_create rejects unknown, conflicting and malformed preset arguments before dispatch', async (t) => {
   const f = await fixture(t);
   const args = { role: 'imp', request_key: 'invalid-preset', task: 'Synthetic task.' };
-  assert.deepEqual(await f.call('hud_create', { ...args, preset: 'missing' }), {
+  assert.deepEqual(withoutHint(await f.call('hud_create', { ...args, preset: 'missing' })), {
     ok: false, code: 'invalid_arguments', error: 'unknown preset: missing',
   });
   assert.deepEqual(await f.call('hud_create', { ...args, preset: 'default', on: 'pi' }), {
@@ -3545,7 +3553,7 @@ test('hud_create rejects unknown, conflicting and malformed preset arguments bef
       ok: false, code: 'tool_error', error: 'invalid_arguments: preset',
     });
   }
-  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
 });
 
 test('hud_create prepends resolved local references and does not revalidate an existing request', async (t) => {
@@ -3573,6 +3581,38 @@ test('hud_create prepends resolved local references and does not revalidate an e
     .map(({ args }) => args[args.indexOf('--label') + 1]), ['imp Synthetic task']);
 });
 
+test('local dispatch references the unregistered project standing brief without changing its labels', async (t) => {
+  const f = await fixture(t);
+  git(f.root, 'init', '-q');
+  const cwd = join(f.root, 'workspace'), hud = join(f.root, '.hud');
+  fs.mkdirSync(cwd);
+  fs.mkdirSync(hud);
+  const standing = join(hud, 'brief.md');
+  fs.writeFileSync(standing, '# Standing rules\nSynthetic project-wide instructions.\n');
+  const task = 'Synthetic task title.';
+  const job = await f.call('hud_create', { role: 'imp', cwd, task });
+  assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
+    `${task}\n\nRead the project standing brief: ${JSON.stringify(standing)}.\n\nFinish with \`hud_report\`.\n`);
+  assert.equal(workerFor(f, job.job).task, task);
+  const tab = f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'create').args;
+  assert.equal(tab[tab.indexOf('--label') + 1], `imp ${task}`);
+});
+
+test('browser dispatch inlines the standing brief once through the bounded context block', async (t) => {
+  const f = await fixture(t);
+  const hud = join(f.root, '.hud'), standing = join(hud, 'brief.md');
+  fs.mkdirSync(hud);
+  const args = { role: 'pro', task: 'Synthetic browser task' };
+  fs.writeFileSync(standing, 'é'.repeat(32 * 1024) + 'x');
+  assert.equal((await f.call('hud_create', args)).code, 'context_too_large');
+  const body = 'Synthetic standing instructions.\n';
+  fs.writeFileSync(standing, body);
+  const job = await f.call('hud_create', { ...args, context_files: ['.hud/brief.md'] });
+  assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
+    `${args.task}\n\n## Context\n\n### ${JSON.stringify(standing)}\n\n\`\`\`\n${body}\`\`\`\n`);
+  assert.equal(workerFor(f, job.job).task, args.task);
+});
+
 test('hud_create inlines browser context with safe fences and caps both file and total bytes', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const max = 64 * 1024;
@@ -3591,7 +3631,7 @@ test('hud_create inlines browser context with safe fences and caps both file and
     assert.equal(result.code, 'context_too_large', JSON.stringify(result));
   }
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [upstream.job]);
-  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
 
   const job = await f.call('hud_create', { ...args, context_files: files, from_jobs: [upstream.job] });
   const brief = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
@@ -3632,7 +3672,7 @@ test('hud_create rejects invalid context paths, symlinks and binary content with
     assert.equal(result.code, 'invalid_arguments', JSON.stringify(input));
   }
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [empty.job, escaped.job]);
-  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
 });
 
 test('hud_create references an upstream report without marking it read or closing its worker', async (t) => {
@@ -3699,7 +3739,7 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
     for (const value of [receipt(), await f.call('hud_read', { job: job.job, detail: true })])
       for (const [key, expected] of Object.entries(options)) assert.deepEqual(value[key], expected);
     assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), enabled ? /^RIGHT=$/m : /^RIGHT=w4E:p3$/m);
-    assert.deepEqual(await f.call('hud_create', { ...args, lens: !enabled, pi_args: [] }), job);
+    assert.deepEqual(await f.call('hud_create', { ...args, lens: !enabled, pi_args: [] }), withoutHint(job));
     assert.equal(receipt().lens, enabled);
     assert.deepEqual(receipt().pi_args, options.pi_args);
   }
@@ -3718,7 +3758,7 @@ test('thin launch options reject Jev roles and invalid pi values before dispatch
   for (const key of keys) {
     const value = key === 'pi_args' ? ['--tools', 'read'] : false;
     assert.deepEqual(
-      await f.call('hud_create', { role: 'pro', request_key: 'jev-launch', task: 'Synthetic.', [key]: value }),
+      withoutHint(await f.call('hud_create', { role: 'pro', request_key: 'jev-launch', task: 'Synthetic.', [key]: value })),
       { ok: false, code: 'invalid_arguments' }
     );
     assert.deepEqual(
@@ -3731,26 +3771,26 @@ test('thin launch options reject Jev roles and invalid pi values before dispatch
       await f.call('hud_create', { role: 'imp', request_key: 'bad-args', task: 'Synthetic.', pi_args }),
       { ok: false, code: 'invalid_arguments' }
     );
-  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
 });
 
 test('thin create rejects model or thinking overrides for Jev roles', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   for (const override of [{ model: 'synthetic/other' }, { thinking: 'max' }]) {
     assert.deepEqual(
-      await f.call('hud_create', {
+      withoutHint(await f.call('hud_create', {
         role: 'pro',
         request_key: 'jev-override',
         task: 'Synthetic question.',
         ...override,
-      }),
+      })),
       {
         ok: false,
         code: 'invalid_arguments',
       }
     );
   }
-  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
 });
 
 test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate sends', { timeout: 15000 }, async (t) => {
@@ -3758,7 +3798,7 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   const args = { role: 'pro', request_key: 'pro-once', task: 'Synthetic question.' };
   const job = await f.call('hud_create', args);
   assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), `${args.task}\n`);
-  assert.deepEqual(await f.call('hud_create', args), job);
+  assert.deepEqual(await f.call('hud_create', args), withoutHint(job));
   const asks = f.commands().filter(({ command }) => command === 'jev-ask');
   assert.deepEqual(
     asks.map(({ args }) => args[0]),
@@ -3854,14 +3894,16 @@ test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, a
 
 test('thin create requires herdr without dispatching', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, false);
-  assert.equal(Object.hasOwn(await f.call('hud_roster'), 'watcher_alive'), false);
+  const roster = await f.call('hud_roster');
+  assert.equal(Object.hasOwn(roster, 'watcher_alive'), false);
+  assert.match(roster.hint, /^Without live delivery, .*`hud_wait`/);
   assert.deepEqual(
     await f.call('hud_create', {
       role: 'imp',
       request_key: 'no-herdr',
       task: 'Synthetic task.',
     }),
-    { ok: false, code: 'herdr_required' }
+    { ok: false, code: 'herdr_required', hint: roster.hint }
   );
   assert.deepEqual(f.commands(), []);
 });
@@ -4027,7 +4069,7 @@ test('a bad role file is skipped; roster and create name it without dropping oth
     assert.deepEqual(roster.invalid, [{ path: badPath, reason }], reason);
     assert.equal(JSON.stringify(roster.invalid).includes(secret), false, reason);
     assert.deepEqual(
-      await f.call('hud_create', { role: roleName ?? 'bad', request_key: `bad-${reason}`, task: 'Synthetic task.' }),
+      withoutHint(await f.call('hud_create', { role: roleName ?? 'bad', request_key: `bad-${reason}`, task: 'Synthetic task.' })),
       roleName ? { ok: false, code: 'role_unavailable', path: badPath, reason } :
         { ok: false, code: 'role_unavailable', reason: 'Role bad is not configured or is hidden in this project' },
       reason
@@ -4156,10 +4198,10 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     ['lens', true],
   ])
     assert.deepEqual(
-      await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'reject-' + key, task: 'Synthetic.', [key]: value }),
+      withoutHint(await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'reject-' + key, task: 'Synthetic.', [key]: value })),
       { ok: false, code: 'invalid_arguments' }
     );
-  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   fs.writeFileSync(
     join(f.env.HUD_HOME, 'roles', 'plain.json'),
@@ -4226,7 +4268,7 @@ test('local CLI trust refuses missing grants without creating a tab', async (t) 
     assert.equal(job.reason, `${agent} has not trusted ${cwd}; run hud trust ${cwd}`);
     assert.equal(job.agent, null);
     assert.equal(cliState(job.task_dir).state, 'failed');
-    assert.deepEqual(await f.call('hud_create', args), job);
+    assert.deepEqual(await f.call('hud_create', args), withoutHint(job));
   }
   assert.equal(f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'create'), false);
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
@@ -4271,7 +4313,7 @@ test('a grok trust dialog is declined and the job fails naming the directory', {
   assert.equal(job.ok, false);
   assert.equal(job.code, 'dispatch_failed');
   assert.equal(job.reason, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
-  assert.deepEqual(await f.call('hud_create', args), job);
+  assert.deepEqual(await f.call('hud_create', args), withoutHint(job));
   assertCliStatus(status, job.task_dir);
   assert.equal(status.state, 'failed');
   assert.equal(status.error, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
@@ -5178,7 +5220,7 @@ test('an unregistered .hud is ignored and roster says so', async (t) => {
   assert.equal(JSON.stringify(roster).includes('secret/model'), false);
   assert.deepEqual(
     await f.call('hud_create', { role: 'frontend', request_key: 'ignored-role', task: 'Synthetic task.', cwd: proj }),
-    { ok: false, code: 'role_unavailable', reason: 'Role frontend is not configured or is hidden in this project' }
+    { ok: false, code: 'role_unavailable', reason: 'Role frontend is not configured or is hidden in this project', hint: roster.hint }
   );
 });
 
@@ -5834,17 +5876,19 @@ for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one que
   assert.match(job.job, /^j[0-9a-f]{16}$/);
 });
 
-test('hud_roster convention and hud_create result carry the hud watch Monitor hint', async (t) => {
+test('roster sends the convention once and returns only the caller’s delivery hint', async (t) => {
   const f = await fixture(t);
-  const roster = await f.call('hud_roster');
-  assert.match(roster.convention.text, /Claude Code: run `hud watch` under Monitor/);
-  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const created = await f.call('hud_create', {
-    role: 'imp',
-    request_key: 'watch-hint',
-    task: 'Check watch hint.',
-  });
-  assert.equal(created.hint, 'Claude Code: run `hud watch` under Monitor');
+  fs.writeFileSync(join(f.env.HOME, 'main-agent'), 'codex');
+  const first = await f.call('hud_roster');
+  assert.doesNotMatch(first.convention.text, /Claude Code:|Codex:|pi:|watcher_alive/);
+  assert.match(first.hint, /^Codex: events are queued automatically;/);
+  assert.doesNotMatch(first.hint, /Claude Code:|pi:/);
+  const repeat = await f.call('hud_roster');
+  assert.equal(repeat.convention, undefined);
+  assert.equal(repeat.convention_unchanged, true);
+  assert.deepEqual(repeat.roles, first.roles);
+  assert.equal(repeat.hint, first.hint);
+  assert.deepEqual((await f.call('hud_roster', { convention_version: 'force' })).convention, first.convention);
 });
 
 test('report written while working settles only at turn end, not mid-turn slice timeout', { timeout: 15000 }, async (t) => {

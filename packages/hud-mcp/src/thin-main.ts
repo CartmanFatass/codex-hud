@@ -42,7 +42,7 @@ const isWorker = jobDir !== undefined;
 const hudHome = isWorker ? dirname(dirname(fs.realpathSync(jobDir))) : resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 if (isWorker) process.env.HUD_HOME = hudHome; // The watcher and other subprocesses inherit the worker's HUD home.
 const jobsRoot = join(hudHome, 'jobs');
-const { ensureQueueWatcher, watching } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
+const { ensureQueueWatcher, paneInfo, watching } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
 const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
 const worker = isWorker ? await import(new URL('../../../../bin/worker-tools.mjs', import.meta.url).href) : undefined;
 function registry(cwd: string) {
@@ -197,10 +197,7 @@ function created(job: Job) {
       ...launch, ...thinking, ...watch,
     };
   }
-  return {
-    ...row, task_dir, agent: primary(task_dir), ...launch, ...thinking, ...watch,
-    ...(watch.watcher_alive ? {} : { hint: 'Claude Code: run `hud watch` under Monitor' }),
-  };
+  return { ...row, task_dir, agent: primary(task_dir), ...launch, ...thinking, ...watch };
 }
 function run(
   command: string,
@@ -1008,10 +1005,45 @@ async function readContextFile(path: string, limit: number | undefined) {
   }
 }
 
-async function assembleContext(args: Args, cwd: string, inline: boolean, repairOf?: string) {
+async function assembleContext(args: Args, cwd: string, inline: boolean, projectRoot: string, repairOf?: string) {
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
   let remaining = 256 * 1024;
+  const inside = (base: string, path: string) => {
+    const rel = relative(base, path);
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
+  };
+  const append = async (path: string, label: string) => {
+    const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
+    if (!file) return false;
+    if (inline) {
+      remaining -= file.bytes;
+      let length = 3;
+      for (const run of file.content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
+      const fence = '`'.repeat(length);
+      sections.push(`### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
+    } else sections.push(`- ${label}`);
+    return true;
+  };
+  const standingPath = join(projectRoot, '.hud', 'brief.md');
+  let standing: string | undefined;
+  let reference = '';
+  try {
+    const path = await fs.promises.realpath(standingPath);
+    inside(projectRoot, path);
+    if (inline) {
+      if (!(await append(path, JSON.stringify(standingPath))))
+        return { ok: false, code: 'context_too_large', error: standingPath } as const;
+    } else {
+      if (!(await fs.promises.stat(path)).isFile()) throw new Error('not a regular file');
+      // A heading here could replace the title of a task written without one.
+      reference = `Read the project standing brief: ${JSON.stringify(standingPath)}.\n\n`;
+    }
+    standing = path;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+      return { ok: false, code: 'invalid_arguments', error: `${standingPath} must resolve to a readable text file inside ${projectRoot}` } as const;
+  }
   for (const [key, root, max] of [['context_files', cwd, 32], ['from_jobs', jobsRoot, 16]] as const) {
     const given = args[key];
     const repair = key === 'from_jobs' ? repairOf : undefined;
@@ -1034,18 +1066,13 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, repairO
       for (const { value, name } of files) {
         source = `${key}: ${JSON.stringify(value)}`;
         const path = await fs.promises.realpath(resolve(root, name ? join(value, `${name}.md`) : value));
-        const rel = relative(base, path);
-        if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
-        const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
-        if (!file) return { ok: false, code: 'context_too_large', error: source } as const;
+        inside(base, path);
         const label = `${name ? `${value} ${name}: ` : ''}${JSON.stringify(path)}`;
-        if (inline) {
-          remaining -= file.bytes;
-          let length = 3;
-          for (const run of file.content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
-          const fence = '`'.repeat(length);
-          sections.push(`### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
-        } else sections.push(`- ${label}`);
+        if (path === standing) {
+          if (!inline) await readContextFile(path, undefined); // Explicit context still requires UTF-8 text.
+        } else if (!(await append(path, label))) {
+          return { ok: false, code: 'context_too_large', error: source } as const;
+        }
         if (!name || (name === 'report' && (value !== repair || values.includes(value)))) recorded.push(name ? value : path);
       }
     } catch {
@@ -1055,7 +1082,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, repairO
   const block = !sections.length ? '' : inline
     ? `\n## Context\n\n${sections.join('\n\n')}\n`
     : `## Context References\n\nRead these files for task context:\n\n${sections.join('\n')}\n\n`;
-  return { metadata, block };
+  return { metadata, block: reference + block };
 }
 
 export async function sonicThinking(cwd: string) {
@@ -1223,7 +1250,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
   }
   const inline = initial.place.harness === 'bro';
-  const context = await assembleContext(args, cwd, inline, repairOf);
+  const projectRoot = found.project().root;
+  const context = await assembleContext(args, cwd, inline, projectRoot, repairOf);
   if ('code' in context) return context;
   let overrideHarnesses: Record<string, { model?: string }> | null = null;
   if (onName) {
@@ -1294,7 +1322,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
-      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro', repairOf);
+      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro', projectRoot, repairOf);
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
         writeBrief(job, dir, task, briefContext.block, attempts.length === 0);
@@ -1339,7 +1367,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
       `Collect: ${command('hud-sonic')} wait ${own} --job <id>\n`;
     brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
-  // References follow the task: the panel title, sentence goal and decision labels read the brief's opening lines.
+  // Standing brief and context references follow the task; labels read the brief's opening lines.
   fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: first ? 'wx' : 'w', mode: 0o600 });
 }
 
@@ -1585,20 +1613,31 @@ async function call(name: string, args: Args): Promise<unknown> {
       if (error instanceof HarnessSwitchError) return harnessSwitchFailure(error);
       throw error;
     }
+    const roles = [...found.roles().values()].map((role) => {
+      const assignment = found.assignment(role, now, undefined, routing);
+      return detail ? assignment : compactAssignment(assignment);
+    });
+    const watcherAlive = !!callerPane && watching(callerPane, hudHome);
+    const unchanged = (args.convention_version ?? sentConventionVersion) === convention_version;
+    if (!unchanged) sentConventionVersion = convention_version;
     return {
-      roles: [...found.roles().values()].map((role) => {
-        const assignment = found.assignment(role, now, undefined, routing);
-        return detail ? assignment : compactAssignment(assignment);
-      }),
+      roles,
       ...(detail || invalid.length ? { invalid } : {}),
       convention_version,
-      ...(args.convention_version === convention_version ? { convention_unchanged: true } : { convention }),
+      ...(unchanged ? { convention_unchanged: true } : { convention }),
       project,
-      ...(callerPane ? { watcher_alive: watching(callerPane, hudHome) } : {}),
+      ...(callerPane ? { watcher_alive: watcherAlive } : {}),
+      hint: deliveryHint(watcherAlive),
       ...(ignored ? { project_config_ignored: ignored } : {}),
     };
   }
-  if (name === 'hud_create') return dispatchJob(args, process.env.HERDR_PANE_ID);
+  if (name === 'hud_create') {
+    const result = await dispatchJob(args, process.env.HERDR_PANE_ID);
+    if (sentCreateHint) return result;
+    sentCreateHint = true;
+    const watcherAlive = 'watcher_alive' in result ? result.watcher_alive === true : !!callerPane && watching(callerPane, hudHome);
+    return { ...result, hint: deliveryHint(watcherAlive) };
+  }
   if (name === 'hud_send') return sendJobs(args);
   if (name === 'hud_wait') return waitJobs(args);
   if (name === 'hud_read') {
@@ -1700,6 +1739,29 @@ async function call(name: string, args: Args): Promise<unknown> {
 }
 
 const callerPane = herdrId(process.env.HERDR_PANE_ID) ? process.env.HERDR_PANE_ID! : null;
+let callerHarness: 'claude' | 'codex' | 'pi' | undefined;
+let sentConventionVersion: string | undefined;
+let sentCreateHint = false;
+function deliveryHint(watcherAlive: boolean): string {
+  if (!callerHarness && callerPane) {
+    const agent = paneInfo(callerPane)?.agent;
+    if (agent === 'claude' || agent === 'codex' || agent === 'pi') callerHarness = agent;
+  }
+  const fallback = 'Without live delivery, questions may be typed; use `hud_wait` for settlement or attention.';
+  const live = 'Keep working until notified, then collect reports with `hud_read`.';
+  switch (callerHarness) {
+    case 'claude':
+      return `Claude Code: ${watcherAlive ? '`hud watch` is live under Monitor' : 'run `hud watch` under Monitor'}; re-arm after expiry. ${live}`;
+    case 'codex':
+      return 'Codex: events are queued automatically; no Monitor is needed. Missing thread ID or queue failure falls back to typing.';
+    case 'pi':
+      return watcherAlive
+        ? `pi: native HUD notices wake an idle session or arrive before the next model request, without touching drafts. ${live}`
+        : `pi: the native HUD watch is not active. ${fallback}`;
+    default:
+      return watcherAlive ? `HUD watch is live. ${live}` : fallback;
+  }
+}
 const createdJobs = new Set<string>();
 const isSessionJob = (job: Job) => (callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
 function sessionRows(markExhaustion: boolean): JobRow[] {
@@ -1765,6 +1827,7 @@ async function receive(line: string): Promise<void> {
   let result: unknown;
   switch (request.method) {
     case 'initialize':
+      if (request.params?.clientInfo?.name === 'hud-pi') callerHarness = 'pi';
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {}, resources: {} },
