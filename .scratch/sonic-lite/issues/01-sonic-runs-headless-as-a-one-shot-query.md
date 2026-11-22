@@ -12,3 +12,5 @@
 ## Comments
 
 Verified headless print mode with local pi and a synthetic provider. The rebased change passes the full test suite and fixture checks, including a regression test that a legacy Sonic at its role cap does not queue a headless query.
+
+- Landed 23610ad0fb3935aa9ddb895ab01bab90192a1144; gate 5/5 passed.
