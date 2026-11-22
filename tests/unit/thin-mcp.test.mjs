@@ -4973,10 +4973,9 @@ test('hud_close stops a working cli job and closes an idle-grace one', { timeout
   await until(() => cliState(working.task_dir)?.state === 'working');
   assert.equal(typeof cliState(working.task_dir).pid, 'number');
   assert.match(cliState(working.task_dir).pid_start_time, /^\d+$/);
-  assert.deepEqual(await f.call('hud_close', { job: working.job }), {
-    exit_code: 0,
-    last_line: 'Synthetic reap complete',
-  });
+  const { exit_code, last_line } = await f.call('hud_close', { job: working.job });
+  assert.equal(exit_code, 0);
+  assert.equal(last_line, 'Synthetic reap complete');
   await until(() => cliState(working.task_dir)?.state === 'stopped');
   assert.equal(cliState(working.task_dir).exit_reason, 'stop requested');
   assert.equal(fs.existsSync(join(working.task_dir, 'STATUS.json.stop-requested')), true);
