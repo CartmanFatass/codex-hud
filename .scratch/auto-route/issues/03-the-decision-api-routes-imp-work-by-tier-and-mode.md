@@ -42,3 +42,4 @@ Record `route: {tier, mode, reason, source: "decision"|"default", fallback?}` in
 
 - 2026-11-22: owner ruled that only `general` takes `preset`/`on`/`model`/`thinking` (ticket role-overrides/01), so every `imp` create is routed when the toggle is on; the router applies the tier presets internally.
 - 2026-11-22 compatibility pass: tiers moved from code to the role file's `routing` block; standard follows the owner's active preset; headless follows harness support; unavailable tier falls to standard; overflow keeps the routed chain.
+- 2026-11-22 answer to q1: the Decision API returns enumerated choices only, so the one-line reason is the chosen tier's and mode's `use` texts from the role file (no second call). An explicit `mode` on create always wins; routing then picks only the tier. Without an explicit mode, every fallback runs in a tab.
