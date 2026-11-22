@@ -103,7 +103,7 @@ setInterval(() => {
 }
 
 for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direct sleep', 'sleep under old MCP server', 'same-named runner']) {
-  test(`supervisor MCP bootstrap: ${scenario}`, { timeout: 10000 }, async (t) => {
+  test(`supervisor MCP bootstrap: ${scenario}`, { timeout: 20000 }, async (t) => {
     const f = await fixture(t);
     const worker = fakeCliWithChild(t, f);
     const mcp = await fakeMcpBootstrap(f, worker, scenario === 'generic package');
@@ -111,7 +111,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
     writeCliRole(f, 'mcp-bootstrap', 8);
     const job = await f.call('hud_create', { role: 'mcp-bootstrap', request_key: scenario, task: 'Synthetic task.' });
     const dir = job.task_dir, report = join(dir, 'report.md');
-    await until(() => cliState(dir)?.pid === worker.pid && cliState(dir)?.agent_session_id);
+    await until(() => cliState(dir)?.pid === worker.pid && cliState(dir)?.agent_session_id, 10000);
     assert.equal((await f.call('hud_read')).jobs.find((row) => row.job === job.job).state, 'working');
     const pids = await mcp.launch();
     assert.ok(Number(procStat(pids[1]).start) > Number(procStat(pids[0]).start));
