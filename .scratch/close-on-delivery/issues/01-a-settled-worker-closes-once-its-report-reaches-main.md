@@ -1,6 +1,6 @@
 # 01: A worker closes at its report and can be resumed for 27 minutes
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 **Owner try:** no
 
@@ -11,11 +11,13 @@ Owner's rule (2026-11-22, replaces the delivery idea): the worker closes when it
 
 Exit guards (owner asked whether hud_report is the only end and whether other exits leave holes): close at report only when all hold: a valid current-turn declaration (done receipt + fresh report signature, or pi native settlement plus changed report); the worker's turn has ended (pi settled / CLI agent idle), waiting at most 120 s after the declaration so a worker that reports early and keeps editing is not cut off; no open hud_ask question; no open or uncollected sonic child (the existing collect prompt runs first). Every other exit keeps today's rule and must be listed with a test in one exit matrix: process gone or tab closed before a report (failed), dispatch rejected (failed), quiet with no report (Decision API: wait, fixed write-the-report prompt, fail on a quoted quota line, or hand to main), report written by hand without hud_report (no declaration: quiet rule), turn ended in chat without a report (quiet rule), hud_close / panel stop (stopped), headless sonic exit without a report (failed), and a rewritten report or a new turn after declaration (invalidates; no close).
 
-- [ ] A pi and a CLI (claude or agy) job close process and pane right after hud_report, read or not
-- [ ] The MCP decides resume vs repair by the clock and session check alone; the caller only calls hud_send and the result says which happened
-- [ ] hud_send within resume_s resumes the same session (same session id, cwd and worktree) and the reply comes back as a new turn of the same job; after resume_s it becomes a repair job
-- [ ] hud_land's gate repair resumes the source session the same way
-- [ ] The exit matrix above has one test per row, and the report lists any exit found in the code that the matrix misses
-- [ ] npm test and check:fixtures pass
+- [x] A pi and a CLI (claude or agy) job close process and pane right after hud_report, read or not
+- [x] The MCP decides resume vs repair by the clock and session check alone; the caller only calls hud_send and the result says which happened
+- [x] hud_send within resume_s resumes the same session (same session id, cwd and worktree) and the reply comes back as a new turn of the same job; after resume_s it becomes a repair job
+- [x] hud_land's gate repair resumes the source session the same way
+- [x] The exit matrix above has one test per row, and the report lists any exit found in the code that the matrix misses
+- [x] npm test and check:fixtures pass
 
 ## Comments
+
+- Landed 242d3f85656ec8783ff8f72af00aedcd944085bc; gate 5/5 passed.
