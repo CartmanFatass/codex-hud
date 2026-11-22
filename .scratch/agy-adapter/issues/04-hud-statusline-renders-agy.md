@@ -1,6 +1,6 @@
 # 04: hud-statusline renders agy's payload, fast enough for 3 Hz
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Blocked by:** none
 
 **What to build:** Proposal 25 §2.4.
@@ -12,7 +12,9 @@
 - A failure prints a short degraded line and exits 0, so agy does not disable the statusline.
 - Use synthetic payload fixtures only. Shape: proposal 25 §1, re-probed with a session-only `--settings` statusLine if the quota bucket shape is needed.
 
-- [ ] Synthetic agy payloads (fresh session, mid-turn, quota present) render the expected lines in EN/ZH
-- [ ] Timing reported before/after; npm test and check:fixtures pass
+- [x] Synthetic agy payloads (fresh session, mid-turn, quota present) render the expected lines in EN/ZH
+- [x] Timing reported before/after; npm test and check:fixtures pass
 
 ## Comments
+
+- 2026-11-22 main: landed 6833f789 4ef12ad3 . Stale-while-revalidate shell fast path: p50 ~17 ms (was ~88), ~0.75 node renders/s while streaming, cold ~105 ms. Quota uses the real 1.5.14 shape probed by main (gemini-*/3p-* buckets, remaining_fraction, reset_time); family follows the model. Suite 962/962. reference.zh.md not yet updated for the statusline.
