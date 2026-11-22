@@ -143,7 +143,8 @@ for (const rewrite of [false, true]) test(`read-close: Pi retries captured child
   f.piStatus(() => procStat(worker.pid) ? 'idle' : 'agent_not_found');
   assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
   const log = join(f.env.HUD_HOME, 'watch.log');
-  await until(() => fs.readFileSync(log, 'utf8').includes('synthetic ENOSPC'));
+  // The watcher creates watch.log on its first write; under load that can follow the read.
+  await until(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('synthetic ENOSPC'));
   assert.equal(procStat(worker.pid), null);
   assert.equal(procStat(child)?.start, start);
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
@@ -251,7 +252,7 @@ test('read-close: CLI pre-quit snapshot failure hands cleanup to the watcher and
   const flag = join(f.env.HOME, 'snapshot-enospc');
   fs.writeFileSync(flag, '');
   assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
-  await until(() => fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8').includes('synthetic ENOSPC'));
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.log')) && fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8').includes('synthetic ENOSPC'));
   assert.equal(readCloseQuit(f, job), false, 'keep the root in place for the watcher to capture');
   assert.equal(cliState(job.task_dir).state, 'closed');
   assert.equal(readCloseReaped(job), undefined);
