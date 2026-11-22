@@ -52,6 +52,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
             .split(/^(?:Options:\s*$|Default if unanswered:|Context:|Answer:)/m, 1)[0];
           return { line: `[${one(tag)}] QUESTION ${id}: ${one(question)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)}${q.context ? ` | context: ${one(q.context)}` : ''} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}` };
         });
+    if (row.land_turn) return questions;
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     let attentionUnread = true;
     if (catchup && (row.blocked || row.display_state === 'failed')) {
@@ -316,7 +317,7 @@ export async function watchCommand(
       const flows = landEvents(home, callerPane, all);
       const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job))), ...flows.lines];
       if (queue) {
-        const pending = flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions || row.checks?.state === 'running') ||
+        const pending = flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {

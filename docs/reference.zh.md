@@ -135,9 +135,11 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 {"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh"}}
 ```
 
-HUD 排队取得 `main-checkout` 租约，在基分支顶端新建分离工作树，依次摘取任务提交，再按退出码检查 `gate` 命令。可选 `wrapper` 是相对主检出的可执行文件，在目标工作树中接收 `sh -c <命令>`。通过后，仅当主检出仍位于原基分支顶端且涉及路径干净时才快进，然后在主检出运行 `after`，按配置把已测试的 SHA 推送到 `origin` 的该分支，最后移除集成工作树、干净的任务工作树和任务分支。失败即停止，不强制覆盖或回滚；快进之后失败仍会报告已集成的 SHA。
+HUD 排队取得 `main-checkout` 租约，在基分支顶端新建分离工作树，依次摘取任务提交，再按退出码检查 `gate` 命令。可选 `wrapper` 是相对主检出的可执行文件，在目标工作树中接收 `sh -c <命令>`。某条 gate 命令失败时，HUD 立即在同一工作树重跑该命令一次；重跑通过则继续，并在通知里注明。若仍失败，或摘取提交时发生冲突，HUD 把失败步骤和最后 40 行输出发给源任务，要求它变基到当前基分支、修复并提交。可以在宽限期内继续的任务会收到续发消息；否则在源工作树创建同角色的本地任务，并记录 `retry_of`。修复期间释放主检出租约；收到新的结算结果后，重新创建集成工作树并从头运行 gate。最多修复两次；工人一旦提问，问题照常送达主会话，本流程停止。
 
-调用立即返回流程 ID（MCP-task 客户端获得一个覆盖全程的任务）；`hud_read({job: "<流程 ID>"})` 可查询状态和当前步骤。结束时一次通知给出 SHA 或失败步骤和最后 40 行输出。流程记录在 `$HUD_HOME/flows/`，watcher 重启不会重复集成，执行进程意外退出时报告中断。
+通过后，若任务的 `ticket`（`feature/NN`）对应本地工单，HUD 将它标为 `ready-for-human`，勾选验收项，并在评论里记录已测试的 SHA 和通过命令数/总数。若项目的 `docs/handoff/STATE.md` 或根目录 `STATE.md` 是受 Git 跟踪的切片账本，HUD 在 `## Slices` 开头的注释之后插入第一条 `try` 记录，使用任务的 `slice`（否则 `package`）、与报告签名匹配的 `hud_report` 摘要和已测试的 SHA。缺少摘要或名称则不写此行。只对这些路径另做一次提交，接在已测试的提交之后，不使用主检出的暂存区。仅当主检出仍位于原基分支顶端且涉及路径干净时才快进，然后在主检出运行 `after`，按配置把包含记录的分支顶端推送到 `origin`，最后移除集成工作树、干净的任务工作树和任务分支。快进之后失败仍会报告已集成的代码 SHA；`records_sha`（若有）标识记录提交。
+
+调用立即返回流程 ID（MCP-task 客户端获得一个覆盖全程的任务）；`hud_read({job: "<流程 ID>"})` 可查询状态和当前步骤。结束时一次通知给出 SHA 或失败步骤和最后 40 行输出，并逐行列出每次修复。流程记录在 `$HUD_HOME/flows/`，watcher 重启不会重复集成，执行进程意外退出时报告中断。
 
 角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、

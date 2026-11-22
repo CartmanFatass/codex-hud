@@ -7,6 +7,8 @@ import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
 import { landFile, readLand, writeLand, type LandFlow } from './land-state.js';
 import { reapWorktree } from './managed-worktree.js';
+import { recordLanding } from './land-records.js';
+import { repairLand } from './land-repair.js';
 
 class CommandError extends Error {
   constructor(message: string, readonly tail: string[]) { super(message); }
@@ -35,8 +37,10 @@ async function execute(home: string, f: LandFlow) {
       throw Error('Main checkout is not at the recorded base tip');
   };
   const checkSource = async () => {
-    const status = JSON.parse(fs.readFileSync(join(home, 'jobs', f.job, 'STATUS.json'), 'utf8'));
-    if (!['closed', 'idle_grace', 'done'].includes(status.state)) throw Error(`Cannot land ${f.job}: job state is ${status.state ?? 'unknown'}`);
+    for (const id of new Set([f.job, f.repairs?.at(-1)?.job ?? f.job])) {
+      const status = JSON.parse(fs.readFileSync(join(home, 'jobs', id, 'STATUS.json'), 'utf8'));
+      if (!['closed', 'idle_grace', 'done'].includes(status.state)) throw Error(`Cannot land ${id}: job state is ${status.state ?? 'unknown'}`);
+    }
     if (await head(wt.root) !== f.source_sha ||
         (await git(wt.root, ['symbolic-ref', 'HEAD'])).trim() !== `refs/heads/${wt.branch}`)
       throw Error('Source job is no longer settled at the recorded commit');
@@ -46,36 +50,74 @@ async function execute(home: string, f: LandFlow) {
       if (kind === 'gate') checkCancel();
       step(`${kind}[${i + 1}]: ${cmd}`);
       const shell = ['sh', '-c', cmd];
-      await command(cwd, c.wrapper ? resolve(main, c.wrapper) : shell.shift()!, shell);
+      const bin = c.wrapper ? resolve(main, c.wrapper) : shell.shift()!;
+      try { await command(cwd, bin, shell); }
+      catch (e) {
+        if (kind !== 'gate' || !(e instanceof CommandError)) throw e;
+        checkCancel(); await command(cwd, bin, shell);
+        (f.reruns ??= []).push(f.step); writeLand(home, f);
+      }
     }
   }
   let acquired = false;
-  try {
+  const acquire = async () => {
     while (!acquired) {
       checkCancel();
       const r = await takeLease({ name: 'main-checkout', wait_s: 1 }, lease);
       acquired = 'granted' in r && r.granted;
     }
+  };
+  async function prepare() {
     f.state = 'running'; step('prepare');
     await checkSource();
     f.base_sha = (await git(main, ['rev-parse', '--verify', `${ref}^{commit}`])).trim();
     await checkMain(f.base_sha);
     await git(main, ['merge-base', '--is-ancestor', wt.base_head, f.source_sha]);
-    const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${wt.base_head}..${f.source_sha}`, '--'])).trim().split(/\s+/);
+    const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${wt.base_head}..${f.source_sha}`, `^${f.base_sha}`, '--'])).trim().split(/\s+/);
     if (!picks[0]) throw Error('Source has no commits to land');
     await git(main, ['worktree', 'add', '--detach', '--', integration, f.base_sha], 120000);
-    step('cherry-pick');
     // includeIf and a wrapper's temporary HOME can give the detached checkout a different identity.
     const identity = (await git(main, ['var', 'GIT_COMMITTER_IDENT'])).match(/^(.*) <([^<>]+)> \d+ [+-]\d+$/m);
     if (!identity) throw Error('Missing checkout committer identity');
-    for (const sha of picks) await command(integration, 'git', [...SAFE_GIT_ARGS, '-c', `user.name=${identity[1]}`, '-c', `user.email=${identity[2]}`,
-      'cherry-pick', '--no-gpg-sign', sha]);
+    const who = ['-c', `user.name=${identity[1]}`, '-c', `user.email=${identity[2]}`];
+    step('cherry-pick');
+    for (const sha of picks) await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
     f.tested_sha = await head(integration);
     await commands('gate', integration);
-    checkCancel(); step('fast-forward');
-    await checkSource();
     if (await head(integration) !== f.tested_sha) throw Error('Gate changed integration HEAD');
-    const paths = fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', f.base_sha, f.tested_sha, '--']));
+    return who;
+  }
+  try {
+    let who: string[];
+    for (;;) {
+      await acquire();
+      try { who = await prepare(); break; }
+      catch (e) {
+        const conflict = f.step === 'cherry-pick' && !!(await git(integration, ['ls-files', '-u']));
+        if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
+        const prior = f.repairs?.at(-1);
+        if (prior) prior.outcome = `failed at ${f.step}`;
+        if ((f.repairs?.length ?? 0) >= 2) throw e;
+        checkCancel(); await checkSource();
+        f.error = e.message; f.tail = e.tail;
+        // Only the helper-created scratch checkout is disposable, never the source or main.
+        await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
+        await takeLease({ name: 'main-checkout', release: true }, lease); acquired = false;
+        await repairLand(home, f, checkCancel);
+        f.source_sha = await head(wt.root);
+        delete f.error; delete f.tail; delete f.tested_sha;
+        step('main-checkout lease');
+      }
+    }
+    const prior = f.repairs?.at(-1);
+    if (prior) prior.outcome = 'gate passed';
+    checkCancel(); await checkSource();
+    step('records');
+    const tested = f.tested_sha!, base = f.base_sha!;
+    f.records_sha = await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who);
+    const tip = f.records_sha ?? tested;
+    checkCancel(); step('fast-forward');
+    const paths = fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', base, tip, '--']));
     const filters = await neutralizeFilters(git, main);
     for (let i = 0; i < paths.length; i += 128) {
       const batch = paths.slice(i, i + 128);
@@ -83,15 +125,15 @@ async function execute(home: string, f: LandFlow) {
       const hidden = fields(await git(main, ['ls-files', '-v', '-z', '--', ...batch])).some(row => /^[a-zS] /.test(row));
       if (status || hidden) throw Error('Main checkout has dirty or hidden changes on paths the landing touches');
     }
-    await checkMain(f.base_sha);
-    await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', f.tested_sha], 120000);
-    await checkMain(f.tested_sha);
-    f.landed_sha = f.tested_sha; writeLand(home, f);
+    checkCancel(); await checkSource(); await checkMain(base);
+    await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', tip], 120000);
+    await checkMain(tip);
+    f.landed_sha = tested; writeLand(home, f);
     await commands('after', main);
     if (c.push) {
-      step('push'); await checkMain(f.landed_sha);
+      step('push'); await checkMain(tip);
       await command(main, 'git', ['-c', 'core.hooksPath=/dev/null', '-c', 'remote.origin.mirror=false', 'push',
-        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${f.landed_sha}:${ref}`]);
+        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${tip}:${ref}`]);
     }
     step('cleanup');
     await git(main, ['worktree', 'remove', '--', integration], 120000);
@@ -106,7 +148,7 @@ async function execute(home: string, f: LandFlow) {
   } catch (e) {
     if (f.state !== 'cancelled') f.state = 'failed';
     f.error = (e as Error).message.split('\n')[0];
-    f.tail = e instanceof CommandError ? e.tail : (e as Error).message.trimEnd().split('\n').slice(-40);
+    f.tail = e instanceof CommandError ? e.tail : f.tail ?? (e as Error).message.trimEnd().split('\n').slice(-40);
     writeLand(home, f);
   } finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
 }

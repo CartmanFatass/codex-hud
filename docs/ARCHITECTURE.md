@@ -477,7 +477,7 @@ registration and `hud import` are separate user actions.
 **Privacy and repository**
 
 - The Model text master switch controls display requests; chat also requires a matching endpoint key. Sonic auto-thinking has its own explicit Decision API switch, independent of Model text, like the quiet-job dispatch path.
-- List every new outbound model input here and in both reference languages.
+- List every new outbound model input here and in both reference languages. A land repair sends the failing cherry-pick or gate step and its last 40 output lines to the project's source worker or its same-role replacement.
 - State is private: `writePrivateFile` or equivalent temp-file/0600/rename.
 - Preserve owner configuration, keys, history and unrelated state.
 - Tests, fixtures, logs and README examples use synthetic data only.

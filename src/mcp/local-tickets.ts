@@ -27,6 +27,20 @@ function directoryExists(path: string): boolean {
   return !!st;
 }
 
+function withStatus(body: string, label: string, ticket: number): string {
+  const field = /((?:^|·)[ \t]*\*\*Status:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+  if (!field.test(body)) throw new Error(`missing Status field in ticket: ${ticket}`);
+  return body.replace(field, (_, prefix, _old, suffix) => `${prefix}${label}${suffix}`);
+}
+
+/** Acceptance is the checklist before Comments; checkboxes in discussion aren't acceptance. */
+export function landedTicket(original: string, ticket: number, comment: string) {
+  const start = original.search(/^## Comments[ \t]*\r?$/m);
+  const body = withStatus(start < 0 ? original : original.slice(0, start), 'ready-for-human', ticket)
+    .replace(/^([ \t]*[-*] \[) \]/gm, '$1x]');
+  return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
+}
+
 export async function editTickets(cwd: string, args: Record<string, unknown>) {
   const { op, feature } = args;
   if (op === 'sync') {
@@ -110,12 +124,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   const original = fs.readFileSync(ticket.path, 'utf8');
   const comments = original.search(/^## Comments[ \t]*\r?$/m);
   let body = comments < 0 ? original : original.slice(0, comments);
-  if (args.status !== undefined) {
-    const field = /((?:^|·)[ \t]*\*\*Status:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-    const label = status(args.status);
-    if (!field.test(body)) throw new Error(`missing Status field in ticket: ${args.ticket}`);
-    body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${label}${suffix}`);
-  }
+  if (args.status !== undefined) body = withStatus(body, status(args.status), args.ticket);
   if (args.blocked_by !== undefined) {
     const field = /((?:^|·)[ \t]*\*\*Blocked by:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
     if (!field.test(body)) throw new Error(`missing Blocked by field in ticket: ${args.ticket}`);

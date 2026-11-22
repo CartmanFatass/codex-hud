@@ -164,8 +164,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     try {
       const dir = join(home, 'jobs', job);
       const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
-      // Scouted dispatch handles all scout outcomes internally. Other children leave DONE to their parent.
-      if (receipt.scout_only === true || (receipt.parent_job && /^\[.*\] DONE /.test(message))) process.exit(0);
+      // Scouts hand all outcomes to their target. Other children and land repairs still forward questions.
+      if (receipt.scout_only === true || ((receipt.parent_job || receipt.land_turn) && /^\[.*\] DONE /.test(message))) process.exit(0);
       if (typeof receipt.herdr_pane === 'string' && receipt.herdr_pane && !/[\x00-\x1f\x7f-\x9f]/.test(receipt.herdr_pane)) pane = receipt.herdr_pane;
       if (taskDelivery(dir, pane)) process.exit(0);
     } catch { /* No receipt: keep the launch delivery path. */ }

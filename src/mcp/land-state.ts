@@ -11,7 +11,8 @@ export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string;
-  base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; error?: string; tail?: string[];
+  base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; error?: string; tail?: string[];
+  repairs?: { step: string; job?: string; outcome: string }[]; reruns?: string[];
 }
 export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}$/.test(id);
 export const flowId = (job: string) => `f${job.slice(1)}`;
@@ -41,11 +42,14 @@ export function readLand(home: string, id: string): LandFlow | null {
   return f;
 }
 export function landView(f: LandFlow) {
-  const { flow, job, state, step, landed_sha, error, tail } = f;
-  return { flow, job, state, step, landed_sha, error, tail };
+  const { flow, job, state, step, landed_sha, records_sha, repairs, reruns, error, tail } = f;
+  return { flow, job, state, step, landed_sha, records_sha, repairs, reruns, error, tail };
 }
 export function landNotice(f: LandFlow) {
-  return `${f.flow} (land ${f.job}) — ${f.state}: ${f.step}${f.landed_sha ? ` ${f.landed_sha}` : ''}${f.error ? `: ${f.error}` : ''}${f.tail?.length ? `\n${f.tail.join('\n')}` : ''}`;
+  const one = (text: string) => text.replace(/\s+/g, ' ').trim();
+  return [`${f.flow} (land ${f.job}) — ${f.state}: ${f.step}${f.landed_sha ? ` ${f.landed_sha}` : ''}${f.error ? `: ${f.error}` : ''}`,
+    ...(f.repairs ?? []).map((r, i) => `Repair ${i + 1}: ${one(r.step)} → ${r.job ?? 'dispatch'}: ${one(r.outcome)}`),
+    ...(f.reruns ?? []).map(step => `${one(step)} passed on immediate rerun`), ...(f.tail ?? [])].join('\n');
 }
 /** Native/watch and MCP changes share one terminal notice claim for the calling pane. */
 export function landEvents(home: string, pane: string | null, all = false, cwd = process.cwd()) {

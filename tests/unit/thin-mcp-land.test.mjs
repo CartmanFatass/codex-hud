@@ -5,7 +5,23 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { fixture, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 
+import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+
 const job = 'j0000000000000123';
+const jobDir = (f, id = job) => join(f.home, 'jobs', id);
+function settle(f, id, text) {
+  writeFixtureFile(join(jobDir(f, id), 'report.md'), text);
+  writeFixtureFile(join(jobDir(f, id), 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: new Date().toISOString() }));
+}
+async function repair(f, flow, index) {
+  await until(() => {
+    const state = f.flowState(flow);
+    assert.notEqual(state.state, 'failed', JSON.stringify(state));
+    return state.repairs?.[index]?.outcome === 'waiting for worker';
+  }, 20000);
+  return f.flowState(flow).repairs[index].job;
+}
 async function checkout(t, gate) {
   const f = await fixture(t);
   const home = f.env.HUD_HOME, main = f.root, root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
@@ -64,26 +80,116 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 2);
 });
 
-for (const scenario of ['red gate', 'conflict', 'dirty touched path', 'moved base']) test(`land refuses ${scenario} without publishing`, async t => {
-  const f = await checkout(t, [scenario === 'red gate' ? 'seq 50; exit 7' : 'while test ! -f "$HOME/release"; do sleep .05; done']);
-  if (scenario === 'conflict') { fs.writeFileSync(join(f.main, 'tracked'), 'conflict\n'); f.git(f.main, 'commit', '-qam', 'conflict'); }
+for (const scenario of ['dirty touched path', 'moved base']) test(`land refuses ${scenario} without publishing`, async t => {
+  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done']);
   const rpc = taskRpc(f.rpc); await rpc('server/discover');
   const task = await taskCall(rpc, 'hud_land', { job });
   assert.equal(task.resultType, 'task'); assert.equal(task.status, 'working');
-  if (scenario !== 'conflict' && scenario !== 'red gate') {
-    await until(() => f.flowState(task.taskId).step.startsWith('gate[1]'), 10000);
-    if (scenario === 'moved base') f.git(f.main, 'commit', '--allow-empty', '-qm', 'moved');
-    else fs.writeFileSync(join(f.main, 'tracked'), 'owner edit\n');
-  }
+  await until(() => f.flowState(task.taskId).step.startsWith('gate[1]'), 10000);
+  if (scenario === 'moved base') f.git(f.main, 'commit', '--allow-empty', '-qm', 'moved');
+  else fs.writeFileSync(join(f.main, 'tracked'), 'owner edit\n');
   const base = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
   await until(() => f.flowState(task.taskId).state === 'failed', 10000);
   const done = await rpc('tasks/get', { taskId: task.taskId });
   assert.equal(done.status, 'failed');
-  assert.match(done.result.content[0].text, scenario === 'red gate' ? /gate\[1\].*exit 7\n11\n[\s\S]*50$/ : scenario === 'conflict' ? /cherry-pick/ : /fast-forward/);
+  assert.match(done.result.content[0].text, /fast-forward/);
+  assert.equal(f.flowState(task.taskId).repairs, undefined);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), base);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
   assert.equal(fs.existsSync(join(f.main, 'after-ran')), false);
   assert.equal(fs.existsSync(f.worktree), true);
   if (scenario === 'dirty touched path') assert.equal(fs.readFileSync(join(f.main, 'tracked'), 'utf8'), 'owner edit\n');
+});
+
+test('red gate continues the source in grace; its rebased fix passes on a fresh checkout', async t => {
+  const f = await checkout(t, ['grep fixed tracked || { echo repair-needed; exit 1; }']);
+  fs.writeFileSync(join(jobDir(f), 'SESSION.txt'), 'PRIMARY=source-agent\n');
+  fs.writeFileSync(join(jobDir(f), 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  fs.writeFileSync(join(f.main, 'upstream'), 'new base');
+  f.git(f.main, 'add', 'upstream'); f.git(f.main, 'commit', '-qm', 'advance base');
+  const { flow } = await f.call('hud_land', { job });
+  assert.equal(await repair(f, flow, 0), job);
+  const prompt = f.commands().find(({ args }) => args[0] === 'agent' && args[1] === 'prompt').args.at(-1);
+  assert.match(prompt, /Rebase onto the current base base/); assert.match(prompt, /gate\[1\][\s\S]*Log tail:\nrepair-needed/);
+  f.git(f.worktree, 'rebase', 'base'); fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
+  await until(() => f.flowState(flow).state !== 'running', 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done)); assert.equal(done.repairs[0].outcome, 'gate passed');
+  assert.equal(done.changes.length, 1); assert.match(done.changes[0], /Repair 1: .*gate passed/);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
+});
+
+test('a persistently red gate creates same-role repairs and hands back once after two', async t => {
+  const f = await checkout(t, ['echo run >> "$HOME/count"; seq 50; exit 7']);
+  // The role and the original context come from the registered main checkout, not the worker's copy.
+  fs.mkdirSync(join(f.main, '.hud/roles'));
+  fs.writeFileSync(join(f.main, '.hud/roles/builder.json'), JSON.stringify({ role: 'builder', can_continue: true,
+    instructions: 'implementer', run: [{ harness: 'pi', pi_role: 'implementer' }] }));
+  const source = join(jobDir(f), 'job.json');
+  fs.writeFileSync(source, JSON.stringify({ ...JSON.parse(fs.readFileSync(source)), role: 'builder', context_files: [join(f.main, 'tracked')] }));
+  const rpc = taskRpc(f.rpc); await rpc('server/discover');
+  const { taskId: flow } = await taskCall(rpc, 'hud_land', { job });
+  let prior = job;
+  for (const i of [0, 1]) {
+    const id = await repair(f, flow, i), dir = jobDir(f, id);
+    const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
+    assert.equal(receipt.role, 'builder'); assert.equal(receipt.retry_of, prior); assert.equal(receipt.cwd, f.worktree);
+    assert.deepEqual(receipt.context_files, [join(f.main, 'tracked')]);
+    assert.match(fs.readFileSync(join(dir, 'brief.md'), 'utf8'), /Log tail:\n11\n[\s\S]*50/);
+    settle(f, id, `Attempt ${i}.`); prior = id;
+  }
+  await until(() => f.flowState(flow).state === 'failed', 15000);
+  const done = await rpc('tasks/get', { taskId: flow });
+  assert.match(done.result.content[0].text, /gate\[1\].*exit 7\nRepair 1:[^\n]+\nRepair 2:[^\n]+\n11\n[\s\S]*50$/);
+  assert.equal(fs.readFileSync(join(f.env.HOME, 'count'), 'utf8'), 'run\n'.repeat(6));
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
+});
+
+test('cherry-pick conflict goes to the repair worker; even a quickly answered question stops the land', async t => {
+  const f = await checkout(t, ['true']);
+  fs.writeFileSync(join(f.main, 'tracked'), 'conflict\n'); f.git(f.main, 'commit', '-qam', 'conflict');
+  const { flow } = await f.call('hud_land', { job });
+  const id = await repair(f, flow, 0), dir = jobDir(f, id);
+  assert.match(fs.readFileSync(join(dir, 'brief.md'), 'utf8'), /cherry-pick[\s\S]*CONFLICT/);
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(join(dir, 'qa/q1.md'), 'Which version?'); fs.writeFileSync(join(dir, 'qa/q1.answer.md'), 'Keep both.');
+  settle(f, id, 'Answered.');
+  await until(() => f.flowState(flow).state === 'failed', 15000);
+  const done = f.flowState(flow); assert.match(done.error, /needs the main session: q1/); assert.equal(done.repairs.length, 1);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
+});
+
+test('gate reruns only the failing step once and reports its recovery without dispatch', async t => {
+  const f = await checkout(t, ['echo first >> "$HOME/count"', 'echo flaky >> "$HOME/count"; test -f "$HOME/once" || { touch "$HOME/once"; exit 1; }']);
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).state === 'completed', 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.repairs, undefined); assert.equal(done.reruns.length, 1);
+  assert.match(done.changes.join('\n'), /gate\[2\].*passed on immediate rerun/);
+  assert.equal(fs.readFileSync(join(f.env.HOME, 'count'), 'utf8'), 'first\nflaky\nflaky\n');
+});
+
+for (const stale of [false, true]) test(`land pushes scoped records (${stale ? 'stale' : 'bound'} summary)`, async t => {
+  const f = await checkout(t, ['true']), dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), ticket: 'feature/01', slice: 'FEATURE-01' }));
+  fs.writeFileSync(join(dir, 'report.md'), 'Report'); writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
+  if (stale) fs.appendFileSync(join(dir, 'report.md'), ' superseded');
+  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
+  fs.writeFileSync(join(f.main, ticket), '# Example\n**Status:** claimed\n- [ ] first\n- [ ] second\n\n## Comments\n- [ ] preserve me\n');
+  fs.writeFileSync(join(f.main, 'STATE.md'), '## Slices\n\n<!-- Row format -->\n\n- try · SAMPLE · SAMPLE-01 · Existing\n');
+  f.git(f.main, 'add', ticket, 'STATE.md'); f.git(f.main, 'commit', '-qm', 'ledger');
+  fs.writeFileSync(join(f.main, 'owner'), 'unrelated staged edit'); f.git(f.main, 'add', 'owner');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow); assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.records_sha);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base^'), done.landed_sha);
+  assert.equal(f.git(f.main, 'diff', '--cached', '--name-only'), 'owner');
+  assert.deepEqual(f.git(f.remote, 'diff', '--name-only', 'base^', 'base').split('\n'), stale ? [ticket] : [ticket, 'STATE.md']);
+  assert.match(f.git(f.remote, 'show', `base:${ticket}`), /ready-for-human\n- \[x\] first\n- \[x\] second[\s\S]*- \[ \] preserve me/);
+  assert.ok(f.git(f.remote, 'show', `base:${ticket}`).includes(`Landed ${done.landed_sha}; gate 1/1`));
+  assert.equal(f.git(f.remote, 'show', 'base:STATE.md').includes(`- try · FEATURE · FEATURE-01 · Synthetic change. (${done.landed_sha})\n- try · SAMPLE`), !stale);
 });

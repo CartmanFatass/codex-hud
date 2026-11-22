@@ -96,6 +96,7 @@ interface Job extends PiOptions {
   checks?: string[];
   repair_of?: string;
   retry_of?: string;
+  land_turn?: string; // Only this repair turn's ordinary notices belong to the enclosing flow.
   target_hint?: string | null;
   task_length?: number;
   create_options?: Args;
@@ -345,7 +346,7 @@ function skillReason(path: string): string | null {
 }
 /** Role skill dirs and the worker prompt, after `--` and before the caller's `pi_args`. */
 function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
-  const gate = registry(job.worktree?.main_root ?? job.cwd).project();
+  const gate = registry(roleCwd(job)).project();
   const role_skills: { name: string; path: string }[] = [];
   const skipped_skills: { name: string; reason: string }[] = [];
   const args: string[] = [];
@@ -1242,6 +1243,8 @@ function placeOptions(args: Args, configured: RolePlace) {
   return { place, options };
 }
 
+// An in-place land retry uses its original worktree but still belongs to the registered main project's roster.
+const roleCwd = (job: Job) => job.worktree?.main_root ?? (job.land_turn ? job.project_root : undefined) ?? job.cwd;
 const piOptionKeys = [...piSwitches, 'pi_args'] as const;
 const replayOptions = ['on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
 function jobOptions(job: Job): Args {
@@ -1318,7 +1321,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
   const deadline = performance.now() + SCOUT_WAIT_MS;
   try {
     const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
-      target.herdr_pane, `scout:${target.job}`, false, target.job, undefined, undefined, contextCwd);
+      target.herdr_pane, `scout:${target.job}`, false, target.job, undefined, undefined, { scoutContextCwd: contextCwd });
     if (!('job' in result)) {
       return { failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch' };
     }
@@ -1349,7 +1352,9 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
   }
 }
 
-async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean, parentJob?: string, repairOf?: string, retryInput?: Args, scoutContextCwd?: string) {
+async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
+  parentJob?: string, repairOf?: string, retryInput?: Args,
+  { scoutContextCwd, landCwd }: { scoutContextCwd?: string; landCwd?: string } = {}) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
@@ -1414,7 +1419,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
     : presetName !== undefined ? { preset: presetName } : undefined;
   const effective = found.assignment(definition, now, modelOverride, routing, choice, !!retryInput && retryInput.model === undefined);
-  const details = effective.places.find((p) => p.state === 'active');
+  const places = effective.places.filter(p => !landCwd || p.place.harness !== 'bro');
+  const details = places.find((p) => p.state === 'active' || (landCwd && p.state === 'standby'));
   if (!details) {
     return { ok: false, code: 'no_available_place', reason: effective.reason, places: effective.places, exhausted: effective.exhausted };
   }
@@ -1459,7 +1465,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     job: id,
     role,
     request_key,
-    cwd,
+    cwd: landCwd ?? cwd,
     project_root: sharedRoot(cwd),
     herdr_pane: pane,
     created_at: new Date().toISOString(),
@@ -1467,6 +1473,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     ...(checks?.length ? { checks } : {}),
     ...(repairOf ? { repair_of: repairOf } : {}),
     ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
+    ...(landCwd ? { land_turn: request_key } : {}),
     target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
     ...(parentJob ? { parent_job: parentJob } : {}),
     ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
@@ -1480,7 +1487,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   };
   const dir = directory(id);
   const selected = definition.presets?.some((p) => p.run === definition.run);
-  const candidates = effective.places.filter((p) => p === details || p.state === 'standby');
+  const candidates = places.filter((p) => p === details || p.state === 'standby');
   let scoutTask: HudTask | undefined;
   let scoutResult: Awaited<ReturnType<typeof runCreateScout>> | undefined;
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
@@ -1517,7 +1524,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       job = {
         ...base, ...options, place, place_key: candidate.key,
         create_options: {
-          cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
+          cwd: landCwd ?? cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
         },
         ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
         ...(place.harness === 'bro' ? { bro: place } : {
@@ -1756,7 +1763,7 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
 function ticketGuide(args: Args): boolean {
   return args.op === undefined || args.op === 'guide';
 }
-async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean) {
+async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean, land = false) {
   const matchKey = explicitKey ?? derivedKey('send', id, message);
   const current = findJob(id);
   if (!current) return { ok: false, code: 'job_not_found' };
@@ -1775,7 +1782,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   }
   const { row, status } = readRow(current);
   const state = row.state ?? '';
-  if (!workingOnly && ((state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) ||
+  if (!workingOnly && !land && ((state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) ||
       ((state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) && piReadSettlement(dir, current, status)))) {
     const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: derivedKey('repair', id, matchKey) },
       process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined });
@@ -1784,13 +1791,13 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   const agent = primary(dir);
   // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
   // continues in its idle grace when the role allows (owner, 2026-11-11).
-  const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
+  const queued = !land && ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
   const readReport = row.report_mtime !== null && !row.report_unread;
   if (
     current.bro ||
     current.jev ||
     !agent ||
-    !(queued || (!workingOnly && state === 'idle_grace' && !readReport && registry(current.worktree?.main_root ?? current.cwd).roles().get(current.role)?.can_continue))
+    !(queued || (!workingOnly && state === 'idle_grace' && !readReport && registry(roleCwd(current)).roles().get(current.role)?.can_continue))
   )
     return { ok: false, code: 'not_continuable' };
   const oldTask = activeTasks.get(id);
@@ -1800,6 +1807,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   const recorded_at = new Date().toISOString();
   const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}), recorded_at,
     exit_code: null as number | null, stderr_tail: '' };
+  current.land_turn = land ? key : undefined;
   (current.send_outcomes ??= []).push(outcome);
   if (!current.cli) current.pi_sent_at = recorded_at;
   save(current);
@@ -1853,6 +1861,33 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     exit_code: result.exit_code,
     stderr_tail: result.stderr,
   };
+}
+
+/** Detached land helper only: repair the existing branch, without widening public retry_of eligibility. */
+export async function dispatchLandRepair(id: string, cwd: string, task: string, key: string, pane: string | null) {
+  const source = findJob(id);
+  if (!source || source.cwd !== cwd) throw Error('Repair source checkout changed');
+  const { row, status } = readRow(source, false);
+  if (row.open_questions || !['idle_grace', 'done', 'closed'].includes(row.state ?? ''))
+    throw Error(`Repair source needs attention: ${id}`);
+  const deadline = typeof status?.idle_deadline_at === 'string' ? Date.parse(status.idle_deadline_at) : Infinity;
+  if (row.state === 'idle_grace' && Date.now() < deadline) {
+    const sent = await keyLock(`job:${id}`, () => sendJob(id, task, key, false, true));
+    if ('sent' in sent && sent.sent) return id;
+    if (!('code' in sent) || sent.code !== 'not_continuable') { releaseLandTurn(id, key); throw Error(`Repair send failed: ${id}`); }
+  }
+  const args = { ...jobOptions(source), cwd: sharedRoot(cwd), isolation: 'none', retry_of: id, task, on: undefined };
+  // A closed but successfully settled job isn't a public retry target. Use the same keyed create path,
+  // retaining retry provenance and the original checkout rather than starting at a clean main tip.
+  const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? source.herdr_pane, key, false,
+    undefined, undefined, { retry_of: id }, { landCwd: cwd }));
+  if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
+  throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);
+}
+
+export function releaseLandTurn(id: string, key: string) {
+  const job = findJob(id);
+  if (job?.land_turn === key) { delete job.land_turn; save(job); }
 }
 
 async function sendJobs(args: Args) {
@@ -2137,7 +2172,7 @@ function sessionRows(markExhaustion: boolean): JobRow[] {
       return reportMeta ? { ...row, report_meta: reportMeta } : row;
     });
 }
-let cursor: Map<string, JobRow>;
+let cursor = new Map<string, JobRow>();
 const tries = new TryLog(hudHome), answers = new PanelActionLog(hudHome);
 function withChanges(value: unknown, markExhaustion: boolean): unknown {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
