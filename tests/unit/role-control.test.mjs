@@ -21,7 +21,8 @@ import { markExhausted, placeKey, roleRegistry } from '../../dist/roles/roster.j
 const saveRun = (s, role, run) => assert.equal(editPreset(s.hud, s.cwd, s.env, { role, op: 'run', run }).ok, true);
 
 function select(state, item) {
-  return { ...state, overlay: undefined, controlNav: { ...state.controlNav, projectCursor: item } };
+  const { control } = state, { roles } = control;
+  return { ...state, overlay: undefined, control: { ...control, roles: { ...roles, nav: { ...roles.nav, cursor: item } } } };
 }
 function focus(s, name = 'imp', at = 0) {
   const role = s.session.snap.roles.find((r) => r.role === name);
@@ -106,7 +107,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   // One line a row at every width and language; at 40 columns a long model is cut in the middle, never the harness or the thinking.
   for (const lang of ['en', 'zh'])
     for (const width of [32, 40, 56, 80, 120])
-      for (const state of [onControl(), onControl({ projectFolded: new Set(['agents']) })]) {
+      for (const state of [onControl(), onControl({ folded: new Set(['agents']) })]) {
         s.session.state = state;
         const view = s.frame(width, lang, 64);
         for (const line of view.lines) assert.equal(visualLength(line), width, stripAnsi(line));
@@ -251,7 +252,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
   assert.match(s.text(), /− imp \[hydrogen\] → none/);
   assert.equal(s.assignment('imp').exhausted.length, 1);
   await s.press('C');
-  assert.equal(s.frame().state.controlNav.projectCursor, item);
+  assert.equal(s.frame().state.control.roles.nav.cursor, item);
   assert.equal(s.assignment('imp').preset, 'default');
   assert.match(s.text(), /sonic → pi/);
   s.session.state = select(s.session.state, 'project:role:sonic');
@@ -349,7 +350,7 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.equal(s.session.done.ok, true);
   assert.equal(stored(s, 'imp').run[0].model, 'xai/grok-4.7');
   assert.equal(s.assignment('imp').model, 'xai/grok-4.7');
-  assert.equal(s.session.state.controlNav.projectCursor, 'project:role:imp');
+  assert.equal(s.session.state.control.roles.nav.cursor, 'project:role:imp');
   assert.deepEqual(JSON.parse(fs.readFileSync(config, 'utf8')), legacy);
   const roleFile = join(s.hud, 'roles/imp.json'), before = fs.readFileSync(roleFile);
   setHarnessDisabled(s.hud, 'pi:xai', true);
@@ -385,13 +386,13 @@ test('quick model on a role saves only the model in the active preset and target
     expected.presets[0].run[index].model = model;
     assert.deepEqual(stored(s, 'imp'), expected);
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-    assert.equal(s.session.state.controlNav.projectCursor, item);
+    assert.equal(s.session.state.control.roles.nav.cursor, item);
     assert.equal(s.session.state.overlay, undefined);
   };
   for (const [panelLayout, model] of [['split', 'xai/grok-4.7-fast'], ['classic', 'xai/grok-4.7-mini']]) {
     s.put(file, original);
     discover(s);
-    s.session.state = onControl({ projectCursor: item }, { panelLayout });
+    s.session.state = onControl({ cursor: item }, { panelLayout });
     await s.keys('m', model);
     assert.equal(s.session.state.overlay.kind, 'control-quick-model');
     assert.equal(s.session.state.overlay.index, 0);
@@ -406,7 +407,7 @@ test('quick model on a role saves only the model in the active preset and target
   const beforeFallback = stored(s, 'imp');
   markExhausted(s.hud, placeKey(beforeFallback.presets[0].run[0]), 'quota exceeded', NOW);
   s.collector.refreshRoles(s.session.snap, NOW);
-  s.session.state = onControl({ projectCursor: item }, { panelLayout: 'split' });
+  s.session.state = onControl({ cursor: item }, { panelLayout: 'split' });
   assert.match(s.text(), /imp \[daily\] → openai\/gpt-6.1-sol/);
   await s.keys('m', 'openai/gpt-6-astra');
   assert.equal(s.session.state.overlay.index, 1);
@@ -501,7 +502,7 @@ test('m on oracle → claude opens the flat picker and Enter saves the active pr
     run: [claude], presets: [{ name: 'daily', run: [claude] }], note: 'keep' };
   s.put(file, before);
   s.collector.refreshRoles(s.session.snap, NOW);
-  s.session.state = onControl({ projectCursor: item }, { panelLayout: 'split' });
+  s.session.state = onControl({ cursor: item }, { panelLayout: 'split' });
   assert.match(s.text(), /oracle \[daily\] → claude fable/);
   await s.press('m');
   assert.equal(s.session.state.overlay.kind, 'control-quick-model');
@@ -514,7 +515,7 @@ test('m on oracle → claude opens the flat picker and Enter saves the active pr
   assert.deepEqual([action.type, action.op, action.modelIndex], ['preset-edit', 'run', 0]);
   assert.equal(s.session.done.ok, true);
   assert.deepEqual(stored(s, 'oracle'), { ...before, presets: [{ name: 'daily', run: [{ ...claude, model: 'opus' }] }] });
-  assert.equal(s.session.state.controlNav.projectCursor, item);
+  assert.equal(s.session.state.control.roles.nav.cursor, item);
   assert.equal(s.session.state.overlay, undefined);
 
   const saved = stored(s, 'oracle');
@@ -817,7 +818,7 @@ test('Control plane keys: decoded names, scoped to Control, Settings letters unc
   assert.deepEqual(decoded('\x1b[B'), [{ type: 'key', key: 'down' }]);
   assert.deepEqual(decoded('Z', 'monitor'), []);
   // Elsewhere they do nothing: the hub, another page, a row of the Control plane that is not a place.
-  for (const state of [onPage(), onPage('progress'), onControl({ projectCursor: 'project:fold:healthy' })]) {
+  for (const state of [onPage(), onPage('progress'), onControl({ cursor: 'project:fold:healthy' })]) {
     s.session.state = state;
     for (const raw of ['p', 'm', 'x', 'i']) assert.equal((await s.press(raw)).action, undefined);
   }
@@ -827,7 +828,7 @@ test('Control plane keys: decoded names, scoped to Control, Settings letters unc
 });
 
 test('40-col EN/ZH frames 5a–5e follow the Control sample; Classic and Split use the same sheet', async (t) => {
-  const s = await setup(t), nav = { projectCursor: 'project:role:imp' };
+  const s = await setup(t), nav = { cursor: 'project:role:imp' };
   const pi = { harness: 'pi', model: 'xai/grok-4.7', thinking: 'high' };
   const cli = { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' };
   for (const [role, preset, run] of [['frontend-imp', 'default', [cli]], ['imp', 'daily', [pi, cli]],

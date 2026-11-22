@@ -19,7 +19,7 @@ import {
 import { controlFacts, editPreset } from '../../dist/roles/role-control.js';
 import { placeCatalog, roleRegistry } from '../../dist/roles/roster.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
-import { MODEL_LISTS } from '../fixtures/project-page.mjs';
+import { MODEL_LISTS, onControl } from '../fixtures/project-page.mjs';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 
@@ -295,7 +295,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
       state: {
         ...initialMonitorState(),
         mainTab: 'project',
-        controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files', 'usage']) },
+        control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'files', 'usage']) }).control,
       },
     },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v)

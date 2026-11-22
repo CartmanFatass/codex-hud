@@ -76,7 +76,7 @@ test('balance dedups, uses completion time against the latest calibration, keeps
         experiments: true,
         mainTab: 'exp',
         panelLayout,
-        expPage: { detail: account, cursor: 'calibration' },
+        exp: { detail: account, cursor: 'calibration', scroll: 0 },
       };
       const frame = renderMonitor({ state, tree, expData: data, width: 40, height: 24, nowMs: Date.parse(now) });
       for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));

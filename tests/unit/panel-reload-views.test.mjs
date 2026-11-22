@@ -81,7 +81,7 @@ test('live input: g on a job reaches focus-job-tab after automatic reload', asyn
 });
 
 test('live input: a build waits for the Harnesses Add back draft to close', async (t) => {
-  const f = live(t, (state) => ({ state: { ...state, mainTab: 'control', controlHarnesses: true }, settings: null }));
+  const f = live(t, (state) => ({ state: { ...state, mainTab: 'control', control: { ...state.control, subTab: 'harnesses' } }, settings: null }));
   writeFixtureFile(join(f.env.HUD_HOME, 'harnesses.json'), JSON.stringify({ disabled: ['pi:xai'] }));
   await until(() => f.output().includes('i add back'), 'Harnesses did not render');
   f.child.stdin.write('ixa');
@@ -93,7 +93,17 @@ test('live input: a build waits for the Harnesses Add back draft to close', asyn
   await until(() => stripAnsi(f.output()).includes('/ xai▌'), 'the draft was not still editable');
   f.child.stdin.write('\x1b');
   await until(() => f.events().filter((e) => e.start).length === 2, 'reload did not resume after Esc');
-  assert.equal(f.restarts()[0].restart.state.controlHarnesses, true);
+  assert.equal(f.restarts()[0].restart.state.control.subTab, 'harnesses');
+  const returned = f.output().length;
+  f.child.stdin.write('ixa\r');
+  await until(() => stripAnsi(f.output().slice(returned)).includes('Restored pi:xai'), 'Add back did not restore the switch');
+  const restored = f.output().length;
+  f.child.stdin.write('h');
+  await until(() => !stripAnsi(f.output().slice(restored)).includes('Restored pi:xai') && f.output().slice(restored).includes('Needs attention'), 'Roles did not render without the Harnesses notice');
+  const roles = f.output().length;
+  f.child.stdin.write('h');
+  await until(() => f.output().slice(roles).includes('This machine'), 'Harnesses did not render again');
+  assert.doesNotMatch(stripAnsi(f.output().slice(roles)), /Restored pi:xai/, 'the old notice does not reappear');
 });
 
 test('live input: a build waits for stop confirmation, and an unnamed key cancels it', async (t) => {

@@ -2,45 +2,83 @@ import { execFile, spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { MonitorState } from '../render/monitor.js';
-import { CONTROL_FOLDS, controlRoleItem, controlRoleOf, storeControlNavigation } from '../render/control-navigation.js';
+import { CONTROL_FOLDS, controlRoleItem, controlRoleOf, initialControlTab, type ControlTabState, type ControlViewState, type ExpTabState } from '../render/monitor-state.js';
 
 const PLACE = 'HUD_PANEL_RELOAD_PLACE', SUPERVISED = 'HUD_PANEL_RELOAD_SUPERVISED', RESTART = 75;
 type Place = { state: MonitorState; settings: { selected: number; offset: number } | null; widthOverride?: number | null; openedAt?: number };
+type LegacyNav = Pick<MonitorState, 'projectCursor' | 'projectScroll' | 'projectFolded' | 'boardRevealed' |
+  'splitFocus' | 'splitList' | 'splitSub' | 'splitScroll' | 'splitListScroll' | 'splitFor'>;
+type LegacyState = Omit<MonitorState, 'control' | 'exp'> & Partial<Pick<MonitorState, 'control' | 'exp'>> & {
+  controlNav?: LegacyNav;
+  controlHarnessNav?: LegacyNav;
+  controlHarnesses?: boolean;
+  controlHarnessNotice?: { id: string; off: boolean };
+  controlPresetNotice?: { role: string; name: string | null } | { role: string; index: number; model: string | null };
+  modelPrevious?: ControlTabState['modelPrevious'];
+  expPage?: Partial<ExpTabState> & { edit?: unknown };
+};
+
+function restoreNav(view: ControlViewState, legacy: LegacyNav | undefined): void {
+  if (!legacy) return;
+  const { projectCursor, projectScroll, projectFolded, boardRevealed, splitFocus, splitList, splitSub, splitScroll, splitListScroll, splitFor } = legacy;
+  view.nav = { cursor: projectCursor, scroll: projectScroll ?? 0, revealed: boardRevealed,
+    split: { focus: splitFocus ?? 'list', listCursor: splitList, previewCursor: splitSub,
+      previewScroll: splitScroll ?? 0, listScroll: splitListScroll ?? 0, previewFor: splitFor } };
+  view.folded = projectFolded ?? view.folded;
+}
+
+function restoreState(raw: LegacyState): MonitorState {
+  const { control, controlNav, controlHarnessNav, controlHarnesses, controlPresetNotice, controlHarnessNotice, modelPrevious,
+    exp, expPage, ...state } = raw;
+  // Older builds saved Skills as a main tab; it now lives in Help.
+  if ((state.mainTab as string | undefined) === 'skills') state.mainTab = 'home';
+  delete state.trySelection; // Legacy handoffs encoded a marked batch as a plain object.
+  delete state.overlay;
+  // A pre-overlay panel could hand off transient drafts and retired fields.
+  for (const key of ['confirmStop', 'controlPresetInput', 'controlChain', 'controlQuickModel',
+    'projectInput', 'controlHarnessAdd', 'preview', 'zoom']) Reflect.deleteProperty(state, key);
+  if (state.scroll) Reflect.deleteProperty(state.scroll, 'agents');
+  if (state.tree) for (const key of ['view', 'collapsed', 'filter', 'scroll']) Reflect.deleteProperty(state.tree, key);
+
+  const tab = control ?? initialControlTab();
+  if (!control) {
+    tab.subTab = controlHarnesses ? 'harnesses' : 'roles';
+    restoreNav(tab.roles, controlNav);
+    restoreNav(tab.harnesses, controlHarnessNav);
+    if (modelPrevious) tab.modelPrevious = modelPrevious;
+    if (controlHarnesses && controlHarnessNotice) tab.notice = { kind: 'harness', ...controlHarnessNotice };
+    else if (controlPresetNotice) tab.notice = 'index' in controlPresetNotice
+      ? { kind: 'model', ...controlPresetNotice } : { kind: 'preset', ...controlPresetNotice };
+  }
+  if ((state.projectPage as string | undefined) === 'control') {
+    const old = state.projectCursor?.replace('project:fold:role:', 'project:role:');
+    const role = controlRoleOf(old), roleItem = role && controlRoleItem(role);
+    const folded = new Set<string>(CONTROL_FOLDS);
+    if (role) folded.delete('healthy');
+    for (const key of ['files', 'agents']) if (state.projectFolded?.has && !state.projectFolded.has(key)) folded.delete(key);
+    restoreNav(tab.roles, {
+      projectCursor: old === 'split:radar' ? 'project:fold:usage' : old === 'split:files' ? 'project:fold:files' : roleItem ?? old,
+      projectScroll: state.projectScroll, projectFolded: folded, splitScroll: state.splitScroll,
+      splitListScroll: state.splitListScroll, splitFor: state.splitFor,
+    });
+    if (state.mainTab === 'project') state.mainTab = 'control';
+    state.projectPage = state.projectList = state.projectBack = undefined;
+    state.projectCursor = state.projectScroll = state.projectFolded = state.boardRevealed = undefined;
+    state.splitFocus = state.splitList = state.splitSub = state.splitScroll = state.splitListScroll = state.splitFor = undefined;
+  }
+  const { edit: _draft, ...legacyExp } = expPage ?? {};
+  return { ...state, control: tab, exp: exp ?? { ...legacyExp, scroll: legacyExp.scroll ?? 0 } };
+}
+
 export function readPanelPlace(): Place | undefined {
   const raw = process.env[PLACE];
   delete process.env[PLACE];
   try {
-    const place: Place | undefined = raw ? JSON.parse(raw, (_key, value) => value?.panelSet ? new Set(value.panelSet) : value) : undefined;
-    if (place) {
-      // Older builds saved Skills as a main tab; it now lives in Help.
-      if ((place.state?.mainTab as string | undefined) === 'skills') place.state.mainTab = 'home';
-      const state = place.state;
-      if (state) {
-        delete state.trySelection; // Legacy handoffs encoded a marked batch as a plain object.
-        delete state.overlay;
-        // A pre-overlay panel could hand off transient drafts and retired fields.
-        for (const key of ['confirmStop', 'controlPresetInput', 'controlChain', 'controlQuickModel',
-          'projectInput', 'controlHarnessAdd', 'preview', 'zoom']) Reflect.deleteProperty(state, key);
-        if (state.expPage) Reflect.deleteProperty(state.expPage, 'edit');
-        if (state.scroll) Reflect.deleteProperty(state.scroll, 'agents');
-        if (state.tree) for (const key of ['view', 'collapsed', 'filter', 'scroll']) Reflect.deleteProperty(state.tree, key);
-      }
-      if ((state?.projectPage as string | undefined) === 'control') {
-        const old = state.projectCursor?.replace('project:fold:role:', 'project:role:');
-        const role = controlRoleOf(old), roleItem = role && controlRoleItem(role);
-        const folded = new Set<string>(CONTROL_FOLDS);
-        if (role) folded.delete('healthy');
-        for (const key of ['files', 'agents']) if (state.projectFolded?.has && !state.projectFolded.has(key)) folded.delete(key);
-        place.state = storeControlNavigation({}, {
-          ...state, mainTab: state.mainTab === 'project' ? 'control' : state.mainTab, projectPage: undefined,
-          projectList: undefined, projectBack: undefined,
-          projectCursor: old === 'split:radar' ? 'project:fold:usage' : old === 'split:files' ? 'project:fold:files' : roleItem ?? old,
-          projectFolded: folded, splitList: undefined, splitFocus: undefined, splitSub: undefined, boardRevealed: undefined,
-        });
-      }
-      place.openedAt ??= Date.now(); // Legacy handoffs start their lifetime when consumed.
-    }
-    return place;
+    const place: (Omit<Place, 'state'> & { state: LegacyState }) | undefined = raw
+      ? JSON.parse(raw, (_key, value) => value?.panelSet ? new Set(value.panelSet) : value) : undefined;
+    if (!place) return;
+    // Legacy handoffs start their lifetime when consumed.
+    return { ...place, state: place.state && restoreState(place.state), openedAt: place.openedAt ?? Date.now() };
   } catch { return undefined; }
 }
 /** One metadata probe per collection; only a quiet, loadable generation may replace this process. */

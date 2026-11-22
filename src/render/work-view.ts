@@ -15,11 +15,10 @@ import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { homeScene } from './split-home.js';
 import { projectScene, TRY_ACTIONS } from './split-project.js';
-import { paintSplit, splitScrolls } from './split-frame.js';
+import { paintSplit, splitPreviewRoom } from './split-frame.js';
 import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 import { controlShown, expShown, mainTabs } from './main-tabs.js';
-import { controlNavigation, storeControlNavigation } from './control-navigation.js';
 import { controlHeader, controlHints, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
 import { chainSheet } from './chain-input.js';
@@ -129,13 +128,6 @@ export function renderWorkboardFrame(
   source: WorkboardSnapshot,
   now: number
 ): MonitorFrame {
-  if (!controlShown(state)) return renderFrame(input, state, source, now);
-  const frame = renderFrame(input, controlNavigation(state), source, now);
-  frame.state = storeControlNavigation(state, frame.state);
-  return frame;
-}
-
-function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardSnapshot, now: number): MonitorFrame {
   const width = Math.max(0, Math.floor(input.width)),
     height = Math.max(0, Math.floor(input.height));
   const frame: MonitorFrame = {
@@ -153,7 +145,8 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
   const control = controlShown(state), exp = expShown(state);
-  const harnesses = control && state.controlHarnesses, addingHarness = harnesses && state.overlay?.kind === 'control-harness-add';
+  const controlView = control ? state.control[state.control.subTab] : undefined, controlNav = controlView?.nav;
+  const harnesses = control && state.control.subTab === 'harnesses', addingHarness = harnesses && state.overlay?.kind === 'control-harness-add';
   const roles = control && !harnesses;
   const overlay = state.overlay;
   if (roles) {
@@ -166,14 +159,14 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   }
   // The picker is for a place that can take a model: with it gone it closes, returning to its parent view.
   const picker = roles ? modelInput(overlay) : undefined;
-  const pick = picker && pickOf(input.project, picker, overlay?.kind === 'control-chain' && overlay.draft ? undefined : state.modelPrevious);
+  const pick = picker && pickOf(input.project, picker, overlay?.kind === 'control-chain' && overlay.draft ? undefined : state.control.modelPrevious);
   if (picker && !pick) {
     if (overlay?.kind === 'control-quick-model') state.overlay = undefined;
     else if (overlay?.kind === 'control-chain') state.overlay = { ...overlay,
       mode: overlay.mode.kind === 'sheet' ? { ...overlay.mode, input: undefined } : { kind: 'places' } };
   }
   const chain = roles && state.overlay?.kind === 'control-chain' ? state.overlay : undefined;
-  const experiment = exp ? { ...state.expPage } : undefined;
+  const experiment = exp ? state.exp : undefined;
   const expEdit = exp && overlay?.kind === 'exp-edit' ? overlay : undefined;
   if (exp) frame.expData = input.expData;
   const home = !sub && !project && !control && !exp;
@@ -273,12 +266,12 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       : controlScene(controlSplit, state, width, now, w, height, notes.length) : build(w);
     let scene = sceneFor(width);
     // A preview that scrolls keeps its last cell for the scrollbar: its rows are laid out one cell narrower, so none is cut.
-    if (scene && splitScrolls(scene, state, height, notes.length)) scene = { ...scene,
+    if (scene && scene.preview.length > splitPreviewRoom(scene, state.splitRatio, controlNav?.split.focus ?? state.splitFocus ?? 'list', height, notes.length)) scene = { ...scene,
       preview: sceneFor(width - 1)?.preview ?? scene.preview };
     if (scene) {
       if (harnesses && height > 1) harnessFooterControls(frame, scene.hints, width, height - 1);
       if (control && !harnesses && height > 1) presetFooterControls(frame, scene.hints, width, height - 1);
-      return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes);
+      return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes, controlNav);
     }
   }
   const anchor = chain && roleRows(chain.role, width, now);
@@ -288,7 +281,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const sheetRows = sheet ? [section(sheet.rule.label, width, sheet.rule.right), ...sheet.rows] : undefined;
   let chainTop = 0;
   if (anchor && sheetRows) {
-    const list = controlRows(input.project, state, width, now);
+    const list = controlRows(input.project, state.control.roles, width, now);
     const at = list.findIndex((r) => r.item === anchor[0]!.item);
     if (at < 0) sheetRows.unshift(...anchor);
     else {
@@ -309,8 +302,8 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
           : control ? harnesses && input.project ? addingHarness
-              ? [section(t('Add back'), width), ...harnessAddRows(input.project, state, width)] : harnessRows(input.project, state, width)
-            : sheetRows ?? controlRows(input.project, state, width, now)
+              ? [section(t('Add back'), width), ...harnessAddRows(input.project, state, width)] : harnessRows(input.project, state.control.harnesses, width)
+            : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
           : experiment ? expRows(experiment, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.error) - Number(!!input.publicationNotice))) : homeRows(board, state, width, now, input);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
@@ -348,13 +341,13 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     state.projectCursor = (!page && !list && state.projectLayout === 'inbox'
       ? rows.find((r) => r.item && r.item !== 'project:switch') || rows.find((r) => r.item)
       : rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
-  if (control && !addingHarness && !sheet && input.project && !rows.some((r) => r.item && r.item === state.projectCursor))
-    state.projectCursor = rows.find((r) => r.item)?.item;
+  if (controlNav && !addingHarness && !sheet && input.project && !rows.some((r) => r.item && r.item === controlNav.cursor))
+    controlNav.cursor = rows.find((r) => r.item)?.item;
   if (experiment && !expEdit && !rows.some((r) => r.item && r.item === experiment.cursor))
     experiment.cursor = rows.find((r) => r.item)?.item;
   if (expEdit) state.boardRevealed = undefined;
   const key = addingHarness && state.overlay?.kind === 'control-harness-add' ? state.overlay.pick
-    : sheet ? sheet.cursor : project || control ? state.projectCursor : inspector ? state.inspectCursor
+    : sheet ? sheet.cursor : controlNav ? controlNav.cursor : project ? state.projectCursor : inspector ? state.inspectCursor
     : experiment ? expEdit ? undefined : experiment.cursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   const room = Math.max(0, height - 2 - top);
   const helpStart = helpContent?.anchor ? rows.indexOf(helpContent.anchor) : 0;
@@ -365,20 +358,23 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     : addingHarness ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
-      : project || control ? (state.projectScroll ?? 0) : experiment ? (experiment.scroll ?? 0) : (state.homeScroll ?? 0);
+      : controlNav ? controlNav.scroll : project ? (state.projectScroll ?? 0) : experiment ? experiment.scroll : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
   if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
-  if (!help && !changes && !sheet && key && (addingHarness || state.boardRevealed !== key) && room) {
+  if (!help && !changes && !sheet && key && (addingHarness || (controlNav ? controlNav.revealed : state.boardRevealed) !== key) && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
-    if (!addingHarness) state.boardRevealed = key;
+    if (controlNav) {
+      if (!addingHarness) controlNav.revealed = key;
+    } else state.boardRevealed = key;
   }
   if (help) {
     state.helpScroll = offset;
     frame.helpPage = { count: room, maxOffset: max };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
-  else if (project || control) { if (!addingHarness && !sheet && (!control || input.project)) state.projectScroll = offset; }
-  else if (experiment) state.expPage = { ...experiment, scroll: offset };
+  else if (controlNav) { if (!addingHarness && !sheet && input.project) controlNav.scroll = offset; }
+  else if (project) state.projectScroll = offset;
+  else if (experiment) experiment.scroll = offset;
   else state.homeScroll = offset;
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
   for (let i = 0; i < room; i++) {
@@ -397,8 +393,8 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     ? { modal: ['Esc back'] }
     : inspector ? ['⏎ open', 'Esc back']
       : changes ? ['Esc back']
-        : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state)
-            : sheet ? sheet.hints : controlHints(input.project, state.projectCursor)
+        : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
+            : sheet ? sheet.hints : controlHints(input.project, controlNav?.cursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : page === 'progress' ? (state.projectTry ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
             : onTry && (state.acceptance !== 'slice' || state.projectLayout === 'board' || state.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']

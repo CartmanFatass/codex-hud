@@ -1,10 +1,76 @@
-/** Transient panel overlays and the live input/reload policy they share. */
-import type { ExpEdit } from '../exp-config.js';
+/** Panel tab state, transient overlays, and the live input/reload policy. */
+import type { ExpAccount, ExpEdit } from '../exp-config.js';
 import type { DraftPlace, PlaceFact, RoleFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { filterScope } from './filter.js';
 import type { MonitorState } from './monitor.js';
 import type { PresetInput } from './preset-input.js';
+
+export interface SplitNav {
+  focus: 'list' | 'preview';
+  listCursor?: string;
+  listScroll: number;
+  previewCursor?: string;
+  previewScroll: number;
+  previewFor?: string;
+}
+
+export interface ClassicSplitNav {
+  /** The acting row, whether in Classic, the Split list, or the Split preview. */
+  cursor?: string;
+  scroll: number;
+  /** Classic and Split share the reveal marker within this view. */
+  revealed?: string;
+  split: SplitNav;
+}
+
+export interface ControlViewState {
+  nav: ClassicSplitNav;
+  folded: ReadonlySet<string>;
+}
+
+export type ControlNotice =
+  | { kind: 'preset'; role: string; name: string | null }
+  | { kind: 'model'; role: string; index: number; model: string | null }
+  | { kind: 'harness'; id: string; off: boolean };
+
+export interface ControlTabState {
+  subTab: 'roles' | 'harnesses';
+  roles: ControlViewState;
+  harnesses: ControlViewState;
+  notice?: ControlNotice;
+  modelPrevious: Readonly<Record<string, string>>;
+}
+
+export const CONTROL_FOLDS = ['healthy', 'usage', 'files', 'agents'] as const;
+export const HARNESS_OFF = 'harness-off';
+export const harnessFold = `project:fold:${HARNESS_OFF}`;
+export const controlRoleOf = (item?: string) => /^project:role:([^:]+)(?::\d+)?$/.exec(item ?? '')?.[1];
+export const controlRoleItem = (role: string) => `project:role:${role}`;
+
+export function initialControlView(subTab: ControlTabState['subTab']): ControlViewState {
+  return { nav: { scroll: 0, split: { focus: 'list', listScroll: 0, previewScroll: 0 } },
+    folded: new Set(subTab === 'roles' ? CONTROL_FOLDS : [HARNESS_OFF]) };
+}
+
+export function initialControlTab(): ControlTabState {
+  return { subTab: 'roles', roles: initialControlView('roles'), harnesses: initialControlView('harnesses'), modelPrevious: {} };
+}
+
+/** The active view may reconcile its navigation while painting or handling input. */
+export function copyControlTab(control: ControlTabState): ControlTabState {
+  const view = control[control.subTab];
+  return { ...control, [control.subTab]: { ...view, nav: { ...view.nav, split: { ...view.nav.split } } } };
+}
+
+export type ExpDetail = ExpAccount | 'codex-help' | 'proxy-status';
+
+export interface ExpTabState {
+  detail?: ExpDetail;
+  cursor?: string;
+  scroll: number;
+  notice?: 'Saved' | 'Could not save EXP setting' | 'Invalid value';
+}
 
 export interface ModelPickerState {
   text: string;

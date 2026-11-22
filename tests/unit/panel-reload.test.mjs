@@ -16,14 +16,31 @@ test('reload place retains opening time; legacy handoffs use their consumption t
     const openedAt = Date.now() - 60000;
     process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: initialMonitorState(), settings: null, openedAt });
     assert.equal(readPanelPlace().openedAt, openedAt);
-    const initial = initialMonitorState();
-    process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: { ...initial, preview: 'agent', zoom: true,
+    const initial = initialMonitorState(), { control: _control, exp: _exp, ...flat } = initial;
+    process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: { ...flat, preview: 'agent', zoom: true,
       scroll: { ...initial.scroll, agents: 4 }, tree: { ...initial.tree, collapsed: new Set(['retired']), showAll: true },
-      expPage: { detail: 'openai-api', edit: { text: 'not transferred' } }, controlHarnessAdd: { text: 'not transferred' },
+      projectCursor: 'project:page:docs', controlHarnesses: true,
+      controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['usage']), projectScroll: 3 },
+      controlHarnessNav: { projectCursor: 'control:harness:pi', projectFolded: new Set(), splitFor: 'harnesses|control:harness:pi', splitScroll: 4 },
+      controlHarnessNotice: { id: 'pi', off: false }, modelPrevious: { synthetic: 'previous-model' },
+      expPage: { detail: 'openai-api', cursor: 'calibration', scroll: 2, edit: { text: 'not transferred' } },
+      controlHarnessAdd: { text: 'not transferred' },
     }, settings: null });
     const before = Date.now(), legacy = readPanelPlace(), after = Date.now();
     assert.ok(legacy.openedAt >= before && legacy.openedAt <= after);
-    assert.deepEqual(legacy.state, { ...initial, tree: { ...initial.tree, showAll: true }, expPage: { detail: 'openai-api' } });
+    const { control, ...rest } = legacy.state;
+    assert.deepEqual(rest, { ...flat, projectCursor: 'project:page:docs', tree: { ...initial.tree, showAll: true },
+      exp: { detail: 'openai-api', cursor: 'calibration', scroll: 2 } });
+    assert.equal(control.subTab, 'harnesses');
+    assert.equal(control.roles.nav.cursor, 'project:role:imp');
+    assert.equal(control.roles.nav.scroll, 3);
+    assert.deepEqual(control.roles.folded, new Set(['usage']));
+    assert.equal(control.harnesses.nav.cursor, 'control:harness:pi');
+    assert.equal(control.harnesses.nav.split.previewScroll, 4);
+    assert.equal(control.harnesses.nav.split.previewFor, 'harnesses|control:harness:pi');
+    assert.deepEqual(control.harnesses.folded, new Set());
+    assert.deepEqual(control.notice, { kind: 'harness', id: 'pi', off: false });
+    assert.deepEqual(control.modelPrevious, { synthetic: 'previous-model' });
     assert.equal(process.env.HUD_PANEL_RELOAD_PLACE, undefined);
   } finally {
     if (previous === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE;
@@ -85,6 +102,11 @@ for (const fallback of [false, true]) test(`${fallback ? 'single-supervisor fall
   const state = { ...initialMonitorState(), mainTab: 'project', homeTarget: { kind: 'worker', laneId: 'lane', workerId: 'worker' },
     boardExpanded: new Set(['worker:lane:worker']), boardToggled: new Set(['worker:lane:worker']), boardFolded: new Set(['other']),
     projectFolded: new Set(['project']), help: true, tree: { ...initialMonitorState().tree, showAll: true } };
+  const roles = state.control.roles;
+  roles.folded = new Set(['usage']);
+  roles.nav = { cursor: 'project:role:imp:0', scroll: 3, revealed: 'control|project:role:imp|project:role:imp:0',
+    split: { focus: 'preview', listCursor: 'project:role:imp', previewCursor: 'project:role:imp:0', listScroll: 2, previewScroll: 5, previewFor: 'control|project:role:imp' } };
+  state.exp = { detail: 'openai-api', cursor: 'calibration', scroll: 2 };
   writeFixtureFile(runner, `import {PanelReload,readPanelPlace} from ${JSON.stringify(moduleUrl)};
 ${fallback ? 'process.execve=undefined;' : ''}
 const reload=new PanelReload();const transportedOverlay=JSON.parse(process.env.HUD_PANEL_RELOAD_PLACE??'null')?.state?.overlay;const place=readPanelPlace();

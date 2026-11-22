@@ -9,7 +9,6 @@ import {
   expTimeZone,
   expUsd,
   parseExpUsd,
-  type ExpAccount,
   type ExpBalance,
   type ExpData,
   type ExpEdit,
@@ -24,14 +23,13 @@ import {
   type ExpProxyWindow,
 } from '../exp-proxy.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import type { OverlayState } from './monitor-state.js';
+import type { ExpDetail, ExpTabState, OverlayState } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import { theme, visualLength } from './colors.js';
 import { flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { boardRow, mark, section, type FooterHints } from './workboard-rows.js';
 import { t } from './i18n.js';
 
-type Detail = ExpAccount | 'codex-help' | 'proxy-status';
 interface Choice {
   label: string;
   change: ExpEdit;
@@ -43,15 +41,9 @@ interface Entry {
   value?: string;
   reading?: string;
   edit?: Editor;
-  detail?: Detail;
+  detail?: ExpDetail;
 }
 type ExpEditor = Extract<OverlayState, { kind: 'exp-edit' }>;
-export interface ExpPage {
-  detail?: Detail;
-  cursor?: string;
-  scroll?: number;
-  notice?: 'Saved' | 'Could not save EXP setting' | 'Invalid value';
-}
 
 const choiceItem = (i: number) => `exp:choice:${i}`;
 const enabled = (on: boolean) => t(on ? 'on' : 'off');
@@ -99,7 +91,7 @@ const input = (
   hint: string,
   parse: (value: string) => ExpEdit | undefined
 ): Entry => ({ id, label, value, edit: { hint, parse } });
-const link = (detail: Detail, label: string, value?: string): Entry => ({ id: detail, label, value, detail });
+const link = (detail: ExpDetail, label: string, value?: string): Entry => ({ id: detail, label, value, detail });
 const parseInteger = (s: string, min: number, max: number) =>
   /^\d+$/.test(s) && expInteger(Number(s), min, max) ? Number(s) : undefined;
 const profileLabel = (data: ExpData, home: string) => {
@@ -158,7 +150,7 @@ function proxyReadings(data: ExpData, nowMs: number): [string, string][] {
 
 function groups(
   data: ExpData,
-  detail: Detail | undefined
+  detail: ExpDetail | undefined
 ): { label: string; entries?: Entry[]; readings?: (string | [string, string])[]; notes?: string[] }[] {
   const { config, profiles } = data;
   if (detail === 'codex-help')
@@ -304,7 +296,7 @@ function groups(
 }
 
 export function expRows(
-  page: ExpPage,
+  page: ExpTabState,
   editor: ExpEditor | undefined,
   data: ExpData | undefined,
   width: number,
@@ -387,18 +379,18 @@ export function expRows(
   return [...header, ...blocks.flatMap((rows, i) => (i < spare ? [boardRow(''), ...rows] : rows))];
 }
 
-export const expHints = (page: ExpPage, edit: ExpEditor | undefined): FooterHints => {
+export const expHints = (page: ExpTabState, edit: ExpEditor | undefined): FooterHints => {
   if (page.detail === 'proxy-status') return ['Esc back'];
   if (!edit) return page.detail ? ['⏎ edit', 'Esc back'] : ['⏎ edit'];
   return { modal: [edit.entryId === 'calibration' && !edit.draft.preview ? '⏎ preview' : '⏎ save', 'Esc cancel'] };
 };
 
 export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
-  const page = { ...state.expPage },
+  const page = { ...state.exp },
     data = ctx.frame?.expData;
   let overlay = state.overlay;
   const out = (edit?: ExpEdit): MonitorOutcome => ({
-    state: { ...state, expPage: page, overlay },
+    state: { ...state, exp: page, overlay },
     close: false,
     action: edit && { type: 'exp-save', edit },
   });
@@ -468,7 +460,7 @@ export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorC
   const scroll = (step: number) => {
     page.scroll = Math.max(
       0,
-      Math.min(Math.max(0, (pane?.contentLength ?? 0) - (pane?.height ?? 0)), (page.scroll ?? 0) + step)
+      Math.min(Math.max(0, (pane?.contentLength ?? 0) - (pane?.height ?? 0)), page.scroll + step)
     );
     return out();
   };

@@ -139,7 +139,7 @@ test('live picker paints immediately, types without discovery and can restore th
   f.put(herdr, `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\n` +
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nprocess.exitCode = 97;\n`);
   chmodSync(herdr, 0o700);
-  const state = onControl({ projectCursor: 'project:role:imp' });
+  const state = onControl({ cursor: 'project:role:imp' });
   const place = JSON.stringify({ state, settings: null }, (_k, v) => v instanceof Set ? { panelSet: [...v] } : v);
   const entry = pathToFileURL(resolve('dist/tree-page.js')).href;
   const child = spawn(process.execPath, ['--input-type=module', '-e',

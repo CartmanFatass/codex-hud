@@ -129,7 +129,7 @@ test('full Project collection and both Control views include radar without chang
     piToday: { costUsd: 1.42, tokens: 184000, sessions: 2 },
     roleStats: { imp: { total: 6, ok: 5, failed: 1, quietEscalated: 1, avgMinutes: 6 } },
   } };
-  const split = (projectCursor, projectFolded) => onControl({ projectCursor, projectFolded }, { panelLayout: 'split' });
+  const split = (projectCursor, projectFolded) => onControl({ cursor: projectCursor, folded: projectFolded }, { panelLayout: 'split' });
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
     const render = (snapshot, state) => f.render(width, lang, state, 80, snapshot);
     for (const state of ['control', split('project:role:imp')]) assert.deepEqual(render(empty, state).lines, render(baseline, state).lines);
@@ -138,7 +138,7 @@ test('full Project collection and both Control views include radar without chang
     const lines = plain(classic), i = lines.findIndex((line) => /^(Usage|用量)/.test(line));
     assert.ok(i === -1 && lines.some((line) => /^▸ (Usage|用量) .*68%/.test(line)), lines.join('\n'));
     const preview = plain(radar).join('\n');
-    assert.equal(radar.state.controlNav.projectCursor, 'project:fold:usage');
+    assert.equal(radar.state.control.roles.nav.cursor, 'project:fold:usage');
     assert.match(preview, /\$1\.42.*184K/);
     assert.match(preview, /5 ok · 1 failed|5 成功 · 1 失败/);
     assert.match(preview, /Quota|额度/);

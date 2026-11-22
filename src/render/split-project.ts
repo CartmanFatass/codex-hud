@@ -8,6 +8,7 @@
 import type { LedgerSlice, SliceState, ProjectSnapshot } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
+import type { ClassicSplitNav } from './monitor-state.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, cutTicketTitle, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
   ledgerText, ledgerFoldItem, newestTasks, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark, taskDetailRows, taskItem, taskLabel, taskRows,
   progressTasks, progressTaskRow, progressTaskDetails, progressTasksHeading, sliceDetailRows, featureItem, featureRow,
@@ -17,7 +18,7 @@ import { boardHubPart, boardProgressPart } from './board-project.js';
 import { inboxHubPart, inboxProgressPart } from './inbox-project.js';
 import type { TryAction } from '../collectors/try-records.js';
 import { diffStatRows } from './diff-stat-rows.js';
-import { splitItems, splitScope, splitSubValid, type SplitScene } from './split-frame.js';
+import { splitItems, type SplitScene } from './split-frame.js';
 import { boardRow, kvRows, mark, minuteAge, section } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
@@ -256,28 +257,53 @@ export function projectScene(input: MonitorData, state: MonitorState, board: Wor
   const part = !page ? (layout === 'board' ? boardHubPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxHubPart(input, data, state, board, width, now) : hubPart(input, data, state, board, width, now))
     : page === 'progress' ? (state.acceptance !== 'slice' ? progressTaskPart(input, data, state, board, width, now) : layout === 'board' ? boardProgressPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxProgressPart(input, data, state, board, width, now) : progressPart(input, data, state, board, width, now))
     : page === 'tickets' ? ticketsPart(data, state, width, now) : factsPart(page, data, width, now);
-  const scene = projectSplitScene(state, part, `project|${page ?? 'hub'}|${state.projectRoot ?? ''}`, !page);
+  const nav = projectSplitNav(state);
+  const scene = projectSplitScene(nav, part, `project|${page ?? 'hub'}|${state.projectRoot ?? ''}`);
+  if (!page && state.splitFocus && !scene.sub) state.trySelection = undefined;
+  saveProjectSplitNav(state, nav);
   return (input.projects?.length ?? 0) > 1 ? scene : { ...scene, hints: scene.hints.filter((hint) => hint !== '[ ] project') };
 }
 
-/** Shared cursor/preview machinery; Control supplies its own navigation state and rows. */
-export function projectSplitScene(state: MonitorState, part: Part, view: string, hub = false): SplitScene & { hints: readonly string[] } {
+/** Project still owns its legacy flat fields until its own tab-state slice. */
+export function projectSplitNav(state: MonitorState): ClassicSplitNav {
+  return { cursor: state.projectCursor, scroll: state.projectScroll ?? 0, revealed: state.boardRevealed,
+    split: { focus: state.splitFocus ?? 'list', listCursor: state.splitList, listScroll: state.splitListScroll ?? 0,
+      previewCursor: state.splitSub, previewScroll: state.splitScroll ?? 0, previewFor: state.splitFor } };
+}
+
+export function saveProjectSplitNav(state: MonitorState, nav: ClassicSplitNav): void {
+  const { split } = nav;
+  state.projectCursor = nav.cursor;
+  state.boardRevealed = nav.revealed;
+  state.splitFocus = split.focus === 'preview' ? 'preview' : undefined;
+  state.splitList = split.listCursor;
+  state.splitSub = split.previewCursor;
+  if (state.splitScroll !== undefined || split.previewScroll !== 0 || state.splitFor !== split.previewFor)
+    state.splitScroll = split.previewScroll;
+  state.splitFor = split.previewFor;
+}
+
+/** Shared cursor/preview machinery; each view supplies its own navigation and rows. */
+export function projectSplitScene(nav: ClassicSplitNav, part: Part, view: string): SplitScene & { hints: readonly string[] } {
+  const { split } = nav;
   const items = splitItems(part.list), wait = (at?: string) => (at?.startsWith('project:wait:') && items.includes('project:fold:waiting') ? 'project:fold:waiting' : at);
-  let focus = state.splitFocus === 'preview', cursor = wait(focus ? state.splitList : state.projectCursor);
+  let focus = split.focus === 'preview', cursor = wait(focus ? split.listCursor : nav.cursor);
   cursor = cursor && items.includes(cursor) ? cursor : part.start;
   let shown = part.preview(cursor);
   // Classic moved the cursor: to another row of this preview (a place added or moved), or off it (a page opened, a project switched).
-  if (focus && state.projectCursor !== state.splitSub) {
-    if (splitItems(shown.rows).includes(state.projectCursor ?? '')) state.splitSub = state.projectCursor;
-    else { focus = false; cursor = wait(state.projectCursor); cursor = cursor && items.includes(cursor) ? cursor : part.start; shown = part.preview(cursor); }
+  if (focus && nav.cursor !== split.previewCursor) {
+    if (splitItems(shown.rows).includes(nav.cursor ?? '')) split.previewCursor = nav.cursor;
+    else { focus = false; cursor = wait(nav.cursor); cursor = cursor && items.includes(cursor) ? cursor : part.start; shown = part.preview(cursor); }
   }
   const scope = `${view}|${cursor}`;
-  splitScope(state, scope);
-  const sub = focus ? splitSubValid(state, shown.rows) : undefined;
-  if (hub && state.splitFocus && !sub) state.trySelection = undefined;
-  state.splitFocus = sub ? 'preview' : undefined;
-  state.splitList = cursor;
-  state.projectCursor = sub ?? cursor;
+  if (split.previewFor !== scope) {
+    split.previewFor = scope;
+    split.previewScroll = 0;
+  }
+  const sub = focus && shown.rows.some((row) => row.item === split.previewCursor) ? split.previewCursor : undefined;
+  split.focus = sub ? 'preview' : 'list';
+  split.listCursor = cursor;
+  nav.cursor = sub ?? cursor;
   const hints = !sub ? shown.hints ?? part.hints : shown.act ? [...TRY_ACTIONS, 'Esc back'] : part.focusHints ?? part.hints;
   return { list: part.list, cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, act: sub ? undefined : shown.act, scope, hints };
 }

@@ -139,7 +139,7 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
 test('Help scrolls over a Control draft and closes back to the same place without a write or discard', async (t) => {
   const { busy } = await fixtures(t);
   for (const panelLayout of ['classic', 'split']) {
-    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout });
+    const state = onControl({ cursor: 'project:role:imp' }, { panelLayout });
     const d = driver(busy, { state, data: busy.control, height: 24 });
     const press = (raw) => d.run(decode(raw)[0]);
     press('N');
@@ -148,7 +148,7 @@ test('Help scrolls over a Control draft and closes back to the same place withou
     press('\x1b');
     press('\r');
     press('J');
-    const { overlay: chain, controlNav: nav } = d.state;
+    const { overlay: chain, control: { roles } } = d.state;
     const original = d.lines();
     assert.ok(chain.draft);
     assert.equal(chain.at, 1);
@@ -167,7 +167,7 @@ test('Help scrolls over a Control draft and closes back to the same place withou
       assert.equal(returned.action, undefined);
       assert.equal(d.state.help, false);
       assert.deepEqual(d.state.overlay, chain);
-      assert.deepEqual(d.state.controlNav, nav);
+      assert.deepEqual(d.state.control.roles, roles);
       assert.deepEqual(d.lines(), original);
     }
 
@@ -228,7 +228,7 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
     const root = render({ ...initialMonitorState(), panelLayout, mainTab, experiments: true });
     const moved = render(press(root, '\x1b[B').state);
     const cursor = ({ home: panelLayout === 'split' ? (s) => s.splitCursor : (s) => s.homeTarget,
-      project: (s) => s.projectCursor, control: (s) => s.controlNav.projectCursor, exp: (s) => s.expPage.cursor })[mainTab];
+      project: (s) => s.projectCursor, control: (s) => s.control.roles.nav.cursor, exp: (s) => s.exp.cursor })[mainTab];
     assert.ok(cursor(moved.state), `${panelLayout} ${mainTab} has a cursor`);
     assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${panelLayout} ${mainTab} moved off its first row`);
     const escaped = press(moved, '\x1b');
@@ -306,7 +306,7 @@ test('the footer shows the keys the selected row accepts', async (t) => {
   // The Control plane: a role takes presets, the Usage and Harnesses rows do not; a place takes its own keys.
   const control = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'control' }) });
   assert.match(foot(control), /c C preset/);
-  while (control.state.controlNav.projectCursor !== 'project:fold:usage') control.run('down');
+  while (control.state.control.roles.nav.cursor !== 'project:fold:usage') control.run('down');
   assert.doesNotMatch(foot(control), /c C preset|⏎ places/);
   const places = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'control' }) });
   places.run('enter');
@@ -341,7 +341,7 @@ test('at 40 columns the role row retains the next target without a placeholder t
   const { busy } = await fixtures(t);
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
-    const state = split({ mainTab: 'control', panelLayout, controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'usage', 'files']) },
+    const state = split({ mainTab: 'control', panelLayout, control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'usage', 'files']) }).control,
       ...(panelLayout === 'classic' ? { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) } : {}) });
     const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
     assert.match(text, /imp → agy/);

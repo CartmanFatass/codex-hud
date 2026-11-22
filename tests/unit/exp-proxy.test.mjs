@@ -347,7 +347,7 @@ test('EXP shows live proxy and OpenAI grant readings at 40 columns', async (t) =
       const draw = (detail) => {
         const frame = renderMonitor({
           tree,
-          state: { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout, expPage: { detail } },
+          state: { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout, exp: { detail, scroll: 0 } },
           width: 40,
           height: 24,
           nowMs: f.now(),

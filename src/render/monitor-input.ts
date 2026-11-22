@@ -20,7 +20,10 @@ export function monitorItemAt(pane: MonitorRect, x: number, y: number): string |
   return monitorRowAt(pane, x, y)?.item || undefined;
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
-  const out = route(state, input, ctx);
+  // A harness switch acknowledgement lasts until the next input, in the live panel and in pure routing.
+  const ready = state.control.notice?.kind === 'harness'
+    ? { ...state, control: { ...state.control, notice: undefined } } : state;
+  const out = route(ready, input, ctx);
   // Help lays out the current tab's section at the current width on its first paint.
   if (!state.help && out.state.help) out.state.helpScroll = undefined;
   // A `/` filter belongs to the view it was typed in: another tab, page, project, Help or the Inspector clears it.

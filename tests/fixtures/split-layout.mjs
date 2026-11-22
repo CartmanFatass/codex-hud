@@ -55,7 +55,7 @@ export function splitFrames(busy, idle) {
     frames[`progress-40-${lang}`] = plain(busy.render(40, lang, 40, page('progress'), busy.rich));
     const control = { ...busy.control, radar: undefined };
     frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, onControl(undefined, split({ mainTab: 'control' })), control));
-    const unfolded = onControl({ projectCursor: 'project:role:reviewer', projectFolded: new Set(['agents', 'usage', 'files']) }, split({ mainTab: 'control' }));
+    const unfolded = onControl({ cursor: 'project:role:reviewer', folded: new Set(['agents', 'usage', 'files']) }, split({ mainTab: 'control' }));
     frames[`control-unfolded-40-${lang}`] = plain(busy.render(40, lang, 40, unfolded, control));
     frames[`tickets-40-${lang}`] = plain(busy.render(40, lang, 40, page('tickets')));
     frames[`tree-40-${lang}`] = plain(busy.render(40, lang, 40, page('tree')));

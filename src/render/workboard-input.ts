@@ -1,7 +1,7 @@
 /** Main-tab routing. It mutates nothing: the owner's micro-actions on a job leave as actions (`job-actions.ts`) for the panel to run. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
-import type { OverlayState } from './monitor-state.js';
+import { copyControlTab, controlRoleItem, controlRoleOf, harnessFold, initialControlView, type OverlayState } from './monitor-state.js';
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
@@ -14,10 +14,8 @@ import { join } from 'node:path';
 import { tryInput } from './try-input.js';
 import { openJobAction } from './job-actions.js';
 import { controlShown, mainTabOf, mainTabs, type MainTab } from './main-tabs.js';
-import { controlNavigation, controlRoleItem, controlRoleOf, storeControlNavigation } from './control-navigation.js';
-import { controlFolded } from './control-page.js';
 import { expInput } from './exp-view.js';
-import { harnessFold, harnessId, restoreId } from './harness-page.js';
+import { harnessId, restoreId } from './harness-page.js';
 
 const clickKind = (input: WorkbenchInput, ctx: MonitorContext) => input.type === 'mouse' && input.button === 'left'
   ? ctx.frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : undefined;
@@ -55,9 +53,8 @@ export function harnessAddInput(state: MonitorState, add: Extract<OverlayState, 
 }
 
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
-  let next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
-  let controlBase: MonitorState | undefined;
-  const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: controlBase ? storeControlNavigation(controlBase, next) : next, close: false, action });
+  let next = { ...state, control: copyControlTab(state.control), tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
+  const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
   const frame = ctx.frame,
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
@@ -65,7 +62,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const main = next.focus === 'agents', classic = next.panelLayout !== 'split';
   const inspector = next.focus === 'details';
   const goTab = (tab: MainTab = 'home') => {
-    next.controlPresetNotice = undefined;
+    next.control.notice = undefined;
     const keepingProject = next.mainTab === 'control' || tab === 'control';
     next.mainTab = tab;
     if (tab === 'home' || next.trySelection && state.mainTab === 'home') next.trySelection = undefined;
@@ -111,8 +108,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const useProject = (root?: string) => {
     if (root === next.projectRoot) return;
     next.projectRoot = root;
-    next.controlPresetNotice = undefined;
-    next.controlNav = undefined;
+    next.control.notice = undefined;
+    next.control.roles = initialControlView('roles');
     next.trySelection = undefined;
     // Esc goes back to the list only from a hub opened out of it, not from one stepped to with `[` and `]`.
     next.projectBack = undefined;
@@ -195,7 +192,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const control = controlShown(next);
   const harnessKey = input.type === 'key' && input.text === 'h';
   if (control && (harnessKey || tab === 'control-roles' || tab === 'control-harnesses')) {
-    next.controlHarnesses = harnessKey ? !next.controlHarnesses : tab === 'control-harnesses';
+    next.control.subTab = (harnessKey ? next.control.subTab === 'roles' : tab === 'control-harnesses') ? 'harnesses' : 'roles';
+    next.control.notice = undefined;
     return result();
   }
   const tabs = mainTabs(next), clicked = tabs.find(({ id }) => tab === `board-${id}`);
@@ -222,34 +220,33 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     cycleProject(key === 'project-next' ? 1 : -1);
     return result();
   }
-  if (control) {
-    controlBase = next;
-    next = controlNavigation(next);
-  }
   if (control || (main && next.mainTab === 'project')) {
-    const folds = () => control ? controlFolded(next) : projectFoldedSet(next);
+    const view = control ? next.control[next.control.subTab] : undefined, nav = view?.nav;
+    const cursor = nav ? nav.cursor : next.projectCursor;
+    const select = (item?: string) => { if (nav) nav.cursor = item; else next.projectCursor = item; };
     const toggleFold = (id: string) => {
-      const folded = new Set(folds());
+      const folded = new Set(view?.folded ?? projectFoldedSet(next));
       if (!folded.delete(id)) folded.add(id);
-      next.projectFolded = folded;
+      if (view) view.folded = folded;
+      else next.projectFolded = folded;
     };
     // A hub entry may span two rows (the bar); the cursor visits it once.
     const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
-      at = rows.findIndex((r) => r.item === next.projectCursor);
-    const harnesses = control && next.controlHarnesses;
+      at = rows.findIndex((r) => r.item === cursor);
+    const harnesses = control && next.control.subTab === 'harnesses';
     const switchAction = (row: typeof rows[number] | undefined, remove = false): MonitorOutcome['action'] => {
       const id = harnessId(row?.item);
       if (id && row?.harnessOff !== undefined && (!remove || !row.harnessOff))
         return { type: 'harness-switch', id, off: !row.harnessOff };
     };
-    const openChain = (role: RoleFact, at = 0) => {
-      next.projectCursor = controlRoleItem(role.role);
-      next.splitFocus = undefined;
-      next.overlay = { kind: 'control-chain', role, at, mode: { kind: 'places' } };
-      return result();
-    };
-    if (control && !harnesses) {
-      if (key !== 'escape') next.controlPresetNotice = undefined;
+    if (nav && !harnesses) {
+      const openChain = (role: RoleFact, at = 0) => {
+        nav.cursor = controlRoleItem(role.role);
+        nav.split.focus = 'list';
+        next.overlay = { kind: 'control-chain', role, at, mode: { kind: 'places' } };
+        return result();
+      };
+      if (key !== 'escape') next.control.notice = undefined;
       const rowFact = (item?: string) => rows.find((r) => r.item === controlRoleItem(controlRoleOf(item) ?? ''))?.roleFact;
       if (input.type === 'mouse' && input.button === 'left') {
         const pane = frame?.panes.find((p) => p.id === 'preview'), list = frame?.panes.find((p) => p.id === 'agents');
@@ -260,10 +257,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (role && index !== undefined) {
           if (tab !== 'control-model') return openChain(role, Number(index));
           next = openQuickModel(next, role, Number(index), ctx);
-          next.projectCursor = controlRoleItem(role.role);
+          nav.cursor = controlRoleItem(role.role);
           return result();
         }
-        if (!tab && role && listItem === next.projectCursor) return openChain(role);
+        if (!tab && role && listItem === cursor) return openChain(role);
       }
       if (tab === 'control-open-file' && rows[at]?.files) return result({ type: 'open-files', files: rows[at]!.files! });
       const clickedRole = input.type === 'mouse' && input.button === 'left'
@@ -281,8 +278,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           return result({ type: 'role-edit', role: fact.role, index: 0, op: 'preset',
             step: op.endsWith('prev') ? -1 : 1, revision: fact.revision });
         if ((op === 'preset-list' && fact.presets?.length) || op === 'preset-copy' || op === 'preset-empty' || ((op === 'preset-rename' || op === 'preset-delete') && fact.preset)) {
-          next.projectCursor = controlRoleItem(fact.role);
-          next.splitFocus = undefined;
+          nav.cursor = controlRoleItem(fact.role);
+          nav.split.focus = 'list';
           next.overlay = { kind: 'control-preset', sheet: op === 'preset-list' ? { mode: 'list', role: fact, text: '', at: 0 }
             : op === 'preset-delete' ? { mode: 'delete', role: fact }
               : { mode: op === 'preset-copy' ? 'copy' : op === 'preset-empty' ? 'empty' : 'rename', role: fact, text: '' } };
@@ -317,9 +314,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         // Project can still be rendering the previous root while a switch is loading.
         if (selectedRoot && frame?.projectDisplayRoot && frame.projectDisplayRoot !== selectedRoot) return;
         goTab('control');
-        next.controlHarnesses = false;
-        next.controlNav = { ...next.controlNav, projectCursor: controlRoleItem(role), projectScroll: 0,
-          splitFocus: undefined, splitList: undefined, splitSub: undefined, boardRevealed: undefined };
+        next.control.subTab = 'roles';
+        const roles = next.control.roles.nav;
+        next.control.roles = { ...next.control.roles, nav: { ...roles, cursor: controlRoleItem(role), scroll: 0,
+          revealed: undefined, split: { ...roles.split, focus: 'list', listCursor: undefined, previewCursor: undefined } } };
       } else if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
@@ -330,19 +328,21 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     };
     // The Split layout has its own list and preview; what it does not do is Classic's, below.
     if (!classic && frame?.panes.some((p) => p.id === 'preview')) {
-      const out = splitProjectInput(next, input, key, ctx, result, () => result(activate()));
+      const out = splitProjectInput(next, nav, input, key, ctx, result, () => result(activate()));
       if (out) return out;
     }
     if (input.type === 'mouse') {
       const pane = frame?.panes.find((p) => p.id === 'agents');
       if (input.button !== 'left') {
         const page = Math.max(1, pane?.height ?? 1), max = Math.max(0, (pane?.contentLength ?? 0) - page);
-        next.projectScroll = Math.max(0, Math.min(max, (next.projectScroll ?? 0) + (input.button === 'wheel-down' ? 3 : -3)));
+        const scroll = Math.max(0, Math.min(max, (nav?.scroll ?? next.projectScroll ?? 0) + (input.button === 'wheel-down' ? 3 : -3)));
+        if (nav) nav.scroll = scroll;
+        else next.projectScroll = scroll;
       } else {
         const row = pane && monitorRowAt(pane, input.x, input.y);
         if (row?.item) {
-          const again = row.item === next.projectCursor;
-          next.projectCursor = row.item;
+          const again = row.item === cursor;
+          select(row.item);
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
           return result(again || /^project:(page:|list:|switch$|try$|wait:\d+$)/.test(row.item) ? activate(row) : undefined);
         }
@@ -356,7 +356,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     if (['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
       const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
-      next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
+      select(rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item);
       return result();
     }
     if (!control && classic && projectPageOf(next) === 'progress') {

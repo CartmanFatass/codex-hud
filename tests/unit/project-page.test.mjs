@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
-import { projectFixture, projectFrames, plain, onPage, PAGES, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
+import { projectFixture, projectFrames, plain, onPage, onControl, PAGES, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
 import { progressSegments } from '../../dist/render/project-view.js';
 import { renderWorkCard } from '../../dist/render/work-card.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
@@ -188,22 +188,22 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general {2}pro$/m);
   assert.match(text, /^▸ Files ─+ keys 3\/5 · browser ✓$/m);
   assert.doesNotMatch(text, /synthetic\/model|project-agent\.md|▸ agents/);
-  frame.state.controlNav.projectCursor = 'project:fold:healthy';
+  frame.state.control.roles.nav.cursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^Healthy ─+ 6$/m);
   assert.match(plain(frame).join('\n'), /imp → synthetic\/model/);
-  frame.state.controlNav.projectCursor = 'project:fold:files';
+  frame.state.control.roles.nav.cursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ agents/);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
-  frame.state.controlNav.projectCursor = 'project:fold:agents';
+  frame.state.control.roles.nav.cursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
   for (const name of ['user-agent.md', 'project-agent.md', 'codex-agent.toml'])
     assert.match(plain(frame).join('\n'), new RegExp(name));
-  frame.state.controlNav.projectCursor = 'project:fold:agents';
+  frame.state.control.roles.nav.cursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
-  frame.state.controlNav.projectCursor = 'project:fold:healthy';
+  frame.state.control.roles.nav.cursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 6$/m, 'a second Enter folds the roles again');
 });
@@ -318,12 +318,12 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
     { env, calls } = editorHerdr(f);
   // Files open from the hub's Waiting items (with o: Enter reads the item on its page) and from every page (the to-try count too: Enter filters there).
   const found = [undefined, 'progress', 'tree', 'docs', 'control'].flatMap((page) => {
-    const frame = f.render(80, 'en', page === 'control' ? { ...initialMonitorState(), mainTab: 'control', controlNav: { projectFolded: new Set(['agents']) } } : page, 80);
+    const frame = f.render(80, 'en', page === 'control' ? onControl({ folded: new Set(['agents']) }) : page, 80);
     return frame.workboard.rows.filter((r) => r.files).map((row) => ({ frame, row }));
   });
   assert.ok(found.length > 20);
   for (const { frame, row } of found) {
-    if (frame.state.mainTab === 'control') frame.state.controlNav.projectCursor = row.item;
+    if (frame.state.mainTab === 'control') frame.state.control.roles.nav.cursor = row.item;
     else frame.state.projectCursor = row.item;
     for (const key of /^project:(wait:|try$|role:[^:]+$)/.test(row.item) ? ['open-session'] : ['enter', 'open-session'])
       assert.deepEqual(press(frame, key).action, { type: 'open-files', files: row.files });

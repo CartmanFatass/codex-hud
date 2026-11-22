@@ -165,7 +165,7 @@ test('resolved bare pi models open and rank their provider; ambiguous bare model
 
   const data = { ...snapshot, roles: [role] };
   const draw = (state) => f.render(40, 'en', state, 24, data);
-  const chain = draw(onControl({ projectCursor: 'project:role:imp' }, { overlay: chainOverlay(role) }));
+  const chain = draw(onControl({ cursor: 'project:role:imp' }, { overlay: chainOverlay(role) }));
   const browse = draw(send(chain, 'place-model').state);
   const input = modelInput(browse.state.overlay), pick = pickOf(data, input), { rows } = pickView(pick, input);
   assert.deepEqual([...pick.inUse], [['openai', 1], ['arena', 1]]);
@@ -227,7 +227,7 @@ test('picker mouse toggles other providers, ignores headers, sets in one click a
     const closed = click(frame, cancel.x, cancel.y);
     assert.equal(closed.action, undefined);
     assert.equal(closed.state.overlay.mode.kind, 'places');
-    assert.deepEqual(closed.state.controlNav, frame.state.controlNav);
+    assert.deepEqual(closed.state.control.roles, frame.state.control.roles);
     const currentY = rowY(frame, /› ◉ xai\/grok-4.7/);
     const set = modelInputEvent(modelInput(frame.state.overlay), { type: 'mouse', button: 'left', x: 3, y: currentY }, { frame });
     assert.deepEqual(set, { action: { type: 'model-picked', value: 'xai/grok-4.7' } });
@@ -293,7 +293,7 @@ test('the picker uses real collected preset chains, and locked and Flow places s
   f.put(join(f.hud, 'roles/reviewer.json'), { role: 'reviewer', can_continue: true, run: [pi('xai/other')], presets: [{ name: 'other', run: [pi('xai/other')] }] });
   f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW, pi: ['xai/current', 'openai/backup', 'xai/other'] });
   const data = await f.collector.collect('control', f.board, NOW);
-  const placeState = (role, i = 0, snapshot = data) => onControl({ projectCursor: `project:role:${role}` }, {
+  const placeState = (role, i = 0, snapshot = data) => onControl({ cursor: `project:role:${role}` }, {
     overlay: chainOverlay(snapshot.roles.find((r) => r.role === role), i),
   });
   const opened = f.render(40, 'en', placeState('imp', 1), 32, data);

@@ -53,7 +53,7 @@ function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiment
     if (out.action?.type === 'exp-save') {
       const saved = () => {
         expData = data();
-        frame = draw({ ...out.state, overlay: undefined, expPage: { ...out.state.expPage, notice: 'Saved' } }, expData);
+        frame = draw({ ...out.state, overlay: undefined, exp: { ...out.state.exp, notice: 'Saved' } }, expData);
         return out.action;
       };
       const pending = saveExpEdit(f.env.HUD_HOME, out.action.edit, NOW, f.env);
@@ -63,8 +63,8 @@ function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiment
   };
   const select = (id) => {
     press('home');
-    for (let n = 0; n < 20 && frame.state.expPage.cursor !== id; n++) press('down');
-    assert.equal(frame.state.expPage.cursor, id);
+    for (let n = 0; n < 20 && frame.state.exp.cursor !== id; n++) press('down');
+    assert.equal(frame.state.exp.cursor, id);
   };
   const type = (s) => {
     for (const input of decoder.push(Buffer.from(s))) press(input);
@@ -77,6 +77,23 @@ function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiment
   };
   return { press, select, type, edit, frame: () => frame };
 }
+
+test('EXP returns to its detail and cursor after visiting Control in either panel layout', (t) => {
+  const f = fixture(t), expData = readExpData(f.env.HUD_HOME, f.env, NOW);
+  for (const panelLayout of ['classic', 'split']) {
+    const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout,
+      exp: { detail: 'openai-api', cursor: 'calibration', scroll: 0 } };
+    const before = draw(state, expData);
+    const control = draw(send(before, key('shift-tab')).state, expData);
+    assert.equal(control.state.mainTab, 'control');
+    const after = draw(send(control, key('tab')).state, expData);
+    assert.deepEqual(after.state.exp, before.state.exp);
+    assert.deepEqual(after.lines, before.lines);
+    const edit = send(after, key('enter'));
+    assert.equal(edit.state.overlay?.kind, 'exp-edit');
+    assert.equal(edit.state.overlay.entryId, 'calibration');
+  }
+});
 
 test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP but digits do not', (t) => {
   const f = fixture(t);
@@ -331,7 +348,7 @@ test('EXP options show every profile with a count and separate cursor/current ma
     setLanguage(lang);
     const en = lang === 'en';
     for (const panelLayout of ['classic', 'split']) {
-      const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout, expPage: { cursor: 'binding' } };
+      const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout, exp: { cursor: 'binding', scroll: 0 } };
       const opened = send(draw(state, expData), key('enter'));
       assert.equal(opened.action, undefined);
       const sheet = draw(opened.state, expData, 16);
@@ -355,7 +372,7 @@ test('EXP options show every profile with a count and separate cursor/current ma
   }
 
   const crowded = { ...expData, profiles: Array.from({ length: 20 }, (_, i) => ({ home: `/synthetic/profile-${i}`, name: `profile-${i}` })) };
-  const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, expPage: { cursor: 'binding' } };
+  const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, exp: { cursor: 'binding', scroll: 0 } };
   const sheet = draw(send(draw(state, crowded), key('enter')).state, crowded, 16);
   const wrapped = draw(send(sheet, key('up')).state, crowded, 16);
   assert.match(plain(wrapped), /^Codex 配置 ─+ 21$/m);

@@ -5,7 +5,7 @@ import { qualifiedPiProvider } from '../roles/roster.js';
 import { placeItem, placeModels, type ModelLists, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import type { ModelPickerState, OverlayState } from './monitor-state.js';
+import type { ControlTabState, ModelPickerState, OverlayState } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import { t } from './i18n.js';
 
@@ -55,10 +55,11 @@ export function rememberModel(state: MonitorState, before: MonitorState, savedRo
   const old = role.editor?.places[input.index]?.raw.model;
   if (old === model) return;
   // The first write to a shipped chain can change its path, and editing a legacy chain can change its displayed preset.
-  state.modelPrevious = { ...state.modelPrevious, [previousKey(savedRole, input.index)]: old ? place.piModel?.current ?? old : '' };
+  state.control = { ...state.control, modelPrevious: { ...state.control.modelPrevious,
+    [previousKey(savedRole, input.index)]: old ? place.piModel?.current ?? old : '' } };
 }
 
-export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput, previous?: MonitorState['modelPrevious']): ModelPick | undefined {
+export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput, previous?: ControlTabState['modelPrevious']): ModelPick | undefined {
   const role = data?.roles.find((r) => r.role === input.role), place = input.place;
   if (!data || !role || !place || role.source === 'project' || (place.harness === 'bro' && place.label !== 'aistudio')) return;
   const common = { place, lists: data.models, presets: role.presets, preset: role.preset, previous: previous?.[previousKey(role, input.index)] };

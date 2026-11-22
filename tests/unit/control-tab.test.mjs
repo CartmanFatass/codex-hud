@@ -51,7 +51,11 @@ test('Control is the third whole tab at 40 columns, with arrows, Tab, click and 
     const project = draw(send(ctrl, 'left').state);
     assert.equal(project.state.projectCursor, 'project:page:docs');
     const again = draw(send(project, tabClick(project, 'control')).state);
-    assert.deepEqual(again.state.controlNav, ctrl.state.controlNav);
+    assert.deepEqual(again.state.control.roles, ctrl.state.control.roles);
+    const saved = draw({ ...again.state, control: { ...again.state.control, notice: { kind: 'preset', role: 'imp', name: 'daily' } } });
+    const switched = send(saved, { type: 'key', key: 'left', text: 'h' });
+    assert.equal(switched.state.control.subTab, 'harnesses');
+    assert.equal(switched.state.control.notice, undefined);
   }
 });
 
@@ -94,7 +98,7 @@ test('Project hubs have no Control row; Inbox alert links to its role on the sam
     assert.equal(next.action, undefined);
     assert.equal(next.state.mainTab, 'control');
     assert.equal(next.state.projectRoot, root);
-    assert.equal(draw(next.state).state.controlNav.projectCursor, 'project:role:pro');
+    assert.equal(draw(next.state).state.control.roles.nav.cursor, 'project:role:pro');
     assert.equal(send(draw(state, PROJECTS[0].root), 'enter').state.mainTab, 'project', 'no stale-root alert opens on the new root');
   }
 });
@@ -109,7 +113,7 @@ test('legacy Project/control continuation returns to the selected role on Contro
     assert.equal(place.state.mainTab, 'control');
     assert.equal(place.state.projectPage, undefined);
     assert.equal(place.state.projectRoot, PROJECTS[1].root);
-    assert.equal(f.render(40, 'en', place.state, 36, data).state.controlNav.projectCursor, 'project:role:reviewer');
+    assert.equal(f.render(40, 'en', place.state, 36, data).state.control.roles.nav.cursor, 'project:role:reviewer');
   }
 });
 
@@ -133,7 +137,7 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
   for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
     f.put(join(f.hud, 'harnesses.json'), { disabled: ['cli:grok', 'pi:xai'] });
     const data = await f.collector.collect('control', f.board, NOW);
-    const roles = { projectCursor: 'project:role:imp' };
+    const roles = { cursor: 'project:role:imp' };
     const draw = (state) => {
       const frame = f.render(40, lang, state, 38, data, true, 'unicode', 'none', { projectName: 'harbor-api', experiments: true });
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
@@ -144,7 +148,7 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     const classic = panelLayout === 'classic', zh = lang === 'zh';
     let frame = draw(send(draw(onControl(roles, { panelLayout, experiments: true })), h).state);
     assert.equal(frame.state.mainTab, 'control');
-    assert.equal(frame.state.controlHarnesses, true);
+    assert.equal(frame.state.control.subTab, 'harnesses');
     assert.match(caption(frame), zh ? /本机 · 所有项目/ : /This machine · all projects/);
     assert.match(caption(frame), /^  ◉ pi$/m);
     assert.match(caption(frame), /^  ◉ jev-ask  chatgpt gemini$/m);
@@ -163,7 +167,7 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
       assert.equal(plain(frame)[preview.y + 1], '  ⊘ pi:xai');
       const clickPreview = send(frame, { type: 'mouse', button: 'left', x: 4, y: preview.y });
       assert.equal(clickPreview.action, undefined);
-      assert.equal(clickPreview.state.controlHarnessNav.projectCursor, 'project:fold:harness-off');
+      assert.equal(clickPreview.state.control.harnesses.nav.cursor, 'project:fold:harness-off');
     }
     frame = draw(send(frame, 'enter').state);
     assert.match(caption(frame), /⊘ cli:grok[\s\S]*⊘ pi:xai/);
@@ -180,16 +184,20 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     assert.equal(send(frame, 'enter').action, undefined);
     // Cancel restores the list. Backspacing and filtering never start discovery or a write.
     frame = draw(send(frame, 'escape').state);
-    const cursor = frame.state.controlHarnessNav.projectCursor;
+    const cursor = frame.state.control.harnesses.nav.cursor;
     frame = draw(send(frame, 'place-add').state);
     for (const input of decoder.push(Buffer.from('xaz\x7fi'))) frame = draw(send(frame, input).state);
     assert.equal(frame.state.overlay.text, 'xai');
     assert.deepEqual(send(frame, 'enter').action, { type: 'harness-switch', id: 'pi:xai', off: false });
     frame = draw(send(frame, 'escape').state);
-    assert.equal(frame.state.controlHarnessNav.projectCursor, cursor);
+    assert.equal(frame.state.control.harnesses.nav.cursor, cursor);
+    const { control } = frame.state;
+    frame = draw({ ...frame.state, control: { ...control, notice: { kind: 'harness', id: 'pi:xai', off: false } } });
     frame = draw(send(frame, click(frame, 'control-roles')).state);
+    assert.equal(frame.state.control.notice, undefined);
     assert.match(caption(frame), /imp \[daily\] → agy/);
     frame = draw(send(frame, click(frame, 'control-harnesses')).state);
+    assert.deepEqual(frame.state.control.harnesses, control.harnesses);
     frame = draw(send(frame, 'home').state);
     const pane = frame.panes.find((p) => p.id === 'agents');
     const item = pane.rows.findIndex((r) => r.item === 'control:harness:pi');
@@ -251,7 +259,7 @@ test('quick model role, picker and saved notice fit in both layouts and language
 test('project role at 40 columns shows source and lock, with open but no preset controls', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
   for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
-    const state = onControl({ projectCursor: 'project:role:frontend' }, { panelLayout,
+    const state = onControl({ cursor: 'project:role:frontend' }, { panelLayout,
       overlay: chainOverlay(data.roles.find((r) => r.role === 'frontend')) });
     const frame = f.render(40, lang, state, 34, data);
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
@@ -283,7 +291,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
       return frame;
     };
     const decoder = new WorkbenchInputDecoder('workboard');
-    let frame = draw(onControl({ projectCursor: cursor }, { panelLayout: layout }));
+    let frame = draw(onControl({ cursor }, { panelLayout: layout }));
     const text = () => plain(frame).join('\n');
     const read = () => JSON.parse(fs.readFileSync(file, 'utf8'));
     const apply = (out) => {
@@ -322,7 +330,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     assert.equal(frame.state.overlay.sheet.text, 'qjk7');
     assert.equal(fs.readFileSync(file, 'utf8'), before);
     keys('\x03');
-    assert.equal(frame.state.controlNav.projectCursor, cursor);
+    assert.equal(frame.state.control.roles.nav.cursor, cursor);
     keys('pG\x1b[F\x7f\x1b[F\r'); // printable G is text; Home/End escapes are navigation.
     assert.equal(read().active_preset, null);
     keys('pdailY\r');
@@ -349,7 +357,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     assert.equal(read().active_preset, null);
     assert.deepEqual(read().run, run);
     assert.deepEqual(read().presets, original.presets);
-    assert.equal(frame.state.controlNav.projectCursor, cursor);
+    assert.equal(frame.state.control.roles.nav.cursor, cursor);
     keys('pdefault\r');
     assert.equal(read().active_preset, 'default');
   }

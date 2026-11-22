@@ -6,8 +6,8 @@ import { answerJobQuestion } from './collectors/panel-actions.js';
 import { readBackupSkills } from './collectors/backup-skills.js';
 import { readExpData, saveExpEdit } from './collectors/exp-store.js';
 import { controlShown, expShown } from './render/main-tabs.js';
-import { controlRoleItem } from './render/control-navigation.js';
-import { HARNESS_OFF, harnessItem } from './render/harness-page.js';
+import { controlRoleItem } from './render/monitor-state.js';
+import { harnessItem } from './render/harness-page.js';
 import { HarnessSwitchError, setHarnessDisabled } from './roles/harness-switches.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
@@ -936,7 +936,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   };
   let expSaving = false;
   const processInput = (inputs: WorkbenchInput[]) => {
-    if (state.controlHarnessNotice && inputs.length) state = { ...state, controlHarnessNotice: undefined };
     if (boardNotice && inputs.length) boardNotice = '';
     if (roleNotice && inputs.length) {
       if (error === roleNotice) error = settingsError || null;
@@ -1079,9 +1078,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (result.action?.type === 'exp-save' && expShown(state)) {
         const saved = () => {
           expData = readExpData(jobPipeline.home);
-          state = { ...state, overlay: undefined, expPage: { ...state.expPage, notice: 'Saved' } };
+          state = { ...state, overlay: undefined, exp: { ...state.exp, notice: 'Saved' } };
         };
-        const failed = () => { state.expPage = { ...state.expPage, notice: 'Could not save EXP setting' }; };
+        const failed = () => { state.exp = { ...state.exp, notice: 'Could not save EXP setting' }; };
         try {
           const pending = saveExpEdit(jobPipeline.home, result.action.edit, Date.now());
           if (pending) {
@@ -1100,11 +1099,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const visit = visits.visit(shownRoot());
         try {
           setHarnessDisabled(jobPipeline.home, id, off);
-          const nav = state.controlHarnessNav;
-          state = { ...state, overlay: undefined, controlHarnessNotice: { id, off }, controlHarnessNav: {
-            ...nav, projectCursor: harnessItem(id), boardRevealed: undefined, splitFocus: undefined,
-            projectFolded: off ? new Set() : nav?.projectFolded,
-          } };
+          const harnesses = state.control.harnesses, nav = harnesses.nav;
+          state = { ...state, overlay: undefined, control: { ...state.control, notice: { kind: 'harness', id, off }, harnesses: {
+            folded: off ? new Set() : harnesses.folded,
+            nav: { ...nav, cursor: harnessItem(id), revealed: undefined, split: { ...nav.split, focus: 'list' } },
+          } } };
           notice('');
         } catch (err) {
           notice(t(err instanceof HarnessSwitchError ? err.message : 'Could not save harness switch'));
@@ -1114,7 +1113,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (result.action?.type === 'role-edit') {
         const { type: _type, ...edit } = result.action;
         const done = editPlaces(jobPipeline.home, shownRoot(), process.env, edit);
-        if (done.ok && done.preset !== undefined) state.controlPresetNotice = { role: edit.role, name: done.preset };
+        if (done.ok && done.preset !== undefined)
+          state.control = { ...state.control, notice: { kind: 'preset', role: edit.role, name: done.preset } };
         // Read the roles again now so a moved place or new assignment is reflected immediately.
         const visit = visits.visit(shownRoot());
         if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
@@ -1127,9 +1127,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const chainSave = modelIndex === undefined && state.overlay?.kind === 'control-chain' ? state.overlay : undefined;
         if (modelIndex === undefined && done.ok) {
           if (chainSave) state = finishChain(state);
-          state = { ...state, overlay: undefined,
-            controlPresetNotice: done.preset === undefined ? undefined : { role: edit.role, name: done.preset },
-            controlNav: { ...state.controlNav, projectCursor: controlRoleItem(edit.role), boardRevealed: undefined } };
+          const roles = state.control.roles;
+          state = { ...state, overlay: undefined, control: { ...state.control,
+            notice: done.preset === undefined ? undefined : { kind: 'preset', role: edit.role, name: done.preset },
+            roles: { ...roles, nav: { ...roles.nav, cursor: controlRoleItem(edit.role), revealed: undefined } },
+          } };
         } else if (chainSave) {
           state = { ...state, overlay: { ...chainSave, error: done.message ?? 'could not save the change' } };
         }
@@ -1142,8 +1144,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           if (role) rememberModel(state, previous, role, edit.run[modelIndex]?.model);
           const place = role?.places[modelIndex];
           const model = place ? place.piModel?.current ?? effectiveModel(place) : edit.run[modelIndex]?.model ?? null;
-          state.controlPresetNotice = { role: edit.role, index: modelIndex, model };
-          state.controlNav = { ...state.controlNav, boardRevealed: undefined };
+          const roles = state.control.roles;
+          state.control = { ...state.control, notice: { kind: 'model', role: edit.role, index: modelIndex, model },
+            roles: { ...roles, nav: { ...roles.nav, revealed: undefined } } };
         }
       }
       if (result.action?.type === 'brief-toggle') {

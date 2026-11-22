@@ -10,13 +10,11 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import type { OverlayState } from './monitor-state.js';
+import { copyControlTab, initialControlTab, type ControlTabState, type ExpTabState, type OverlayState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
 import { mainTabOf, type MainTab } from './main-tabs.js';
-import type { ControlNavigation } from './control-navigation.js';
-import type { ExpPage } from './exp-view.js';
 import type { ExpData, ExpEdit } from '../exp-config.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
@@ -51,13 +49,9 @@ export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
   mainTab?: MainTab;
   experiments?: boolean;
-  expPage?: ExpPage;
-  controlNav?: ControlNavigation;
-  controlHarnesses?: boolean;
-  controlHarnessNav?: ControlNavigation;
-  controlHarnessNotice?: { id: string; off: boolean };
+  exp: ExpTabState;
+  control: ControlTabState;
   overlay?: OverlayState;
-  controlPresetNotice?: { role: string; name: string | null } | { role: string; index: number; model: string | null };
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -77,7 +71,6 @@ export interface MonitorState {
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
-  modelPrevious?: Record<string, string>;
   homeTarget?: WorkTarget;
   homeScroll?: number;
   boardExpanded?: ReadonlySet<string>;
@@ -261,6 +254,8 @@ export interface MonitorOutcome {
 export function initialMonitorState(): MonitorState {
   return {
     mainTab: 'home',
+    control: initialControlTab(),
+    exp: { scroll: 0 },
     tree: initialPanelState(),
     focus: 'agents',
     modes: { agents: 'open', changes: 'closed', details: 'closed' },
@@ -283,7 +278,8 @@ export function reconcileMonitor(
   _tree: SubagentTree,
   _nowMs?: number
 ): MonitorState {
-  return { ...state, mainTab: mainTabOf(state), expPage: state.experiments ? state.expPage : undefined,
+  return { ...state, mainTab: mainTabOf(state), control: copyControlTab(state.control),
+    exp: state.experiments ? { ...state.exp } : { scroll: 0 },
     overlay: !state.experiments && state.overlay?.kind === 'exp-edit' ? undefined : state.overlay,
     tree: { ...state.tree }, scroll: { ...state.scroll }, modes: { ...state.modes } };
 }

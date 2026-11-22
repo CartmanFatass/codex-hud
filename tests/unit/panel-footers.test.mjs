@@ -61,7 +61,7 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
   for (const panelLayout of ['split', 'classic']) for (const [i, lang] of ['en', 'zh'].entries()) for (const width of [40, 56, 80, 120]) {
     const layout = { panelLayout }, state = split(layout), draw = (s, snapshot, extra) => f.render(width, lang, 50, s, snapshot, extra);
     const page = (p, extra = {}) => onPage(p, { ...layout, ...extra });
-    const harnesses = onControl(undefined, { ...layout, controlHarnesses: true });
+    const harnesses = onControl(undefined, layout, { subTab: 'harnesses' });
     const exp = { ...state, mainTab: 'exp', experiments: true };
     const settings = () => {
       const old = setLanguage(lang);
@@ -79,8 +79,8 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
       [`${panelLayout} Project hub`]: draw(page(undefined), f.control),
       [`${panelLayout} Progress`]: draw(page('progress'), f.rich),
       Tickets: draw(page('tickets')), 'Working tree': draw(page('tree')), Docs: draw(page('docs')),
-      Roles: draw(onControl({ projectCursor: 'project:role:imp' }, layout), f.control),
-      Chain: draw(onControl({ projectCursor: 'project:role:imp' }, { ...layout, overlay: chainOverlay(role) }), f.control),
+      Roles: draw(onControl({ cursor: 'project:role:imp' }, layout), f.control),
+      Chain: draw(onControl({ cursor: 'project:role:imp' }, { ...layout, overlay: chainOverlay(role) }), f.control),
       Harnesses: draw(harnesses, harnessData),
       Inspector: draw({ ...state, focus: 'details', boardInspect: target(running) }),
       Settings: settings(), EXP: draw(exp, f.data, { expData }),
@@ -122,7 +122,7 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
     for (const modal of [draw({ ...state, filterOpen: true }),
       draw({ ...harnesses, overlay: { kind: 'control-harness-add', text: '' } }, harnessData),
       draw(onControl(undefined, { ...layout, overlay: { kind: 'control-preset', sheet: { mode: 'list', role, text: '', at: 0 } } }), f.control),
-      draw({ ...exp, expPage: { cursor: 'binding' }, overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }, f.data, { expData })]) {
+      draw({ ...exp, exp: { ...exp.exp, cursor: 'binding' }, overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }, f.data, { expData })]) {
       assert.ok(!read(modal).includes(help), 'keyboard-owning modal');
       assert.doesNotMatch(read(modal), /↑↓|\besc\b/);
     }

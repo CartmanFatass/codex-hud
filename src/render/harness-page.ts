@@ -1,6 +1,7 @@
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { HarnessSwitchFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
+import { HARNESS_OFF, harnessFold, type ControlViewState } from './monitor-state.js';
 import { projectSplitScene, type Shown } from './split-project.js';
 import { boardRow, footerLayout, kvRows, mark, section, type FooterHints } from './workboard-rows.js';
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
@@ -10,8 +11,6 @@ import { presetTag } from './control-view.js';
 
 const GROUPS = [['runner', 'Runner'], ['cli', 'CLI agents'], ['browser', 'Browser tools'], ['provider', 'Pi providers']] as const;
 const muted = theme.board.muted;
-export const HARNESS_OFF = 'harness-off';
-export const harnessFold = `project:fold:${HARNESS_OFF}`;
 export const harnessItem = (id: string) => `control:harness:${id}`;
 export const harnessId = (item?: string) => /^control:harness:(.+)$/.exec(item ?? '')?.[1];
 export const restoreId = (item?: string) => /^control:restore:(.+)$/.exec(item ?? '')?.[1];
@@ -19,7 +18,7 @@ export const restoreId = (item?: string) => /^control:restore:(.+)$/.exec(item ?
 const scope = () => t('This machine · all projects');
 const presence = (h: HarnessSwitchFact) => t(h.group === 'provider' ? h.present ? 'listed' : 'not seen' : h.present ? 'installed' : 'not installed');
 const target = (id: string | null) => id ?? t('none');
-const offFolded = (state: MonitorState) => state.projectFolded?.has(HARNESS_OFF) ?? true;
+const offFolded = (view: ControlViewState) => view.folded.has(HARNESS_OFF);
 const offSwitches = (data: ProjectSnapshot) => (data.harnessSwitches ?? []).filter((h) => h.off).sort((a, b) => a.id.localeCompare(b.id));
 
 function switchText(h: HarnessSwitchFact, width: number, showPresence = false): string {
@@ -44,10 +43,10 @@ export function harnessErrorRow(data: ProjectSnapshot, width: number): MonitorRo
   }] : [];
 }
 
-export function harnessRows(data: ProjectSnapshot, state: MonitorState, width: number): MonitorRow[] {
+export function harnessRows(data: ProjectSnapshot, view: ControlViewState, width: number): MonitorRow[] {
   if (data.harnessSwitchError) return harnessErrorRow(data, width);
   const harnesses = data.harnessSwitches ?? [];
-  const off = offSwitches(data), folded = offFolded(state);
+  const off = offSwitches(data), folded = offFolded(view);
   return [
     ...GROUPS.flatMap(([group, label]) => {
       const enabled = harnesses.filter((h) => h.group === group && !h.off);
@@ -93,18 +92,18 @@ export function harnessAddRows(data: ProjectSnapshot, state: MonitorState, width
 }
 
 export const addBackHints = { modal: ['type to filter', '⏎ restore', 'Esc back'] };
-export function harnessHints(data: ProjectSnapshot | undefined, state: MonitorState, item = state.projectCursor): string[] {
+export function harnessHints(data: ProjectSnapshot | undefined, view: ControlViewState, item = view.nav.cursor): string[] {
   const entry = data?.harnessSwitches?.find((h) => h.id === harnessId(item));
-  return [...(entry ? ['Space on/off'] : item === harnessFold ? [offFolded(state) ? '⏎ expand' : '⏎ fold']
+  return [...(entry ? ['Space on/off'] : item === harnessFold ? [offFolded(view) ? '⏎ expand' : '⏎ fold']
     : data?.harnessSwitchError ? ['⏎ open file'] : []),
     ...(data?.harnessSwitches?.some((h) => h.off) ? ['i add back'] : []),
     'h roles', ...(entry && !entry.off ? ['Del remove'] : []), 'r refresh'];
 }
 
 export function harnessScene(data: ProjectSnapshot, state: MonitorState, width: number, previewWidth = width) {
-  const list = harnessRows(data, state, width);
+  const view = state.control.harnesses, list = harnessRows(data, view, width);
   const preview = (item?: string): Shown => {
-    const hints = harnessHints(data, state, item);
+    const hints = harnessHints(data, view, item);
     const h = data.harnessSwitches?.find((h) => h.id === harnessId(item));
     if (h) return { label: monitorText(h.id), rows: harnessDetail(h, previewWidth), hints };
     if (item === harnessFold) {
@@ -114,7 +113,7 @@ export function harnessScene(data: ProjectSnapshot, state: MonitorState, width: 
     return { label: '', rows: [], hints };
   };
   const add = state.overlay?.kind === 'control-harness-add';
-  const scene = projectSplitScene(state, { list, preview, hints: harnessHints(data, state), start: list.find((r) => r.item)?.item },
+  const scene = projectSplitScene(view.nav, { list, preview, hints: harnessHints(data, view), start: list.find((r) => r.item)?.item },
     add ? 'harnesses|add' : 'harnesses');
   if (add) {
     scene.rule = { label: t('Add back'), right: scope() };

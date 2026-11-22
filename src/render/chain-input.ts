@@ -5,14 +5,13 @@ import { placeDestination, placeItem, placeModels, placeSwitch, previewDraft, re
   type DraftPlace, type ModelLists, type RoleFact } from '../roles/role-control.js';
 import { MODEL_ID_MAX } from '../roles/model-discovery.js';
 import { qualifiedPiProvider, type RolePlace } from '../roles/roster.js';
-import { controlRoleItem } from './control-navigation.js';
 import { glyph, modelButton, modelFieldRows, placeRows, presetName, presetTag, sourceLabel, withDestination } from './control-view.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { boardRow, kvRows, mark, section, type FooterHints } from './workboard-rows.js';
 import { modelInput, modelInputEvent } from './model-input.js';
-import type { ChainField as Field, ChainSheet as Sheet, OverlayState } from './monitor-state.js';
+import { controlRoleItem, type ChainField as Field, type ChainSheet as Sheet, type OverlayState } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 
@@ -42,8 +41,10 @@ const EMPTY = 'needs a place to save';
 export function finishChain(state: MonitorState): MonitorState {
   const chain = state.overlay;
   if (chain?.kind !== 'control-chain') return state;
-  return { ...state, overlay: undefined, controlNav: { ...state.controlNav,
-    projectCursor: controlRoleItem(chain.role.role), splitFocus: undefined, splitList: undefined, splitSub: undefined, boardRevealed: undefined } };
+  const roles = state.control.roles, nav = roles.nav;
+  return { ...state, overlay: undefined, control: { ...state.control, roles: { ...roles, nav: { ...nav,
+    cursor: controlRoleItem(chain.role.role), revealed: undefined,
+    split: { ...nav.split, focus: 'list', listCursor: undefined, previewCursor: undefined } } } } };
 }
 
 function fill(place: DraftPlace, field: 'model' | 'kind' | 'thinking' | 'effort', value?: string): DraftPlace {
@@ -131,7 +132,7 @@ export function chainInputKey(state: MonitorState, chain: ChainInput, input: Wor
   route: (state: MonitorState, input: WorkbenchInput, ctx: MonitorContext) => MonitorOutcome): MonitorOutcome {
   const { role, draft, mode } = chain;
   if (mode.kind === 'quick-model') return quickModelKey(state, chain, input, ctx);
-  if (state.controlPresetNotice && 'index' in state.controlPresetNotice) state = { ...state, controlPresetNotice: undefined };
+  if (state.control.notice?.kind === 'model') state = { ...state, control: { ...state.control, notice: undefined } };
   const sheet = mode.kind === 'sheet' ? mode : undefined;
   const choice = choiceOf(sheet);
   const run = draft?.run ?? role.editor?.places ?? [];

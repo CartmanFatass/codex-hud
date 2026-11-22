@@ -22,7 +22,7 @@ async function fixtures(t) {
   return { busy: await splitFixture(join(root, 'busy')), idle: await splitFixture(join(root, 'idle'), { idle: true }) };
 }
 const page = (p, extra) => split({ mainTab: 'project', projectPage: p, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
-const control = (projectCursor) => onControl({ projectCursor }, { panelLayout: 'split' });
+const control = (cursor) => onControl({ cursor }, { panelLayout: 'split' });
 /** One input against a frame, then the next frame from the state it left. */
 function driver(f, { width = 40, height = 40, data = f.data } = {}) {
   let frame = f.render(width, 'en', height, undefined, data);
@@ -209,22 +209,22 @@ test('Project list rows use the same Enter path for two clicks and the keyboard'
   for (const [p, item, sub] of [[undefined, 'project:fold:waiting', 'project:wait:0'], ['control', 'project:role:imp', 'project:role:imp:0']]) {
     const d = driver(busy, { data: busy.control, height: 24 });
     const at = (projectCursor) => p ? control(projectCursor) : page(p, { projectCursor });
-    const nav = () => p ? d.state.controlNav : d.state;
+    const cursor = () => p ? d.state.control.roles.nav.cursor : d.state.projectCursor;
     d.at(at(p ? 'project:fold:healthy' : undefined));
     const click = (id) => {
       const pane = d.pane('agents');
       d.run({ type: 'mouse', x: 4, y: pane.y + pane.rows.findIndex((r) => r.item === id) - pane.offset, button: 'left' });
     };
     click(item);
-    assert.equal(nav().projectCursor, item);
-    assert.equal(nav().splitFocus, undefined);
+    assert.equal(cursor(), item);
+    assert.equal(p ? d.state.control.roles.nav.split.focus : d.state.splitFocus ?? 'list', 'list');
     click(item);
     if (p) {
       assert.equal(d.state.overlay.at, 0);
-      assert.equal(nav().projectCursor, item);
+      assert.equal(cursor(), item);
     } else {
-      assert.equal(nav().splitFocus, 'preview');
-      assert.equal(nav().projectCursor, sub);
+      assert.equal(d.state.splitFocus, 'preview');
+      assert.equal(cursor(), sub);
     }
     const mouse = d.lines();
     d.at(at(item));
@@ -322,7 +322,7 @@ test('Progress page: one ledger list, the cursor slice explained underneath; y a
 test('Control plane: roles on top, the cursor role’s places below; Enter takes the place keys into them; c and C apply a preset from the list', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control }).at(control());
-  assert.match(d.state.controlNav.projectCursor ?? '', /^project:role:imp$/);
+  assert.match(d.state.control.roles.nav.cursor ?? '', /^project:role:imp$/);
   assert.match(rule(d), /^imp ─+$/);
   const preset = d.run('role-preset');
   assert.deepEqual([preset.action.type, preset.action.role, preset.action.op], ['role-edit', 'imp', 'preset']);
@@ -342,7 +342,7 @@ test('Control plane: roles on top, the cursor role’s places below; Enter takes
   assert.match(d.lines().join('\n'), /Discard edits\?/);
   d.run('enter');
   assert.equal(d.state.overlay, undefined);
-  assert.equal(d.state.controlNav.projectCursor, 'project:role:imp');
+  assert.equal(d.state.control.roles.nav.cursor, 'project:role:imp');
 });
 
 test('Tickets, Working tree and Docs: a row each, the whole text or the checklist underneath; Enter opens the file', async (t) => {

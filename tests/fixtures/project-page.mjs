@@ -164,7 +164,11 @@ export const MODEL_LISTS = {
 export const PROJECTS = [{ root: '/synthetic/demo-project', name: 'demo-project' }, { root: '/synthetic/second-project', name: 'second-project' }, { root: '/synthetic/third', name: 'third' }];
 /** A Project tab state: the hub, or one page of it. */
 export const onPage = (projectPage, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
-export const onControl = (controlNav, extra) => ({ ...initialMonitorState(), mainTab: 'control', controlNav, ...extra });
+export const onControl = ({ folded, ...nav } = {}, extra, controlPatch) => {
+  const state = initialMonitorState(), { control } = state;
+  const roles = { nav: { ...control.roles.nav, ...nav }, folded: folded ?? control.roles.folded };
+  return { ...state, mainTab: 'control', ...extra, control: { ...control, roles, ...controlPatch } };
+};
 export const chainOverlay = (role, at = 0) => ({ kind: 'control-chain', role, at, mode: { kind: 'places' } });
 export const withChainPicker = (state, patch) => ({ ...state, overlay: { ...state.overlay,
   mode: { ...state.overlay.mode, picker: { ...state.overlay.mode.picker, ...patch } } } });
@@ -191,11 +195,11 @@ export function projectFrames(f) {
   frames['hub-rich-120-40-en'] = plain(f.render(120, 'en', undefined, 40, f.rich));
   // The Control plane: what needs the owner first, healthy roles folded; opened, with the files.
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`control-rich-${width}-${lang}`] = plain(f.render(width, lang, 'control', 48, control));
-  const opened = onControl({ projectFolded: new Set(['agents', 'usage']) });
+  const opened = onControl({ folded: new Set(['agents', 'usage']) });
   for (const lang of ['en', 'zh']) {
     frames[`control-rich-open-40-${lang}`] = plain(f.render(40, lang, opened, 56, control));
     frames[`control-chain-40-${lang}`] = plain(f.render(40, lang,
-      onControl({ projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files', 'usage']) },
+      onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'files', 'usage']) },
         { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) }), 26, control));
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
@@ -215,7 +219,7 @@ export function presetFrames(f, control) {
     places: [{ harness: 'pi', label: 'pi', provider: 'xai', model: 'xai/grok-4.7', thinking: 'high', state: 'active' },
       agy, { ...base.places[2], model: 'claude-opus-5-5' }] };
   const withImp = (role) => ({ ...control, roles: control.roles.map((r) => r === base ? role : r) });
-  const nav = { projectCursor: 'project:role:imp' };
+  const nav = { cursor: 'project:role:imp' };
   const views = {
     row: {}, list: { overlay: { kind: 'control-preset', sheet: { mode: 'list', role: imp, text: '', at: 0 } } },
     delete: { overlay: { kind: 'control-preset', sheet: { mode: 'delete', role: imp } } },
@@ -225,8 +229,8 @@ export function presetFrames(f, control) {
     frames[`preset-${name}-40-${panelLayout}-${lang}`] = plain(f.render(40, lang, onControl(nav, { panelLayout, experiments: true, ...extra }),
       name === 'row' ? 34 : 23, withImp(imp), true, 'unicode', 'none', { projectName: 'harbor-api' }));
   for (const lang of ['en', 'zh']) frames[`preset-switched-40-split-${lang}`] = plain(f.render(40, lang, onControl(nav, {
-    panelLayout: 'split', experiments: true, controlPresetNotice: { role: 'imp', name: 'default' },
-  }), 34, withImp({ ...imp, preset: 'default', places: fileChain }), true, 'unicode', 'none', { projectName: 'harbor-api' }));
+    panelLayout: 'split', experiments: true,
+  }, { notice: { kind: 'preset', role: 'imp', name: 'default' } }), 34, withImp({ ...imp, preset: 'default', places: fileChain }), true, 'unicode', 'none', { projectName: 'harbor-api' }));
   return frames;
 }
 
@@ -239,7 +243,7 @@ export function quickModelFrames(f, control) {
     { ...imp, preset: 'daily', places: chain, editor: mockEditor(chain) }, review,
     ...control.roles.filter((r) => ['sonic', 'oracle', 'frontend'].includes(r.role)),
   ] });
-  const nav = { projectCursor: 'project:role:imp', projectFolded: new Set(['usage', 'files']) };
+  const nav = { cursor: 'project:role:imp', folded: new Set(['usage', 'files']) };
   const frames = {};
   for (const width of [40, 120]) for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
     const draw = (state, snapshot = data(places)) => f.render(width, lang, state, modelInput(state.overlay) ? 24 : 28, snapshot);
@@ -249,7 +253,7 @@ export function quickModelFrames(f, control) {
     const picked = send(draw(send(picker, '', 'grok-4.7-fast').state), 'enter');
     const { modelIndex: index, run } = picked.action;
     const model = run[index].model;
-    const saved = draw({ ...picked.state, controlPresetNotice: { role: 'imp', index, model } },
+    const saved = draw({ ...picked.state, control: { ...picked.state.control, notice: { kind: 'model', role: 'imp', index, model } } },
       data(places.map((p, i) => i === index ? { ...p, model } : p)));
     for (const [name, frame] of Object.entries({ row, picker, saved }))
       frames[`quick-model-${name}-${width}-${panelLayout}-${lang}`] = frame.lines.map(stripAnsi);
@@ -261,7 +265,7 @@ export function pickerFrames(f, control = richControl(f.data), layout = 'split')
   const frames = {};
   const draw = (lang, snapshot, height, text = '', pick) => {
     const role = snapshot.roles.find((r) => r.role === 'imp');
-    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout: layout, overlay: chainOverlay(role) });
+    const state = onControl({ cursor: 'project:role:imp' }, { panelLayout: layout, overlay: chainOverlay(role) });
     const frame = f.render(40, lang, state, height, snapshot);
     const opened = handleMonitorInput(frame.state, { type: 'key', key: 'place-model' }, { frame, tree: TREE, nowMs: NOW }).state;
     return plain(f.render(40, lang, withChainPicker(opened, { text, pick }), height, snapshot));
@@ -320,7 +324,7 @@ export function modelPickerSample(f) {
   const data = { ...f.data, control: [], roles, models: { ...MODEL_LISTS, pi, piFacts, piExhausted: { 'openai/gpt-6.1-sol': cutoff } },
     harnessSwitches: [{ id: 'pi:deepseek', name: 'deepseek', group: 'provider', off: true }], radar: undefined };
   const state = (layout = 'split') => onControl({
-    projectFolded: new Set(['usage', 'files']), projectCursor: 'project:role:imp',
+    folded: new Set(['usage', 'files']), cursor: 'project:role:imp',
   }, { panelLayout: layout, experiments: true, overlay: chainOverlay(roles.find((r) => r.role === 'imp')) });
   const draw = (lang, state, height = 28, snapshot = data) => f.render(40, lang, state, height, snapshot, true, 'unicode', 'none', {
     projectName: 'harbor-api', projects: PROJECTS, projectWaiting: 2,
@@ -348,7 +352,7 @@ export function pickerOrderSample(f) {
     projectWaiting: 2,
   });
   const open = (width, lang, panelLayout = 'split') => {
-    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout, experiments: true });
+    const state = onControl({ cursor: 'project:role:imp' }, { panelLayout, experiments: true });
     const shipped = { ...role, source: 'default', path: '/synthetic/shipped/roles/imp.json', places: oldPlaces, editor: mockEditor(oldPlaces) };
     const before = send(draw(width, lang, state, { ...data, roles: [shipped, reviewer] }), 'place-model');
     rememberModel(state, before.state, role, active.model);
@@ -370,7 +374,7 @@ export function pickerOrderFrames(f, layout = 'split') {
 export function flatPickerFrames(f, panelLayout = 'split') {
   const data = { ...richControl(f.data), models: { ...MODEL_LISTS, cli: { ...MODEL_LISTS.cli,
     claude: [...MODEL_LISTS.cli.claude, 'fable'] } } }, frames = {};
-  const state = onControl({ projectCursor: 'project:role:oracle', projectFolded: new Set(['files', 'usage']) }, { panelLayout });
+  const state = onControl({ cursor: 'project:role:oracle', folded: new Set(['files', 'usage']) }, { panelLayout });
   for (const width of [40, 120]) for (const lang of ['en', 'zh']) {
     const draw = (state) => f.render(width, lang, state, 24, data);
     const frame = draw(state);
