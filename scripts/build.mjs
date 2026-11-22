@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireBuildLock, withDistLock } from './dist-lock.mjs';
 
 const root = fs.realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const legacy = 'packages/hud-mcp/dist';
+const cacheRoot = '.tsbuild';
 const stagePattern = /^\.dist(?:-test)?-stage-([1-9]\d*)$/;
 
 function pidIsAlive(pid) {
@@ -38,8 +39,50 @@ function* inventory(dir, prefix = '') {
   }
 }
 
-function publish(stage, dist, main) {
-  const staged = new Map(inventory(stage));
+function expectedOutputs(infoPath) {
+  try {
+    const info = JSON.parse(fs.readFileSync(infoPath, 'utf8'));
+    const infoDir = dirname(infoPath);
+    const rootDir = typeof info.options?.rootDir === 'string' ? resolve(infoDir, info.options.rootDir) : null;
+    if (!rootDir || !Array.isArray(info.fileNames)) return null;
+    const expected = new Set();
+    for (const file of info.fileNames) {
+      if (typeof file !== 'string') continue;
+      const rel = relative(rootDir, resolve(infoDir, file));
+      if (!rel || rel.startsWith('..') || isAbsolute(rel) || /\.d\.[cm]?ts$/.test(rel)) continue;
+      if (rel.endsWith('.json')) { expected.add(rel); continue; }
+      const match = /^(.*)\.(c|m)?tsx?$/.exec(rel);
+      if (!match) continue;
+      const [, stem, mod = ''] = match;
+      expected.add(`${stem}.${mod}js`);
+      if (info.options.sourceMap) expected.add(`${stem}.${mod}js.map`);
+      if (info.options.declaration) {
+        expected.add(`${stem}.d.${mod}ts`);
+        if (info.options.declarationMap) expected.add(`${stem}.d.${mod}ts.map`);
+      }
+    }
+    return expected;
+  } catch { return null; }
+}
+
+function syncCache(cacheOut, expected) {
+  const present = new Set();
+  for (const [name, entry] of inventory(cacheOut)) {
+    const path = join(cacheOut, name);
+    if (entry.isDirectory()) {
+      try { fs.rmdirSync(path); } catch (e) { if (e.code !== 'ENOTEMPTY') throw e; }
+    } else if (!expected.has(name)) {
+      fs.unlinkSync(path);
+    } else {
+      present.add(name);
+    }
+  }
+  for (const name of expected) if (!present.has(name)) return false;
+  return true;
+}
+
+function publish(source, stage, dist, main) {
+  const staged = new Map(inventory(source));
   const sentinels = main ? ['index.js', 'tree-page.js'] : [];
   for (const name of sentinels) {
     if (!staged.get(name)?.isFile()) throw new Error(`Compiler did not emit ${name}; keeping the current build`);
@@ -54,14 +97,16 @@ function publish(stage, dist, main) {
     }
   }
   const replace = (name) => {
-    const dest = join(dist, name);
+    const tmp = join(stage, name), dest = join(dist, name);
+    fs.mkdirSync(dirname(tmp), { recursive: true });
+    fs.copyFileSync(join(source, name), tmp);
     fs.mkdirSync(dirname(dest), { recursive: true });
-    fs.renameSync(join(stage, name), dest);
+    fs.renameSync(tmp, dest);
   };
   const changed = [];
   for (const [name, entry] of staged) {
     if (entry.isDirectory()) continue;
-    const before = join(dist, name), after = join(stage, name);
+    const before = join(dist, name), after = join(source, name);
     if (live.get(name)?.isFile() && fs.statSync(before).size === fs.statSync(after).size &&
       fs.readFileSync(before).equals(fs.readFileSync(after))) continue;
     changed.push(name);
@@ -87,10 +132,23 @@ function publish(stage, dist, main) {
   if (changed.some((name) => !name.startsWith('mcp/'))) replace('tree-page.js');
 }
 
+function compile(main, cacheOut, buildInfo) {
+  const result = spawnSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '-p', main ? 'tsconfig.json' : 'tsconfig.test.json', '--incremental', '--tsBuildInfoFile', buildInfo,
+    '--outDir', cacheOut, '--noEmitOnError', 'true'],
+  { cwd: root, stdio: 'inherit' });
+  if (result.error) throw result.error;
+  if (result.signal) throw new Error(`TypeScript compiler terminated by ${result.signal}`);
+  return result.status ?? 1;
+}
+
 async function run(args) {
   const target = args[0] === '--target' && args.length === 2 ? args[1] : !args.length ? 'main' : undefined;
   const clean = args.length === 1 && args[0] === '--clean';
-  if (!clean && target !== 'main' && target !== 'test') throw new Error('Usage: node scripts/build.mjs [--target main|test | --clean]');
+  const publishFrom = args[0] === '--publish-from' && args.length === 2 ? args[1] : undefined;
+  if (!clean && !publishFrom && target !== 'main' && target !== 'test') {
+    throw new Error('Usage: node scripts/build.mjs [--target main|test | --publish-from <dir> | --clean]');
+  }
 
   // Keep compilation serialized, but only exclude dist readers while changing live files.
   const lock = await acquireBuildLock('build');
@@ -98,7 +156,7 @@ async function run(args) {
     cleanStages(clean);
     if (clean) {
       return await withDistLock(() => {
-        for (const name of ['dist', 'dist-test', legacy]) {
+        for (const name of ['dist', 'dist-test', cacheRoot, legacy]) {
           const path = join(root, name);
           if (!fs.lstatSync(path, { throwIfNoEntry: false })) continue;
           if (fs.realpathSync(dirname(path)) !== dirname(path)) throw new Error(`Refusing to clean ${name} through a symlink`);
@@ -107,7 +165,7 @@ async function run(args) {
         }
       });
     }
-    const main = target === 'main';
+    const main = Boolean(publishFrom) || target === 'main';
     const dist = join(root, main ? 'dist' : 'dist-test');
     const stage = join(root, `.${main ? 'dist' : 'dist-test'}-stage-${process.pid}`);
     if (main && fs.existsSync(join(root, legacy))) {
@@ -115,14 +173,35 @@ async function run(args) {
     }
     fs.mkdirSync(stage);
     try {
-      const result = spawnSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
-        '-p', main ? 'tsconfig.json' : 'tsconfig.test.json', '--outDir', stage, '--noEmitOnError', 'true'],
-      { cwd: root, stdio: 'inherit' });
-      if (result.error) throw result.error;
-      if (result.signal) throw new Error(`TypeScript compiler terminated by ${result.signal}`);
-      if (result.status !== 0) process.exitCode = result.status;
-      else if (main) await withDistLock(() => publish(stage, dist, main));
-      else publish(stage, dist, main);
+      if (publishFrom) {
+        const source = resolve(root, publishFrom);
+        if (!fs.lstatSync(source, { throwIfNoEntry: false })?.isDirectory()) {
+          throw new Error(`Publish source is not a real directory: ${publishFrom}`);
+        }
+        await withDistLock(() => publish(source, stage, dist, true));
+        return;
+      }
+      const cacheOut = join(root, cacheRoot, main ? 'dist' : 'dist-test');
+      const buildInfo = join(root, cacheRoot, main ? 'main.tsbuildinfo' : 'test.tsbuildinfo');
+      const hadInfo = fs.existsSync(buildInfo);
+      fs.mkdirSync(cacheOut, { recursive: true });
+      let status = compile(main, cacheOut, buildInfo);
+      if (status === 0) {
+        const expected = expectedOutputs(buildInfo);
+        if ((expected && !syncCache(cacheOut, expected)) || (!expected && hadInfo)) {
+          fs.rmSync(cacheOut, { recursive: true, force: true });
+          fs.rmSync(buildInfo, { force: true });
+          fs.mkdirSync(cacheOut, { recursive: true });
+          status = compile(main, cacheOut, buildInfo);
+          if (status === 0) {
+            const rebuilt = expectedOutputs(buildInfo);
+            if (rebuilt) syncCache(cacheOut, rebuilt);
+          }
+        }
+      }
+      if (status !== 0) process.exitCode = status;
+      else if (main) await withDistLock(() => publish(cacheOut, stage, dist, main));
+      else publish(cacheOut, stage, dist, main);
     } finally {
       fs.rmSync(stage, { recursive: true, force: true });
     }

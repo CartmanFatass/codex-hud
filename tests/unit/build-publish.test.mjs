@@ -241,4 +241,47 @@ test('PanelReload probes a published non-MCP generation after its quiet window a
   assert.equal(await reload.poll(() => false, 12001), true);
   assert.equal(reload.failed, false);
 });
+
+test('incremental build keeps buildinfo outside stage/dist, prunes deleted sources, self-heals cache and cleans', async (t) => {
+  const f = fixture(t);
+  f.put('src/extra/removed.ts', 'export const gone = 1;\n');
+  await f.run();
+  await f.run(['--target', 'test']);
+  assert.equal(fs.existsSync(f.file('.tsbuild/main.tsbuildinfo')), true);
+  assert.equal(fs.existsSync(f.file('.tsbuild/test.tsbuildinfo')), true);
+  assert.equal(fs.existsSync(f.file('dist/extra/removed.js')), true);
+  assert.deepEqual(f.stages(), []);
+
+  // Deleting a source file prunes emitted artifacts from both .tsbuild/dist and live dist.
+  fs.unlinkSync(f.file('src/extra/removed.ts'));
+  await f.run();
+  assert.equal(fs.existsSync(f.file('dist/extra')), false);
+  assert.equal(fs.existsSync(f.file('.tsbuild/dist/extra')), false);
+
+  // Deleting a cached output while tsbuildinfo remains triggers a self-healing rebuild.
+  fs.unlinkSync(f.file('.tsbuild/dist/render/sub.js'));
+  fs.unlinkSync(f.file('dist/render/sub.js'));
+  await f.run();
+  assert.equal(fs.existsSync(f.file('dist/render/sub.js')), true);
+  assert.equal(fs.existsSync(f.file('.tsbuild/dist/render/sub.js')), true);
+
+  await f.run(['--clean']);
+  assert.equal(fs.existsSync(f.file('.tsbuild')), false);
+});
+
+test('--publish-from publishes a prebuilt tree through the staged publisher without altering the source', async (t) => {
+  const f = fixture(t), other = fixture(t);
+  await f.run();
+  f.put('dist/stale.js', 'prune me');
+  other.put('src/render/sub.ts', 'export const generation = 99;\n');
+  await other.run();
+  const srcDist = other.file('dist');
+  const beforeSrc = fs.readFileSync(join(srcDist, 'render/sub.js'), 'utf8');
+  await f.run(['--publish-from', srcDist]);
+  assert.match(fs.readFileSync(f.file('dist/render/sub.js'), 'utf8'), /generation = 99/);
+  assert.equal(fs.existsSync(f.file('dist/stale.js')), false);
+  assert.equal(fs.readFileSync(join(srcDist, 'render/sub.js'), 'utf8'), beforeSrc);
+  assert.deepEqual(f.stages(), []);
+  await assert.rejects(f.run(['--publish-from', f.file('missing-dir')]), /not a real directory/);
+});
 });

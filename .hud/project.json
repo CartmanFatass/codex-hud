@@ -18,6 +18,7 @@
     "disposable": [
       "dist/**",
       "dist-test/**",
+      ".tsbuild/**",
       "tmp/**",
       "hud-*.tar.gz"
     ]

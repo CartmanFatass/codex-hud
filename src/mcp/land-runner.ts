@@ -17,6 +17,7 @@ import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { repairLand } from './land-repair.js';
+import { canPublishTestedBuild } from './land-build.js';
 
 class CommandError extends Error {
   constructor(message: string, readonly tail: string[]) { super(message); }
@@ -85,6 +86,17 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
   const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: f.flow };
   const cancelled = () => fs.existsSync(`${landFile(home, f.flow)}.cancel`);
   const step = (name: string) => { f.step = name; writeLand(home, f); };
+  const recordTiming = (name: string, t0: number, ok: boolean, extra?: { rerun?: true; skipped?: true }) => {
+    (f.timings ??= []).push({ step: name, ms: Math.max(0, Math.round(performance.now() - t0)), ok, ...extra });
+    writeLand(home, f);
+  };
+  let activeStep: [string, number] | undefined;
+  const startStep = (name: string) => { step(name); activeStep = [name, performance.now()]; };
+  const endStep = (ok = true) => {
+    if (!activeStep) return;
+    const [name, t0] = activeStep; activeStep = undefined;
+    recordTiming(name, t0, ok);
+  };
   const checkCancel = () => { if (cancelled()) { f.state = 'cancelled'; throw Error('Cancelled before fast-forward'); } };
   const head = async (dir: string) => (await git(dir, ['rev-parse', '--verify', 'HEAD'])).trim();
   const checkMain = async (sha: string) => {
@@ -101,21 +113,37 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       throw Error('Source job is no longer settled at the recorded commit');
   };
   const deadlineMs = (c.timeout_s ?? DEFAULT_LAND_TIMEOUT_S) * 1000;
-  async function commands(kind: 'gate' | 'after', cwd: string) {
+  async function commands(kind: 'gate' | 'after', cwd: string, reuse?: { tested: string; filters: string[] }) {
     for (const [i, cmd] of c[kind].entries()) {
       if (kind === 'gate') checkCancel();
-      step(`${kind}[${i + 1}]: ${cmd}`);
+      const label = `${kind}[${i + 1}]: ${cmd}`;
+      step(label);
+      if (kind === 'after' && reuse &&
+          await canPublishTestedBuild({ main, integration, testedSha: reuse.tested, mainHeadSha: await head(main), gateCommands: c.gate, cmd, filters: reuse.filters })) {
+        const t0 = performance.now();
+        try {
+          await command(main, process.execPath, [join(main, 'scripts/build.mjs'), '--publish-from', join(integration, 'dist')], deadlineMs);
+          recordTiming(label, t0, true, { skipped: true });
+        } catch (e) { recordTiming(label, t0, false); throw e; }
+        continue;
+      }
       const invoke = (script: string, failures?: TestFailure[]) => c.wrapper
         ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, failures)
         : command(cwd, 'sh', ['-c', script], deadlineMs, failures);
       const failures = kind === 'gate' ? [] as TestFailure[] : undefined;
-      try { await invoke(cmd, failures); }
+      const t0 = performance.now();
+      try { await invoke(cmd, failures); recordTiming(label, t0, true); }
       catch (e) {
+        recordTiming(label, t0, false);
         // A command deadline can leave tests unrun; a red test (including a node:test timeout) identifies a safe rerun.
         if (!failures || !(e instanceof CommandError) || e instanceof CommandTimeout) throw e;
         checkCancel();
         const files = [...new Set(failures.map(({ file }) => file))];
-        await invoke(files.length ? [process.execPath, '--test', '--test-timeout=60000', '--test-force-exit', '--', ...files].map(quote).join(' ') : cmd);
+        const r0 = performance.now();
+        try {
+          await invoke(files.length ? [process.execPath, '--test', '--test-timeout=60000', '--test-force-exit', '--', ...files].map(quote).join(' ') : cmd);
+          recordTiming(label, r0, true, { rerun: true });
+        } catch (re) { recordTiming(label, r0, false, { rerun: true }); throw re; }
         const tests = [...new Set(failures.map(({ file, name }) => name ? `${name} (${file})` : file))];
         (f.reruns ??= []).push(tests.length ? { step: f.step, tests } : f.step);
         writeLand(home, f);
@@ -160,15 +188,17 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${f.base_sha}..${f.source_sha}`, '--'])).trim();
     if (!picks) throw Error('Source has no commits to land');
     if (fs.lstatSync(integration, { throwIfNoEntry: false })) throw Error('Integration destination already exists');
-    step('create integration');
+    startStep('create integration');
     await git(main, ['worktree', 'add', '--detach', '--', integration, ff ? f.source_sha : f.base_sha], 120000);
+    endStep();
     // includeIf and a wrapper's temporary HOME can give the detached checkout a different identity.
     const identity = (await git(main, ['var', 'GIT_COMMITTER_IDENT'])).match(/^(.*) <([^<>]+)> \d+ [+-]\d+$/m);
     if (!identity) throw Error('Missing checkout committer identity');
     const who = ['-c', `user.name=${identity[1]}`, '-c', `user.email=${identity[2]}`];
     if (!ff) {
-      step('cherry-pick');
+      startStep('cherry-pick');
       for (const sha of picks.split(/\s+/)) await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
+      endStep();
     }
     f.tested_sha = await head(integration);
     await commands('gate', integration);
@@ -181,6 +211,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       await acquire();
       try { who = await prepare(); break; }
       catch (e) {
+        endStep(false);
         const conflict = f.step === 'cherry-pick' && !!(await git(integration, ['ls-files', '-u']));
         if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
         const prior = f.repairs?.at(-1);
@@ -200,10 +231,11 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     const prior = f.repairs?.at(-1);
     if (prior) prior.outcome = 'gate passed';
     checkCancel(); await checkSource();
-    step('records');
+    startStep('records');
     const tested = f.tested_sha!, base = f.base_sha!;
     let landed = (await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who)) ?? tested;
-    checkCancel(); step('fast-forward');
+    endStep();
+    checkCancel(); startStep('fast-forward');
     const touched = async (from: string, to: string) => [...new Set([
       ...fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', from, to, '--'])),
       ...fields(await git(main, ['log', '--format=', '--name-only', '--no-renames', '-m', '--first-parent', '-z', `${from}..${to}`, '--'])),
@@ -257,7 +289,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     }
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
     if (target !== base) f.replayed_onto = target;
-    f.landed_sha = landed; writeLand(home, f);
+    f.landed_sha = landed; endStep();
     const landingHead = async () => {
       const moved = Error('Main checkout is not at the recorded base tip');
       if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref) throw moved;
@@ -269,16 +301,17 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       return current;
     };
     await landingHead();
-    await commands('after', main);
+    await commands('after', main, target === base ? { tested, filters } : undefined);
     if (c.push) {
-      step('push');
+      startStep('push');
       await checkClean(target === base ? paths : await touched(target, landed));
       const pushHead = await landingHead();
       // Push the verified HEAD by SHA so a later branch switch cannot change what is published.
       await command(main, 'git', ['-c', 'core.hooksPath=/dev/null', '-c', 'remote.origin.mirror=false', 'push',
         '--no-follow-tags', '--recurse-submodules=no', 'origin', `${pushHead}:${ref}`]);
+      endStep();
     }
-    step('cleanup');
+    startStep('cleanup');
     const notes: string[] = [];
     const note = (e: unknown) => {
       const line = (e instanceof Error ? e.message : String(e)).split('\n')[0].trim();
@@ -295,8 +328,10 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       if ('worktree_kept_reason' in result) notes.push(result.worktree_kept_reason);
     } catch (e) { note(e); }
     if (notes.length) f.cleanup_note = notes.join('; ');
+    endStep();
     f.state = 'completed'; step('done');
   } catch (e) {
+    endStep(false);
     if (f.state !== 'cancelled') f.state = 'failed';
     f.error = (e as Error).message.split('\n')[0];
     f.tail = e instanceof CommandError ? e.tail : f.tail ?? (e as Error).message.trimEnd().split('\n').slice(-40);

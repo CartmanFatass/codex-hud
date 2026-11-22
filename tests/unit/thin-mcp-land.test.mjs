@@ -711,3 +711,104 @@ test('a main commit touching the landing ticket path during the gate stops befor
   assert.equal(fs.existsSync(join(f.main, 'after-ran')), false);
   assert.equal(fs.existsSync(f.worktree), true);
 });
+
+test('flow receipt records per-step timings including separate gate reruns', async t => {
+  const f = await checkout(t, ['true', 'test -f "$HOME/once" || { touch "$HOME/once"; exit 1; }']);
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).state === 'completed', 15000);
+  const state = f.flowState(flow);
+  const view = await f.call('hud_read', { job: flow });
+  assert.deepEqual(view.timings, state.timings);
+  const steps = state.timings.map(e => `${e.step}${e.rerun ? ':rerun' : ''}:${e.ok}`);
+  assert.ok(steps.includes('create integration:true'), JSON.stringify(steps));
+  assert.ok(steps.includes('gate[1]: true:true'), JSON.stringify(steps));
+  assert.ok(steps.some(s => s.startsWith('gate[2]:') && s.endsWith(':false')), JSON.stringify(steps));
+  assert.ok(steps.some(s => s.startsWith('gate[2]:') && s.endsWith(':rerun:true')), JSON.stringify(steps));
+  assert.ok(steps.includes('records:true') && steps.includes('fast-forward:true') && steps.includes('push:true') && steps.includes('cleanup:true'));
+  for (const entry of state.timings) {
+    assert.equal(typeof entry.ms, 'number');
+    assert.ok(Number.isInteger(entry.ms) && entry.ms >= 0);
+  }
+});
+
+async function buildableCheckout(t, { gate = ['npm run build'], after = ['npm run build'] } = {}) {
+  const f = await checkout(t, gate, { after });
+  const put = (base, rel, body) => {
+    const full = join(base, rel);
+    fs.mkdirSync(join(full, '..'), { recursive: true });
+    fs.writeFileSync(full, body);
+  };
+  put(f.main, '.gitignore', 'dist/\ndist-test/\n.tsbuild/\n.dist-stage-*/\n.dist-test-stage-*/\n');
+  put(f.main, 'package.json', JSON.stringify({ type: 'module', scripts: { build: 'node scripts/build.mjs' } }));
+  put(f.main, 'tsconfig.json', JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', rootDir: 'src', types: [], declaration: true, sourceMap: true },
+    include: ['src/**/*'],
+  }));
+  fs.mkdirSync(join(f.main, 'scripts'), { recursive: true });
+  fs.copyFileSync(resolve('scripts/build.mjs'), join(f.main, 'scripts/build.mjs'));
+  fs.copyFileSync(resolve('scripts/dist-lock.mjs'), join(f.main, 'scripts/dist-lock.mjs'));
+  fs.mkdirSync(join(f.main, 'node_modules'), { recursive: true });
+  fs.symlinkSync(resolve('node_modules/typescript'), join(f.main, 'node_modules/typescript'), 'dir');
+  put(f.main, 'src/index.ts', 'export const index = 1;\n');
+  put(f.main, 'src/tree-page.ts', 'export const page = 1;\n');
+  put(f.main, 'src/mcp/thin-main.ts', 'export const version = 1;\n');
+  put(f.main, '.hud/project.json', JSON.stringify({
+    worktree: { disposable: ['dist/**', 'dist-test/**', '.tsbuild/**'] },
+    land: { base: 'base', gate, after, push: true, wrapper: 'wrap' },
+  }));
+  f.git(f.main, 'add', '.gitignore', 'package.json', 'tsconfig.json', 'scripts', 'node_modules/typescript', 'src', '.hud/project.json');
+  f.git(f.main, 'commit', '-qm', 'add buildable project');
+  const seeded = f.git(f.main, 'rev-parse', 'HEAD');
+  f.git(f.main, 'push', '-q', 'origin', 'base');
+  f.git(f.worktree, 'rebase', 'base');
+  put(f.worktree, 'src/mcp/thin-main.ts', 'export const version = 2;\n');
+  f.git(f.worktree, 'commit', '-qam', 'bump version');
+  return { ...f, seeded, put };
+}
+
+test('after npm run build is skipped via staged publish when inputs match, even with a folded ticket commit', async t => {
+  const f = await buildableCheckout(t);
+  const dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', receipt = join(dir, 'job.json');
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
+  f.put(f.main, ticket, '# 01: Example\n**Status:** ready-for-agent\n**Owner try:** no\n- [ ] done\n');
+  f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
+  f.git(f.worktree, 'rebase', 'base');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 20000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.notEqual(done.landed_sha, done.tested_sha);
+  const afterTiming = done.timings.find(e => e.step === 'after[1]: npm run build');
+  assert.equal(afterTiming?.ok, true);
+  assert.equal(afterTiming?.skipped, true);
+  assert.match(fs.readFileSync(join(f.main, 'dist/mcp/thin-main.js'), 'utf8'), /version = 2/);
+  // No compiler run occurred in main checkout because dist was published from the tested integration checkout.
+  assert.equal(fs.existsSync(join(f.main, '.tsbuild')), false);
+});
+
+for (const reason of ['dirty main src', 'replayed base']) test(`after npm run build rebuilds when inputs do not match (${reason})`, async t => {
+  const f = await buildableCheckout(t, {
+    gate: reason === 'replayed base' ? ['npm run build', 'while test ! -f "$HOME/release"; do sleep .05; done'] : ['npm run build'],
+  });
+  if (reason === 'dirty main src') f.put(f.main, 'src/local-extra.ts', 'export const localExtra = true;\n');
+  const { flow } = await f.call('hud_land', { job });
+  if (reason === 'replayed base') {
+    await until(() => f.flowState(flow).step.startsWith('gate[2]'), 15000);
+    f.put(f.main, 'src/unrelated.ts', 'export const unrelated = 7;\n');
+    f.git(f.main, 'add', 'src/unrelated.ts'); f.git(f.main, 'commit', '-qm', 'unrelated src on base');
+    fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  }
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 20000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  const afterTiming = done.timings.find(e => e.step === 'after[1]: npm run build');
+  assert.equal(afterTiming?.ok, true);
+  assert.equal(afterTiming?.skipped, undefined);
+  assert.equal(fs.existsSync(join(f.main, '.tsbuild/main.tsbuildinfo')), true);
+  assert.match(fs.readFileSync(join(f.main, 'dist/mcp/thin-main.js'), 'utf8'), /version = 2/);
+  if (reason === 'dirty main src') {
+    assert.match(fs.readFileSync(join(f.main, 'dist/local-extra.js'), 'utf8'), /localExtra = true/);
+  } else {
+    assert.match(fs.readFileSync(join(f.main, 'dist/unrelated.js'), 'utf8'), /unrelated = 7/);
+  }
+});

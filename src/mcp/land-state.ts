@@ -8,6 +8,7 @@ import type { ManagedWorktree } from './managed-worktree.js';
 
 export const DEFAULT_LAND_TIMEOUT_S = 900;
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
+export interface LandTiming { step: string; ms: number; ok: boolean; rerun?: true; skipped?: true }
 export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
@@ -15,6 +16,7 @@ export interface LandFlow {
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
   repairs?: { step: string; job?: string; outcome: string }[];
   reruns?: (string | { step: string; tests: string[] })[];
+  timings?: LandTiming[];
 }
 export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}(?:-[1-9]\d*)?$/.test(id);
 export const retryableLand = (f: LandFlow) => !f.landed_sha && (f.state === 'failed' || f.state === 'cancelled');
@@ -55,8 +57,8 @@ export function landAttempt(home: string, job: string) {
   return { flow, prior, cleanup };
 }
 export function landView(f: LandFlow) {
-  const { flow, job, state, step, landed_sha, records_sha, replayed_onto, cleanup_note, repairs, reruns, error, tail } = f;
-  return { flow, job, state, step, landed_sha, records_sha, replayed_onto, cleanup_note, repairs, reruns, error, tail };
+  const { flow, job, state, step, landed_sha, records_sha, replayed_onto, cleanup_note, repairs, reruns, timings, error, tail } = f;
+  return { flow, job, state, step, landed_sha, records_sha, replayed_onto, cleanup_note, repairs, reruns, timings, error, tail };
 }
 export function landNotice(f: LandFlow) {
   const one = (text: string) => text.replace(/\s+/g, ' ').trim();
