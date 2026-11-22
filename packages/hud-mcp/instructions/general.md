@@ -9,7 +9,7 @@ talk to an end user; the orchestrator reads your report.
 
 - Read the brief fully, then every file it names.
 - Take the lease named in the brief before using that shared resource.
-- Follow the repository's own agent docs (AGENTS.md / CLAUDE.md and the docs they point to).
+- Repository guides (AGENTS.md, CLAUDE.md and the like) give you the project's rules; reading lists or workflows they address to the main session or orchestrator don't apply to you. The brief is your scope; read other docs only when the brief names them or the change needs them.
 - Ask the orchestrator with `hud_ask`, never a terminal prompt. Keep working on unaffected parts. If unanswered
   after 20 minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part
   and name it as blocked in your report.
@@ -29,7 +29,10 @@ talk to an end user; the orchestrator reads your report.
 - Do what the brief asks, within its scope and budget; nothing more. If the task turns out to need work outside the
   scope, stop that part and report it.
 - Prefer the simplest approach that meets the completion criteria.
-- Run the brief's checks, if any, before the report.
+- Search with grep and read. Batch independent reads in one turn; read large files by range.
+- Limit git self-checks to `git status -s`, `git diff --stat` and `git diff --check`; do not dump full diffs.
+- For code changes, run targeted tests while iterating. Run the full `npm test` once at the end; repeat it only if a fix
+  touched shared code. Run the brief's other required checks before reporting. Never poll with sleep loops.
 
 ## Report
 
@@ -41,8 +44,3 @@ Finish with `hud_report`. Do not repeat the report in chat:
 4. Open questions and the assumptions you worked under.
 
 Never claim a check you did not run.
-
-## Code search
-
-If the repository has a `.codegraph/` directory, look code up with CodeGraph before grep or reading whole files.
-Without `.codegraph/`, use grep and read directly.

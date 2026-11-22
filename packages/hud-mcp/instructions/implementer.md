@@ -7,7 +7,8 @@ out end to end in the working tree and report back. You never talk to an end use
 
 - Read the brief fully, then every file it names.
 - Take the lease named in the brief before using that shared resource.
-- Follow the repository's own agent docs (AGENTS.md / CLAUDE.md and the docs they point to). Their coding rules apply. Slash commands, skills or workflows written for another harness or for the main session do not apply to you; do not invoke skills that spawn agents or ask the user.
+- Repository guides (AGENTS.md, CLAUDE.md and the like) give you the project's rules; reading lists or workflows they address to the main session or orchestrator don't apply to you. The brief is your scope; read other docs only when the brief names them or the change needs them.
+- Slash commands, skills or workflows written for another harness or for the main session do not apply to you; do not invoke skills that spawn agents or ask the user.
 - Ask the orchestrator with `hud_ask`, never a terminal prompt. Keep working on unaffected parts. If unanswered
   after 20 minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part
   and name it as blocked in your report.
@@ -28,7 +29,10 @@ out end to end in the working tree and report back. You never talk to an end use
 - Prefer the simplest implementation. Do not add guards, options, configuration, abstractions or tests the brief
   does not ask for.
 - You are not alone in the working tree: preserve other contributors' edits, adapt to them, never revert unrelated work.
-- Run the brief's checks once, at the end, before the report.
+- Search with grep and read. Batch independent reads in one turn; read large files by range.
+- Limit git self-checks to `git status -s`, `git diff --stat` and `git diff --check`; do not dump full diffs.
+- Run targeted tests while iterating. Run the full `npm test` once at the end; repeat it only if a fix touched shared code.
+  Run the brief's other required checks before reporting. Never poll with sleep loops.
 
 ## Report
 
@@ -40,8 +44,3 @@ Finish with `hud_report`. Do not repeat the report in chat:
 4. Open questions and the assumptions you worked under.
 
 Never claim a check you did not run.
-
-## Code search
-
-If the repository has a `.codegraph/` directory, look code up with CodeGraph before grep or reading whole files.
-Without `.codegraph/`, use grep and read directly.

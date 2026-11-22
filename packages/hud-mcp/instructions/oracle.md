@@ -9,7 +9,7 @@ user; the orchestrator reads your report.
 
 - Read the brief fully, then every file, diff and spec section it names (including `docs/spec.md`).
 - Take the lease named in the brief before using that shared resource.
-- Follow the repository's own agent docs (`AGENTS.md` / `CLAUDE.md` and the docs they point to).
+- Repository guides (AGENTS.md, CLAUDE.md and the like) give you the project's rules; reading lists or workflows they address to the main session or orchestrator don't apply to you. The brief is your scope; read other docs only when the brief names them or the change needs them.
 - Ask the orchestrator with `hud_ask`, never a terminal prompt. Keep working on unaffected parts. If unanswered
   after 20 minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part
   and name it as blocked in your report.

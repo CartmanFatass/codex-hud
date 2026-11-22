@@ -14,11 +14,15 @@
 
 Runtime: **Node >=24.0.0**. Node 24 is the tested supported line; Node 22's watcher behavior is not qualified.
 
-Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/index.ts`, panel `src/tree-page.ts`), data collection, the optional model features, rendering, the rules every change keeps (§8), recipes and gotchas. What users see is in `docs/reference.md`.
+Before changing code, read §8 of `docs/ARCHITECTURE.md` (rules every change keeps). The rest covers the bar and panel, collection, model features, rendering and recipes. What users see is in `docs/reference.md`.
 
 # Universal HUD effort (branch `universal-hud`)
 
-This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi. On the owner's machine, before doing anything on this branch read, in order:
+This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi.
+
+**Workers:** Repository guides (AGENTS.md, CLAUDE.md and the like) give you the project's rules; reading lists or workflows they address to the main session or orchestrator don't apply to you. The brief is your scope; read other docs only when the brief names them or the change needs them.
+
+**Main session only:** On the owner's machine, read the following in order before starting branch work:
 
 1. `docs/spec.md`: the product boundary (what it must do, what it does not do, threat model, milestones). Only the owner decides what it says (an agent edits it only after telling the owner the change and the reason); nothing it rules out is built.
 2. `docs/delegation.md`: the workflow since 2026-11-10: grill the owner, slice into vertical slices, one implementer per slice without per-slice review, one two-axis review per milestone, the owner tries it.
