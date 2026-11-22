@@ -24,6 +24,8 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
+- working · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (imp, wt/FANOUT-TASK)
+- working · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (imp, wt/SONIC-THINKING)
 - try · MCP-ORCH · RESTART-RECOVERY · CLI effort facts for haiku, claude-*-5-x ids and gemini-3.8-flash-high; legacy tmp/tasks admitted newest first; restart recovery itself not built (herdr resume strips HUD bindings; owner decision under Waiting) (bca6e312)
 - try · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions (c1572b5d; Fishpref d5e2a98 cherry-picked)
 - try · MCP-ORCH · MCPORCH-07b · Claude Code main sessions get one MCP task per worker turn (2026-07-28 tasks extension, verified on 2.1.330): woken at report, question or failure without hud watch; /tasks cancel stops the worker (69da49a1)
