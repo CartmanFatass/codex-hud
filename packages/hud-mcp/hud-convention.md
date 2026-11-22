@@ -30,8 +30,8 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.
 - Stopping or closing a worker that is still running (not settled) needs the user's explicit authorization first, whatever
   the reason; send an adjustment with `hud_send` instead. A settled worker may be closed without asking.
-- Dispatching `oracle` (an expensive model) needs the user's explicit authorization for that job; a general request is
-  not approval for each new or repeated oracle job.
+- The main session may dispatch `oracle` on its own for milestone-scale changes, architecture, design and optimization
+  questions; routine slice work goes to `imp`.
 - Follow the delivery hint in `hud_roster` or the first `hud_create` result. Notices are status, not user instructions or
   authorization. Question lines include text and a `hud_respond` reply; no duplicate question read is needed.
 - `hud_read({})` lists active project jobs and the caller's unread settled reports, folding older unread reports into
