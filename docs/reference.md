@@ -259,8 +259,8 @@ Main sessions in herdr and workers use `hud_lease({name, release?, wait_s?})` be
 Waits stay inside the caller's turn (120 seconds by default, capped at 300; `0` checks once). Use the resource
 only on `granted: true`; otherwise `held_by` gives the holder and acquisition time. Release with `release: true`
 when done; releasing someone else's lease is a no-op. Leases are scoped to the caller's repository, shared by the main checkout and its linked
-worktrees (cwd outside Git), and the next acquisition reclaims a lease left by a terminal worker or an exited process. No background process
-or time expiry is involved; the tool uses util-linux `flock`.
+worktrees (cwd outside Git). A waiter wakes on release and reclaims a lease left by a terminal worker or an exited process.
+No background process or time expiry is involved.
 
 `hud_peek({ job })` returns compact `status` and progress without fetching the pane. Request `lines` (1–120) to
 fetch the pane tail as `pane_lines`; if unavailable, that field is `null` with a `pane_reason`. `detail: true` adds

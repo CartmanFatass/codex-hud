@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import childProcess, { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import fsDefault from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import test from 'node:test';
 import { reportSignature, turnToken } from '../../dist/mcp/cli-judge.js';
+import { takeLease } from '../../dist/roles/lease.js';
 import { readReportMeta } from '../../dist/roles/report-meta.js';
 import { ask, waitSonic } from '../../packages/hud-mcp/bin/worker-tools.mjs';
 import {
@@ -454,21 +456,24 @@ test('hud_lease grants one worker per Git root, then wakes a waiter after releas
   assert.equal(spawnSync('git', ['init', '-q'], { cwd: f.root, env: f.env }).status, 0);
   const sub = join(f.root, 'sub');
   fs.mkdirSync(sub);
-  const workers = [leaseWorker(t, f, 1), leaseWorker(t, f, 2, sub)];
-  const results = await Promise.all(workers.map((w) => w.lease({ wait_s: 0 })));
-  const winner = results.findIndex((r) => r.granted), loser = 1 - winner;
-  assert.equal(results.filter((r) => r.granted).length, 1);
-  const held_by = results[loser].held_by;
-  assert.equal(held_by.holder, workers[winner].job);
-  assert.ok(Number.isFinite(Date.parse(held_by.since)));
-  assert.deepEqual(await workers[loser].lease({ release: true }), { released: false, held_by });
-  const waiting = workers[loser].lease({ wait_s: 3 });
-  assert.deepEqual(await workers[winner].lease({ release: true }), { released: true });
-  assert.deepEqual(await waiting, { granted: true });
-  assert.deepEqual(await workers[loser].lease({ release: true }), { released: true });
+  const workers = [1, 2, 3, 4].map((i) => leaseWorker(t, f, i, i % 2 ? f.root : sub));
+  for (let round = 0; round < 4; round++) {
+    const results = await Promise.all(workers.map((w) => w.lease({ wait_s: 0 })));
+    assert.equal(results.filter((r) => r.granted).length, 1);
+    const winner = results.findIndex((r) => r.granted), loser = (winner + 1) % workers.length;
+    const held_by = results[loser].held_by;
+    assert.equal(held_by.holder, workers[winner].job);
+    assert.ok(Number.isFinite(Date.parse(held_by.since)));
+    for (const result of results.filter((r) => !r.granted)) assert.deepEqual(result.held_by, held_by);
+    assert.deepEqual(await workers[loser].lease({ release: true }), { released: false, held_by });
+    const waiting = workers[loser].lease({ wait_s: 3 });
+    assert.deepEqual(await workers[winner].lease({ release: true }), { released: true });
+    assert.deepEqual(await waiting, { granted: true });
+    assert.deepEqual(await workers[loser].lease({ release: true }), { released: true });
+  }
 });
 
-test('hud_lease reclaims terminal jobs and dead processes without granting twice', async (t) => {
+test('hud_lease reclaims terminal jobs and a SIGKILLed fallback holder', async (t) => {
   const f = await fixture(t);
   const main = (args = {}) => f.call('hud_lease', { name: 'install', wait_s: 0, ...args });
   const closed = leaseWorker(t, f, 1);
@@ -487,12 +492,18 @@ test('hud_lease reclaims terminal jobs and dead processes without granting twice
   assert.equal(fallback.status, 0, fallback.stderr);
   assert.deepEqual(JSON.parse(fallback.stdout), { granted: true });
   assert.equal((await main()).held_by.holder, dead.job);
-  proc.kill();
-  await exited;
-  const other = leaseWorker(t, f, 3);
-  const results = await Promise.all([main(), other.lease({ wait_s: 0 })]);
-  assert.equal(results.filter((r) => r.granted).length, 1);
-  assert.equal(results.find((r) => !r.granted).held_by.holder, results[0].granted ? 'w4E:p1' : other.job);
+  const stats = trackFsWatches(t);
+  const waiting = takeLease({ name: 'install', wait_s: 3 }, { home: f.env.HUD_HOME, cwd: f.root, holder: 'w4E:p1' });
+  await new Promise(setImmediate);
+  assert.equal(stats.active, 2);
+  const killedAt = performance.now();
+  proc.kill('SIGKILL'); // No lease or STATUS write to notify the waiter.
+  assert.deepEqual(await exited, [null, 'SIGKILL']);
+  assert.deepEqual(await waiting, { granted: true });
+  const latency = performance.now() - killedAt;
+  t.diagnostic(`SIGKILL to grant: ${latency.toFixed(1)} ms`);
+  assert.ok(latency < 1000, 'the liveness fallback should reclaim within one second');
+  assert.equal(stats.active, 0);
 });
 
 test('main sessions can hold and release a lease by pane', async (t) => {
@@ -507,15 +518,62 @@ test('main sessions can hold and release a lease by pane', async (t) => {
   assert.equal(lease.holder, f.env.HERDR_PANE_ID);
   assert.deepEqual(await f.call('hud_lease', { name, release: true }), { released: true });
   assert.deepEqual(await f.call('hud_lease', { name, release: true }), { released: false });
-  const missing = spawnSync(process.execPath, [entry], { cwd: f.root, env: { ...f.env, PATH: join(f.root, 'empty') },
-    encoding: 'utf8', input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
-      name: 'hud_lease', arguments: { name },
-    } }) + '\n' });
-  assert.equal(missing.status, 0, missing.stderr);
-  const reply = JSON.parse(missing.stdout).result;
-  assert.equal(reply.isError, true);
-  assert.match(JSON.parse(reply.content[0].text).error, /requires util-linux flock/);
+  const withoutPath = (args) => {
+    const child = spawnSync(process.execPath, [entry], { cwd: f.root, env: { ...f.env, PATH: '' },
+      encoding: 'utf8', input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+        name: 'hud_lease', arguments: { name, ...args },
+      } }) + '\n' });
+    assert.equal(child.status, 0, child.stderr);
+    return resultValue(JSON.parse(child.stdout).result);
+  };
+  assert.deepEqual(withoutPath({ wait_s: 0 }), { granted: true });
+  assert.deepEqual(withoutPath({ release: true }), { released: true });
   assert.deepEqual(fs.readdirSync(folder), []);
+});
+
+test('hud_lease wakes on release and terminal status without lock or wait subprocesses', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'hud-lease-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.equal(spawnSync('git', ['init', '-q', root]).status, 0);
+  const home = join(root, 'hud'), holder = 'j0000000000000001';
+  const owner = { home, cwd: root, holder, worker: true };
+  const waiter = { home, cwd: root, holder: 'w4E:p1' };
+  const status = join(home, 'jobs', holder, 'STATUS.json');
+  fs.mkdirSync(join(home, 'jobs', holder), { recursive: true });
+  const writeStatus = (state) => writeFixtureFile(status, JSON.stringify({ state, pid: process.pid }));
+  const lease = (caller, args) => takeLease({ name: 'install', ...args }, caller);
+  const stats = trackFsWatches(t);
+  const subprocesses = [];
+  for (const method of ['spawn', 'spawnSync']) {
+    const run = childProcess[method];
+    t.mock.method(childProcess, method, (command, ...args) => {
+      subprocesses.push(command);
+      return run(command, ...args);
+    });
+  }
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+
+  for (const end of ['release', 'closed']) {
+    writeStatus('working');
+    assert.deepEqual(await lease(owner, { wait_s: 0 }), { granted: true });
+    const waiting = lease(waiter, { wait_s: 3 });
+    await new Promise(setImmediate);
+    assert.equal(stats.active, 2);
+    const start = performance.now();
+    if (end === 'release') assert.deepEqual(await lease(owner, { release: true }), { released: true });
+    else writeStatus(end);
+    assert.deepEqual(await waiting, { granted: true });
+    const latency = performance.now() - start;
+    t.diagnostic(`${end} to grant: ${latency.toFixed(1)} ms`);
+    assert.ok(latency < 150, 'the watcher should wake before the fallback tick');
+    assert.equal(stats.active, 0);
+    assert.deepEqual(await lease(waiter, { release: true }), { released: true });
+  }
+  assert.deepEqual(subprocesses, Array(7).fill('git'), 'only the existing project lookup may spawn');
 });
 
 test('hud-progress validates the job directory, normalizes text, and retains the newest 50', async (t) => {

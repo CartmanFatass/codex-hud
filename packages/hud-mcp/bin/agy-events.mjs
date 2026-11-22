@@ -16,8 +16,8 @@ export function hasAgyEvents(pane, home) {
   return !!file && fs.existsSync(file);
 }
 
-// Use the same open-file-description flock as hud_lease. Do not lock the pending
-// inode itself: publishing or claiming replaces it. The hook never waits for a lock.
+// Lock a separate inode: publishing or claiming replaces the pending file.
+// The hook never waits for a lock.
 async function locked(file, env, hook, run) {
   const fd = fs.openSync(`${file}.lock`, O_CREAT | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0o600);
   try {
