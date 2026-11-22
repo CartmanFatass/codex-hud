@@ -98,6 +98,7 @@ Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a ne
 `hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
 question, failure or stop without Monitor. The notification names the job, role and state, with a report path and
 one-line summary or the question ID and text. It does not mark a report read; collect it with `hud_read({job})`.
+A successful fan-out send keeps the job’s existing active task instead of starting a new one.
 Cancelling a still-current task stops the worker like `hud_close`; repeating cancel or cancelling an old task does
 nothing. Dispatch failures, duplicates and fan-out sends return immediately. Use `hud_read` for jobs without a
 task and to recover after an MCP restart. Task clients do not get `hud_wait`, `changes`, `watcher_alive`, or the

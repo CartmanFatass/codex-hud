@@ -793,6 +793,34 @@ test('MCP tasks: a question completes the task; an answer starts another task', 
   assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'completed');
 });
 
+test('MCP tasks: fan-out sends keep the create task through report settlement', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const task = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic fan-out job.' });
+  const job = taskJob(f, task);
+  const get = () => rpc('tasks/get', { taskId: task.taskId });
+
+  const failPrompt = join(f.env.HOME, 'fail-prompt');
+  fs.writeFileSync(failPrompt, '');
+  const failed = await taskCall(rpc, 'hud_send', { jobs: [job.job], text: 'Synthetic refused fan-out.' });
+  assert.deepEqual(resultValue(failed).skipped, [{ job: job.job, reason: 'send_failed' }]);
+  assert.equal((await get()).status, 'working');
+  fs.unlinkSync(failPrompt);
+
+  const sent = await taskCall(rpc, 'hud_send', { jobs: [job.job], text: 'Synthetic queued fan-out.' });
+  assert.equal(sent.resultType, 'complete');
+  assert.deepEqual(resultValue(sent).sent, [job.job]);
+  assert.equal((await get()).status, 'working');
+
+  await publishPiGrace(job);
+  const done = await get();
+  assert.equal(done.status, 'completed');
+  assert.ok(done.result.content[0].text.includes(`Report: ${join(job.task_dir, 'report.md')}`));
+  assert.match(done.result.content[0].text, /Summary: Synthetic settled pi report\./);
+});
+
 test('MCP tasks: cancel fences sends and reaps once even with duplicate requests', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);

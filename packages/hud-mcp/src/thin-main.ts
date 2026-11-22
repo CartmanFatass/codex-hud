@@ -1581,7 +1581,15 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
       spawnCliSupervisor(dir);
     }
   }
-  if (oldTask && !taskEntry) sampleTask(oldTask);
+  if (oldTask && !taskEntry) {
+    if (workingOnly && activeTasks.get(id) === oldTask) {
+      // A queued fan-out has no successor task. Follow only this send's fence;
+      // a failed send can advance it only for a CLI prompt that may have reached the worker.
+      const fence = taskFence(latest);
+      if (fence === (turn ? turnToken(turn) : key)) oldTask.fence = fence;
+    }
+    sampleTask(oldTask);
+  }
   const ok = result.exit_code === 0;
   const response = finishTask(taskEntry, latest, ok);
   if (!ok && oldTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
