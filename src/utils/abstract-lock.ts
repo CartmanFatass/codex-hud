@@ -2,18 +2,23 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-/** Try a Linux/WSL abstract socket mutex. The kernel releases it even on SIGKILL. */
-export async function tryAbstractLock(scope: string, key: string): Promise<(() => Promise<void>) | undefined> {
+export function abstractAddress(scope: string, key: string): string {
   // Keep the full address under sockaddr_un's 108-byte limit.
   if (!/^[a-z0-9-]{1,24}$/.test(scope)) throw new Error(`invalid abstract lock scope: ${scope}`);
   const name = createHash('sha256').update(key).digest('hex');
+  return `\0myhud-${scope}-${name}`;
+}
+
+/** Try a Linux/WSL abstract socket mutex. The kernel releases it even on SIGKILL. */
+export async function tryAbstractLock(scope: string, key: string): Promise<(() => Promise<void>) | undefined> {
+  const address = abstractAddress(scope, key);
   return new Promise((resolve, reject) => {
     const server = createServer((connection) => connection.destroy());
     server.once('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE') resolve(undefined);
       else reject(error);
     });
-    server.listen(`\0myhud-${scope}-${name}`, () => {
+    server.listen(address, () => {
       server.unref();
       let closed: Promise<void> | undefined;
       resolve(() => closed ??= new Promise<void>((done) => server.close(() => done())));

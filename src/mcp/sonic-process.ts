@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { ensureJobWatcher } from './watch-pid.js';
 import { binScript, jobFiles } from './paths.js';
 import type { Job, JobStatus } from './job-contracts.js';
+import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { procStat, readBootId } from '../utils/proc.js';
 import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
@@ -41,6 +42,7 @@ export function startSonicProcess(dir: string, job: Job, args: string[]) {
 /** Run in the owned runner, after the dispatch handshake. Retain the pi PID before a runner crash could orphan it. */
 export async function runSonicPi(dir: string, argv: string[]) {
   // No input until dispatch has durably bound this runner to STATUS. A lost launcher closes the pipe.
+  await publishRunnerLifetime(dir);
   let go = '';
   for await (const chunk of process.stdin) go += chunk;
   if (go !== 'start') return;

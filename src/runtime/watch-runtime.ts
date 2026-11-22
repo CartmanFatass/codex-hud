@@ -22,6 +22,9 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { RunnerWatches } from './runner-watches.js';
+import { RUNNER_READY } from '../utils/runner-lifetime.js';
+import { isProcAlive } from '../utils/proc.js';
 import { request } from '../runtime/herdr-socket.js';
 
 const bundled = BUNDLED_ROOT;
@@ -106,8 +109,7 @@ function warn(kind: string, message: string) {
 let watcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
 let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
-  stopped = false,
-  reapBacklog = false;
+  stopped = false;
 type Retry = { ownership: string; readClose: boolean; at: number; attempts: number; outcome: string; snapshot?: WorkerTreeSnapshot };
 type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: SessionEntry | null; tab: string;
   ownership: string; retry: Retry | null; readInGrace: string | null; resumeReadReap?: boolean; jobFile: string; statusFile: string };
@@ -121,6 +123,9 @@ const inFlightReaps = new Map<string, ActiveReap>();
 const inFlightWorktrees = new Map<string, Promise<void>>();
 const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
 const worktreeLocks = new Set<string>(), checking = new Set<string>();
+const runners = new RunnerWatches(schedule);
+const checkRetries = new Map<string, number>();
+const orphanRetries = new Map<string, { pid: number; at: number; delay: number }>();
 let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
   if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size) return;
@@ -128,24 +133,33 @@ function drained() {
   pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries });
   pauseReady = undefined;
 }
-function checksOpen(id: string, dir: string, job: Job | null, status: Partial<JobStatus>) {
-  if (!job?.checks?.length) return false;
-  if (checking.has(id)) return true;
+function checkDeadline(id: string, dir: string, job: Job | null, status: Partial<JobStatus>): number | undefined {
+  if (!job?.checks?.length) return;
+  if (checking.has(id)) return Infinity; // Our child has an exit event.
   const previous = readCheckReceipt(dir);
-  if (previous?.state === 'running' && workerAlive(previous.pid ?? null, previous.start ?? null) === true) return true;
+  if (previous?.state === 'running' && previous.pid && workerAlive(previous.pid, previous.start ?? null) === true) {
+    return runners.watch(dir, previous.pid); // Adopted after watcher restart; not our child.
+  }
   const binding = checkBinding(dir, job, status);
-  if (!binding || (previous?.state === 'done' && sameChecks(binding, previous))) return false;
+  const retryAt = checkRetries.get(id);
+  if (binding && retryAt && retryAt > Date.now()) return retryAt;
+  checkRetries.delete(id);
+  if (!binding || (previous?.state === 'done' && sameChecks(binding, previous))) return;
   const child = spawn(process.execPath, [binScript('hud-check'), dir, JSON.stringify(binding)], { stdio: 'ignore' });
   child.unref();
   checking.add(id);
-  child.once('error', (error) => { checking.delete(id); drained(); warn(`checks ${id}`, `checks ${id}: ${error.message}`); });
-  child.once('exit', (code) => {
+  function finished(issue?: string) {
     checking.delete(id);
+    if (issue) {
+      warn(`checks ${id}`, `checks ${id}: ${issue}`);
+      checkRetries.set(id, Date.now() + cliCheck);
+    }
     drained();
-    if (code === 0) schedule();
-    else warn(`checks ${id}`, `checks ${id}: helper exit=${code}`);
-  });
-  return true;
+    schedule();
+  }
+  child.once('error', error => finished(error.message));
+  child.once('exit', (code, signal) => finished(code === 0 ? undefined : `helper exit=${signal ?? code}`));
+  return Infinity;
 }
 function subscribe() {
   if (subscribed) return;
@@ -154,6 +168,7 @@ function subscribe() {
 }
 function stopScheduling() {
   stopped = true;
+  runners.close();
   watcher?.close();
   watcher = undefined;
   settingsWatcher?.close();
@@ -214,14 +229,6 @@ function supervisorPid(dir: string, status: Partial<JobStatus> | null) {
   const pid = status?.supervisor_pid;
   return typeof pid === 'number' && Number.isInteger(pid) && pid > 1 ? pid : null;
 }
-function supervisorAlive(pid: number) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
 function readCloseTurn(dir: string, job: Job | null, status: Partial<JobStatus> | null) {
   if (status?.state !== 'idle_grace' || !job || job.reaped_at) return null;
   const turn = piReportSettlement(dir, job, status);
@@ -274,15 +281,15 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   const { controller: { signal }, ownership, readClose } = entry;
   if (job?.headless) {
     const end = sonicExit(dir, status);
-    if (!end) return true;
+    if (!end) return;
     entry.phase = 'reaping';
     const cleanup = await reapWorkerTree(dir, status, () => killSonicRoot(dir, status), gone => gone,
       { expectSnapshot: true, carry: retry?.snapshot, signal });
-    if (signal.aborted) return true;
+    if (signal.aborted) return;
     entry.snapshot = cleanup.snapshot;
     if (!cleanup.complete && !(cleanup.unrecoverable && cleanup.result)) {
       deferReap(entry, input, `reap ${id}: ${cleanup.issue ?? 'sonic runner still exiting'}`);
-      return true;
+      return;
     }
     const now = new Date().toISOString();
     const stopped = fs.existsSync(join(dir, jobFiles.stopRequested));
@@ -293,19 +300,19 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     if (latest) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
     if (cleanup.unrecoverable) log(`reap ${id}: ${cleanup.unrecoverable}; ${UNVERIFIED_TREE_NOTE}`);
     reapRetries.delete(id);
-    return true;
+    return;
   }
   if (readInGrace) {
     const target = session?.fields.primary;
     const agent = target ? (await request('agent.get', { target }, { signal }))?.result?.agent : undefined;
-    if (signal.aborted || (job?.resume_s === undefined && closedTabs.has(tab))) return true;
+    if (signal.aborted || (job?.resume_s === undefined && closedTabs.has(tab))) return;
     const latest = readJson<JobStatus>(statusFile);
     if (!latest || reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership ||
-        readCloseTurn(dir, readJson<Job>(jobFile), latest) !== readInGrace) return true;
+        readCloseTurn(dir, readJson<Job>(jobFile), latest) !== readInGrace) return;
     const observed = agent?.agent_status;
     if (job?.resume_s === undefined ? !['idle', 'done'].includes(observed ?? '') : observed === 'working' || observed === 'blocked') {
       preflightHold.set(id, { ownership, token: readInGrace, until: Date.now() + (job?.resume_s === undefined ? cliCheck : 500) });
-      return false;
+      return;
     }
     status = latest;
   }
@@ -321,18 +328,18 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   const exit = signal.aborted ? 'aborted' : result.exitCode ?? result.reason;
   const groupIssue = result.groupCleanupIssue?.replace(/^group \d+ /, 'reaper group ');
   const message = `reap ${id} state=${status.state} exit=${exit}; ${issue ? `${issue}; ` : ''}${groupIssue ? `${groupIssue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
-  if (signal.aborted || result.reason === 'aborted') { log(message); return true; }
+  if (signal.aborted || result.reason === 'aborted') { log(message); return; }
   const refusal = result.exitCode === 1 &&
     result.stderr.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`) && !result.stderr.trim().includes('\n');
   // When ancestry cannot be recovered, only the tab outcome remains to be verified.
   if (!complete && !(unrecoverable && (result.ok || refusal || closedTabs.has(tab)))) {
     deferReap(entry, input, message, refusal && !issue && !readClose);
-    return true;
+    return;
   }
 
   // Preserve worker shutdown facts and any job receipt updates made while we reaped.
   const latest = readJson<JobStatus>(statusFile);
-  if (!latest || reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership) return true;
+  if (!latest || reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership) return;
   if (readClose && (['idle_grace', 'closed'].includes(latest.state) || resumeReadReap &&
       (latest.state === 'working' || latest.state?.startsWith('waiting')))) {
     writeJsonAtomic(statusFile, { ...latest, state: 'closed',
@@ -351,20 +358,18 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     // There is no receipt to stamp. Don't repeat a finished reap on every scan.
     deferReap(entry, input, message, true);
   }
-  return true;
 }
 function startReap(job: ReapInput) {
   const { id, tab, ownership, readInGrace, resumeReadReap, retry } = job;
   const busy = [job.job?.worktree?.root, job.job?.cwd].filter((path): path is string => !!path);
   const entry: ActiveReap = { tab, ownership, readClose: Boolean(readInGrace || resumeReadReap), busy,
     phase: 'preflight', controller: new AbortController(), snapshot: retry?.snapshot };
-  let rescan = true;
-  entry.promise = Promise.resolve().then(() => reapJob(entry, job)).then((again) => { rescan = again; }).catch((error) => {
+  entry.promise = Promise.resolve().then(() => reapJob(entry, job)).catch((error) => {
     if (error.code !== 'ENOENT' && !stopped) deferReap(entry, job, `keep ${id} scan: ${error.message}`);
   }).finally(() => {
     inFlightReaps.delete(id);
     drained();
-    if (rescan || reapBacklog) schedule();
+    schedule(); // Completion may have installed a preflight/retry deadline.
   });
   inFlightReaps.set(id, entry);
 }
@@ -388,7 +393,6 @@ function startQueued(id: string, targetRole: string, overflowed: boolean) {
 }
 function scan(retryWatch = false) {
   if (stopped || pauseReady) return;
-  reapBacklog = false;
   clearTimeout(timer);
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
@@ -402,10 +406,11 @@ function scan(retryWatch = false) {
   };
   let rechecks = 0;
   let open = false,
-    safetyCheck = false,
     nearest = Infinity;
   const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
   const liveIds = new Set(listedIds);
+  const orphans = new Set<string>();
+  const watch = (dir: string, pid: number) => { nearest = Math.min(nearest, runners.watch(dir, pid)); };
   for (const id of listedIds) {
     const dir = join(jobs, id);
     try {
@@ -418,10 +423,7 @@ function scan(retryWatch = false) {
       const active = inFlightReaps.get(id);
       if (active) {
         for (const root of active.busy) busyWorktrees.add(root);
-        if (active.phase === 'preflight') {
-          safetyCheck = true;
-          if (closedTabs.has(active.tab)) active.controller.abort();
-        }
+        if (active.phase === 'preflight' && closedTabs.has(active.tab)) active.controller.abort();
         continue;
       }
       if (inFlightWorktrees.has(id) || !fs.lstatSync(dir).isDirectory()) continue;
@@ -456,21 +458,22 @@ function scan(retryWatch = false) {
         if (retry?.at === Infinity) continue;
         open = true;
         if (retry && retry.at > Date.now()) nearest = Math.min(nearest, retry.at);
-        else if (!sonicExit(dir, status)) {
-          safetyCheck = true;
-          nearest = Math.min(nearest, Date.parse(status.started_at!) + SONIC_TIMEOUT_MS);
+        else {
+          // Keep the close/reconnect edge even if /proc cannot resolve an exiting runner's argv yet.
+          if (status.pid) watch(dir, status.pid);
+          if (!sonicExit(dir, status)) nearest = Math.min(nearest, Date.parse(status.started_at!) + SONIC_TIMEOUT_MS);
+          else if (inFlightReaps.size < MAX_CONCURRENT_REAPS)
+            startReap({ id, dir, job, status, session, tab: '', ownership, retry, readInGrace: null, jobFile, statusFile });
         }
-        else if (inFlightReaps.size >= MAX_CONCURRENT_REAPS) reapBacklog = true;
-        else startReap({ id, dir, job, status, session, tab: '', ownership, retry, readInGrace: null, jobFile, statusFile });
         continue;
       }
       if (!['closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
         let update: JobStatus | undefined;
         const now = new Date().toISOString();
         if (job?.cli) {
-          safetyCheck ||= Boolean(status);
-          const pid = (status || tabClosed) && supervisorPid(dir, status);
-          const liveSupervisor = pid && supervisorAlive(pid);
+          const pid = supervisorPid(dir, status);
+          const liveSupervisor = pid && isProcAlive(pid);
+          if (pid && liveSupervisor) watch(dir, pid);
           // A live supervisor delivering /quit owns the terminal write and knows why the tab closed.
           const quitting = tabClosed && liveSupervisor && fs.existsSync(`${statusFile}.quit-${pid}`);
           if (!quitting && (tabClosed || (pid && !liveSupervisor))) {
@@ -480,6 +483,17 @@ function scan(retryWatch = false) {
             const alive = workerAlive(status?.pid ?? null, status?.pid_start_time ?? null);
             const end = terminalFact({ alive, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
               turn: readTurn(dir), reportSig: reportSignature(dir) });
+            if (!end && alive === true && status?.pid && !liveSupervisor) {
+              // The remaining third-party worker owns no HUD socket. Back off until a replacement
+              // supervisor, a tab event, or verified worker exit ends this degraded handoff.
+              orphans.add(id);
+              let retry = orphanRetries.get(id);
+              if (!retry || retry.pid !== status.pid || retry.at <= Date.now()) {
+                const delay = Math.min(MAX_REAP_BACKOFF_MS, retry?.pid === status.pid ? retry.delay * 2 : cliCheck);
+                orphanRetries.set(id, retry = { pid: status.pid, delay, at: Date.now() + delay });
+              }
+              nearest = Math.min(nearest, retry.at);
+            }
             const reason = alive === true ? 'supervisor exited; worker still running' : 'supervisor exited; worker liveness unknown';
             if (end) update = { state: end.state, reason: null, blocked: false, output_written: end.outputWritten,
               settled_at: status?.settled_at ?? now, ended_at: now, exit_reason: end.exitReason,
@@ -493,7 +507,8 @@ function scan(retryWatch = false) {
           if (terminal) { status = terminal; jobCache.invalidateFile(statusFile); statusAt = null; }
           else if (status) {
             // The marker or tab event can arrive before the PID is gone.
-            open = safetyCheck = true;
+            open = true;
+            nearest = Math.min(nearest, Date.now() + cliCheck); // Native pi-roles has no HUD runner.
             if (isWorkingForCap(job, status)) countWorking(job!.role);
             continue;
           }
@@ -511,9 +526,14 @@ function scan(retryWatch = false) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) { open = true; markBusy(job); }
         continue;
       }
-      const checkingReport = checksOpen(id, dir, job, status);
+      // Land can start in idle_grace as well as after closure; its receipt is outside jobs/.
+      const land = job?.worktree && landAttempt(home, id).prior;
+      const landing = land && activeLand(land);
+      if (landing) { watch(dir, land.pid); open = true; markBusy(job); }
+      const check = checkDeadline(id, dir, job, status);
+      const checkingReport = check !== undefined;
       if (checkingReport) {
-        open = safetyCheck = true; markBusy(job);
+        open = true; nearest = Math.min(nearest, check); markBusy(job);
         if (job?.resume_s === undefined || !status.output_written) continue;
       }
       // If report eligibility changes, still look for the root to exit, without polling during backoff.
@@ -548,10 +568,6 @@ function scan(retryWatch = false) {
         }
       }
       const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at ?? '');
-      // A land helper owns its checkout and receipt through push and cleanup, across watcher restarts.
-      const land = job?.worktree && landAttempt(home, id).prior;
-      const landing = land && activeLand(land);
-      if (landing) { open = safetyCheck = true; markBusy(job); }
       const resumeUntil = job && resumeDeadline(job, status);
       const resumable = !!resumeUntil && resumeUntil > Date.now();
       if (resumable && job?.worktree) nearest = Math.min(nearest, resumeUntil);
@@ -598,17 +614,13 @@ function scan(retryWatch = false) {
         continue;
       }
       if (readInGrace) {
-        safetyCheck = true;
         const hold = preflightHold.get(id);
         if (hold?.ownership === ownership && hold.token === readInGrace && hold.until > Date.now()) {
           nearest = Math.min(nearest, hold.until);
           continue;
         }
       }
-      if (inFlightReaps.size >= MAX_CONCURRENT_REAPS) {
-        reapBacklog = true;
-        continue;
-      }
+      if (inFlightReaps.size >= MAX_CONCURRENT_REAPS) continue;
       preflightHold.delete(id);
       startReap({ id, dir, job, status, session, tab, retry, readInGrace, resumeReadReap, jobFile, statusFile, ownership });
     } catch (error) {
@@ -620,6 +632,7 @@ function scan(retryWatch = false) {
     }
   }
   for (const id of [...reapRetries.keys()]) if (!liveIds.has(id)) reapRetries.delete(id);
+  for (const id of checkRetries.keys()) if (!liveIds.has(id)) checkRetries.delete(id);
   for (const id of [...preflightHold.keys()]) if (!liveIds.has(id)) preflightHold.delete(id);
   for (const id of [...worktreeRetries.keys()]) if (!liveIds.has(id)) worktreeRetries.delete(id);
   const warnNow = Date.now();
@@ -669,7 +682,8 @@ function scan(retryWatch = false) {
     settingsWatcher = undefined;
   }
   if (open) subscribe();
-  if (safetyCheck) nearest = Math.min(nearest, Date.now() + cliCheck);
+  runners.finishScan();
+  for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);
   const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
@@ -704,7 +718,8 @@ function startWatch() {
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
       const path = filename?.toString();
-      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-exit\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
+      if (path?.endsWith(`/${RUNNER_READY}`)) { runners.ready(join(jobs, dirname(path))); schedule(); return; }
+      if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-exit\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;
       warn('watch error', `watch error: ${error.message}`);

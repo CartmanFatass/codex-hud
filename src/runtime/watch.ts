@@ -29,7 +29,7 @@ export async function openWatcher() {
   const pidFile = join(home, 'watch.pid'), logFile = join(home, 'watch.log');
   const runtime = new URL('./watch-runtime.js', import.meta.url);
   const closedTabs = new Set<string>();
-  let current: Generation<Runtime>, stamp: string | null, timer: NodeJS.Timeout, switching: Promise<void> | undefined;
+  let current: Generation<Runtime>, stamp: string | null, buildWatch: fs.FSWatcher | undefined, switching: Promise<void> | undefined;
   let stopping = false, subscribed = false, socket: ReturnType<typeof createConnection>;
   function log(message: string) {
     try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); }
@@ -65,7 +65,7 @@ export async function openWatcher() {
   async function finish(reason: string) {
     if (stopping) return;
     stopping = true;
-    clearInterval(timer);
+    buildWatch?.close();
     socket?.destroy();
     const active = current;
     await active.call('shutdown'); // A signal must still abort a reap while reload is draining it.
@@ -112,11 +112,22 @@ export async function openWatcher() {
   writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
   log(`start pid=${process.pid}`);
   return async () => {
-    timer = setInterval(() => {
+    function checkBuild() {
       if (switching || stopping) return;
       const seen = buildStamp();
-      if (seen && seen !== stamp) switching = reload(seen).finally(() => { switching = undefined; });
-    }, 30000).unref();
-    if (!stopping) await current.call('start', null, closedTabs);
+      if (seen && seen !== stamp) switching = reload(seen).finally(() => {
+        switching = undefined;
+        if (!stopping && buildStamp() !== seen) checkBuild(); // A second publish during reload.
+      });
+    }
+    if (stopping) return;
+    // Successful builds replace or touch index.js. Watch its directory, not the replaced inode.
+    try {
+      buildWatch = fs.watch(new URL('../', import.meta.url), { persistent: false }, (_event, name) => {
+        if (!name || name === 'index.js') checkBuild();
+      }).on('error', error => log(`build watch unavailable: ${error.message}`));
+    } catch (error) { log(`build watch unavailable: ${(error as Error).message}`); }
+    await current.call('start', null, closedTabs);
+    checkBuild();
   };
 }

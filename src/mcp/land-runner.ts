@@ -15,6 +15,7 @@ import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safet
 import { DEFAULT_LAND_TIMEOUT_S, isFlowId, landFile, readLand, writeLand, type LandFlow } from './land-state.js';
 import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
+import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { repairLand } from './land-repair.js';
 
 class CommandError extends Error {
@@ -304,5 +305,8 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
 }
 process.once('message', async ({ home, flow, cleanup }: { home: string; flow: string; cleanup: string[] }) => {
   const f = readLand(home, flow);
-  if (f?.state === 'queued' && f.pid === process.pid) await execute(home, f, cleanup);
+  if (f?.state === 'queued' && f.pid === process.pid) {
+    await publishRunnerLifetime(join(home, 'jobs', f.job));
+    await execute(home, f, cleanup);
+  }
 });

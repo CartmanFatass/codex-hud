@@ -7,6 +7,38 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { SONIC_TIMEOUT_MS } from '../../dist/mcp/sonic-process.js';
 import { isProcAlive } from '../../dist/utils/proc.js';
 
+test('a quiet sonic causes no watcher ticks; killing its runner triggers a scan without an exit file', async (t) => {
+  const probe = `import fs from 'node:fs'; import net from 'node:net'; import { syncBuiltinESMExports } from 'node:module';
+if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
+  const home = process.env.HUD_HOME, connect = net.createConnection, lstat = fs.lstatSync;
+  net.createConnection = (path, ...args) => {
+    const socket = connect(path, ...args);
+    if (path.startsWith('\\0myhud-runner-')) socket.once('connect', () => fs.writeFileSync(home + '/connected', 'yes'));
+    return socket;
+  };
+  fs.lstatSync = (path, ...args) => {
+    if (path === home + '/jobs') fs.appendFileSync(home + '/scans', Date.now() + '\\n');
+    return lstat(path, ...args);
+  };
+  syncBuiltinESMExports();
+}`;
+  const f = await fixture(t, { watcherTickMs: 60, probe: `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify('data:text/javascript,' + encodeURIComponent(probe))}` });
+  f.overrideBin('pi', '#!/bin/sh\nexec sleep 120\n');
+  const { task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic quiet query.' });
+  const scans = () => fs.readFileSync(join(f.env.HUD_HOME, 'scans'), 'utf8').trim().split('\n').map(Number);
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'connected')));
+  await new Promise(resolve => setTimeout(resolve, 150)); // Let dispatch file events drain.
+  const before = scans().length;
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(scans().length, before, 'five former slow ticks without a scan');
+  const killed = Date.now();
+  process.kill(cliState(dir).pid, 'SIGKILL');
+  await until(() => cliState(dir).state === 'failed');
+  assert.ok(scans()[before] - killed < 1000, 'runner death wakes the watcher within one second');
+  assert.equal(cliState(dir).exit_reason, 'sonic runner exited without an exit receipt');
+  assert.equal(fs.existsSync(join(dir, 'sonic-exit.json')), false);
+});
+
 // Model-free pi stand-in. Its TERM-resistant detached grandchild is not in the runner's group.
 test('the headless deadline fails the query, preserves partial output and reaps verified descendants', async (t) => {
   // Backdating STATUS below must be noticed within the test window even if its rename event is missed.

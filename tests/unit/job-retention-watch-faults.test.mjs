@@ -191,7 +191,9 @@ test('persistent asynchronous watch errors stay at one scan per second and throt
   const { child, exited } = f.start(scanProbe + `
 import { EventEmitter } from 'node:events';
 let attempts = 0;
-fs.watch = () => {
+const watch = fs.watch;
+fs.watch = (...args) => {
+  if (!args[1]?.recursive) return watch(...args);
   fs.appendFileSync(process.env.HUD_HOME + '/attempts', Date.now() + '\\n');
   const watcher = new EventEmitter();
   watcher.close = () => {};

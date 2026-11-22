@@ -228,8 +228,7 @@ CLI 任务的监督进程只观察；只有事实能结束任务：记录的进�
 回合安静超过空闲宽限且无报告时，做一次决策 API 选择，只在固定动作中选（继续等、一次固定的写报告提示、屏幕上有配额行才 `failed`、
 交给主会话）；置信度低于 0.8 或出错则交给主会话。不确定的一律 `waiting_orchestrator` 并写明原因。监督进程由 herdr 推送、
 文件变化和自身截止时间唤醒，另有每 30 秒一次重读状态；STATUS 只在行变化时写。`hud_create`、`hud_read`、`hud_send`、`hud_respond` 或 `hud_land` 会按需启动 watcher，后者经 `pi-role-reap` 回收已结束任务，
-失败标签页保留两小时；没有未结束任务或待到期失败任务时退出。CLI 任务开着时还会检查监督进程是否还活着；
-`HUD_WATCH_CLI_CHECK_MS`（默认 30000）是该间隔。监督进程已死而工作者仍在时任务为 `waiting_orchestrator`（“supervisor exited; worker still running”），对它 `hud_send` 会启动新的监督进程。已结算目录在**关闭一天后**的
+失败标签页保留两小时；没有未结束任务或待到期失败任务时退出。watcher 通过套接字关闭事件发现 HUD 启动的运行进程退出，无需定期扫描。原生 pi-roles 工作者没有这样的套接字，等待停止或已读关闭时仍可按 `HUD_WATCH_CLI_CHECK_MS`（默认 30000 毫秒）复查。监督进程已死而工作者仍在时任务为 `waiting_orchestrator`（“supervisor exited; worker still running”），watcher 按指数退避复查该工作者，对它 `hud_send` 会启动新的监督进程。已结算目录在**关闭一天后**的
 后续扫描时清理，不设专门到期定时器；包括报告及 `hud_read` 访问。删除旧 pi 任务前先将真实 JSONL
 会话移至 pi 存储；CLI 和浏览器会话留在各自存储。cwd 无效、目标冲突或移动失败则保留任务。删除会话链接不删除目标。
 删除任务目录前，watcher 向 `$HUD_HOME/archive/YYYY-MM.jsonl` 追加一行任务事实，不含任务说明或报告正文；写入失败不影响删除，HUD 暂不读取或清理归档。

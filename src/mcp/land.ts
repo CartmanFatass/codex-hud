@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
+import { notifyRunner } from '../utils/runner-lifetime.js';
 import { procStat } from '../utils/proc.js';
 import { activeLand, landAttempt, landFile, landNotice, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
 import { managedReceiptMatches } from './managed-worktree.js';
@@ -45,6 +46,8 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
       state: 'queued', step: 'main-checkout lease', created_at: now, updated_at: now };
     try { writeLand(home, f, true); }
     catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') return readLand(home, flow)!; throw e; }
+    // flows/ is outside the jobs watch. Announce the identity even if the helper never finishes startup.
+    notifyRunner(join(home, 'jobs', id), pid);
     child.send({ home, flow, cleanup });
     return f;
   } finally { if (child.connected) child.disconnect(); child.unref(); }

@@ -63,12 +63,8 @@ test('one connection and watcher keep their work across two published generation
     fs.cpSync(resolve(name), join(root, name), { recursive: true });
   fs.symlinkSync(resolve('node_modules'), join(root, 'node_modules'));
   const bin = join(root, 'packages/hud-mcp/bin');
-  const fastTick = `if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
-    const interval = globalThis.setInterval; globalThis.setInterval = (fn, ms) => interval(fn, ms === 30000 ? 100 : ms);
-  }`;
   // Keep the watcher alive after task settlement so the same PID can reload again.
-  const f = await legacyFixture(t, { mcpEntry: join(bin, 'hud-mcp.mjs'),
-    probe: `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify('data:text/javascript,' + encodeURIComponent(fastTick))};` });
+  const f = await legacyFixture(t, { mcpEntry: join(bin, 'hud-mcp.mjs') });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');

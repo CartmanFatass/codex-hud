@@ -435,7 +435,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
 });
 
 test('hud_send restarts a dead supervisor only when the worker is confirmed alive', { timeout: 20000 }, async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, { watcherTickMs: 200 }); // Scale the orphan retry, not the supervisor death event.
   writeCliRole(f, 'respawn-cli', 1, true);
   const spawnDummy = () => {
     const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { env: f.env, stdio: 'ignore' });
@@ -454,7 +454,6 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
   const startedAt = cliState(job.task_dir).started_at;
   process.kill(oldSupPid, 'SIGKILL');
   await until(() => dead(oldSupPid));
-  fs.utimesSync(join(job.task_dir, 'STATUS.json'), new Date(Date.now() + 2000), new Date(Date.now() + 2000));
   await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 5000);
   assert.equal(cliState(job.task_dir).reason, 'supervisor exited; worker still running');
 
@@ -485,10 +484,10 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
   dyingWorker.kill('SIGKILL');
   await until(() => dead(goneSupPid) && dead(dyingWorker.pid));
   const sentGone = await f.call('hud_send', { job: goneJob.job, message_key: 'gone-before-watch', text: 'Worker already dead.' });
-  assert.equal(sentGone.sent, true);
+  // Socket close can settle the job before this send; neither ordering may respawn a supervisor.
+  if (!sentGone.sent) assert.equal(sentGone.code, 'not_continuable');
   // hud_send publishes any replacement supervisor PID before it returns.
   assert.equal(fs.readFileSync(join(goneJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(goneSupPid));
-  fs.utimesSync(join(goneJob.task_dir, 'STATUS.json'), new Date(Date.now() + 2000), new Date(Date.now() + 2000));
   await until(() => cliState(goneJob.task_dir)?.state === 'failed', 5000);
   // The watcher may have settled before or after the previous reply advanced the change cursor.
   const { changes, ...rejected } = await f.call('hud_send', { job: goneJob.job, message_key: 'gone-after-watch', text: 'Still dead.' });

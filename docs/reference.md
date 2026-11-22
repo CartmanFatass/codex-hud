@@ -365,10 +365,8 @@ Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; 
 The supervisor wakes on herdr pushes, file changes and its own deadlines,
 plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes. The on-demand watcher starts on
 `hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed. It reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
-and exits with no open job or pending failed-job deadline. While a CLI job is open
-it also checks the supervisor; `HUD_WATCH_CLI_CHECK_MS` (default 30000) is that
-interval. A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
-worker still running"); `hud_send` to it starts a new supervisor. Settled directories, including reports and
+and exits with no open job or pending failed-job deadline. The watcher learns of a HUD runner's exit through a socket close, not a periodic scan. Native pi-roles workers have no such runner; pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000). A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
+worker still running"); the watcher rechecks this unsupervised worker with exponential backoff. `hud_send` to it starts a new supervisor. Settled directories, including reports and
 `hud_read` access, expire **one day after closure** on a later watcher scan, not a dedicated expiry timer. Before deleting a legacy pi job it moves real
 JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job. Removing session

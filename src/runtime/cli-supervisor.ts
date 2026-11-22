@@ -16,8 +16,11 @@ import { createInterface } from 'node:readline';
 import { request } from './herdr-socket.js';
 import { sonicChildren, sonicCollectPrompt } from '../worker/sonic-jobs.js';
 
-export function main() {
+import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
+
+export async function main() {
   const dir = fs.realpathSync(process.argv[2]);
+  await publishRunnerLifetime(dir);
   const bundled = BUNDLED_ROOT, hudHome = dirname(dirname(dir));
   const jobFile = join(dir, jobFiles.job), job = readJsonFile(jobFile) as Job;
   let readAt = job.read_at;

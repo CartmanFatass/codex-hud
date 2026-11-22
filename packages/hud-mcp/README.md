@@ -271,10 +271,9 @@ leaves input drafts untouched and avoids typed-input prompt hooks. Stale PIDs ne
 path and `hud_respond` reply, so another read is unnecessary. Answer with `hud_respond`. A mid-turn `blocked` status marks the job as needing the
 owner; the session learns it from `changes` or `hud watch`. `hud_close` stops a working CLI job, or quits one that is in idle grace.
 
-While a CLI job is open, the watcher also checks that the supervisor is alive.
-`HUD_WATCH_CLI_CHECK_MS` is that interval in milliseconds (default 30000). A dead
+The watcher subscribes to each CLI supervisor's lifetime socket and rechecks its PID on disconnect. Native pi-roles workers have no HUD runner socket; their pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000). A dead
 supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
-worker still running"); `hud_send` to it starts a new supervisor. With the worker gone
+worker still running"); this orphan is rechecked with exponential backoff, and `hud_send` to it starts a new supervisor. With the worker gone
 too, the job closes with a new report or fails without one.
 
 Settled job directories are removed **one day after closure** on a later watcher

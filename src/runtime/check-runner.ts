@@ -1,5 +1,6 @@
 /** Run main-session checks once for the declared report. Never write lifecycle state. */
 import { checkBinding, CHECKS_FILE, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
+import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { procStat } from '../utils/proc.js';
 import { readJsonFile, writeJsonPrivate } from '../utils/atomic-fs.js';
 import type { CheckBinding, CheckReceipt, CheckResult, Job, JobStatus } from '../mcp/job-contracts.js';
@@ -55,6 +56,7 @@ export function main() {
       const interrupted = sameChecks(prior, binding);
       if (interrupted && prior?.state === 'done') return;
       const results: CheckResult[] = [];
+      await publishRunnerLifetime(dir);
       save({ ...binding, state: 'running', pid: process.pid, start: procStat(process.pid)?.start, results });
       for (const command of job.checks!) results.push(interrupted
         ? { command, exit_code: null, duration_ms: 0, output_tail: 'Check helper interrupted; result unavailable.' }
