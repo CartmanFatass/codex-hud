@@ -13,6 +13,7 @@ import {
   cliState,
   graceArmed,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('supervisor events: report then long summary, flapping, explicit continuation and rewritten report', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
@@ -20,7 +21,7 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   writeCliRole(f, 'event-cli', 4);
   const job = await f.call('hud_create', { role: 'event-cli', request_key: 'events', task: 'Synthetic event sequences.' });
   await until(() => cliState(job.task_dir)?.pid);
-  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report before the long summary.\n');
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'Report before the long summary.\n');
   await new Promise((r) => setTimeout(r, 750));
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).quiet_decision, undefined);
@@ -43,7 +44,7 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   await until(() => cliState(job.task_dir)?.state === 'working');
   await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic retry.' });
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json'))).seq, second.seq);
-  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report before the long summary.\n'); // same bytes, new signature
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'Report before the long summary.\n'); // same bytes, new signature
   await until(() => cliState(job.task_dir)?.state === 'idle_grace');
   assert.equal(cliState(job.task_dir).output_written, true);
   assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === 'w4E:p1'), false);
@@ -57,7 +58,7 @@ test('supervisor events: a report with a missed status push settles on the safet
   writeCliRole(f, 'missed-push', 4);
   const job = await f.call('hud_create', { role: 'missed-push', request_key: 'missed-push', task: 'Synthetic missed push.' });
   await until(() => cliState(job.task_dir)?.pid);
-  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report, then herdr goes idle without a push.\n');
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'Report, then herdr goes idle without a push.\n');
   f.silent(job.job, 'idle');
   await until(() => cliState(job.task_dir)?.state === 'idle_grace', 5000);
   assert.equal(cliState(job.task_dir).output_written, true);
@@ -87,7 +88,7 @@ test('done without report keeps the job open and a later report settles it', { t
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const job2 = await f.call('hud_create', { role: 'short-cli', request_key: 'grok-late-report', task: 'Synthetic late report.' });
   await until(() => cliState(job2.task_dir)?.state === 'working' && cliState(job2.task_dir)?.pid);
-  fs.writeFileSync(join(job2.task_dir, 'report.md'), 'Synthetic direct report.\n');
+  writeFixtureFile(join(job2.task_dir, 'report.md'), 'Synthetic direct report.\n');
   await until(() => cliState(job2.task_dir)?.state === 'closed', 8000);
   assert.equal(cliState(job2.task_dir).output_written, true);
 });
@@ -121,7 +122,7 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
     const dir = job.task_dir, turn = () => JSON.parse(fs.readFileSync(join(dir, 'turn.json'), 'utf8'));
     const receipt = () => JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
     await until(() => cliState(dir)?.agent_session_id);
-    fs.writeFileSync(join(dir, 'report.md'), 'Synthetic first report.\n');
+    writeFixtureFile(join(dir, 'report.md'), 'Synthetic first report.\n');
     f.push(job.job, 'idle');
     await until(() => cliState(dir)?.state === 'idle_grace');
     const prior = turn(), grace = cliState(dir);
@@ -170,7 +171,7 @@ test('an unchanged cli report after continuation stays open without failing', { 
   await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.output_written === false, 5000);
   await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 5000);
   assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
-  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Synthetic grok report two.\n');
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'Synthetic grok report two.\n');
   await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
 });
 
@@ -277,7 +278,7 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
 test('idle and unknown with a live agent settle only a stable new report', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   for (const status of ['idle', 'unknown']) {
-    fs.writeFileSync(join(f.env.HOME, 'quiet-hold'), status);
+    writeFixtureFile(join(f.env.HOME, 'quiet-hold'), status);
     const job = await f.call('hud_create', {
       role: 'imp',
       on: 'grok',
@@ -304,7 +305,7 @@ test(
   { timeout: 15000 },
   async (t) => {
     const f = await fixture(t);
-    fs.writeFileSync(join(f.env.HOME, 'grace-quiet'), 'idle');
+    writeFixtureFile(join(f.env.HOME, 'grace-quiet'), 'idle');
     const held = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grace-idle', task: 'Synthetic grace.' });
     await until(() => cliState(held.task_dir)?.state === 'closed', 8000);
     assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
@@ -313,7 +314,7 @@ test(
     const seen = JSON.parse(fs.readFileSync(join(f.env.HOME, 'seen-grace.json'), 'utf8'));
     assert.equal(cliState(held.task_dir).idle_deadline_at, seen.idle_deadline_at);
     // A pushed unknown cannot override the /proc exit fact.
-    fs.writeFileSync(join(f.env.HOME, 'grace-quiet'), 'unknown');
+    writeFixtureFile(join(f.env.HOME, 'grace-quiet'), 'unknown');
     fs.writeFileSync(join(f.env.HOME, 'grace-quiet-gone'), '');
     const gone = await f.call('hud_create', {
       role: 'imp',
@@ -330,7 +331,7 @@ test(
 test('a blocked resume treats idle as present and unknown as gone', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-blocked'), '');
-  fs.writeFileSync(join(f.env.HOME, 'blocked-quiet'), 'idle');
+  writeFixtureFile(join(f.env.HOME, 'blocked-quiet'), 'idle');
   const held = await f.call('hud_create', {
     role: 'imp',
     on: 'grok',
@@ -344,7 +345,7 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
   assert.equal(cliState(held.task_dir).error, null);
   fs.unlinkSync(join(f.env.HOME, 'release-blocked'));
   // A missing worker on blocked resume still fails by its PID.
-  fs.writeFileSync(join(f.env.HOME, 'blocked-quiet'), 'unknown');
+  writeFixtureFile(join(f.env.HOME, 'blocked-quiet'), 'unknown');
   fs.writeFileSync(join(f.env.HOME, 'blocked-quiet-gone'), '');
   const gone = await f.call('hud_create', {
     role: 'imp',

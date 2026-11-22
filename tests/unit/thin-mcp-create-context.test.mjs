@@ -19,6 +19,7 @@ import {
   waitFixtureJob,
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('launch thinking facts map CLI efforts before opening the worker; unknown models pass through', async (t) => {
   const f = await fixture(t);
@@ -119,7 +120,7 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
     role: 'retry-check', preset: 'two', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false, checks: ['true'],
   });
   const statusFile = join(original.task_dir, 'STATUS.json');
-  fs.writeFileSync(statusFile, JSON.stringify({ state: 'failed', exit_reason: 'rate limit reached; retry after 5m' }));
+  writeFixtureFile(statusFile, JSON.stringify({ state: 'failed', exit_reason: 'rate limit reached; retry after 5m' }));
   const retry = { retry_of: original.job };
   const next = await f.call('hud_create', retry);
   assert.notEqual(next.job, original.job);
@@ -635,7 +636,7 @@ test('hud_create inlines browser context with safe fences and caps both file and
   const sample = 'Synthetic file; cost: 90 credits.\n`````\nSynthetic code.\n`````\n';
   const body = sample.padEnd(max, 'x');
   fs.writeFileSync(join(f.root, 'sample.md'), body);
-  for (const path of [report, join(f.root, 'a.md'), join(f.root, 'b.md')]) fs.writeFileSync(path, 'é'.repeat(max / 2));
+  for (const path of [report, join(f.root, 'a.md'), join(f.root, 'b.md')]) writeFixtureFile(path, 'é'.repeat(max / 2));
   fs.writeFileSync(join(f.root, 'extra.md'), 'x');
   fs.writeFileSync(join(f.root, 'big.md'), 'é'.repeat(max / 2) + 'x');
   const args = { role: 'pro', request_key: 'context-bro', task: 'Synthetic browser task.' };

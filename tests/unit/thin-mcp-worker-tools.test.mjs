@@ -24,6 +24,7 @@ import {
   writeCliRole,
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
@@ -56,11 +57,11 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.deepEqual(resultValue(await call('hud_sonic', { timeout_s: 0 })), { reports: [], working: [first, second].sort(), failed: [] });
   const qa = join(dir(first), 'qa');
   fs.mkdirSync(qa, { recursive: true });
-  fs.writeFileSync(join(qa, 'q1.md'), 'Synthetic child question.');
+  writeFixtureFile(join(qa, 'q1.md'), 'Synthetic child question.');
   const changes = async () => (await f.call('hud_read')).changes ?? [];
   assert.ok((await changes()).some((line) => line.startsWith(first) && line.includes('QUESTION') && !line.includes(' | report')));
   const waiting = call('hud_sonic', { timeout_s: 2 });
-  fs.writeFileSync(join(qa, 'q1.answer.md'), 'Answer.');
+  writeFixtureFile(join(qa, 'q1.answer.md'), 'Answer.');
   publishSonic(dir(first), { state: 'closed', output_written: true });
   assert.ok(!(await changes()).some((line) => line.startsWith(first)), 'child settlement stays quiet');
   publishSonic(dir(second), { state: 'closed', output_written: true });
@@ -233,16 +234,16 @@ test('worker MCP lists only the worker tools and refuses main-session calls', as
     place_key: 'pi:implementer:synthetic/default',
   };
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
-  fs.writeFileSync(join(dir, 'SESSION.txt'), `PRIMARY=${job}-primary\n`);
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
-  fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify(receipt));
+  writeFixtureFile(join(dir, 'SESSION.txt'), `PRIMARY=${job}-primary\n`);
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  writeFixtureFile(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
   const listed = await f.rpc('tools/list');
   assert.deepEqual(listed.result.tools.map(({ name }) => name), ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
   const call = (name, args) => f.rpc('tools/call', { name, arguments: args });
   assert.equal(resultValue((await call('hud_progress', { message: 'Synthetic milestone' })).result).ok, true);
   assert.equal(JSON.parse(fs.readFileSync(join(dir, 'progress.jsonl'), 'utf8')).text, 'Synthetic milestone');
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'quota exceeded' }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'quota exceeded' }));
   for (const [name, payload] of [
     ['hud_roster', {}], ['hud_read', { job }], ['hud_create', args], ['hud_close', { job }],
     ['hud_send', { job, message_key: 'worker-send', text: 'Synthetic message.' }],
@@ -262,8 +263,8 @@ test('worker MCP lists only the worker tools and refuses main-session calls', as
 function leaseWorker(t, f, number, cwd = f.root, pid = process.pid) {
   const job = `j${String(number).padStart(16, '0')}`, dir = join(f.env.HUD_HOME, 'jobs', job);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job, cwd, role: 'imp', herdr_pane: 'w4E:p2', created_at: new Date().toISOString() }));
-  const status = (state) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, pid }));
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job, cwd, role: 'imp', herdr_pane: 'w4E:p2', created_at: new Date().toISOString() }));
+  const status = (state) => writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state, pid }));
   status('working');
   const rpc = workerClient(t, f, dir);
   return { job, dir, status, lease: async (args) => resultValue(await rpc('hud_lease', { name: 'install', ...args })) };
@@ -435,7 +436,7 @@ test(
     const id = 'j00000000000000a1',
       dir = join(f.env.HUD_HOME, 'jobs', id);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
+    writeFixtureFile(
       join(dir, 'job.json'),
       JSON.stringify({
         job: id,
@@ -445,9 +446,9 @@ test(
         created_at: new Date().toISOString(),
       })
     );
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', harness: 'cli', agent: 'grok' }));
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', harness: 'cli', agent: 'grok' }));
     fs.writeFileSync(join(dir, 'brief.md'), '# Synthetic ask\n');
-    fs.writeFileSync(join(dir, 'SESSION.txt'), 'LEFT=w4E:p2\nORCH=w4E:p1\n');
+    writeFixtureFile(join(dir, 'SESSION.txt'), 'LEFT=w4E:p2\nORCH=w4E:p1\n');
     const call = workerClient(t, f, dir);
     const pending = call('hud_ask', { question: 'Which layout?', options: ['rows', 'columns'], default: 'rows', context: 'card width' });
     await until(() => fs.existsSync(join(dir, 'qa', 'q1.md')));
@@ -484,7 +485,7 @@ test('hud-ask prints the default when no answer arrives', { timeout: 10000 }, as
   const id = 'j00000000000000a2',
     dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
+  writeFixtureFile(
     join(dir, 'job.json'),
     JSON.stringify({
       job: id,
@@ -494,7 +495,7 @@ test('hud-ask prints the default when no answer arrives', { timeout: 10000 }, as
       created_at: new Date().toISOString(),
     })
   );
-  fs.writeFileSync(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
+  writeFixtureFile(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
   const result = await runAsk(f.env, [
     '--dir',
     dir,

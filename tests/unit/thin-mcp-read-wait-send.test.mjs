@@ -24,6 +24,7 @@ import {
   jsonLines,
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('lean main-pi delegation collects first and repeat reports through native watch without polling', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
@@ -115,7 +116,7 @@ try {
     assert.equal(refresh.convention, undefined);
     assert.ok([...(collected.changes ?? []), ...(refresh.changes ?? [])].some((line) => line.startsWith(`${repeated} imp: closed`)));
     const working = waitFixtureJob(f, 1, 'working', 'w4E:p9');
-    fs.writeFileSync(join(working.dir, 'job.json'), JSON.stringify({ ...working.receipt, model: 'synthetic/default',
+    writeFixtureFile(join(working.dir, 'job.json'), JSON.stringify({ ...working.receipt, model: 'synthetic/default',
       thinking: 'low', model_source: join(f.root, 'roles/implementer.md'), split: false, pi_args: [],
       dispatch_exit_code: 0, stderr_tail: '', role_skills: [], skipped_skills: [], worker_prompt: null }));
     const read = await call('hud_read', { job: working.job });
@@ -162,15 +163,15 @@ test('hud_read compact lists actionable jobs without losing unread reports or hi
     const reason = working ? 'Reading synthetic files' : 'settled';
     const dir = join(f.env.HUD_HOME, 'jobs', job);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({
       job, role, created_at, cwd: f.root, herdr_pane: 'w4E:p1',
       ...(n === 1 ? { parent_job: 'j0000000000000002' } : {}),
       ...(n > 5 ? { read_at: created_at } : {}),
     }));
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
     if (!working) {
       const report = join(dir, 'report.md');
-      fs.writeFileSync(report, 'Synthetic report.');
+      writeFixtureFile(report, 'Synthetic report.');
       fs.utimesSync(report, n, n);
     }
     return {
@@ -251,13 +252,13 @@ test('MCP adopts same-project orphan jobs in one scan and pushes questions to th
   const read = waitFixtureJob(f, 7, 'closed', 'w4E:p8');
   const observed = waitFixtureJob(f, 8, 'failed', 'w4E:p8');
   const question = waitFixtureJob(f, 9, 'closed', 'w4E:p8');
-  for (const { dir } of [unread, read]) fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report.');
-  fs.writeFileSync(join(question.dir, 'qa/q1.md'), 'Synthetic question.');
+  for (const { dir } of [unread, read]) writeFixtureFile(join(dir, 'report.md'), 'Synthetic report.');
+  writeFixtureFile(join(question.dir, 'qa/q1.md'), 'Synthetic question.');
   const at = new Date(Date.now() + 1000).toISOString();
-  fs.writeFileSync(join(read.dir, 'job.json'), JSON.stringify({ ...read.receipt, read_at: at }));
-  fs.writeFileSync(join(observed.dir, 'job.json'), JSON.stringify({ ...observed.receipt, observed_at: at }));
-  fs.writeFileSync(join(adopted[0].dir, 'SESSION.txt'), 'ORCH=w4E:p8\n');
-  fs.writeFileSync(join(f.env.HOME, 'pane-list.json'), '{"result":{"panes":[{"pane_id":"w4E:p1"},{}]}}');
+  writeFixtureFile(join(read.dir, 'job.json'), JSON.stringify({ ...read.receipt, read_at: at }));
+  writeFixtureFile(join(observed.dir, 'job.json'), JSON.stringify({ ...observed.receipt, observed_at: at }));
+  writeFixtureFile(join(adopted[0].dir, 'SESSION.txt'), 'ORCH=w4E:p8\n');
+  writeFixtureFile(join(f.env.HOME, 'pane-list.json'), '{"result":{"panes":[{"pane_id":"w4E:p1"},{}]}}');
   await f.call('hud_read');
   assert.deepEqual(adopted.map(ownerOf), ['w4E:p8', 'w4E:p7'], 'incomplete pane list cannot transfer ownership');
 
@@ -287,7 +288,7 @@ test('hud watch adopts on catch-up and delivers an already pending question', as
   const f = await fixture(t);
   const orphan = waitFixtureJob(f, 1, 'working', 'w4E:p8');
   paneList(f, 'w4E:p1');
-  fs.writeFileSync(join(orphan.dir, 'qa/q1.md'), '# Question q1 from imp@demo\n\nWhich layout?\n\nDefault if unanswered: Rows.\n');
+  writeFixtureFile(join(orphan.dir, 'qa/q1.md'), '# Question q1 from imp@demo\n\nWhich layout?\n\nDefault if unanswered: Rows.\n');
   const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'inherit'] });
   const exited = once(child, 'exit');
   t.after(async () => { child.kill(); await exited; });
@@ -331,14 +332,14 @@ test('hud_peek returns a bounded pane tail and does not acknowledge, exhaust or 
   const { dir, job } = waitFixtureJob(f, 1, 'idle_grace');
   const fault = waitFixtureJob(f, 2, 'failed');
   const faultStatus = JSON.stringify({ state: 'failed', reason: 'HTTP 429 quota' });
-  fs.writeFileSync(join(fault.dir, 'STATUS.json'), faultStatus);
-  fs.writeFileSync(join(fault.dir, 'job.json'), JSON.stringify({ ...fault.receipt, place_key: 'synthetic-quota' }));
-  fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report not read.');
-  fs.writeFileSync(join(dir, 'SESSION.txt'), 'PRIMARY=synthetic\nLEFT=w4E:p2\nRIGHT=w4E:p3\n');
+  writeFixtureFile(join(fault.dir, 'STATUS.json'), faultStatus);
+  writeFixtureFile(join(fault.dir, 'job.json'), JSON.stringify({ ...fault.receipt, place_key: 'synthetic-quota' }));
+  writeFixtureFile(join(dir, 'report.md'), 'Synthetic report not read.');
+  writeFixtureFile(join(dir, 'SESSION.txt'), 'PRIMARY=synthetic\nLEFT=w4E:p2\nRIGHT=w4E:p3\n');
   const milestone = progressRecord('Tested the change');
-  fs.writeFileSync(join(dir, 'progress.jsonl'), jsonLines([milestone]));
+  writeFixtureFile(join(dir, 'progress.jsonl'), jsonLines([milestone]));
   const pane = Array.from({ length: 121 }, (_, i) => `pane line ${i}`);
-  fs.writeFileSync(join(f.env.HOME, 'pane-read'), pane.join('\r\n') + '\r\n');
+  writeFixtureFile(join(f.env.HOME, 'pane-read'), pane.join('\r\n') + '\r\n');
   const paths = [join(dir, 'job.json'), join(dir, 'STATUS.json'), join(fault.dir, 'job.json'), join(fault.dir, 'STATUS.json')];
   const before = paths.map((path) => fs.readFileSync(path, 'utf8'));
   const peek = await f.call('hud_peek', { job });
@@ -378,7 +379,7 @@ test('hud_wait any wakes on a settlement among the caller’s initially unsettle
   const waiting = f.call('hud_wait', { wait_ms: 5000 });
   await f.rpc('ping'); // The wait is active and does not hold up another call.
   foreign.status('done');
-  fs.writeFileSync(join(second.dir, 'report.md'), 'Synthetic report.');
+  writeFixtureFile(join(second.dir, 'report.md'), 'Synthetic report.');
   second.status('idle_grace');
   const result = await waiting;
   result.jobs.sort((a, b) => a.job.localeCompare(b.job));
@@ -414,7 +415,7 @@ test('hud_wait all wakes early for a question and previews only its ID', { timeo
   const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
   const waiting = f.call('hud_wait', { jobs: [first.job, second.job], mode: 'all', wait_ms: 5000 });
   await f.rpc('ping');
-  fs.writeFileSync(join(first.dir, 'qa', 'q1.md'), 'Synthetic question.');
+  writeFixtureFile(join(first.dir, 'qa', 'q1.md'), 'Synthetic question.');
   const result = await waiting;
   assert.equal(result.ready, true);
   assert.equal(result.timed_out, false);
@@ -446,10 +447,10 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   const f = await fixture(t), id = 'j0000000000000099';
   const dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, created_at: '2026-01-01', herdr_pane: 'w4E:p1', cli: { idle_grace_s: 120 } }));
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-  fs.writeFileSync(join(dir, 'report.md'), 'First report.');
-  fs.writeFileSync(join(dir, 'qa/q1.md'), 'Question?');
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, created_at: '2026-01-01', herdr_pane: 'w4E:p1', cli: { idle_grace_s: 120 } }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  writeFixtureFile(join(dir, 'report.md'), 'First report.');
+  writeFixtureFile(join(dir, 'qa/q1.md'), 'Question?');
   const recent = (await f.call('hud_read', { view: 'recent' })).jobs[0];
   assert.equal(recent.open_questions, 1);
   assert.equal(recent.report_unread, true);
@@ -467,18 +468,18 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   assert.deepEqual((await f.call('hud_read')).jobs, [{ job: id, role: 'imp', state: 'idle_grace', question_ids: ['q1'] }]);
   assert.equal((await f.call('hud_read', { job: id, full: true })).report, 'First report.');
   await new Promise((r) => setTimeout(r, 10));
-  fs.writeFileSync(join(dir, 'report.md'), 'Second report.');
+  writeFixtureFile(join(dir, 'report.md'), 'Second report.');
   assert.equal((await f.call('hud_read', { job: id })).report, 'Second report.');
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at > stamp);
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
   assert.equal((await f.call('hud_read', { job: id })).report_unchanged, true);
 });
 
 test('failed job without a report catches up once, then hud_read marks attention seen without marking a report read', async (t) => {
   const f = await fixture(t), id = 'j0000000000000098', dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, herdr_pane: 'w4E:p1', created_at: '2026-01-01' }));
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', reason: 'worker gone' }));
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, herdr_pane: 'w4E:p1', created_at: '2026-01-01' }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', reason: 'worker gone' }));
   const catchup = async () => {
     const lines = [], ac = new AbortController();
     const watching = watchCommand([], { env: f.env, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
@@ -500,7 +501,7 @@ test('failed job without a report catches up once, then hud_read marks attention
   assert.deepEqual(await catchup(), []);
   assert.deepEqual((await f.call('hud_read')).jobs, []);
   assert.equal((await f.call('hud_read', { view: 'recent' })).jobs[0].state, 'failed');
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', reason: 'new failure' }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', reason: 'new failure' }));
   assert.deepEqual(await catchup(), [`${id} imp: failed | new failure`]);
   assert.deepEqual((await f.call('hud_read')).jobs, [{ job: id, role: 'imp', state: 'failed', reason: 'new failure' }]);
 });
@@ -525,7 +526,7 @@ syncBuiltinESMExports();`
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
   const receipt = { job, role: 'imp', cwd: f.root, created_at: '2026-01-01', dispatch_exit_code: 0, stderr_tail: '' };
   // Atomic like the real writers: the polled hud_read must never see a half-written file.
-  const put = (name, value) => { fs.writeFileSync(join(dir, `.${name}.tmp`), JSON.stringify(value)); fs.renameSync(join(dir, `.${name}.tmp`), join(dir, name)); };
+  const put = (name, value) => writeFixtureFile(join(dir, name), JSON.stringify(value));
   const save = () => put('job.json', receipt);
   const status = (state) => put('STATUS.json', { state, exit_reason: null });
   const reads = () =>
@@ -535,8 +536,8 @@ syncBuiltinESMExports();`
   const read = (wait_ms = 0) => f.call('hud_read', { job, wait_ms, detail: true });
   save();
   status('working');
-  fs.writeFileSync(join(dir, 'report.md'), 'r'.repeat(65537));
-  fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
+  writeFixtureFile(join(dir, 'report.md'), 'r'.repeat(65537));
+  writeFixtureFile(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
   assert.deepEqual((await f.call('hud_read')).jobs, [{
     job, role: 'imp', state: 'working', report_unread: true, question_ids: ['q1'],
   }]);
@@ -560,7 +561,7 @@ syncBuiltinESMExports();`
   assert.equal(question.report_truncated, true);
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at);
   const newQuestion = read(3000);
-  setTimeout(() => fs.writeFileSync(join(dir, 'qa', 'q2.md'), 'New question.'), 100);
+  setTimeout(() => writeFixtureFile(join(dir, 'qa', 'q2.md'), 'New question.'), 100);
   assert.deepEqual(await newQuestion, { ...timeout, questions: [{ id: 'q2', text: 'New question.' }] });
   await f.call('hud_respond', { job, request_id: 'q2', answer: 'Answered.' });
   for (const [state, display_state] of [
@@ -589,7 +590,7 @@ test('hud_create and hud_send derive keys for concurrent identical calls', async
   const [job, duplicate] = await Promise.all([f.call('hud_create', create), f.call('hud_create', create)]);
   assert.equal(duplicate.job, job.job);
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job.job]);
-  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   const send = { job: job.job, text: 'Synthetic message without a key.' };
   const [first, second] = await Promise.all([f.call('hud_send', send), f.call('hud_send', send)]);
   assert.equal(first.sent, true);
@@ -599,7 +600,7 @@ test('hud_create and hud_send derive keys for concurrent identical calls', async
   const receipt = JSON.parse(fs.readFileSync(file));
   assert.equal(receipt.message_keys, undefined);
   assert.equal(receipt.send_outcomes.length, 1);
-  fs.writeFileSync(file, JSON.stringify({ ...receipt, message_keys: ['legacy-key'] }));
+  writeFixtureFile(file, JSON.stringify({ ...receipt, message_keys: ['legacy-key'] }));
   assert.deepEqual(await f.call('hud_send', { ...send, message_key: 'legacy-key' }), { ok: false, sent: false, code: 'send_failed' });
   assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[3] === send.text).length, 1);
 });
@@ -611,7 +612,7 @@ test('hud_create starts a new job after the derived key window expires', async (
   const file = join(first.task_dir, 'job.json');
   const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
   receipt.created_at = new Date(Date.now() - 11 * 60_000).toISOString();
-  fs.writeFileSync(file, JSON.stringify(receipt));
+  writeFixtureFile(file, JSON.stringify(receipt));
   const second = await f.call('hud_create', create);
   assert.notEqual(second.job, first.job);
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [first.job, second.job].sort());
@@ -621,13 +622,13 @@ test('hud_create starts a new job after the derived key window expires', async (
 test('hud_send sends again after the derived key window expires', async (t) => {
   const f = await fixture(t);
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic working task.' });
-  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   const send = { job: job.job, text: 'Synthetic message to send again later.' };
   assert.equal((await f.call('hud_send', send)).sent, true);
   const file = join(job.task_dir, 'job.json');
   const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
   receipt.send_outcomes[0].recorded_at = new Date(Date.now() - 11 * 60_000).toISOString();
-  fs.writeFileSync(file, JSON.stringify(receipt));
+  writeFixtureFile(file, JSON.stringify(receipt));
   assert.equal((await f.call('hud_send', send)).sent, true);
   assert.deepEqual(await f.call('hud_send', send), { ok: true, sent: false });
   assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[3] === send.text).length, 2);
@@ -639,7 +640,7 @@ test('hud_send to several jobs sends once per working job and skips read-closed 
   const create = (task) => f.call('hud_create', { role: 'imp', task });
   const working = await create('Synthetic working task.');
   const closed = await create('Synthetic settled task.');
-  fs.writeFileSync(join(working.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  writeFixtureFile(join(working.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   await publishPiGrace(closed);
   await f.call('hud_read', { job: closed.job });
   await until(() => cliState(closed.task_dir)?.exit_reason === 'closed after report read');
@@ -654,13 +655,13 @@ test('hud_send to several jobs sends once per working job and skips read-closed 
 test('thin send queues a message for a working pi job and refuses a finished one', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const job = await f.call('hud_create', { role: 'reviewer', request_key: 'send-queue', task: 'Synthetic task.' });
-  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   const sent = await f.call('hud_send', { job: job.job, message_key: 'queued', text: 'Synthetic addendum.' });
   assert.equal(sent.sent, true);
   assert.equal(sent.queued, true);
   const prompted = f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'prompt').at(-1);
   assert.deepEqual(prompted.args, ['agent', 'prompt', job.agent, 'Synthetic addendum.']);
-  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
   const late = await f.call('hud_send', { job: job.job, message_key: 'late', text: 'Synthetic late.' });
   assert.equal(late.code, 'not_continuable');
 });
@@ -679,14 +680,13 @@ test(
     assert.ok(stamp);
     // An earlier read stamp survives sends; a newer, unread settled report still permits continuation.
     await new Promise((done) => setTimeout(done, 10));
-    fs.writeFileSync(join(job.task_dir, 'report.md'), 'Unread settled report.');
-    fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-    const herdr = join(f.root, 'bin', 'herdr');
+    writeFixtureFile(join(job.task_dir, 'report.md'), 'Unread settled report.');
+    writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
     const fake = `#!${process.execPath}
 import fs from 'node:fs';
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args: process.argv.slice(2) }) + '\\n');
 `;
-    fs.writeFileSync(herdr, fake + "console.error('Synthetic prompt failure'); process.exit(9);\n");
+    f.overrideBin('herdr', fake + "console.error('Synthetic prompt failure'); process.exit(9);\n");
     const args = { job: job.job, message_key: 'failed-send', text: 'Synthetic continuation.' };
     const failed = await f.call('hud_send', args);
     assert.equal(failed.ok, false);
@@ -695,7 +695,7 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
     assert.match(failed.stderr_tail, /Synthetic prompt failure/);
     assert.equal(JSON.parse(fs.readFileSync(receiptFile)).read_at, stamp);
     // The transport is now healthy, but retrying the failed key must not claim delivery or resend.
-    fs.writeFileSync(herdr, fake);
+    f.overrideBin('herdr', fake);
     const retry = await f.call('hud_send', args);
     assert.equal(retry.ok, false);
     assert.equal(retry.sent, false);
@@ -707,9 +707,9 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
     assert.equal(success.ok, true);
     assert.equal(success.sent, true);
     assert.equal(JSON.parse(fs.readFileSync(receiptFile)).read_at, stamp);
-    fs.writeFileSync(join(job.task_dir, 'report.md'), 'Second report after repairs.');
+    writeFixtureFile(join(job.task_dir, 'report.md'), 'Second report after repairs.');
     const settled = Date.now();
-    fs.writeFileSync(
+    writeFixtureFile(
       join(job.task_dir, 'STATUS.json'),
       JSON.stringify({ state: 'idle_grace', settled_at: new Date(settled).toISOString() })
     );
@@ -768,7 +768,7 @@ test('STATUS table matches across the panel reader and hud_read', async (t) => {
     const id = `j${(idx + 1).toString(16).padStart(16, '0')}`;
     const dir = join(f.env.HUD_HOME, 'jobs', id);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
+    writeFixtureFile(
       join(dir, 'job.json'),
       JSON.stringify({
         job: id,
@@ -780,7 +780,7 @@ test('STATUS table matches across the panel reader and hud_read', async (t) => {
         stderr_tail: '',
       })
     );
-    if (entry.status !== null) fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(entry.status));
+    if (entry.status !== null) writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(entry.status));
     return { id, entry };
   });
   const listed = (await f.call('hud_read', { view: 'recent' })).jobs;
@@ -831,7 +831,7 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
   const writeSyntheticJob = (id, pane, pkg, state) => {
     const dir = join(f.env.HUD_HOME, 'jobs', id);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
+    writeFixtureFile(
       join(dir, 'job.json'),
       JSON.stringify({
         job: id,
@@ -845,7 +845,7 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
         stderr_tail: '',
       })
     );
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, exit_reason: null }));
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state, exit_reason: null }));
     return dir;
   };
 
@@ -856,7 +856,7 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
 
   const waitPromise = f.call('hud_read', { job: 'j00000000000001a1', wait_ms: 5000 });
   await new Promise((r) => setTimeout(r, 80));
-  fs.writeFileSync(
+  writeFixtureFile(
     join(w1Dir, 'STATUS.json'),
     JSON.stringify({ state: 'waiting_orchestrator', blocked: false, reason: 'quiet', harness: 'cli' })
   );
@@ -875,8 +875,8 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
   assert.equal(baseline.changes?.length, 1);
   assert.match(baseline.changes[0], /^j00000000000001a2 imp 02-roster: working$/);
 
-  fs.writeFileSync(join(w2Dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', exit_reason: null }));
-  fs.writeFileSync(
+  writeFixtureFile(join(w2Dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', exit_reason: null }));
+  writeFixtureFile(
     join(foreignDir, 'STATUS.json'),
     JSON.stringify({ state: 'waiting_orchestrator', exit_reason: null })
   );
@@ -893,10 +893,10 @@ test('an answer the owner gives from the panel rides on the next response as one
   const f = await fixture(t);
   const dir = join(f.env.HUD_HOME, 'jobs', 'j00000000000001b1');
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: 'j00000000000001b1', role: 'imp', package: '03-ask', cwd: f.root, herdr_pane: 'w4E:p1', created_at: new Date().toISOString(),
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: 'j00000000000001b1', role: 'imp', package: '03-ask', cwd: f.root, herdr_pane: 'w4E:p1', created_at: new Date().toISOString(),
     cli: { agent: 'grok' }, dispatch_exit_code: 0, stderr_tail: '' }));
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
-  fs.writeFileSync(join(dir, 'qa/q1.md'), '# Question q1 from imp@demo\n\nKeep it?\n\nOptions:\n- keep it\n- drop it\n\nDefault if unanswered: keep it\n');
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  writeFixtureFile(join(dir, 'qa/q1.md'), '# Question q1 from imp@demo\n\nKeep it?\n\nOptions:\n- keep it\n- drop it\n\nDefault if unanswered: keep it\n');
   await f.call('hud_roster');
   assert.equal('changes' in (await f.call('hud_roster')), false);
   assert.deepEqual(answerJobQuestion(f.env.HUD_HOME, 'j00000000000001b1', 'q1', 'drop it', 'imp'), { ok: true, written: true });

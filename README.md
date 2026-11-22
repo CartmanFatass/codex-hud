@@ -188,6 +188,15 @@ npm run check:fixtures
 npm run snapshots:update
 ```
 
+After `npm run build` and `npm run build:test`, use these subsets for focused checks
+(file names below are relative to `tests/unit/`; patterns end in `.test.mjs`):
+
+| Command | Coverage |
+| --- | --- |
+| `npm run test:mcp` | `thin-mcp-*`, `hud-watch`, `cli-judge`, `job-retention*` |
+| `npm run test:panel` | `panel-*`, `split-*`, `project-*`, `home-*`, `control-*`, `role-*`, `kept-pages`, `card-*` |
+| `npm run test:fast` | `test:unit` plus `card-*`, `cleanup-views`, `cli-judge`, `decision-labels`, `home-*`, `html-board`, `job-sentences`, `kept-pages`, `model-picker*`, `panel-filter`, `panel-footers`, `panel-keys-rows`, `project-hub`, `project-layout-*`, `role-presets`, `roster-invalid`, `skills-tab`, `split-layout`, `themes`, `waiting-settled` |
+
 Tests use synthetic data and temporary homes. Frame tests compare terminal cells,
 not font pixels. Normal tests verify, never rewrite snapshots. `CODEX_HUD_PROFILE=1`
 writes stage timings under `$HUD_HOME/display/profile.log`.

@@ -20,6 +20,7 @@ import {
   until,
   sonicTask,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('CLI state trust defaults, owner overrides, roster facts and dispatch snapshots agree', async (t) => {
   const f = await fixture(t);
@@ -158,7 +159,7 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
   const pendingJob = (id, pane, role) => {
     const dir = join(f.env.HUD_HOME, 'jobs', id);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role, herdr_pane: pane, created_at: new Date(now) }));
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, role, herdr_pane: pane, created_at: new Date(now) }));
     const file = join(dir, 'STATUS.json');
     fs.writeFileSync(file, JSON.stringify({ state: 'waiting_orchestrator', harness: 'cli', blocked: true }));
     return file;
@@ -445,7 +446,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
   assert.equal(Object.hasOwn(receipt, 'package'), false);
   assert.equal(Object.hasOwn(receipt, 'preset'), false);
-  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   assert.equal(
     (await f.call('hud_send', { job: job.job, message_key: 'custom-send', text: 'Synthetic follow-up.' })).sent,
     true

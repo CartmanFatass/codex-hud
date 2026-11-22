@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
@@ -13,6 +14,10 @@ import { renderWorkCard } from '../../dist/render/work-card.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, turnToken } from '../../dist/mcp/cli-judge.js';
+import { writeFixtureFile } from './thin-mcp-files.mjs';
+
+const fakeBin = fileURLToPath(new URL('./thin-mcp-fake-bin.mjs', import.meta.url));
+const clock = new URL('./thin-mcp-clock.mjs', import.meta.url).href;
 
 export const workerFor = (f, id) =>
   readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' })
@@ -27,378 +32,52 @@ export const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
 export const withoutHint = ({ hint, ...result }) => result;
 export const withoutCallerLookups = (commands) => commands.filter(({ command, args }) =>
   !(command === 'herdr' && args[0] === 'pane' && args[1] === 'get' && args[2] === 'w4E:p1'));
-export async function fixture(t, inHerdr = true, probe = '', watcherTickMs, worker = false) {
-  const root = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-'));
+export function fixture(t, inHerdr = true, probe = '', watcherTickMs, worker = false) {
+  return startFixture(t, { inHerdr, probe, watcherTickMs, worker });
+}
+
+// Routing tests keep their closed PATH and real supervisor clock, without the socket simulation.
+export function rolePlacesFixture(t, { withPi = true } = {}) {
+  return startFixture(t, { routingOnly: true, withPi });
+}
+
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true }) {
+  const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const bin = join(root, 'bin');
   fs.mkdirSync(bin);
   const log = join(root, 'commands.jsonl');
-  const fake = `#!${process.execPath}
-import * as fs from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
-import { basename, join } from 'node:path';
-const command = basename(process.argv[1]), args = process.argv.slice(2);
-if (command === 'pi') {
-  const caps = join(process.env.HOME, 'pi-model-caps.json');
-  if (!fs.existsSync(caps)) process.exit(1);
-  const model = JSON.parse(fs.readFileSync(caps, 'utf8'))[args[args.indexOf('--model') + 1]];
-  if (!model) process.exit(1);
-  process.stdin.once('data', () => console.log(JSON.stringify({ id: 'hud-thinking', data: { model } })));
-} else fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\\n');
-function waitToReply() {
-  const end = Date.now() + 5000;
-  while (Date.now() < end && !fs.existsSync(join(process.env.HOME, 'release-prompt-result'))) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
-  }
-}
-if (command === 'pi-dispatch') {
-  process.exit(99); // The MCP must never use this legacy launcher.
-} else if (command === 'pi-role') {
-  console.log(JSON.stringify(args.slice(2)));
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
-  if (args[args.indexOf('--kind') + 1] === 'grok' && fs.existsSync(join(process.env.HOME, 'hold-grok-start'))) {
-    waitToReply();
-    console.error('synthetic delayed start failed');
-    process.exit(1);
-  }
-  if (fs.existsSync(join(process.env.HOME, 'start-not-ready'))) {
-    console.log(JSON.stringify({ error: { code: 'agent_not_ready', message: 'agent synthetic is blocked during startup and is not ready for prompts' } }));
-    process.exit(1);
-  }
-  const kind = args[args.indexOf('--kind') + 1];
-  const failure = ['fail-start-' + kind, 'fail-start'].map((name) => join(process.env.HOME, name)).find((file) => fs.existsSync(file));
-  if (failure) { console.error(fs.readFileSync(failure, 'utf8') || 'synthetic start failed'); process.exit(1); }
-  const at = args.indexOf('--task-dir');
-  if (at >= 0) {
-    const dir = args[at + 1];
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
-    if (!fs.existsSync(join(process.env.HOME, 'defer-pi-report')))
-      fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
-  }
-  if (['cli-exit', 'cli-unknown', 'cli-gone', 'grace-quiet-gone', 'blocked-quiet-gone', 'exit-after-done'].some((name) => fs.existsSync(join(process.env.HOME, name)))) {
-    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { detached: true, stdio: 'ignore' });
-    sleeper.unref();
-    fs.writeFileSync(join(process.env.HOME, 'fake-agent-pid'), String(sleeper.pid));
-  }
-} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'read') {
-  const paneFile = join(process.env.HOME, 'pane-read');
-  const dialog = join(process.env.HOME, 'trust-dialog');
-  const text = fs.existsSync(paneFile)
-    ? fs.readFileSync(paneFile, 'utf8')
-    : fs.existsSync(dialog)
-      ? (fs.readFileSync(dialog, 'utf8').trim() || 'Do you trust the contents of this directory?') + '\\n'
-      : 'synthetic grok ready\\n';
-  console.log(JSON.stringify({ result: { type: 'pane_read', read: { text, pane_id: args[2], workspace_id: 'w4E', tab_id: 'w4E:t2', source: 'recent', format: 'text', revision: 1, truncated: false } } }));
-} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'process-info') {
-  if (fs.existsSync(join(process.env.HOME, 'no-pid'))) {
-    console.log(JSON.stringify({ result: { type: 'pane_process_info', process_info: { pane_id: args[args.indexOf('--pane') + 1], shell_pid: 1, foreground_processes: [] } } }));
-    process.exit(0);
-  }
-  const pidFile = join(process.env.HOME, 'cli-pid');
-  const fakePidFile = join(process.env.HOME, 'fake-agent-pid');
-  const line = fs.readFileSync('/proc/self/status', 'utf8').split('\\n').find((row) => row.startsWith('PPid:'));
-  const ppid = fs.existsSync(pidFile)
-    ? Number(fs.readFileSync(pidFile, 'utf8').trim())
-    : fs.existsSync(fakePidFile)
-      ? Number(fs.readFileSync(fakePidFile, 'utf8').trim())
-      : Number(line.split(':')[1]);
-  console.log(JSON.stringify({ result: { type: 'pane_process_info', process_info: { pane_id: args[args.indexOf('--pane') + 1], shell_pid: 1, foreground_processes: [{ pid: ppid, name: 'grok' }] } } }));
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'get') {
-  const goneId = args[2].replace(/-primary$/, '');
-  if (fs.existsSync(join(process.env.HOME, 'herdr-errors')) || fs.existsSync(join(process.env.HOME, 'late-session-gone')) || fs.existsSync(join(process.env.HUD_HOME, 'jobs', goneId, 'agent-gone')) || ['cli-gone', 'cli-exit', 'cli-unknown'].some((name) => fs.existsSync(join(process.env.HOME, name)))) {
-    console.error('agent_not_found');
-    process.exit(1);
-  }
-  let session = { kind: 'id', value: 'synthetic-grok-session', source: 'synthetic', agent: 'grok' };
-  const late = join(process.env.HOME, 'late-session');
-  if (fs.existsSync(late)) {
-    const n = Number(fs.readFileSync(late, 'utf8') || '0') + 1;
-    fs.writeFileSync(late, String(n));
-    if (n === 1) session = null;
-  }
-  console.log(JSON.stringify({ result: { type: 'agent_info', agent: { name: args[2], agent_status: 'working', agent_session: session } } }));
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'wait') {
-  const until = [];
-  for (let i = 0; i < args.length; i++) if (args[i] === '--until') until.push(args[i + 1]);
-  const id = args[2].replace(/-primary$/, '');
-  const dir = join(process.env.HUD_HOME, 'jobs', id);
-  const home = process.env.HOME;
-  const matched = (agent_status) => console.log(JSON.stringify({ result: { type: 'wait_matched', event: { event: 'pane_agent_status_changed', data: { agent_status, pane_id: 'w4E:p2', workspace_id: 'w4E' } } } }));
-  const killFakeAgent = () => {
-    const fakePidFile = join(home, 'fake-agent-pid');
-    if (fs.existsSync(fakePidFile)) {
-      const fpid = Number(fs.readFileSync(fakePidFile, 'utf8').trim());
-      if (fpid > 0) {
-        try { process.kill(fpid, 'SIGKILL'); } catch {}
-        const end = Date.now() + 200;
-        while (Date.now() < end) {
-          try {
-            const st = fs.readFileSync('/proc/' + fpid + '/stat', 'utf8');
-            if (st.slice(st.lastIndexOf(')') + 1).trim().startsWith('Z ')) break;
-            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
-          } catch {
-            break;
-          }
-        }
-      }
-    }
-  };
-  if (fs.existsSync(join(home, 'herdr-errors'))) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
-    console.error('herdr_error');
-    process.exit(1);
-  }
-  const left = () => fs.existsSync(join(dir, 'agent-gone')) || fs.existsSync(join(dir, 'STATUS.json.stop-requested')) || fs.existsSync(join(dir, 'STATUS.json.close-requested'));
-  const poll = (ms, check) => {
-    const end = Date.now() + ms;
-    let hit = null;
-    while (Date.now() < end && !hit) {
-      hit = check();
-      if (!hit) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-    }
-    return hit;
-  };
-  const cap = Math.min(Number(args[args.indexOf('--timeout') + 1]) || 8000, 12000);
-  if (fs.existsSync(join(home, 'cli-blocked'))) {
-    const released = () => fs.existsSync(join(home, 'release-blocked'));
-    if (until.includes('blocked') && !released()) { matched('blocked'); process.exit(0); }
-    if (until.includes('working') && until.includes('done') && !until.includes('blocked')) {
-      const blockedQuiet = join(home, 'blocked-quiet');
-      if (fs.existsSync(blockedQuiet) && (until.includes('idle') || until.includes('unknown')) && !fs.existsSync(join(home, 'blocked-quiet-seen'))) {
-        fs.writeFileSync(join(home, 'blocked-quiet-seen'), '');
-        if (fs.existsSync(join(home, 'blocked-quiet-gone'))) { fs.writeFileSync(join(dir, 'agent-gone'), ''); killFakeAgent(); }
-        matched(fs.readFileSync(blockedQuiet, 'utf8').trim() || 'idle');
-        process.exit(0);
-      }
-      const hit = poll(cap, () => (released() ? 'working' : left() ? 'idle' : null));
-      if (hit === 'working') { matched('working'); process.exit(0); }
-      if (hit === 'idle') { matched('idle'); process.exit(0); }
-      console.error('timeout');
-      process.exit(1);
-    }
-  }
-  if (until.includes('done') && until.includes('idle') && !until.includes('blocked') && !until.includes('working')) {
-    if (fs.existsSync(join(home, 'phantom-working')) && !fs.existsSync(join(home, 'phantom-settled'))) {
-      fs.writeFileSync(join(home, 'phantom-settled'), '');
-      matched('done');
-      process.exit(0);
-    }
-    matched('idle');
-    process.exit(0);
-  }
-  if (until.includes('working') && until.includes('blocked') && !until.includes('done')) {
-    if (fs.existsSync(join(home, 'exit-after-done'))) { fs.writeFileSync(join(dir, 'agent-gone'), ''); killFakeAgent(); }
-    if (fs.existsSync(join(home, 'cli-exit'))) { killFakeAgent(); matched('idle'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-unknown'))) { killFakeAgent(); matched('unknown'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-gone'))) { killFakeAgent(); console.error('agent_not_found'); process.exit(1); }
-    const hit = poll(cap, () => (left() ? 'idle' : fs.existsSync(join(home, 'wake-turn')) ? 'working' : null));
-    if (hit === 'working') { matched('working'); process.exit(0); }
-    if (hit === 'idle') { matched('idle'); process.exit(0); }
-    console.error('timeout');
-    process.exit(1);
-  }
-  if (args.includes('--timeout') && until.includes('working') && !until.includes('done') && !until.includes('blocked')) {
-    const statusFile = join(dir, 'STATUS.json');
-    if (fs.existsSync(statusFile)) fs.writeFileSync(join(home, 'seen-grace.json'), fs.readFileSync(statusFile));
-    const graceQuiet = join(home, 'grace-quiet');
-    if (fs.existsSync(graceQuiet) && !fs.existsSync(join(home, 'grace-quiet-seen'))) {
-      fs.writeFileSync(join(home, 'grace-quiet-seen'), '');
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
-      if (fs.existsSync(join(home, 'grace-quiet-gone'))) { fs.writeFileSync(join(dir, 'agent-gone'), ''); killFakeAgent(); }
-      matched(fs.readFileSync(graceQuiet, 'utf8').trim() || 'idle');
-      process.exit(0);
-    }
-    if (!fs.existsSync(join(home, 'hold-grace'))) {
-      if (fs.existsSync(join(home, 'report-while-working')) && !fs.existsSync(join(home, 'release-done'))) {
-        matched('working');
-        process.exit(0);
-      }
-      console.error('timeout');
-      process.exit(1);
-    }
-    const log = process.env.FAKE_LOG;
-    const mark = fs.existsSync(log) ? fs.statSync(log).size : 0;
-    const hit = poll(cap, () => {
-      if (left()) return 'idle';
-      const extra = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').slice(mark) : '';
-      return extra.includes('"prompt"') && extra.includes(id) && !extra.includes('/quit') ? 'working' : null;
-    });
-    if (hit === 'working') { matched('working'); process.exit(0); }
-    if (hit === 'idle') { matched('idle'); process.exit(0); }
-    console.error('timeout');
-    process.exit(1);
-  }
-  if (until.includes('done') && until.includes('blocked')) {
-    const seenPrompt = fs.existsSync(process.env.FAKE_LOG) && fs.readFileSync(process.env.FAKE_LOG, 'utf8').includes('brief.md');
-    if (fs.existsSync(join(home, 'startup-done')) && !seenPrompt) { matched('done'); process.exit(0); }
-    if (fs.existsSync(join(home, 'phantom-working')) && !fs.existsSync(join(home, 'phantom-settled'))) { matched('done'); process.exit(0); }
-    const quietHold = join(home, 'quiet-hold');
-    if (fs.existsSync(quietHold) && (until.includes('idle') || until.includes('unknown'))) {
-      matched(fs.readFileSync(quietHold, 'utf8').trim() || 'idle');
-      process.exit(0);
-    }
-    if (fs.existsSync(join(home, 'cli-exit'))) { killFakeAgent(); matched('idle'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-unknown'))) { killFakeAgent(); matched('unknown'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-gone'))) { killFakeAgent(); console.error('agent_not_found'); process.exit(1); }
-    if (fs.existsSync(join(home, 'report-while-working'))) {
-      const stageFile = join(home, 'report-while-working-stage');
-      const stage = fs.existsSync(stageFile) ? Number(fs.readFileSync(stageFile, 'utf8')) : 0;
-      fs.writeFileSync(stageFile, String(stage + 1));
-      if (stage === 0) {
-        fs.writeFileSync(join(dir, 'report.md'), 'Synthetic mid-turn report.\\n');
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
-        console.error('timeout');
-        process.exit(1);
-      }
-      const hit = poll(cap, () => (left() ? 'idle' : fs.existsSync(join(home, 'release-done')) ? 'done' : null));
-      if (hit === 'done') { matched('done'); process.exit(0); }
-      if (hit === 'idle') { matched('idle'); process.exit(0); }
-      console.error('timeout');
-      process.exit(1);
-    }
-    if (fs.existsSync(join(home, 'hold-turn'))) {
-      const hit = poll(cap, () => (left() ? 'idle' : fs.existsSync(join(home, 'release-turn')) ? 'done' : null));
-      if (hit === 'idle') { matched('idle'); process.exit(0); }
-      if (hit !== 'done') { console.error('timeout'); process.exit(1); }
-    }
-    if (!fs.existsSync(join(home, 'missing-report'))) {
-      const countFile = join(home, 'done-count');
-      const n = (fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, 'utf8')) : 0) + 1;
-      fs.writeFileSync(countFile, String(n));
-      const report = join(dir, 'report.md');
-      if (n > 1 && !fs.existsSync(join(home, 'unchanged-report'))) fs.writeFileSync(report, 'Synthetic grok report two.' + String.fromCharCode(10));
-      else if (!fs.existsSync(report)) fs.writeFileSync(report, 'Synthetic grok report.' + String.fromCharCode(10));
-    }
-    matched('done');
-  } else if (until.includes('idle') || until.includes('unknown')) matched('idle');
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && args[3] === '/quit' && fs.existsSync(join(process.env.HOME, 'late-session'))) {
-  fs.writeFileSync(join(process.env.HOME, 'late-session-gone'), '');
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && String(args[3]).startsWith('Write your report to ') && fs.existsSync(join(process.env.HOME, 'write-on-report-prompt'))) {
-  const reportPath = String(args[3]).slice('Write your report to '.length).split(' now;')[0];
-  fs.writeFileSync(reportPath, 'Synthetic report after prompt.\\n');
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && String(args[3]).startsWith('Write your report to ') && fs.existsSync(join(process.env.HOME, 'fail-report-prompt'))) {
-  console.error('synthetic report prompt failed'); process.exit(1);
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && args[3] === '/quit' && fs.existsSync(join(process.env.HOME, 'reject-quit'))) {
-  console.error('agent_not_ready before input'); process.exit(1);
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'fast-ambiguous-prompt'))) {
-  const id = args[2].replace(/-primary$/, '');
-  fs.writeFileSync(join(process.env.HUD_HOME, 'jobs', id, 'report.md'), 'Synthetic fast report after input.\\n');
-  waitToReply();
-  console.error('agent_prompt_stalled after submit'); process.exit(1);
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'stalled-prompt'))) {
-  console.error('agent_prompt_stalled after submit'); process.exit(1);
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'rejected-prompt'))) {
-  if (!args.includes('--wait')) waitToReply();
-  console.error('agent_not_ready before input'); process.exit(1);
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'fail-prompt'))) {
-  console.error('synthetic prompt timeout'); process.exit(1);
-} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'split') {
-  if (fs.existsSync(join(process.env.HOME, 'fail-split'))) { console.error('synthetic split failed'); process.exit(1); }
-  console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p3'}}}));
-} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'list') {
-  const file = join(process.env.HOME, 'pane-list.json');
-  if (!fs.existsSync(file)) process.exit(1);
-  console.log(fs.readFileSync(file, 'utf8'));
-} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') {
-  const agentFile = join(process.env.HOME, 'main-agent');
-  const agent = fs.existsSync(agentFile) ? fs.readFileSync(agentFile, 'utf8') : 'claude';
-  console.log(JSON.stringify({result: {pane: {workspace_id: 'w4E', agent}}}));
-} else if (command === 'herdr' && args[0] === 'tab' && args[1] === 'create') {
-  console.log(JSON.stringify({result: {tab: {tab_id: 'w4E:t2'}, root_pane: {pane_id: 'w4E:p2'}}}));
-} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'run') {
-  process.exit(spawnSync('/bin/sh', ['-c', args[3]], {stdio: 'inherit'}).status);
-} else if (command === 'jev-ask' && args[0] === 'key') {
-  console.log(JSON.stringify({key: 'synthetic-key'}));
-} else if (command === 'jev-ask' && args[0] === 'wait') {
-  fs.writeFileSync(args[args.indexOf('--answer-file') + 1], 'Synthetic Jev answer.');
-} else if (command === 'jev-aistudio') {
-  fs.writeFileSync(args[args.indexOf('--out') + 1], 'Synthetic Argon answer.');
-} else if (command === 'jev-flow') {
-  if (args[args.indexOf('--kind') + 1] === 'video' && !args.includes('--confirm-credits')) process.exit(17);
-  fs.writeFileSync(join(args[args.indexOf('--out-dir') + 1], 'synthetic-media.mp4'), 'synthetic media');
-} else if (command === 'pi-role-reap') {
-  const dir = args[0], fail = join(dir, 'fail-reap-once');
-  if (fs.existsSync(fail)) { fs.unlinkSync(fail); process.exit(1); }
-  if (fs.existsSync(join(dir, 'reap-worker'))) {
-    try { process.kill(Number(fs.readFileSync(join(process.env.HOME, 'cli-pid'))), 'SIGTERM'); }
-    catch (error) { if (error.code !== 'ESRCH') throw error; }
-  }
-  try {
-    const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
-    if (status && !['closed', 'failed', 'stopped', 'idle_grace'].includes(status.state))
-      fs.writeFileSync(join(dir, 'STATUS.json.stop-requested'), '');
-    fs.writeFileSync(join(dir, 'agent-gone'), '');
-  } catch {}
-  console.log('Reaping synthetic job');
-  console.log('Synthetic reap complete');
-}
-`;
-  for (const command of ['pi', 'pi-role', 'pi-dispatch', 'pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex']) {
-    fs.writeFileSync(join(bin, command), fake, { mode: 0o700 });
+  // The fake shebang finds this Node even on the routing fixture's closed PATH.
+  fs.symlinkSync(process.execPath, join(bin, 'node'));
+  const commands = ['pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex'];
+  if (withPi) commands.push('pi-role');
+  if (!routingOnly) commands.push('pi', 'pi-dispatch');
+  for (const command of commands) {
+    const path = join(bin, command);
+    // The roster resolves these launchers' real paths to locate the adjacent roles directory.
+    if (command === 'pi-role' || command === 'pi-dispatch')
+      fs.writeFileSync(path, `#!/bin/sh\nexec node "$FAKE_BIN" ${command} "$@"\n`, { mode: 0o700 });
+    else fs.symlinkSync(fakeBin, path);
   }
   fs.mkdirSync(join(root, 'roles'));
-  fs.writeFileSync(join(root, 'roles', 'implementer.md'), '---\nmodel: synthetic/default\nthinking: low\n---\n');
-  // Accelerate deadlines, not observations: production still wakes from real socket/file events.
-  const clock = join(root, 'clock.mjs');
-  fs.writeFileSync(clock, `import * as fs from 'node:fs';
-import { join } from 'node:path';
-if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
-  const now = Date.now, timer = globalThis.setTimeout, anchor = Date.now();
-  Date.now = () => anchor + (now() - anchor) * 20;
-  globalThis.setTimeout = (fn, ms, ...args) => timer(fn, ms === 250 ? 15 : ms / 20, ...args);
-  const opendir = fs.opendirSync;
-  fs.default.opendirSync = (...args) => {
-    if (/^\\/proc\\/\\d+\\/task$/.test(args[0])) fs.appendFileSync(join(process.env.HOME, 'proc-scans'), 'scan\\n');
-    return opendir(...args);
-  };
-  const rename = fs.renameSync;
-  fs.default.renameSync = (...args) => {
-    if (args[1].endsWith('/STATUS.json')) fs.appendFileSync(join(process.env.HOME, 'status-writes'), args[1] + '\\n');
-    return rename(...args);
-  };
-  const { syncBuiltinESMExports } = await import('node:module');
-  syncBuiltinESMExports();
-}
-if (process.argv[1]?.endsWith('/hud-progress.mjs')) {
-  const fault = join(process.env.HOME, 'progress-snapshot-enospc');
-  const rename = fs.renameSync, open = fs.openSync;
-  const enospc = () => Object.assign(new Error('synthetic ENOSPC in hud-progress'), { code: 'ENOSPC' });
-  fs.default.renameSync = (from, to) => {
-    if (to.endsWith('/worker-tree.json') && fs.existsSync(fault)) throw enospc();
-    return rename(from, to);
-  };
-  fs.default.openSync = (file, ...args) => {
-    if (typeof file === 'string' && file.includes('/worker-tree.json.') && fs.existsSync(fault) &&
-        fs.readFileSync(fault, 'utf8') === 'open') throw enospc();
-    return open(file, ...args);
-  };
-  const { syncBuiltinESMExports } = await import('node:module');
-  syncBuiltinESMExports();
-}
-const isWatcher = process.argv[1]?.endsWith('/hud-watch.mjs');
-if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
-  const flag = join(process.env.HOME, 'snapshot-enospc'), rename = fs.renameSync, kill = process.kill;
-  fs.default.renameSync = (from, to) => {
-    if (to.endsWith('/worker-tree.json') && fs.existsSync(flag))
-      throw Object.assign(new Error('synthetic ENOSPC'), { code: 'ENOSPC' });
-    return rename(from, to);
-  };
-  if (isWatcher) process.kill = (pid, signal) => {
-    if (signal && fs.existsSync(flag) && String(pid) === fs.readFileSync(flag, 'utf8')) return false;
-    return kill(pid, signal);
-  };
-  const { syncBuiltinESMExports } = await import('node:module');
-  syncBuiltinESMExports();
-}`);
+  fs.writeFileSync(join(root, 'roles', 'implementer.md'), routingOnly
+    ? '---\nmodel: gpt-6.1-sol\nthinking: high\n---\n'
+    : '---\nmodel: synthetic/default\nthinking: low\n---\n');
+  if (routingOnly) fs.writeFileSync(join(root, 'roles', 'reviewer.md'), '---\nmodel: anthropic/opus\nthinking: high\n---\n');
   const env = {
     ...process.env,
-    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`,
     HUD_MCP_SURFACE: 'roles',
     HUD_WATCH_FAILED_RETENTION_MS: '1000',
     ...(watcherTickMs ? { HUD_WATCH_CLI_CHECK_MS: String(watcherTickMs) } : {}),
-    PATH: `${bin}:${process.env.PATH}`,
+    PATH: routingOnly ? bin : `${bin}:${process.env.PATH}`,
+    FAKE_BIN: fakeBin,
     FAKE_LOG: log,
     HERDR_SOCKET_PATH: join(root, 'events.sock'),
   };
+  if (routingOnly) env.FAKE_ROUTING_ONLY = '1';
+  else {
+    delete env.FAKE_ROUTING_ONLY;
+    env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`;
+  }
   for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'MISTRAL_API_KEY']) {
     delete env[key];
   }
@@ -411,9 +90,11 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
   const trusted = fs.realpathSync(root);
   const grokDir = join(env.HOME, '.grok');
   const agyDir = join(env.HOME, '.gemini', 'antigravity-cli');
-  fs.mkdirSync(grokDir);
+  if (!routingOnly) {
+    fs.mkdirSync(grokDir);
+    fs.writeFileSync(join(grokDir, 'trusted_folders.toml'), `[folders.${JSON.stringify(trusted)}]\ntrusted = true\n`);
+  }
   fs.mkdirSync(agyDir, { recursive: true });
-  fs.writeFileSync(join(grokDir, 'trusted_folders.toml'), `[folders.${JSON.stringify(trusted)}]\ntrusted = true\n`);
   fs.writeFileSync(join(agyDir, 'settings.json'), JSON.stringify({ trustedWorkspaces: [trusted] }));
   fs.writeFileSync(join(env.CLAUDE_CONFIG_DIR, '.claude.json'), JSON.stringify({ projects: { [trusted]: { hasTrustDialogAccepted: true } } }));
   if (inHerdr) env.HERDR_PANE_ID = 'w4E:p1';
@@ -515,17 +196,17 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
         if (has('herdr-errors')) { client.socket.destroy(); continue; }
         const turn = JSON.parse(fs.readFileSync(join(dir, 'turn.json')));
         const status = cliState(dir);
-        if (status?.state === 'idle_grace') fs.writeFileSync(join(env.HOME, 'seen-grace.json'), JSON.stringify(status));
+        if (status?.state === 'idle_grace') writeFixtureFile(join(env.HOME, 'seen-grace.json'), JSON.stringify(status));
         let state = has('hold-turn') && !has('release-turn') ? 'working' : 'done';
         if (has('cli-blocked') && !has('release-blocked')) state = 'blocked';
         const report = join(dir, 'report.md');
         if (has('report-while-working')) {
-          if (!fs.existsSync(report)) fs.writeFileSync(report, 'Synthetic mid-turn report.\n');
-          fs.writeFileSync(join(env.HOME, 'report-while-working-stage'), '1');
+          if (!fs.existsSync(report)) writeFixtureFile(report, 'Synthetic mid-turn report.\n');
+          writeFixtureFile(join(env.HOME, 'report-while-working-stage'), '1');
           if (!has('release-done')) state = 'working';
         } else if (state === 'done' && !has('missing-report') && client.reported !== turn.seq) {
-          if (turn.seq > 1 && !has('unchanged-report')) fs.writeFileSync(report, 'Synthetic grok report two.\n');
-          else if (!fs.existsSync(report)) fs.writeFileSync(report, 'Synthetic grok report.\n');
+          if (turn.seq > 1 && !has('unchanged-report')) writeFixtureFile(report, 'Synthetic grok report two.\n');
+          else if (!fs.existsSync(report)) writeFixtureFile(report, 'Synthetic grok report.\n');
           client.reported = turn.seq;
         }
         if (['cli-exit', 'cli-unknown', 'cli-gone', 'exit-after-done'].some(has) || (status?.state === 'idle_grace' && has('grace-quiet-gone')) || (has('cli-blocked') && has('blocked-quiet-gone'))) {
@@ -542,7 +223,7 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
     t.after(() => { clearInterval(simulation); for (const client of subscribers) client.socket.destroy(); cliSocket.close(); });
   }
   async function call(name, args = {}) {
-    if (name === 'hud_create') {
+    if (!routingOnly && name === 'hud_create') {
       const roleFile = join(env.HUD_HOME, 'roles', `${args.role}.json`);
       let role;
       try { role = JSON.parse(fs.readFileSync(roleFile)); } catch {}
@@ -567,6 +248,8 @@ if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
     env,
     rpc,
     call,
+    // Rename replaces the fixture symlink itself, never the shared executable it points to.
+    overrideBin: (name, body) => writeFixtureFile(join(bin, name), body, { mode: 0o700 }),
     socketRequests,
     startCliSocket,
     piStatus: (get) => { piStatus = get; },
@@ -699,7 +382,7 @@ export function fakeCliWithChild(t, f) {
   `], { env: f.env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   const exited = once(worker, 'exit');
   t.after(async () => { if (worker.connected) worker.disconnect(); await exited; });
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(worker.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(worker.pid));
   return {
     pid: worker.pid,
     // Model a tool shell that stays live until stopped, without leaving an orphan child.
@@ -736,9 +419,9 @@ export function declareDone(f, job, cli = true) {
 export async function publishPiGrace(job, worker, writeReport = true) {
   const dir = job.task_dir;
   const report = join(dir, 'report.md');
-  if (writeReport) fs.writeFileSync(report, 'Synthetic settled pi report.\n');
+  if (writeReport) writeFixtureFile(report, 'Synthetic settled pi report.\n');
   const now = Date.now();
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({
     version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', output_written: true,
     ...(worker ? { pid: worker.pid, pid_start_time: procStat(worker.pid).start } : {}),
     settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 8000).toISOString(),
@@ -762,18 +445,14 @@ export function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1', c
   const dir = join(f.env.HUD_HOME, 'jobs', job);
   const receipt = { job, role: 'imp', herdr_pane, cwd, created_at: new Date(n * 1000).toISOString() };
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
-  const status = (state) => {
-    const file = join(dir, 'STATUS.json');
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ state }));
-    fs.renameSync(`${file}.tmp`, file);
-  };
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify(receipt));
+  const status = (state) => writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state }));
   status(state);
   return { job, dir, receipt, status };
 }
 
 export const ownerOf = ({ dir }) => JSON.parse(fs.readFileSync(join(dir, 'job.json'))).herdr_pane;
-export const paneList = (f, ...ids) => fs.writeFileSync(join(f.env.HOME, 'pane-list.json'), JSON.stringify({
+export const paneList = (f, ...ids) => writeFixtureFile(join(f.env.HOME, 'pane-list.json'), JSON.stringify({
   result: { panes: ids.map((pane_id) => ({ pane_id })) },
 }));
 

@@ -15,6 +15,7 @@ import {
   writeCliRole,
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('supervisor events: renewed idle and stale scrollback do not settle a draft with an in-turn child', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
@@ -28,9 +29,9 @@ test('supervisor events: renewed idle and stale scrollback do not settle a draft
   const report = join(job.task_dir, 'report.md');
   const marker = `⏺ report written: ${report}\n`;
   f.push(job.job, 'idle');
-  fs.writeFileSync(join(f.env.HOME, 'pane-read'), marker.repeat(2));
-  fs.writeFileSync(report, 'Report while tests finish.\n');
-  fs.writeFileSync(join(f.env.HOME, 'pane-read'), marker);
+  writeFixtureFile(join(f.env.HOME, 'pane-read'), marker.repeat(2));
+  writeFixtureFile(report, 'Report while tests finish.\n');
+  writeFixtureFile(join(f.env.HOME, 'pane-read'), marker);
   const queries = statusQueries(f, job);
   await until(() => statusQueries(f, job) >= queries + 2);
   assert.ok(procStat(child));
@@ -52,14 +53,18 @@ async function fakeMcpBootstrap(f, worker, generic = false) {
   fs.writeFileSync(join(bin, entry), `#!${process.execPath}
 const { spawn } = require('node:child_process');
 const fs = require('node:fs'), files = ${JSON.stringify(files)};
+const publish = (file, data) => {
+  fs.writeFileSync(file + '.tmp', data);
+  fs.renameSync(file + '.tmp', file);
+};
 const pids = [process.ppid, process.pid];
 ${generic ? '' : `process.title = 'chrome-devtools-mcp';
 pids.push(spawn(process.execPath, [${JSON.stringify(watchdog)}, '--parent-pid', String(process.pid)], { stdio: 'ignore' }).pid);`}
-fs.writeFileSync(files.pids, JSON.stringify(pids));
+publish(files.pids, JSON.stringify(pids));
 setInterval(() => {
   if (!fs.existsSync(files['start-work']) || fs.existsSync(files['work-pid'])) return;
   const child = spawn('sleep', ['30'], { stdio: 'ignore' });
-  fs.writeFileSync(files['work-pid'], String(child.pid));
+  publish(files['work-pid'], String(child.pid));
 }, 10);
 `, { mode: 0o700 });
   const launcher = await worker.start(process.execPath, ['-e', `
@@ -119,7 +124,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
     }
     // Exercise non-shell work on a continuation, where no direct child gets a launch exemption.
     if (['sleep under old MCP server', 'direct sleep', 'same-named runner'].includes(scenario)) {
-      fs.writeFileSync(report, 'First synthetic report.\n');
+      writeFixtureFile(report, 'First synthetic report.\n');
       f.push(job.job, 'idle');
       await until(() => cliState(dir)?.state === 'idle_grace');
       assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic continuation.' })).sent, true);
@@ -140,7 +145,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
       assert.equal(reads(), before, 'no quiet decision while the worker has a live child');
       assert.equal(cliState(dir).state, 'working');
     }
-    fs.writeFileSync(report, 'Synthetic fresh report with MCP infrastructure still alive.\n');
+    writeFixtureFile(report, 'Synthetic fresh report with MCP infrastructure still alive.\n');
     f.push(job.job, 'idle');
     if (work) {
       assert.match((await f.call('hud_read', { job: job.job })).report, /Synthetic fresh report/);
@@ -220,10 +225,10 @@ test('supervisor edges: outage with a report settles at 60s, PID death closes wi
   writeCliRole(f, 'outage-events', 10);
   const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
   t.after(() => worker.kill('SIGKILL'));
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(worker.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(worker.pid));
   const job = await f.call('hud_create', { role: 'outage-events', request_key: 'outage-report', task: 'Synthetic outage.' });
   await until(() => cliState(job.task_dir)?.pid === worker.pid);
-  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report survives a socket outage.\n');
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'Report survives a socket outage.\n');
   fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
   f.drop();
   await until(() => cliState(job.task_dir)?.state === 'idle_grace', 5000);
@@ -234,10 +239,10 @@ test('supervisor edges: outage with a report settles at 60s, PID death closes wi
   fs.unlinkSync(join(f.env.HOME, 'herdr-errors'));
   const worker2 = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
   t.after(() => worker2.kill('SIGKILL'));
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(worker2.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(worker2.pid));
   const failed = await f.call('hud_create', { role: 'outage-events', request_key: 'no-report-death', task: 'Task text says quota but that is not a quota fact.' });
   await until(() => cliState(failed.task_dir)?.pid === worker2.pid);
-  fs.writeFileSync(join(f.env.HOME, 'pane-read'), 'quota exceeded');
+  writeFixtureFile(join(f.env.HOME, 'pane-read'), 'quota exceeded');
   worker2.kill('SIGKILL');
   await until(() => cliState(failed.task_dir)?.state === 'failed', 3000);
   assert.equal(cliState(failed.task_dir).exit_reason, 'worker exited');
@@ -284,7 +289,7 @@ for (const first of ['watcher', 'supervisor']) {
       process.kill(second, 'SIGSTOP');
       let terminal;
       try {
-        fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report before loss of tab.\n');
+        writeFixtureFile(join(dir, 'report.md'), 'Synthetic report before loss of tab.\n');
         if (fact === 'stop') fs.writeFileSync(join(dir, 'STATUS.json.stop-requested'), '');
         else { await worker.exit(); assert.equal(procStat(worker.pid), null); }
         f.closeTab();
@@ -312,7 +317,7 @@ test('supervisor preserves the watcher tab-close fact when its own push socket w
   f.dropWorker(job.job);
   f.closeTab();
   await until(() => cliState(job.task_dir)?.exit_reason === 'tab closed');
-  fs.writeFileSync(join(job.task_dir, 'report.md'), 'A late report must not overwrite tab closure.\n');
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'A late report must not overwrite tab closure.\n');
   await new Promise((r) => setTimeout(r, 800));
   assert.equal(cliState(job.task_dir).state, 'failed');
   assert.equal(cliState(job.task_dir).exit_reason, 'tab closed');
@@ -330,7 +335,7 @@ test('an unread declared report closes at the idle deadline and reaps leftovers'
   });
   await until(() => cliState(graceJob.task_dir)?.pid === worker.pid);
   const child = await worker.start();
-  fs.writeFileSync(join(graceJob.task_dir, 'report.md'), 'Synthetic report with leftover child.\n');
+  writeFixtureFile(join(graceJob.task_dir, 'report.md'), 'Synthetic report with leftover child.\n');
   declareDone(f, graceJob);
   await until(() => cliState(graceJob.task_dir)?.state === 'idle_grace');
   const quit = () => f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === `${graceJob.job}-primary` && c.args[3] === '/quit');
@@ -352,7 +357,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
 
   // 1. Live pid stays working across repeated herdr errors, then closes cleanly once herdr recovers.
   const liveProc = spawnDummy();
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(liveProc.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(liveProc.pid));
   fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
   const keepAlive = await f.call('hud_create', {
     role: 'imp',
@@ -372,7 +377,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
 
   // 2. Pid gone without a report -> failed.
   const procNoReport = spawnDummy();
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(procNoReport.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(procNoReport.pid));
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const failJob = await f.call('hud_create', {
@@ -391,7 +396,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
 
   // 3. Pid gone with a report -> closed (output_written true).
   const procWithReport = spawnDummy();
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(procWithReport.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(procWithReport.pid));
   const closeJob = await f.call('hud_create', {
     role: 'imp',
     on: 'grok',
@@ -399,7 +404,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
     task: 'Pid dies after writing report.',
   });
   await until(() => cliState(closeJob.task_dir)?.pid === procWithReport.pid);
-  fs.writeFileSync(join(closeJob.task_dir, 'report.md'), 'Finished before exit.\n');
+  writeFixtureFile(join(closeJob.task_dir, 'report.md'), 'Finished before exit.\n');
   procWithReport.kill('SIGKILL');
   fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
   await until(() => cliState(closeJob.task_dir)?.state === 'closed', 5000);
@@ -434,7 +439,7 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
 
   // 1. Dead supervisor + live worker -> hud-watch marks waiting_orchestrator -> hud_send spawns a new supervisor and the turn settles.
   const liveWorker = spawnDummy();
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(liveWorker.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(liveWorker.pid));
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const job = await f.call('hud_create', { role: 'respawn-cli', request_key: 'respawn-live', task: 'Respawn on live worker.' });
   await until(() => cliState(job.task_dir)?.pid === liveWorker.pid && cliState(job.task_dir)?.supervisor_pid);
@@ -464,7 +469,7 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
 
   // 2. Dead supervisor + dead worker -> keeps today's hud_send behaviour without respawning.
   const dyingWorker = spawnDummy();
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(dyingWorker.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(dyingWorker.pid));
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const goneJob = await f.call('hud_create', { role: 'respawn-cli', request_key: 'respawn-gone', task: 'No respawn when worker gone.' });
   await until(() => cliState(goneJob.task_dir)?.pid === dyingWorker.pid && cliState(goneJob.task_dir)?.supervisor_pid);

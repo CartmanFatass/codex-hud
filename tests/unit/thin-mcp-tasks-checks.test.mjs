@@ -33,6 +33,7 @@ import {
   writeCliRole,
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('MCP tasks: discover, progress and report settlement without reading or closing', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
@@ -58,7 +59,7 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   assert.equal(task.ttlMs, 3 * 60 * 60_000);
   assert.match(task.statusMessage, /task completions.*hud_read/);
   const get = () => rpc('tasks/get', { taskId: task.taskId });
-  fs.writeFileSync(join(job.task_dir, 'progress.jsonl'), JSON.stringify({ at: new Date().toISOString(), text: 'Synthetic milestone.' }) + '\n');
+  writeFixtureFile(join(job.task_dir, 'progress.jsonl'), JSON.stringify({ at: new Date().toISOString(), text: 'Synthetic milestone.' }) + '\n');
   assert.match((await get()).statusMessage, /Synthetic milestone\./);
   await publishPiGrace(job);
   const done = await get();
@@ -75,7 +76,7 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const report = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
   assert.match(report.report, /Synthetic settled pi report/);
   assert.equal(report.changes, undefined);
-  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed', exit_reason: 'closed after report read' }));
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed', exit_reason: 'closed after report read' }));
   const repair = taskJob(f, await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic repair.' }));
   assert.notEqual(repair.job, job.job);
   assert.equal(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'))).repair_of, job.job);
@@ -224,7 +225,7 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
   const watching = watchCommand([], { env: f.env, stdout: (s) => lines.push(...s.trim().split('\n')), stderr: () => {} },
     { signal: ac.signal, rescanMs: 100 });
   try {
-    fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report without a declaration yet.\n');
+    writeFixtureFile(join(dir, 'report.md'), 'Synthetic report without a declaration yet.\n');
     await new Promise((done) => setTimeout(done, 120));
     assert.equal(checkReceipt(job), null);
     declareDone(f, job);
@@ -286,7 +287,7 @@ test('HUD checks: Pi continuation and report rewrite make results stale; a runni
   assert.notEqual(next.report_sig, previous.report_sig);
   assert.equal(readCloseReaped(job), undefined);
   const report = join(job.task_dir, 'report.md');
-  fs.writeFileSync(report, 'Synthetic rewritten Pi report.\n');
+  writeFixtureFile(report, 'Synthetic rewritten Pi report.\n');
   await until(() => Date.now() > fs.statSync(report).mtimeMs);
   assert.equal((await f.call('hud_read', { job: job.job })).checks.stale, true);
   assert.equal(checkReceipt(job).report_sig, next.report_sig);

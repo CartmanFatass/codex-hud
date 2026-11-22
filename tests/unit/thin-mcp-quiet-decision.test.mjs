@@ -28,6 +28,7 @@ import {
   decisionAnswer,
   configureFakeDecision,
 } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt', { timeout: 12000 }, async (t) => {
   const f = await fixture(t);
@@ -58,7 +59,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.equal(server.requests.length, 0);
   assert.equal(cliState(parent.task_dir).state, 'working');
 
-  fs.writeFileSync(join(parent.task_dir, 'report.md'), 'Premature synthetic parent report.');
+  writeFixtureFile(join(parent.task_dir, 'report.md'), 'Premature synthetic parent report.');
   await new Promise((done) => setTimeout(done, 700)); // exceeds the accelerated report stability window
   assert.equal(cliState(parent.task_dir).state, 'working');
   assert.equal(cliState(parent.task_dir).settled_at, null);
@@ -76,7 +77,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.equal(superseded.status, 'failed');
   assert.match(superseded.statusMessage, /no longer current/);
   assert.equal(reapAttempts(f, parent), 0);
-  fs.writeFileSync(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
+  writeFixtureFile(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
   await until(() => cliState(parent.task_dir)?.state === 'closed', 5000);
   assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'completed');
   assert.equal(prompts().length, 1, 'the same report is not prompted for again');
@@ -136,7 +137,7 @@ test('quiet decision still-working keeps waiting up to 3 questions then escalate
   const f = await fixture(t);
   writeCliRole(f, 'qd-wait', 1, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
-  fs.writeFileSync(
+  writeFixtureFile(
     join(f.env.HOME, 'pane-read'),
     Array.from({ length: 70 }, (_, i) => `line ${i + 1}: waiting on background build`).join('\n') + '\n'
   );
@@ -228,7 +229,7 @@ test('quiet decision failed uses screen line and quota marks place exhausted', {
     })
   );
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
-  fs.writeFileSync(join(f.env.HOME, 'pane-read'), 'working...\nError: 429 rate limit exceeded for grok-4.7\n> \n');
+  writeFixtureFile(join(f.env.HOME, 'pane-read'), 'working...\nError: 429 rate limit exceeded for grok-4.7\n> \n');
   const server = await fakeDecisionServer(t, () => decisionAnswer('failed', 0.96));
   configureFakeDecision(f, server.baseUrl);
   const job = await f.call('hud_create', { role: 'qd-fail', request_key: 'qd-fail', task: 'Synthetic quota fail.' });
@@ -249,7 +250,7 @@ test('quiet decision failed without quota regex falls back to needs-human withou
   const f = await fixture(t);
   writeCliRole(f, 'qd-nonquota', 1, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
-  fs.writeFileSync(join(f.env.HOME, 'pane-read'), 'working...\nError: segmentation fault in worker\n> \n');
+  writeFixtureFile(join(f.env.HOME, 'pane-read'), 'working...\nError: segmentation fault in worker\n> \n');
   const server = await fakeDecisionServer(t, () => decisionAnswer('failed', 0.95));
   configureFakeDecision(f, server.baseUrl);
   const job = await f.call('hud_create', { role: 'qd-nonquota', request_key: 'qd-nonquota', task: 'Synthetic non-quota error.' });
@@ -285,7 +286,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
   configureFakeDecision(fCap, sCap.baseUrl, 1);
   const apiDir = join(fCap.env.HUD_HOME, 'display/model-cache/decision-api');
   fs.mkdirSync(apiDir, { recursive: true });
-  fs.writeFileSync(join(apiDir, 'calls.json'), JSON.stringify([{ at: Date.now(), feature: 'outcome' }]));
+  writeFixtureFile(join(apiDir, 'calls.json'), JSON.stringify([{ at: Date.now(), feature: 'outcome' }]));
   const jCap = await fCap.call('hud_create', { role: 'qd-cap', request_key: 'qd-cap', task: 'Synthetic cap.' });
   await until(() => cliState(jCap.task_dir)?.state === 'waiting_orchestrator', 8000);
   assert.equal(sCap.requests.length, 0);
@@ -347,7 +348,7 @@ test('reportPromptSent persists across supervisor restart via hud_send', { timeo
   writeCliRole(f, 'qd-prompt-respawn', 1, true);
   const liveWorker = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
   t.after(() => { try { liveWorker.kill('SIGKILL'); } catch {} });
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(liveWorker.pid));
+  writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(liveWorker.pid));
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
   configureFakeDecision(f, server.baseUrl);
