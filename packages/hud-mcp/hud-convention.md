@@ -8,10 +8,10 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   needs a resource only the main session holds.
 - Pass `isolation: "worktree"` only when the job edits code or runs builds or tests; docs, design samples, tickets,
   studies and read-only roles (`sonic`, `oracle`, `reviewer`) work in the main checkout and commit with a pathspec.
-- Per-role caps (Settings) queue jobs past the cap and start an `imp` at its cap as `general` when it has room; do not
-  count jobs yourself before dispatching.
-- Pass a role `preset` only when the user asks for it in that request or for a hard slice when the project's docs name
-  the preset for hard slices; otherwise the role's default runs.
+- Per-role caps (Settings) queue jobs past the cap and start an `imp` at its cap as `general` when it has room;
+  dispatch as soon as work is ready.
+- Each role runs where its role file says; `general` also takes `preset`, `on`, `model` or `thinking` for one job when
+  the user names a model.
 - A sonic brief asks for facts, not a recommendation, and fits one report of about 60 lines; split a wide survey
   across several sonics started together.
 - Shared resources (a real install, paid or live runs, the shared browser) stay with the main session. A brief that
@@ -49,4 +49,4 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   status and milestones; pass `lines` only for pane output and `detail: true` for launch diagnostics.
 - The orchestrator writes Waiting items in the owner's panel language.
 - File tickets with `owner_try: false` when tests fully cover the behaviour; `true` only for visible UI, installs or live-session behaviour tests cannot cover. On a `try accepted` line, mark those tickets `done` (legacy STATE `try` rows: `accepted`); on a `try flagged` line, add the item under Waiting for the owner and ask what is wrong. Never list a to-try item under Waiting for the owner; Waiting holds flagged items and owner decisions. A Waiting item that depends on tickets ends with `(waits on <feature>/<NN>)`; the panel drops it once every one is done or dropped.
-The main session owns handoffs and decides the next step; HUD only chains the steps within a requested fixed flow.
+The main session owns handoffs and decides the next step.

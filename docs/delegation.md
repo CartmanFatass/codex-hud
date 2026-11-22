@@ -26,8 +26,7 @@ agent proposes.
    records `ready-for-human` (or `done` when the ticket says `Owner try: no`). Do not make a claim commit. The implementer runs the main-path tests for what it
    changed, once, at the end. When a slice needs a lookup
    across several files first, pass `scout: "<question>"` on `hud_create` to attach a sonic dossier via `from_jobs`
-   (prefixed with the unverified-facts reminder). Scout is for where/what/how-many questions; why/which/is-it-wrong
-   questions (root cause, design, review) stay with the deciding model.
+   (prefixed with the unverified-facts reminder). Scout answers where/what/how-many questions.
 4. **Integrate.** The orchestrator reads each diff and tries the slice, then calls `hud_land({ job })` on the settled
    managed worktree (`isolation: "worktree"`). `hud_land` acquires the `main-checkout` lease, cherry-picks the job's
    commits into a detached checkout, runs the `.hud/project.json` `land` gate (one immediate rerun per red command; up
@@ -90,13 +89,13 @@ job and the land read the same requirement.
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | role `imp` (skill `hud-delegate`) | one slice each |
 | reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
-| sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups); never test authoring, bug hunting, design, review or why/which/is-it-wrong questions (those stay with the deciding model) |
+| sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups) |
 | oracle | role `oracle` | the strongest seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |
 | frontend-implementer | role `frontend-imp` | UI design and every user-facing UI build: panel, statusline, footers, rendered pages, design samples (`src/render/`) |
 | Hermes | Windows, computer use | tests that need human-like interaction |
 
-Where each role runs is the MCP's business, not this page's: the owner's role files and the Control plane decide it, and `hud_roster` reports it as `runs_on`. A dispatch passes no `preset`, `on`, `model` or `thinking`; the MCP accepts them only for `general`, the flexible seat, when the owner names a model for one job, and that pick does not carry over (owner, 2026-11-22).
+Each role runs where the owner's role files and the Control plane put it (`hud_roster` reports `runs_on`). `general` is the flexible seat: it takes `preset`, `on`, `model` or `thinking` for one job when the owner names a model (owner, 2026-11-22).
 
 Codex tests use `codex2` (the free account), never the main `codex` account.
 
