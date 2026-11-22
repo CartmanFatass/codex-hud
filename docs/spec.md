@@ -46,8 +46,7 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - `general`: global ad-hoc work set by the brief, with any model (e.g. a pi provider's) via `hud_create`
   `model`/`thinking` for one job (§2.1.4). (16.01)
 - Named presets in role files are full chains. Owner switches places and presets in Control (§2.2.5).
-  `hud_create` can pick a harness (`on`) or `preset` for one job without editing role files (§2.1.4).
-  (14.01, 17.04, 18.01)
+  Only `general` takes a one-job `on`, `preset`, `model` or `thinking` (§2.1.4). (14.01, 17.04, 18.01, 22.22)
 - Ship presets for the owner's current combinations, including Antigravity Hydrogen (`high`) for `imp`.
   No shipped Grok presets for `imp`; `grok` and `xai` are currently switched off. (21.02)
 
@@ -66,9 +65,9 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 
 #### 2.1.4 Dispatch inputs, isolation and launch guards
 
-- `hud_create` can override model and thinking for one job. Per `docs/delegation.md`, the main session
-  passes `preset`, `on`, `model` or `thinking` only if the owner asks for it in that request; no carryover.
-  Exception: `preset: astra` for `imp` on hard slices (several modules, review fixes, design-heavy). (22.20, 22.22)
+- Role files decide where every role runs. `hud_create` accepts `preset`, `on`, `model` or `thinking` only for
+  `general`, the flexible seat, when the owner names a model for one job; for any other role it rejects them and
+  names Control and `general`. Picking a tier for `imp` is the MCP's routing below, not the caller's. (22.22)
   For pi roles, named switches cover pi-lens, MCP adapter, tokens/s, UI extensions, helper pane and personal
   skills; pass extra pi args as given. (11.02)
   Pi workers skip the MCP adapter when no MCP servers are configured unless `mcp: true` is set. (22.17)
@@ -88,9 +87,8 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - Sonic thinking uses the role default (`high`), not caller choice or a tool prompt. When enabled (off by default),
   the Decision API chooses `none`, `low`, `high` or `max` using each brief and the role file's level purposes.
   Any failure falls back to the default. (21.05)
-- Imp routing (Settings, off by default; needs the Decision API): an `imp` create that passes no `preset`, `on`,
-  `model` or `thinking` gets a tier, light (`hydrogen`), standard (role default) or hard (`astra`), and a run mode,
-  headless or tab, chosen from the brief, ticket and context files against the role file's tier purposes. The
+- Imp routing (Settings, off by default; needs the Decision API): an `imp` create gets a tier,
+  light (`hydrogen`), standard (role default) or hard (`astra`), and a run mode, headless or tab, chosen from the brief, ticket and context files against the role file's tier purposes. The
   create result, card and job record show tier, mode and a one-line reason. A land repair of a light job runs one
   tier up. Any failure or timeout falls back to the role default in a tab. (22.22)
 - A headless worker runs a continuable role without a tab, in its harness's non-interactive mode, and keeps its

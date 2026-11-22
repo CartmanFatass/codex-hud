@@ -36,7 +36,7 @@ agent proposes.
    and branch. One notice or MCP task reports the landed SHA or the failing step and tail; `hud_read({ job: "<flow>" })`
    inspects progress. A worker question goes to the main session and stops the flow.
 5. **Review once, at the milestone.** One reviewer on the whole milestone diff (owner, 2026-11-17: no second
-   reviewer and no model-family rule; supersedes 2026-11-11); it reports two axes separately:
+   reviewer; supersedes 2026-11-11); it reports two axes separately:
    - **spec:** does it do what `docs/spec.md` asks, and does it do things nobody asked for (scope creep);
    - **simplicity and quality:** correctness defects, and what can be deleted (guards, options, abstractions, tests).
 
@@ -83,7 +83,7 @@ add it to `.hud/brief.md` ("Decide these yourself") in the same turn, not only i
 running work goes into its ticket (What to build or Comments) first; the `hud_send` points to that line, so the next
 job and the land read the same requirement.
 
-## Roles and models
+## Roles
 
 | Role | Runs on | Used for |
 | --- | --- | --- |
@@ -91,12 +91,12 @@ job and the land read the same requirement.
 | implementer | role `imp` (skill `hud-delegate`) | one slice each |
 | reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
 | sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups); never test authoring, bug hunting, design, review or why/which/is-it-wrong questions (those stay with the deciding model) |
-| oracle | role `oracle` | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
+| oracle | role `oracle` | the strongest seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |
 | frontend-implementer | role `frontend-imp` | UI design and every user-facing UI build: panel, statusline, footers, rendered pages, design samples (`src/render/`) |
 | Hermes | Windows, computer use | tests that need human-like interaction |
 
-Where each role runs (harness, model, thinking) is what `hud_roster` reports as `runs_on`: the owner's role files, switched in the Control plane. A dispatch passes no `preset`, `on`, `model` or `thinking` unless the owner asks for it in that request, and an owner's pick for one task does not carry over to the next (owner, 2026-11-20). One standing exception (owner, 2026-11-22): `imp` runs its default `fast` preset (gpt-6.2-sol-fast), and the orchestrator passes `preset: "astra"` for hard slices (owner kept it, 2026-11-22): several modules, review fixes, or design-heavy work; simple slices may use `preset: "hydrogen"`. Milestone reviews run on the reviewer's default, astra max (owner, 2026-11-22: thorough and high quality; reviews cover mixed implementers, so a provider rule adds nothing).
+Where each role runs is the MCP's business, not this page's: the owner's role files and the Control plane decide it, and `hud_roster` reports it as `runs_on`. A dispatch passes no `preset`, `on`, `model` or `thinking`; the MCP accepts them only for `general`, the flexible seat, when the owner names a model for one job, and that pick does not carry over (owner, 2026-11-22).
 
 Codex tests use `codex2` (the free account), never the main `codex` account.
 
