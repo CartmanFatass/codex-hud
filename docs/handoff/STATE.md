@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · DOGFOOD-FIXES · DOGFOOD-FIXES-11 · Land cleanup trusts its own landing (554096a0)
 - try · ORCH-LEAN · ORCH-LEAN-04 · Owner panel actions reach MCP-task clients; retry and land intents (e59e9319)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-10 · Continuing a closed CLI job keeps its worktree (49e57b75)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-02 · Tests never leave hud-watch or hud-cli processes behind (be73d2f8)
