@@ -456,27 +456,27 @@ Running jobs with unanswered questions need you; an unanswered question left on 
 finished job does not. A report is not proof of success, and display labels are not
 acceptance or a merge decision. Unknown evidence stays unknown.
 
-Cards are tiered by whether the owner needs to act on them: open questions render as amber slabs at the top (with model/effort marks and any active `⚡N` on the header, and no duplicate pointer card in the lane below); unhandled failures (red reason row), unread reports (`✓●`, ASCII `+*`), active land/scout flows and stalled jobs show their factual detail rows without empty `┃` placeholders. Secondary workers — routine running jobs, queued jobs and read settled jobs — pack into one dense row (state glyph, coloured role, title, provider/short-model/effort marks narrowing `◎ sol-fast◕` → `◎◕` → `◎`, active `⚡N`, age). Enter expands any card in place to its full sentence, milestone and activity sparkline.
-A brief heading in the panel language supplies the card title. For a foreign heading,
-the same sentence request can supply a localized short name beside the slice or ticket ID.
-Without model text the heading or first task line remains; narrow lane labels keep their numeric suffix. Only the newest current settled card initially expands, until its fold
-time; explicit choices win for that panel lifetime. Enter on a lane folds it.
+Home draws **one row per job**: a state glyph in a fixed two-cell column, the ticket id, the short title, then on the right the role's icon (`⚒ ✎ ✦ ◈ ⚖ ⚡ •`, ASCII `I F G O R * .`, the statusline's table), the provider/short-model/effort mark (narrowing `◎ sol-fast◕` → `◎◕` → `◎` before the title is cut below 16 cells), active `⚡N`, a state word (`failed`, `stalled`) and the age. The title is the heading of the job's ticket file (`.scratch/<feature>/issues/NN-*.md` for the job's `ticket`, its `NN:` prefix off), else the brief heading, else the model's short name; the raw task text only when nothing else names the job. A lane gets a header (ticket id, title, phase at the right) only when it shows more than one job; its jobs indent under it. Open questions render as amber slabs at the top (with model/effort marks and any active `⚡N` on the header, and no duplicate row in the lane below). A failed job keeps its card (red reason row) until the failure is observed or superseded; a job with an active land or scout flow gets one sub-row (`land · gate[3] test:mjs · 1m`, `scouting · 1m`; a land waiting for another keeps its own wait line); an unread report (`✓●`, ASCII `+*`) keeps its own row; a failed flow keeps its chain row. Queued jobs fold into one `◷ queued N · cache-v2/04 · …` row and read finished jobs inside the hide window into one `✓ done N · …` row (whole ids while they fit, then `+N`); Enter on a fold lists one row per job. Enter on a job row expands its card in place (sentence, milestone, activity) and keeps the row out of the folds while it is open; the report sentence is also in the Inspector.
+A brief heading in the panel language supplies the title when the job has no ticket file. For a foreign heading,
+the same sentence request can supply a localized short name that replaces it (and a ticket heading in the wrong language).
+Without model text the ticket or brief heading remains; narrow lane labels keep their numeric suffix. Classic's job rows never open by themselves; native subagent cards and Split's preview still open the newest current settled card until its fold
+time, and explicit choices win for that panel lifetime. Enter on a lane header folds the lane.
 Question slabs show answer keys beside the expanded options; `o` still opens the question file.
 
 **Sonic children.** A `sonic` job a HUD job dispatched (`parent_job`) never renders as its own row or card on Home (in Classic or Split). Instead, active (currently running) sonic children appear only as `⚡N` (ASCII `*N`) on their parent worker's row (and on the parent's ask slab header or Split lane row); finished sonic children add nothing (never a cumulative total). Sonic children do not count in lane strips, Split job counts or `done today`, and never hijack a Split lane row. A `/` filter that matches a sonic job still keeps its parent visible.
 
-**Flows.** A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows a flow row on its card
+**Flows.** A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows, under its row on Classic Home, the one sub-row above while the flow runs or waits; Split's preview, a failed flow and the Inspector show a flow row on the card
 (`gate ▸ merge ▸ push` or `scout ▸ run`, localized in Chinese) with the active step or final outcome (landed SHA, done,
-failed or cancelled) in both Classic and Split's preview, and in the Inspector, and its active chain on Split's lane row. A card with a running land stays
-visible and unfolded until the flow settles.
+failed or cancelled), and Split's lane row shows its active chain. A job with a running land stays
+visible and unfolded until the flow settles; Fold after now applies to native subagent cards and Split's preview.
 
 **Panel lifetime.** Jobs settled before the panel opened are excluded, including
 their decisions and model inputs; `a` cannot reveal them. Active/unknown jobs stay
 eligible regardless of age. Build reload preserves the original opening time.
 Native agents and Project's STATE slice lookup keep their own scope.
 
-**Card lifetimes.** Settled HUD/native cards fold after 5 minutes and
-hide after 5 minutes by default (so fold and hide coincide; adjust both in Settings → Panel). A hide time below fold
+**Card lifetimes.** Settled native cards fold after 5 minutes and
+hide after 5 minutes by default (so fold and hide coincide; adjust both in Settings → Panel). A read, settled HUD job is in the finished row from the start and leaves it at the hide time. A hide time below fold
 time counts as fold time. A failed or stopped job leaves Home immediately when a retry,
 repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
 `a` shows it muted as `superseded`. An observed failure follows the ordinary fold/hide times.
@@ -918,8 +918,9 @@ Home, Project and Control become **a list above and a preview of the cursor row 
 (`docs/design/panel-v8/`, option 2). The preview uses Classic's cards and sentences; a question slab doesn't repeat the lane name from its preview rule.
 
 - **Home.** One row per package lane and per block (Waiting for you,
-  Progress), always the same height, whatever runs: mark, name, phase, then the state
-  of the lane's most important job. A question or a failure keeps a reason row, so what
+  Progress), always the same height, whatever runs: mark, name, phase, then the role icon and the state
+  of the lane's most important job. Queued lanes and read finished lanes are one row each
+  (`◷ queued N · ids`, `✓ done N · ids`) whose preview lists their cards. A question or a failure keeps a reason row, so what
   needs you is always on screen; the cursor starts on the first such row. Below the
   list the preview shows that row: the question's slab and the lane's cards, the
   waiting items with the newest pending trials, or the milestone and ticket rollup.

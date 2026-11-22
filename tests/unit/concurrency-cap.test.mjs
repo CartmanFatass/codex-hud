@@ -377,7 +377,7 @@ test('sonic children and non-working jobs are excluded from caps; panel shows qu
     coverage: { incomplete: false, diagnostics: [], workspace: f.root },
   };
 
-  for (const [lang, expectedText] of [['en', 'queued #1'], ['zh', '排队 #1']]) {
+  for (const [lang, expectedText, folded] of [['en', 'queued #1', 'queued 1 · pkg-queued'], ['zh', '排队 #1', '排队 1 · pkg-queued']]) {
     const prev = setLanguage(lang);
     try {
       for (const panelLayout of ['classic', 'split']) {
@@ -386,7 +386,7 @@ test('sonic children and non-working jobs are excluded from caps; panel shows qu
           const frame = renderMonitor({ workboard: board, state, width, height: 30, nowMs: Date.now() });
           for (const line of frame.lines) assert.equal(visualLength(line), width);
           const plain = frame.lines.map(stripAnsi).join('\n');
-          assert.ok(plain.includes(expectedText), `${lang}/${panelLayout}/${width}: expected ${expectedText} in:\n${plain}`);
+          assert.ok(plain.includes(folded), `${lang}/${panelLayout}/${width}: expected the queued row ${folded} in:\n${plain}`);
         }
       }
       const cardPlain = renderWorkCard(card, { ...initialMonitorState(), activeTab: 'home' }, 56).map(stripAnsi).join('\n');

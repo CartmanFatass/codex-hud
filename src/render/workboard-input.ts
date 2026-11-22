@@ -572,7 +572,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     if (item?.startsWith('fold:')) {
       setAnchor(item);
-      toggle(item, true);
       next.home.revealed = undefined;
       return result();
     }

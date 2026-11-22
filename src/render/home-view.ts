@@ -3,7 +3,8 @@ import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collecto
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { boardRow, minuteAge, mark, footHints } from './workboard-rows.js';
-import { laneRows, orderedLanes } from './work-lanes.js';
+import { orderedLanes } from './work-lanes.js';
+import { jobRows } from './work-jobs.js';
 import { quietDecisionSummary, requestLines, questionOriginalRows, stemLines } from './work-card.js';
 import { theme, visualLength } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
@@ -147,7 +148,7 @@ export function askSlabRows(
   return rows;
 }
 
-/** Only the newest current settled non-child result opens by itself, before its fold time. */
+/** Only the newest current settled non-child result opens by itself, before its fold time. Classic's job rows never do (the report sentence is in the Inspector); its native subagent cards and Split's preview still do. */
 export function newestCard(board: WorkboardSnapshot, state: MonitorState, now: number): string | undefined {
   const newest = board.workers
     .filter(
@@ -155,6 +156,7 @@ export function newestCard(board: WorkboardSnapshot, state: MonitorState, now: n
         !state.home.foldedLanes?.has(w.laneId) &&
         w.settledAt !== null &&
         !w.parentJobId &&
+        (state.prefs.panelLayout === 'split' || w.nativeDepth !== undefined) &&
         currentWorker(w, now, state.prefs) &&
         !foldedWorker(w, now, state.prefs) &&
         (isUnreadReport(w) || unattendedFailure(w) || activeFlow(w) || w.nativeDepth !== undefined || !w.files?.length)
@@ -195,10 +197,7 @@ export function homeRows(
       state.home.showAll && !board.workers.some((w) => w.homeRank !== undefined)
         ? board.lanes
         : orderedLanes(board, now);
-    for (const lane of ordered) {
-      if (!lane.workers.length) continue;
-      rows.push(...laneRows(input, lane, state, width, now, { skipAsking: true, allWorkers }));
-    }
+    rows.push(...jobRows(input, ordered, state, width, now, allWorkers));
   }
   const source = input?.workboard;
   const visibleMainCount = board.workers.filter((w) => !w.parentJobId).length;

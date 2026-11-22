@@ -92,26 +92,8 @@ export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room
   return older + tokens.slice(-keep).join(' ') + tail;
 }
 
-export interface LaneRowsOptions {
-  /** Skip asking workers already shown in the Ask Slab above. */
-  skipAsking?: boolean;
-  /** Full worker list for counting active sonic children even when a subset is rendered. */
-  allWorkers?: readonly OwnerWorker[];
-}
-
-export function laneRows(
-  _input: MonitorData,
-  lane: WorkLane,
-  state: MonitorState,
-  width: number,
-  now: number,
-  opts: LaneRowsOptions = {}
-): MonitorRow[] {
-  const target = { kind: 'lane' as const, laneId: lane.id };
-  const allMain = mainLaneWorkers(lane);
-  const visibleMain = opts.skipAsking ? allMain.filter((w) => !w.homeNeedsHuman) : allMain;
-  if (!visibleMain.length) return [];
-
+/** A lane header's phase: a thin-job lane reads its non-child workers (`review r1 · fixing`, `landing`); others use their own. */
+export function lanePhase(lane: WorkLane, visibleMain: readonly OwnerWorker[], now: number): string {
   let phase = lane.phase ?? '';
   if (lane.id.startsWith('thin-job:')) {
     const active = visibleMain
@@ -134,6 +116,30 @@ export function laneRows(
   } else if (phase === 'working' || phase === 'done' || phase === 'build') {
     phase = '';
   }
+  return phase;
+}
+
+export interface LaneRowsOptions {
+  /** Skip asking workers already shown in the Ask Slab above. */
+  skipAsking?: boolean;
+  /** Full worker list for counting active sonic children even when a subset is rendered. */
+  allWorkers?: readonly OwnerWorker[];
+}
+
+export function laneRows(
+  _input: MonitorData,
+  lane: WorkLane,
+  state: MonitorState,
+  width: number,
+  now: number,
+  opts: LaneRowsOptions = {}
+): MonitorRow[] {
+  const target = { kind: 'lane' as const, laneId: lane.id };
+  const allMain = mainLaneWorkers(lane);
+  const visibleMain = opts.skipAsking ? allMain.filter((w) => !w.homeNeedsHuman) : allMain;
+  if (!visibleMain.length) return [];
+
+  const phase = lanePhase(lane, visibleMain, now);
 
   const foldedLane = state.home.foldedLanes?.has(lane.id) === true;
   const labelText = monitorText(

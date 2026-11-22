@@ -112,6 +112,8 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly displayId?: string;
   /** Thin job's first brief heading, preferred when already in the display language. */
   readonly briefTitle?: string;
+  /** Heading of the ticket file the job works on (`NN:` prefix off); Home's job row title, else `briefTitle`. */
+  readonly ticketTitle?: string;
   readonly model: string | null;
   readonly provider?: string | null;
   readonly effort: string | null;

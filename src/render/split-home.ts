@@ -11,12 +11,13 @@ import { homeCursor, homeTarget, type HomeCursor } from './monitor-state.js';
 import { TRY_ACTIONS } from './split-project.js';
 import { homeKeys } from './job-actions.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
+import { foldText, roleMark } from './work-jobs.js';
 import { activeFlow, unattendedFailure } from './work-visibility.js';
 import { isUnreadReport, laneSonicRunning, mainLaneWorkers, sonicBadge, workerModelBadge } from './worker-roster.js';
 import type { WorkCard } from '../collectors/work-card.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
-import { acceptedText, briefStack, currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedEntries, roleInk, taskRows, tryCount, trySentence, waitingRows } from './project-view.js';
+import { acceptedText, briefStack, currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedEntries, taskRows, tryCount, trySentence, waitingRows } from './project-view.js';
 import { boardRow, homeDoneCount, mark, minuteAge, originalRows, section } from './workboard-rows.js';
 import { splitSubValid, type SplitScene } from './split-frame.js';
 import { cutWords, fit, flowLines, monitorText, pair } from './monitor-text.js';
@@ -99,17 +100,18 @@ export function homeScene(
         : word && phaseText.includes(word)
           ? role
           : phaseText;
-    const mid = flowMid || theme.board.muted(midText);
+    // The role is the icon on the right, never a word here; the preview's rule below still says it.
+    const mid = flowMid || theme.board.muted(midText === role ? '' : midText);
     const sonicStr = sonicBadge(sonic);
     const stateOrRole = native
       ? theme.board.muted(t('{n} running', { n: running }))
       : word
         ? `${(top.flow && activeFlow(top) && word === t('land') ? theme.board.active : ink)(word)} ${theme.board.muted(age)}`
-        : `${roleInk(card.role)(role)} ${theme.board.muted(age)}`;
+        : theme.board.muted(age);
     const makeRight = (lvl: '' | 'full' | 'compact' | 'min') =>
       native
         ? stateOrRole
-        : [lvl ? workerModelBadge(top, lvl) : '', sonicStr, stateOrRole].filter(Boolean).join(' ');
+        : [roleMark(card.role), lvl ? workerModelBadge(top, lvl) : '', sonicStr, stateOrRole].filter(Boolean).join(' ');
 
     const labelCol = Math.max(4, col - (visualLength(glyph) - 1));
     const suffix = !native && names[i].match(/[-/#]\d+$/)?.[0];
@@ -136,7 +138,7 @@ export function homeScene(
         }
       }
     }
-    const lead = showMid ? `${head} ${mid}` : head;
+    const lead = showMid && mid ? `${head} ${mid}` : head;
     const rows: MonitorRow[] = [{ text: pair(lead, right, width), item }];
     if (top.superseded) for (const row of rows) row.text = theme.board.muted(stripAnsi(row.text));
     // A job at work shows model keywords in the row's free cells while the cursor is elsewhere.
@@ -222,10 +224,26 @@ export function homeScene(
     }];
   })();
 
+  // Queued lanes and read, finished lanes are each one row (ticket ids, `+N`); the cursor on it previews their cards.
+  const foldOf = (l: WorkLane) => (l.identity.kind === 'native' ? undefined : group(l) === 4.5 ? 'queued' : group(l) === 5 ? 'done' : undefined);
+  const fold = (kind: 'queued' | 'done'): Entry[] => {
+    const ids = lanes.flatMap((l, i) => (foldOf(l) === kind ? [i] : [])), item = `fold:${kind}`;
+    return ids.length ? [{
+      item,
+      needs: false,
+      rows: [{ item, text: foldText(kind, ids.map((i) => names[i]), width) }],
+      preview: () => ({
+        label: t(kind === 'queued' ? 'queued {n}' : 'done {n}', { n: ids.length }),
+        rows: ids.flatMap((i) => laneRows(input, lanes[i], { ...state, home: { ...state.home, foldedLanes: new Set() } }, width, now, { skipAsking: true, allWorkers: lanes[i].workers })),
+      }),
+    }] : [];
+  };
   const entries = [
-    ...lanes.flatMap((l, i) => (group(l) < 5 ? [laneEntry(l, i)] : [])),
+    ...lanes.flatMap((l, i) => (group(l) < 5 && !foldOf(l) ? [laneEntry(l, i)] : [])),
+    ...fold('queued'),
     ...waiting,
-    ...lanes.flatMap((l, i) => (group(l) < 5 ? [] : [laneEntry(l, i)])),
+    ...fold('done'),
+    ...lanes.flatMap((l, i) => (group(l) >= 5 && !foldOf(l) ? [laneEntry(l, i)] : [])),
     ...progress,
   ];
   const items = entries.map((e) => e.item);
@@ -234,7 +252,7 @@ export function homeScene(
   const entry = entries.find((e) => e.item === cursor), shown = entry?.preview() ?? { label: '', rows: [] };
   const scope = `home|${cursor}`, sub = splitSubValid(split, shown.rows);
   const lane = lanes.find((l) => targetKey({ kind: 'lane', laneId: l.id }) === cursor), at = sub ?? cursor;
-  const anchor = at && /^(home-progress:|split:|original:|project:fold:(task|ledger):)/.test(at) ? at : undefined;
+  const anchor = at && /^(home-progress:|split:|original:|fold:|project:fold:(task|ledger):)/.test(at) ? at : undefined;
   const target = anchor ? homeTarget(state.home) : sub ? targets.get(sub)
     : lane ? { kind: 'worker' as const, laneId: lane.id, workerId: laneTop(lane, now).id } : homeTarget(state.home);
   const selected = homeCursor(target, anchor);

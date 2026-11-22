@@ -276,9 +276,9 @@ test('a row says its state once: Home’s lane rows, its cards and their model m
     for (const line of plain(frame)) assert.deepEqual(repeated(line, lang), [], `${layout} ${lang} ${width}: ${line}`);
     if (layout === 'classic') for (const line of plain(frame)) assert.doesNotMatch(line, /\[(done|failed|完成|失败)\] (done|failed|完成|失败)/);
   }
-  // The lane that asks names its role in the middle, not its state again; a finished lane shows its job cleanly.
+  // The lane that asks carries its role icon, not its state again; a finished lane shows its job cleanly.
   const lines = plain(busy.render(40, 'en', 40, split(), busy.data));
-  assert.match(lines.find((l) => /^\? NATIVE-TREE/.test(l)), /^\? NATIVE-TREE +imp +asking 0m$/);
+  assert.match(lines.find((l) => /^\? NATIVE-TREE/.test(l)), /^\? NATIVE-TREE +⚒ asking 0m$/);
   const idleDone = plain(idle.render(40, 'en', 40, split({ prefs: { cardHideMinutes: 15 } }), idle.data)).find((l) => /^✓●? NATIVE-TREE/.test(l));
   assert.match(idleDone, /^✓●? NATIVE-TREE +2 jobs +\S+ \d+m$/);
 });

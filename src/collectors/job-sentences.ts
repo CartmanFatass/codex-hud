@@ -342,8 +342,13 @@ export class JobSentences {
         (!summary || needsTranslation(summary, this.language));
       const name = row?.reportSource && !useFinal ? undefined : row?.name;
       const localName = name && (!w.briefTitle || needsTranslation(w.briefTitle, this.language) || w.briefTitle === w.displayId);
+      // Home's job row reads the heading: the stored name replaces a missing or foreign brief heading, and a ticket heading in the wrong language.
+      const heading = localName
+        ? { briefTitle: name, ...(w.ticketTitle && needsTranslation(w.ticketTitle, this.language) ? { ticketTitle: name } : {}) }
+        : {};
       return {
         ...w,
+        ...heading,
         task: localName ? [w.displayId, name].filter(Boolean).join(' · ') : w.briefTitle ?? w.task,
         modelSentence: (settled ? useFinal : !row?.reportSource) ? row?.text : undefined,
       };

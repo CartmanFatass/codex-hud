@@ -66,7 +66,7 @@ test('typing after / filters Home live, in Classic and Split: the bar under the 
   const old = classic({ prefs: { cardFoldMinutes: 1, cardHideMinutes: 1 } }), d = drive(f, old);
   assert.doesNotMatch(d.lines().join('\n'), /retry/, 'hidden: the reviewer card that finished two minutes ago');
   d.press('/'); d.type('reviewer');
-  assert.match(d.lines().join('\n'), /✓●? reviewer {2}NATIVE-TREE: retry/);
+  assert.match(d.lines().join('\n'), /✓●? +NATIVE-TREE {2}retry/);
   d.esc(); d.esc();
   assert.doesNotMatch(d.lines().join('\n'), /retry/);
 });

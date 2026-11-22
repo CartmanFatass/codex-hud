@@ -31,8 +31,9 @@ const subjects = (t) => {
   ];
 };
 
-test('a settled job and a settled native subagent: default hides at 5 min; with Hide after 15m, folds at 5 min, Enter opens/folds, hides at 15 and shown by a', (t) => {
-  for (const [kind, board, tree, card, title] of subjects(t))
+test('a settled native subagent: default hides at 5 min; with Hide after 15m, folds at 5 min, Enter opens/folds, hides at 15 and shown by a', (t) => {
+  // A HUD job's row is one row throughout and folds into the finished row at once: home-jobs.test.mjs.
+  for (const [kind, board, tree, card, title] of subjects(t).filter(([kind]) => kind !== 'HUD job'))
     for (const [width, lang] of [[80, 'en'], [80, 'zh'], [120, 'en'], [120, 'zh']]) {
       const longHide = withState(initialMonitorState(), { prefs: { cardFoldMinutes: 5, cardHideMinutes: 15 } });
       const at = (m, state = longHide) => drawAt(board, state, m, width, lang, tree);
@@ -61,24 +62,17 @@ test('a settled job and a settled native subagent: default hides at 5 min; with 
     }
 });
 
-test('only a result before its fold time opens by itself; a card the owner opened stays open', (t) => {
+test('a HUD job row never opens by itself; a card the owner opened stays open', (t) => {
   const board = jobBoard(temp(t)),
-    newest = board.workers.find((w) => w.task.startsWith('Add the retry')),
-    older = board.workers.find((w) => w.task.startsWith('Write the migration'));
+    newest = board.workers.find((w) => w.task.startsWith('Add the retry'));
   const longHide = withState(initialMonitorState(), { prefs: { cardFoldMinutes: 5, cardHideMinutes: 15 } });
-  const first = drawAt(board, longHide, 3.9);
-  assert.equal(first.state.home.newestCard, targetKey(targetOf(newest)));
-  assert.equal(rowsOf(first, older).length, 3, 'the older unread result stays collapsed: title and two sentence rows');
-  assert.ok(rowsOf(first, newest).length > 3, 'the newest opens in full');
-  // Each card folds 5 minutes after its own settlement; once the newest has, nothing opens by itself.
-  for (const m of [5, 6, 14]) {
+  for (const m of [3.9, 5, 14]) {
     const frame = drawAt(board, longHide, m);
     assert.equal(frame.state.home.newestCard, undefined, `${m} min`);
-    assert.equal(rowsOf(frame, newest).length, 1);
+    assert.equal(rowsOf(frame, newest).length, 1, `${m} min: one row, its sentence is in the Inspector`);
   }
   // Opened at 5 min by Enter, a card stays open until Enter folds it, past the next frames.
-  const folded = drawAt(board, longHide, 5);
-  const state = press(folded, 'enter', targetOf(newest));
+  const state = press(drawAt(board, longHide, 5), 'enter', targetOf(newest));
   assert.ok(rowsOf(drawAt(board, state, 9), newest).length > 1);
 });
 
@@ -117,8 +111,7 @@ test('Fold after and Hide after: defaults, validator, rows, save, reset, and a c
   const board = jobBoard(temp(t)), card = board.workers[0];
   const frame = (m, settings) => drawAt(board, initialMonitorState(settings), m);
   assert.equal(rowsOf(frame(7, defaultSettings()), card).length, 0, 'default: hidden at 7 min');
-  assert.ok(rowsOf(frame(7, loadSettings()), card).length > 1, 'fold 10: still full at 7 min');
-  assert.equal(rowsOf(frame(10, loadSettings()), card).length, 1, 'fold 10: folded at 10 min');
+  assert.equal(rowsOf(frame(7, loadSettings()), card).length, 1, 'hide 30: on Home at 7 min');
   assert.equal(rowsOf(frame(29, loadSettings()), card).length, 1, 'hide 30: on Home at 29 min');
   assert.equal(rowsOf(frame(30, loadSettings()), card).length, 0, 'hide 30: gone at 30 min');
 });
@@ -126,7 +119,7 @@ test('Fold after and Hide after: defaults, validator, rows, save, reset, and a c
 test('a hide time before the fold time is the fold time; failed and protected cards keep their own rules', (t) => {
   const board = jobBoard(temp(t)), card = board.workers[0];
   const short = { cardFoldMinutes: 10, cardHideMinutes: 5 };
-  assert.ok(rowsOf(drawAt(board, initialMonitorState({ ...defaultSettings(), ...short }), 9), card).length > 1, 'full before the fold time');
+  assert.equal(rowsOf(drawAt(board, initialMonitorState({ ...defaultSettings(), ...short }), 9), card).length, 1, 'on Home before the hide time');
   assert.equal(rowsOf(drawAt(board, initialMonitorState({ ...defaultSettings(), ...short }), 10), card).length, 0, 'gone when it would fold');
   const settled = { settledAt: NOW, homeNeedsHuman: false, state: 'done' };
   const worker = (extra) => ({ ...card, ...settled, ...extra });

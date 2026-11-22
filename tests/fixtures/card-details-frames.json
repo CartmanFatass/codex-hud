@@ -3,8 +3,7 @@
     " Home  Project  Control                                                         ",
     "✓ Nothing needs you                                      ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
     "                                                                                ",
-    "SYNTHETIC                                                                      ◉",
-    "◉ imp  SYNTHETIC: keyword colours                                             4m",
+    "◉  SYNTHETIC  keyword colours                                               ⚒ 4m",
     "┃ Checking report.md and src/tree-page.ts.                                      ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.   ",
     "Claude · this session                                                        ◉ ✓",
@@ -27,14 +26,14 @@
     "                                                                                ",
     "                                                                                ",
     "                                                                                ",
-    "✓ 1 done today              ⏎ expand  o file  v inspect  / filter  a all  ? help"
+    "                                                                                ",
+    "✓ 1 done today  g job tab  X stop  ⏎ expand  o file  v inspect  / filter  ? help"
   ],
   "zh-80": [
     " 首页  项目  控制                                                               ",
     "✓ 没有需要你处理的事                                     ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
     "                                                                                ",
-    "SYNTHETIC                                                                      ◉",
-    "◉ imp  SYNTHETIC: keyword colours                                            4分",
+    "◉  SYNTHETIC  keyword colours                                              ⚒ 4分",
     "┃ 正在检查report.md和src/tree-page.ts。                                         ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.   ",
     "Claude · 本次会话                                                            ◉ ✓",
@@ -57,14 +56,14 @@
     "                                                                                ",
     "                                                                                ",
     "                                                                                ",
-    "✓ 1 今日完成                      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
+    "                                                                                ",
+    "✓ 1 今日完成    g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "en-120": [
     " Home  Project  Control                                                                                                 ",
     "✓ Nothing needs you                                                                              ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
     "                                                                                                                        ",
-    "SYNTHETIC                                                                                                              ◉",
-    "◉ imp  SYNTHETIC: keyword colours                                                                                     4m",
+    "◉  SYNTHETIC  keyword colours                                                                                       ⚒ 4m",
     "┃ Checking report.md and src/tree-page.ts.                                                                              ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.                                           ",
     "Claude · this session                                                                                                ◉ ✓",
@@ -87,14 +86,14 @@
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
-    "✓ 1 done today                                                      ⏎ expand  o file  v inspect  / filter  a all  ? help"
+    "                                                                                                                        ",
+    "✓ 1 done today                                   g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "zh-120": [
     " 首页  项目  控制                                                                                                       ",
     "✓ 没有需要你处理的事                                                                             ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
     "                                                                                                                        ",
-    "SYNTHETIC                                                                                                              ◉",
-    "◉ imp  SYNTHETIC: keyword colours                                                                                    4分",
+    "◉  SYNTHETIC  keyword colours                                                                                      ⚒ 4分",
     "┃ 正在检查report.md和src/tree-page.ts。                                                                                 ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.                                           ",
     "Claude · 本次会话                                                                                                    ◉ ✓",
@@ -117,6 +116,7 @@
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
-    "✓ 1 今日完成                                                              ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
+    "                                                                                                                        ",
+    "✓ 1 今日完成                                            g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ]
 }

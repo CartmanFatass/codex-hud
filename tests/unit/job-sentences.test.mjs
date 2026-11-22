@@ -349,7 +349,7 @@ for (const language of ['en', 'zh']) {
         const inspector = renderMonitor({ tree, workboard: board, state, width, height: 30, nowMs: f.now });
         for (const frame of [home, inspector]) {
           const text = frame.lines.map(stripAnsi).join('\n');
-          assert.ok(text.includes(expected), text);
+          assert.ok(text.includes(frame === home ? expected.replace(': ', '  ') : expected), text); // Home's row splits the id from the title
           assert.doesNotMatch(text, /Read and carry out|\/synthetic\/brief/);
           for (const line of frame.lines) assert.equal(visualLength(line), width);
         }
@@ -370,6 +370,7 @@ for (const language of ['en', 'zh']) {
     f.service.configure(true, language);
     board = f.service.apply(f.board());
     assert.equal(board.workers[0].task, name, 'without a heading use the same-response name');
+    assert.equal(board.workers[0].briefTitle, name, 'Home’s job row reads the same name');
     renderFrames(board, name);
     const reads = t.mock.method(fsMutable, 'readSync');
     f.board();

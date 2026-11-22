@@ -83,7 +83,7 @@ test('Sonic children fold into ⚡N on their parent worker (running only, never 
 test('Finished sonic children add nothing: when all sonic children settle, ⚡N disappears from the parent', async (t) => {
   const s = await scene(t, { kids: [['First query', NOW - 2 * MIN], ['Second query', NOW - MIN]] });
   const lines = text(s.render(80, 'en', initialMonitorState()));
-  const parentRow = lines.find((l) => l.includes('AUTH-REFRESH: token rotation'));
+  const parentRow = lines.find((l) => /AUTH-REFRESH {2}token rotation/.test(l));
   assert.ok(parentRow, lines.join('\n'));
   assert.ok(!parentRow.includes('⚡'), `finished sonic must not show ⚡N: ${parentRow}`);
 });

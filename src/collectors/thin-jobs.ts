@@ -12,6 +12,7 @@ import { keywordMarks } from '../utils/keyword-marks.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
+import { ticketTitle } from './ticket-title.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { computeQueuePositions, queuedTimestamp } from '../roles/concurrency.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
@@ -935,6 +936,7 @@ export function readThinJobs(
             ...(typeof qd.reason === 'string' && qd.reason.trim() ? { reason: qd.reason.trim() } : {}),
           }
         : undefined;
+    const ticketHeading = ticketTitle(word(job.project_root) ?? scope.project, word(job.ticket) ?? word(job.slice), word(job.package) ?? '');
     const worker: OwnerWorker = {
       files,
       ...(flow ? { flow } : {}),
@@ -951,6 +953,7 @@ export function readThinJobs(
       task: title,
       displayId,
       ...(briefTitle ? { briefTitle } : {}),
+      ...(ticketHeading ? { ticketTitle: ticketHeading } : {}),
       ...(quietDecision ? { quietDecision } : {}),
       ...(row.report_unread ? { reportUnread: true as const } : {}),
       ...(failedAttempt(row) ? {

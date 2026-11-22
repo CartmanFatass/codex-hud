@@ -25,6 +25,10 @@ const writers = {
     const { cardFixture, colourFrames } = await load('card-details.mjs');
     return withHome((h) => colourFrames(cardFixture(h)));
   },
+  'home-jobs-frames.json': async () => {
+    const { jobFrames } = await load('home-jobs.mjs');
+    return jobFrames();
+  },
   'native-tree-frames.json': async () => {
     const { nativeFixture, nativeFrames } = await load('native-tree.mjs');
     return withHome((h) => nativeFrames(nativeFixture(h)));

@@ -44,13 +44,15 @@ test('Home opens only the newest current result by itself; routine running cards
   }
   const newest = f.board.workers.find((w) => key(w) === frame.state.home.newestCard);
   assert.ok(newest && newest.settledAt !== null, 'the newest result opens');
-  job.settledAt = NOW - 500; // the job settles: it is now the newest result
+  job.settledAt = NOW - 500; // the job settles: a Classic job row never opens by itself (its sentence is in the Inspector)
   frame = f.render(frame.state);
-  assert.equal(frame.state.home.newestCard, key(job));
+  assert.notEqual(frame.state.home.newestCard, key(job));
+  assert.doesNotMatch(rows(job).map((r) => stripAnsi(r.text)).join(' '), /final word/);
+  let state = enter(f, frame, job); // Enter opens it
+  frame = f.render(state);
   assert.ok(cardExpanded(frame.state, key(job)));
   assert.match(rows(job).map((r) => stripAnsi(r.text)).join(' '), /final word/);
-  let state = enter(f, frame, job); // explicitly fold the newest
-  frame = f.render(state);
+  frame = f.render(enter(f, frame, job)); // Enter folds it again
   assert.ok(!cardExpanded(frame.state, key(job)));
   state = enter(f, frame, native); // explicitly open a running card
   frame = f.render(state);

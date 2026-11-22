@@ -15,6 +15,7 @@ import { Notifier } from '../../dist/notify.js';
 import { frameDiff } from '../../dist/render/frame-diff.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { flowSummary } from '../../dist/render/work-card.js';
 const now = new Date().setHours(12, 0, 0, 0);
 const question =
   'Where should the model chip go on a card whose phase strip is longer than one complete line at 56 columns, without hiding any of the important results?';
@@ -122,7 +123,7 @@ const expandAll = (board, from = initialMonitorState()) => (withState(from, { ho
   ]) } }));
 const joined = (frame) =>
   plain(frame)
-    .map((l) => l.replace(/^[┃|]\s?/, '').trim())
+    .map((l) => l.replace(/^\s*[┃|]\s?/, '').trim())
     .join(' ')
     .replace(/\s+/g, ' ');
 test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes and ten-minute fold', async (t) => {
@@ -205,11 +206,10 @@ test('Home shows questions and lanes with cards without duplicating asking cards
     assert.match(card.at(-1), /┃ 3 options · default: a\)/);
     assert.doesNotMatch(card.join('\n'), /blocked|b\) beside|qa\/q3\.md|⏎/);
     if (width === 40) assert.match(card.at(-2), /…\s*$/, 'a long question is cut with an ellipsis');
-    const lane = home.findIndex((l) => l.startsWith('PANEL-THIN  '));
-    assert.ok(at < lane);
+    const row = home.findIndex((l) => /^◉ +width flag/.test(l)); // one job left in the lane: its row, no lane header
+    assert.ok(at < row);
     assert.doesNotMatch(home.join('\n'), /Decided for you|PANEL-THIN · imp q[12]/);
-    assert.doesNotMatch(home[lane + 1], /thin job cards/, 'asking job stays in its slab above, never duplicated in the lane');
-    assert.match(home[lane + 1], /width flag/);
+    assert.doesNotMatch(home.slice(row).join('\n'), /thin job cards/, 'asking job stays in its slab above, never duplicated in the lane');
     assert.match(home[0], /^ Home \?1\s+Project\s+Control\s*$/);
     assert.doesNotMatch(home.join('\n'), /asked|instead of/);
   }
@@ -272,10 +272,11 @@ test('Home Enter toggles cards and lanes; navigation opens Project; a reveals ol
   assert.doesNotMatch(text(card), /cannot be finished/);
   assert.match(text(press(card, '\r')), /cannot be finished/);
   assert.doesNotMatch(text(press(press(card, '\r'), '\r')), /cannot be finished/);
-  const lane = at({ kind: 'lane', laneId: w.laneId }),
+  // PANEL-THIN has one job left and no lane header; the TEST-CUT lane folds.
+  const lane = at({ kind: 'lane', laneId: board.lanes.find((l) => l.label === 'TEST-CUT').id }),
     folded = press(lane, '\r');
-  assert.doesNotMatch(text(folded), /width flag/);
-  assert.match(text(press(folded, '\r')), /width flag/);
+  assert.doesNotMatch(text(folded), /review card renderer/);
+  assert.match(text(press(folded, '\r')), /review card renderer/);
   const before = rendered(card).state;
   for (const [key, tab] of [['\x1b[D', 'control'], ['\x1b[C', 'project'], ['\t', 'project'], ['\x1b[Z', 'control']]) {
     assert.equal(press(before, key).activeTab, tab);
@@ -306,7 +307,7 @@ test('an answered question is still collected after the finished job hides', asy
   assert.ok(frame.workboard.snapshot.decisions.some((d) => d.question === 'Keep this choice?'));
   assert.doesNotMatch(plain(frame).join('\n'), /TEST-CUT · imp q1|Keep this choice/);
 });
-test('a lane row ends in one state glyph per non-child job, oldest first, without sonic or redundant role words', async (t) => {
+test('a folded lane header ends in one state glyph per job it shows, oldest first, without sonic; a lane with one job has no header', async (t) => {
   const f = fixture(t);
   const dispatch = (n, pkg, state, started, settled) => {
     const id = `j${String(n).padStart(16, '0')}`,
@@ -325,24 +326,22 @@ test('a lane row ends in one state glyph per non-child job, oldest first, withou
   dispatch(32, 'STRIP', 'closed', 20, 3);
   dispatch(33, 'STRIP', 'working', 10);
   dispatch(34, 'BAD', 'failed', 5, 2);
-  for (let n = 0; n < 12; n++) dispatch(40 + n, 'MANY', 'closed', 25 - n, 2);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
-  const row = (label, width = 40) => {
-    const lines = plain(f.render(board, 180, width));
-    for (const line of lines) assert.equal(visualLength(line), width, line);
-    return lines.find((l) => l.startsWith(label + ' '));
+  const folded = withState(initialMonitorState(), { home: { foldedLanes: new Set(board.lanes.map((l) => l.id)) } });
+  const lines = (width = 40, state = folded) => {
+    const out = plain(f.render(board, 180, width, state));
+    for (const line of out) assert.equal(visualLength(line), width, line);
+    return out;
   };
-  assert.match(row('STRIP'), /^STRIP\s+− ✓ ◉$/);
-  assert.match(row('PANEL-THIN'), /^PANEL-THIN\s+◉$/);
-  assert.match(row('BAD'), /^BAD  failed\s+✗$/);
-  assert.match(row('MANY', 24), /^MANY\s+\+\d+ (✓ )+✓$/, 'the newest keep their glyphs');
-  const home = plain(f.render(board));
-  const next = home[home.findIndex((l) => /^STRIP\s+/.test(l)) + 1];
-  assert.match(next, /^\S imp  STRIP job/, 'cards follow the row');
+  const row = (label) => lines().find((l) => l.startsWith(label + ' '));
+  assert.match(row('STRIP'), /^STRIP\s+− ◉$/, 'the closed job is in the finished row, not the strip');
+  assert.equal(row('BAD'), undefined, 'one job: its own row, no header to fold');
+  assert.match(lines(40, initialMonitorState()).find((l) => /^✗ +BAD job 34/.test(l)), /failed/);
+  const home = lines(40, initialMonitorState());
+  assert.match(home[home.findIndex((l) => /^STRIP\s+/.test(l)) + 1], /^ {2}\S +STRIP job/, 'its jobs follow the header');
   setDisplayConfig({ theme: 'none', icons: 'text', glyphs: 'text' });
-  assert.match(row('STRIP'), /^STRIP\s+- \+ @$/);
-  assert.match(row('BAD'), /^BAD  failed\s+x$/);
+  assert.match(row('STRIP'), /^STRIP\s+- @$/);
 });
 test('Home → thin-job Inspector → Changes preserves summary mouse controls with the production sidecar', async (t) => {
   const f = fixture(t);
@@ -425,15 +424,15 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
   await f.pipeline.refresh();
   let board = f.pipeline.workboard(f.tree);
   for (const [lang, landStep, scoutStep] of [
-    ['en', '◉ gate ▸ merge ▸ push · gate[1]: npm test', '◉ scout ▸ run'],
-    ['zh', '◉ 门禁 ▸ 合并 ▸ 推送 · 门禁[1]: npm test', '◉ 侦察 ▸ 运行'],
+    ['en', 'land · gate[1] npm test', 'scouting'],
+    ['zh', '落地 · gate[1] npm test', '侦察中'],
   ]) {
     setLanguage(lang);
     for (const width of [40, 80]) {
       const lines = plain(f.render(board, 180, width));
       for (const line of lines) assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
       const text = lines.join('\n');
-      assert.ok(text.includes(width === 40 ? landStep.slice(0, 22) : landStep), `${lang} ${width}\n${text}`);
+      assert.ok(text.includes(landStep), `${lang} ${width}\n${text}`);
       assert.ok(text.includes(scoutStep), `${lang} ${width}\n${text}`);
     }
   }
@@ -471,9 +470,11 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
     ['zh', '✓ 门禁 ▸ ✓ 合并 ▸ ✓ 推送 · 已落地 1234567', '✓ 侦察 ▸ ◉ 运行'],
   ]) {
     setLanguage(lang);
-    const text = plain(f.render(board, 180, 80)).join('\n');
-    assert.ok(text.includes(landedText), `${lang}\n${text}`);
-    assert.ok(text.includes(runText), `${lang}\n${text}`);
+    // A finished flow leaves Home's job rows; the Inspector's flow row (flowSummary) keeps its steps and outcome.
+    assert.doesNotMatch(plain(f.render(board, 180, 80)).join('\n'), /▸/, lang);
+    const summaries = board.workers.flatMap((w) => (w.flow ? [flowSummary(w.flow)] : [])).join('\n');
+    assert.ok(summaries.includes(landedText), `${lang}\n${summaries}`);
+    assert.ok(summaries.includes(runText), `${lang}\n${summaries}`);
   }
 
   // Failed land reports the failing stage and error.

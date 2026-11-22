@@ -292,25 +292,24 @@ export interface RenderCardOptions {
   /** Secondary workers (routine running, queued, read settled) pack into one row until Enter expands. */
   compact?: boolean;
 }
-function workCardName(card: WorkCard, _state: MonitorState, width: number, badge = '', opts: RenderCardOptions = {}) {
-  const labels = card.worker.labels;
-  const word = workStateWord(card),
-    outcomeVal = labels?.outcome?.value,
-    outcome =
-      outcomeVal &&
-      t(outcomeVal) !== word &&
-      !(outcomeVal === 'done' && !failed(card) && card.worker.settledAt !== null)
-        ? `[${t(outcomeVal)}]`
-        : '';
-  const ink = workStateInk(card);
+/** What a job's title row says between its model mark and its age: the checks chip, `badge`, `⚠ looping`, the `[outcome]` label and the state `word`. */
+export function cardMarks(card: WorkCard, badge = '', word = workStateWord(card)): string[] {
+  const labels = card.worker.labels, outcomeVal = labels?.outcome?.value, ink = workStateInk(card);
+  const outcome =
+    outcomeVal && t(outcomeVal) !== word && !(outcomeVal === 'done' && !failed(card) && card.worker.settledAt !== null)
+      ? `[${t(outcomeVal)}]`
+      : '';
   const wordInk = card.worker.flow && activeFlow(card.worker) && word === t('land') ? theme.board.active : ink;
-  const stateParts = [
+  return [
+    checkChip(card.worker.checks),
     badge,
     labels?.looping !== undefined ? ink(`${mark('⚠', '!')} ${t('looping')}`) : '',
     outcome ? ink(outcome) : '',
     word ? wordInk(word) : '',
   ].filter(Boolean);
-  const chip = checkChip(card.worker.checks);
+}
+function workCardName(card: WorkCard, _state: MonitorState, width: number, badge = '', opts: RenderCardOptions = {}) {
+  const ink = workStateInk(card), marks = cardMarks(card, badge);
   const sonic = sonicBadge(opts.sonic ?? 0);
   const age = theme.board.muted(ageText(card.elapsedMinutes ?? 0));
   const glyph = workStateGlyph(card);
@@ -321,7 +320,7 @@ function workCardName(card: WorkCard, _state: MonitorState, width: number, badge
     card.title + ((card.worker.nativeDepth ?? 0) > 2 && card.worker.parentName ? ` ↳ ${card.worker.parentName}` : '')
   );
   const makeRight = (lvl: '' | 'full' | 'compact' | 'min') =>
-    [lvl ? workerModelBadge(card.worker, lvl) : '', sonic, chip, ...stateParts, age].filter(Boolean).join(' ');
+    [lvl ? workerModelBadge(card.worker, lvl) : '', sonic, ...marks, age].filter(Boolean).join(' ');
   const minTitle = Math.min(visualLength(titleRaw), 26);
   let right = makeRight('');
   for (const lvl of ['full', 'compact', 'min', ''] as const) {

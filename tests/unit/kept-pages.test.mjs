@@ -36,7 +36,7 @@ test("frames: all seven kept pages in Home's kit", (t) => {
       text = plainFrame(frame).join('\n');
     if (page === 'older') {
       assert.match(text, /3 older shown · a hide/);
-      assert.match(text, /✓●? imp  Add the retry helper\s+.*1h12m/);
+      assert.match(text, /✓●? +Add the retry helper\s+.*1h12m/);
     }
     if (page === 'home') {
       assert.match(text, /\+3 older · a/);
@@ -198,9 +198,6 @@ test('old rows have only muted ink, no band; expansion restores the card and a r
   assert.equal(oldRow.text, theme.board.muted(stripAnsi(oldRow.text)));
   assert.ok(f.board.decisions.length);
   assert.ok(![...frame.workboard.targets.values()].some((target) => target.kind === 'decision'));
-  const oldLane = f.board.lanes.find((l) => l.label === 'R5');
-  const laneRow = frame.workboard.rows.find((r) => r.item === targetKey({ kind: 'lane', laneId: oldLane.id }));
-  assert.equal(laneRow.text, theme.board.muted(stripAnsi(laneRow.text)));
   const act = (key) => handleMonitorInput(frame.state, { type: 'key', key }, { tree: TREE, frame, nowMs: NOW }).state;
   const expanded = draw(act('enter')).workboard.rows.filter((r) => r.item === key);
   assert.ok(expanded.length > 1);
@@ -375,7 +372,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 58, nowMs: NOW, ...options });
   const home = draw(f.states.home),
     text = plainFrame(home).join('\n');
-  assert.match(text, /@ imp  Retry/);
+  assert.match(text, /@ {2}Retry/);
   assert.doesNotMatch(text, /◉|●/);
   const asking = draw(f.states.asking),
     cursor = asking.state.subpage?.cursor;

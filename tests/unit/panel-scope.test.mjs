@@ -120,12 +120,13 @@ test('settlement at/after open shows, hides at five minutes by default (or folds
   const worker = board.workers.find((w) => w.id.endsWith('2'));
   const key = targetKey({ kind: 'worker', laneId: worker.laneId, workerId: worker.id });
   const rows = (frame) => frame.workboard.rows.filter((r) => r.item === key);
-  assert.ok(rows(f.draw(board, worker.settledAt + 5 * MIN - 1)).length > 1);
+  const shown = (frame) => rows(frame).length > 0 || frame.workboard.rows.some((r) => r.item === 'fold:done'); // its row, or the finished row
+  assert.ok(shown(f.draw(board, worker.settledAt + 5 * MIN - 1)));
   const defaultHidden = f.draw(board, worker.settledAt + 5 * MIN);
   assert.equal(defaultHidden.workboard.snapshot.workers.length, 0);
   assert.equal(rows(defaultHidden).length, 0);
   const longHide = withState(initialMonitorState(), { prefs: { cardFoldMinutes: 5, cardHideMinutes: 15 } });
-  assert.equal(rows(f.draw(board, worker.settledAt + 5 * MIN, longHide)).length, 1);
+  assert.ok(shown(f.draw(board, worker.settledAt + 5 * MIN, longHide)));
   const hidden = f.draw(board, worker.settledAt + 15 * MIN, longHide);
   assert.equal(hidden.workboard.snapshot.workers.length, 0);
   const all = handleMonitorInput(hidden.state, { type: 'key', key: 'show-all' }, { tree, frame: hidden }).state;

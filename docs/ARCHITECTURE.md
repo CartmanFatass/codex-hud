@@ -196,6 +196,8 @@ retired `$HUD_HOME` observation records such as `assoc/`, `native-relations/` an
 `jev-runtime/`. Existing records are left in place. `CODEX_HUD_PANEL_ALL_DELEGATIONS`
 is ignored; it does not widen the pane scope.
 
+A job whose receipt names a `ticket` (`feature/NN`, or a `package` and a number) also gets `ticketTitle`, the heading of `<project_root>/.scratch/<feature>/issues/NN-*.md`: the first 512 bytes of one regular file in an unlinked directory, cached for 30 seconds per ticket (`ticket-title.ts`); a missing or unreadable file is no title. Home displays it and never sends it to a model.
+
 `readThinJobs` selects the newest 200 job directories and filters to the caller's
 recorded pane. It excludes jobs settled before the panel's original `openedAt`
 before reading their artifacts or planning model requests. Active/unknown jobs
@@ -211,7 +213,7 @@ limits are not a claim of constant total scan cost.
 
 `hud_land` runs in a detached helper. The watcher uses the job's latest land attempt to protect its worktree and receipt while queued or running. A retry before fast-forward keeps the old attempt readable under its own flow ID and removes its scratch worktree under the `main-checkout` lease. Integration tests the source commit directly when possible, otherwise picking only commits not on the current base. A red gate gets one immediate rerun of the reported Node.js test files (or of the whole command when no files are reported); recovery is stored in the flow and reported with the flaky test names when available.
 
-Home has package lanes plus one lane per native main session. Direct native children
+Home has package lanes plus one lane per native main session. Classic draws a package lane's jobs in `work-jobs.ts`: one row per job, a lane header only when it shows several, queued jobs and read finished jobs folded into one row each; native lanes keep `laneRows`. Direct native children
 are cards, their children indent one level, deeper descendants say `↳ parent`.
 `work-visibility.ts` owns shared lifetimes: settled cards fold after 5 minutes and
 hide after 15 by default (failed/stopped at least 30); `a` reveals older items in

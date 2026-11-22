@@ -420,8 +420,8 @@ test('Home: a working lane the cursor is not on shows its model keywords in the 
   const board = sentence(busy.board, 'M4-PROJECT', '«parser» rewrite, «+tests» green, «-lint» red');
   const row = (frame) => agentsRows(frame).find((l) => /^◉ M4-PRO/.test(l));
   const at = (width, lang = 'en', state = split()) => busy.render(width, lang, 40, state, undefined, { workboard: board });
-  assert.match(row(at(80)), /^◉ M4-PROJECT +build parser tests lint +imp 20m$/);
-  assert.match(row(at(40)), /^◉ M4-PROJECT +build parser +imp 20m$/, 'only the keywords that fit');
+  assert.match(row(at(80)), /^◉ M4-PROJECT +build parser tests lint +⚒ 20m$/);
+  assert.match(row(at(40)), /^◉ M4-PROJECT +build parser tests +⚒ 20m$/, 'only the keywords that fit');
   assert.doesNotMatch(row(at(26)), /parser/, 'no room, no cue');
   assert.equal(row(busy.render(80, 'en', 40)).includes('parser'), false, 'without a model sentence there is nothing to show');
   // The row under the cursor is previewed below, so it keeps the plain row.
