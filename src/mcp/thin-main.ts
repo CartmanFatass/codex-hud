@@ -11,6 +11,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
+import { startLand, landTask } from './land.js';
+import { isFlowId, landEvents, landView, readLand } from './land-state.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
@@ -1714,6 +1716,17 @@ async function sendJobs(args: Args) {
 }
 
 async function call(name: string, args: Args): Promise<unknown> {
+  if (name === 'hud_land') {
+    const id = required(args, 'job'), job = findJob(id);
+    const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, taskClient);
+    ensureWatcher();
+    if (taskClient) {
+      landTasks.add(flow.flow);
+      return { resultType: 'task', ...landTask(hudHome, flow) };
+    }
+    if (callerPane) void ensureQueueWatcher(callerPane, hudHome);
+    return landView(flow);
+  }
   if (name === 'hud_lease') return takeLease(args, { home: hudHome, cwd: process.cwd(), holder: callerPane });
   if (name === 'hud_tickets') {
     if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
@@ -1800,6 +1813,10 @@ async function call(name: string, args: Args): Promise<unknown> {
 
 async function callJob(name: string, args: Args, detail: boolean) {
   const id = required(args, 'job');
+  if (name === 'hud_read' && isFlowId(id)) {
+    const flow = readLand(hudHome, id);
+    return flow ? landView(flow) : { ok: false, code: 'flow_not_found' };
+  }
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
   if (name === 'hud_peek') return job.job === id ? peekJob(job, args) : { ok: false, code: 'job_not_found' };
@@ -1957,7 +1974,7 @@ function withChanges(value: unknown, markExhaustion: boolean): unknown {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
   if (taskClient || !value || typeof value !== 'object' || Array.isArray(value)) return value;
   const rows = sessionRows(markExhaustion);
-  const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)))];
+  const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job))), ...landEvents(hudHome, callerPane).lines];
   cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }
@@ -1995,6 +2012,7 @@ type HudTask = {
   reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number;
 };
 const tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
+const landTasks = new Set<string>();
 const markerFile = (task: HudTask) => join(directory(task.job), 'mcp-task.json');
 function claimTask(task: HudTask, job: Job) {
   if (!callerPane || job.herdr_pane !== callerPane) return;
@@ -2128,6 +2146,10 @@ function sampleTask(task: HudTask): TaskView {
   return updateTask(task, 'working', `${taskLabel(task, settled(state) ? 'working' : state)}${message ? ` — ${message}` : ''}`);
 }
 async function taskRequest(taskId: string, cancel: boolean) {
+  if (landTasks.has(taskId)) {
+    const flow = readLand(hudHome, taskId);
+    if (flow) return landTask(hudHome, flow, cancel);
+  }
   const task = tasks.get(taskId);
   if (!task) {
     const now = new Date().toISOString(), statusMessage = 'Unknown or expired task. Use hud_read to find the job and collect its report.';
@@ -2194,7 +2216,7 @@ async function receive(line: string): Promise<void> {
     case 'tools/list':
       result = { ...(discovered ? privateCache : {}), tools: resumeRefusal ? [] : worker ? await worker.listWorkerTools(true) :
         [...tools, statuslineTool].filter((tool) => !taskClient || tool.name !== 'hud_wait').map((tool) =>
-          taskClient && ['hud_create', 'hud_send', 'hud_respond'].includes(tool.name)
+          taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land'].includes(tool.name)
             ? { ...tool, execution: { taskSupport: 'optional' } } : tool) };
       break;
     case 'tasks/get':

@@ -122,6 +122,7 @@ export const ROLE_TOOLS = [
     'answer',
   ]),
   tool('hud_close', 'Reap a job early; safe to repeat.', { job: text }, ['job']),
+  tool('hud_land', 'Land a settled managed worktree job through the project gate. Read the returned flow ID with hud_read.', { job: text }, ['job']),
   LEASE_TOOL,
   tool(
     'hud_tickets',

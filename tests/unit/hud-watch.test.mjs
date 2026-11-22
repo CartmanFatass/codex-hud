@@ -51,7 +51,7 @@ async function until(check, timeoutMs = 4000) {
   assert.fail('timed out waiting for expected watcher output');
 }
 
-for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 'unmerged', 'nested']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
+for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 'disposable', 'mixed ignored', 'unmerged', 'nested']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-worktree-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const main_root = initRepo(home);
@@ -95,6 +95,16 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
   fs.writeFileSync(join(home, 'pi-role-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), PATH: `${home}:${process.env.PATH}` };
   const dir = writeJob(env.HUD_HOME, id, 'w4E:p1', 'imp', { state: 'closed', ended_at: new Date().toISOString() });
+  if (scenario === 'disposable' || scenario === 'mixed ignored') {
+    fs.mkdirSync(join(main_root, '.hud'));
+    fs.writeFileSync(join(main_root, '.hud/project.json'), JSON.stringify({ worktree: { disposable: ['ignored.txt'] } }));
+    fs.writeFileSync(join(env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: main_root }] }));
+    fs.writeFileSync(join(root, 'ignored.txt'), 'generated');
+    if (scenario === 'mixed ignored') {
+      fs.appendFileSync(join(main_root, '.git/info/exclude'), '\nprivate.txt\n');
+      fs.writeFileSync(join(root, 'private.txt'), 'keep');
+    }
+  }
   const file = join(dir, 'job.json'), job = JSON.parse(fs.readFileSync(file));
   fs.writeFileSync(file, JSON.stringify({ ...job, cwd: root, worktree: { main_root, root, branch, base_head } }));
   fs.writeFileSync(join(dir, 'SESSION.txt'), 'TAB=w4E:t2\n');
@@ -116,7 +126,7 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
     result = scan();
   }
   assert.ok(result.reaped_at);
-  const removed = ['merged', 'picked', 'picked later'].includes(scenario);
+  const removed = ['merged', 'picked', 'picked later', 'disposable'].includes(scenario);
   assert.equal(fs.existsSync(root), !removed);
   assert.equal(!!git(main_root, 'branch', '--list', branch), !removed);
   assert.ok(fs.statSync(join(main_root, 'node_modules')).isDirectory());
@@ -125,7 +135,7 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
     assert.equal(result.worktree_kept_reason, undefined);
     assert.ok(result.worktree_removed_at);
   } else {
-    assert.match(result.worktree_kept_reason, new RegExp(scenario === 'amended' ? 'unmerged' : scenario));
+    assert.match(result.worktree_kept_reason, new RegExp(scenario === 'amended' ? 'unmerged' : scenario === 'mixed ignored' ? 'dirty' : scenario));
     if (scenario === 'dirty') assert.equal(result.worktree_checked_head, undefined);
     assert.equal(fs.readlinkSync(join(root, 'node_modules')), join(main_root, 'node_modules'));
   }

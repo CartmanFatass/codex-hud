@@ -90,7 +90,7 @@ Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pa
 Unavailable evidence leaves the jobs view unbound to a native session.
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
-**hud_send**, **hud_respond**, **hud_close**, **hud_lease**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
+**hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
 It returns role availability, continuation, effective `runs_on` and the convention. For presets, fallbacks,
 model/thinking sources and accepted options, pass `detail: true`. The MCP omits an unchanged convention on
 subsequent roster calls in the same session; role rows are always refreshed.
@@ -187,7 +187,17 @@ the main checkout's HEAD. An empty list means no overlaps found, `null` means th
 if the worktree is clean and its branch is unchanged, merged, or every slice commit has a patch-equivalent commit
 on the base branch. It keeps dirty worktrees and those with unpicked or amended patches, recording
 `worktree_kept_reason`. A later scan can reconsider an unpicked branch if the base HEAD changed; it never retries
-a dirty checkout. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
+a dirty checkout. A registered project's `worktree.disposable` in `.hud/project.json` lists globs of **ignored** build outputs that cleanup may discard (for example `["dist/**"]`, default `[]`). Other ignored files and untracked or tracked changes are preserved. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
+
+Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace`, `done` or `closed`). Configure `land` in the registered main checkout's `.hud/project.json`, for example:
+
+```json
+{"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh"}}
+```
+
+HUD queues behind the `main-checkout` lease, cherry-picks the job's commits into a fresh detached checkout and runs the gate there. Commands are shell strings; the optional wrapper is an executable relative to the main checkout, passed `sh -c <command>` in the target checkout. On success HUD fast-forwards the checked-out base only if its tip is unchanged and touched paths are clean, runs `after` there, optionally pushes the tested SHA to that branch on `origin`, then removes the integration and clean job worktrees and job branch. A failure stops the flow; nothing is forced or rolled back. A failure after fast-forward includes the landed SHA.
+
+The call returns a flow ID immediately (one task for MCP-task clients). `hud_read({job: "<flow ID>"})` gives its state and current step. One terminal notice reports the SHA or the failing step and last 40 output lines. The helper survives a watcher restart; an interrupted helper is reported, not replayed. Receipts live under `$HUD_HOME/flows/`.
 
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s`
 (default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`

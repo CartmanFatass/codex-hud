@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, matchesGlob, resolve } from 'node:path';
+import { registeredProject } from '../roles/projects.js';
 import { readBytes } from '../statusline-parity/storage.js';
 import { parseWorktreeList, worktreeGit as git, type WorktreeGit } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
@@ -44,7 +45,7 @@ export async function populateWorktree(wt: ManagedWorktree) {
 
 const status = (root: string, filters: string[], ignored: boolean, run: WorktreeGit = git) => run(root, [...filters,
   'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all', '--ignore-submodules=dirty',
-  ...(ignored ? ['--ignored=matching'] : []),
+  ...(ignored ? ['--ignored'] : []),
 ]);
 const fields = (text: string) => text ? text.slice(0, -1).split('\0') : [];
 function dependencyLink(wt: ManagedWorktree) {
@@ -150,6 +151,13 @@ function nestedGitReason(root: string): string | undefined {
   }
 }
 
+export function managedReceiptMatches(id: string, job: { job: string; cwd: string; worktree: ManagedWorktree }) {
+  const wt = job.worktree, name = basename(wt.root);
+  return job.job === id && job.cwd === wt.root && wt.branch === `wt/${name}` && /^[a-z0-9-]+$/.test(name) &&
+    name.endsWith(`-${id.slice(-6)}`) && oid(wt.base_head) && wt.root === pathFor(wt.main_root, name) &&
+    fs.realpathSync(wt.main_root) === wt.main_root && fs.realpathSync(wt.root) === wt.root;
+}
+
 /** Cheap scan hint only: the reaper verifies the registered checkout and commit IDs with Git. */
 export function mainHead(root: string): string | null {
   try {
@@ -170,13 +178,17 @@ export function mainHead(root: string): string | null {
 }
 
 const kept = (reason: string, checkedHead?: string) => ({ worktree_kept_reason: reason, worktree_checked_head: checkedHead });
-export async function reapWorktree(id: string, job: { job: string; cwd: string; worktree: ManagedWorktree }) {
+function disposablePaths(home: string, root: string): string[] {
+  if (!registeredProject(home, root).registered) return [];
+  try {
+    const globs = JSON.parse(fs.readFileSync(join(root, '.hud/project.json'), 'utf8')).worktree?.disposable;
+    return Array.isArray(globs) && globs.every(g => typeof g === 'string') ? globs : [];
+  } catch { return []; }
+}
+export async function reapWorktree(id: string, job: { job: string; cwd: string; worktree: ManagedWorktree }, home: string) {
   const wt = job.worktree;
   try {
-    const name = basename(wt.root);
-    if (job.job !== id || job.cwd !== wt.root || wt.branch !== `wt/${name}` || !/^[a-z0-9-]+$/.test(name) ||
-        !name.endsWith(`-${id.slice(-6)}`) || !oid(wt.base_head) || wt.root !== pathFor(wt.main_root, name) ||
-        fs.realpathSync(wt.main_root) !== wt.main_root || fs.realpathSync(wt.root) !== wt.root)
+    if (!managedReceiptMatches(id, job))
       return kept('worktree receipt does not match its checkout');
     const [main, ...linked] = await list(wt.main_root);
     const tree = linked.find((t) => t.path === wt.root && t.branch === wt.branch);
@@ -190,7 +202,9 @@ export async function reapWorktree(id: string, job: { job: string; cwd: string; 
     const index = await git(wt.root, ['ls-files', '-v', '-z']);
     if (fields(index).some((row) => /^[a-zS] /.test(row))) return kept('worktree has hidden index entries');
     const pending = fields(await status(wt.root, filters, true));
-    if (pending.some((row) => !/^(?:\?\?|!!) node_modules$/.test(row) || !dependencyLink(wt)))
+    const globs = pending.some(row => row.startsWith('!! ')) ? disposablePaths(home, wt.main_root) : [];
+    if (pending.some(row => !(row.startsWith('!! ') && globs.some(glob => matchesGlob(row.slice(3), glob))) &&
+        (!/^(?:\?\?|!!) node_modules$/.test(row) || !dependencyLink(wt))))
       return kept('worktree is dirty (tracked, untracked or ignored files)');
     const nested = nestedGitReason(wt.root);
     if (nested) return kept(nested);

@@ -13,5 +13,13 @@
   "links": [],
   "role_files": [],
   "agents": [],
-  "convention": false
+  "convention": false,
+  "worktree": { "disposable": ["dist/**", "dist-test/**"] },
+  "land": {
+    "base": "universal-hud",
+    "wrapper": "tmp/env.sh",
+    "gate": ["npm run build", "npm run build:test", "npm run test:mjs", "npm run test:mjs", "npm run test:unit", "npm run check:fixtures"],
+    "after": ["npm run build"],
+    "push": true
+  }
 }

@@ -77,7 +77,7 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 没有显式选择时，`HERDR_PANE_ID` 允许用一秒预算向 `herdr pane current` 查询调用者的 Claude 转写或 Codex 会话（herdr 窗格内回退读取 `CODEX_THREAD_ID`）；
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
 
-MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**。
+MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**、**hud_land**。
 首次分派或项目上下文失效时，调用 `hud_roster` 获取角色可用性、能否继续、生效的 `runs_on` 和约定；上下文仍有效时直接调用 `hud_create`。
 同一 MCP 会话再次调用时，若约定未变则省略正文，角色信息仍会刷新。
 `hud_roster` 和该会话的首个 `hud_create` 结果会按调用者的运行环境给出通知提示；无法识别时给出通用提示。
@@ -119,6 +119,18 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 任务关闭后，只有工作树干净且分支未改动、已合并或每个切片提交在基分支上都有等价补丁时，watcher 才会移除检出和分支。
 若工作树不干净，或仍有未摘取的补丁（包括集成时被修改的补丁），则保留并在 `job.json` 记录 `worktree_kept_reason`。
 基分支 HEAD 变化后，后续扫描可重新检查因补丁未摘取而保留的分支；不会重试脏工作树。Project 把这些检出视为任务自己的，不算未登记的 worktree。
+
+已注册项目可在主检出的 `.hud/project.json` 中设置 `worktree.disposable`（例如 `["dist/**"]`，默认为 `[]`）。清理时只豁免匹配的已忽略文件；其他忽略文件、未跟踪文件及已跟踪的改动仍会保留。
+
+`hud_land({job})` 集成成功结算（`idle_grace`、`done` 或 `closed`）的托管工作树。主检出的项目配置示例：
+
+```json
+{"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh"}}
+```
+
+HUD 排队取得 `main-checkout` 租约，在基分支顶端新建分离工作树，依次摘取任务提交，再按退出码检查 `gate` 命令。可选 `wrapper` 是相对主检出的可执行文件，在目标工作树中接收 `sh -c <命令>`。通过后，仅当主检出仍位于原基分支顶端且涉及路径干净时才快进，然后在主检出运行 `after`，按配置把已测试的 SHA 推送到 `origin` 的该分支，最后移除集成工作树、干净的任务工作树和任务分支。失败即停止，不强制覆盖或回滚；快进之后失败仍会报告已集成的 SHA。
+
+调用立即返回流程 ID（MCP-task 客户端获得一个覆盖全程的任务）；`hud_read({job: "<流程 ID>"})` 可查询状态和当前步骤。结束时一次通知给出 SHA 或失败步骤和最后 40 行输出。流程记录在 `$HUD_HOME/flows/`，watcher 重启不会重复集成，执行进程意外退出时报告中断。
 
 角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、

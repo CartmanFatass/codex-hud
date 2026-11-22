@@ -261,7 +261,10 @@ test('plan change removes owned links, role files and agents, and copy-default i
     fs.readFileSync(join(f.project, '.hud/hud-convention.md'), 'utf8'),
     fs.readFileSync(join(bundled, 'hud-convention.md'), 'utf8')
   );
-  assert.equal(read(join(f.project, '.hud/project.json')).convention, true);
+  const projectJson = join(f.project, '.hud/project.json');
+  assert.equal(read(projectJson).convention, true);
+  const local = { land: { base: 'main', gate: ['npm test'], after: [], push: false }, worktree: { disposable: ['dist/**'] } };
+  fs.writeFileSync(projectJson, JSON.stringify({ ...read(projectJson), ...local }));
   f.reset();
   const second = writePlan(f.root, {
     version: 1,
@@ -297,6 +300,7 @@ test('plan change removes owned links, role files and agents, and copy-default i
     role_files: [],
     agents: [],
     convention: true,
+    ...local,
   });
   const shipped = fs.readFileSync(join(bundled, 'hud-convention.md'));
   f.reset();

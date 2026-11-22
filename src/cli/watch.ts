@@ -6,6 +6,7 @@ import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
 import { getHudHome } from '../hud-home.js';
+import { landEvents } from '../mcp/land-state.js';
 import { herdrId } from '../roles/herdr-run.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
@@ -107,7 +108,7 @@ function settlementNotices(windowMs: number) {
 
 // The CLI and pi both watch the same inputs, including atomic replacements of tries.jsonl.
 function watchInputs(home: string, changed: () => void, persistent = true) {
-  let watcher: fs.FSWatcher | undefined, homeWatcher: fs.FSWatcher | undefined;
+  let watcher: fs.FSWatcher | undefined, homeWatcher: fs.FSWatcher | undefined, flowWatcher: fs.FSWatcher | undefined;
   let closed = false;
   const attach = () => {
     if (closed) return;
@@ -119,10 +120,16 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
           watcher = undefined;
           attach();
         }
-        if (!file || file === 'jobs' || file === TRIES_FILE || file === PANEL_ACTIONS_FILE) changed();
+        if (file === 'flows') { flowWatcher?.close(); flowWatcher = undefined; attach(); }
+        if (!file || file === 'flows' || file === 'jobs' || file === TRIES_FILE || file === PANEL_ACTIONS_FILE) changed();
       });
       homeWatcher.on('error', () => { homeWatcher?.close(); homeWatcher = undefined; });
     } catch { /* No home yet: the rescan retries. */ }
+    if (!flowWatcher) try {
+      flowWatcher = fs.watch(join(home, 'flows'), { persistent }, (_event, file) => {
+        if (!file || file.endsWith('.json')) changed();
+      }).on('error', () => { flowWatcher?.close(); flowWatcher = undefined; });
+    } catch { /* No flows yet. */ }
     if (watcher) return;
     try {
       // One recursive watch covers every job's STATUS.json, report.md and qa/ (Node 24 on Linux).
@@ -142,6 +149,7 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
       if (closed) return;
       closed = true;
       homeWatcher?.close();
+      flowWatcher?.close();
       watcher?.close();
     },
   };
@@ -170,7 +178,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     const rows = await readSessionJobRows(home, pane, cwd, process.env);
     scanning = false;
     if (stopped) return;
-    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)))]);
+    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job))), ...landEvents(home, pane, false, cwd).lines]);
     first = false;
     prev = new Map(rows.map((row) => [row.job, row]));
     schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
@@ -305,9 +313,10 @@ export async function watchCommand(
       const rows = all ? readThinJobRows(home, { pane: null }) : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
-      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)))];
+      const flows = landEvents(home, callerPane, all);
+      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job))), ...flows.lines];
       if (queue) {
-        const pending = agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions || row.checks?.state === 'running') ||
+        const pending = flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions || row.checks?.state === 'running') ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {

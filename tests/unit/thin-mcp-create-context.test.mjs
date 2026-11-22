@@ -262,7 +262,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const listed = await f.rpc('tools/list');
   assert.deepEqual(
     listed.result.tools.map((tool) => tool.name),
-    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close', 'hud_lease', 'hud_tickets', 'hud_statusline']
+    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close', 'hud_land', 'hud_lease', 'hud_tickets', 'hud_statusline']
   );
   const feature = 'synthetic-feature';
   const drafts = [

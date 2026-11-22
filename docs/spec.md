@@ -22,6 +22,7 @@ machine, inside herdr. (10.02, 22.12)
 - Main-session tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`, `hud_close`,
   `hud_wait` (hidden from MCP-task clients), `hud_peek`, `hud_tickets`, `hud_lease`, `hud_statusline`.
   (17.02, 21.07, 22.04)
+- `hud_land({ job })` lands a settled managed worktree through the project's configured gate, fast-forward, after commands, optional push and cleanup as one flow. (22.19)
 - `hud_read` returns a digest by default (state, result line, changed files, verdict and blockers when the report gives them); `mode: "full"` returns the whole report; `jobs` reads several at once. (22.15)
 - Thin tools over local herdr and unbundled pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
   `pi-role-reap`). The MCP opens the job's herdr tab. Jobs are plain JSON under `$HUD_HOME/jobs`. (10.01)
@@ -73,6 +74,7 @@ machine, inside herdr. (10.02, 22.12)
   `git_summary`, including files also changed in other managed worktrees of the same checkout. After closure
   the watcher reaps only clean worktrees that are merged or unmodified, or whose commits are already on
   the base branch (cherry-picked); preserve dirty worktrees or those with unintegrated work. (18.03)
+- A project's `worktree.disposable` globs exempt matching ignored files from worktree cleanup's dirty check; the default is empty. (22.19)
 - HUD, not the model, manages launch parameters. Check each dispatch's model, thinking and place against
   model facts before opening a tab. Show only supported levels; map to nearest supported and report the
   level used. On pre-start failure close the tab and report the cause, not a timeout. (21.04)

@@ -227,7 +227,7 @@ function startWorktree(id, file, job) {
   if (worktreeLocks.has(root)) return; // The owning task reschedules the scan on release.
   worktreeLocks.add(root);
   const promise = Promise.resolve().then(async () => {
-    const result = await reapWorktree(id, job);
+    const result = await reapWorktree(id, job, home);
     const latest = jsonFresh(file);
     if (latest && !latest.worktree_removed_at && JSON.stringify(latest.worktree) === JSON.stringify(job.worktree))
       writeJsonAtomic(file, { ...latest, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }, 2);
@@ -422,9 +422,13 @@ function scan(retryWatch = false) {
         }
       }
       const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
+      // A land helper owns its checkout and receipt through push and cleanup, across watcher restarts.
+      const land = job?.worktree && readLand(home, flowId(id));
+      const landing = land && activeLand(land);
+      if (landing) open = safetyCheck = true;
       // With a tab, wait for successful reap; without a session, only a finished failed launch is safe.
       if ((job?.reaped_at || (!session && job?.dispatch_exit_code > 0)) &&
-          job.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
+          !landing && job.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
         const root = job.worktree.main_root;
         let pending = !job.worktree_kept_reason;
         // Only a clean, unpicked result has a checked HEAD. Don't spawn Git for an unchanged base.
@@ -445,7 +449,7 @@ function scan(retryWatch = false) {
       }
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
       const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
-      if (expires < Date.now() && (!tab || job?.reaped_at)) {
+      if (!landing && expires < Date.now() && (!tab || job?.reaped_at)) {
         // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
         archiveJob(home, dir, id, job, status, Date.now(), log);
@@ -522,7 +526,7 @@ function startWatch() {
 const [
   { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
   { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
-  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree, mainHead }, { runCommand }, { archiveJob },
+  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree, mainHead }, { runCommand }, { archiveJob }, { readLand, flowId, activeLand },
 ] = await withDistLock(async () => {
   // Multiple parents can spawn before the first watcher is ready. Only one publishes under the lock.
   const { watcherReady } = await import('../../../dist/mcp/watch-pid.js');
@@ -531,7 +535,7 @@ const [
     import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),
     import('../../../dist/roles/worker-tree.js'), import('../../../dist/mcp/pi-read-settlement.js'),
     import('../../../dist/roles/job-checks.js'), import('../../../dist/mcp/managed-worktree.js'),
-    import('../../../dist/roles/herdr-run.js'), import('../../../dist/roles/job-archive.js'),
+    import('../../../dist/roles/herdr-run.js'), import('../../../dist/roles/job-archive.js'), import('../../../dist/mcp/land-state.js'),
   ]);
   const oldLog = read(logFile) ?? '';
   fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
