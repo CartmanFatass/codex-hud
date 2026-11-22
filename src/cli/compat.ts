@@ -13,10 +13,15 @@ export function installationRoot(): string {
   throw new Error('installation_unavailable');
 }
 
-/** A foreground compatibility child. Never retry or change execution form after dispatch. */
-export function foreground(command: LaunchCommand, env: NodeJS.ProcessEnv): Promise<number> {
+/** Run in the inherited terminal. The panel can replace the CLI; compatibility launchers still spawn. */
+export function foreground(command: LaunchCommand, env: NodeJS.ProcessEnv, { replace = false } = {}): Promise<number> {
   return new Promise((resolve, reject) => {
     const argv = command.argv ?? [command.shellPath, '-ic', command.shell];
+    const execve = (process as typeof process & { execve?: (file: string, args: string[], env: NodeJS.ProcessEnv) => never }).execve;
+    if (replace && execve && !['win32', 'os400'].includes(process.platform)) {
+      // execve requires string values; spawn omits undefined entries.
+      execve(argv[0], argv, Object.fromEntries(Object.entries(env).filter(([, value]) => value !== undefined)));
+    }
     const child = spawn(argv[0], argv.slice(1), { env, stdio: 'inherit', shell: false });
     const interrupt = () => child.kill('SIGINT');
     const terminate = () => child.kill('SIGTERM');

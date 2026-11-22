@@ -97,6 +97,7 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
       ...(root ? { CODEX_HUD_PANEL_ROOT: root } : {}),
       CODEX_HUD_PANEL_SOURCE: source ?? '',
       CODEX_HUD_PANEL_HARNESS: harness ?? '',
-    }
+    },
+    { replace: true }
   );
 }

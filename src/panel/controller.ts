@@ -29,7 +29,7 @@ import { defaultSettings, saveSettings } from '../settings.js';
 import { runtimeSettings, applyDisplaySettings } from '../settings-runtime.js';
 import { buildSnapshot, SnapshotWriter } from '../snapshot.js';
 import type { SubagentTree } from '../types.js';
-import { getCodexHome } from '../utils/codex-path.js';
+import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
 import { collectionObservation } from '../utils/collection-observation.js';
 import { withInputRefresh } from '../utils/delegation-actions.js';
 import { fileSignature } from '../utils/file-signature.js';
@@ -242,11 +242,14 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         const sid = parseRosterRoot(selectedRoot).sessionId;
         session = findSessionByThreadId(sid, selectedSource);
         boundJobRoot = `${makeSourceId('codex', fs.realpathSync(selectedSource))}/${sid}`;
-      } else {
+      } else if (
+        selectedHarness === 'codex' ||
+        (!selectedHarness && fs.statSync(getSessionsDir(), { throwIfNoEntry: false })?.isDirectory())
+      ) {
         session = await finder.check();
         boundJobRoot = session ? `${makeSourceId('codex', fs.realpathSync(getCodexHome()))}/${session.sessionId}` : '';
         if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
-      }
+      } else boundJobRoot = '';
       const inspect = inspector()?.target;
       await jobPipeline.refresh(inspect?.kind === 'worker' ? inspect.workerId : undefined);
       if (isClosed()) return;
@@ -387,7 +390,10 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const data = currentHud();
       const native = collectionObservation(data, tree);
       const jobOnly = !boundJobRoot;
-      const jobQuiet = jobOnly && !selectedRoot && !tree.nodes.length && native.activity !== 'active';
+      // The board checks Claude subagent coverage and activity. Pi has only HUD jobs here.
+      const boardScope = selectedHarness === 'claude' ? Boolean(selectedRoot && selectedSource)
+        : selectedHarness === 'pi' || (!selectedRoot && !tree.nodes.length);
+      const jobQuiet = jobOnly && boardScope && native.activity !== 'active';
       const observation = jobOnly
         ? jobPipeline.observation(tree, jobQuiet)
         : { ...native, succeeded: data?.health?.sessionBound === true };

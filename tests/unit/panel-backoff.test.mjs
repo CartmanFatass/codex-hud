@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { PanelJobPipeline } from '../../dist/tree-page.js';
+import { makeSourceId } from '../../dist/core/identity.js';
 import {
   createAdaptivePollState,
   recordAdaptivePoll,
@@ -174,7 +175,10 @@ process.on('message',m=>{
 });
 process.stdin.on('data',()=>process.send({type:'input'}));
 const r=new ProfileRecorder('panel',()=>{});
-r.record=(stage)=>{if(stage==='collect')process.send({type:'collected',at:Date.now(),startedAt});};useProfileRecorder(r);
+r.record=(stage)=>{
+  if(stage==='session.find')process.send({type:'session.find'});
+  if(stage==='collect')process.send({type:'collected',at:Date.now(),startedAt});
+};useProfileRecorder(r);
 await runLivePage();process.exit(0);`
   );
   const child = spawn(process.execPath, [runner], {
@@ -202,6 +206,43 @@ await runLivePage();process.exit(0);`
   const collections = () => events.filter((e) => e.type === 'collected');
   return { child, events, until, collections, output: () => output, herdrCalls: () => readFileSync(herdrLog, 'utf8') };
 }
+
+test('Claude and pi skip the Codex finder and back off when their observed boards are quiet', { timeout: 15000 }, async (t) => {
+  await Promise.all(['claude', 'pi', 'incomplete-claude'].map(async (variant) => {
+    const f = fixture(t, 0, LIVE_BASE_MS);
+    const harness = variant === 'pi' ? 'pi' : 'claude';
+    const source = join(f.root, 'transcripts'), session = 'synthetic-session';
+    const agents = join(source, session, 'subagents');
+    mkdirSync(agents, { recursive: true });
+    mkdirSync(join(f.env.CODEX_HOME, 'sessions'));
+    Object.assign(f.env, {
+      CODEX_HUD_PANEL_HARNESS: harness,
+      CODEX_HUD_PANEL_SOURCE: source,
+      CODEX_HUD_PANEL_ROOT: `${makeSourceId(harness, source)}/${session}`,
+    });
+    if (harness === 'claude') {
+      f.put(join(source, `${session}.jsonl`), '{"type":"user"}\n');
+      f.put(join(agents, 'agent-a.jsonl'), '');
+      f.put(join(agents, 'agent-a.meta.json'), variant === 'claude' ? { finished: true } : 'invalid');
+    }
+    const p = live(t, f);
+    await p.until(() => p.collections().length >= 5);
+    assert.equal(p.events.some((e) => e.type === 'session.find'), false, variant);
+    const [previous, latest] = p.collections().slice(-2);
+    if (variant === 'incomplete-claude') assertBaseCadence(previous, latest, variant);
+    else assert.ok(latest.startedAt - previous.at >= LIVE_BASE_MS * 3.9, `${variant} did not back off`);
+  }));
+});
+
+test('an unset harness only runs the finder when Codex sessions exist', { timeout: 15000 }, async (t) => {
+  await Promise.all([false, true].map(async (hasCodex) => {
+    const f = fixture(t, 0, LIVE_BASE_MS);
+    if (hasCodex) mkdirSync(join(f.env.CODEX_HOME, 'sessions'));
+    const p = live(t, f);
+    await p.until(() => p.collections().length >= 2);
+    assert.equal(p.events.some((e) => e.type === 'session.find'), hasCodex);
+  }));
+});
 
 test('live working and capped scopes retain the original nonquiet base-tick timing', { timeout: 30000 }, async (t) => {
   await Promise.all(
