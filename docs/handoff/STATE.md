@@ -45,6 +45,9 @@ board counts these; update at every landing or decision. -->
 - todo · MCP-ORCH · IMP-MODEL-COST · owner 2026-11-22: imp's default is now openai/gpt-6.2-astra high (preset astra, from 11:43Z; before: 6.2-sol high, then 6.2-sol-fast); once every open ticket has landed, compare average time and cost per imp task across the three (pi session usage.cost)
 - accepted · MCP-ORCH · ORCH-LOAD · read docs/llm/orch-load-2026-11-22.md: ~73% of orch turns are chores (search 32%, land/test/poll 25%, STATE/tickets 6%, full reports 6%) and 30% of context is fixed schema/skill overhead; 10 ranked cuts (~80% fewer Opus tokens if ranks 1–8 land) and 5 questions (d61876c7)
 - accepted · PANEL · DESIGN-HOME-PROGRESS · open docs/design/home-progress/sample.html: the proposed Home in zh and en (milestone bar, one ticket meter, planned features folded into one row, failed jobs leave once retried); README has the diagnosis, 4 slices and 5 questions; pick before any build (3cf299cc)
+- try · FLOWS · FLOWS-01 · hud_land({job}) gates a settled worktree job in a fresh detached worktree by the project's .hud/project.json land config, fast-forwards, runs after commands, pushes and cleans up, in one call with one notice; worktree.disposable globs let the watcher reap worktrees whose only leftovers are build output (eda6382a)
+- try · IMP-LEAN · IMP-LEAN-04/05 · sonic has no hud_sonic, batches its inspection in ~20 turns and reports ≤60 lines; reviewer reads diffs file by file and hands lookups to sonic to stay under ~150k context (d647091e)
+- try · IMP-LEAN · IMP-LEAN-02 · pi workers get short briefs inline in the first message and start without the MCP adapter when no MCP server is configured (6fc6d5a3)
 - try · HOME-PROGRESS · HOME-PROGRESS-03 · Home shows the milestone bar with legend, one project ticket meter, one row per started feature and unstarted ones folded into one row; Tickets has ready, queued (folded) and stalled lanes (98fbc7c4)
 - try · IMP-LEAN · IMP-LEAN-03 · a pi worker that starts sonic keeps working and gets a ready message when the child settles, no zero-timeout polling (3048f0d9)
 - try · IMP-LEAN · IMP-LEAN-01 · root AGENTS.md is a 24-line worker entry (old one archived); every shipped worker instruction says repo guides give rules but their orchestrator reading lists don't apply, brief is the scope; no CodeGraph; short git checks and test habits (b7852e69)
@@ -102,7 +105,7 @@ board counts these; update at every landing or decision. -->
 
 ## Now (2026-11-22)
 
-- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01、03 已落地；02 进行中；04+05 sonic 批量与 reviewer 控上下文进行中；06 CLI worker 只载 HUD MCP 等 02。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
-- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land（HUD 自跑集成门、快进、构建、推送、清理）→ 02 失败交回原 imp（最多 2 轮）、03 记工单与 STATE；04 先派 sonic 收集事实再派；05 面板与文档。等 ORCH-LEAN-02/03、IMP-LEAN-02 落地再开工（同改 thin-main）。工单队列自动推进放第二期。
+- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–05 已落地；06 CLI worker 只载 HUD MCP 进行中。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
+- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land 已落地（eda6382a，需重连 hud MCP 才可用）→ 02 失败交回原 imp（最多 2 轮）、03 记工单与 STATE；04 先派 sonic 收集事实再派；05 面板与文档。等 ORCH-LEAN-02/03、IMP-LEAN-02 落地再开工（同改 thin-main）。工单队列自动推进放第二期。
 - 并行三条线：首页进度（HOME-PROGRESS，owner 已定 5 个问题）、orch 减负（ORCH-LEAN，owner 同意 A/B/C 三批）、MCP 线剩余（JOB-ARCHIVE-01 进行中）。
 - imp 默认已换成 6.2-astra high；所有工单做完后对比单任务时间与成本。
