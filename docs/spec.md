@@ -89,7 +89,7 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   Any failure falls back to the default. (21.05)
 - Imp routing (Settings, off by default; needs the Decision API): the role file's `routing` block names a preset
   and a purpose per tier, light, standard and hard; standard is the role's active preset (the owner's Control
-  choice). Shipped `imp` maps light to `hydrogen` and hard to `astra`; no tier name or model lives in code, a tier
+  choice). Shipped `imp` maps light to `hydrogen` and hard to `astra`; no tier preset or model lives in code, a tier
   missing from the file is not offered, and a role file without the block is never routed. When on, an `imp`
   create gets a tier and a run mode, headless or tab, chosen from the brief, ticket and context files against
   those purposes. Headless applies only when the chosen place's harness supports it; otherwise tab. A tier whose
