@@ -1,7 +1,4 @@
-/**
- * The bin only serves the thin local pi-roles server.
- * Accept `roles` for existing installed registrations.
- */
+// Source-only surface selection rejects invalid registrations before importing dist.
 
 export function selectMcpEntry(surface) {
   if (surface === undefined || surface === 'roles') return '../../../dist/mcp/thin-main.js';

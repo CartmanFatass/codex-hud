@@ -1,0 +1,367 @@
+/** Worker protocol shared by MCP, the native pi extension and the CLI fallbacks. */
+import { normalizeReportMeta, writeReportMeta } from '../roles/report-meta.js';
+import { DONE_FILE, readTurn, turnToken, reportSignature } from '../mcp/cli-judge.js';
+import { rememberWorkerTree } from '../roles/worker-tree.js';
+import { readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { takeLease, LEASE_TOOL } from '../roles/lease.js';
+import { waitUntilFs } from '../utils/fs-wait.js';
+import type { Job, DoneReceipt } from '../mcp/job-contracts.js';
+import { jobFiles } from '../mcp/paths.js';
+import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import { sonicState } from '../worker/sonic-jobs.js';
+import { withDistLock } from '../../scripts/dist-lock.mjs';
+
+const idPattern = /^j[0-9a-f]{16}$/;
+type Worker = ReturnType<typeof workerJob>;
+type QuestionInput = { question: string; default: string; options?: string[]; context?: string };
+type Question = QuestionInput & { tag: string; n: number; qfile: string; afile: string };
+
+function readJob(dir: string) {
+  const job = readJsonFile(join(dir, jobFiles.job)) as Job;
+  if (job.job !== basename(dir)) throw new Error('not a HUD job directory');
+  return job;
+}
+
+export function workerJob(path = process.env.HUD_JOB_DIR) {
+  const dir = path && fs.realpathSync(path);
+  const own = process.env.HUD_JOB_DIR;
+  const root = own !== undefined ? dirname(fs.realpathSync(own))
+    : join(fs.realpathSync(process.env.HUD_HOME || join(homedir(), '.hud')), 'jobs');
+  if (!dir || basename(root) !== 'jobs' || dirname(dir) !== root || !idPattern.test(basename(dir))) {
+    throw new Error('--dir must name a job directory under HUD_HOME');
+  }
+  return { dir, root, job: readJob(dir) };
+}
+
+// Omit text for the fallback command, which declares a report the worker wrote itself.
+export async function finishReport({ dir, job }: Worker, turn: unknown, text?: string, metadata: Parameters<typeof normalizeReportMeta>[0] = {}) {
+  if (job.bro || job.jev) throw new Error('only local workers can declare a report');
+  if (text !== undefined && (typeof text !== 'string' || !text.trim())) throw new Error('write a nonempty report');
+  const fields = normalizeReportMeta(metadata);
+  const path = join(dir, jobFiles.report);
+  if (job.cli) {
+    const current = readTurn(dir);
+    if (!current || turn !== turnToken(current)) throw new Error('use the turn token from the prompt you are answering');
+    if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
+    const sig = reportSignature(dir);
+    if (!sig || sig === current.report_sig) throw new Error('write a fresh report for this turn first');
+    const latest = readTurn(dir);
+    if (!latest || turnToken(latest) !== turn) throw new Error('the turn changed; no receipt recorded');
+    writeReportMeta(dir, sig, fields);
+    writeJsonPrivate(join(dir, DONE_FILE), { seq: current.seq, sent_at: current.sent_at, report_sig: sig, at: new Date().toISOString() } satisfies DoneReceipt, { mkdir: false });
+  } else {
+    // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
+    if (turn !== undefined) throw new Error('pi does not use a turn token');
+    if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
+    const sig = reportSignature(dir);
+    if (!sig) throw new Error('write the pi report first');
+    const status = readJsonFile(join(dir, jobFiles.status));
+    writeReportMeta(dir, sig, fields);
+    const { snapshot, issue } = rememberWorkerTree(dir, status);
+    if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
+  }
+  return { path };
+}
+
+export async function progress({ dir }: Pick<Worker, 'dir'>, message: string) {
+  const text = [...message.replace(/[\r\n\u2028\u2029]+/gu, ' ').replace(/\p{Cc}/gu, '').trim()]
+    .slice(0, 240).join('').trimEnd();
+  if (!text) throw new Error('usage: hud-progress [--dir <job-dir>] <message>');
+  const record = JSON.stringify({ at: new Date().toISOString(), text }) + '\n';
+  const file = join(dir, jobFiles.progress);
+  const { O_RDWR, O_CREAT, O_APPEND, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
+  const fd = fs.openSync(file, O_RDWR | O_CREAT | O_APPEND | O_NOFOLLOW | O_NONBLOCK, 0o600);
+  try {
+    const limit = 64 * 1024;
+    if (!fs.fstatSync(fd).isFile()) throw new Error('progress.jsonl is not a regular file');
+    const buffer = Buffer.alloc(limit + 1);
+    const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    if (size > limit) throw new Error('progress.jsonl exceeds 64 KiB');
+    const previous = buffer.subarray(0, size).toString('utf8');
+    const rows = previous.trimEnd().split('\n').filter(Boolean);
+    if (rows.length < 50 && (!previous || previous.endsWith('\n'))) fs.appendFileSync(fd, record);
+    else writePrivateFile(file, [...rows.slice(-49), record.trimEnd()].join('\n') + '\n', { mkdir: false });
+  } finally { fs.closeSync(fd); }
+  return { ok: true };
+}
+
+export async function startSonic({ job: parent }: Pick<Worker, 'job'>, task: string, cwd?: unknown) {
+  if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
+  if (!task.trim()) throw new Error('the sub-task is empty');
+  const { dispatchJob } = await withDistLock(() => import('../mcp/thin-main.js'));
+  const result = await dispatchJob({
+    role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd, task,
+  }, parent.herdr_pane, parent);
+  if (!('job' in result) || !result.job) {
+    const code = 'code' in result ? result.code : undefined;
+    const message = ('error' in result ? result.error : undefined) ?? code;
+    if (code === 'invalid_arguments') {
+      throw Object.assign(new Error(`invalid_arguments: ${message}`), { code });
+    }
+    throw new Error(message);
+  }
+  // A launch failure with a job receipt is also collectable via wait.
+  return { job: result.job, thinking: result.thinking ?? null, thinking_source: result.thinking_source,
+    attempts: result.attempts, used_place: result.used_place,
+    ...('ok' in result && result.ok === false ? { error: result.reason } : {}) };
+}
+
+// A native pi start watches only its own launch receipt. This notice never collects the report.
+export function watchSonicReady(id: string, signal: AbortSignal, ready: (state: 'settled' | 'failed') => void) {
+  if (signal.aborted) return;
+  const child = join(workerJob().root, id);
+  let watcher: fs.FSWatcher;
+  function check() {
+    if (signal.aborted) return;
+    const { state } = sonicState(child);
+    if (state === 'open') return;
+    watcher.close();
+    if (!fs.existsSync(join(child, 'sonic-collected'))) ready(state);
+  }
+  try {
+    watcher = fs.watch(child, { persistent: false, signal }, (_event, file) => {
+      if (file && file !== jobFiles.status) return;
+      try { check(); } catch { /* Retry on the next status write. */ }
+    });
+    watcher.on('error', () => watcher.close());
+    check(); // Subscribe before reading: the child may already have settled during launch.
+  } catch { /* Best effort; explicit wait and the end-of-turn collection prompt remain available. */ }
+}
+
+export async function waitSonic({ dir, root, job: parent }: Worker, ids?: string[], seconds = 480, signal?: AbortSignal) {
+  if (!Number.isFinite(seconds * 1000) || seconds < 0) throw new Error('--timeout must be a nonnegative number of seconds');
+  if (!ids?.length) {
+    try { ids = fs.readdirSync(join(dir, jobFiles.sonic)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; ids = []; }
+    ids = ids.filter((id) => fs.existsSync(join(root, id, jobFiles.job)) && !fs.existsSync(join(root, id, 'sonic-collected')));
+  }
+  const children = [...new Set(ids)].map((id) => {
+    if (!idPattern.test(id)) throw new Error('--job must be a sonic child job id');
+    const child = join(root, id);
+    const job = readJob(child);
+    if (fs.realpathSync(child) !== child || job.parent_job !== parent.job || job.role !== 'sonic') {
+      throw new Error('job is not a sonic child of this --dir');
+    }
+    return { id, child };
+  });
+  signal?.throwIfAborted();
+  const readStates = () => children.map(({ id, child }) => ({ id, child, ...sonicState(child) }));
+  let states;
+  if (children.length === 0 || seconds === 0) {
+    states = readStates();
+  } else {
+    let openChildren = children;
+    const openIds = new Set(children.map(({ id }) => id));
+    states = await waitUntilFs<ReturnType<typeof readStates>>({
+      targets: () => {
+        if (openChildren.length <= 32) {
+          return openChildren.map(({ child }) => ({
+            dir: child,
+            filter: (name) => name === null || name === jobFiles.status || name === jobFiles.report,
+          }));
+        }
+        return [{
+          dir: root,
+          recursive: true,
+          filter: (name) => {
+            if (name === null) return true;
+            const sep = name.indexOf('/');
+            if (sep < 0) return openIds.has(name);
+            const id = name.slice(0, sep);
+            const file = name.slice(sep + 1);
+            return openIds.has(id) && (file === jobFiles.status || file === jobFiles.report);
+          },
+        }];
+      },
+      timeoutMs: seconds * 1000,
+      signal,
+      coalesceMs: 15,
+      fallbackIntervalMs: 5000,
+      isTransientError: (error) => error instanceof SyntaxError,
+      check: ({ timedOut }) => {
+        const current = readStates();
+        openChildren = current.filter(({ state }) => state === 'open');
+        openIds.clear();
+        for (const { id } of openChildren) openIds.add(id);
+        if (openChildren.length === 0 || timedOut) return { done: true, value: current };
+        return { done: false };
+      },
+    });
+  }
+  const working = states.filter(({ state }) => state === 'open').map(({ id }) => id);
+  const failed = states.filter(({ state }) => state === 'failed').map(({ id, reason }) => ({ id, reason }));
+  const reports = [];
+  for (const { id, child, state } of states) {
+    if (state !== 'settled') continue;
+    const path = join(child, jobFiles.report);
+    try { reports.push({ id, path, body: fs.readFileSync(path, 'utf8') }); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      failed.push({ id, reason: 'settled without a report on disk' });
+    }
+  }
+  for (const { id } of reports) fs.writeFileSync(join(root, id, 'sonic-collected'), '', { mode: 0o600 });
+  return { reports, working, failed };
+}
+
+export async function workerLease({ job, root }: Worker, args: Record<string, unknown>, signal?: AbortSignal, fallback = false) {
+  return takeLease(args, { home: dirname(root), cwd: job.cwd, holder: job.job, worker: true, fallback }, signal);
+}
+
+export async function callWorkerTool(name: string, args: Record<string, unknown>, signal?: AbortSignal) {
+  const context = workerJob();
+  const string = (key: string, value = args[key]) => {
+    if (typeof value !== 'string') throw new Error(`invalid_arguments: ${key}`);
+    return value;
+  };
+  const strings = (key: string) => {
+    const value = args[key];
+    if (value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))) {
+      throw new Error(`invalid_arguments: ${key}`);
+    }
+    return value;
+  };
+  switch (name) {
+    case 'hud_report': return finishReport(context, args.turn, string('text'), args);
+    case 'hud_progress': return progress(context, string('message'));
+    case 'hud_lease': return workerLease(context, args, signal);
+    case 'hud_ask': return ask(context, { question: string('question'), default: string('default'), options: strings('options'),
+      context: args.context === undefined ? undefined : string('context') }, undefined, signal);
+    case 'hud_sonic':
+      if (args.thinking !== undefined) throw new Error('invalid_arguments: unexpected thinking');
+      if (args.task !== undefined) {
+        if (args.wait !== undefined || args.timeout_s !== undefined) throw new Error('start or wait for sonic, not both');
+        return startSonic(context, string('task'), args.cwd);
+      }
+      if (args.cwd !== undefined) throw new Error('cwd is only used when starting sonic');
+      if (args.timeout_s !== undefined && typeof args.timeout_s !== 'number') {
+        throw new Error('invalid_arguments: sonic wait');
+      }
+      return waitSonic(context, strings('wait'), args.timeout_s, signal);
+  }
+  throw new Error('unknown worker tool');
+}
+
+const string = { type: 'string' };
+const strings = { type: 'array', items: string };
+// MCP checks calls against workerTools and advertises listWorkerTools; use the same role-aware list.
+export { workerTools as listWorkerTools };
+export async function workerTools(cli = false) {
+  let role: string | undefined;
+  try {
+    const { job } = workerJob();
+    role = job.role;
+    cli = cli && Boolean(job.cli);
+  } catch { /* Keep the caller's schema when no job receipt is available. */ }
+  const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ name, description,
+    inputSchema: { type: 'object', properties, required, additionalProperties: false } });
+  return [
+    tool('hud_report', 'Finish the turn by publishing your report. Returns its path. Give a one-line plain summary of the result; code roles list the files changed.',
+      {
+        text: string,
+        ...(cli ? { turn: { ...string, description: 'Use the token in the prompt you are answering, not a newer turn.' } } : {}),
+        summary: { ...string, maxLength: 320, description: 'Optional one-line plain-text summary of the result (up to 160 code points, no Markdown heading).' },
+        files: { type: 'array', items: { ...string, maxLength: 260 }, maxItems: 50, description: 'Optional list of relative paths to files changed by code roles (up to 50).' },
+      },
+      cli ? ['text', 'turn'] : ['text']),
+    tool('hud_ask', 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
+      { question: string, default: string, options: strings, context: string }, ['question', 'default']),
+    tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. Pi sends a ready notice. timeout_s defaults to 480.',
+      { task: string, cwd: { ...string, description: "Start only. Defaults to the parent job's working directory. Resolve relative paths there; the destination must stay inside the parent project." },
+        wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
+    tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
+    LEASE_TOOL,
+  ].filter(({ name }) => role !== 'sonic' || name !== 'hud_sonic');
+}
+
+function questionBody(q: Question) {
+  return [
+    `# Question q${q.n} from ${q.tag}`, '', q.question.trim(), '',
+    ...(q.options?.length ? ['Options:', ...q.options.map((o) => `- ${o}`), ''] : []),
+    `Default if unanswered: ${q.default.trim()}`, '',
+    ...(q.context ? ['', `Context: ${q.context.trim()}`] : []), '',
+    `Answer: write the answer to ${q.afile}`, '',
+  ].join('\n');
+}
+function questionLine(q: Question, job: Job) {
+  const oneLine = q.question.replace(/\s+/g, ' ').trim().slice(0, 400);
+  const options = q.options?.length ? ` | options: ${q.options.join(' / ')}` : '';
+  return `[${q.tag}] QUESTION q${q.n}: ${oneLine}${options} | default: ${q.default.trim()} | full text: ${q.qfile} | reply: hud_respond job=${job.job} request_id=q${q.n}`;
+}
+function publishQuestion(qa: string, input: QuestionInput & { tag: string }) {
+  let highest = 0;
+  for (const file of fs.readdirSync(qa)) {
+    const match = /^q(\d+)(?:\.answer)?\.md$/.exec(file);
+    if (match) highest = Math.max(highest, Number(match[1]));
+  }
+  for (let n = highest + 1;; n++) {
+    const q = { ...input, n, qfile: join(qa, `q${n}.md`), afile: join(qa, `q${n}.answer.md`) };
+    const answerExistedAtCreation = fs.existsSync(q.afile);
+    try { writePrivateFile(q.qfile, questionBody(q), { exclusive: true, mkdir: false }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue; throw error; }
+    return { ...q, answerExistedAtCreation, questionMtimeMs: fs.statSync(q.qfile).mtimeMs };
+  }
+}
+function readQuestionAnswer(q: ReturnType<typeof publishQuestion>) {
+  try {
+    const answer = fs.statSync(q.afile);
+    if (!answer.isFile() || answer.size === 0 || (q.answerExistedAtCreation && answer.mtimeMs < q.questionMtimeMs)) return undefined;
+    return fs.readFileSync(q.afile, 'utf8').trim() || undefined;
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+}
+function orchestrator(dir: string) {
+  try {
+    const line = fs.readFileSync(join(dir, jobFiles.session), 'utf8').split('\n').find((row) => row.startsWith('ORCH='));
+    return line?.slice(5) ?? '';
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return ''; }
+}
+
+export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: QuestionInput, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal?: AbortSignal) {
+  const { notify, taskDelivery } = await withDistLock(() => import('../roles/notify.js'));
+  signal?.throwIfAborted();
+  const tag = `${typeof job.role === 'string' ? job.role : 'cli'}@${basename(job.cwd || dir)}`;
+  const qa = join(dir, jobFiles.qa);
+  fs.mkdirSync(qa, { recursive: true, mode: 0o700 });
+  const published = publishQuestion(qa, { ...input, tag });
+  let pushed = 'not pushed (no --notify / --orchestrator)';
+  // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
+  const receipt = readJob(dir);
+  const orch = receipt.herdr_pane || orchestrator(dir);
+  if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
+  else if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
+  else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
+    const ran = await notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))), { signal });
+    signal?.throwIfAborted();
+    const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
+    pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
+  }
+  const timeoutSec = timeoutRaw !== undefined && /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : 1200;
+  const started = performance.now();
+  let answer;
+  if (timeoutSec > 0) {
+    const answerName = `q${published.n}.answer.md`;
+    answer = await waitUntilFs({
+      targets: [{ dir: qa, filter: (name) => name === null || name === answerName }],
+      timeoutMs: timeoutSec * 1000,
+      signal,
+      coalesceMs: 15,
+      fallbackIntervalMs: 5000,
+      check: ({ timedOut }) => {
+        const value = readQuestionAnswer(published);
+        if (value !== undefined) return { done: true, value };
+        if (timedOut) return { done: true, value: undefined };
+        return { done: false };
+      },
+    });
+  }
+  const waited = Math.round((performance.now() - started) / 1000);
+  const defaultLine = `Proposed default: ${input.default.trim()}. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report.`;
+  return answer
+    ? `ANSWER from the orchestrator (q${published.n}, after ${waited}s):\n\n${answer}`
+    : timeoutSec === 0
+      ? `Question q${published.n} recorded (${pushed}); not waiting. ${defaultLine}`
+      : `No answer to q${published.n} within ${timeoutSec}s (${pushed}). ${defaultLine}`;
+}

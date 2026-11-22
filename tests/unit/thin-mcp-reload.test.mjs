@@ -83,7 +83,7 @@ test('one connection and watcher keep their work across two published generation
   const dep = join(root, 'dist/mcp/codex-statusline.js'), original = fs.readFileSync(dep, 'utf8');
   const publish = (n) => {
     fs.writeFileSync(dep, original.replace('ui://myhud/codex-statusline', `ui://myhud/build-${n}`));
-    fs.appendFileSync(join(bin, 'watch-runtime.mjs'), `\nfs.writeFileSync(join(home, 'watch-build'), '${n}');\n`);
+    fs.appendFileSync(join(root, 'dist/runtime/watch-runtime.js'), `\nfs.writeFileSync(join(home, 'watch-build'), '${n}');\n`);
     const now = new Date(); fs.utimesSync(join(root, 'dist/index.js'), now, now);
   };
   async function checkBuild(n) {

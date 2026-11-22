@@ -9,7 +9,7 @@ import {
   readProcChildren,
   readProcCmdline,
 } from '../utils/proc.js';
-import { jobFiles } from './paths.js';
+import { binScript, jobFiles } from './paths.js';
 import type { QuietDecision } from './quiet-decision.js';
 import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 export { procStat };
@@ -19,7 +19,7 @@ export const firstInput = (turn: Turn) => turn.first_sent_at ?? (turn.seq === 1 
 export const cliWorkerTools = (agent: string) => agent === 'claude' || agent === 'codex' || agent === 'agy';
 export function withDonePrompt(text: string, bundled: string, dir: string, turn: Turn, agent: string): string {
   const token = turnToken(turn);
-  const command = `node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${token}`;
+  const command = `node ${JSON.stringify(binScript('hud-progress', bundled))} --done --dir ${JSON.stringify(dir)} --turn ${token}`;
   if (!cliWorkerTools(agent)) {
     return `${text}\n\nAfter writing the report for this turn, run: ${command}\nUse the command from the prompt you are answering, not a newer turn.\n`;
   }

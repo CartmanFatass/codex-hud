@@ -53,12 +53,15 @@ function audit(tree) {
   // Scan every byte-bearing member, including bundled dependencies, not just emitted JS.
   const broad = /\/home\/|fires|MyHUD-wt|[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\w*_API_KEY\s*=\s*\S+|sk-|\b(?:token|secret)\b/gi;
   const privateText = /\/home\/|MyHUD-wt|\bfires\b|[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\w*_API_KEY\s*=\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s'"`]+)|\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[A-Z0-9]{16})/g;
-  const author = spawnSync('git', ['log', '-1', '--format=%an%n%ae', '--', 'src/roles/roster.ts'], { cwd: root, encoding: 'utf8' });
-  assert.equal(author.status, 0);
+  const authors = spawnSync('git', ['log', '--format=%an%x00%ae', '--', 'src/roles/roster.ts'], { cwd: root, encoding: 'utf8' });
+  assert.equal(authors.status, 0);
+  // The temporary test home commits as a synthetic worker, not the owner. In shallow history we may have only those commits.
+  const owner = authors.stdout.trimEnd().split('\n').map(row => row.split('\0'))
+    .find(([, email]) => email && email !== 'worker@hud.invalid');
   // The OS login is not scanned: it can be an ordinary word; /home/ paths are caught above.
-  const identities = [...author.stdout.trim().split('\n')]
-    .filter(Boolean).map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const ownerText = new RegExp(`\\b(?:${identities.join('|')})\\b`, 'gi');
+  const identities = owner?.filter(Boolean).map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const ownerText = identities && new RegExp(`\\b(?:${identities.join('|')})\\b`, 'gi');
+  if (!ownerText) console.log('No non-worker roster author in this history; skipping the git-author identity check.');
   const secretText = /\b\w*_API_KEY\s*=\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s'"`]+)|\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[A-Z0-9]{16})|-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
   let count = 0, firstParty = 0, broadCount = 0;
   const upstream = [];
@@ -74,7 +77,7 @@ function audit(tree) {
       continue;
     }
     firstParty++;
-    assert.deepEqual([...text.matchAll(ownerText)], [], `owner identity in ${name}`);
+    if (ownerText) assert.deepEqual([...text.matchAll(ownerText)], [], `owner identity in ${name}`);
     assert.deepEqual(hits.map(hit => hit[0]), [], `private material in ${name}`);
     if (name.endsWith('.md')) {
       // Inline Markdown/HTML and reference-style destinations; anchors stay in their containing file.
@@ -89,7 +92,7 @@ function audit(tree) {
     }
   }
   console.log(`All-member audit: ${count} file/link members; ${broadCount} broad path/email/key/sk-/token/secret candidates (includes code/prose).`);
-  console.log(`First-party audit: ${firstParty} members; regex=${privateText}; zero hits (also owner login and runtime git-author name/email). All first-party Markdown relative links resolve inside archive.`);
+  console.log(`First-party audit: ${firstParty} members; regex=${privateText}; zero hits${ownerText ? ' (including git-author name/email)' : ''}. All first-party Markdown relative links resolve inside archive.`);
   console.log('Public upstream metadata/examples (unchanged): ' + JSON.stringify(upstream));
 }
 
@@ -247,7 +250,7 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
   assert.equal(replies.find(reply => reply.id === 1).result.serverInfo.name, 'hud-mcp-thin');
   assert.deepEqual(replies.find(reply => reply.id === 2).result.tools.map(tool => tool.name),
     ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close',
-      'hud_lease', 'hud_tickets', 'hud_statusline']);
+      'hud_land', 'hud_lease', 'hud_tickets', 'hud_statusline']);
   const roster = JSON.parse(replies.find(reply => reply.id === 3).result.content[0].text);
   assert.deepEqual(roster.roles.map(role => role.role).sort(),
     fs.readdirSync(path.join(tree, 'packages/hud-mcp/roles')).map(name => name.replace('.json', '')).sort());

@@ -96,6 +96,9 @@ test('hud-sonic starts without a retry when idle and waits for a consistent gene
   f.put(`hud/jobs/${job}/job.json`, JSON.stringify({ job, role: 'oracle' }));
   const main = (binding) => `import { ${binding} } from '../render/sub.js';
 export function dispatchJob() { return { job: ${binding} }; }`;
+  // The wrapper now locks while loading its compiled entry and that entry's dependency graph.
+  f.put('src/worker/cli-sonic.ts', `import { dispatchJob } from '../mcp/thin-main.js';
+export function main() { console.log(dispatchJob().job); }`);
   f.put('src/mcp/thin-main.ts', main('oldJob'));
   f.put('src/render/sub.ts', 'export const oldJob = "old", generation = 1;');
   await f.run();

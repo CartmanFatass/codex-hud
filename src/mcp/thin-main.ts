@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import { cliWorkerTools, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
@@ -55,6 +55,7 @@ import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../roles/tool-definitions.js';
 import { checkBinding, CHECKS_FILE, CHECK_TIMEOUT_MS, jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { takeLease } from '../roles/lease.js';
+import { ensureQueueWatcher, notify, paneInfo, watching } from '../roles/notify.js';
 import { adoptProjectJobs, projectJobFilter } from '../roles/job-project.js';
 import { JOB_ID_RE, JobIndexCache, type CachedJsonResult } from '../roles/job-index-cache.js';
 import { sharedRoot } from '../roles/projects.js';
@@ -75,8 +76,7 @@ function checkResume(agent: 'agy' | 'claude' | 'codex', id: unknown) {
 }
 const bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url));
 const binScript = (name: string) => join(bundled, 'bin', name);
-const { ensureQueueWatcher, notify, paneInfo, watching } = await import(pathToFileURL(binScript('hud-notify.mjs')).href);
-const worker = isWorker ? await import(pathToFileURL(binScript('worker-tools.mjs')).href) : undefined;
+const worker = isWorker ? await import('../worker/tools.js') : undefined;
 function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
 }

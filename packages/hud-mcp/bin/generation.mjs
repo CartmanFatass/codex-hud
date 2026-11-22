@@ -1,3 +1,4 @@
+// Source-only bootstrap: hud-mcp imports this before the Node guard and dist lock.
 /** A fresh ESM graph for a rebuilt service. The stdio/socket owner never moves.
  * Initial startup uses the main thread; only a rebuild needs a worker. Callers
  * hold the dist lock through import/ready, not through application requests. */

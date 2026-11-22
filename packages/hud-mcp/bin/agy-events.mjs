@@ -1,4 +1,4 @@
-/** Antigravity's per-pane event mailbox, shared by the queue watcher and PreInvocation. */
+// Keep the Antigravity PreInvocation mailbox hook usable before dist is built.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';

@@ -1,0 +1,28 @@
+/** Fallback: publish a milestone or declare completion after writing a report. */
+import { parseArgs } from 'node:util';
+import { finishReport, progress, workerJob } from '../worker/tools.js';
+
+export async function main() {
+  try {
+    const { values, positionals } = parseArgs({
+      options: {
+        dir: { type: 'string' }, done: { type: 'boolean' }, turn: { type: 'string' },
+        summary: { type: 'string' }, file: { type: 'string', multiple: true },
+      },
+      allowPositionals: true,
+    });
+    const context = workerJob(values.dir);
+    if (values.done) {
+      if (positionals.length || context.job.bro || context.job.jev) throw new Error('--done is for local worker reports, not milestones');
+      await finishReport(context, values.turn, undefined, { summary: values.summary, files: values.file });
+    } else {
+      for (const key of ['turn', 'summary', 'file'] as const) {
+        if (values[key] !== undefined) throw new Error(`--${key} requires --done`);
+      }
+      await progress(context, positionals.join(' '));
+    }
+  } catch (error) {
+    console.error(`hud-progress: ${(error as Error).message}`);
+    process.exitCode = 1;
+  }
+}

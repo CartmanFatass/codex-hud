@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Keep the Node floor check and generation owner independent of any built dist.
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 24) {
   process.stderr.write(

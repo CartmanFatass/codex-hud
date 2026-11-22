@@ -1,27 +1,4 @@
 #!/usr/bin/env node
-/** Fallback: publish a milestone or declare completion after writing a report. */
-import { parseArgs } from 'node:util';
-import { finishReport, progress, workerJob } from './worker-tools.mjs';
-
-try {
-  const { values, positionals } = parseArgs({
-    options: {
-      dir: { type: 'string' }, done: { type: 'boolean' }, turn: { type: 'string' },
-      summary: { type: 'string' }, file: { type: 'string', multiple: true },
-    },
-    allowPositionals: true,
-  });
-  const context = workerJob(values.dir);
-  if (values.done) {
-    if (positionals.length || context.job.bro || context.job.jev) throw new Error('--done is for local worker reports, not milestones');
-    await finishReport(context, values.turn, undefined, { summary: values.summary, files: values.file });
-  } else {
-    for (const key of ['turn', 'summary', 'file']) {
-      if (values[key] !== undefined) throw new Error(`--${key} requires --done`);
-    }
-    await progress(context, positionals.join(' '));
-  }
-} catch (error) {
-  console.error(`hud-progress: ${error.message}`);
-  process.exitCode = 1;
-}
+import { withDistLock } from '../../../scripts/dist-lock.mjs';
+const { main } = await withDistLock(() => import('../../../dist/worker/cli-progress.js'));
+await main();
