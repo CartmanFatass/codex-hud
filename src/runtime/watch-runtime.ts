@@ -33,6 +33,8 @@ const cliCheck = Number(process.env.HUD_WATCH_CLI_CHECK_MS ?? 30000);
 const degradedOverride = Number(process.env.HUD_WATCH_DEGRADED_MS);
 const degradedMs = Number.isInteger(degradedOverride) && degradedOverride > 0 ? degradedOverride : 1000;
 const MAX_CONCURRENT_REAPS = 4;
+const MAX_REAP_ATTEMPTS = 10;
+const MAX_REAP_BACKOFF_MS = 60 * 60_000;
 const REAP_BUDGET_MS = 135_000;
 const REAP_KILL_GRACE_MS = 2_000;
 const SHUTDOWN_DRAIN_MS = 3_000;
@@ -69,11 +71,11 @@ let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
   stopped = false,
   reapBacklog = false;
-type Retry = { ownership: string; readClose: boolean; at: number; snapshot?: WorkerTreeSnapshot };
+type Retry = { ownership: string; readClose: boolean; at: number; attempts: number; outcome: string; snapshot?: WorkerTreeSnapshot };
 type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: SessionEntry | null; tab: string;
   ownership: string; retry: Retry | null; readInGrace: string | null; resumeReadReap?: boolean; jobFile: string; statusFile: string };
 type ActiveReap = { tab: string; ownership: string; readClose: boolean; busy: string[]; phase: 'preflight' | 'reaping';
-  controller: AbortController; promise?: Promise<void> };
+  controller: AbortController; promise?: Promise<void>; snapshot?: WorkerTreeSnapshot };
 const closedTabs = new Set<string>();
 let reapRetries = new Map<string, Retry>(), preflightHold = new Map<string, { ownership: string; token: string; until: number }>();
 let worktreeRetries = new Map<string, number>();
@@ -214,7 +216,20 @@ function startWorktree(id: string, file: string, job: Job) {
 }
 const reapOwner = (session: SessionEntry | null, status: Partial<JobStatus> | null) =>
   JSON.stringify([session?.fields ?? null, status?.pid, status?.pid_start_time]);
-async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, retry, readInGrace, resumeReadReap, jobFile, statusFile }: ReapInput) {
+function deferReap(entry: ActiveReap, { id, retry }: ReapInput, message: string, final = false) {
+  const attempts = (retry?.attempts ?? 0) + 1;
+  const exhausted = !final && attempts >= MAX_REAP_ATTEMPTS;
+  const outcome = `${message}${exhausted ? '; retry limit reached' : ''}`;
+  // Staging names vary across attempts without changing the failure.
+  const key = outcome.replace(/worker-tree\.json\.[0-9a-f-]{36}\.tmp/g, 'worker-tree.json.tmp');
+  if (key !== retry?.outcome) log(outcome);
+  reapRetries.set(id, { ownership: entry.ownership, readClose: entry.phase === 'reaping' && entry.readClose,
+    at: final || exhausted ? Infinity : Date.now() + Math.min(MAX_REAP_BACKOFF_MS, cliCheck * 2 ** (attempts - 1)),
+    attempts, outcome: key, snapshot: entry.snapshot });
+}
+async function reapJob(entry: ActiveReap, input: ReapInput) {
+  const { id, dir, job, session, tab, retry, readInGrace, resumeReadReap, jobFile, statusFile } = input;
+  let { status } = input;
   const { controller: { signal }, ownership, readClose } = entry;
   if (job?.headless) {
     const end = sonicExit(dir, status);
@@ -223,9 +238,9 @@ async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, 
     const cleanup = await reapWorkerTree(dir, status, () => killSonicRoot(dir, status), gone => gone,
       { expectSnapshot: true, carry: retry?.snapshot, signal });
     if (signal.aborted) return true;
-    if (!cleanup.complete) {
-      warn(`reap ${id}`, `reap ${id}: ${cleanup.issue ?? 'sonic runner still exiting'}`);
-      reapRetries.set(id, { ownership, readClose: false, at: Date.now() + cliCheck, snapshot: cleanup.snapshot });
+    entry.snapshot = cleanup.snapshot;
+    if (!cleanup.complete && !(cleanup.unrecoverable && cleanup.result)) {
+      deferReap(entry, input, `reap ${id}: ${cleanup.issue ?? 'sonic runner still exiting'}`);
       return true;
     }
     const now = new Date().toISOString();
@@ -235,6 +250,7 @@ async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, 
       stdout_bytes: fs.statSync(join(dir, jobFiles.sonicStdout)).size, stderr_bytes: fs.statSync(join(dir, jobFiles.sonicStderr)).size });
     const latest = readJson<Job>(jobFile);
     if (latest) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
+    if (cleanup.unrecoverable) log(`reap ${id}: ${cleanup.unrecoverable}; ${UNVERIFIED_TREE_NOTE}`);
     reapRetries.delete(id);
     return true;
   }
@@ -254,22 +270,23 @@ async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, 
   entry.phase = 'reaping';
   // Only native Pi may exit using a worker-side snapshot the watcher never saw.
   const expectSnapshot = !!job && !job.cli && !job.bro && !job.jev;
-  const { result, complete, issue, snapshot } = await reapWorkerTree(dir, status,
+  const { result, complete, issue, snapshot, unrecoverable } = await reapWorkerTree(dir, status,
     // Own a new process group so stopping pi-role-reap also stops its Herdr CLI child.
     () => runCommand('pi-role-reap', [dir], process.env, {
       budgetMs: REAP_BUDGET_MS, killGraceMs: REAP_KILL_GRACE_MS, killProcessGroup: true, signal,
     }), (run) => run.ok, { carry: retry?.snapshot, expectSnapshot, signal });
+  entry.snapshot = snapshot;
   const exit = signal.aborted ? 'aborted' : result.exitCode ?? result.reason;
-  if (result.groupCleanupIssue) log(`reap ${id}: ${result.groupCleanupIssue}`);
-  const message = `reap ${id} state=${status.state} exit=${exit}; ${issue ? `${issue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
-  if (complete || signal.aborted) log(message);
-  else warn(`reap ${id}`, message);
-  if (signal.aborted || result.reason === 'aborted') return true;
-  // A tab ownership refusal is final only when there is no unresolved descendant cleanup.
-  const refusal = !issue && !readClose && result.exitCode === 1 &&
+  const groupIssue = result.groupCleanupIssue?.replace(/^group \d+ /, 'reaper group ');
+  const message = `reap ${id} state=${status.state} exit=${exit}; ${issue ? `${issue}; ` : ''}${groupIssue ? `${groupIssue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
+  if (signal.aborted || result.reason === 'aborted') { log(message); return true; }
+  const refusal = result.exitCode === 1 &&
     result.stderr.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`) && !result.stderr.trim().includes('\n');
-  reapRetries.set(id, { ownership, readClose, at: refusal ? Infinity : Date.now() + cliCheck, snapshot });
-  if (!complete) return true;
+  // When ancestry cannot be recovered, only the tab outcome remains to be verified.
+  if (!complete && !(unrecoverable && (result.ok || refusal || closedTabs.has(tab)))) {
+    deferReap(entry, input, message, refusal && !issue && !readClose);
+    return true;
+  }
 
   // Preserve worker shutdown facts and any job receipt updates made while we reaped.
   const latest = readJson<JobStatus>(statusFile);
@@ -281,11 +298,14 @@ async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, 
   }
   const receipt = readJson<Job>(jobFile);
   if (receipt) {
-    if (!receipt.reaped_at) writeJsonAtomic(jobFile, { ...receipt, reaped_at: new Date().toISOString() }, 2);
+    if (!receipt.reaped_at) {
+      writeJsonAtomic(jobFile, { ...receipt, reaped_at: new Date().toISOString() }, 2);
+      log(message);
+    }
     reapRetries.delete(id);
   } else {
-    // There is no receipt to stamp. Don't repeat a successful reap on every scan.
-    reapRetries.set(id, { ownership, readClose, at: Infinity, snapshot });
+    // There is no receipt to stamp. Don't repeat a finished reap on every scan.
+    deferReap(entry, input, message, true);
   }
   return true;
 }
@@ -293,14 +313,10 @@ function startReap(job: ReapInput) {
   const { id, tab, ownership, readInGrace, resumeReadReap, retry } = job;
   const busy = [job.job?.worktree?.root, job.job?.cwd].filter((path): path is string => !!path);
   const entry: ActiveReap = { tab, ownership, readClose: Boolean(readInGrace || resumeReadReap), busy,
-    phase: 'preflight', controller: new AbortController() };
+    phase: 'preflight', controller: new AbortController(), snapshot: retry?.snapshot };
   let rescan = true;
   entry.promise = Promise.resolve().then(() => reapJob(entry, job)).then((again) => { rescan = again; }).catch((error) => {
-    if (error.code !== 'ENOENT' && !stopped) {
-      if (reapRetries.get(id) === retry || reapRetries.get(id)?.ownership !== ownership)
-        reapRetries.set(id, { ownership, readClose: entry.phase === 'reaping' && entry.readClose, at: Date.now() + cliCheck, snapshot: retry?.snapshot });
-      warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`);
-    }
+    if (error.code !== 'ENOENT' && !stopped) deferReap(entry, job, `keep ${id} scan: ${error.message}`);
   }).finally(() => {
     inFlightReaps.delete(id);
     drained();
@@ -390,10 +406,14 @@ function scan(retryWatch = false) {
       // A previous read-close attempt may have closed its own tab before retrying cleanup.
       const tabClosed = !retry?.readClose && !!tab && closedTabs.has(tab);
       if (job?.headless && status?.state === 'working') {
-        open = safetyCheck = true;
         markBusy(job);
+        if (retry?.at === Infinity) continue;
+        open = true;
         if (retry && retry.at > Date.now()) nearest = Math.min(nearest, retry.at);
-        else if (!sonicExit(dir, status)) nearest = Math.min(nearest, Date.parse(status.started_at!) + SONIC_TIMEOUT_MS);
+        else if (!sonicExit(dir, status)) {
+          safetyCheck = true;
+          nearest = Math.min(nearest, Date.parse(status.started_at!) + SONIC_TIMEOUT_MS);
+        }
         else if (inFlightReaps.size >= MAX_CONCURRENT_REAPS) reapBacklog = true;
         else startReap({ id, dir, job, status, session, tab: '', ownership, retry, readInGrace: null, jobFile, statusFile });
         continue;
@@ -445,7 +465,9 @@ function scan(retryWatch = false) {
         continue;
       }
       if (checksOpen(id, dir, job, status)) { open = safetyCheck = true; markBusy(job); continue; }
-      safetyCheck ||= Boolean(retry?.readClose && retry.at !== Infinity); // The root may still exit after report eligibility changes.
+      // If report eligibility changes, still look for the root to exit, without polling during backoff.
+      if (retry?.readClose && retry.at !== Infinity)
+        nearest = Math.min(nearest, retry.at > Date.now() ? retry.at : Date.now() + cliCheck);
       // Once the recorded tab or root is gone, retry that owner's cleanup without an agent preflight.
       const resumeReadReap = retry?.readClose && ((!!tab && closedTabs.has(tab)) || workerTreeRootGone(status.pid, status.pid_start_time));
       let readInGrace = null;
@@ -504,6 +526,7 @@ function scan(retryWatch = false) {
         archiveJob(home, dir, id, job, status, Date.now(), log);
         fs.rmSync(dir, { recursive: true, force: true });
         jobCache.evictJob(id);
+        reapRetries.delete(id);
         log(`delete ${id} state=${status.state}`);
         continue;
       }

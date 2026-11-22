@@ -150,9 +150,12 @@ export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () =
   if (signal?.aborted) return { result, complete: false, issue: undefined, snapshot: before.snapshot ?? carry };
   const after = rememberWorkerTree(dir, status, before.snapshot ?? carry);
   const snapshot = after.snapshot ?? before.snapshot;
-  let issue = before.issue ?? after.issue;
-  if (!snapshot && expectSnapshot && (before.missingAfterExit || after.missingAfterExit))
-    issue ??= 'worker-tree snapshot unresolved: recorded root exited before any matching ancestry snapshot could be recovered';
+  const missingSnapshot = !snapshot && expectSnapshot && (before.missingAfterExit || after.missingAfterExit);
+  const missingNote = missingSnapshot
+    ? 'worker-tree snapshot unresolved: recorded root exited before any matching ancestry snapshot could be recovered' : undefined;
+  // An unreadable snapshot or /proc is not proof that ancestry is unrecoverable.
+  const unrecoverable = after.missingAfterExit && !after.issue ? missingNote : undefined;
+  let issue = unrecoverable ?? before.issue ?? after.issue ?? missingNote;
   if (snapshot) {
     const protectedPids = new Set<number>();
     try {
@@ -184,5 +187,5 @@ export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () =
       issue ??= `worker-tree identity unresolved: ${(error as Error).message}`;
     }
   }
-  return { result, complete: ok(result) && !issue, issue, snapshot };
+  return { result, complete: ok(result) && !issue, issue, snapshot, unrecoverable };
 }

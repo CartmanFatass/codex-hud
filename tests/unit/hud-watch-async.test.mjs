@@ -10,7 +10,7 @@ import test from 'node:test';
 import { runCommand } from '../../dist/roles/herdr-run.js';
 import { procStat } from '../../dist/roles/worker-tree.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
-import { fixture, until } from '../helpers/job-retention-fixture.mjs';
+import { expired, fixture, hour, until } from '../helpers/job-retention-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 const text = (file) => fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
@@ -119,6 +119,36 @@ test('watcher settles other jobs, starts checks and handles failures during a pe
   assert.equal(attempts(f, slow), 1, 'one reap despite repeated disk events');
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
   assert.equal(child.exitCode, 0);
+});
+
+for (const outcome of ['closed tab', 'missing or renamed tab']) test(`watcher reaps an exited root without a snapshot once (${outcome}), idles, then archives it at retention`, { timeout: 10000 }, async (t) => {
+  const f = fixture(t);
+  const root = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  const start = procStat(root.pid).start;
+  await once(root, 'exit');
+  const dir = f.job({ ...expired(), state: 'stopped' });
+  save(dir, 'STATUS.json', { ...status(dir), slot: 'primary', task_dir: dir, pid: root.pid, pid_start_time: start });
+  writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=synthetic-tab\nLEFT=synthetic-worker\nORCH=synthetic-caller\n');
+  assert.equal(fs.existsSync(join(dir, 'worker-tree.json')), false);
+  if (outcome === 'missing or renamed tab') reapStub(f, `
+console.error('pi-role-reap: ' + dir + ': TAB synthetic-tab name changed or missing; not closing');
+process.exitCode = 1;`);
+  const { child, exited } = f.start("process.env.HUD_WATCH_CLI_CHECK_MS = '30';");
+  await until(() => child.exitCode !== null || attempts(f, dir) >= 2);
+  assert.equal(attempts(f, dir), 1, f.log());
+  assert.deepEqual(await exited, [0, null]);
+  const stamp = reaped(dir);
+  assert.ok(stamp);
+  assert.equal(f.log().match(/worker-tree snapshot unresolved/g)?.length, 1);
+  assert.match(f.log(), /exit pid=\d+: no open jobs or failed deadlines/);
+  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+
+  assert.deepEqual(await f.start(`Date.now = () => ${Date.parse(stamp) + 25 * hour};`).exited, [0, null]);
+  assert.equal(fs.existsSync(dir), false);
+  const [archive] = fs.readdirSync(join(f.home, 'archive'));
+  assert.equal(json(join(f.home, 'archive'), archive).reaped_at, stamp);
+  assert.equal(attempts(f, dir), 1);
+  assert.equal(f.log().match(/worker-tree snapshot unresolved/g)?.length, 1);
 });
 
 test('overlapping watcher startups publish only one ready PID', async (t) => {

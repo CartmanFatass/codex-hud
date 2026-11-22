@@ -263,9 +263,10 @@ for (const fault of ['rename', 'open']) test(`pi reap: --done snapshot ${fault} 
     assert.ok(!procStat(child) || procStat(child).state === 'Z', 'watcher recovered the captured orphan');
   } else {
     const log = join(f.env.HUD_HOME, 'watch.log');
-    await until(() => readCloseReaped(job) || reapAttempts(f, job) >= 2);
-    assert.equal(readCloseReaped(job), undefined, 'missing proof must not be recorded as a successful reap');
-    assert.match(fs.readFileSync(log, 'utf8'), /worker-tree snapshot unresolved/);
+    await until(() => readCloseReaped(job) && fs.existsSync(log) &&
+      fs.readFileSync(log, 'utf8').includes('worker-tree snapshot unresolved'));
+    assert.equal(reapAttempts(f, job), 1, 'missing proof cannot be recovered by another reap');
+    assert.equal(fs.readFileSync(log, 'utf8').match(/worker-tree snapshot unresolved/g)?.length, 1);
     assert.equal(procStat(child)?.start, start, 'unprovable child was left alone');
   }
   assert.equal(done.status, 1, done.stderr);

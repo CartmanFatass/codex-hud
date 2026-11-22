@@ -51,72 +51,65 @@ test('permanent watch failure still scans and exits with no open jobs', { timeou
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
 });
 
-for (const kind of ['session preservation', 'reap']) {
-  test(`permanently failing ${kind} warns once per minute per job, not per scan`, { timeout }, async (t) => {
-    const f = fixture(t, DEGRADED_MS), open = f.job({ state: 'working' });
-    const bad = [f.job(expired(), {}, kind === 'reap'), f.job(expired(), {}, kind === 'reap')];
-    if (kind === 'session preservation') {
-      for (const dir of bad) realSession(dir, 'sessions', { type: 'session' });
-    } else {
-      fs.appendFileSync(join(f.home, '..', 'bin', 'pi-role-reap'), `
-if (fs.existsSync(process.env.HUD_HOME + '/reap-ownership-lost')) {
-  console.error('pi-role-reap: ' + process.argv[2] + ': TAB synthetic-tab name changed or missing; not closing');
-}
-process.exitCode = 1;
-`);
-    }
-    // The watcher reads this file as its clock; write it atomically so a read never sees it empty.
-    const clock = join(f.home, 'clock'), now = Date.now();
-    const setClock = (ms) => writeFixtureFile(clock, String(ms));
-    setClock(now);
-    const completed = join(f.home, 'completed-reaps');
-    // A scan can now finish before its reaps. Advance the fake clock only after the watcher has handled their results.
-    const reapProbe = kind === 'reap' ? `
-import childProcess from 'node:child_process';
-const spawn = childProcess.spawn;
-childProcess.spawn = (bin, ...args) => {
-  const child = spawn(bin, ...args);
-  if (bin === 'pi-role-reap') child.once('close', () => setImmediate(() =>
-    fs.appendFileSync(${JSON.stringify(completed)}, args[0][0] + '\\n')));
-  return child;
-};` : '';
-    const { child, exited } = f.start(scanProbe + reapProbe + `
+test('permanently failing session preservation warns once per minute per job, not per scan', { timeout }, async (t) => {
+  const f = fixture(t, DEGRADED_MS), open = f.job({ state: 'working' });
+  const bad = [f.job(expired()), f.job(expired())];
+  for (const dir of bad) realSession(dir, 'sessions', { type: 'session' });
+  // The watcher reads this file as its clock; write it atomically so a read never sees it empty.
+  const clock = join(f.home, 'clock'), now = Date.now();
+  const setClock = (ms) => writeFixtureFile(clock, String(ms));
+  setClock(now);
+  const { child, exited } = f.start(scanProbe + `
 fs.watch = () => { throw Error('synthetic permanent watch failure'); };
 syncBuiltinESMExports();
 Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
-    const warnings = (dir) => f.log().split('\n').filter((line) => line.includes(
-      kind === 'reap' ? `reap ${dir.split('/').at(-1)} ` : `keep ${dir.split('/').at(-1)} session preservation:`));
-    const scans = () => fs.readFileSync(join(f.home, 'scans'), 'utf8').trim().split('\n').length;
-    await until(() => fs.existsSync(join(f.home, 'scans')) && bad.every((dir) => warnings(dir).length >= 1));
-    await until(() => scans() >= 4); // Three finished scans, even under scheduler load.
-    assert.equal(child.exitCode, null, 'working job keeps degraded scans running');
-    for (const dir of bad) assert.equal(warnings(dir).length, 1, 'repeated failures within a minute are suppressed');
-    setClock(now + 59999);
-    const before = scans();
-    await until(() => scans() >= before + 2);
-    if (kind === 'reap') await until(() => fs.existsSync(completed) &&
-      fs.readFileSync(completed, 'utf8').trim().split('\n').length >= 4);
-    for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
-    // A terminal reap is retried on the slow timer, not at every intervening scan.
-    setClock(now + (kind === 'reap' ? 60999 : 60000));
-    await until(() => bad.every((dir) => warnings(dir).length >= 2));
-    for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again after one minute');
-    writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-    if (kind === 'reap') {
-      assert.ok(fs.readFileSync(join(f.home, 'reaps'), 'utf8').trim().split('\n').length >= 6, 'reap keeps retrying despite throttled logs');
-      const beforeClose = scans();
-      await until(() => scans() >= beforeClose + 2); // The degraded scan has observed the last job closing.
-      assert.equal(child.exitCode, null, 'pending cleanup keeps the watcher alive without a working job');
-      writeFixtureFile(join(f.home, 'reap-ownership-lost'), '');
-      setClock(now + 61999);
-    }
-    await exited;
-    if (kind === 'reap') for (const dir of bad)
-      assert.equal(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at, undefined);
-    assert.equal(child.exitCode, 0);
-    assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
-  });
-}
+  const warnings = (dir) => f.log().split('\n').filter((line) => line.includes(
+    `keep ${dir.split('/').at(-1)} session preservation:`));
+  const scans = () => fs.readFileSync(join(f.home, 'scans'), 'utf8').trim().split('\n').length;
+  await until(() => fs.existsSync(join(f.home, 'scans')) && bad.every((dir) => warnings(dir).length >= 1));
+  await until(() => scans() >= 4); // Three finished scans, even under scheduler load.
+  assert.equal(child.exitCode, null, 'working job keeps degraded scans running');
+  for (const dir of bad) assert.equal(warnings(dir).length, 1, 'repeated failures within a minute are suppressed');
+  setClock(now + 59999);
+  const before = scans();
+  await until(() => scans() >= before + 2);
+  for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
+  setClock(now + 60000);
+  await until(() => bad.every((dir) => warnings(dir).length >= 2));
+  for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again after one minute');
+  writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+});
+
+test('ambiguous reap failures back off, log outcome changes and stop without claiming cleanup', { timeout }, async (t) => {
+  const f = fixture(t), dir = f.job(expired(), {}, true);
+  fs.appendFileSync(join(f.home, '..', 'bin', 'pi-role-reap'), `
+const attempts = fs.readFileSync(process.env.HUD_HOME + '/reaps', 'utf8').trim().split('\\n').length;
+process.exitCode = attempts < 3 ? 1 : 2;
+`);
+  const { exited } = f.start(`
+import fs from 'node:fs';
+let now = Date.now();
+Date.now = () => now;
+process.env.HUD_WATCH_CLI_CHECK_MS = '30000';
+const timeout = globalThis.setTimeout;
+globalThis.setTimeout = (callback, wait, ...args) => {
+  if (wait < 30000) return timeout(callback, wait, ...args);
+  fs.appendFileSync(process.env.HUD_HOME + '/timers', wait + '\\n');
+  return timeout(() => { now += wait; callback(...args); }, 1);
+};`);
+  assert.deepEqual(await exited, [0, null]);
+  assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), (dir + '\n').repeat(10));
+  assert.deepEqual(fs.readFileSync(join(f.home, 'timers'), 'utf8').trim().split('\n').map(Number),
+    [30000, 60000, 120000, 240000, 480000, 960000, 1920000, 3600000, 3600000]);
+  const logs = f.log().split('\n').filter((line) => line.includes(`reap ${dir.split('/').at(-1)} `));
+  assert.deepEqual(logs.map((line) => [Number(/exit=(\d+)/.exec(line)[1]), line.includes('retry limit reached')]),
+    [[1, false], [2, false], [2, true]]);
+  assert.equal(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at, undefined);
+  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+});
 
 test('degraded watching polls for new jobs while a failed tab deadline keeps it alive', { timeout }, async (t) => {
   const f = fixture(t), failed = f.job({ state: 'failed', ended_at: new Date().toISOString() }, {}, true);
