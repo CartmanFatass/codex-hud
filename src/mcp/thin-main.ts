@@ -2732,6 +2732,7 @@ async function call(name: string, args: Args, scan: JobScan): Promise<unknown> {
   }
   if (name === 'hud_create') {
     if (args.jobs !== undefined) {
+      if (taskClient) throw new Error('In a task session, send one hud_create per job as parallel calls; each gets its own MCP task.');
       if (!Array.isArray(args.jobs) || !args.jobs.length ||
           Object.keys(args).some((key) => key !== 'jobs' && args[key] !== undefined)) {
         throw new Error('invalid_arguments: jobs');

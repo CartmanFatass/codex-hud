@@ -9,6 +9,7 @@ import {
   publishLegacyPiGrace,
   resultValue,
   taskCall,
+  taskJob,
   taskRpc,
   until,
   waitFixtureJob,
@@ -298,27 +299,54 @@ test('hud_send messages sends distinct texts and repairs in input order while ke
   assert.equal(mixed.result.isError, true);
 });
 
-test('MCP tasks: batch creates and responds deliver per-job compact notices with check-wait, changes fallback and disconnect fallback', { timeout: 25000 }, async (t) => {
-  const f = await fixture(t, true, '', 200);
+test('MCP tasks: batch create is rejected before launch; parallel single creates return separate tasks', async (t) => {
+  const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const jobs = [
+    { role: 'imp', task: 'Synthetic task one.', request_key: 'tc-1' },
+    { role: 'imp', task: 'Synthetic task two.', request_key: 'tc-2' },
+  ];
+  const batch = await taskCall(rpc, 'hud_create', { jobs });
+  assert.equal(batch.resultType, 'complete');
+  assert.equal(batch.isError, true);
+  assert.equal(JSON.parse(batch.content[0].text).error,
+    'In a task session, send one hud_create per job as parallel calls; each gets its own MCP task.');
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'jobs')), false, 'rejected batch leaves no job receipts');
+
+  const tasks = await Promise.all(jobs.map((args) => taskCall(rpc, 'hud_create', args)));
+  const created = tasks.map((task) => taskJob(f, task));
+  assert.notEqual(tasks[0].taskId, tasks[1].taskId);
+  assert.notEqual(created[0].job, created[1].job);
+  for (const job of created) assert.equal(taskDelivery(job.task_dir, f.env.HERDR_PANE_ID), true);
+});
+
+async function answerInitialQuestions(rpc, jobs) {
+  const answers = jobs.map(({ job, task_dir }) => {
+    writeFixtureFile(join(task_dir, 'qa', 'q1.md'), 'Synthetic initial question?');
+    return { job, request_id: 'q1', answer: 'Proceed.' };
+  });
+  const response = await taskCall(rpc, 'hud_respond', { answers });
+  assert.equal(response.resultType, 'complete');
+  assert.deepEqual(resultValue(response).answers, answers.map(({ job, request_id }) => ({ job, request_id, ok: true, written: true })));
+}
+
+test('MCP tasks: batch responses deliver per-job compact notices with check-wait, changes fallback and disconnect fallback', { timeout: 25000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
 
   const checkCmd = 'for ((i=0; i<120; i++)); do [[ -f release-batch-check ]] && break; sleep .05; done; test -f release-batch-check';
-  const createRes = await taskCall(rpc, 'hud_create', {
+  const { jobs: [plain, checked, disc] } = await f.call('hud_create', {
     jobs: [
       { role: 'imp', task: 'Batch plain job.', request_key: 'tc-plain' },
       { role: 'imp', task: 'Batch checked job.', checks: [checkCmd], request_key: 'tc-check' },
       { role: 'imp', task: 'Batch disconnect job.', request_key: 'tc-disc' },
-      { role: 'unknown-role', task: 'Bad role.' },
     ],
   });
-  assert.equal(createRes.resultType, 'complete');
-  const { jobs: [plain, checked, disc, bad] } = resultValue(createRes);
-  assert.match(plain.job, /^j[0-9a-f]{16}$/);
-  assert.match(checked.job, /^j[0-9a-f]{16}$/);
-  assert.match(disc.job, /^j[0-9a-f]{16}$/);
-  assert.equal(bad.ok, false);
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  await answerInitialQuestions(rpc, [plain, checked, disc]);
   assert.equal(taskDelivery(plain.task_dir, f.env.HERDR_PANE_ID), true);
   assert.equal(taskDelivery(checked.task_dir, f.env.HERDR_PANE_ID), true);
   assert.equal(taskDelivery(disc.task_dir, f.env.HERDR_PANE_ID), true);
@@ -350,18 +378,17 @@ test('MCP tasks: batch creates and responds deliver per-job compact notices with
   assert.equal(panePrompts().filter((m) => m.includes(checked.job)).length, 1);
 
   // 3. Batch hud_respond resumes turn; when push fails, notice falls back to changes once and is recorded.
-  writeFixtureFile(join(plain.task_dir, 'qa', 'q1.md'), 'Synthetic follow-up question?');
+  writeFixtureFile(join(plain.task_dir, 'qa', 'q2.md'), 'Synthetic follow-up question?');
   const failPrompt = join(f.env.HOME, 'fail-prompt');
   fs.writeFileSync(failPrompt, '');
   const respRes = await taskCall(rpc, 'hud_respond', {
-    answers: [{ job: plain.job, request_id: 'q1', answer: 'Proceed.' }],
+    answers: [{ job: plain.job, request_id: 'q2', answer: 'Proceed.' }],
   });
   assert.equal(respRes.resultType, 'complete');
-  assert.deepEqual(resultValue(respRes).answers, [{ job: plain.job, request_id: 'q1', ok: true, written: true }]);
-  writeFixtureFile(join(plain.task_dir, 'qa', 'q2.md'), 'Second question?');
-  await until(() => fs.existsSync(join(plain.task_dir, 'qa', 'q2.md')));
+  assert.deepEqual(resultValue(respRes).answers, [{ job: plain.job, request_id: 'q2', ok: true, written: true }]);
+  writeFixtureFile(join(plain.task_dir, 'qa', 'q3.md'), 'Another question?');
   const withFallback = resultValue(await taskCall(rpc, 'hud_roster'));
-  assert.ok(withFallback.changes?.some((line) => line.includes(plain.job) && line.includes('Question q2: Second question?')));
+  assert.ok(withFallback.changes?.some((line) => line.includes(plain.job) && line.includes('Question q3: Another question?')));
   assert.equal(resultValue(await taskCall(rpc, 'hud_roster')).changes, undefined, 'changes fallback delivered once');
   assert.equal(JSON.parse(fs.readFileSync(join(plain.task_dir, 'batch-notice.json'), 'utf8')).via, 'changes');
   fs.unlinkSync(failPrompt);
@@ -376,17 +403,16 @@ test('MCP tasks: batch creates and responds deliver per-job compact notices with
 
 test('MCP tasks: batch follow-up sends and answers carry on live batch tasks with one terminal notice', { timeout: 15000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
-  const rpc = taskRpc(f.rpc);
-  await rpc('server/discover');
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
-
-  const created = resultValue(await taskCall(rpc, 'hud_create', {
+  const { jobs: [chain, asking] } = await f.call('hud_create', {
     jobs: [
       { role: 'imp', task: 'Batch chain worker.', request_key: 'bc-1' },
       { role: 'imp', task: 'Batch asking worker.', request_key: 'bc-2' },
     ],
-  }));
-  const [chain, asking] = created.jobs;
+  });
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  await answerInitialQuestions(rpc, [chain, asking]);
   const panePrompts = () => f.commands()
     .filter((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID)
     .map((c) => c.args[3]);
@@ -403,11 +429,11 @@ test('MCP tasks: batch follow-up sends and answers carry on live batch tasks wit
   assert.deepEqual(resultValue(fanOut).sent, [chain.job]);
 
   // Live batch answer continues the asking worker's batch task without pushing a stale question notice.
-  writeFixtureFile(join(asking.task_dir, 'qa', 'q1.md'), 'Synthetic batch live question?');
+  writeFixtureFile(join(asking.task_dir, 'qa', 'q2.md'), 'Synthetic batch live question?');
   writeFixtureFile(join(asking.task_dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', reason: 'asking' }));
-  const ans = await taskCall(rpc, 'hud_respond', { answers: [{ job: asking.job, request_id: 'q1', answer: 'Continue.' }] });
+  const ans = await taskCall(rpc, 'hud_respond', { answers: [{ job: asking.job, request_id: 'q2', answer: 'Continue.' }] });
   assert.equal(ans.resultType, 'complete');
-  assert.deepEqual(resultValue(ans).answers, [{ job: asking.job, request_id: 'q1', ok: true, written: true }]);
+  assert.deepEqual(resultValue(ans).answers, [{ job: asking.job, request_id: 'q2', ok: true, written: true }]);
 
   writeFixtureFile(join(chain.task_dir, 'report.md'), 'Latest batch chain report.\n');
   await publishPiGrace(chain, undefined, false);

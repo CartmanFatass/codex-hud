@@ -109,9 +109,11 @@ not mark a report read; collect it with `hud_read({job})`. Launch details remain
 A successful fan-out send keeps the job’s existing active task instead of starting a new one.
 The same caller can poll existing worker and land tasks after an MCP restart until their task TTL expires.
 Cancelling a still-current task on its original connection stops the worker like `hud_close`; repeating cancel,
-cancelling an old task or cancelling from a fresh connection does nothing. Dispatch failures, duplicates, fan-out sends and batch calls (`hud_create({jobs})`, `hud_send({messages})`,
-`hud_respond({answers})`) return immediately with per-item results in input order; for each created, continued or
-resumed job in a batch, the live MCP connection delivers the same compact notice (waiting for checks on report,
+cancelling an old task or cancelling from a fresh connection does nothing. To start several jobs in a task session,
+send one `hud_create` per job in parallel. `hud_create({jobs})` returns an error without creating any jobs.
+Dispatch failures, duplicates and fan-out sends return immediately. Batch `hud_send({messages})` and
+`hud_respond({answers})` still return per-item results in input order. For each new turn started by one of
+those batches, the live MCP connection delivers the same compact notice (waiting for checks on report,
 immediate on question, failure or stop) once to the caller pane (or in `changes` if delivery fails), and falls back to
 normal `hud-notify`/`changes` delivery if the connection ends first. Use `hud_read` for jobs without a
 task or whose task has expired. Task clients do not get `hud_wait`, `changes` (beyond panel and undelivered batch notices), `watcher_alive`, or the
@@ -145,7 +147,7 @@ back to typing that line, which can touch a draft or fire prompt hooks. Stale PI
 MCP `changes` stays the fuller, query-only stream; a `report` token always means unread. With live events, keep
 working until notified instead of polling or waiting. A report-ready notice leaves the report unread; collect it explicitly.
 
-`hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) and `slice` (STATE ID) to link progress. Pass `jobs: [...]` instead of single-create fields to dispatch several jobs in one call; each item accepts the same fields as a single create, returns its result in input order, and one item's error does not block the others (each created job keeps its own notice). The optional `request_key`
+`hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) and `slice` (STATE ID) to link progress. In sessions without MCP tasks, pass `jobs: [...]` instead of single-create fields to dispatch several jobs in one call; each item accepts the same fields as a single create, returns its result in input order, and one item's error does not block the others (each created job keeps its own notice). The optional `request_key`
 defaults to a hash of the caller pane, role, cwd and task. By default it dispatches on the role's first available place (`runs_on`).
 `hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields
 can override them, subject to the same rules as a new create. Without new placement options, the retry keeps the

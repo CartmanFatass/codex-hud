@@ -34,7 +34,7 @@ export const ROLE_TOOLS = [
         type: 'array',
         minItems: 1,
         items: { type: 'object' },
-        description: 'Batch create; items take single-create fields (no nested jobs).',
+        description: 'Batch create for sessions without MCP tasks; task sessions send parallel single creates.',
       },
       scout: { ...text, minLength: 1, description: 'Run sonic on this question first and attach its report. Not available for role sonic.' },
       retry_of: { ...text, description: 'Failed or stopped job ID. Reuses its brief and options and selects an available place.' },

@@ -1,6 +1,6 @@
 # 20: Batch creates in a task session use MCP tasks
 
-**Status:** ready-for-agent
+**Status:** done
 **Blocked by:** role-overrides/01 (same `hud_create` code)
 **Owner try:** no
 
@@ -8,8 +8,10 @@
 
 In a session whose client supports MCP tasks, `hud_create` with `jobs` returns an error before creating anything: "In a task session, send one hud_create per job as parallel calls; each gets its own MCP task." Sessions without task support keep batch create and its pane delivery as today. Say this positively in the `jobs` field description ("batch create for sessions without MCP tasks; task sessions send parallel single creates"). Remove the batch pane-push path only if nothing else uses it.
 
-- [ ] Task client: batch create errors and creates no job; single creates in parallel each return a task
-- [ ] Non-task client: batch create unchanged
-- [ ] Targeted MCP task tests pass
+- [x] Task client: batch create errors and creates no job; single creates in parallel each return a task
+- [x] Non-task client: batch create unchanged
+- [x] Targeted MCP task tests pass
 
 ## Comments
+
+- Landed 1a56e565b2d826bd9d7ce86cc85677a855a834cb; gate 5/5 passed.
