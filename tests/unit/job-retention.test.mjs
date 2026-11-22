@@ -393,7 +393,8 @@ fs.rmSync = (dir, options) => {
 };
 syncBuiltinESMExports();`);
   await until(() => deleted.every((dir) => !fs.existsSync(dir)));
-  await until(() => fs.existsSync(join(f.home, 'reaps')));
+  // appendFileSync creates the file before writing, so wait for the complete line, not just the file.
+  await until(() => fs.existsSync(join(f.home, 'reaps')) && fs.readFileSync(join(f.home, 'reaps'), 'utf8').endsWith('\n'));
   for (const dir of kept) assert.ok(fs.existsSync(dir), dir);
   assert.ok(fs.lstatSync(symlink).isSymbolicLink());
   assert.ok(fs.existsSync(join(outside, 'STATUS.json')));

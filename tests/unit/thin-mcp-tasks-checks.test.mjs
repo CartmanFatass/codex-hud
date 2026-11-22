@@ -289,7 +289,7 @@ test('HUD checks: Pi continuation and report rewrite make results stale; a runni
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic checks and repair.', checks });
   assert.equal(checkReceipt(job), null);
   await publishPiGrace(job);
-  await until(() => checkReceipt(job)?.state === 'done');
+  await until(() => checkReceipt(job)?.state === 'done', 10000); // The check is a shell run; under full-suite load 4 s is tight.
   const previous = checkReceipt(job);
   assert.equal(previous.report_sig, reportSignature(job.task_dir));
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic continuation.' })).sent, true);
