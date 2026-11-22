@@ -13,3 +13,5 @@ Update the `hud_create` tool description in `src/roles/tool-definitions.ts` ("Om
 - [ ] Imp routing, land repair and overflow paths still apply their own place; targeted create/roster tests pass
 
 ## Comments
+
+- 2026-11-22 addendum: an `imp` create that overflows to `general` runs the run chain `imp` would have used (its active preset), not general's default; the job stays `general` for caps and says `overflow_from: imp`. Spec §2.1.4 caps bullet.

@@ -87,17 +87,23 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - Sonic thinking uses the role default (`high`), not caller choice or a tool prompt. When enabled (off by default),
   the Decision API chooses `none`, `low`, `high` or `max` using each brief and the role file's level purposes.
   Any failure falls back to the default. (21.05)
-- Imp routing (Settings, off by default; needs the Decision API): an `imp` create gets a tier,
-  light (`hydrogen`), standard (role default) or hard (`astra`), and a run mode, headless or tab, chosen from the brief, ticket and context files against the role file's tier purposes. The
-  create result, card and job record show tier, mode and a one-line reason. A land repair of a light job runs one
-  tier up. Any failure or timeout falls back to the role default in a tab. (22.22)
+- Imp routing (Settings, off by default; needs the Decision API): the role file's `routing` block names a preset
+  and a purpose per tier, light, standard and hard; standard is the role's active preset (the owner's Control
+  choice). Shipped `imp` maps light to `hydrogen` and hard to `astra`; no tier name or model lives in code, a tier
+  missing from the file is not offered, and a role file without the block is never routed. When on, an `imp`
+  create gets a tier and a run mode, headless or tab, chosen from the brief, ticket and context files against
+  those purposes. Headless applies only when the chosen place's harness supports it; otherwise tab. A tier whose
+  preset has no available place falls to standard and says so. The create result, card and job record show tier,
+  mode and a one-line reason. An overflow to `general` keeps the routed run chain; `retry_of` keeps the tier; a
+  land repair of a light job runs as standard. Any failure, timeout or the toggle off runs the active preset in a
+  tab. (22.22)
 - A headless worker runs a continuable role without a tab, in its harness's non-interactive mode, and keeps its
   native session. A question ends its turn and `hud_respond` resumes the session with the answer; `hud_send` and
   land repairs resume it the same way, within the same `resume_s` rules as a closed tab worker. The owner can read
   its progress and output and stop it from the panel; there is no tab to focus. (22.22)
 - Soft per-role concurrency caps (Settings; defaults `imp` 3, `general` 3, other roles uncapped) count working jobs
   machine-wide. With `imp→general` overflow on (default), an `imp` create at its cap starts as `general` when
-  `general` has room and says so; otherwise a create past the cap is `queued` with its position, the watcher starts
+  `general` has room and says so, on the run chain `imp` would have used; otherwise a create past the cap is `queued` with its position, the watcher starts
   the oldest queued job when a slot frees or a cap rises, and `hud_close` removes a queued job. (22.22)
 
 #### 2.1.5 Lifecycle, settlement and cleanup
