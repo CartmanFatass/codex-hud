@@ -5,8 +5,8 @@
  *   DeepSeek V4.1 Flash 1017 max │ ━━━━────── 42%/200K │ example main +1 *1 ?3 │ lens ✓   MCP 2  skills 5
  *
  * The editor's top border carries the p10k ribbon and other extensions' statuses, after pi's native working
- * indicator. Context stays on the shared bottom bar; cost lives only in the ribbon. The notice zone tells the HUD
- * jobs' events and questions (the footer host sees no skill loads, so none are told).
+ * indicator. Context stays on the shared bottom bar; cost lives only in the ribbon. The notice zone counts the HUD's
+ * workers by provider, model and effort (the footer host sees no skill loads, so none are told).
  */
 
 import { execFile } from 'node:child_process';
@@ -485,8 +485,7 @@ export function createP10kFooter(
         dirty: marks.length > 0,
       },
       quota,
-      needs: work.needs,
-      events: work.events,
+      workers: work.workers,
       loaded: {
         counts: [
           ['MCP', enabled('mcp') ? capturedLoaded.mcp : 0],
@@ -528,7 +527,7 @@ export function createP10kFooter(
   }
   let capturedLoaded: LoadedCounts = { mcp: 0, skills: 0 };
   /** What the HUD jobs ask and just did, pushed by the Work segment's timer. */
-  let work: WorkSignals = { needs: [], events: [] };
+  let work: WorkSignals = { workers: [] };
   let repaint: (() => void) | null = null;
   let mounted = false;
   let live = true;
@@ -705,7 +704,7 @@ export function createP10kFooter(
     current = ctx;
     mounted = true;
     config = fromSettings();
-    work = { needs: [], events: [] };
+    work = { workers: [] };
     applyBarSettings();
     lensFiles.clear();
     lensAnalyzed = false;

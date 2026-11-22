@@ -98,6 +98,22 @@ test('Antigravity renders fresh/mid-turn/quotas, EN/ZH details and the caller wi
   ]);
 });
 
+test('Antigravity draws the same worker zone from this pane\'s jobs, long-running ones included, with no title', async (t) => {
+  const { hud, env, run } = fixture(t);
+  const pane = 'w4E:p1', id = 'j0000000000000001';
+  env.HERDR_PANE_ID = pane;
+  const dir = join(hud, 'jobs', id);
+  fs.mkdirSync(dir, { recursive: true });
+  const ago = (seconds) => new Date(Date.now() - seconds * 1000).toISOString();
+  fs.writeFileSync(
+    join(dir, 'job.json'),
+    JSON.stringify({ job: id, role: 'imp', model: 'gpt-6.2-sol-fast', thinking: 'high', herdr_pane: pane, created_at: ago(1800) })
+  );
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', started_at: ago(1800) }));
+  fs.writeFileSync(join(dir, 'brief.md'), '# Secret heading');
+  assert.equal(await run(payload), `${wide} │ ◎ sol-fast◕ 1`);
+});
+
 test('Antigravity quota follows the model id or display name without falling back to another family', async (t) => {
   const { run } = fixture(t);
   const thirdPartyPlain = '✻ Claude Example │ ████░░░░░░ 35%/200K │ demo';

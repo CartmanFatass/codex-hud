@@ -72,7 +72,7 @@ export function renderParity(
   evidence: ParityEvidence,
   now: number,
   env: NodeJS.ProcessEnv = {},
-  work: WorkSignals = { needs: [], events: [] }
+  work: WorkSignals = { workers: [] }
 ): string {
   const v = record(input),
     m = record(v.model),
@@ -113,8 +113,8 @@ export function renderParity(
     },
     quota: windows.length ? { windows } : undefined,
     tps: t.tps,
-    needs: work.needs,
-    events: [...events(t, d.showAgents, d.showSkills), ...work.events],
+    events: events(t, d.showAgents, d.showSkills),
+    workers: work.workers,
     loaded: {
       counts: [
         ['MCP', c.mcpCount],

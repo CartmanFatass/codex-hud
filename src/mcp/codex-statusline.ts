@@ -86,7 +86,7 @@ function workReminder(home: string, pane: string | null, now: number): string | 
     const priority = asks ? 1 : 0;
     if (best && (priority < best.priority || (priority === best.priority && at <= best.at))) continue;
     const reminder = asks
-      ? askOf({ name: role })
+      ? askOf(role)
       : `${role} ${row.display_state === 'working' ? 'started' : row.display_state}`;
     best = { reminder, priority, at, receipt, status };
   }

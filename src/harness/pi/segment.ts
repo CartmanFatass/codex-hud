@@ -13,7 +13,7 @@ export function createPiSegment(options: {
   env: NodeJS.ProcessEnv;
   now?: () => number;
   schedule?: (callback: () => void, ms: number) => () => void;
-  /** Told what the jobs ask and just did, at every refresh and, empty, when the segment stops. */
+  /** Told the census of the jobs, at every refresh and, empty, when the segment stops. */
   onSignals?: (signals: WorkSignals) => void;
 }) {
   let current: { ctx: SegmentContext; root: string; isCurrent(): boolean } | null = null;
@@ -61,7 +61,7 @@ export function createPiSegment(options: {
     text = undefined;
     published = false;
     if (old && isPiTui(old.ctx)) old.ctx.ui.setStatus(HUD_STATUS_KEY, undefined);
-    options.onSignals?.({ needs: [], events: [] });
+    options.onSignals?.({ workers: [] });
   }
   return {
     start(ctx: SegmentContext, root: string, isCurrent: () => boolean) {

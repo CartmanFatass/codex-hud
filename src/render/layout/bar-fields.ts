@@ -4,6 +4,9 @@
  *
  *   model effort │ context %/window │ repo branch │ quota │ ~N t/s │ notice zone ········ MCP n  skills n
  *
+ * The notice zone is the HUD's workers as counts and marks, one group per provider, short model and effort
+ * (`◎ sol-fast◕ 3  ▲ neon◕ 2  ⚡4`), then what the client itself tells (a subagent's events, a skill load, an approval).
+ *
  * Fields a client cannot supply are left out, never shown as zero. The fields shown are `barFields`; the style is
  * `barStyle`: `│` separators (`line`), or powerline capsules (`p10k`: each segment padded by a space on its own
  * background, an arrow in its colour leading into the next; flat, without arrows, when icons are text). The line always fits: forms shorten and whole segments drop in the order of
@@ -14,6 +17,7 @@
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
 import { activeBarStyle, displayConfig, iconSet, isLightTheme, type BarField, type BarStyle } from '../hud-config.js';
+import { EFFORT_GLYPHS, workerModelName } from '../model-glyphs.js';
 import { providerMark } from '../providers.js';
 
 /**
@@ -56,17 +60,21 @@ type Role =
   | 'usage'
   | 'usageHigh'
   | 'skill'
+  | 'count'
   | 'lead';
-/** A piece of text and its role; `bar` pieces are a meter's cells, which the capsule look leaves out. */
-export type Form = ReadonlyArray<readonly [text: string, role?: Role, bar?: true]>;
+/**
+ * A piece of text and its role; `bar` pieces are a meter's cells, which the capsule look leaves out; a `lead` piece may
+ * carry its own mark colour (256-colour index), else the segment's.
+ */
+export type Form = ReadonlyArray<readonly [text: string, role?: Role, bar?: true, ink?: number]>;
 
-/** Something that happened: a subagent or job started, finished or failed, a skill was loaded. */
+/** Something that happened: a subagent started, finished or failed, a skill was loaded. */
 export interface BarEvent {
   kind: 'started' | 'done' | 'failed' | 'warn' | 'skill';
   /** The words: an agent's name and title, which is also what `×n` groups by. */
   text: string;
   at: number;
-  /** An agent's or job's type or role (`imp`, `Explore`) in the agent colour: it stays whole while the zone shrinks. */
+  /** An agent's type (`Explore`) in the agent colour: it stays whole while the zone shrinks. */
   name?: string;
   /** What it works on, in its own words: cut at a word when the zone is short of room, and the first thing to go. */
   title?: string;
@@ -74,10 +82,21 @@ export interface BarEvent {
   ran?: string;
   /** Who it is about: only its latest event shows, so `finished` replaces `started`. Defaults to the text. */
   key?: string;
-  /** A HUD job (its own tab) rather than a subagent inside the session: its mark is boxed, `[✓]` against `✓`. */
-  job?: true;
-  /** A settled job's report has not been read: `[✓●]` until it is. */
-  unread?: boolean;
+}
+
+/** One HUD worker as the worker zone counts it: every live one, and each settled one for `NOTICE_MS`. */
+export interface BarWorker {
+  role: string;
+  /** The model's id and the route's provider: the group's mark and short name are read from them. */
+  model?: string;
+  provider?: string;
+  effort?: string;
+  state: 'working' | 'asking' | 'done' | 'failed';
+  /** A settled worker's report has not been read. */
+  unread?: true;
+  startedAt: number;
+  /** Only a settled worker has it. */
+  settledAt?: number;
 }
 
 export interface BarQuotaWindow {
@@ -101,9 +120,11 @@ export interface BarFacts {
   quota?: { windows: BarQuotaWindow[]; trailing?: boolean } | { label?: string; text: string; shortText?: string };
   /** Latest available output-rate estimate, in tokens per second. */
   tps?: number;
-  /** What needs the owner now (an approval, a job's question): pinned while it is open. */
+  /** What needs the owner now (an approval): pinned while it is open. */
   needs?: string[];
   events?: BarEvent[];
+  /** The HUD's workers: the zone's groups and counts. */
+  workers?: BarWorker[];
   loaded?: { counts: ReadonlyArray<readonly [string, number | null | undefined]>; words?: Form[] };
 }
 
@@ -123,10 +144,10 @@ export function gitSync(ahead: number, behind: number): string {
 /** `42s`, `12m`, `1h19m`: how long something ran. */
 const runTime = (ms: number) => (ms < 60_000 ? `${Math.floor(ms / 1000)}s` : span(Math.floor(ms / 60_000)));
 
-/** A subagent's or job's event: its type or role, what it works on (when known) and, for an end, how long it ran. */
+/** A subagent's event: its type, what it works on (when known) and, for an end, how long it ran. */
 export function agentEvent(
   kind: 'started' | 'done' | 'failed',
-  who: { id?: string; name: string; title?: string; job?: true; unread?: boolean },
+  who: { id?: string; name: string; title?: string },
   at: number,
   ranMs?: number
 ): BarEvent {
@@ -139,14 +160,11 @@ export function agentEvent(
     title,
     ran: kind !== 'started' && ranMs !== undefined && ranMs >= 0 ? runTime(ranMs) : undefined,
     key: who.id ?? who.name,
-    ...(who.job ? { job: true as const } : {}),
-    ...(who.job && who.unread ? { unread: true } : {}),
   };
 }
 
-/** A job asking the owner, as the pinned need says it: `imp 首页修正 asks`. */
-export const askOf = (who: { name: string; title?: string }): string =>
-  `${who.name} ${cutWords(clean(who.title ?? ''), TITLE_COLS)} asks`.replace(/ {2,}/g, ' ');
+/** A job asking the owner, as the Codex footer's reminder says it: `imp asks`. */
+export const askOf = (name: string): string => `${name} asks`;
 
 // ─── Painting ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -169,6 +187,7 @@ const INK: Record<Role, (text: string) => string> = {
   agent: plain(35),
   usage: plain(94),
   usageHigh: plain(95),
+  count: theme.bold,
   lead: (text) => text,
   alert: theme.alert,
 };
@@ -331,9 +350,9 @@ interface Notice {
   tail: string;
 }
 
-/** The widest a job's title gets, so a long brief heading cannot push the vitals off the bar. */
+/** The widest a subagent's title gets, so a long Agent-call description cannot push the vitals off the bar. */
 const TITLE_COLS = 36;
-/** What the vitals leave a title before it goes altogether: a few words, enough to tell two jobs of one role apart. */
+/** What the vitals leave a title before it goes altogether: a few words, enough to tell two subagents of one type apart. */
 const TITLE_SHORT = 14;
 
 const MARKS = {
@@ -347,10 +366,8 @@ const MARKS = {
 const clean = (words: string) => words.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
 
 function noticeOf(event: BarEvent, count = 1): Notice {
-  const [glyph, tone] = MARKS[event.kind];
+  const [mark, tone] = MARKS[event.kind];
   const name = event.name && clean(event.name);
-  // A HUD job's mark is boxed; a settled one whose report is unread has a dot in it.
-  const mark = event.job ? `[${glyph}${event.unread && event.kind !== 'started' ? '●' : ''}]` : glyph;
   return {
     mark,
     tone,
@@ -378,7 +395,7 @@ function zoneOf(
   // The same kind of event with the same words (three `Explore ‹title›` started) is one item with `×3`.
   const groups = new Map<string, BarEvent[]>();
   for (const event of [...latest.values()].sort((a, b) => b.at - a.at || a.text.localeCompare(b.text))) {
-    const group = `${event.kind}\u0000${event.job ? 1 : 0}${event.unread ? 1 : 0}\u0000${event.text}`;
+    const group = `${event.kind}\u0000${event.text}`;
     groups.set(group, [...(groups.get(group) ?? []), event]);
   }
   const events = [...groups.values()].map(([newest, ...rest]) => noticeOf(newest, rest.length + 1));
@@ -492,6 +509,118 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
   }
 }
 
+// ─── The worker zone ───────────────────────────────────────────────────────────────────────────────────────────────
+
+interface Group {
+  /** The provider's mark and its colour; sonic has a mark of its own and no provider, model or effort. */
+  mark: string;
+  ink?: number;
+  sonic: boolean;
+  name: string;
+  effort: string;
+  effortRole: Role;
+  n: number;
+  since: number;
+  /** How many are asking, failed or done, by `state` and `●` (report unread): `!`, `✗`, `✓●`, `✓` follow the count. */
+  states: Map<string, number>;
+}
+
+const effortRole = (glyph: string): Role =>
+  glyph === EFFORT_GLYPHS.max || glyph === EFFORT_GLYPHS.ultra
+    ? 'warn'
+    : glyph === EFFORT_GLYPHS.high || glyph === EFFORT_GLYPHS.xhigh
+      ? 'name'
+      : 'dim';
+
+/**
+ * The workers as groups at one rung of narrowing: `rung` 0 keeps each one's provider, short model and effort, 1 drops
+ * the model name, 2 the effort too, so groups merge and their counts stay true. Oldest group first; sonic, which has
+ * no provider, model or effort to tell, last.
+ */
+function groupWorkers(workers: readonly BarWorker[], rung: number, ascii: boolean): Group[] {
+  const groups = new Map<string, Group>();
+  for (const worker of workers) {
+    const sonic = worker.role === 'sonic';
+    const lead = sonic ? null : providerMark({ provider: worker.provider, id: worker.model }, ascii);
+    const name = sonic || rung > 0 ? '' : workerModelName(worker.model);
+    const effort = sonic || rung > 1 ? '' : (EFFORT_GLYPHS[(worker.effort ?? '').trim().toLowerCase()] ?? '');
+    const mark = sonic ? (ascii ? '*' : '⚡') : (lead?.glyph ?? '·');
+    const key = sonic ? 'sonic' : [mark, name, effort].join('\u0000');
+    const group = groups.get(key) ?? {
+      mark,
+      ink: lead?.color,
+      sonic,
+      name,
+      effort,
+      effortRole: effortRole(effort),
+      n: 0,
+      since: worker.startedAt,
+      states: new Map<string, number>(),
+    };
+    group.n++;
+    group.since = Math.min(group.since, worker.startedAt);
+    if (worker.state !== 'working') {
+      const state = worker.state + (worker.unread && worker.state !== 'asking' ? '●' : '');
+      group.states.set(state, (group.states.get(state) ?? 0) + 1);
+    }
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => Number(a.sonic) - Number(b.sonic) || a.since - b.since);
+}
+
+/** A group's states in the order its marks stand: what the group's `states` keys read as. */
+const STATE_MARKS = [
+  ['asking', '!', 'alert'],
+  ['failed●', `${icons.cross}●`, 'bad'],
+  ['failed', icons.cross, 'bad'],
+  ['done●', `${icons.check}●`, 'ok'],
+  ['done', icons.check, 'ok'],
+] as const;
+
+/**
+ * A group as pieces: `◎ sol-fast◕ 3`, then its marks. A mark follows the count, `!` (asking, the bar's alert badge, with
+ * its own padding on a coloured bar), `✗` failed, `✓●` finished with the report unread and `✓` finished and read, each
+ * with its number when more than one. Working has no mark.
+ */
+function groupForm(group: Group, pad: string, ascii: boolean): Form {
+  const lead: Form = [
+    group.sonic ? [group.mark, 'warn'] : [group.mark, 'lead', undefined, group.ink],
+    ...(group.name || ascii ? ([[' ']] as Form) : []),
+  ];
+  const marks = STATE_MARKS.flatMap(([state, glyph, role]): Form => {
+    const n = group.states.get(state);
+    if (!n) return [];
+    const number = n > 1 ? String(n) : '';
+    return role === 'alert'
+      ? [[' '], [`${pad}${glyph}${number}${pad}`, pad ? 'alert' : 'warn']]
+      : [[' '], [`${glyph}${number}`, role]];
+  });
+  return [
+    ...lead,
+    ...(group.name ? ([[group.name, 'value']] as Form) : []),
+    ...(group.effort ? ([[group.effort, group.effortRole]] as Form) : []),
+    ...(group.name ? ([[' ']] as Form) : []),
+    [String(group.n), 'count'],
+    ...marks,
+  ];
+}
+
+/**
+ * The census of workers as one segment, a form per rung of narrowing (full, no model name, no effort glyph); null when
+ * none is live or settled within `NOTICE_MS`. A worker's time is judged here, at paint, so a cached census stays true.
+ */
+function rosterSeg(workers: readonly BarWorker[] | undefined, now: number, pad: string, ascii: boolean): Seg | null {
+  const shown = (workers ?? []).filter((w) => w.settledAt === undefined || now - w.settledAt < NOTICE_MS);
+  if (!shown.length) return null;
+  const forms = [0, 1, 2].map((rung) =>
+    groupWorkers(shown, rung, ascii).flatMap((group, i): Form => [
+      ...(i ? ([['  ']] as Form) : []),
+      ...groupForm(group, pad, ascii),
+    ])
+  );
+  return { id: 'notice', forms, ink: P10K.info, at: 0 };
+}
+
 // ─── The six opt-in looks ──────────────────────────────────────────────────────────────────────────────────────────
 
 const clamp = (p: number) => Math.min(100, Math.max(0, p));
@@ -510,6 +639,7 @@ const LOOK_INKS: Partial<Record<Role, readonly [number, number]>> = {
   quiet: [243, 245],
   branch: [176, 133],
   agent: [176, 133],
+  count: [252, 235],
   info: [75, 25],
   skill: [141, 61],
   ok: [71, 28],
@@ -539,18 +669,21 @@ function lookInk(role: Role, part: string, style: BarStyle): string {
       ? style !== 'headline'
       : role === 'agent'
         ? style !== 'micro' && style !== 'triptych'
-        : role in LEVEL_INKS && style !== 'headline' && part.includes('%');
+        : role === 'count'
+          ? style !== 'headline'
+          : role in LEVEL_INKS && style !== 'headline' && part.includes('%');
   return `${bold ? '\x1b[1m' : ''}${fg(ink[+light()])}${part}${RESET}`;
 }
 const ruleInk = (words: string) => `${fg(light() ? 250 : 239)}${words}${RESET}`;
 const paintForm = (form: Form, style: BarStyle, lead?: number, meterBack?: number): string =>
   form
-    .map(([part, role, bar]) => {
+    .map(([part, role, bar, own]) => {
+      const mark = own ?? lead;
       const ink =
         role === 'lead'
-          ? lead === undefined
+          ? mark === undefined
             ? part
-            : `${fg((light() && LIGHT_MARKS[lead]) || lead)}${part}${RESET}`
+            : `${fg((light() && LIGHT_MARKS[mark]) || mark)}${part}${RESET}`
           : role
             ? lookInk(role, part, style)
             : part;
@@ -668,6 +801,13 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     seg.forms = noticeStages(n, '');
     return seg;
   });
+  // The workers come after a pinned need and before the client's own events.
+  const roster = on.has('notice') ? rosterSeg(facts.workers, now, '', iconSet() === 'text') : null;
+  const zoneSegments = [
+    ...noticeSegments.slice(0, zone?.alert ? 1 : 0),
+    ...(roster ? [roster] : []),
+    ...noticeSegments.slice(zone?.alert ? 1 : 0),
+  ];
   const fields = [
     on.has('model') && facts.model ? modelSeg(facts.model, iconSet() === 'text') : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
@@ -677,7 +817,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
   ];
   // Micro tells who (model, repo) before the meters.
   if (style === 'micro') fields.splice(1, 0, ...fields.splice(2, 1));
-  const list = [...fields, ...noticeSegments, on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null].filter(
+  const list = [...fields, ...zoneSegments, on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null].filter(
     (s): s is Seg => s !== null
   );
   const reading = (s: Seg): { percent: number; role: Role } | null => {
@@ -821,6 +961,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     if (id === 'title') {
       stage = Math.min(stage + 1, 2);
       for (const s of noticeSegments) s.at = Math.max(s.at, stage);
+      if (roster) roster.at = stage;
       continue;
     }
     if (id === 'meters') {
@@ -839,7 +980,16 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
   // Last resort for the notice zone: keep the pinned/newest one and cut at a word, never split its metadata.
   if (!roomy && natural() > width && noticeSegments.length > 1) noticeSegments[1]!.at = noticeSegments[1]!.forms.length;
   if (!roomy && natural() > width && noticeSegments[0] && !fitNotice(0, notices[0]!)) noticeSegments[0].forms = [];
-  // What room is left goes back to the titles, the newest first: a few words each before any gets more.
+  // What room is left goes back to the workers first, a rung at a time, then to the titles, the newest first: a few
+  // words each before any gets more.
+  if (!roomy && roster)
+    while (roster.at > 0) {
+      roster.at--;
+      if (natural() > width) {
+        roster.at++;
+        break;
+      }
+    }
   if (!roomy && natural() < width)
     for (const cap of [TITLE_SHORT, TITLE_COLS])
       notices.forEach((n, i) => fitNotice(i, { ...n, title: cutWords(n.title, cap) }, true));
@@ -901,12 +1051,13 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
 
 /**
  * Who gives up the next form when the line is too wide, cheapest loss first. The vitals' numbers outrank everything
- * round them, and a notice's name outranks its title, so the order is: the loaded counts; both gauges' cells (`meters`:
- * the two go together); the quota's reset; the branch's marks; a notice's title, down to a few words and then
- * altogether (`title`, twice); the output rate; the older of two notices (`notice`, which also cuts the newest at a
- * word, and shortens a pinned need to `N needs`); the effort; the context's window; the branch; the quota; the
- * project; the context. The model alone is never dropped. What room is left afterwards goes back to the titles, so a
- * job starting takes room from titles and extras, not from the numbers.
+ * round them, and the worker zone's marks and counts outrank its words, so the order is: the loaded counts; both gauges'
+ * cells (`meters`: the two go together); the quota's reset; the branch's marks; the zone's words (`title`, twice: the
+ * workers lose their model names, then their effort glyphs, a subagent's title a few words, then altogether); the
+ * output rate; the older of two subagent items (`notice`, which also cuts the newest at a word, and shortens a pinned
+ * need to `N needs`); the effort; the context's window; the branch; the quota; the project; the context. The model alone
+ * is never dropped. What room is left afterwards goes back to the workers, a rung at a time, then to the titles, so a
+ * worker starting takes room from the extras, not from the numbers.
  */
 const LADDER: Array<BarField | 'meters' | 'title'> = [
   'loaded',
@@ -945,6 +1096,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
   // Several needs: `first +2`, then `N needs` when the notice has to give way.
   if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
+  const roster = on.has('notice') ? rosterSeg(facts.workers, now, pad, ascii) : null;
   const left = [
     on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
@@ -952,6 +1104,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
     on.has('tps') ? tpsSeg(facts.tps) : null,
     alertSeg,
+    roster,
   ].filter((seg): seg is Seg => seg !== null);
   const right = on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null;
   const all = right ? [...left, right] : left;
@@ -988,6 +1141,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     if (total() <= width) break;
     if (id === 'title') {
       stage = Math.min(stage + 1, 2);
+      if (roster) roster.at = stage;
       continue;
     }
     if (id === 'meters') {
@@ -1002,8 +1156,17 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
       continue;
     }
     const seg = all.find((candidate) => candidate.id === id);
-    if (seg && seg.at < seg.forms.length) seg.at = zone && id === 'loaded' ? seg.forms.length : seg.at + 1;
+    if (seg && seg.at < seg.forms.length) seg.at = (zone || roster) && id === 'loaded' ? seg.forms.length : seg.at + 1;
   }
+  // What room is left goes back to the workers, a rung of narrowing at a time.
+  if (roster)
+    while (roster.at > 0) {
+      roster.at--;
+      if (total() > width) {
+        roster.at++;
+        break;
+      }
+    }
 
   const shown = fields();
   if (zone) {
@@ -1023,12 +1186,13 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
 
   const paint = (seg: Seg): string =>
     form(seg)
-      .map(([part, role]) => {
+      .map(([part, role, , own]) => {
+        const lead = own ?? seg.lead;
         if (p10k) {
           if (role === 'quiet') return `\x1b[2m${part}\x1b[22m`;
-          return role === 'lead' && seg.lead !== undefined ? `${fg(seg.lead)}${part}${fg(seg.ink[1])}` : part;
+          return role === 'lead' && lead !== undefined ? `${fg(lead)}${part}${fg(seg.ink[1])}` : part;
         }
-        if (role === 'lead' && seg.lead !== undefined && themeName !== 'none') return `${fg(seg.lead)}${part}${RESET}`;
+        if (role === 'lead' && lead !== undefined && themeName !== 'none') return `${fg(lead)}${part}${RESET}`;
         return role ? INK[role](part) : part;
       })
       .join('');

@@ -105,6 +105,14 @@
       "vendor": "gemini",
       "cliThinking": { "agy": ["low", "medium", "high", "xhigh", "max"] }
     },
+    "gemini-4-neon-high": {
+      "vendor": "gemini",
+      "cliThinking": { "agy": ["low", "medium", "high", "xhigh", "max"] }
+    },
+    "gemini-4-carbon-high": {
+      "vendor": "gemini",
+      "cliThinking": { "agy": ["low", "medium", "high", "xhigh", "max"] }
+    },
     "gemini-3.8-flash-high": {
       "vendor": "gemini",
       "cliThinking": { "agy": ["low", "medium", "high", "xhigh", "max"] }
@@ -116,6 +124,11 @@
       "vendor": "gemini"
     },
     "gpt-6.2-sol": {
+      "vendor": "openai",
+      "family": "sol",
+      "cliThinking": { "codex": ["low", "medium", "high", "xhigh", "max", "ultra"] }
+    },
+    "gpt-6.2-sol-fast": {
       "vendor": "openai",
       "family": "sol",
       "cliThinking": { "codex": ["low", "medium", "high", "xhigh", "max", "ultra"] }

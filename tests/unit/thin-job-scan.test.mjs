@@ -319,7 +319,7 @@ test('readThinJobRows caches unchanged files by signature without reading bodies
   assert.equal(fs.existsSync(join(home, 'display')), false);
 });
 
-test('a settled job whose report is unread shows [✓●] on the bar until hud_read stamps read_at', (t) => {
+test('a settled job whose report is unread shows ✓● on its group until hud_read stamps read_at', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-unread-'));
   const config = setDisplayConfig({ theme: 'none', barFields: ['model', 'notice'] });
   t.after(() => {
@@ -337,7 +337,10 @@ test('a settled job whose report is unread shows [✓●] on the bar until hud_r
   };
   const created_at = new Date(Date.now() - 60_000).toISOString();
   const receipt = (extra = {}) =>
-    write('job.json', JSON.stringify({ job, role: 'imp', herdr_pane: scope.pane, created_at, ...extra }));
+    write(
+      'job.json',
+      JSON.stringify({ job, role: 'imp', model: 'gpt-6.2-sol-fast', thinking: 'high', herdr_pane: scope.pane, created_at, ...extra })
+    );
   receipt();
   write('STATUS.json', JSON.stringify({ state: 'closed', settled_at: settled }));
   write('brief.md', '# Fix the panel');
@@ -345,21 +348,23 @@ test('a settled job whose report is unread shows [✓●] on the bar until hud_r
   const bar = () => {
     const now = Date.now();
     const lanes = readThinJobs(home, scope);
-    const line = renderBar({ model: { name: 'M' }, events: workSignals(lanes, now).events }, 120, now).line;
+    const line = renderBar({ model: { name: 'M' }, workers: workSignals(lanes, now).workers }, 120, now).line;
     return {
       unread: lanes[0].workers[0].reportUnread,
-      line: line.replace(/\x1b\[[0-9;]*m/g, '').replace(/ \d+s$/, ''),
+      line: line.replace(/\x1b\[[0-9;]*m/g, ''),
     };
   };
-  assert.deepEqual(bar(), { unread: true, line: 'M │ [✓●] imp Fix the panel' });
+  assert.deepEqual(bar(), { unread: true, line: 'M │ ◎ sol-fast◕ 1 ✓●' });
   // hud_read stamps read_at after the report was written: the dot goes, the report stays.
   receipt({ read_at: new Date(Date.now() + 1000).toISOString() });
-  assert.deepEqual(bar(), { unread: undefined, line: 'M │ [✓] imp Fix the panel' });
+  assert.deepEqual(bar(), { unread: undefined, line: 'M │ ◎ sol-fast◕ 1 ✓' });
   receipt({ parent_job: 'j0000000000000001' });
-  assert.deepEqual(bar(), { unread: true, line: 'M │ [◐] imp Fix the panel' }, 'only the child start remains on the bar; its card keeps the report');
+  assert.deepEqual(bar(), { unread: true, line: 'M' }, "a child's settlement stays off the bar; its card keeps the report");
   write('STATUS.json', JSON.stringify({ state: 'failed', ended_at: settled }));
-  assert.match(bar().line, /imp Fix the panel/);
-  assert.doesNotMatch(bar().line, /●/);
+  assert.equal(bar().line, 'M │ ◎ sol-fast◕ 1 ✗');
+  // A job still running is counted however long it has run.
+  write('STATUS.json', JSON.stringify({ state: 'working', started_at: new Date(Date.now() - 30 * 60_000).toISOString() }));
+  assert.equal(bar().line, 'M │ ◎ sol-fast◕ 1');
 });
 
 test('readThinJobs and readThinJobRows share JobIndexCache cleanly, jobRow stats report.md once, and panel answers invalidate qa', (t) => {

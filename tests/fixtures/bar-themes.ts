@@ -7,9 +7,30 @@ import { renderParity } from '../../dist/statusline-parity/render.js';
 import { fitStatusBar } from '../../dist/render/header.js';
 import { DEFAULT_LAYOUT } from '../../dist/types.js';
 import { setDisplayConfig, BAR_FIELDS, type BarStyle } from '../../dist/render/hud-config.js';
-import { agentEvent } from '../../dist/render/layout/bar-fields.js';
+import type { BarWorker } from '../../dist/render/layout/bar-fields.js';
 
 export const THEME_NOW = FOOTER_NOW;
+
+/** A synthetic HUD worker, started ten minutes before `THEME_NOW` unless `extra` says otherwise. */
+export const worker = (
+  role: string,
+  model: string,
+  provider: string,
+  effort: string,
+  state: BarWorker['state'] = 'working',
+  extra: Partial<BarWorker> = {}
+): BarWorker => ({ role, model, provider, effort, state, startedAt: THEME_NOW - 600_000, ...extra });
+/** The busy scenes' workers: two imps (one asking), two sonic (one finished, report unread). */
+export const THEME_WORKERS: BarWorker[] = [
+  worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high'),
+  worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high', 'asking', { startedAt: THEME_NOW - 590_000 }),
+  worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'working', { startedAt: THEME_NOW - 60_000 }),
+  worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'done', {
+    startedAt: THEME_NOW - 90_000,
+    settledAt: THEME_NOW - 20_000,
+    unread: true,
+  }),
+];
 export function barThemeScene() {
   const footer = parityFixture({ name: 'bar-themes', width: 120, env: { NO_COLOR: '' } });
   footer.ctx.model!.id = 'deepseek-v4-1-flash-1017';
@@ -17,13 +38,7 @@ export function barThemeScene() {
   footer.ctx.getContextUsage = () => ({ contextWindow: 200000, percent: 72 });
   footer.ctx.sessionManager.getSessionName = () => 'example';
   footer.controller.update();
-  footer.controller.setWork({
-    needs: [],
-    events: [
-      agentEvent('started', { name: 'imp', title: 'Synthetic fix' }, THEME_NOW - 10000),
-      agentEvent('done', { name: 'reviewer', title: 'Synthetic check' }, THEME_NOW - 20000, 754_000),
-    ],
-  });
+  footer.controller.setWork({ workers: THEME_WORKERS });
   const data = makeHudData({
     config: { ...makeHudData().config, model: 'gpt-5.6-astra', model_reasoning_effort: 'xhigh' },
     session: undefined,
@@ -40,6 +55,7 @@ export function barThemeScene() {
       },
       { kind: 'agent-done', subject: 'worker', ranMs: 95_000, at: new Date(THEME_NOW - 20000) },
     ],
+    work: { workers: THEME_WORKERS },
   });
   return {
     footer,
@@ -79,7 +95,9 @@ export function barThemeScene() {
           counts: { mcpCount: 4 },
           git: { branch: 'main', dirty: true, ahead: 0, behind: 0 },
         },
-        THEME_NOW
+        THEME_NOW,
+        {},
+        { workers: THEME_WORKERS }
       );
       return {
         claude: claude.split('\n'),

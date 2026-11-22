@@ -1,6 +1,7 @@
 import { lookupModelEntry, SHIPPED_MODELS_CATALOG, type ModelFamilyId } from '../models/catalog.js';
 import { colors, theme, visualLength } from './colors.js';
 import { displayConfig, type GlyphMode } from './hud-config.js';
+import { PROVIDERS, providerMark, shortModel } from './providers.js';
 
 export const MODEL_GLYPHS: Readonly<Record<ModelFamilyId, string>> = Object.fromEntries(
   Object.entries(SHIPPED_MODELS_CATALOG.families).map(([id, meta]) => [id, meta.glyph])
@@ -53,6 +54,25 @@ export function versionedModelLabel(model?: string | null): string {
   // A variant after the family (`gpt-6.2-sol-fast`) is a different model: keep it.
   const variant = slug.match(new RegExp(`${family}(-[a-z][a-z0-9]*)$`))?.[1] ?? '';
   return `${version}${family}${variant}`;
+}
+
+/**
+ * A model in one word for the bar's worker zone, read from the catalog rather than tabulated: a family is its id less the
+ * version (`gpt-6.2-sol-fast` is `sol-fast`); else the entry's `shortLabel`, first alias or digit-free id (`opus`,
+ * `haiku`); else a Gemini codename (`gemini-4-neon-high` is `neon`); else the vendor's catalog tag (`ds`, `glm`, `mis`).
+ * An id with none of these keeps `shortModel`'s reading.
+ */
+export function workerModelName(model?: string | null): string {
+  const bare = (model ?? '').trim().replace(/^.*\//, '');
+  if (!bare) return '';
+  if (classifyModelFamily(bare)) return versionedModelLabel(bare).replace(/^\d+(?:\.\d+)?/, '');
+  const entry = lookupModelEntry(bare);
+  const word = entry?.shortLabel ?? entry?.aliases?.[0] ?? (/\d/.test(bare) ? '' : bare.toLowerCase());
+  if (word) return word;
+  const codename = /^gemini-\d+(?:\.\d+)?-([a-z]+)/i.exec(bare)?.[1];
+  if (codename) return codename.toLowerCase();
+  const tag = (entry?.vendor ? PROVIDERS[entry.vendor] : providerMark({ id: bare }))?.ascii;
+  return tag ? tag.toLowerCase() : shortModel(bare);
 }
 
 /**

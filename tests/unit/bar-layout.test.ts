@@ -1,6 +1,7 @@
 /**
  * The three bottom bars share one builder: the same fields in the same order, one line at every width, and one notice
- * zone that tells events (3 minutes each) and what needs the owner, nothing else.
+ * zone: the HUD's workers as counts and marks (live ones always, settled ones for 3 minutes), then the client's own
+ * events (3 minutes each) and what needs the owner, nothing else.
  */
 
 import test from 'node:test';
@@ -23,6 +24,7 @@ import { DEFAULT_LAYOUT } from '../../dist/types.js';
 import { makeHudData } from '../fixtures/hud-data.js';
 import { NOW, OWNER_CONFIG } from '../fixtures/claude-hud-parity/fixture.js';
 import { parityFixture, FOOTER_NOW } from '../fixtures/pi-footer.js';
+import { worker } from '../fixtures/bar-themes.js';
 
 const noColour = (t: test.TestContext) => {
   const previous = setDisplayConfig({
@@ -36,13 +38,14 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
   noColour(t);
   t.mock.method(Date, 'now', () => FOOTER_NOW);
   const transcript = {
-    agents: [{ id: 'a', type: 'Explore', description: 'Audit', start: NOW - 20_000, startPos: 1, background: true }],
+    agents: [],
     todos: [],
     skills: ['hud-delegate'],
     ultracode: false,
     bytesRead: 0,
     pendingHistory: false,
   };
+  const workers = [worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high')];
   const input = {
     model: { display_name: 'Opus 5.5' },
     effort: 'high',
@@ -54,28 +57,27 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
     120,
     paritySettings(OWNER_CONFIG),
     { transcript, counts: { mcpCount: 4 }, git: { branch: 'main', dirty: true, ahead: 0, behind: 0 } },
-    NOW
+    NOW,
+    {},
+    { workers }
   );
   const f = parityFixture({ name: 'main', width: 120, settings: { band: { cost: false } } });
   t.after(() => f.dispose());
   f.statuses.clear();
-  f.controller.setWork({
-    needs: [],
-    events: [agentEvent('started', { name: 'Explore', title: 'Audit' }, FOOTER_NOW - 20_000)],
-  });
+  f.controller.setWork({ workers });
   const codex = fitStatusBar(
     makeHudData({
       project: { ...makeHudData().project, skillsCount: 10 },
-      notices: [{ kind: 'agent-started', subject: 'Explore', task: 'Audit', at: new Date(FOOTER_NOW - 20_000) }],
+      work: { workers },
     }),
     DEFAULT_LAYOUT,
     120,
     FOOTER_NOW
   ).line;
-  // model [effort] │ context (its meter is the first thing to go) │ repo branch │ [quota] │ notice (an agent's name, no
-  // age), then what was loaded (which gives way to a long notice). pi's session cost is switched off here.
+  // model [effort] │ context (its meter is the first thing to go) │ repo branch │ [quota] │ the worker zone (a group:
+  // provider, short model, effort, count), then what was loaded (which gives way to the zone). pi's session cost is off.
   const shape =
-    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?◐ Explore Audit(?: +MCP \d+  skills \d+)?$/;
+    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?◎ sol-fast◕ 1(?: +MCP \d+  skills \d+)?$/;
   for (const row of [claude, f.render()[0], codex]) {
     assert.match(stripAnsi(row), shape);
     assert.ok(visualWidth(row) <= 120 && !row.includes('\n'), 'one row that fits');
@@ -283,79 +285,142 @@ test('Claude subagents read type + the call description; a finished one carries 
   assert.match(claudeBar([agents[0]!], 62), /│ ◐ frontend-implementer$/);
 });
 
-test('HUD jobs read role + brief heading (else the package); two imps are two items; the run time is fixed', (t) => {
+/** A synthetic HUD job (a thin-job worker), for `workSignals`: an imp on gpt-6.2-sol-fast, running since 10 seconds ago. */
+const hudJob = (id: string, extra: Record<string, unknown> = {}) =>
+  ({
+    id: `thin-job:${id}`,
+    role: 'imp',
+    model: 'gpt-6.2-sol-fast',
+    provider: 'openai',
+    effort: 'high',
+    state: 'working',
+    startedAt: NOW - 10_000,
+    settledAt: null,
+    work: {},
+    ...extra,
+  }) as never;
+const hudLane = (label: string, workers: unknown[]) => ({ id: `thin-job:package:${label}`, label, workers }) as never;
+const zoneOf = (lanes: unknown[], width = 160, at = NOW, facts: Partial<BarFacts> = {}) =>
+  stripAnsi(
+    renderBar({ model: { name: 'M' }, ...facts, workers: workSignals(lanes as never, at).workers }, width, at).line
+  );
+
+test('worker zone: one group per provider, short model and effort with a count; sonic is `⚡N`; no title anywhere', (t) => {
   noColour(t);
-  const worker = (id: string, extra: Record<string, unknown>) =>
-    ({ id: `thin-job:${id}`, role: 'imp', startedAt: NOW - 10_000, settledAt: null, work: {}, ...extra }) as never;
-  const lane = (label: string, workers: unknown[]) => ({ id: `thin-job:package:${label}`, label, workers }) as never;
-  const finished = worker('cccccc', { briefTitle: 'Fix the panel', startedAt: NOW - 725_000, settledAt: NOW - 5_000 });
+  const heading = { briefTitle: 'Secret heading' };
   const lanes = [
-    lane('pkg-a', [worker('aaaaaa', { briefTitle: '状态栏TPS' })]),
-    lane('pkg-b', [worker('bbbbbb', {}), finished]),
+    hudLane('pkg-a', [
+      hudJob('a1', { ...heading, startedAt: NOW - 90_000 }),
+      hudJob('a2', { startedAt: NOW - 80_000 }),
+      hudJob('a3', { homeNeedsHuman: true, startedAt: NOW - 70_000 }),
+    ]),
+    hudLane('pkg-b', [
+      hudJob('b1', { role: 'general', model: 'gemini-4-neon-high', provider: 'google-vertex', startedAt: NOW - 40_000 }),
+      hudJob('b2', {
+        role: 'general',
+        model: 'gemini-4-neon-high',
+        provider: 'google-vertex',
+        state: 'failed',
+        startedAt: NOW - 50_000,
+        settledAt: NOW - 5_000,
+        work: { failed: true },
+      }),
+      hudJob('c1', { role: 'frontend', model: 'claude-sonnet-5-5', provider: 'anthropic', effort: 'xhigh' }),
+      ...[1, 2, 3].map((n) => hudJob(`s${n}`, { role: 'sonic', model: 'deepseek-v4-1-flash-1017', provider: 'deepseek' })),
+      hudJob('s4', { role: 'sonic', state: 'done', settledAt: NOW - 8_000, reportUnread: true }),
+    ]),
   ];
-  const zone = (jobs: unknown[], width = 160, at = NOW) =>
-    stripAnsi(renderBar({ model: { name: 'M' }, events: workSignals(jobs as never, NOW).events }, width, at).line);
-  // Two different imp jobs are two items; the finished one carries its run time, fixed at its end.
-  assert.equal(zone([lanes[0]!, lane('pkg-b', [finished])]), 'M │ [✓] imp Fix the panel 12m │ [◐] imp 状态栏TPS');
-  assert.equal(
-    zone([lanes[0]!, lane('pkg-b', [finished])], 160, NOW + 60_000),
-    'M │ [✓] imp Fix the panel 12m │ [◐] imp 状态栏TPS'
-  );
-  // No brief heading: the package names it.
-  assert.equal(zone([lanes[1]!]), 'M │ [✓] imp Fix the panel 12m │ [◐] imp pkg-b');
-  assert.doesNotMatch(zone(lanes), /sonnet|gpt|\[\d|×/);
-  // The same words of one kind group; a package label that only repeats the role or the job id says nothing.
-  assert.equal(
-    zone([lane('pkg-a', [worker('d1', { briefTitle: 'Same' }), worker('d2', { briefTitle: 'Same' })])]),
-    'M │ [◐] imp Same ×2'
-  );
-  assert.equal(zone([lane('imp', [worker('e1', {})]), lane('ffffff', [worker('ffffff', {})])]), 'M │ [◐] imp ×2');
+  // Groups in the order their oldest worker started (the imps 90 s ago, the generals 50 s, the frontend 10 s); sonic last.
+  const wide = '◎ sol-fast◕ 3 !  ▲ neon◕ 2 ✗  ✻ sonnet● 1  ⚡4 ✓●';
+  assert.equal(zoneOf(lanes), `M │ ${wide}`);
+  assert.doesNotMatch(zoneOf(lanes), /Secret|heading|imp|general|frontend|sonic|deepseek|\d+[sm]\b/);
+  // Neither the passing seconds nor a later paint change it while the same workers run.
+  assert.equal(zoneOf(lanes, 160, NOW + 5_000), zoneOf(lanes));
+  // The model goes first, then the effort: the marks and counts stay, groups merge so counts stay true, `⚡N` never shrinks.
+  assert.equal(zoneOf(lanes, 40), 'M │ ◎◕3 !  ▲◕2 ✗  ✻●1  ⚡4 ✓●');
+  assert.equal(zoneOf(lanes, 29), 'M │ ◎◕3 !  ▲◕2 ✗  ✻●1  ⚡4 ✓●');
+  assert.equal(zoneOf(lanes, 28), 'M │ ◎3 !  ▲2 ✗  ✻1  ⚡4 ✓●');
+  assert.equal(zoneOf(lanes, 160, NOW, { model: { name: 'M', effort: 'high' } }).slice(0, 14), 'M high │ ◎ sol');
+  // Two models of one provider and effort are one group once the name is gone.
+  const two = [hudLane('x', [hudJob('x1'), hudJob('x2', { model: 'gpt-6.2-astra' })])];
+  assert.equal(zoneOf(two), 'M │ ◎ sol-fast◕ 1  ◎ astra◕ 1');
+  assert.equal(zoneOf(two, 12), 'M │ ◎◕2');
 });
 
-/** A synthetic HUD job (a thin-job worker) and its lane, for `workSignals`. */
-const hudJob = (id: string, extra: Record<string, unknown> = {}) =>
-  ({ id: `thin-job:${id}`, role: 'imp', startedAt: NOW - 10_000, settledAt: null, work: {}, ...extra }) as never;
-const hudLane = (label: string, workers: unknown[]) => ({ id: `thin-job:package:${label}`, label, workers }) as never;
-
-test('a pinned need names its job; several: the first and +N, then `N needs`; nothing open, nothing pinned', (t) => {
+test('worker zone: a worker running for 30 minutes is still counted; a settled one stays three minutes; queued is not live', (t) => {
   noColour(t);
-  const asking = (id: string, briefTitle: string) => hudJob(id, { briefTitle, homeNeedsHuman: true });
-  const lanes = [
-    hudLane('pkg', [asking('aaaaaa', '首页修正'), asking('bbbbbb', 'Fix the panel'), asking('cccccc', '状态栏TPS')]),
-  ];
-  assert.deepEqual(workSignals(lanes, NOW).needs, [
-    'imp 首页修正 asks',
-    'imp Fix the panel asks',
-    'imp 状态栏TPS asks',
-  ]);
-  assert.deepEqual(workSignals([hudLane('pkg', [hudJob('dddddd')])], NOW).needs, []);
+  const long = hudJob('l1', { startedAt: NOW - 30 * 60_000 });
+  assert.equal(zoneOf([hudLane('p', [long])]), 'M │ ◎ sol-fast◕ 1');
+  assert.equal(zoneOf([hudLane('p', [long])], 160, NOW + 3 * 3_600_000), 'M │ ◎ sol-fast◕ 1');
+  const done = hudJob('d1', { state: 'done', settledAt: NOW - 120_000 });
+  assert.equal(zoneOf([hudLane('p', [done])]), 'M │ ◎ sol-fast◕ 1 ✓');
+  // Gone at three minutes: the census drops it, and so does a paint of a census read earlier.
+  assert.equal(zoneOf([hudLane('p', [done])], 160, NOW + 60_001), 'M');
+  const census = workSignals([hudLane('p', [done])], NOW);
+  assert.equal(stripAnsi(renderBar({ model: { name: 'M' }, workers: census.workers }, 160, NOW + 60_001).line), 'M');
+  assert.equal(zoneOf([hudLane('p', [hudJob('q1', { state: 'queued', startedAt: NOW - 60_000 })])]), 'M');
+  // A worker with no model says no model; one with no provider mark a dot, never a guess.
+  assert.equal(zoneOf([hudLane('p', [hudJob('u1', { model: undefined, provider: undefined, effort: undefined })])]), 'M │ ·1');
+  // An effort that is off shows no glyph.
+  assert.equal(zoneOf([hudLane('p', [hudJob('o1', { effort: 'off' })])]), 'M │ ◎ sol-fast 1');
+});
+
+test('worker zone marks: asking, failed, unread and read; a sonic child reports to its parent, not the bar', (t) => {
+  noColour(t);
+  const asking = (id: string) => hudJob(id, { homeNeedsHuman: true });
+  assert.equal(zoneOf([hudLane('p', [asking('a1')])]), 'M │ ◎ sol-fast◕ 1 !');
+  assert.equal(zoneOf([hudLane('p', [asking('a1'), asking('a2'), hudJob('a3')])]), 'M │ ◎ sol-fast◕ 3 !2');
+  const failed = hudJob('f1', { state: 'failed', settledAt: NOW - 5_000, work: { failed: true } });
+  assert.equal(zoneOf([hudLane('p', [failed])]), 'M │ ◎ sol-fast◕ 1 ✗');
+  const unread = hudJob('u1', { state: 'done', settledAt: NOW - 5_000, reportUnread: true });
+  assert.equal(zoneOf([hudLane('p', [unread])]), 'M │ ◎ sol-fast◕ 1 ✓●');
+  assert.equal(zoneOf([hudLane('p', [unread, { ...(unread as object), id: 'thin-job:u2' }])]), 'M │ ◎ sol-fast◕ 2 ✓●2');
+  // Every mark of one group stands in a fixed order.
+  assert.equal(zoneOf([hudLane('p', [asking('a1'), failed, unread, hudJob('r1', { state: 'done', settledAt: NOW - 9_000 })])]), 'M │ ◎ sol-fast◕ 4 ! ✗ ✓● ✓');
+  // A sonic child's report belongs to its parent: only a failure of it reaches the bar.
+  const child = hudJob('k1', { role: 'sonic', parentJobId: 'thin-job:p0', state: 'done', settledAt: NOW - 5_000 });
+  assert.equal(zoneOf([hudLane('p', [child])]), 'M');
+  assert.equal(
+    zoneOf([hudLane('p', [{ ...(child as object), state: 'failed', work: { failed: true } }])]),
+    'M │ ⚡1 ✗'
+  );
+  // The coloured bar paints an asking mark as the alert badge; the plain one needs no padding.
+  setDisplayConfig({ theme: 'terminal' });
+  const colour = (width: number) =>
+    renderBar({ model: { name: 'M' }, workers: workSignals([hudLane('p', [asking('a1')])] as never, NOW).workers }, width, NOW)
+      .line;
+  assert.match(colour(60), /\x1b\[1m1\x1b\[0m \x1b\[1;7;31m ! \x1b\[0m$/);
+});
+
+test('a pinned approval stays first and a worker asking is the `!` of its group; `N needs` when several do not fit', (t) => {
+  noColour(t);
   const loaded = { counts: [['MCP', 4]] as const };
+  const lanes = [hudLane('pkg', [hudJob('a1', { homeNeedsHuman: true }), hudJob('a2')])];
+  const workers = workSignals(lanes, NOW).workers;
   const bar = (needs: string[], width: number) =>
     stripAnsi(
       renderBar(
-        { model: { name: 'M', effort: 'high' }, context: { percent: 16, shown: '16%', window: 1e6 }, needs, loaded },
+        { model: { name: 'M', effort: 'high' }, context: { percent: 16, shown: '16%', window: 1e6 }, needs, workers, loaded },
         width,
         NOW
       ).line
     );
-  const three = workSignals(lanes, NOW).needs;
-  // Wide, with the vitals; medium, the vitals shortened; narrow, the count only.
-  assert.match(bar(three, 120), /^M high │ ██░░░░░░░░ 16%\/1M │ ! imp 首页修正 asks \+2 +MCP 4$/);
-  assert.match(bar(three, 44), /^M high │ 16%\/1M │ ! imp 首页修正 asks \+2$/);
-  assert.match(bar(three, 30), /^M high │ 16%\/1M │ ! 3 needs$/);
-  // One need says its job alone; Codex's approvals join the same list.
-  assert.match(bar(three.slice(0, 1), 120), /│ ! imp 首页修正 asks +MCP 4$/);
-  assert.match(bar(['Approve: Bash', ...three.slice(0, 1)], 120), /│ ! Approve: Bash \+1 +MCP 4$/);
-  assert.doesNotMatch(bar([], 120), /!/);
-  // The p10k capsule and a look say the same.
+  assert.match(bar([], 120), /^M high │ ██░░░░░░░░ 16%\/1M │ ◎ sol-fast◕ 2 ! +MCP 4$/);
+  const needs = ['Approve: Bash', 'Approve: Edit', 'Approve: Write'];
+  // The approval takes the first slot and the workers follow; narrower, the loaded cluster gives way for them.
+  assert.match(bar(needs, 120), /^M high │ ██░░░░░░░░ 16%\/1M │ ! Approve: Bash \+2 │ ◎ sol-fast◕ 2 ! +MCP 4$/);
+  assert.match(bar(needs.slice(0, 1), 120), /│ ! Approve: Bash │ ◎ sol-fast◕ 2 ! +MCP 4$/);
+  assert.match(bar(needs, 60), /^M high │ 16%\/1M │ ! Approve: Bash \+2 │ ◎ sol-fast◕ 2 !$/);
+  assert.match(bar(needs, 40), /! 3 needs │ ◎◕2 !$/);
+  assert.doesNotMatch(bar([], 120), /\bneeds\b|asks/);
+  // The p10k capsule and a look draw the same zone.
+  setDisplayConfig({ theme: 'terminal' });
   for (const style of ['p10k', 'gauge'] as const) {
     const draw = (width: number) =>
-      stripAnsi(renderBar({ model: { name: 'M' }, needs: three }, width, NOW, style).line).replace(
-        /[\ue0b0\ue0b2]/g,
-        ''
-      );
-    assert.match(draw(120), /! imp 首页修正 asks \+2/);
-    assert.match(draw(24), /! 3 needs/);
+      stripAnsi(renderBar({ model: { name: 'M' }, needs, workers }, width, NOW, style).line).replace(/[\ue0b0\ue0b2]/g, '');
+    assert.match(draw(120), /! Approve: Bash \+2.*◎ sol-fast◕ 2 !/, style);
+    assert.match(draw(36), /! Approve: Bash \+2.*◎◕2 !/, style);
+    assert.match(draw(24), /! 3 needs.*◎◕2 !/, style);
   }
 });
 
@@ -364,32 +429,22 @@ const claudeEvents = (a: { id: string; type: string; description: string; start:
   agentEvent('started', { id: a.id, name: a.type, title: a.description }, a.start),
 ];
 
-test('a HUD job and a Claude subagent differ in every look: a boxed mark `[◐]` against `◐`', (t) => {
+test('the worker zone and a Claude subagent stand side by side in the statusline and in every look', (t) => {
   noColour(t);
-  const jobs = workSignals([hudLane('pkg', [hudJob('aaaaaa', { briefTitle: '首页修正' })])], NOW);
+  const lanes = [hudLane('pkg', [hudJob('aaaaaa'), hudJob('bbbbbb', { role: 'sonic' })])];
+  const jobs = workSignals(lanes, NOW);
   const sub = { id: 'a', type: 'Explore', description: 'Find where notices are made', start: NOW - 20_000 };
-  assert.match(claudeBar([sub], 200, NOW, jobs), /│ \[◐\] imp 首页修正 │ ◐ Explore Find where notices are made/);
-  // Finished or failed, the same: the state glyph stays, boxed for the job.
-  const ended = workSignals(
-    [
-      hudLane('pkg', [
-        hudJob('bbbbbb', { briefTitle: 'Fix', settledAt: NOW - 5000 }),
-        hudJob('cccccc', { briefTitle: 'Bad', settledAt: NOW - 6000, work: { failed: true } }),
-      ]),
-    ],
-    NOW
-  );
-  assert.match(claudeBar([], 200, NOW, ended), /│ \[✓\] imp Fix 5s │ \[✗\] imp Bad 4s/);
+  assert.match(claudeBar([sub], 200, NOW, jobs), /│ ◎ sol-fast◕ 1  ⚡1 │ ◐ Explore Find where notices are made/);
   // Every look carries it, in icons text too.
   for (const icons of ['unicode', 'text'] as const) {
     const previous = setDisplayConfig({ theme: 'terminal', icons, barFields: ['model', 'notice'] });
     t.after(() => setDisplayConfig(previous));
     for (const style of BAR_STYLES) {
       const row = stripAnsi(
-        renderBar({ model: { name: 'M' }, events: [...jobs.events, ...claudeEvents(sub)] }, 120, NOW, style).line
+        renderBar({ model: { name: 'M' }, workers: jobs.workers, events: claudeEvents(sub) }, 120, NOW, style).line
       );
-      assert.match(row, /\[◐\] imp/, `${style}/${icons}`);
-      assert.match(row, /(^|[^\[])◐ Explore/, `${style}/${icons}`);
+      assert.match(row, icons === 'text' ? /OAI sol-fast◕ 1 +\* 1/ : /◎ sol-fast◕ 1 +⚡1/, `${style}/${icons}`);
+      assert.match(row, /◐ Explore/, `${style}/${icons}`);
     }
   }
 });
@@ -434,21 +489,21 @@ test('Codex subagents read name + task when known, with the run time they ended 
   assert.doesNotMatch(line, /sol|\[/);
 });
 
-test('a long title is cut at a word in the line and capsule looks; the role stays, then the title goes', (t) => {
+test('a long subagent title is cut at a word in the line and capsule looks; the type stays, then the title goes', (t) => {
   const previous = setDisplayConfig({ theme: 'terminal', barFields: ['model', 'notice'] });
   t.after(() => setDisplayConfig(previous));
   const events = [
-    agentEvent('done', { id: 'j', name: 'imp', title: 'Rework the notice zone of every bar' }, NOW - 1000, 754_000),
+    agentEvent('done', { id: 'j', name: 'Explore', title: 'Rework the notice zone of every bar' }, NOW - 1000, 754_000),
   ];
   for (const style of ['line', 'p10k'] as const) {
     const draw = (width: number) =>
       stripAnsi(renderBar({ model: { name: 'M' }, events }, width, NOW, style).line)
         .replace(/[\ue0b0\ue0b2]/g, '')
         .trim();
-    assert.match(draw(120), /✓ imp Rework the notice zone of every bar 12m$/);
-    assert.match(draw(30), /✓ imp Rework the… 12m$/);
-    assert.match(draw(18), /✓ imp 12m$/);
-    assert.match(draw(12), /✓ imp$/);
+    assert.match(draw(120), /✓ Explore Rework the notice zone of every bar 12m$/);
+    assert.match(draw(34), /✓ Explore Rework the… 12m$/);
+    assert.match(draw(22), /✓ Explore 12m$/);
+    assert.match(draw(16), /✓ Explore$/);
     for (let width = 1; width <= 60; width++) assert.ok(visualWidth(draw(width)) <= width);
   }
 });

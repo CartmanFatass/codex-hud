@@ -152,8 +152,18 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
         const terminal = input.terminal_width;
         if (!widthArgs.length && typeof terminal === 'number' && Number.isSafeInteger(terminal) && terminal > 0)
           width = Math.max(1, Math.min(500, terminal - (parity?.widthMargin ?? 0)));
-        if (!options.details) applyBarSettings();
-        return renderAntigravity(input, width, options);
+        if (options.details) return renderAntigravity(input, width, options);
+        applyBarSettings();
+        // The same worker zone as Claude's bar; a failed read leaves it out and the line stays.
+        const now = Date.now();
+        let work: ReturnType<typeof workSignals> | undefined;
+        try {
+          const scope = { project: null, pane: io.env.HERDR_PANE_ID ?? null };
+          work = workSignals(readThinJobs(getHudHome(io.env), scope, undefined, { settledBefore: now - NOTICE_MS }), now);
+        } catch {
+          work = undefined;
+        }
+        return renderAntigravity(input, width, options, work);
       }
       if (antigravityOnly || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
       const now = Date.now();

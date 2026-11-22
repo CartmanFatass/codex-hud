@@ -1,6 +1,6 @@
 /**
  * The default look's bar at the widths of a main pane beside the open panel, 144, 120, 100 and 80 columns: the vitals
- * keep their numbers, a job's name stays whole while its title gives way, and all three clients' paths fit.
+ * keep their numbers, the worker zone keeps its counts and marks while its words give way, and all three clients' paths fit.
  */
 
 import test from 'node:test';
@@ -33,20 +33,30 @@ test('pi quota golden rows stay English when the panel language is Chinese', (t)
       if (name.startsWith('pi-')) assert.deepEqual(rows, golden[width][name]);
 });
 
-test('a notice gives up its title before the vitals give up their numbers', () => {
+test('the worker zone gives up its model names, then its effort glyphs, and keeps its counts and marks', () => {
   const frames = widthFrames();
   for (const width of BAR_WIDTHS)
-    for (const scene of ['quiet', 'one', 'busy'] as const) {
+    for (const scene of ['quiet', 'one', 'busy', 'mixed'] as const) {
       const row = frames[String(width)]![scene]![0]!;
       for (const reading of ['opus-5.5', '41%', 'example', '62%'])
         assert.ok(row.includes(reading), `${scene} at ${width}: ${reading}`);
-      if (scene === 'one' || (scene === 'busy' && width >= 100))
-        assert.match(row, /\[✓●\] frontend-implementer/, `${scene} at ${width}: the job stays whole`);
+      // Nothing of a job's own words, ever: only marks, a short model, an effort glyph and a count.
+      assert.doesNotMatch(row, /frontend|general|sonic|imp\b|BAR-NARROW:/, `${scene} at ${width}`);
     }
-  // The output rate stays while the main pane is 120 columns or more, with or without notices.
+  const zone = (width: number, scene: string) => frames[String(width)]![scene]![0]!.split(' │ ').pop()!;
+  // Ten workers, four groups: whole at 144; the model names go at 120 and 100; the effort glyphs at 80. The counts add up to ten.
+  assert.match(zone(144, 'busy'), /^◎ sol-fast◕ 3 +! +▲ neon◕ 2 ✗ +✻ sonnet● 1 +⚡4 ✓●$/);
+  for (const width of [120, 100]) assert.match(zone(width, 'busy'), /^◎◕3 +! +▲◕2 ✗ +✻●1 +⚡4 ✓●$/, `busy at ${width}`);
+  assert.match(zone(80, 'busy'), /^◎3 +! +▲2 ✗ +✻1 +⚡4 ✓●$/);
+  // One worker: the same ladder.
+  for (const width of [144, 120, 100]) assert.match(zone(width, 'one'), /^◎ sol-fast◕ 1/, `one at ${width}`);
+  assert.match(zone(80, 'one'), /^◎◕1$/);
+  // The output rate stays while the main pane is 120 columns or more, with or without workers.
   for (const width of [144, 120])
-    for (const scene of ['quiet', 'one', 'busy']) assert.match(frames[String(width)]![scene]![0]!, /~42\.7 t\/s/);
-  // Two jobs show as two items down to 100 columns; at 80 the newest stays and the title is cut at a word.
-  assert.match(frames['100']!.busy![0]!, /◐ Explore .*\[✓●\] frontend-implementer/);
-  assert.doesNotMatch(frames['80']!.busy![0]!, /frontend-implementer/);
+    for (const scene of ['quiet', 'one', 'busy', 'mixed'])
+      assert.match(frames[String(width)]![scene]![0]!, /~42\.7 t\/s/);
+  // A subagent beside the zone keeps its type down to 80 columns; its title is the first to go.
+  assert.match(frames['144']!.mixed![0]!, /◐ Explore Audit bar fitting ladder$/);
+  for (const width of [120, 100, 80]) assert.match(frames[String(width)]!.mixed![0]!, /◐ Explore/, `mixed at ${width}`);
+  assert.doesNotMatch(frames['80']!.mixed![0]!, /Audit/);
 });

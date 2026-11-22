@@ -2,7 +2,7 @@
 import type { OwnerWorker, WorkLane } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { truncateAnsi } from './colors.js';
-import { agentEvent, askOf, NOTICE_MS, type BarEvent } from './layout/bar-fields.js';
+import { NOTICE_MS, type BarWorker } from './layout/bar-fields.js';
 const wordOf = (worker: OwnerWorker, now: number): string => {
   const state = projectWorkCard(worker, now).state;
   return worker.work?.failed
@@ -17,34 +17,40 @@ const wordOf = (worker: OwnerWorker, now: number): string => {
             ? 'running'
             : '';
 };
-/** What the bar's notice zone takes from the jobs: a question waiting for the person, and what each job just did. */
+/** What the bar's worker zone takes from the jobs: a census of the live workers and the settled ones of the last three minutes. */
 export interface WorkSignals {
-  needs: string[];
-  events: BarEvent[];
+  workers: BarWorker[];
 }
 export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignals {
-  const needs: string[] = [];
-  const events: BarEvent[] = [];
+  const workers: BarWorker[] = [];
   for (const lane of lanes)
     for (const worker of lane.workers) {
-      // The role and the brief's heading, else the package; a label that only repeats the role or the job id says nothing.
-      const label = lane.label === worker.role || worker.id.endsWith(lane.label) ? '' : lane.label;
-      const who = {
-        id: worker.id,
-        name: worker.role || 'job',
-        title: worker.briefTitle || label,
-        job: true as const,
-        unread: !worker.parentJobId && worker.reportUnread === true,
-      };
-      if (wordOf(worker, now) === 'needs you') needs.push(askOf(who));
-      if (worker.startedAt !== null && now - worker.startedAt < NOTICE_MS)
-        events.push(agentEvent('started', who, worker.startedAt));
-      if (worker.settledAt !== null && now - worker.settledAt < NOTICE_MS && (!worker.parentJobId || worker.work?.failed)) {
-        const ran = worker.startedAt === null ? undefined : worker.settledAt - worker.startedAt;
-        events.push(agentEvent(worker.work?.failed ? 'failed' : 'done', who, worker.settledAt, ran));
-      }
+      const live = worker.settledAt === null && worker.state !== 'queued';
+      // A settled worker keeps its place for NOTICE_MS; a sonic child's report goes to its parent, unless it failed.
+      const settled =
+        worker.settledAt !== null &&
+        now - worker.settledAt < NOTICE_MS &&
+        (!worker.parentJobId || worker.work?.failed === true);
+      if (!live && !settled) continue;
+      const state: BarWorker['state'] = live
+        ? wordOf(worker, now) === 'needs you'
+          ? 'asking'
+          : 'working'
+        : worker.work?.failed
+          ? 'failed'
+          : 'done';
+      workers.push({
+        role: worker.role || 'job',
+        ...(worker.model ? { model: worker.model } : {}),
+        ...(worker.provider ? { provider: worker.provider } : {}),
+        ...(worker.effort ? { effort: worker.effort } : {}),
+        state,
+        ...(settled && !worker.parentJobId && worker.reportUnread === true ? { unread: true as const } : {}),
+        startedAt: worker.startedAt ?? worker.settledAt ?? now,
+        ...(worker.settledAt !== null && settled ? { settledAt: worker.settledAt } : {}),
+      });
     }
-  return { needs, events };
+  return { workers };
 }
 export function renderWorkSummary(lanes: readonly WorkLane[], width: number, now: number): string {
   const counts = new Map<string, number>();

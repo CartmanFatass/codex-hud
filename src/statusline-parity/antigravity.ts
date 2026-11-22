@@ -1,4 +1,5 @@
 import { renderBar, type BarQuotaWindow } from '../render/layout/bar-fields.js';
+import type { WorkSignals } from '../render/work-summary.js';
 import { monitorText } from '../render/monitor-text.js';
 import { formatWindowLabel } from '../render/quota.js';
 import { renderStatuslineDetails } from '../render/statusline-details.js';
@@ -10,7 +11,12 @@ const percent = (value: unknown) =>
 const label = (value: unknown) =>
   typeof value === 'string' ? monitorText(value.slice(0, 256)).replace(/[\u2028\u2029]/g, ' ').trim() : '';
 
-export function renderAntigravity(input: unknown, width: number, options: StatuslineSessionOptions): string {
+export function renderAntigravity(
+  input: unknown,
+  width: number,
+  options: StatuslineSessionOptions,
+  work?: WorkSignals
+): string {
   const value = record(input), model = record(value.model), context = record(value.context_window);
   const id = label(model.id), displayName = label(model.display_name);
   const name = displayName || id;
@@ -52,5 +58,6 @@ export function renderAntigravity(input: unknown, width: number, options: Status
     context: used === undefined ? undefined : { percent: used, shown: `${used}%`, window },
     project: project ? { name: project, branch: null } : undefined,
     quota: windows.length ? { windows, trailing: true } : undefined,
+    workers: work?.workers,
   }, width).line;
 }

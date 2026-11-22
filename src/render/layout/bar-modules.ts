@@ -67,14 +67,12 @@ export function barFacts(data: HudData, nowMs: number): BarFacts {
             })),
           },
     tps: data.outputRate?.tokensPerSecond,
-    needs: [
-      ...alertParts(
-        collectAttention(data, nowMs).filter((item) => item.kind === 'approval'),
-        nowMs
-      ),
-      ...(data.work?.needs ?? []),
-    ],
-    events: [...(data.notices ?? []).map(eventOf), ...(data.work?.events ?? [])],
+    needs: alertParts(
+      collectAttention(data, nowMs).filter((item) => item.kind === 'approval'),
+      nowMs
+    ),
+    events: (data.notices ?? []).map(eventOf),
+    workers: data.work?.workers,
     loaded: {
       counts: [
         ['MCP', data.project.mcpCount],

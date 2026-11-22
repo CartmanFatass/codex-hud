@@ -36,3 +36,12 @@ Derived, not tabulated, from `src/models/models-catalog.json` through the existi
 - B's letter is the role's first letter; roles can collide (`frontend` and `flow`), so B needs a rule if chosen.
 - The ambiguous-width glyphs (`◎ ◕ ● ✻ ≋ ▲`) are one column as `visualLength` counts them, as the vitals' marks already are.
 - Not designed here: native subagents and skill loads, the Codex native footer's `workReminder`, the other six bar looks, light themes. Frame tests to rework: `bar-layout`, `bar-themes` (with `tests/fixtures/bar-themes.json`), `bar-widths`, `pi-footer`, `thin-job-scan`; the notice rules in `docs/reference.md` and `docs/reference.zh.md`.
+
+## As built (2026-11-22)
+
+Variant A with the owner's change: sonic shows no provider, model or effort, only `⚡` and its count (`⚡4`), after the other groups whatever its start time; its marks follow the count like any group's. Text icons draw `*` for `⚡` and the provider's ASCII tag (`OAI sol-fast◕ 3`, a space after a tag that has no name).
+
+- `src/render/work-summary.ts`: `workSignals` is the census, `{ workers }`: every live HUD job of the pane (queued ones are not live) and each settled one for three minutes (a sonic child's normal finish is not told; its failure is). `BarFacts.workers` carries it; paint judges the three minutes, so a cached census stays true.
+- `src/render/layout/bar-fields.ts`: `rosterSeg` makes the zone's three forms (full, no model name, no effort glyph); `LADDER`'s two `title` rungs step them, and room left over goes back a rung at a time. Approvals stay pinned before the groups and a subagent's events follow them.
+- `src/render/model-glyphs.ts`: `workerModelName`, the catalog rules of "Short model names"; `neon`, `carbon` and `gpt-6.2-sol-fast` are catalog entries now. A worker with no known vendor has a dim dot, `·`.
+- `hud-statusline` (Claude Code and Antigravity), the Codex bar and the pi footer draw it; the six other looks draw the same groups without further design; B's letter was not built; the Codex native footer's `workReminder` still says `HUD: imp asks`.

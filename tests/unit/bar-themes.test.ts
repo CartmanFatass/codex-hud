@@ -55,13 +55,13 @@ test('all six looks: busy 120-column golden frames, real Claude/pi/Codex paths a
   }
 });
 
-test('micro and triptych: width ladder at 160/120/80 on all clients and ribbon', (t) => {
+test('micro and triptych: width ladder at 200/120/80 on all clients and ribbon', (t) => {
   const f = scene(t);
   for (const style of ['micro', 'triptych'] as const) {
-    const frames = [160, 120, 80].map((width) => f.render(style, width));
+    const frames = [200, 120, 80].map((width) => f.render(style, width));
     for (const [i, frame] of frames.entries())
       for (const rows of Object.values(frame))
-        for (const row of rows) assert.ok(visualWidth(row) <= [160, 120, 80][i]!, style);
+        for (const row of rows) assert.ok(visualWidth(row) <= [200, 120, 80][i]!, style);
     for (const client of ['claude', 'pi', 'codex'] as const) {
       const wide = frames[0]![client].map(stripAnsi).join(' '),
         narrow = frames[2]![client].map(stripAnsi).join(' ');

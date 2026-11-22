@@ -345,10 +345,13 @@ change-summary generator runs.
 
 All three bars collect `BarFacts`; `render/layout/bar-fields.ts` fits and paints
 model/effort, context, repo/branch, client quota (pi cost in its ribbon), output rate
-(Claude and Codex; pi keeps its ribbon reading), event notices and loaded counts.
-Missing facts disappear. Notices retain starts/completions/failures and Claude skill loads
-for three minutes, with open questions/approvals pinned. No tool-at-work line or clock
-appears in the bar. Styles are line,
+(Claude and Codex; pi keeps its ribbon reading), the notice zone and loaded counts.
+Missing facts disappear. The zone counts the HUD's workers (`work-summary.ts` makes the census
+of live jobs plus the settled ones of the last three minutes; `bar-fields.ts` groups them by provider
+mark, catalog short model and effort glyph, sonic as `⚡N`; no job title appears in the bar), then
+retains subagent starts/completions/failures and Claude skill loads for three minutes, with
+approvals pinned. The `title` rungs of `LADDER` narrow the groups (model name, then effort glyph).
+No tool-at-work line or clock appears in the bar. Styles are line,
 p10k, gauge, tide, micro, stacked, headline and triptych; Stacked is two rows in
 Claude/pi, with the one-row Codex pane falling back to line.
 

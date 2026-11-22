@@ -393,7 +393,9 @@ test('statusline notices and explicit detail counts read job folders with no rol
   });
   const result = run();
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /! imp thin job cards in the panel asks/, 'shared bar pins the asking job by name, not a count');
+  // The three live imps in this pane (another pane's, settled and old ones stay out): one asking, two on another model.
+  assert.match(stripAnsi(result.stdout), /│ ◎ sol◕ 1 +! +ℤ glm◆ 2\s*$/, 'the shared bar counts live workers by provider and model; the asking one is a mark');
+  assert.doesNotMatch(result.stdout, /thin job cards|asks|imp/, 'no job title or role in the zone');
   const details = run(['--details']);
   assert.equal(details.status, 0, details.stderr);
   // A settled job is done, read or not: no "report ready" count.

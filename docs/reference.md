@@ -1116,19 +1116,25 @@ Context is ten cells, green below 70%, yellow from 70%, red from 85%, measured
 against the client's compaction window when known. Claude/Codex show only their
 own tightest quota window, blue then magenta from 75%, red from 90%; pi has session
 cost instead (in its top-right editor ribbon, not duplicated below). Missing facts
-are absent. Agent/job start/done/failure and Claude skill-load notices stay three
-minutes. An agent or job item names the work, never the model: its type or role and what it
-works on (`[◐] imp 状态栏TPS`; a Claude subagent's Agent-call description, a HUD job's brief
-heading else its package, a Codex subagent's label or task; left out when unknown), and a
-finished or failed one how long it ran, fixed when it ended (`[✓] imp 状态栏TPS 12m`). `×n`
-groups the same kind with the same words; the title is cut at 36 columns, then at a word
-on narrow bars, before the item goes, and the type stays. A HUD job (its own tab) wears a boxed mark, `[◐]` `[✓]` `[✗]`, a
-subagent inside the session a bare one; a settled job whose report is unread has a dot in it, `[✓●]`, until `hud_read` reads it.
-Open approvals and job questions are pinned, the first one named (`! imp 首页修正 asks`) and `+2` for the others, `! 3 needs`
-when even that does not fit; nothing open, nothing pinned. No clock, task count, hooks count, tool-at-work or idle fallback.
+are absent. The notice zone is, in order: what needs the owner, the HUD's workers, then what the client itself
+tells (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
+
+The workers are counts and marks, never titles: one group per provider mark, short model and thinking glyph, with the
+number of workers in it, oldest group first (`◎ sol-fast◕ 3  ▲ neon◕ 2  ✻ sonnet● 1  ⚡4`). sonic shows no provider, model
+or effort, only `⚡N`, and stands last. The zone reads a census of this pane's live jobs, so a worker that runs for hours is
+still counted; a settled one stays three minutes; a queued one is not counted. The provider mark and its colour are the
+model field's (a worker with no known provider has a dot, `·`). The short model name is read from the model catalog, not a
+second table: a family is its id less the version (`sol`, `sol-fast`, `astra`); else the entry's alias or digit-free id
+(`opus`, `haiku`); else a Gemini codename (`neon`, `carbon`); else the vendor's tag (`ds`, `glm`, `mis`). The thinking glyph
+is `○ ◐ ◕ ● ◆ ✦` for low to ultra, none for off or unknown. After the count, a mark says what is not plain working: `!` the
+bar's alert badge, for a worker asking the owner (`!2` for two), until it is answered; `✗` failed; `✓●` finished with its
+report unread, until `hud_read` reads it; `✓` finished and read. A sonic child's own finish is not shown (its report goes
+to its parent), its failure is. Open approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others,
+`! 3 needs` when even that does not fit; nothing open, nothing pinned. No clock, task count, hooks count, tool-at-work or
+idle fallback.
 
 - Claude statusline: `~N t/s` estimates the latest response from transcript output tokens and elapsed time since its prompt or tool result.
-- Antigravity statusline: the same `hud-statusline` command shows its model, context and recognized quota readings (`5h 80% left`), without reading its transcript or forwarding its payload. `--details --lang en|zh` also shows reported input and output totals. The Linux launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws; a change may appear on the next refresh rather than immediately.
+- Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same worker zone (this pane's jobs, read as Claude's is), without reading its transcript or forwarding its payload. `--details --lang en|zh` also shows reported input and output totals. The Linux launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws; a change may appear on the next refresh rather than immediately.
 - Codex bar: `~N t/s` shows the existing output-rate estimate from the rollout.
 
 Settings Bar style: `line`, `p10k`, `gauge` (Gauge Plates), `tide`, `micro`, `stacked`,
@@ -1137,12 +1143,13 @@ Tide tints need truecolor. Text icons/none keep meanings without colour. `barFie
 selects from `model,context,project,quota,tps,notice,loaded` without reordering them.
 If you use a field allowlist, include `tps` to show the rate. Narrow bars (a main pane beside
 the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts;
-both gauges' cells together; the quota's reset and the branch's `↑n`; a notice's title (a few words,
-then none); the rate; the older of two notices; the effort; the context's window (`41%`); the branch;
-the quota; the project; the context. The model is never dropped, a job's role stays whole, and the
-numbers keep their forms while a job starts: it takes room from titles, which take back what is left.
-pi's ribbon follows the look;
-other extensions' statuses remain visible. The bars stay English-only apart from a job's own title.
+both gauges' cells together; the quota's reset and the branch's `↑n`; the workers' model names, then their
+thinking glyphs (a subagent's title, a few words and then none, goes with them); the rate; the older of two
+subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context. The
+model is never dropped. The groups merge as the words go, so the counts stay true, and the marks and `⚡N` never
+shrink; the numbers keep their forms while a worker starts, which takes room from the extras and the zone's words, and
+what is left goes back to the zone one step at a time. pi's ribbon follows the look;
+other extensions' statuses remain visible. The bars stay English-only apart from a subagent's own description.
 
 ### EXP · Codex native status line (experimental)
 

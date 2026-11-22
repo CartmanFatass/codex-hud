@@ -137,6 +137,8 @@ export function parityFixture(row: ParityRow, host = parityHost) {
           JSON.stringify({
             job: id,
             role: 'imp',
+            model: 'gpt-6.2-sol-fast',
+            thinking: 'high',
             herdr_pane: env.HERDR_PANE_ID,
             created_at: new Date(FOOTER_NOW).toISOString(),
           })

@@ -2,11 +2,17 @@
  * The default look's bars at the widths a main pane has beside the open panel (BAR-NARROW): 184 columns less the
  * 40-column panel is 144, then smaller windows 120, 100 and 80. Plain text, synthetic facts only.
  */
-import { renderBar, agentEvent, type BarFacts, type BarQuotaWindow } from '../../dist/render/layout/bar-fields.js';
+import {
+  renderBar,
+  agentEvent,
+  type BarFacts,
+  type BarQuotaWindow,
+  type BarWorker,
+} from '../../dist/render/layout/bar-fields.js';
 import { renderPiBar } from '../../dist/harness/pi/p10k-footer.js';
 import { setDisplayConfig, BAR_FIELDS } from '../../dist/render/hud-config.js';
 import { stripAnsi } from '../../dist/render/colors.js';
-import { barThemeScene, THEME_NOW } from './bar-themes.js';
+import { barThemeScene, THEME_NOW, worker } from './bar-themes.js';
 
 export const BAR_WIDTHS = [144, 120, 100, 80] as const;
 export const PI_QUOTA_WIDTHS = [144, 120, 80, 36] as const;
@@ -65,24 +71,33 @@ const vitals: BarFacts = {
     ],
   },
 };
-const job = agentEvent(
-  'done',
-  {
-    id: 'j',
-    name: 'frontend-implementer',
-    title: 'BAR-NARROW: the bottom bar reads well beside the panel',
-    job: true,
+/** The worker-zone design sample's busy scenario: ten workers in four groups; one asking, one failed, one finished unread. */
+export const BUSY_WORKERS: BarWorker[] = [
+  worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high'),
+  worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high', 'working', { startedAt: THEME_NOW - 590_000 }),
+  worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high', 'asking', { startedAt: THEME_NOW - 580_000 }),
+  worker('general', 'gemini-4-neon-high', 'google-vertex', 'high', 'working', { startedAt: THEME_NOW - 500_000 }),
+  worker('general', 'gemini-4-neon-high', 'google-vertex', 'high', 'failed', {
+    startedAt: THEME_NOW - 400_000,
+    settledAt: THEME_NOW - 30_000,
+  }),
+  ...[1, 2, 3].map((n) =>
+    worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'working', { startedAt: THEME_NOW - n * 10_000 })
+  ),
+  worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'done', {
+    startedAt: THEME_NOW - 100_000,
+    settledAt: THEME_NOW - 20_000,
     unread: true,
-  },
-  THEME_NOW - 20_000,
-  754_000
-);
+  }),
+  worker('frontend', 'claude-sonnet-5-5', 'anthropic', 'xhigh', 'working', { startedAt: THEME_NOW - 300_000 }),
+];
 const sub = agentEvent('started', { id: 'a', name: 'Explore', title: 'Audit bar fitting ladder' }, THEME_NOW - 10_000);
-/** Idle; one settled job with an unread report; that job and a subagent that just started. */
+/** Idle; one worker running; the sample's ten workers; those and a subagent that just started. */
 const WIDTH_SCENES: Record<string, BarFacts> = {
   quiet: vitals,
-  one: { ...vitals, events: [job] },
-  busy: { ...vitals, events: [sub, job] },
+  one: { ...vitals, workers: BUSY_WORKERS.slice(0, 1) },
+  busy: { ...vitals, workers: BUSY_WORKERS },
+  mixed: { ...vitals, workers: BUSY_WORKERS, events: [sub] },
 };
 
 /** Per width: the three scenes through `renderBar`, and the real Claude, pi and Codex paths of the themes' scene. */
