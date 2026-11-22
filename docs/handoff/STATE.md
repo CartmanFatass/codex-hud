@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · FLOWS · FLOWS-05 · Implemented flows/05 (commit 362a8b3d): EN/ZH land & scout flow steps on cards, sonic from_jobs prefix, updated docs & hud-delegate; unit 92/92, mjs 1055/1055,… (98150a6ef54b41adb5355812da8d6b98c069a2fe)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-08 · closing a job during startup leaves it stopped, and a stop-requested job whose worker died settles on the next watcher pass (e0290351)
 - try · FLOWS · FLOWS-02/03 · a failed hud_land gate goes back to the source imp for a repair (at most two rounds) and a landing marks its ticket ready-for-human and adds the STATE slice row (45645928; landed by hand: the land range bug is in dogfood-fixes/09)
 - try · FLOWS · FLOWS-04 · scouted dispatch: hud_create can send a sonic first to collect a fact dossier, then starts the real job with the dossier as context (f1de3c93; second live hud_land after a retry)
