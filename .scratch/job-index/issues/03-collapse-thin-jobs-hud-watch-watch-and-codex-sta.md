@@ -9,3 +9,5 @@
 - [x] Codex statusline reminder dot still clears after reading a job; net lines removed
 
 ## Comments
+
+- Landed 6a4c18693d7ec15fa47d81e81ef6e5dcafab5417; gate 5/5 passed.
