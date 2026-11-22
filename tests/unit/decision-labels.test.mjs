@@ -18,6 +18,7 @@ import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
 import { saveSettings } from '../../dist-test/src/settings.js';
 import { parserReport, checkFailed, probeNotDone, migrationReport, approvalNeeded } from '../helpers/report-summary-fixtures.mjs';
+import { waitFor } from '../helpers/wait-for.mjs';
 
 const pause = () => new Promise((r) => setTimeout(r, 5));
 const empty = (workers = [], decisions = []) => ({ revision: '1', coverage: { incomplete: false, diagnostics: [], workspace: null },
@@ -65,9 +66,16 @@ function fixture(t, keys = { GEMINI_API_KEY: 'synthetic-gemini', OPENAI_API_KEY:
   };
   f.open = () => { f.service = new DecisionLabels(dir, () => {}, env, f.fetch, () => f.now); f.service.configure(true, f.cap ?? 60); };
   f.open();
-  f.pump = async (board = f.board, tree, rounds = 16) => {
-    for (let i = 0; i < rounds; i++) { f.service.update(board(), home, tree); await pause(); }
-    return f.service.apply(board());
+  f.pump = async (board = f.board, tree) => {
+    const source = board();
+    // update starts at most one label. Drain one at a time until an update starts none.
+    // The change callback does not fire on failure, no key, or a refused reservation.
+    await waitFor(() => {
+      if (f.service.active) return false;
+      f.service.update(source, home, tree);
+      return !f.service.active;
+    }, 'Decision labels did not become idle');
+    return f.service.apply(source);
   };
   const previous = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
   t.after(async () => { f.service.stop(); await pause(); setDisplayConfig(previous); fs.rmSync(home, { recursive: true, force: true }); });
@@ -166,7 +174,8 @@ test('04: HUD job uses the same public activity input as its sentence', async (t
     outbound = JSON.parse(init.body).messages[1].content; return new Response(JSON.stringify({ choices: [{ message: { content: 'Checking commands.' } }] }));
   } }); model.configure({ backend: 'api' });
   const sentences = new JobSentences(model, join(f.dir, 'sentences.json'), () => {}, () => f.now);
-  sentences.configure(true, 'en'); sentences.update(f.board(), f.home); await pause();
+  sentences.configure(true, 'en'); sentences.update(f.board(), f.home);
+  await waitFor(() => outbound !== undefined, 'Job sentence did not reach fetch');
   assert.match(outbound, /failed command/); assert.match(outbound, /exit=1/); assert.doesNotMatch(outbound, /PRIVATE-REASONING/);
   sentences.stop(); model.cancelAll();
 });
@@ -257,9 +266,12 @@ test('cached overlays/repaints do no file or model I/O; parallel panels coalesce
   const peer = new DecisionLabels(f.dir, () => {}, { HUD_HOME: f.home, GEMINI_API_KEY: 'synthetic' }, f.fetch, () => f.now);
   peer.configure(true, 60);
   t.after(() => peer.stop());
-  for (let i = 0; i < 20; i++) {
-    f.service.update(f.board(), f.home); peer.update(f.board(), f.home); await pause();
-  }
+  const pending = f.pump();
+  peer.update(f.board(), f.home); // Start the peer while the first panel's decision is pending.
+  await pending;
+  await waitFor(() => !peer.active, 'Peer decision did not become idle');
+  peer.update(f.board(), f.home); // Pick up the shared result if the first update had to wait.
+  await waitFor(() => !peer.active, 'Peer did not pick up the shared decision');
   assert.equal(f.calls.length, 1);
   assert.equal(peer.apply(f.board()).workers[0].labels.outcome.value, 'partial');
   const board = f.board();

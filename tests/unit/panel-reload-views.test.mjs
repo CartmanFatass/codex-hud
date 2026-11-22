@@ -18,8 +18,10 @@ for (const bound of [false, true]) for (const view of ['project', 'help', 'inspe
   await until(() => f.output().includes('models off') || f.output().includes('Home ›') || f.output().includes('Help'), 'first collected view did not render');
   for (let generation = 1; generation <= 2; generation++) {
     f.appendBuild(`\n// ${view} build ${generation}`);
-    await until(() => f.events().filter((e) => e.start).length === generation + 1, `${view} did not restart`);
-    await delay(300);
+    // The start event precedes PanelReload construction. Wait for the replacement
+    // to enter its alternate screen so the next edit cannot become its baseline.
+    await until(() => f.events().filter((e) => e.start).length === generation + 1 &&
+      f.output().match(/\x1b\[\?1049h/g)?.length === generation + 1, `${view} did not restart`);
     const { schemaVersion, stateV2: state } = f.restarts()[generation - 1].restart;
     assert.equal(schemaVersion, 2);
     assert.equal(state.activeTab, view === 'project' ? 'project' : 'home');

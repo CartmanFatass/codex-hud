@@ -12,6 +12,7 @@ import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist-test/src/settings.js';
 import { SETTING_ROWS, handleSettingsInput, resetSettingsGroup, renderSettingsPage } from '../../dist-test/src/render/settings-page.js';
+import { waitFor } from '../helpers/wait-for.mjs';
 const NOW = Date.parse('2030-01-15T12:00:00Z');
 const pause = () => new Promise((r) => setTimeout(r, 5));
 function fixture(t, keys = true) {
@@ -65,7 +66,9 @@ function fixture(t, keys = true) {
     return { revision: '1', lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions), coverage: { incomplete: false, diagnostics: [], workspace: null } };
   };
   f.pump = async (board = f.board()) => {
-    for (let i = 0; i < 20; i++) { f.service.update(board); await pause(); }
+    f.service.update(board);
+    // Ranking and the brief finish independently, including failures that never notify.
+    await waitFor(() => !f.service.active && !f.service.brief, 'Home ranking and brief did not become idle');
     return f.service.apply(board);
   };
   f.render = (board, width = 80, lang = 'en', all = false) => {
@@ -168,10 +171,13 @@ test('changed sentences refresh only the independent brief after the Summary int
   let release;
   f.briefHold = new Promise((resolve) => { release = resolve; });
   f.now++;
-  const pending = await f.pump(changed);
-  assert.equal(pending.homeBrief, previous, 'old brief stays while the replacement is in flight');
-  assert.equal(f.briefs.length, 2);
-  release();
+  try {
+    f.service.update(changed);
+    await waitFor(() => f.briefs.length >= 2, 'Replacement brief did not reach fetch');
+    const pending = f.service.apply(changed);
+    assert.equal(pending.homeBrief, previous, 'old brief stays while the replacement is in flight');
+    assert.equal(f.briefs.length, 2);
+  } finally { release(); }
   const result = await f.pump(changed);
   assert.equal(f.briefs.length, 2); assert.equal(f.calls.length, 1);
   assert.equal(result.homeBrief, f.text.trim());
@@ -249,9 +255,12 @@ test('never blocks a frame; off cancels late ranking/brief results', async (t) =
   const f = fixture(t); f.job(1);
   let release; f.hold = new Promise((r) => { release = r; });
   const source = f.board(); f.service.update(source);
-  assert.equal(f.service.apply(source), source);
-  for (let i = 0; i < 50 && !f.calls.length; i++) await pause();
-  f.configure(false); release(); await pause(); await pause();
+  try {
+    assert.equal(f.service.apply(source), source);
+    await waitFor(() => f.calls.length > 0, 'Ranking did not reach fetch');
+    f.configure(false);
+  } finally { release(); }
+  await waitFor(() => !f.service.active && !f.model.active, 'Cancelled ranking and brief did not finish');
   assert.equal(f.service.apply(source), source);
   const attempts = f.briefs.length;
   await f.pump(source); assert.equal(f.briefs.length, attempts, 'off never submits another brief');
