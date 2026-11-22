@@ -11,6 +11,7 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 - 首页进度设计（docs/design/home-progress/，示例 sample.html 已在 Chrome 打开）：选推荐方案还是备选，并回答 README §6 的 5 个问题；选定后按 4 个切片开工（waits on DESIGN-HOME-PROGRESS）
 - 试用 agy 适配：`./install --with agy`，开一个新的 agy 会话，看底部状态行，并在 agy 里 hud_create 一个 imp（waits on AGY-ADAPTER-01, AGY-ADAPTER-02, AGY-ADAPTER-03, AGY-ADAPTER-04）
+- orch 负载优化（docs/llm/orch-load-2026-11-22.md）：选择要做的排名项，并回答 5 个问题（合入外包给 sonic、hud_read 摘要模式、面板优先沟通、批量 MCP 调用、仓库级 Claude 设置）（waits on ORCH-LOAD）
 
 ## Next
 
@@ -41,7 +42,7 @@ board counts these; update at every landing or decision. -->
 - try · REPORT-SUMMARY · REPORT-SUMMARY-02 · hud_report (Claude, Codex, pi; hud-progress --done) takes an optional one-line summary and file list, asked for in the tool's own text (no role-text change); saved to report-meta.json bound to the report, before the done receipt; nothing reads it until 03 (9b888e4d)
 - try · CODE-HEALTH · MONITOR-STATE-01 · neon 04 S1: one overlay state replaces seven modal flags; `/` filter, `g`, Control's Add back draft and stop confirmation survive (or delay) an automatic panel reload; dead MonitorState fields removed; frames unchanged (bfc8677d)
 - todo · MCP-ORCH · IMP-MODEL-COST · owner 2026-11-22: imp's default is now openai/gpt-6.2-astra high (preset astra, from 11:43Z; before: 6.2-sol high, then 6.2-sol-fast); once every open ticket has landed, compare average time and cost per imp task across the three (pi session usage.cost)
-- working · MCP-ORCH · ORCH-LOAD · owner 2026-11-22: where a Claude orchestrator session's context and tokens go and how to cut them; general on agy gemini-4-carbon-high measures the orch transcripts (aggregates only, tmp/tasks/ORCH-LOAD/) and ranks HUD/workflow/config optimizations
+- try · MCP-ORCH · ORCH-LOAD · read docs/llm/orch-load-2026-11-22.md: ~73% of orch turns are chores (search 32%, land/test/poll 25%, STATE/tickets 6%, full reports 6%) and 30% of context is fixed schema/skill overhead; 10 ranked cuts (~80% fewer Opus tokens if ranks 1–8 land) and 5 questions (d61876c7)
 - try · PANEL · DESIGN-HOME-PROGRESS · open docs/design/home-progress/sample.html: the proposed Home in zh and en (milestone bar, one ticket meter, planned features folded into one row, failed jobs leave once retried); README has the diagnosis, 4 slices and 5 questions; pick before any build (3cf299cc)
 - try · CODE-HEALTH · ASYNC-WATCH-03 · hud_create/hud_send answer at once even when herdr is slow (synthetic: create 4.4 s → 0.5 s, send 2.1 s → 0.06 s); a worker's other MCP calls keep answering while hud_ask delivers; `hud watch --queue` stops in ~0.3 s even if codex queue hangs (b8981a9f)
 - try · CODE-HEALTH · ASYNC-WATCH-02 · hud_close on a CLI worker stops it in ~0.1 s even when herdr hangs, with no Decision API call; closing a worker's tab while it runs /quit records closed, not failed (f644b00a)
