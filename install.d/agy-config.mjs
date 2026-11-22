@@ -107,6 +107,10 @@ function writeAtomic(target, text, mode) {
   }
 }
 
+// agy leaves an empty config file behind when it has nothing to write; that is
+// an empty object, not a malformed document.
+const objectText = (text) => (text === undefined || text.trim() === '' ? '{}\n' : text);
+
 function readConfig(file) {
   const target = exists(file) ? fs.realpathSync(file) : file;
   const before = exists(target) ? read(target) : undefined;
@@ -115,8 +119,8 @@ function readConfig(file) {
   try {
     return {
       target, before, backup, baseline,
-      live: new JsonText(before ?? '{}\n'),
-      original: new JsonText(baseline || '{}\n'),
+      live: new JsonText(objectText(before)),
+      original: new JsonText(objectText(baseline)),
     };
   } catch {
     throw new Error(`${file}: expected a valid JSON object (including any HUD backup)`);
@@ -125,11 +129,12 @@ function readConfig(file) {
 
 function save(config, installing, keepBackup = false) {
   const { target, before, backup, baseline, live } = config;
-  if (live.text !== (before ?? '{}\n')) {
+  if (live.text !== objectText(before)) {
     if (installing && !exists(backup)) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      // An empty backup records that the config file did not exist.
-      fs.writeFileSync(backup, before ?? '', { mode: 0o600, flag: 'wx' });
+      // An empty backup records that the config file did not exist; a blank
+      // file is recorded as an empty object so uninstall leaves it in place.
+      fs.writeFileSync(backup, before === undefined ? '' : objectText(before), { mode: 0o600, flag: 'wx' });
     }
     if (!installing && baseline === '' && live.text === '{}\n') {
       fs.unlinkSync(target);

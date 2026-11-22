@@ -157,3 +157,23 @@ test('agy preflight refuses a missing CLI and install rejects an unexpected stag
   assert.match(run([], 1), /agy is required/);
   assert.equal(exists(path.join(bin, 'hud')), false);
 });
+
+test('agy reads an empty config file as an empty object and leaves it on uninstall', (t) => {
+  // agy creates mcp_config.json empty when it has no servers; hooks can be empty too.
+  const { files, bin, run } = fixture(t, { settings: '{}\n', hooks: '', mcp: '' });
+  run();
+  const settings = json(files.settings);
+  assert.deepEqual(settings.permissions.allow, ['mcp(hud/*)']);
+  assert.deepEqual(settings.statusLine, { type: 'command', command: path.join(bin, 'hud-statusline') });
+  assert.equal(json(files.hooks).hud.PreInvocation[0].type, 'command');
+  assert.deepEqual(json(files.mcp).mcpServers, {
+    hud: { command: path.join(bin, 'hud-mcp'), disabled: false, env: { HUD_MCP_SURFACE: 'roles' } },
+  });
+  run(['--uninstall']);
+  for (const key of ['hooks', 'mcp']) {
+    assert.equal(exists(files[key]), true, `${key} existed before the install`);
+    assert.equal(read(files[key]), '{}\n', key);
+    assert.equal(fs.statSync(files[key]).mode & 0o777, 0o640, key);
+  }
+  assert.equal(read(files.settings), '{}\n');
+});
