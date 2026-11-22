@@ -262,7 +262,8 @@ async function reapJob(entry, { id, dir, job, status, session, tab, retry, readI
 }
 function startReap(job) {
   const { id, tab, ownership, readInGrace, resumeReadReap, retry } = job;
-  const entry = { tab, ownership, readClose: Boolean(readInGrace || resumeReadReap),
+  const busy = [job.job?.worktree?.root, job.job?.cwd].filter(Boolean);
+  const entry = { tab, ownership, readClose: Boolean(readInGrace || resumeReadReap), busy,
     phase: 'preflight', controller: new AbortController() };
   let rescan = true;
   entry.promise = Promise.resolve().then(() => reapJob(entry, job)).then((again) => { rescan = again; }).catch((error) => {
@@ -285,6 +286,11 @@ function scan(retryWatch = false) {
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   seen.clear();
   const baseHeads = new Map();
+  const busyWorktrees = new Set(), worktreeChecks = [];
+  const markBusy = (job) => {
+    if (job?.worktree?.root) busyWorktrees.add(job.worktree.root);
+    if (job?.cwd) busyWorktrees.add(job.cwd);
+  };
   let rechecks = 0;
   let open = false,
     safetyCheck = false,
@@ -295,6 +301,7 @@ function scan(retryWatch = false) {
     try {
       const active = inFlightReaps.get(id);
       if (active) {
+        for (const root of active.busy) busyWorktrees.add(root);
         if (active.phase === 'preflight') {
           safetyCheck = true;
           if (closedTabs.has(active.tab)) active.controller.abort();
@@ -363,21 +370,23 @@ function scan(retryWatch = false) {
       }
       // A persisted launch without STATUS is still open until dispatch returns.
       if (!status) {
-        if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
+        if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) { open = true; markBusy(job); }
         continue;
       }
-      if (checksOpen(id, dir, job, status)) { open = safetyCheck = true; continue; }
+      if (checksOpen(id, dir, job, status)) { open = safetyCheck = true; markBusy(job); continue; }
       safetyCheck ||= Boolean(retry?.readClose && retry.at !== Infinity); // The root may still exit after report eligibility changes.
       // Once the recorded tab or root is gone, retry that owner's cleanup without an agent preflight.
       const resumeReadReap = retry?.readClose && (closedTabs.has(tab) || workerTreeRootGone(status.pid, status.pid_start_time));
       let readInGrace = null;
       if (!resumeReadReap && status.state === 'idle_grace') {
         open = true;
+        markBusy(job);
         // Pi owns the unread deadline. CLI grace always goes through its supervisor.
         if (!tab || !(readInGrace = readCloseTurn(dir, job, status))) continue;
       }
       if (!resumeReadReap && (status.state === 'working' || status.state?.startsWith('waiting'))) {
         open = true;
+        markBusy(job);
         continue;
       }
       const readClose = Boolean(resumeReadReap || readInGrace);
@@ -396,10 +405,11 @@ function scan(retryWatch = false) {
       // A land helper owns its checkout and receipt through push and cleanup, across watcher restarts.
       const land = job?.worktree && landAttempt(home, id).prior;
       const landing = land && activeLand(land);
-      if (landing) open = safetyCheck = true;
+      if (landing) { open = safetyCheck = true; markBusy(job); }
+      const worktreeSafe = Boolean(job?.reaped_at || (!session && job?.dispatch_exit_code > 0));
+      if (!worktreeSafe) markBusy(job);
       // With a tab, wait for successful reap; without a session, only a finished failed launch is safe.
-      if ((job?.reaped_at || (!session && job?.dispatch_exit_code > 0)) &&
-          !landing && job.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
+      if (worktreeSafe && !landing && job.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
         const root = job.worktree.main_root;
         let pending = !job.worktree_kept_reason;
         // Only a clean, unpicked result has a checked HEAD. Don't spawn Git for an unchanged base.
@@ -409,12 +419,7 @@ function scan(retryWatch = false) {
           pending = head && head !== job.worktree_checked_head;
         }
         if (pending) {
-          const at = worktreeRetries.get(id);
-          if (at > Date.now()) nearest = Math.min(nearest, at);
-          else if (!worktreeLocks.has(root) && (!job.worktree_checked_head || rechecks < 4)) {
-            if (job.worktree_checked_head) rechecks++;
-            startWorktree(id, jobFile, job);
-          }
+          worktreeChecks.push({ id, jobFile, job, root });
           continue; // A completing worktree task schedules the next scan for any backlog.
         }
       }
@@ -461,6 +466,15 @@ function scan(retryWatch = false) {
         if (retry) nearest = Math.min(nearest, retry.at);
         warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`);
       }
+    }
+  }
+  for (const { id, jobFile, job, root } of worktreeChecks) {
+    if (busyWorktrees.has(job.worktree.root)) continue;
+    const at = worktreeRetries.get(id);
+    if (at > Date.now()) nearest = Math.min(nearest, at);
+    else if (!worktreeLocks.has(root) && (!job.worktree_checked_head || rechecks < 4)) {
+      if (job.worktree_checked_head) rechecks++;
+      startWorktree(id, jobFile, job);
     }
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);

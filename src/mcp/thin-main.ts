@@ -22,7 +22,7 @@ import { settleStoppedPi } from './pi-stop-settlement.js';
 import { watcherReady } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
-import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
+import { addWorktree, gitSummary, planWorktree, populateWorktree, reusableWorktree, type ManagedWorktree } from './managed-worktree.js';
 import { taskTarget } from '../collectors/job-supersession.js';
 import { needsTranslation, replyWords } from '../collectors/reply-language.js';
 import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
@@ -270,6 +270,26 @@ function run(
     child.on('close', (code) => done({ exit_code: code ?? -1, stdout, stderr, notStarted: child.pid === undefined }));
   });
 }
+const AGENT_PANE_BUSY_DELAYS_MS = [100, 200, 400, 800] as const;
+function isAgentPaneBusy(result: Awaited<ReturnType<typeof run>>): boolean {
+  if (result.exit_code === 0) return false;
+  for (const text of [result.stdout, result.stderr]) {
+    try {
+      if (JSON.parse(text)?.error?.code === 'agent_pane_busy') return true;
+    } catch { /* Herdr may also render plain text or trailing lines. */ }
+    if (/\bagent_pane_busy\b/.test(text)) return true;
+  }
+  return false;
+}
+async function startAgentWithBusyWait(argv: string[]) {
+  let started = await run('herdr', argv);
+  for (const delay of AGENT_PANE_BUSY_DELAYS_MS) {
+    if (!isAgentPaneBusy(started)) return started;
+    await sleep(delay);
+    started = await run('herdr', argv);
+  }
+  return started;
+}
 function refusedBeforeInput(result: Awaited<ReturnType<typeof run>>): boolean {
   if (result.exit_code === 0) return false;
   if (result.notStarted) return true;
@@ -448,7 +468,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
-    const result = await run('herdr', [
+    const tabArgv = [
       'tab',
       'create',
       ...(await workspaceArgs(job)),
@@ -461,53 +481,61 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
       '--env',
       `HUD_HOME=${hudHome}`,
       '--no-focus',
-    ]);
-    if (result.exit_code !== 0) return reject(result);
-    const { tab, root_pane } = JSON.parse(result.stdout).result;
-    if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
-    const left = root_pane?.pane_id;
-    if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-    let right = '';
-    const record = () => {
-      const fields = {
-        TASK: job.job,
-        TAB: tab.tab_id,
-        TAB_NAME: tabName,
-        LEFT: left,
-        RIGHT: right,
-        ORCH: job.herdr_pane,
-        BASE: base,
-        PRIMARY: name,
+    ];
+    let left = '';
+    let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
+    for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
+      const result = await run('herdr', tabArgv);
+      if (result.exit_code !== 0) return reject(result);
+      const { tab, root_pane } = JSON.parse(result.stdout).result;
+      if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
+      left = root_pane?.pane_id;
+      if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+      let right = '';
+      const record = () => {
+        const fields = {
+          TASK: job.job,
+          TAB: tab.tab_id,
+          TAB_NAME: tabName,
+          LEFT: left,
+          RIGHT: right,
+          ORCH: job.herdr_pane,
+          BASE: base,
+          PRIMARY: name,
+        };
+        if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
+        fs.writeFileSync(
+          join(dir, 'SESSION.txt'),
+          Object.entries(fields)
+            .map(([k, v]) => `${k}=${v}\n`)
+            .join(''),
+          { mode: 0o600 }
+        );
       };
-      if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
-      fs.writeFileSync(
-        join(dir, 'SESSION.txt'),
-        Object.entries(fields)
-          .map(([k, v]) => `${k}=${v}\n`)
-          .join(''),
-        { mode: 0o600 }
-      );
-    };
-    record();
-    if (job.split) {
-      const split = await run('herdr', [
-        'pane',
-        'split',
-        left,
-        '--direction',
-        'right',
-        '--ratio',
-        '0.5',
-        '--cwd',
-        job.cwd,
-        '--no-focus',
-      ]);
-      if (split.exit_code !== 0) return reject(split);
-      right = JSON.parse(split.stdout).result.pane.pane_id;
-      if (!herdrId(right)) throw new Error('split did not return a pane id');
       record();
+      if (job.split) {
+        const split = await run('herdr', [
+          'pane',
+          'split',
+          left,
+          '--direction',
+          'right',
+          '--ratio',
+          '0.5',
+          '--cwd',
+          job.cwd,
+          '--no-focus',
+        ]);
+        if (split.exit_code !== 0) return reject(split);
+        right = JSON.parse(split.stdout).result.pane.pane_id;
+        if (!herdrId(right)) throw new Error('split did not return a pane id');
+        record();
+      }
+      started = await startAgentWithBusyWait(['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
+      if (!isAgentPaneBusy(started) || tabAttempt === 1) break;
+      await runHerdr(['tab', 'close', openedTab], process.env, { budgetMs: 3000 });
+      openedTab = undefined;
     }
-    const started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
     if (started.exit_code !== 0) return reject(await startupFailure(started, left));
     job.pi_sent_at = new Date().toISOString();
     save(job);
@@ -701,7 +729,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
-    const result = await run('herdr', [
+    const tabArgv = [
       'tab',
       'create',
       ...(place.agent === 'codex' ? ['--env', `CODEX_HOME=${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}`] : []),
@@ -715,41 +743,49 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       '--env',
       `HUD_HOME=${hudHome}`,
       '--no-focus',
-    ]);
-    if (result.exit_code !== 0) return reject(result);
-    const { tab, root_pane } = JSON.parse(result.stdout).result;
-    if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
-    const left = root_pane?.pane_id;
-    if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-    const fields = {
-      TASK: job.job,
-      TAB: tab.tab_id,
-      TAB_NAME: tabName,
-      LEFT: left,
-      RIGHT: '',
-      ORCH: job.herdr_pane,
-      BASE: base,
-      PRIMARY: name,
-    };
-    if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
-    fs.writeFileSync(
-      join(dir, 'SESSION.txt'),
-      Object.entries(fields)
-        .map(([k, v]) => `${k}=${v}\n`)
-        .join(''),
-      { mode: 0o600 }
-    );
-    const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
-    if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
-    argv.push(
-      '--',
-      ...(place.model ? kind.model(place.model) : []),
-      ...(place.thinking ? kind.effort(place.thinking) : []),
-      ...kind.bypass,
-      ...(place.args ?? []),
-      ...startup.args
-    );
-    const started = await run('herdr', argv);
+    ];
+    let left = '';
+    let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
+    for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
+      const result = await run('herdr', tabArgv);
+      if (result.exit_code !== 0) return reject(result);
+      const { tab, root_pane } = JSON.parse(result.stdout).result;
+      if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
+      left = root_pane?.pane_id;
+      if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+      const fields = {
+        TASK: job.job,
+        TAB: tab.tab_id,
+        TAB_NAME: tabName,
+        LEFT: left,
+        RIGHT: '',
+        ORCH: job.herdr_pane,
+        BASE: base,
+        PRIMARY: name,
+      };
+      if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
+      fs.writeFileSync(
+        join(dir, 'SESSION.txt'),
+        Object.entries(fields)
+          .map(([k, v]) => `${k}=${v}\n`)
+          .join(''),
+        { mode: 0o600 }
+      );
+      const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
+      if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
+      argv.push(
+        '--',
+        ...(place.model ? kind.model(place.model) : []),
+        ...(place.thinking ? kind.effort(place.thinking) : []),
+        ...kind.bypass,
+        ...(place.args ?? []),
+        ...startup.args
+      );
+      started = await startAgentWithBusyWait(argv);
+      if (!isAgentPaneBusy(started) || tabAttempt === 1) break;
+      await runHerdr(['tab', 'close', openedTab], process.env, { budgetMs: 3000 });
+      openedTab = undefined;
+    }
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
     if (started.exit_code !== 0 && !notReady) return reject(await startupFailure(started, left));
     if (kind.trust?.text) {
@@ -1305,6 +1341,18 @@ function sonicCwd(parent: SonicParent, args: Args): string {
   throw new Error('outside parent project');
 }
 
+function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): Job | undefined {
+  const seen = new Set<string>();
+  for (let id = jobId; id && !seen.has(id) && seen.size < 16;) {
+    seen.add(id);
+    const job = findJob(id);
+    if (!job) break;
+    if (job.worktree) return job;
+    id = job.repair_of;
+  }
+  return fallback?.worktree?.owner ? fallback : undefined;
+}
+
 export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { job: string; derived: boolean }) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
@@ -1313,6 +1361,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
   const retryOf = input.retry_of === undefined ? undefined : required(input, 'retry_of');
   let args = input;
   let repairOf = repair?.job;
+  let worktreeSource = repair?.job ? continuationWorktreeSource(repair.job) : undefined;
   if (retryOf) {
     const source = findJob(retryOf);
     if (!source) return { ok: false, code: 'job_not_found' };
@@ -1323,6 +1372,9 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     if (input.on !== undefined) delete inherited.preset;
     args = { ...inherited, task: input.task === undefined ? originalTask(source) : input.task, ...input };
     repairOf = input.from_jobs === undefined ? source.repair_of : undefined;
+    if (input.cwd === undefined && input.isolation !== 'none') {
+      worktreeSource = continuationWorktreeSource(source.repair_of, source);
+    }
   }
   const role = required(args, 'role');
   const cwd = jobCwd(args);
@@ -1332,7 +1384,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource }));
 }
 
 const pendingScouts = new Map<string, AbortController>();
@@ -1378,7 +1430,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parentJob?: string, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, landCwd }: { scoutContextCwd?: string; landCwd?: string } = {}) {
+  { scoutContextCwd, landCwd, worktreeSource }: { scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job } = {}) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
@@ -1462,9 +1514,14 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
   const id = 'j' + randomBytes(8).toString('hex');
   let worktree: ManagedWorktree | undefined;
+  let reusedWorktree: ManagedWorktree | undefined;
   if (isolation === 'worktree') {
-    try { worktree = await planWorktree(cwd, id, (args.package as string | undefined) || role); }
-    catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
+    if (worktreeSource) reusedWorktree = await reusableWorktree(worktreeSource, cwd) ?? undefined;
+    if (reusedWorktree) worktree = reusedWorktree;
+    else {
+      try { worktree = await planWorktree(cwd, id, (args.package as string | undefined) || role); }
+      catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
+    }
   }
   const inline = initial.place.harness === 'bro';
   const project = found.project();
@@ -1489,8 +1546,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     job: id,
     role,
     request_key,
-    cwd: landCwd ?? cwd,
+    cwd: landCwd ?? reusedWorktree?.root ?? cwd,
     project_root: sharedRoot(cwd),
+    ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
     herdr_pane: pane,
     created_at: new Date().toISOString(),
     task_length: task.length,
@@ -1636,7 +1694,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const creating = (async () => {
     try {
       // Keep worktree creation behind the same trust gate as ordinary worktree dispatch.
-      if (worktree && candidates.some(({ place }) => !('code' in placeOptions(argsFor(place), place)) &&
+      if (worktree && !base.worktree && candidates.some(({ place }) => !('code' in placeOptions(argsFor(place), place)) &&
         (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
         await prepareWorktree(base, worktree);
       }

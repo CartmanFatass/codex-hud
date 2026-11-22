@@ -27,6 +27,24 @@ if (command === 'pi-dispatch') {
 } else if (command === 'pi-role') {
   console.log(JSON.stringify(args.slice(2)));
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
+  const pane = args[args.indexOf('--pane') + 1];
+  const busyIdFile = join(process.env.HOME, 'busy-pane-id');
+  const busyCountFile = join(process.env.HOME, 'busy-pane-count');
+  const busyMatches = fs.existsSync(busyIdFile) && fs.readFileSync(busyIdFile, 'utf8').trim() === pane;
+  let busyRemaining = 0;
+  if (!busyMatches && fs.existsSync(busyCountFile)) {
+    busyRemaining = Number(fs.readFileSync(busyCountFile, 'utf8').trim()) || 0;
+    if (busyRemaining > 0) writeFixtureFile(busyCountFile, String(busyRemaining - 1));
+  }
+  if (busyMatches || busyRemaining > 0) {
+    console.error(
+      JSON.stringify({
+        error: { code: 'agent_pane_busy', message: `agent target pane ${pane} is not an available shell` },
+        id: 'cli:agent:start',
+      })
+    );
+    process.exit(1);
+  }
   if (args[args.indexOf('--kind') + 1] === 'grok' && fs.existsSync(join(process.env.HOME, 'hold-grok-start'))) {
     waitToReply();
     console.error('synthetic delayed start failed');
@@ -515,7 +533,13 @@ if (command === 'pi-dispatch') {
   const agent = fs.existsSync(agentFile) ? fs.readFileSync(agentFile, 'utf8') : 'claude';
   console.log(JSON.stringify({ result: { pane: { workspace_id: 'w4E', ...(routingOnly ? {} : { agent }) } } }));
 } else if (command === 'herdr' && args[0] === 'tab' && args[1] === 'create') {
-  console.log(JSON.stringify({ result: { tab: { tab_id: 'w4E:t2' }, root_pane: { pane_id: 'w4E:p2' } } }));
+  const seqFile = join(process.env.HOME, 'tab-seq');
+  let n = 2;
+  if (fs.existsSync(seqFile)) {
+    n = (Number(fs.readFileSync(seqFile, 'utf8').trim()) || 1) + 1;
+    writeFixtureFile(seqFile, String(n));
+  }
+  console.log(JSON.stringify({ result: { tab: { tab_id: `w4E:t${n}` }, root_pane: { pane_id: `w4E:p${n}` } } }));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'run') {
   process.exit(spawnSync('/bin/sh', ['-c', args[3]], { stdio: 'inherit' }).status);
 } else if (command === 'jev-ask' && args[0] === 'key') {

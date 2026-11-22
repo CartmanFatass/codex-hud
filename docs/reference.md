@@ -284,7 +284,9 @@ Antigravity and Grok Build use the fallback commands in their briefs. Workers us
 sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
 `hud_send` queues a message for a working pi or CLI job, or continues an eligible role during idle grace while
 its report is still unread. A single send to a job closed by reading its report starts a repair with references to its
-brief and report, returning the new job ID as `continued_as`. Use `jobs` instead of `job` to send only to working
+brief and report, returning the new job ID as `continued_as`. When continuing a managed-worktree job—or retrying a
+failed continuation with `retry_of` without overriding `cwd` or `isolation`—HUD reuses the source worktree if it still
+exists and is clean; otherwise it creates a fresh worktree. Use `jobs` instead of `job` to send only to working
 jobs; the response lists `sent` job IDs and `skipped` entries with reasons. An explicit `message_key` deduplicates sends;
 if omitted, the same job and text are treated as a retry only within 10 minutes. Workers ask with `hud_ask`; the question arrives through
 an active MCP task or the `QUESTION` notice, and `hud_respond` answers it. A synchronous question waits up to 20 minutes;

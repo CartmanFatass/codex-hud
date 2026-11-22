@@ -150,6 +150,56 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
   }
 });
 
+test('watcher preserves a shared worktree while a continuation job is active and removes it once both finish', { timeout: 10000 }, (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-shared-wt-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const main_root = initRepo(home);
+  const sourceId = 'j0000000000000a01', contId = 'j0000000000000a02';
+  const name = `imp-${sourceId.slice(-6)}`, root = join(home, 'demo-wt', name), branch = `wt/${name}`;
+  const base_head = git(main_root, 'rev-parse', 'HEAD');
+  git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
+  fs.writeFileSync(join(home, 'pi-role-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), PATH: `${home}:${process.env.PATH}` };
+  const now = new Date().toISOString();
+  const wt = { main_root, root, branch, base_head };
+  const sourceDir = writeJob(env.HUD_HOME, sourceId, 'w4E:p1', 'imp', { state: 'closed', ended_at: now });
+  const sourceFile = join(sourceDir, 'job.json');
+  fs.writeFileSync(sourceFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(sourceFile)), cwd: root, reaped_at: now, worktree: wt }));
+  const contDir = writeJob(env.HUD_HOME, contId, 'w4E:p1', 'imp', { state: 'working' });
+  const contFile = join(contDir, 'job.json');
+  fs.writeFileSync(contFile, JSON.stringify({
+    ...JSON.parse(fs.readFileSync(contFile)),
+    cwd: root, repair_of: sourceId, worktree: { ...wt, owner: sourceId },
+  }));
+
+  const watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
+  t.after(() => watcher.kill('SIGKILL'));
+  const done = spawnSync(process.execPath, ['-e', `
+    const fs = require('node:fs');
+    const end = Date.now() + 2000;
+    while (Date.now() < end && !fs.existsSync(${JSON.stringify(join(env.HUD_HOME, 'watch.pid'))})) {}
+  `], { timeout: 3000 });
+  assert.equal(done.status, 0);
+  // Give the initial scan a moment to settle; the active continuation must protect the shared worktree.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+  assert.equal(fs.existsSync(root), true);
+  assert.equal(JSON.parse(fs.readFileSync(sourceFile)).worktree_removed_at, undefined);
+
+  // Once the continuation closes and is reaped, the watcher removes the clean unchanged worktree and exits.
+  fs.writeFileSync(join(contDir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: now }));
+  fs.writeFileSync(contFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(contFile)), reaped_at: now }));
+  const finished = spawnSync(process.execPath, ['-e', `
+    const fs = require('node:fs');
+    const end = Date.now() + 5000;
+    while (Date.now() < end && fs.existsSync(${JSON.stringify(root)})) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  `], { timeout: 6000 });
+  assert.equal(finished.status, 0);
+  assert.equal(fs.existsSync(root), false);
+  assert.equal(git(main_root, 'branch', '--list', branch), '');
+});
+
 test('dead supervisor watcher preserves a live worker; both gone fail or close by the explicit report baseline', { timeout: 10000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'dead-supervisor-'));
   const hudHome = join(home, 'hud');

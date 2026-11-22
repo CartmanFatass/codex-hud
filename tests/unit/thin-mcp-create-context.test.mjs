@@ -18,6 +18,7 @@ import {
   fallbackRole,
   waitFixtureJob,
   cliState,
+  writeCliRole,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
@@ -967,4 +968,143 @@ test('thin create requires herdr without dispatching', { timeout: 10000 }, async
     { ok: false, code: 'herdr_required', hint: roster.hint }
   );
   assert.deepEqual(f.commands(), []);
+});
+
+test('hud_send to a just-closed CLI worktree job continues in the same worktree without agent_pane_busy', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  fs.chmodSync(f.env.HUD_HOME, 0o700);
+  fs.writeFileSync(join(cwd, '.gitignore'), 'build/\n');
+  git(cwd, 'add', '.gitignore');
+  git(cwd, 'commit', '-qm', 'ignore build artifacts');
+  fs.mkdirSync(join(cwd, 'node_modules'));
+  const trust = join(f.env.HOME, '.grok', 'trusted_folders.toml');
+  fs.appendFileSync(trust, `\n[folders.${JSON.stringify(cwd)}]\ntrusted = true\n`);
+  writeCliRole(f, 'wt-cli', 8);
+
+  const source = await f.call('hud_create', {
+    role: 'wt-cli', cwd, isolation: 'worktree', package: 'Demo Slice',
+    request_key: 'wt-cli-source', task: 'Synthetic initial work.',
+  });
+  await until(() => cliState(source.task_dir)?.state === 'idle_grace', 8000);
+  const sourceReceipt = JSON.parse(fs.readFileSync(join(source.task_dir, 'job.json'), 'utf8'));
+  const wt = sourceReceipt.worktree;
+  fs.writeFileSync(join(wt.root, 'feature.txt'), 'committed work\n');
+  git(wt.root, 'add', 'feature.txt');
+  git(wt.root, 'commit', '-qm', 'synthetic source commit');
+  const sourceCommit = git(wt.root, 'rev-parse', 'HEAD');
+  fs.mkdirSync(join(wt.root, 'build'));
+  fs.writeFileSync(join(wt.root, 'build', 'artifact.out'), 'ignored output\n');
+
+  await f.call('hud_read', { job: source.job });
+  await until(() => cliState(source.task_dir)?.state === 'closed', 5000);
+  assert.equal(cliState(source.task_dir).exit_reason, 'closed after report read');
+
+  // Transient agent_pane_busy clears within the bounded wait.
+  writeFixtureFile(join(f.env.HOME, 'busy-pane-count'), '2');
+  const repair = await f.call('hud_send', { job: source.job, text: 'Synthetic follow-up in same worktree.' });
+  assert.equal(repair.continued_as, repair.job);
+  assert.notEqual(repair.job, source.job);
+  assert.notEqual(repair.ok, false, JSON.stringify(repair));
+  const repairReceipt = JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'), 'utf8'));
+  assert.equal(repairReceipt.dispatch_exit_code, 0, repairReceipt.stderr_tail);
+  assert.equal(repairReceipt.repair_of, source.job);
+  assert.equal(repairReceipt.cwd, wt.root);
+  assert.deepEqual(repairReceipt.worktree, { ...wt, owner: source.job });
+  assert.equal(git(repairReceipt.cwd, 'rev-parse', 'HEAD'), sourceCommit);
+  assert.deepEqual(fs.readdirSync(join(f.root, 'demo-wt')), [wt.root.split('/').at(-1)]);
+  const repairStarts = f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'start' && args[2] === `${repair.job}-primary`);
+  assert.equal(repairStarts.length, 3, 'two busy responses followed by one successful start');
+  const readRepair = await f.call('hud_read', { job: repair.job, mode: 'full' });
+  assert.deepEqual(readRepair.worktree, { ...wt, owner: source.job });
+  assert.equal(readRepair.git_summary.ahead_commits, 1);
+  assert.equal(readRepair.git_summary.dirty, false);
+  assert.deepEqual(readRepair.git_summary.overlaps, []);
+
+  // A pane that stays busy falls back to a fresh tab and pane instead of failing dispatch.
+  await until(() => cliState(repair.task_dir)?.state === 'idle_grace', 8000);
+  await f.call('hud_read', { job: repair.job });
+  await until(() => cliState(repair.task_dir)?.state === 'closed', 5000);
+  writeFixtureFile(join(f.env.HOME, 'tab-seq'), '1');
+  writeFixtureFile(join(f.env.HOME, 'busy-pane-id'), 'w4E:p2');
+  const third = await f.call('hud_send', { job: repair.job, text: 'Synthetic follow-up on fresh pane.' });
+  assert.equal(third.continued_as, third.job);
+  assert.notEqual(third.ok, false, JSON.stringify(third));
+  const thirdReceipt = JSON.parse(fs.readFileSync(join(third.task_dir, 'job.json'), 'utf8'));
+  assert.equal(thirdReceipt.cwd, wt.root);
+  assert.deepEqual(thirdReceipt.worktree, { ...wt, owner: source.job });
+  const thirdSession = fs.readFileSync(join(third.task_dir, 'SESSION.txt'), 'utf8');
+  assert.match(thirdSession, /^TAB=w4E:t3$/m);
+  assert.match(thirdSession, /^LEFT=w4E:p3$/m);
+  assert.ok(f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'close' && args[2] === 'w4E:t2'));
+});
+
+test('retry_of a failed continuation keeps the source worktree and falls back when dirty or removed', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  fs.chmodSync(f.env.HUD_HOME, 0o700);
+  const trust = join(f.env.HOME, '.grok', 'trusted_folders.toml');
+  fs.appendFileSync(trust, `\n[folders.${JSON.stringify(cwd)}]\ntrusted = true\n`);
+  writeCliRole(f, 'wt-retry-cli', 8);
+
+  const source = await f.call('hud_create', {
+    role: 'wt-retry-cli', cwd, isolation: 'worktree', package: 'Retry Slice',
+    request_key: 'wt-retry-source', task: 'Synthetic initial work.',
+  });
+  await until(() => cliState(source.task_dir)?.state === 'idle_grace', 8000);
+  const sourceReceipt = JSON.parse(fs.readFileSync(join(source.task_dir, 'job.json'), 'utf8'));
+  const wt = sourceReceipt.worktree;
+  fs.writeFileSync(join(wt.root, 'work.txt'), 'source commit\n');
+  git(wt.root, 'add', 'work.txt');
+  git(wt.root, 'commit', '-qm', 'synthetic source work');
+  const sourceCommit = git(wt.root, 'rev-parse', 'HEAD');
+
+  await f.call('hud_read', { job: source.job });
+  await until(() => cliState(source.task_dir)?.state === 'closed', 5000);
+
+  // Make the continuation dispatch fail so we can retry_of it.
+  writeFixtureFile(join(f.env.HOME, 'fail-start-grok'), 'synthetic start failure');
+  const failed = await f.call('hud_send', { job: source.job, message_key: 'fail-once', text: 'Synthetic continuation.' });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.state, 'failed');
+  fs.unlinkSync(join(f.env.HOME, 'fail-start-grok'));
+
+  const retried = await f.call('hud_create', { retry_of: failed.job, request_key: 'retry-clean' });
+  assert.notEqual(retried.ok, false, JSON.stringify(retried));
+  const retriedReceipt = JSON.parse(fs.readFileSync(join(retried.task_dir, 'job.json'), 'utf8'));
+  assert.equal(retriedReceipt.retry_of, failed.job);
+  assert.equal(retriedReceipt.repair_of, source.job);
+  assert.equal(retriedReceipt.cwd, wt.root);
+  assert.deepEqual(retriedReceipt.worktree, { ...wt, owner: source.job });
+  assert.equal(git(retriedReceipt.cwd, 'rev-parse', 'HEAD'), sourceCommit);
+  assert.deepEqual(fs.readdirSync(join(f.root, 'demo-wt')), [wt.root.split('/').at(-1)]);
+
+  // Simulate a pre-fix failed continuation receipt pointing at a different worktree; retry_of still picks the source's.
+  const failedFile = join(failed.task_dir, 'job.json');
+  const failedReceipt = JSON.parse(fs.readFileSync(failedFile, 'utf8'));
+  writeFixtureFile(failedFile, JSON.stringify({
+    ...failedReceipt,
+    cwd: join(f.root, 'demo-wt', `retry-slice-${failed.job.slice(-6)}`),
+    worktree: { ...wt, root: join(f.root, 'demo-wt', `retry-slice-${failed.job.slice(-6)}`), branch: `wt/retry-slice-${failed.job.slice(-6)}` },
+  }));
+  const retriedLegacy = await f.call('hud_create', { retry_of: failed.job, request_key: 'retry-legacy' });
+  assert.notEqual(retriedLegacy.ok, false, JSON.stringify(retriedLegacy));
+  const legacyReceipt = JSON.parse(fs.readFileSync(join(retriedLegacy.task_dir, 'job.json'), 'utf8'));
+  assert.equal(legacyReceipt.cwd, wt.root);
+  assert.deepEqual(legacyReceipt.worktree, { ...wt, owner: source.job });
+
+  // Dirty source worktree falls back to a fresh worktree without touching the dirty one.
+  fs.writeFileSync(join(wt.root, 'untracked.txt'), 'dirty\n');
+  const dirtyRetry = await f.call('hud_create', { retry_of: failed.job, request_key: 'retry-dirty' });
+  assert.notEqual(dirtyRetry.ok, false, JSON.stringify(dirtyRetry));
+  const dirtyReceipt = JSON.parse(fs.readFileSync(join(dirtyRetry.task_dir, 'job.json'), 'utf8'));
+  assert.notEqual(dirtyReceipt.cwd, wt.root);
+  assert.equal(dirtyReceipt.worktree.owner, undefined);
+  assert.equal(fs.readFileSync(join(wt.root, 'untracked.txt'), 'utf8'), 'dirty\n');
+
+  // Removed source worktree also falls back to a fresh worktree.
+  git(cwd, 'worktree', 'remove', '--force', wt.root);
+  const removedRetry = await f.call('hud_create', { retry_of: failed.job, request_key: 'retry-removed' });
+  assert.notEqual(removedRetry.ok, false, JSON.stringify(removedRetry));
+  const removedReceipt = JSON.parse(fs.readFileSync(join(removedRetry.task_dir, 'job.json'), 'utf8'));
+  assert.notEqual(removedReceipt.cwd, wt.root);
+  assert.equal(removedReceipt.worktree.owner, undefined);
 });

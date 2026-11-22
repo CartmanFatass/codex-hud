@@ -10,6 +10,7 @@ export interface ManagedWorktree {
   root: string;
   branch: string;
   base_head: string;
+  owner?: string;
 }
 const oid = (value: unknown) => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
 const list = async (cwd: string) => parseWorktreeList(await git(cwd, ['worktree', 'list', '--porcelain', '-z']));
@@ -152,10 +153,35 @@ function nestedGitReason(root: string): string | undefined {
 }
 
 export function managedReceiptMatches(id: string, job: { job: string; cwd: string; worktree: ManagedWorktree }) {
-  const wt = job.worktree, name = basename(wt.root);
-  return job.job === id && job.cwd === wt.root && wt.branch === `wt/${name}` && /^[a-z0-9-]+$/.test(name) &&
-    name.endsWith(`-${id.slice(-6)}`) && oid(wt.base_head) && wt.root === pathFor(wt.main_root, name) &&
+  const wt = job.worktree, name = basename(wt.root), owner = wt.owner ?? id;
+  return job.job === id && /^j[0-9a-f]{16}$/.test(owner) && job.cwd === wt.root && wt.branch === `wt/${name}` &&
+    /^[a-z0-9-]+$/.test(name) && name.endsWith(`-${owner.slice(-6)}`) && oid(wt.base_head) &&
+    wt.root === pathFor(wt.main_root, name) &&
     fs.realpathSync(wt.main_root) === wt.main_root && fs.realpathSync(wt.root) === wt.root;
+}
+
+export async function reusableWorktree(
+  source: { job: string; cwd: string; worktree?: ManagedWorktree },
+  cwd: string,
+): Promise<ManagedWorktree | null> {
+  const wt = source.worktree;
+  if (!wt) return null;
+  try {
+    if (!managedReceiptMatches(source.job, { ...source, worktree: wt })) return null;
+    const [main, ...linked] = await list(cwd);
+    if (!main || main.bare || fs.realpathSync(main.path) !== wt.main_root) return null;
+    const tree = linked.find((t) => t.path === wt.root && t.branch === wt.branch);
+    if (!tree || tree.locked !== undefined || tree.prunable !== undefined || !oid(tree.head)) return null;
+    const common = await git(wt.main_root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    if (await git(wt.root, ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir']) !== `${wt.root}\n${common}`)
+      return null;
+    const index = await git(wt.root, ['ls-files', '-v', '-z']);
+    if (fields(index).some((row) => /^[a-zS] /.test(row))) return null;
+    const filters = await neutralizeFilters(git, wt.root);
+    const pending = fields(await status(wt.root, filters, false));
+    if (pending.some((row) => row !== '?? node_modules' || !dependencyLink(wt))) return null;
+    return { ...wt, owner: wt.owner ?? source.job };
+  } catch { return null; }
 }
 
 /** Cheap scan hint only: the reaper verifies the registered checkout and commit IDs with Git. */
