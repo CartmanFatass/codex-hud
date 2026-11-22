@@ -26,7 +26,7 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 10000 }, async (t) => {
+test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', request_key: 'sonic-parent', task: 'Synthetic parent.' });

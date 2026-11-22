@@ -33,7 +33,7 @@ export const withoutHint = ({ hint, ...result }) => result;
 export const withoutCallerLookups = (commands) => commands.filter(({ command, args }) =>
   !(command === 'herdr' && args[0] === 'pane' && args[1] === 'get' && args[2] === 'w4E:p1'));
 export function fixture(t, inHerdr = true, probe = '', watcherTickMs, worker = false) {
-  return startFixture(t, { inHerdr, probe, watcherTickMs, worker });
+  return startFixture(t, typeof inHerdr === 'object' ? inHerdr : { inHerdr, probe, watcherTickMs, worker });
 }
 
 // Routing tests keep their closed PATH and real supervisor clock, without the socket simulation.
@@ -41,7 +41,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20 }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const bin = join(root, 'bin');
   fs.mkdirSync(bin);
@@ -66,7 +66,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   const env = {
     ...process.env,
     HUD_MCP_SURFACE: 'roles',
-    HUD_WATCH_FAILED_RETENTION_MS: '1000',
+    HUD_WATCH_FAILED_RETENTION_MS: String(failedRetentionMs),
     ...(watcherTickMs ? { HUD_WATCH_CLI_CHECK_MS: String(watcherTickMs) } : {}),
     PATH: routingOnly ? bin : `${bin}:${process.env.PATH}`,
     FAKE_BIN: fakeBin,
@@ -77,6 +77,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   else {
     delete env.FAKE_ROUTING_ONLY;
     env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`;
+    env.HUD_TEST_CLOCK_SCALE = String(clockScale);
   }
   for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'MISTRAL_API_KEY']) {
     delete env[key];
@@ -231,7 +232,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         if (args.role === 'imp' && !role) {
           fs.mkdirSync(join(env.HUD_HOME, 'roles'), { recursive: true });
           const imp = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles/imp.json')));
-          fs.writeFileSync(roleFile, JSON.stringify({ ...imp, idle_grace_s: 40 }));
+          writeFixtureFile(roleFile, JSON.stringify({ ...imp, idle_grace_s: 15 }));
         }
         await startCliSocket();
       }
@@ -496,7 +497,7 @@ export function writeCliRole(f, role, idle_grace_s = 1, can_continue = true, age
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   fs.writeFileSync(
     join(f.env.HUD_HOME, 'roles', `${role}.json`),
-    JSON.stringify({ role, harness: 'cli', agent, ...(agent === 'grok' ? { model: 'grok-4.7' } : {}), thinking: 'high', can_continue, idle_grace_s: idle_grace_s * 20 })
+    JSON.stringify({ role, harness: 'cli', agent, ...(agent === 'grok' ? { model: 'grok-4.7' } : {}), thinking: 'high', can_continue, idle_grace_s: idle_grace_s * Number(f.env.HUD_TEST_CLOCK_SCALE ?? 20) })
   );
 }
 

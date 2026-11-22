@@ -23,6 +23,9 @@ const jobs = join(home, 'jobs'),
   logFile = join(home, 'watch.log');
 const retention = Number(process.env.HUD_WATCH_FAILED_RETENTION_MS ?? 7200000);
 const cliCheck = Number(process.env.HUD_WATCH_CLI_CHECK_MS ?? 30000);
+// Test-only retry interval override while no file watch is available.
+const degradedOverride = Number(process.env.HUD_WATCH_DEGRADED_MS);
+const degradedMs = Number.isInteger(degradedOverride) && degradedOverride > 0 ? degradedOverride : 1000;
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
 const cache = new Map();
 const seen = new Set();
@@ -375,7 +378,7 @@ async function scan(retryWatch = false) {
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
   if (safetyCheck) nearest = Math.min(nearest, Date.now() + cliCheck);
-  if ((open || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
+  if ((open || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + degradedMs);
   scanning = false;
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.ceil(nearest - Date.now())));
   if (queued) setImmediate(scan);
@@ -397,7 +400,7 @@ function startWatch() {
       warn('watch error', `watch error: ${error.message}`);
       watcher?.close(); watcher = undefined;
       clearTimeout(timer);
-      timer = setTimeout(() => scan(true), 1000);
+      timer = setTimeout(() => scan(true), degradedMs);
     });
   } catch (error) { warn('watch error', `watch error: ${error.message}`); }
 }

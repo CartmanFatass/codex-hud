@@ -11,9 +11,10 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
   if (isCli) {
     const now = Date.now,
       timer = globalThis.setTimeout,
-      anchor = Date.now();
-    Date.now = () => anchor + (now() - anchor) * 20;
-    globalThis.setTimeout = (fn, ms, ...args) => timer(fn, ms === 250 ? 15 : ms / 20, ...args);
+      anchor = Date.now(),
+      scale = Number(process.env.HUD_TEST_CLOCK_SCALE ?? 20);
+    Date.now = () => anchor + (now() - anchor) * scale;
+    globalThis.setTimeout = (fn, ms, ...args) => timer(fn, ms === 250 ? 15 : ms / scale, ...args);
     const opendir = fs.opendirSync;
     fs.opendirSync = (...args) => {
       if (/^\/proc\/\d+\/task$/.test(args[0])) fs.appendFileSync(join(process.env.HOME, 'proc-scans'), 'scan\n');

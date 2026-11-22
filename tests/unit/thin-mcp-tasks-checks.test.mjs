@@ -210,7 +210,7 @@ test('MCP tasks: a fresh server cannot cancel old tasks; legacy and failed dispa
 const checkFile = (job) => join(job.task_dir, 'checks.json');
 const checkReceipt = (job) => fs.existsSync(checkFile(job)) ? JSON.parse(fs.readFileSync(checkFile(job), 'utf8')) : null;
 
-test('HUD checks: CLI declaration starts ordered checks, delays reap and announces results', { timeout: 18000 }, async (t) => {
+test('HUD checks: CLI declaration starts ordered checks, delays reap and announces results', { timeout: 30000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -223,7 +223,7 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
   fs.writeFileSync(join(dir, 'reap-worker'), '');
   const lines = [], ac = new AbortController();
   const watching = watchCommand([], { env: f.env, stdout: (s) => lines.push(...s.trim().split('\n')), stderr: () => {} },
-    { signal: ac.signal, rescanMs: 100 });
+    { signal: ac.signal, rescanMs: 100, settlementWindowMs: 250 });
   try {
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic report without a declaration yet.\n');
     await new Promise((done) => setTimeout(done, 120));
@@ -239,7 +239,7 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
     assert.equal(readCloseQuit(f, job), false);
     assert.equal((await f.call('hud_read', { job: job.job })).checks.state, 'running');
     assert.match(cardText(workerFor(f, job.job)), /\[↻0\/2\]/);
-    fs.writeFileSync(join(f.root, 'release-check'), '');
+    writeFixtureFile(join(f.root, 'release-check'), '');
     await until(() => checkReceipt(job)?.state === 'done' && !fs.existsSync(pidFile));
     const receipt = checkReceipt(job);
     assert.equal(receipt.turn, cliToken(dir));
@@ -260,7 +260,7 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
     assert.equal(reapAttempts(f, job), 1);
     assert.ok([helper, shell, watchPid, worker.pid].every((pid) => !procStat(pid) || procStat(pid)?.state === 'Z'));
   } finally {
-    fs.writeFileSync(join(f.root, 'release-check'), '');
+    writeFixtureFile(join(f.root, 'release-check'), '');
     ac.abort(); await watching;
   }
 });

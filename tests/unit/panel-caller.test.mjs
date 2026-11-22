@@ -5,6 +5,8 @@ import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { watchPanelCaller } from '../../dist/cli/panel-pane.js';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 // The modules deleted by PRUNE-OBS-01 through PRUNE-OBS-03. Keep the live rollout/recovery types out of this list.
 const retiredModules = [
@@ -47,6 +49,14 @@ test('removed observer modules stay out of source and the panel build', () => {
   assert.deepEqual(files.filter((file) => fs.existsSync(new URL(`../../${file}`, import.meta.url))), []);
 });
 
+test('panel caller uses a 3000ms interval without a timing override', (t) => {
+  const interval = t.mock.method(globalThis, 'setInterval');
+  const stop = watchPanelCaller({ HUD_PANEL_CALLER_PANE: 'w4E:p1', HERDR_PANE_ID: 'w4E:p2' }, () => {});
+  stop();
+  assert.equal(interval.mock.callCount(), 1);
+  assert.equal(interval.mock.calls[0].arguments[1], 3000);
+});
+
 for (const initiallyMissing of [true, false])
   test(`panel caller ${initiallyMissing ? 'missing' : 'present, then closed'}`, { timeout: 20000 }, async (t) => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'panel-caller-'));
@@ -63,7 +73,7 @@ if (args[1] === 'get' && fs.existsSync(${JSON.stringify(missing)})) {
 }
 console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
 `, { mode: 0o700 });
-    if (initiallyMissing) fs.writeFileSync(missing, '');
+    if (initiallyMissing) writeFixtureFile(missing, '');
     const child = spawn(process.execPath, [resolve('dist/tree-page.js')], {
       cwd: dir, stdio: ['pipe', 'ignore', 'pipe'],
       env: {
@@ -71,6 +81,7 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
         CLAUDE_CONFIG_DIR: join(dir, 'claude'), PI_CODING_AGENT_DIR: join(dir, 'pi'),
         HERDR_SOCKET_PATH: join(dir, 'synthetic.sock'), PATH: `${bin}:${dirname(process.execPath)}`,
         HUD_PANEL_CALLER_PANE: 'w4E:p1', HERDR_PANE_ID: 'w4E:p2', CODEX_HUD_STANDALONE_PANEL: '1',
+        HUD_PANEL_CALLER_POLL_MS: '150',
       },
     });
     t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
@@ -84,7 +95,7 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
       await delay(200);
       assert.equal(child.exitCode, null, stderr);
       assert.ok(!calls().some((a) => a[1] === 'close'));
-      fs.writeFileSync(missing, '');
+      writeFixtureFile(missing, '');
     }
     const result = await exited;
     assert.deepEqual(result, { code: 0, signal: null }, stderr);

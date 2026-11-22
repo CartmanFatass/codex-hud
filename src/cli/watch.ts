@@ -21,6 +21,12 @@ const DEFAULT_RESCAN_MS = 30_000;
 const DEBOUNCE_MS = 50;
 const SETTLEMENT_WINDOW_MS = 3000;
 
+// Test-only override for both the CLI and in-process notification paths.
+function settlementWindow(env: NodeJS.ProcessEnv): number {
+  const ms = Number(env.HUD_WATCH_SETTLEMENT_MS);
+  return Number.isInteger(ms) && ms > 0 ? ms : SETTLEMENT_WINDOW_MS;
+}
+
 const isBrokenPipe = (error: unknown): boolean => {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED';
@@ -72,7 +78,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
 }
 
 // A fixed window from the first settlement, not a debounce that slides with each arrival.
-function settlementNotices() {
+function settlementNotices(windowMs: number) {
   let held: string[] = [], deadline = Infinity;
   return {
     get pending() { return held.length > 0; },
@@ -91,7 +97,7 @@ function settlementNotices() {
         if (held.length || events.some((event) => event.defer)) flush(lines);
         else ready.push(...lines);
       } else {
-        if (!held.length) deadline = now + SETTLEMENT_WINDOW_MS;
+        if (!held.length) deadline = now + windowMs;
         held.push(...lines);
       }
       return ready;
@@ -141,12 +147,12 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
 }
 
 /** In-process, pane-scoped quiet events; no CLI signal hooks or transport. */
-export function startSessionWatch(home: string, pane: string, cwd: string, deliver: (lines: string[]) => void) {
+export function startSessionWatch(home: string, pane: string, cwd: string, deliver: (lines: string[]) => void, settlementWindowMs = settlementWindow(process.env)) {
   const tries = new TryLog(home), answers = new PanelActionLog(home);
   let prev = new Map<string, JobRow>();
   let first = true, stopped = false, scanning = false, dirty = false;
   let timer: ReturnType<typeof setTimeout>;
-  const notices = settlementNotices();
+  const notices = settlementNotices(settlementWindowMs);
   const inputs = watchInputs(home, () => {
     if (scanning) dirty = true;
     else schedule(DEBOUNCE_MS);
@@ -182,6 +188,7 @@ export interface WatchOptions {
   rescanMs?: number;
   signal?: AbortSignal;
   queueIdleMs?: number;
+  settlementWindowMs?: number;
 }
 
 export async function watchCommand(
@@ -213,7 +220,7 @@ export async function watchCommand(
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
   let idleSince: number | null = null;
-  const notices = settlementNotices();
+  const notices = settlementNotices(options.settlementWindowMs ?? settlementWindow(io.env));
   const inputs = watchInputs(home, () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;

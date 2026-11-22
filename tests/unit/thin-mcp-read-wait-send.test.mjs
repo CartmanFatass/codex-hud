@@ -54,7 +54,8 @@ try {
   }
 } finally { await hooks.get('session_shutdown')(); }
 `);
-  const pi = spawn(process.execPath, [launcher], { cwd: f.root, env: f.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const pi = spawn(process.execPath, [launcher], { cwd: f.root,
+    env: { ...f.env, HUD_WATCH_SETTLEMENT_MS: '250' }, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(pi, 'close'), notices = [], calls = [];
   let stderr = '', reply;
   pi.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });

@@ -81,6 +81,8 @@ export function watchPanelCaller(env: NodeJS.ProcessEnv, onMissing: () => void):
   const caller = env.HUD_PANEL_CALLER_PANE;
   if (!herdrId(caller) || !herdrId(env.HERDR_PANE_ID) || caller === env.HERDR_PANE_ID) return () => {};
   const abort = new AbortController();
+  // Test-only caller probe interval override.
+  const ms = Number(env.HUD_PANEL_CALLER_POLL_MS);
   let busy = false;
   const timer = setInterval(() => {
     if (busy) return;
@@ -96,7 +98,7 @@ export function watchPanelCaller(env: NodeJS.ProcessEnv, onMissing: () => void):
         }
       })
       .finally(() => { busy = false; });
-  }, 3000);
+  }, Number.isInteger(ms) && ms > 0 ? ms : 3000);
   return () => {
     clearInterval(timer);
     abort.abort();

@@ -43,7 +43,11 @@ export class PanelReload {
   failed = false;
   private readonly env = { ...process.env };
   private readonly argv = [process.execPath, ...process.execArgv, ...process.argv.slice(1)];
-  constructor(readonly entry = fileURLToPath(new URL('../tree-page.js', import.meta.url))) {
+  // Test-only timing override; real builds must be quiet for 2s.
+  private readonly quietMs: number;
+  constructor(readonly entry = fileURLToPath(new URL('../tree-page.js', import.meta.url)), quietMs?: number) {
+    const ms = Number(process.env.HUD_PANEL_RELOAD_QUIET_MS);
+    this.quietMs = quietMs ?? (Number.isInteger(ms) && ms > 0 ? ms : 2000);
     this.seen = this.attempted = this.signature();
   }
   private signature(): string {
@@ -53,7 +57,7 @@ export class PanelReload {
   async poll(dirty: () => boolean, now = Date.now()): Promise<boolean> {
     const signature = this.signature();
     if (signature !== this.seen) { this.seen = signature; this.changedAt = now; }
-    if (this.busy || dirty() || signature === this.attempted || now - this.changedAt < 2000) return false;
+    if (this.busy || dirty() || signature === this.attempted || now - this.changedAt < this.quietMs) return false;
     this.busy = true;
     const ok = await new Promise<boolean>((resolve) => execFile(process.execPath,
       ['--input-type=module', '--eval', 'await import(process.argv[1])', pathToFileURL(this.entry).href],

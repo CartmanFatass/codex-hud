@@ -11,11 +11,12 @@ import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
   const dir = join(hudHome, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
+  writeFixtureFile(
     join(dir, 'job.json'),
     JSON.stringify({
       job: id,
@@ -30,10 +31,10 @@ function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
     })
   );
   if (status !== null) {
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(status));
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(status));
   }
   if (report) {
-    fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report.');
+    writeFixtureFile(join(dir, 'report.md'), 'Synthetic report.');
   }
   return dir;
 }
@@ -241,30 +242,30 @@ for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbo
   const lines = [], id = 'j00000000000000a1', head = `${id} imp life:`;
   const running = watchCommand(verbose ? ['--verbose'] : [], {
     env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(s.trim()), stderr: () => {},
-  }, { signal: ac.signal, rescanMs: 100 });
+  }, { signal: ac.signal, rescanMs: 100, settlementWindowMs: 1800 });
   const dir = writeJob(home, id, 'w4E:p1', 'life', { state: 'working' });
   const status = async (state, reason) => {
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
     await wait(180);
   };
   await wait(180);
   fs.mkdirSync(join(dir, 'qa'));
   const qfile = join(dir, 'qa/q1.md');
-  fs.writeFileSync(qfile, '# Question q1 from imp@demo\n\nWhich\nlayout?\n\nOptions:\n- rows\n- columns\n\nDefault if unanswered: rows\n');
+  writeFixtureFile(qfile, '# Question q1 from imp@demo\n\nWhich\nlayout?\n\nOptions:\n- rows\n- columns\n\nDefault if unanswered: rows\n');
   await status('waiting_orchestrator', 'question');
-  fs.writeFileSync(join(dir, 'qa/q1.answer.md'), 'rows');
+  writeFixtureFile(join(dir, 'qa/q1.answer.md'), 'rows');
   await wait(180);
   await status('working');
-  fs.writeFileSync(join(dir, 'report.md'), 'First report');
+  writeFixtureFile(join(dir, 'report.md'), 'First report');
   await status('idle_grace');
   const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
   const markRead = async () => {
-    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
     await wait(180);
   };
   await markRead();
   await status('working');
-  fs.writeFileSync(join(dir, 'report.md'), 'Second report');
+  writeFixtureFile(join(dir, 'report.md'), 'Second report');
   await status('idle_grace');
   await markRead();
   await status('working');
@@ -283,6 +284,30 @@ for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbo
   ]);
 });
 
+test('hud watch holds unconfigured settlements for exactly 3000ms', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-default-window-'));
+  const ac = new AbortController(), writes = [];
+  t.after(() => { ac.abort(); fs.rmSync(home, { recursive: true, force: true }); });
+  const id = 'j0000000000000001';
+  writeJob(home, id, 'w4E:p1', 'default', { state: 'done' }, true);
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const running = watchCommand(['--all'], { env: { HUD_HOME: home },
+    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal });
+  assert.deepEqual(writes, []);
+  now = 2999;
+  t.mock.timers.tick(2999);
+  await Promise.resolve();
+  assert.deepEqual(writes, []);
+  now = 3000;
+  t.mock.timers.tick(1);
+  await Promise.resolve();
+  assert.deepEqual(writes, [`${id} imp default: done | report\n`]);
+  ac.abort();
+  assert.equal(await running, 0);
+});
+
 test('hud watch batches three settled jobs into one notice', async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-batch-'));
   const ac = new AbortController(), writes = [], pane = 'w4E:p1';
@@ -290,9 +315,9 @@ test('hud watch batches three settled jobs into one notice', async (t) => {
   const ids = ['j0000000000000001', 'j0000000000000002', 'j0000000000000003'];
   const dirs = ids.map((id) => writeJob(home, id, pane, 'batch', { state: 'working' }));
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
-    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100 });
+    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100, settlementWindowMs: 500 });
   for (const dir of dirs) {
-    fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"done"}');
+    writeFixtureFile(join(dir, 'STATUS.json'), '{"state":"done"}');
     await wait(150);
     assert.deepEqual(writes, [], 'hold settlements across scans');
   }
@@ -310,11 +335,11 @@ test('hud watch flushes a held settlement with an immediate question', async (t)
   const ask = writeJob(home, 'j0000000000000002', pane, 'batch', { state: 'working' });
   fs.mkdirSync(join(ask, 'qa'));
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
-    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100 });
-  fs.writeFileSync(join(done, 'STATUS.json'), '{"state":"done"}');
-  await wait(150);
+    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100, settlementWindowMs: 250 });
+  writeFixtureFile(join(done, 'STATUS.json'), '{"state":"done"}');
+  await wait(100);
   assert.deepEqual(writes, []);
-  fs.writeFileSync(join(ask, 'qa/q1.md'), 'Synthetic question?');
+  writeFixtureFile(join(ask, 'qa/q1.md'), 'Synthetic question?');
   await until(() => writes.length > 0, 1500);
   ac.abort();
   assert.equal(await running, 0);
@@ -558,16 +583,17 @@ test('hud watch --queue queues catch-up and settlement silently and exits on age
   const dir = writeJob(f.home, 'j0000000000000002', 'w4E:p1', 'settlement', { state: 'working' });
   const ac = new AbortController(), stdout = [], stderr = [];
   t.after(() => ac.abort());
-  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60 });
+  // Queue scans also run synthetic CLI subprocesses; keep headroom for the second scan.
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, settlementWindowMs: 1000 });
   await until(() => fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')));
-  fs.writeFileSync(join(dir, 'report.md'), 'Done.');
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  writeFixtureFile(join(dir, 'report.md'), 'Done.');
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   await until(() => f.deliveries().length > 0, 6000);
   assert.deepEqual(f.deliveries().map((d) => d.args), [
     ['queue', '--thread', '00000000-0000-4000-8000-000000000001', '--message',
       'j0000000000000001 imp catchup: idle_grace | report\nj0000000000000002 imp settlement: idle_grace | report'],
   ]);
-  fs.writeFileSync(f.agentFile, 'claude');
+  writeFixtureFile(f.agentFile, 'claude');
   assert.equal(await running, 0);
   assert.deepEqual(stdout, []);
   assert.deepEqual(stderr, []);
@@ -579,12 +605,12 @@ test('hud watch --queue typed fallback keeps running and exits after injectable 
   const dir = writeJob(f.home, 'j0000000000000001', 'w4E:p1', 'fallback', { state: 'closed' }, true);
   const ac = new AbortController(), stdout = [], stderr = [];
   t.after(() => ac.abort());
-  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, queueIdleMs: 100 });
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, queueIdleMs: 100, settlementWindowMs: 250 });
   await until(() => f.deliveries().length === 2, 6000);
   await wait(180);
   assert.equal(fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), true, 'unread report prevents idle exit');
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ ...job, read_at: new Date(Date.now() + 1000).toISOString() }));
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...job, read_at: new Date(Date.now() + 1000).toISOString() }));
   assert.equal(await running, 0);
   assert.deepEqual(f.deliveries().map((d) => d.args[0]), ['queue', 'agent']);
   assert.equal(f.deliveries()[0].args[4], f.deliveries()[1].args[3]);

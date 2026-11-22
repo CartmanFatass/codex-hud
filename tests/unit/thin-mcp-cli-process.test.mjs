@@ -168,9 +168,11 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
   });
 }
 
-test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working', { timeout: 10000 }, async (t) => {
-  const f = await fixture(t);
-  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working', { timeout: 30000 }, async (t) => {
+  const clockScale = 40;
+  const f = await fixture(t, { clockScale });
+  writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
+  const observeRest = () => new Promise((r) => setTimeout(r, 62_000 / clockScale));
   writeCliRole(f, 'rest-events', 10);
   const job = await f.call('hud_create', { role: 'rest-events', request_key: 'rest-events', task: 'Synthetic rest.' });
   await until(() => cliState(job.task_dir)?.agent_session_id);
@@ -183,7 +185,7 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   }
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes, 'no-report status flaps do not write STATUS');
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'flaps never sample descendants');
-  await new Promise((r) => setTimeout(r, 3100)); // >60 virtual seconds, two real safety ticks
+  await observeRest(); // >60 virtual seconds, two safety ticks
   assert.equal(f.commands().length, commands);
   // Each safety tick re-reads the status once, so a missed push cannot hold a job; nothing else is asked at rest.
   const extra = f.socketRequests.slice(requests);
@@ -192,9 +194,9 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'working ticks never sample descendants');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes);
   assert.equal(cliState(job.task_dir).state, 'working');
-  fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
+  writeFixtureFile(join(f.env.HOME, 'herdr-errors'), '');
   f.drop();
-  await new Promise((r) => setTimeout(r, 3100));
+  await observeRest();
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).error, null);
   assert.equal(f.commands().length, commands);

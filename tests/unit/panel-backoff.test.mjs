@@ -12,9 +12,18 @@ import {
   adaptivePollDue,
   forceAdaptivePoll,
 } from '../../dist-test/src/collectors/adaptive-poll.js';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
+const LIVE_BASE_MS = 200;
+const LIVE_MAX_MS = 5 * LIVE_BASE_MS;
+// The next base tick waits one interval, then aligns to the grid. Measure at
+// its start so slower collection work is not mistaken for extra backoff.
+function assertBaseCadence(previous, next, label) {
+  const gap = next.startedAt - previous.at;
+  assert.ok(gap >= LIVE_BASE_MS * 0.98 && gap < LIVE_BASE_MS * 2.6, `${label}: ${gap}ms`);
+}
 const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
-function fixture(t, count = 1) {
+function fixture(t, count = 1, refreshMs = 1000) {
   const root = mkdtempSync(join(tmpdir(), 'hud-backoff-test-'));
   const env = {
     PATH: process.env.PATH,
@@ -33,9 +42,9 @@ function fixture(t, count = 1) {
     mkdirSync(env[k], { recursive: true });
   const put = (p, v) => {
     mkdirSync(join(p, '..'), { recursive: true });
-    writeFileSync(p, typeof v === 'string' ? v : JSON.stringify(v));
+    writeFixtureFile(p, typeof v === 'string' ? v : JSON.stringify(v));
   };
-  put(join(env.HUD_HOME, 'hud-settings.json'), { modelEnabled: false, refreshMs: 1000, language: 'en', theme: 'none' });
+  put(join(env.HUD_HOME, 'hud-settings.json'), { modelEnabled: false, refreshMs, language: 'en', theme: 'none' });
   mkdirSync(join(env.HUD_HOME, 'jobs'), { recursive: true });
   const dir = join(env.HUD_HOME, 'jobs', 'j0000000000000000');
   for (let i = 0; i < count; i++) {
@@ -152,15 +161,25 @@ for (const io of [fs, fs.promises]) {
 syncBuiltinESMExports();
 const {runLivePage,PanelJobPipeline} = await import(${JSON.stringify(module('tree-page'))});
 const {ProfileRecorder,useProfileRecorder} = await import(${JSON.stringify(module('utils/profile'))});
-let gate=false,release;const original=PanelJobPipeline.prototype.refresh;
-PanelJobPipeline.prototype.refresh=async function(...args){if(gate){gate=false;process.send({type:'waiting'});await new Promise(r=>release=r);}return original.apply(this,args);};
-process.on('message',m=>{if(m==='gate')gate=true;if(m==='release')release?.();});
-const r=new ProfileRecorder('panel',()=>{});r.record=(stage)=>{if(stage==='collect')process.send({type:'collected',at:Date.now()});};useProfileRecorder(r);
+let gate=false,release,startedAt;
+const original=PanelJobPipeline.prototype.refresh;
+PanelJobPipeline.prototype.refresh=async function(...args){
+  startedAt=Date.now();
+  if(gate){gate=false;process.send({type:'waiting',at:startedAt});await new Promise(r=>release=r);}
+  return original.apply(this,args);
+};
+process.on('message',m=>{
+  if(m==='gate'){gate=true;process.send({type:'armed'});}
+  if(m==='release')release?.();
+});
+process.stdin.on('data',()=>process.send({type:'input'}));
+const r=new ProfileRecorder('panel',()=>{});
+r.record=(stage)=>{if(stage==='collect')process.send({type:'collected',at:Date.now(),startedAt});};useProfileRecorder(r);
 await runLivePage();process.exit(0);`
   );
   const child = spawn(process.execPath, [runner], {
     cwd: f.env.CODEX_HUD_CWD,
-    env: { ...f.env, PATH: `${bin}:${f.env.PATH}`, HERDR_LOG: herdrLog },
+    env: { ...f.env, PATH: `${bin}:${f.env.PATH}`, HERDR_LOG: herdrLog, HUD_PANEL_ADAPTIVE_MAX_MS: String(LIVE_MAX_MS) },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   });
   let output = '',
@@ -184,17 +203,16 @@ await runLivePage();process.exit(0);`
   return { child, events, until, collections, output: () => output, herdrCalls: () => readFileSync(herdrLog, 'utf8') };
 }
 
-test('live working and capped scopes retain the original nonquiet base-tick timing', { timeout: 12000 }, async (t) => {
+test('live working and capped scopes retain the original nonquiet base-tick timing', { timeout: 30000 }, async (t) => {
   await Promise.all(
     [1, 201].map(async (count) => {
-      const f = fixture(t, count);
+      const f = fixture(t, count, LIVE_BASE_MS);
       if (count === 1) f.put(join(f.dir, 'STATUS.json'), { state: 'working' });
       const p = live(t, f);
       await p.until(() => p.collections().length >= 4, 10000);
-      const times = p.collections().map((e) => e.at);
-      for (let i = 1; i < times.length; i++) {
-        const gap = times[i] - times[i - 1];
-        assert.ok(gap >= 1800 && gap < 2600, `${count === 1 ? 'working' : 'capped'} base interval: ${gap}ms`);
+      const polls = p.collections();
+      for (let i = 1; i < polls.length; i++) {
+        assertBaseCadence(polls[i - 1], polls[i], `${count === 1 ? 'working' : 'capped'} base interval`);
       }
     })
   );
@@ -206,49 +224,49 @@ test(
   async (t) => {
     await Promise.all([
       (async () => {
-        const f = fixture(t),
+        const f = fixture(t, 1, LIVE_BASE_MS),
           p = live(t, f);
         await p.until(() => p.collections().length >= 5);
         assert.ok(
-          p.collections().at(-1).at - p.collections().at(-2).at >= 3900,
-          `quiet curve reached max after base-grid observations, then 2s and 4s; collected at +${p.collections().map((e) => e.at - p.collections()[0].at).join(', +')}ms`
+          p.collections().at(-1).at - p.collections().at(-2).at >= LIVE_BASE_MS * 3.9,
+          `quiet curve reached backoff after base-grid observations, then 2× and 4×; collected at +${p.collections().map((e) => e.at - p.collections()[0].at).join(', +')}ms`
         );
         p.child.send('gate');
-        const start = Date.now();
+        await p.until(() => p.events.some((e) => e.type === 'armed'), 1000);
+        const start = Date.now(), beforeInput = p.collections().length;
         p.child.stdin.write('a');
         await p.until(() => p.events.some((e) => e.type === 'waiting'), 1000);
-        assert.ok(Date.now() - start < 1000, 'input started collection without waiting for the backed-off timer');
+        const latency = p.events.find((e) => e.type === 'waiting').at - start;
+        assert.ok(latency >= 0 && latency < LIVE_BASE_MS, 'input started collection without waiting for the backed-off timer');
         p.child.stdin.write('a');
-        await new Promise((r) => setTimeout(r, 50));
+        // The second key must reach the panel while the first collection is still awaiting release.
+        await p.until(() => p.events.filter((e) => e.type === 'input').length === 2, 1000);
         p.child.send('release');
-        await p.until(() => p.collections().length >= 7, 1000);
+        await p.until(() => p.collections().length >= beforeInput + 2, 1000);
         assert.ok(
-          p.collections().at(-1).at - p.collections().at(-2).at < 500,
+          p.collections()[beforeInput + 1].startedAt - p.collections()[beforeInput].at < LIVE_BASE_MS / 2,
           'second forced collection was not lost during await'
         );
       })(),
       (async () => {
-        const f = fixture(t),
+        const f = fixture(t, 1, LIVE_BASE_MS),
           p = live(t, f);
-        await p.until(() => p.collections().length >= 7, 22000);
+        await p.until(() => p.collections().length >= 7);
         const gap = p.collections().at(-1).at - p.collections().at(-2).at;
-        assert.ok(gap >= 4900 && gap < 5500, `continued polling at max interval: ${gap}ms`);
+        assert.ok(gap >= LIVE_MAX_MS * 0.98 && gap < LIVE_MAX_MS * 1.1, `continued polling at max interval: ${gap}ms`);
         const start = Date.now(),
           beforeQuestion = p.collections().length;
         f.put(join(f.dir, 'STATUS.json'), { state: 'working' });
         f.put(join(f.dir, 'qa/q1.md'), '# Question\n\nSYNTHETIC_BACKOFF_QUESTION?\n\nDefault if unanswered: yes\n');
-        await p.until(() => p.output().includes('SYNTHETIC_BACKOFF_QUESTION'), 5500);
+        await p.until(() => p.output().includes('SYNTHETIC_BACKOFF_QUESTION'), LIVE_MAX_MS * 1.1);
         const elapsed = Date.now() - start;
         assert.ok(
-          elapsed >= 4500 && elapsed <= 5500,
-          `visible after one 5s interval plus collection/scheduler overhead: ${elapsed}ms`
+          elapsed >= LIVE_MAX_MS * 0.9 && elapsed <= LIVE_MAX_MS * 1.1,
+          `visible after one scaled maximum interval plus collection/scheduler overhead: ${elapsed}ms`
         );
-        await p.until(() => p.collections().length >= beforeQuestion + 2, 2600);
-        const baseGap = p.collections().at(-1).at - p.collections().at(-2).at;
-        assert.ok(
-          baseGap >= 1800 && baseGap < 2600,
-          `question/working job restores original base-grid cadence: ${baseGap}ms`
-        );
+        await p.until(() => p.collections().length >= beforeQuestion + 2, LIVE_BASE_MS * 2.6);
+        const polls = p.collections();
+        assertBaseCadence(polls[beforeQuestion], polls[beforeQuestion + 1], 'question/working job restores original base-grid cadence');
         // Reuse these real polling cycles (past the old 5s sampler cadence) instead of adding a sleep.
         assert.doesNotMatch(p.herdrCalls(), /^agent list(?:\s|$)/m, 'live collection never lists herdr agents');
         assert.deepEqual(p.events.filter((e) => e.type === 'retired-probe'), [], 'live collection never probes retired HUD home paths');

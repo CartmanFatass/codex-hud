@@ -29,10 +29,13 @@ export function createAdaptivePollState(baseIntervalMs: number, maxIdleIntervalM
   ) {
     throw new RangeError('Collection intervals must be finite and positive');
   }
+  // Test-only cap override for live panel cadence tests.
+  const ms = Number(process.env.HUD_PANEL_ADAPTIVE_MAX_MS);
+  const cap = Number.isInteger(ms) && ms > 0 ? ms : 5000;
   return {
     baseIntervalMs,
-    // A caller already configured above 5s keeps its configured cadence.
-    maxIdleIntervalMs: Math.max(baseIntervalMs, Math.min(5000, maxIdleIntervalMs)),
+    // A caller configured above the cap keeps its configured cadence.
+    maxIdleIntervalMs: Math.max(baseIntervalMs, Math.min(cap, maxIdleIntervalMs)),
     intervalMs: baseIntervalMs,
     nextDueAt: Number.NEGATIVE_INFINITY,
     stablePolls: 0,

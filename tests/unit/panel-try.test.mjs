@@ -10,6 +10,7 @@ import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
 import { stripAnsi } from '../../dist/render/colors.js';
+import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'panel-try-'));
@@ -28,9 +29,9 @@ Milestone: 0.1.4
 - try · 0.1.4 · TWO · second slice
 - accepted · 0.1.4 · DONE · already accepted
 `;
-  fs.writeFileSync(state, body);
+  writeFixtureFile(state, body);
   const record = (action, ...slices) => appendTry(hud, cwd, action, { milestone: '0.1.4', slices });
-  // Only finished lines: the panel may be mid-append when the test polls.
+  // The real ledger is append-only; an empty file or a partial tail is not a record yet.
   const records = () => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').slice(0, -1).filter(Boolean).map(JSON.parse) : [];
   return { cwd, hud, file, state, body, env, record, records };
 }
@@ -107,11 +108,11 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   assert.equal(fs.statSync(f.file).mode & 0o777, 0o600);
   assert.equal(fs.readFileSync(f.state, 'utf8'), f.body);
 
-  fs.writeFileSync(f.state, f.body.replace('try · 0.1.4 · TWO', 'accepted · 0.1.4 · TWO'));
+  writeFixtureFile(f.state, f.body.replace('try · 0.1.4 · TWO', 'accepted · 0.1.4 · TWO'));
   await painted(/^Only to try ─+ 2$/m);
   assert.doesNotMatch(frame(), /TWO/);
   assert.match(frame(), /⚑ ONE/, 'another ledger line changing does not clear a flag');
-  fs.writeFileSync(f.state, fs.readFileSync(f.state, 'utf8').replace('first slice', 'updated first slice'));
+  writeFixtureFile(f.state, fs.readFileSync(f.state, 'utf8').replace('first slice', 'updated first slice'));
   await painted(/◇ ONE/);
   await painted(/▾ 0\.1\.4 +◇ 1$/m);
   await close();

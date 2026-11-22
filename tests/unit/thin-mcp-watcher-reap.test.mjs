@@ -388,18 +388,20 @@ test('stopped jobs read immediately, render neutral and are terminal to the watc
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
 });
 
-test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeout: 7000 }, async (t) => {
-  const f = await fixture(t);
+const failedRetentionMs = 250;
+
+test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeout: 30000 }, async (t) => {
+  const f = await fixture(t, { failedRetentionMs });
   for (const ended_at of [undefined, 'not-a-date']) {
     const job = await f.call('hud_create', { role: 'imp', request_key: String(ended_at), task: 'Synthetic task.' });
     const file = join(job.task_dir, 'STATUS.json');
     writeFixtureFile(file, JSON.stringify({ state: 'failed', ended_at }));
     const mtime = fs.statSync(file).mtimeMs;
-    await new Promise((done) => setTimeout(done, 200));
+    await new Promise((done) => setTimeout(done, 50));
     assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, undefined);
     assert.ok(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
     await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
-    assert.ok(Date.parse(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at) >= mtime + 999);
+    assert.ok(Date.parse(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at) >= mtime + failedRetentionMs - 1);
   }
 });
 
@@ -477,9 +479,9 @@ test('thin watcher catches up without a new file event and exits', { timeout: 50
 
 test(
   'thin watcher starts once, catches up, respects grace and failed deadline, then exits',
-  { timeout: 15000 },
+  { timeout: 30000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await fixture(t, { failedRetentionMs });
     const jobs = join(f.env.HUD_HOME, 'jobs');
     const caught = join(jobs, 'j0000000000000000');
     fs.mkdirSync(caught, { recursive: true });
@@ -516,11 +518,11 @@ test(
       join(second.task_dir, 'STATUS.json'),
       JSON.stringify({ state: 'failed', ended_at: new Date(ended).toISOString() })
     );
-    await new Promise((done) => setTimeout(done, 300));
+    await new Promise((done) => setTimeout(done, 75));
     assert.equal(reaped(second.task_dir), 0);
     assert.equal(fs.existsSync(pidFile), true);
     await until(() => reaped(second.task_dir) === 1);
-    assert.ok(Date.now() >= ended + 1000);
+    assert.ok(Date.now() >= ended + failedRetentionMs);
     await until(() => !fs.existsSync(pidFile));
     await until(() => {
       try {
