@@ -381,8 +381,14 @@ function scan(retryWatch = false) {
         const now = new Date().toISOString();
         if (job?.cli) {
           safetyCheck ||= Boolean(status);
-          const pid = status && supervisorPid(dir, status);
-          if (tabClosed || (pid && !supervisorAlive(pid))) {
+          const pid = (status || tabClosed) && supervisorPid(dir, status);
+          const liveSupervisor = pid && supervisorAlive(pid);
+          // A live supervisor delivering /quit owns the terminal write and knows why the tab closed.
+          const quitting = tabClosed && liveSupervisor && fs.existsSync(`${statusFile}.quit-${pid}`);
+          if (!quitting && (tabClosed || (pid && !liveSupervisor))) {
+            // The quit marker is removed after STATUS is published; ignore a snapshot taken before that write.
+            status = jsonFresh(statusFile);
+            if (['closed', 'failed', 'stopped'].includes(status?.state)) { schedule(); continue; }
             const alive = workerAlive(status?.pid, status?.pid_start_time);
             const end = terminalFact({ alive, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
               turn: readTurn(dir), reportSig: reportSignature(dir) });

@@ -30,6 +30,7 @@ export interface QuietDecisionInput {
   questionIndex: number;
   env?: NodeJS.ProcessEnv;
   fetcher?: typeof fetch;
+  signal?: AbortSignal;
 }
 
 const CHOICE_DESCRIPTIONS: Choice[] = [
@@ -77,7 +78,10 @@ export async function decideQuietJob(
   const paneLines = input.paneText.replace(/\r?\n$/, '').split(/\r?\n/).slice(-60).join('\n').slice(-12_000);
   let asked = false;
   let capHit = false;
+  const timeout = AbortSignal.timeout(30_000);
+  const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
   try {
+    signal.throwIfAborted();
     const settings = loadSettings(env);
     const store = new ModelRuntimeStore(join(input.hudHome, 'display', 'model-cache', 'decision-api'));
     const baseFetch = input.fetcher ?? fetch;
@@ -87,10 +91,11 @@ export async function decideQuietJob(
         randomUUID(),
         settings.decisionCallsPerHour,
         Date.now,
-        () => false,
+        () => signal.aborted,
         undefined,
         'quiet-job'
       );
+      signal.throwIfAborted();
       if (reservation.kind !== 'reserved') {
         capHit = true;
         throw new DecisionCapReached();
@@ -126,8 +131,9 @@ export async function decideQuietJob(
           },
         ],
       },
-      { signal: AbortSignal.timeout(30_000), cacheKey }
+      { signal, cacheKey }
     );
+    input.signal?.throwIfAborted();
     const answer = result.answers.find((item) => item.name === 'quiet_job');
     if (!answer || answer.kind !== 'choice') {
       return { choice: null, probability: null, action: 'needs-human', reason: 'error', asked };
@@ -160,6 +166,9 @@ export async function decideQuietJob(
     }
     return { choice, probability, action: 'needs-human', asked };
   } catch (error) {
+    if (input.signal?.aborted) {
+      return { choice: null, probability: null, action: 'needs-human', reason: 'aborted', asked };
+    }
     if (error instanceof JevCredentialsMissing) {
       return { choice: null, probability: null, action: 'needs-human', reason: 'no-key', asked: false };
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** One CLI job: pushed facts -> pure judge -> effects. No subprocesses or STATUS writes at rest. */
-import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
@@ -13,10 +13,11 @@ import { sonicChildren, sonicCollectPrompt } from './sonic-jobs.mjs';
 const [
   { recordFailureExhaustion }, { decideQuietJob },
   { cliWorkerTools, firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn },
-  { rememberWorkerTree }, { reportWasRead },
+  { rememberWorkerTree }, { reportWasRead }, { runHerdr },
 ] = await withDistLock(() => Promise.all([
   import('../../../dist/roles/roster.js'), import('../../../dist/mcp/quiet-decision.js'),
   import('../../../dist/mcp/cli-judge.js'), import('../../../dist/roles/worker-tree.js'), import('../../../dist/collectors/thin-jobs.js'),
+  import('../../../dist/roles/herdr-run.js'),
 ]));
 
 const dir = fs.realpathSync(process.argv[2]);
@@ -30,15 +31,20 @@ const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'ut
 const name = session.PRIMARY, pane = session.LEFT, cli = job.cli;
 const tools = cliWorkerTools(cli.agent);
 const output = join(dir, 'report.md'), graceMs = (cli.idle_grace_s ?? 600) * 1000;
+const statusFile = join(dir, 'STATUS.json'), stopFile = `${statusFile}.stop-requested`, closeFile = `${statusFile}.close-requested`;
+const quitFile = `${statusFile}.quit-${process.pid}`;
 fs.writeFileSync(join(dir, 'supervisor.pid'), `${process.pid}\n`, { mode: 0o600 });
-function effect(args) {
-  const ran = spawnSync('herdr', args, { encoding: 'utf8', timeout: 20000 });
-  let body = null;
-  try { body = JSON.parse(ran.stdout); } catch { /* Effects can fail without proving worker death. */ }
-  return { ok: ran.status === 0, body };
+function effect(kind, args) {
+  // Leave headroom for terminal status writes even if the helper ignores SIGTERM.
+  return withEffect(kind, async (signal) => {
+    const ran = await runHerdr(args, process.env, { budgetMs: 20_000, killGraceMs: 100, signal });
+    let body = null;
+    try { body = JSON.parse(ran.stdout); } catch { /* Effects can fail without proving worker death. */ }
+    return { ok: ran.ok, body };
+  });
 }
 let initialStatus = null;
-try { initialStatus = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8')); } catch { /* Fresh job has no STATUS yet. */ }
+try { initialStatus = JSON.parse(fs.readFileSync(statusFile, 'utf8')); } catch { /* Fresh job has no STATUS yet. */ }
 let current = {
   version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: cli.agent,
   role: job.role, model: job.model ?? null, thinking: job.thinking ?? null,
@@ -54,26 +60,50 @@ let prev = null, status = null, agentMissing = false, workingAt = null, tabClose
 let turn = readTurn(dir) ?? writeTurn(dir), done = null, signature = null, stamp;
 let stop = false, close = false, openQuestions = false, diskDirty = true, sendInFlight = false;
 let socket, lines, reconnectTimer, debounce, deadline, tickTimer, dirWatch, qaWatch;
-let stopped = false, busy = false, pending = false, tickPending = false, reconnectMs = 5000, generation = 0;
+let stopped = false, busy = false, pending = false, tickPending = false, seedPending = false, reconnectMs = 5000, generation = 0;
 let quietQuestions = 0, reportPromptSent = Boolean(turn.report_prompt_sent), rowStamp;
+const lifecycle = new AbortController();
+let activeEffect, immediate;
+let urgentWake = false;
+async function withEffect(kind, call) {
+  const controller = new AbortController();
+  activeEffect = { kind, controller };
+  const signal = AbortSignal.any([lifecycle.signal, controller.signal]);
+  try { return { result: await call(signal), aborted: signal.aborted }; }
+  finally { activeEffect = undefined; }
+}
+function cancelQuiet() {
+  if (activeEffect?.kind === 'read' || activeEffect?.kind === 'decide') activeEffect.controller.abort();
+}
 function shutdown() {
+  if (stopped) return;
   stopped = true;
+  lifecycle.abort();
   for (const timer of [reconnectTimer, debounce, deadline, tickTimer]) clearTimeout(timer);
+  clearImmediate(immediate);
   dirWatch?.close(); qaWatch?.close(); lines?.close(); socket?.destroy();
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-function wake(tick = false) {
+function wake(tick = false, urgent = false) {
   if (stopped) return;
   tickPending ||= tick;
+  urgentWake ||= urgent;
   pending = true;
+  if (busy) return;
   clearTimeout(debounce);
-  debounce = setTimeout(run, 250);
+  if (urgentWake) immediate ??= setImmediate(run);
+  else debounce = setTimeout(run, 250);
+}
+function terminalWake() {
+  diskDirty = true;
+  activeEffect?.controller.abort();
+  wake(false, true);
 }
 function watchQa() {
   if (qaWatch || !fs.existsSync(join(dir, 'qa'))) return;
   try {
-    qaWatch = fs.watch(join(dir, 'qa'), () => { diskDirty = true; wake(); });
+    qaWatch = fs.watch(join(dir, 'qa'), () => { diskDirty = true; cancelQuiet(); wake(); });
     qaWatch.on('error', () => { qaWatch?.close(); qaWatch = undefined; });
   } catch { /* The safety tick retries a missing watch. */ }
 }
@@ -83,6 +113,8 @@ function watchDir() {
     dirWatch = fs.watch(dir, (_event, filename) => {
       const file = filename?.toString();
       if (file && (file === 'STATUS.json' || file === 'supervisor.pid' || file.endsWith('.tmp'))) return;
+      if ((!file || file === 'STATUS.json.stop-requested') && fs.existsSync(stopFile)) { terminalWake(); return; }
+      if (!file || ['report.md', 'turn.json', DONE_FILE, 'qa', 'STATUS.json.close-requested'].includes(file)) cancelQuiet();
       if (!file || ['report.md', 'job.json', 'turn.json', DONE_FILE, 'qa', '.sonic', 'STATUS.json.stop-requested', 'STATUS.json.close-requested'].includes(file)) {
         diskDirty = true; watchQa(); wake();
       }
@@ -94,17 +126,19 @@ function watchDir() {
 function tick() {
   if (stopped) return;
   diskDirty = true;
-  watchDir(); watchQa(); wake(true);
+  watchDir(); watchQa();
+  if (fs.existsSync(stopFile)) terminalWake();
+  else wake(true);
   tickTimer = setTimeout(tick, 30000);
 }
 function observeStatus(next) {
   if (next === 'working' && (status !== 'working' || (workingAt ?? -Infinity) < Date.parse(turn.sent_at))) workingAt = Date.now();
   status = next;
 }
-async function seed() {
+async function seed(signal) {
   const epoch = generation;
-  const got = await request('agent.get', { target: name });
-  if (stopped || epoch !== generation) return;
+  const got = await request('agent.get', { target: name }, { signal });
+  if (signal.aborted || epoch !== generation) return;
   agentMissing = got?.error?.code === 'agent_not_found';
   const agent = got?.result?.agent;
   observeStatus(agent?.agent_status ?? null);
@@ -126,13 +160,13 @@ function connect() {
     subscriptions: [{ type: 'pane.agent_status_changed', pane_id: pane },
       ...['pane.exited', 'pane.closed', 'tab.closed', 'pane.agent_detected'].map((type) => ({ type }))],
   } }) + '\n'));
-  lines.on('line', async (line) => {
+  lines.on('line', (line) => {
     let event;
     try { event = JSON.parse(line); } catch { unavailable(); return; }
     if (event.error) { unavailable(); return; }
     if (event.id === 'hud-cli-events') {
       reconnectMs = 5000;
-      await seed(); wake(); return;
+      seedPending = true; wake(); return;
     }
     // herdr names pushed events like their subscriptions (`pane.agent_status_changed`); the schema's kinds use `_`.
     const kind = String(event.event ?? '').replace(/\./g, '_'), data = event.data;
@@ -140,10 +174,11 @@ function connect() {
     generation += 1;
     if (kind === 'pane_agent_status_changed') {
       observeStatus(data.agent_status); agentMissing = false;
+      if (status === 'working') cancelQuiet();
+      if (!current.agent_session_id) seedPending = true;
     } else if (kind === 'pane_closed' || kind === 'tab_closed') {
-      tabClosed = true; diskDirty = true; // Read stop intent even if the file event has not arrived.
-    } else if (kind === 'pane_agent_detected') { await seed(); }
-    if (!current.agent_session_id && kind === 'pane_agent_status_changed') await seed();
+      tabClosed = true; terminalWake(); return;
+    } else if (kind === 'pane_agent_detected') seedPending = true;
     wake();
   });
   lines.on('error', unavailable); socket.on('error', unavailable); socket.on('close', unavailable);
@@ -158,8 +193,8 @@ function collect(isTick, checkChild = isTick && status !== 'working') {
     // Keep the prior settlement while the sender can still cancel this baseline. If it dies, assume delivery is possible.
     sendInFlight = turn.send && receipt.send_outcomes?.some((attempt) => attempt.key === turn.send.key && attempt.exit_code === null)
       && workerAlive(turn.send.pid, turn.send.start) === true;
-    stop = fs.existsSync(join(dir, 'STATUS.json.stop-requested'));
-    close = fs.existsSync(join(dir, 'STATUS.json.close-requested'));
+    stop = fs.existsSync(stopFile);
+    close = fs.existsSync(closeFile);
     const qa = join(dir, 'qa');
     openQuestions = fs.existsSync(qa) && fs.readdirSync(qa).some((file) => /^q\d+\.md$/.test(file) && !fs.existsSync(join(qa, file.replace('.md', '.answer.md'))));
     diskDirty = false;
@@ -174,6 +209,13 @@ function collect(isTick, checkChild = isTick && status !== 'working') {
     stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
     tick: isTick, agentMissing, workingAt, done, tabClosed };
 }
+function stillQuiet(before, latest) {
+  return !sendInFlight && !latest.stop && !latest.close && !latest.tabClosed && latest.alive !== false &&
+    latest.turn.seq === before.turn.seq && latest.turn.sent_at === before.turn.sent_at &&
+    latest.reportSig === before.reportSig && latest.done?.at === before.done?.at &&
+    latest.status === before.status && latest.workingAt === before.workingAt && !latest.openQuestions &&
+    latest.liveChild === false && !latest.sonic.open && !latest.sonic.uncollected.length;
+}
 function write(result) {
   const terminal = ['closed', 'failed', 'stopped'].includes(result.state);
   const iso = (time) => time === null ? null : new Date(time).toISOString();
@@ -184,26 +226,42 @@ function write(result) {
     error: result.state === 'failed' ? result.exitReason : null };
   const changed = JSON.stringify(row);
   if (changed === rowStamp) return;
-  const file = join(dir, 'STATUS.json');
   // A watcher may have reached a terminal verdict while this socket was down.
   try {
-    if (['closed', 'failed', 'stopped'].includes(JSON.parse(fs.readFileSync(file, 'utf8')).state)) { shutdown(); return; }
+    if (['closed', 'failed', 'stopped'].includes(JSON.parse(fs.readFileSync(statusFile, 'utf8')).state)) { shutdown(); return; }
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify({ ...row, updated_at: iso(Date.now()) }) + '\n', { mode: 0o600 });
-  fs.renameSync(`${file}.${process.pid}.tmp`, file);
+  const temp = `${statusFile}.${process.pid}.${randomUUID()}.tmp`;
+  const fd = fs.openSync(temp, 'wx', 0o600);
+  try {
+    try { fs.writeFileSync(fd, JSON.stringify({ ...row, updated_at: iso(Date.now()) }) + '\n'); }
+    finally { fs.closeSync(fd); }
+    fs.renameSync(temp, statusFile);
+  } catch (error) {
+    fs.rmSync(temp, { force: true });
+    throw error;
+  }
   current = row; rowStamp = changed;
 }
 async function run() {
   if (stopped || !pending || busy) return;
-  busy = true; pending = false;
-  const isTick = tickPending; tickPending = false;
+  busy = true; pending = urgentWake = false; immediate = undefined;
+  const isTick = tickPending, refreshAgent = isTick || seedPending;
+  tickPending = seedPending = false;
+  let quitting = false;
   try {
-    // The safety tick re-reads status once (one socket request per 30 s), so a missed push cannot hold a job.
-    if (isTick) await seed();
-    if (!current.pid_start_time) {
-      const info = (await request('pane.process_info', { pane_id: pane }))?.result?.process_info;
-      const pid = info?.foreground_processes?.find((item) => item.pid && item.pid !== info.shell_pid)?.pid;
-      if (pid) { current.pid = pid; current.pid_start_time = procStat(pid)?.start ?? null; }
+    // Terminal facts never wait on a socket query. The safety tick refreshes missed status pushes.
+    const stopping = fs.existsSync(stopFile);
+    if (stopping) diskDirty = true;
+    if (!tabClosed && !stopping && (refreshAgent || !current.pid_start_time)) {
+      const { aborted } = await withEffect('query', async (signal) => {
+        if (refreshAgent) await seed(signal);
+        if (!current.pid_start_time && !signal.aborted) {
+          const info = (await request('pane.process_info', { pane_id: pane }, { signal }))?.result?.process_info;
+          const pid = info?.foreground_processes?.find((item) => item.pid && item.pid !== info.shell_pid)?.pid;
+          if (!signal.aborted && pid) { current.pid = pid; current.pid_start_time = procStat(pid)?.start ?? null; }
+        }
+      });
+      if (stopped || aborted) return;
     }
     let observed = collect(isTick);
     if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
@@ -216,39 +274,55 @@ async function run() {
       const { open, uncollected } = sonicChildren(dir);
       if (open || !uncollected.length) { wake(); return; }
       const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, writeTurn(dir, { by: 'hud' }), cli.agent);
-      if (!effect(['agent', 'prompt', name, prompt]).ok) throw new Error('sonic collect prompt failed');
-      diskDirty = true; wake(); return;
+      const { result, aborted } = await effect('sonic', ['agent', 'prompt', name, prompt]);
+      if (stopped || aborted) return;
+      diskDirty = true;
+      if (!result.ok) {
+        const after = collect(false);
+        if (!after.close && !terminalFact(after)) throw new Error('sonic collect prompt failed');
+      }
+      wake(); return;
     }
     if (next.action === 'decide') {
-      const text = effect(['pane', 'read', pane, '--source', 'recent']).body?.result?.read?.text ?? '';
-      // The pane read can block; don't ask using the earlier child sample.
-      const liveChild = sampleChild(), sonic = sonicChildren(dir);
-      if (liveChild !== false || sonic.open || sonic.uncollected.length) { wake(); return; }
-      const decision = quietQuestions >= 3
-        ? { choice: null, probability: null, action: 'needs-human', reason: 'max-questions', asked: false }
-        : await decideQuietJob({ hudHome, jobId: job.job, role: job.role, agent: cli.agent,
-            jobState: current.state, backgroundChildAlive: liveChild,
+      const read = await effect('read', ['pane', 'read', pane, '--source', 'recent']);
+      if (stopped || read.aborted) return;
+      diskDirty = true;
+      const mid = collect(false, true);
+      if (!stillQuiet(observed, mid)) { wake(); return; }
+      const { result: decision, aborted } = quietQuestions >= 3
+        ? { result: { choice: null, probability: null, action: 'needs-human', reason: 'max-questions', asked: false } }
+        : await withEffect('decide', (signal) => decideQuietJob({ hudHome, jobId: job.job, role: job.role, agent: cli.agent,
+            jobState: current.state, backgroundChildAlive: mid.liveChild,
             minutesQuiet: Math.max(0, Math.round((Date.now() - next.quietSince) / 60000)),
-            paneText: text, reportPromptSent, questionIndex: quietQuestions + 1 });
+            paneText: read.result.body?.result?.read?.text ?? '', reportPromptSent, questionIndex: quietQuestions + 1, signal }));
       if (decision.asked) quietQuestions += 1;
+      if (stopped || aborted) return;
       diskDirty = true;
       const latest = collect(false, true);
-      if (sendInFlight || latest.turn.seq !== observed.turn.seq || latest.reportSig !== observed.reportSig || latest.stop || latest.close || latest.alive === false || latest.status !== observed.status || latest.workingAt !== observed.workingAt || latest.openQuestions || latest.liveChild !== false || latest.sonic.open || latest.sonic.uncollected.length) { wake(); return; }
-      current.quiet_decision = { choice: decision.choice, probability: decision.probability, action: decision.action,
-        ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
+      if (!stillQuiet(observed, latest)) { wake(); return; }
+      observed = latest;
+      let prompted = false;
       if (decision.action === 'prompt-report') {
         reportPromptSent = true;
         const sent = writeTurn(dir, { by: 'hud', reportPromptSent: true });
         const prompt = withDonePrompt(tools ? 'If work remains, finish it first.' :
           `Write your report to ${output} now; if work remains, finish it first.`, bundled, dir, sent, cli.agent);
-        if (!effect(['agent', 'prompt', name, prompt]).ok) {
+        const reply = await effect('prompt', ['agent', 'prompt', name, prompt]);
+        if (stopped || reply.aborted) return;
+        diskDirty = true;
+        const after = collect(false, !reply.result.ok);
+        if (sendInFlight || after.close || terminalFact(after) || after.turn.seq !== sent.seq || after.turn.sent_at !== sent.sent_at) { wake(); return; }
+        if (reply.result.ok) prompted = true;
+        else {
+          if (!stillQuiet({ ...observed, turn: sent, reportSig: sent.report_sig }, after)) { wake(); return; }
           decision.action = 'needs-human'; decision.reason = 'prompt-failed';
-          current.quiet_decision = { ...current.quiet_decision, action: 'needs-human', reason: 'prompt-failed' };
-          turn = sent;
-          observed = { ...observed, turn: sent };
+          observed = after;
           prev = prev ? { ...prev, seq: sent.seq } : prev;
-        } else { diskDirty = true; wake(); return; }
+        }
       }
+      current.quiet_decision = { choice: decision.choice, probability: decision.probability, action: decision.action,
+        ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
+      if (prompted) { wake(); return; }
       if (decision.action === 'fail') decision.failReason = recordFailureExhaustion(hudHome, bundled, dir, job, decision.failReason).reason;
       next = judge(prev, { ...observed, decision }, Date.now());
     }
@@ -261,7 +335,18 @@ async function run() {
       if (issue) {
         deferredQuit = true;
         console.error(`pre-quit snapshot: ${issue}; deferring quit to watcher`);
-      } else effect(['agent', 'prompt', name, '/quit']);
+      } else {
+        // Reserve the terminal write until delivery/cancellation; the watcher must not race it with tab failure.
+        fs.writeFileSync(quitFile, '', { flag: 'wx', mode: 0o600 });
+        quitting = true;
+        await effect('quit', ['agent', 'prompt', name, '/quit']);
+        if (stopped) return;
+        if (fs.existsSync(stopFile)) {
+          diskDirty = true;
+          next = judge(prev, collect(false), Date.now());
+        }
+        // A tab close can be confirmation of `/quit`; keep the prior closed judgment.
+      }
     }
     try { write(next); }
     catch (error) {
@@ -280,8 +365,18 @@ async function run() {
       shutdown();
     }
   } catch (error) {
-    try { write(judge(prev, { ...collect(false), supervisorError: `supervisor error: ${String(error.message ?? error).replace(/[\r\n]+/g, ' ')}` }, Date.now())); } catch { /* Watcher observes death if the directory vanished. */ }
+    if (stopped) return;
+    try {
+      diskDirty = true;
+      write(judge(prev, { ...collect(false), supervisorError: `supervisor error: ${String(error.message ?? error).replace(/[\r\n]+/g, ' ')}` }, Date.now()));
+    } catch { /* Watcher observes death if the directory vanished. */ }
     process.exitCode = 1; shutdown();
-  } finally { busy = false; if (pending && !stopped) wake(); }
+  } finally {
+    if (quitting) {
+      try { fs.rmSync(quitFile, { force: true }); } catch { /* A stale marker is ignored when the supervisor exits. */ }
+    }
+    busy = false;
+    if (pending) wake();
+  }
 }
-watchDir(); connect(); tickTimer = setTimeout(tick, 30000); wake();
+watchDir(); connect(); tickTimer = setTimeout(tick, 30000); wake(false, fs.existsSync(stopFile));
