@@ -19,11 +19,11 @@ agent proposes.
    use `op: add` to publish approved drafts into `.scratch/<slug>/issues/` (see `docs/agents/issue-tracker.md`).
    The Project tab tracks those tickets. Several small features one implementer can
    finish in one session are one slice with one brief and its acceptance list, no tickets (owner, 2026-11-12: "没有拆的
-   必要"). STATE.md's `## Slices` ledger keeps one line per work package either way.
+   必要"). STATE.md changes only at milestone boundaries; the Project tab reads slice progress from tickets.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per
    slice. For ticketed work, call `hud_tickets({op: "ready"})` and pass the returned `ticket` and `path` to `hud_create`
    as `ticket` and `brief_file`. A live job claims the ticket; leave the file at `ready-for-agent` until `hud_land`
-   records `ready-for-human`. Do not make a claim commit. The implementer runs the main-path tests for what it
+   records `ready-for-human` (or `done` when the ticket says `Owner try: no`). Do not make a claim commit. The implementer runs the main-path tests for what it
    changed, once, at the end. When a slice needs a lookup
    across several files first, pass `scout: "<question>"` on `hud_create` to attach a sonic dossier via `from_jobs`
    (prefixed with the unverified-facts reminder). Scout is for where/what/how-many questions; why/which/is-it-wrong
@@ -31,7 +31,7 @@ agent proposes.
 4. **Integrate.** The orchestrator reads each diff and tries the slice, then calls `hud_land({ job })` on the settled
    managed worktree (`isolation: "worktree"`). `hud_land` acquires the `main-checkout` lease, cherry-picks the job's
    commits into a detached checkout, runs the `.hud/project.json` `land` gate (one immediate rerun per red command; up
-   to two source-worker repairs on conflict or persistent failure), records the landing in the ticket and STATE ledger,
+   to two source-worker repairs on conflict or persistent failure), folds the ticket landing record into the landed commit,
    fast-forwards the base branch, runs `after`, pushes when configured, and removes the integration and job worktrees
    and branch. One notice or MCP task reports the landed SHA or the failing step and tail; `hud_read({ job: "<flow>" })`
    inspects progress. A worker question goes to the main session and stops the flow.
@@ -65,8 +65,8 @@ Every brief states:
 
 Design samples (owner, 2026-11-20): UI design starts with one self-contained HTML sample under `docs/design/<name>/`
 (synthetic data, no outside fetches; terminal frames drawn on the real grid, every row exactly the panel's width, as
-`docs/design/panel-v8/gen/` does). The worker commits it and reports its path; the owner looks at it and settles
-it; the build then takes that HTML as its template. One artifact, no screenshots, no separate preview after the
+`docs/design/panel-v8/gen/` does). The worker (`frontend-imp`, no worktree) commits it and reports its path; the orchestrator opens it in the owner's
+browser right away (a chat link alone gets missed) and the owner settles it; the build then takes that HTML as its template. One artifact, no screenshots, no separate preview after the
 build: the owner tries the real panel. A plain feature slice with no design question goes straight to the build.
 No claude.ai Artifacts.
 
