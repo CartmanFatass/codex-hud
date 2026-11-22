@@ -74,6 +74,10 @@ The owner approved the lean spec and resolved the draft questions:
   repairs) and scouted dispatch (a sonic fact dossier first, passed by from_jobs); a ticket queue that dispatches
   the next unblocked ticket comes after those two. Supersedes the §5 exclusion of `after` chaining for these
   flows only; general plan execution stays out.
+- **D-2026-11-22-20** (§2.1.4): After the astra trial (docs/llm/imp-load-2026-11-22.md: astra ~$3.7/job vs sol-fast
+  ~$0.9 at similar turns and wall time), imp's default preset returns to `fast` (gpt-6.2-sol-fast) and the main
+  session passes `preset: astra` for hard slices (several modules, review fixes, design-heavy); the only standing
+  exception to the no-override rule.
 
 ## 2026-11-21
 
