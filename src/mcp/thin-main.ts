@@ -16,7 +16,7 @@ import { isFlowId, landEvents, landView, readLand } from './land-state.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
-import { cliWorkerStartup } from './cli-worker-startup.js';
+import { cliWorkerStartup, type StandingBriefRef } from './cli-worker-startup.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
 import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
@@ -662,7 +662,7 @@ async function rejectLaunch(result: DispatchResult, tab?: string): Promise<Dispa
   const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
   return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok) };
 }
-async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[]): Promise<DispatchResult> {
+async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef): Promise<DispatchResult> {
   let openedTab: string | undefined;
   let mayHaveInput = false;
   const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
@@ -673,7 +673,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
     if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
       return reject({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
     }
-    const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers);
+    const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers, standingBrief);
     if (job.cli && startup.warning) job.cli.mcp_scope_warning = startup.warning;
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
@@ -1188,6 +1188,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
     return true;
   };
   let standing: string | undefined;
+  let standingLabel: string | undefined;
   let reference = '';
   if (project.registered) {
     const standingPath = join(project.root, '.hud', 'brief.md');
@@ -1203,6 +1204,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
         reference = `Read the project standing brief: ${JSON.stringify(standingPath)}.\n\n`;
       }
       standing = path;
+      standingLabel = standingPath;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         return { ok: false, code: 'invalid_arguments', error: `${standingPath} must resolve to a readable text file inside ${project.root}` } as const;
@@ -1251,7 +1253,11 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
   const block = !sections.length ? '' : inline
     ? `\n## Context\n\n${sections.join('\n\n')}\n`
     : `## Context References\n\nRead these files for task context:\n\n${sections.join('\n')}\n\n`;
-  return { metadata, block: reference + block };
+  return {
+    metadata,
+    block: reference + block,
+    standing: standing && standingLabel ? { path: standing, label: standingLabel } satisfies StandingBriefRef : undefined,
+  };
 }
 
 function placeOptions(args: Args, configured: RolePlace) {
@@ -1662,7 +1668,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         jobCache.invalidateFile(join(dir, jobFiles.status));
       }
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
-      else result = await launchPlace(job, launchRole, place, dir, task, worktree);
+      else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing);
       reason = result.exit_code === 0 ? '' : launchReason(result);
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
@@ -1756,7 +1762,7 @@ async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
   await populateWorktree(worktree);
 }
 
-async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree): Promise<DispatchResult> {
+async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree, standingBrief?: StandingBriefRef): Promise<DispatchResult> {
   let instructionsPath = '';
   try {
     if (job.thinking != null) {
@@ -1787,7 +1793,7 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
     // Worktree setup is shared; another place cannot repair it.
     return launchError(String(error));
   }
-  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task, definition.mcp_servers ?? []);
+  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task, definition.mcp_servers ?? [], standingBrief);
   if (place.harness === 'pi') return dispatchPi(job, definition, place, task);
   try { return await dispatchBro(job, task); }
   catch (error) { return launchError(String(error)); }

@@ -4,8 +4,44 @@ import { join } from 'node:path';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import type { RolePlace } from '../roles/roster.js';
 import { jobFiles } from './paths.js';
-import { briefPrompt } from './brief-prompt.js';
+import { briefPrompt, readInlineText } from './brief-prompt.js';
 import { codexWorkerMcp } from './codex-worker-mcp.js';
+
+export interface StandingBriefRef {
+  path: string;
+  label: string;
+}
+
+function stripLast(text: string, needle: string): string {
+  const at = text.lastIndexOf(needle);
+  return at < 0 ? text : text.slice(0, at) + text.slice(at + needle.length);
+}
+
+function agyFirstPrompt(briefPath: string, instructions: string, standingBrief?: StandingBriefRef): string {
+  const role = readInlineText(instructions);
+  const standing = standingBrief ? readInlineText(standingBrief.path) : null;
+  const standingRef = standingBrief ? `Read the project standing brief: ${JSON.stringify(standingBrief.label)}.` : '';
+  const brief = readInlineText(briefPath);
+  const briefSection = brief !== null
+    ? `Carry out this brief:\n\n${standing !== null ? stripLast(brief, `${standingRef}\n\n`) : brief}`
+    : `Read ${briefPath} and do exactly what it asks.`;
+
+  const parts: string[] = [];
+  if (role !== null) {
+    if (role.trim()) parts.push(role.trimEnd());
+  } else {
+    parts.push(`Read ${instructions} for your role instructions.`);
+  }
+  if (standingBrief) {
+    if (standing !== null) {
+      if (standing.trim()) parts.push(`Project standing brief (${JSON.stringify(standingBrief.label)}):\n\n${standing.trimEnd()}`);
+    } else if (!briefSection.includes(standingRef)) {
+      parts.push(standingRef);
+    }
+  }
+  parts.push(briefSection);
+  return parts.join('\n\n');
+}
 
 function claudeServers(names: Set<string>): [string, unknown][] {
   if (!names.size) return [];
@@ -21,9 +57,10 @@ function claudeServers(names: Set<string>): [string, unknown][] {
 }
 
 export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, instructions: string,
-  entry: string, allowed: readonly string[]): { args: string[]; prompt: string; warning?: string } {
-  const prompt = briefPrompt(join(dir, jobFiles.brief));
-  if (place.agent === 'agy') return { args: [], prompt: `Read ${instructions} for your role instructions.\n\n${prompt}` };
+  entry: string, allowed: readonly string[], standingBrief?: StandingBriefRef): { args: string[]; prompt: string; warning?: string } {
+  const briefPath = join(dir, jobFiles.brief);
+  if (place.agent === 'agy') return { args: [], prompt: agyFirstPrompt(briefPath, instructions, standingBrief) };
+  const prompt = briefPrompt(briefPath);
   const role = readFileSync(instructions, 'utf8');
   if (place.agent === 'grok') return { args: ['--rules', role], prompt };
 

@@ -232,7 +232,8 @@ test('imp falls back to agy when pi-role is missing on PATH', { timeout: 10000 }
   assert.equal(start.args[4], 'agy');
   assert.ok(start.args.includes('gemini-4-hydrogen-high'));
   const prompt = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt');
-  assert.match(prompt.args[3], /packages\/hud-mcp\/instructions\/implementer\.md/);
+  const implementerText = fs.readFileSync('packages/hud-mcp/instructions/implementer.md', 'utf8').trimEnd();
+  assert.ok(prompt.args[3].startsWith(`${implementerText}\n\nCarry out this brief:\n\nSynthetic task.`));
 });
 
 test('quota failure marks pi exhausted for 1h, names next place, and falls back to agy on next dispatch', { timeout: 10000 }, async (t) => {

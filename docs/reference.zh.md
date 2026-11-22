@@ -416,7 +416,7 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 
 角色文件可为 Claude 和 Codex CLI 工作者指定额外的 MCP 服务器，例如 `"mcp_servers": ["chrome-devtools"]`。省略此字段或设为 `[]` 时，只加载 HUD 工作者 MCP。Claude 从用户 `.claude.json`（设置了 `CLAUDE_CONFIG_DIR` 时为 `$CLAUDE_CONFIG_DIR/.claude.json`）的 `mcpServers` 中按名称读取条目，以该任务的私有配置严格启动。若 Claude 配置中没有所指定的名称，本次启动尝试会失败。Codex 仅在本次启动时禁用未列出的服务器；列出的服务器保持其配置状态。如果 HUD 无法读取某层 Codex 配置，就保留原有 MCP 设置，并在启动诊断中记录 `mcp scope not applied`。HUD 不会为限制 MCP 而修改宿主配置。
 
-Claude 将角色指令追加到系统提示，Codex 使用开发者指令，Grok 追加规则。Agy 的交互模式没有对应的系统提示参数，也不能按次严格选择 MCP 服务器，因此沿用原有 MCP 配置，并在第一条消息中要求读取角色指令文件。四种 CLI 的首条消息都直接包含组装后的简报；达到 16 KiB 或含有 NUL 字符时，改为指向 `brief.md`。
+Claude 将角色指令追加到系统提示，Codex 使用开发者指令，Grok 追加规则。Agy 的交互模式没有对应的系统提示参数，也不能按次严格选择 MCP 服务器，因此沿用原有 MCP 配置，并在首条消息前直接附上角色指令以及已注册项目的 `.hud/brief.md`（各自小于 16 KiB 且不含 NUL 字符时内联，否则保留读取提示）。四种 CLI 的首条消息都直接包含组装后的简报；达到 16 KiB 或含有 NUL 字符时，改为指向 `brief.md`。
 
 角色文件可带 `presets`：`[{ "name": "short-token", "run": [...] }]`，每项是完整有序位置列表，按 `run` 的规则校验。名称在同一文件内唯一，1–32 个 `[A-Za-z0-9._-]` 字符。预设按内置 → 用户 → 已登记项目合并，每一层先用 `hidden_presets` 隐藏继承的名称，再以本层定义替换同名项或追加新名称。由生效角色文件的 `active_preset` 选择名称，`null` 选择文件自身的 `run`。没有此字段时仍运行文件链，以首个规范化后完全匹配的名称作为预设名。指定的名称不存在时使用文件链，控制标签和名册会显示缺失的名称。`hud_roster` 的详情返回生效的 `run`、`preset` 和合并后的 `presets`。`hud_create(preset: …)` 只在本次任务中使用该预设，不保存。
 

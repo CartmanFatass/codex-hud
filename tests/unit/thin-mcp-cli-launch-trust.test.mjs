@@ -224,7 +224,9 @@ test(
     const commands = f.commands();
     const promptAt = commands.findIndex((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit');
     assert.ok(promptAt >= 0);
-    assert.match(commands[promptAt].args[3], /Read .*instructions\/implementer\.md[\s\S]*Carry out this brief:\n\nSynthetic agy task\./);
+    const firstPrompt = commands[promptAt].args[3];
+    assert.ok(firstPrompt.startsWith(`${roleText.trimEnd()}\n\nCarry out this brief:\n\nSynthetic agy task.`));
+    assert.doesNotMatch(firstPrompt, /Read .*instructions\/implementer\.md/);
     assert.equal(commands.some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
     const closed = cliState(job.task_dir);
     assert.equal(closed.agent, 'agy');
@@ -235,6 +237,65 @@ test(
     assert.equal(closed.error, null);
     assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic grok report.\n');
     assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+  }
+);
+
+test(
+  'an agy worker prepends role instructions and a registered standing brief within bounds, falling back when oversized',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t);
+    const hudDir = join(f.root, '.hud');
+    const standing = join(hudDir, 'brief.md');
+    const standingBody = '# Synthetic standing brief\nKeep all synthetic rules.\n';
+    fs.mkdirSync(hudDir);
+    fs.writeFileSync(standing, standingBody);
+
+    const unregistered = await f.call('hud_create', {
+      role: 'imp',
+      on: 'agy',
+      request_key: 'agy-unreg-standing',
+      task: 'Synthetic unregistered task.',
+    });
+    const unregPrompt = f.commands().find((c) => c.args[1] === 'prompt' && c.args[2] === `${unregistered.job}-primary`).args[3];
+    assert.ok(unregPrompt.startsWith(`${roleText.trimEnd()}\n\nCarry out this brief:\n\nSynthetic unregistered task.`));
+    assert.equal(unregPrompt.includes(standingBody.trimEnd()), false);
+    assert.doesNotMatch(unregPrompt, /Read .*instructions\/implementer\.md/);
+    await until(() => cliState(unregistered.task_dir)?.state === 'closed', 8000);
+
+    fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
+      version: 1,
+      projects: [{ root: fs.realpathSync(f.root), registered_at: new Date().toISOString() }],
+    }));
+
+    const registered = await f.call('hud_create', {
+      role: 'imp',
+      on: 'agy',
+      request_key: 'agy-reg-standing',
+      task: 'Synthetic registered task.',
+    });
+    const regPrompt = f.commands().find((c) => c.args[1] === 'prompt' && c.args[2] === `${registered.job}-primary`).args[3];
+    assert.ok(regPrompt.startsWith(
+      `${roleText.trimEnd()}\n\nProject standing brief (${JSON.stringify(join(fs.realpathSync(f.root), '.hud', 'brief.md'))}):\n\n${standingBody.trimEnd()}\n\nCarry out this brief:\n\nSynthetic registered task.`
+    ));
+    assert.doesNotMatch(regPrompt, /Read .*instructions\/implementer\.md/);
+    assert.equal(regPrompt.includes('Read the project standing brief:'), false);
+    assert.ok(fs.readFileSync(join(registered.task_dir, 'brief.md'), 'utf8').includes('Read the project standing brief:'));
+    await until(() => cliState(registered.task_dir)?.state === 'closed', 8000);
+
+    const oversizedBody = 'synthetic-rule\n'.repeat(1200);
+    fs.writeFileSync(standing, oversizedBody);
+    const oversized = await f.call('hud_create', {
+      role: 'imp',
+      on: 'agy',
+      request_key: 'agy-big-standing',
+      task: 'Synthetic oversized standing task.',
+    });
+    const bigPrompt = f.commands().find((c) => c.args[1] === 'prompt' && c.args[2] === `${oversized.job}-primary`).args[3];
+    assert.ok(bigPrompt.startsWith(`${roleText.trimEnd()}\n\nCarry out this brief:\n\nSynthetic oversized standing task.`));
+    assert.equal(bigPrompt.includes(oversizedBody.trimEnd()), false);
+    assert.ok(bigPrompt.includes(`Read the project standing brief: ${JSON.stringify(join(fs.realpathSync(f.root), '.hud', 'brief.md'))}.`));
+    await until(() => cliState(oversized.task_dir)?.state === 'closed', 8000);
   }
 );
 

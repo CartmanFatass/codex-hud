@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { briefPrompt } from '../../dist/mcp/brief-prompt.js';
+import { cliWorkerStartup } from '../../dist/mcp/cli-worker-startup.js';
 import { piMcpConfigEmpty } from '../../dist/mcp/pi-mcp-config.js';
 
 function temp(t) {
@@ -28,6 +29,57 @@ test('inline limit is strictly below 16 KiB of assembled UTF-8, without truncati
   assert.equal(fs.readFileSync(path, 'utf8'), under + 'x');
   put(path, 'A NUL\0cannot travel in argv');
   assert.equal(briefPrompt(path), fallback);
+});
+
+test('cliWorkerStartup for agy inlines role and standing brief under 16 KiB and falls back at the bound or on NUL', t => {
+  const root = temp(t);
+  const dir = join(root, 'job');
+  const instructions = join(root, 'role.md');
+  const standing = join(root, 'standing.md');
+  const briefPath = join(dir, 'brief.md');
+  const place = { harness: 'cli', agent: 'agy' };
+  const ref = `Read the project standing brief: ${JSON.stringify(standing)}.`;
+  const run = () => cliWorkerStartup(place, root, dir, instructions, 'entry.mjs', [], { path: standing, label: standing });
+
+  put(instructions, '# Synthetic role\nFollow rules.\n');
+  put(standing, '# Synthetic standing\nProject rules.\n');
+  put(briefPath, `Synthetic task.\n\n${ref}\n\n`);
+  const inlined = run();
+  assert.deepEqual(inlined.args, []);
+  assert.equal(
+    inlined.prompt,
+    `# Synthetic role\nFollow rules.\n\nProject standing brief (${JSON.stringify(standing)}):\n\n# Synthetic standing\nProject rules.\n\nCarry out this brief:\n\nSynthetic task.\n\n`
+  );
+  assert.ok(fs.readFileSync(briefPath, 'utf8').includes(ref));
+
+  put(instructions, 'é'.repeat(8192));
+  const bigRole = run();
+  assert.ok(bigRole.prompt.startsWith(`Read ${instructions} for your role instructions.\n\nProject standing brief (`));
+  assert.equal(bigRole.prompt.includes(ref), false);
+
+  put(instructions, 'Role with\0NUL');
+  assert.ok(run().prompt.startsWith(`Read ${instructions} for your role instructions.\n\n`));
+
+  put(instructions, '# Synthetic role\n');
+  put(standing, 'é'.repeat(8192));
+  const bigStanding = run();
+  assert.equal(bigStanding.prompt, `# Synthetic role\n\nCarry out this brief:\n\nSynthetic task.\n\n${ref}\n\n`);
+
+  put(standing, 'Standing\0NUL');
+  assert.equal(run().prompt, `# Synthetic role\n\nCarry out this brief:\n\nSynthetic task.\n\n${ref}\n\n`);
+
+  put(standing, '# Synthetic standing\n');
+  put(briefPath, 'x'.repeat(16 * 1024));
+  assert.equal(
+    run().prompt,
+    `# Synthetic role\n\nProject standing brief (${JSON.stringify(standing)}):\n\n# Synthetic standing\n\nRead ${briefPath} and do exactly what it asks.`
+  );
+
+  put(standing, 'x'.repeat(16 * 1024));
+  assert.equal(
+    run().prompt,
+    `# Synthetic role\n\n${ref}\n\nRead ${briefPath} and do exactly what it asks.`
+  );
 });
 
 test('adapter emptiness checks user and cwd configs, not other projects or cached server names', t => {
