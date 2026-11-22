@@ -96,13 +96,7 @@ export function nativeFixture(home) {
   }
   const codex = buildSubagentTree('synthetic-codex', [], 3, NOW, listed);
   const combined = () => ({ ...codex, nodes: [...claude().nodes, ...codex.nodes], totalCount: 5 });
-  const board = (tree = combined()) =>
-    buildWorkboard(
-      home,
-      { revision: 0, lanes: [], coverage: { incomplete: false, workspace: home, diagnostics: [] }, cost: {} },
-      { generation: 0, root: null, jobs: [], coverage: { incomplete: false, diagnostics: [] } },
-      tree
-    );
+  const board = (tree = combined()) => buildWorkboard(tree);
   const render = (width = 80, language = 'en', state = initialMonitorState(), tree = combined()) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }),
       lang = setLanguage(language);

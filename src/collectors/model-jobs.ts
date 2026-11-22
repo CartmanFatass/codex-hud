@@ -109,18 +109,10 @@ function usableCharge(value: string | undefined): string | undefined {
   return text;
 }
 export function labelSource(node: SubagentTreeNode): string | undefined {
-  if (jobOnlyNode(node) || displayOnlyRoot in node) return undefined;
   const charge = usableCharge(node.charge);
   if (charge) {
     const where = [node.agentPath, node.role].filter((part): part is string => Boolean(part)).join(' ');
     return where ? `${where} ${charge}` : charge;
   }
   return usableCharge(node.task);
-}
-export function jobOnlyNode(node: Pick<SubagentTreeNode, 'id'>): boolean {
-  return /^(?:role-job:|external-herdr:|job-root:)/.test(node.id);
-}
-const displayOnlyRoot = Symbol('display-only-job-root');
-export function displayOnlySummaryRoot<T extends SubagentTreeNode>(node: T): T {
-  return Object.assign(node, { [displayOnlyRoot]: true });
 }

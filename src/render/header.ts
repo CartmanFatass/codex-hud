@@ -10,7 +10,6 @@
 
 import type { HudData, RenderOptions, LayoutConfig, SubagentTree } from '../types.js';
 import { DEFAULT_LAYOUT } from '../types.js';
-import type { HudDelegationData } from '../core/link/view-model.js';
 import { colors, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { barFacts } from './layout/bar-modules.js';
 import { activeBarStyle } from './hud-config.js';
@@ -20,7 +19,7 @@ import { collectActiveTreeLineages, type SubagentTreeEntry } from '../collectors
 
 /** The single status line, fitted to the pane: the shared bar builder shortens, drops whole fields and never wraps. */
 export function fitStatusBar(
-  data: HudData & HudDelegationData,
+  data: HudData,
   _layout: LayoutConfig,
   width: number,
   nowMs: number = Date.now()
@@ -29,11 +28,11 @@ export function fitStatusBar(
   return renderBar(barFacts(data, nowMs), width, nowMs, activeBarStyle() === 'stacked' ? 'line' : activeBarStyle());
 }
 
-function renderStatusHeader(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string {
+function renderStatusHeader(data: HudData, layout: LayoutConfig, width: number): string {
   return fitStatusBar(data, layout, width).line;
 }
 
-function renderCompactLayout(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string[] {
+function renderCompactLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
   return [renderStatusHeader(data, layout, width)];
 }
 
@@ -131,14 +130,14 @@ function renderActiveTreeRows(tree: SubagentTree | undefined, width: number): st
 /**
  * Header plus parallel directory trees for top-level subagents.
  */
-function renderExpandedLayout(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string[] {
+function renderExpandedLayout(data: HudData, layout: LayoutConfig, width: number): string[] {
   return [renderStatusHeader(data, layout, width), ...renderActiveTreeRows(data.subagentTree, width)];
 }
 
 /**
  * Render the full HUD output (all lines)
  */
-export function renderHud(data: HudData & HudDelegationData, options: RenderOptions): string[] {
+export function renderHud(data: HudData, options: RenderOptions): string[] {
   const layout = options.layout ?? DEFAULT_LAYOUT;
 
   if (layout.mode === 'compact') {

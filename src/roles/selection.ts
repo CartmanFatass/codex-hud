@@ -1,5 +1,4 @@
 /** Display identity for a roster root: source namespace and session id, without a thread id. */
-import { createHash } from 'node:crypto';
 
 const NAMESPACE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SESSION = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$/;
@@ -22,10 +21,4 @@ export function parseRosterRoot(value: string): RosterRoot {
     throw new Error('invalid_value: root');
   }
   return { namespace, sessionId };
-}
-
-export function rosterSelectionKey(root: RosterRoot): string {
-  return createHash('sha256')
-    .update(JSON.stringify([root.namespace, root.sessionId]), 'utf8')
-    .digest('hex');
 }

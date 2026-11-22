@@ -20,21 +20,13 @@ import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
 import { theme } from './render/colors.js';
 import { makeSourceId } from './core/identity.js';
-import { externalRootHash } from './roles/external-association.js';
 import { parseRosterRoot, formatRosterRoot } from './roles/selection.js';
-import type { SessionRef } from './core/types/identity.js';
-import { JobObservationCollector, type JobObserverOptions, type JobReadSlice } from './collectors/job-observations.js';
-import type { JobSnapshot } from './collectors/job-display-types.js';
 import { TaskObservationCollector } from './collectors/task-observations.js';
 import { buildWorkboard } from './collectors/workboard.js';
 import { readThinJobs, type ThinJobScope } from './collectors/thin-jobs.js';
 import { DiffStatCollector } from './collectors/diff-stat.js';
 import { ActivityRings } from './collectors/activity-ring.js';
 import type { OwnerWorker, TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
-import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
-import { NativeCallCollector } from './collectors/native-calls.js';
-import { performance } from 'node:perf_hooks';
-import type { DelegationViewModel } from './core/link/view-model.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import {
   withInputRefresh,
@@ -99,13 +91,11 @@ import { TryBriefs } from './collectors/try-brief.js';
 import { DecisionLabels } from './collectors/decision-labels.js';
 import { HomeRecommendation } from './collectors/home-recommendation.js';
 import { DecisionTitles } from './collectors/decision-titles.js';
-import { hudProblems } from './render/hud-diagnostics.js';
 import { createAdaptivePollState, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
 import { collectionObservation, jobPanelObservation } from './utils/collection-observation.js';
-import { jobOnlyNode, displayOnlySummaryRoot } from './collectors/model-jobs.js';
 import { ClaudeNativeTree } from './collectors/claude-native-tree.js';
 import { getCodexHome } from './utils/codex-path.js';
-import { getHudDisplayHome } from './hud-home.js';
+import { getHudDisplayHome, getHudHome } from './hud-home.js';
 import { HudStatus } from './collectors/hud-status.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
@@ -115,87 +105,38 @@ import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.
 import type { HealthSource } from './collectors/hud-health.js';
 import type { SubagentTree, SubagentTreeNode } from './types.js';
 
-/** The live refresh and tests share this lifecycle: no I/O in compose/afterPaint. */
+/** Collect thin jobs and workspace task artifacts; project them alongside the native tree. */
 export class PanelJobPipeline {
-  private observer: JobObservationCollector;
-  private artifacts: TaskObservationCollector;
-  private taskSnapshot: TaskSnapshot | null = null;
-  private boardCache?: {
-    tree: SubagentTree;
-    legacy: DelegationViewModel | null;
-    jobs: JobSnapshot | null;
-    tasks: TaskSnapshot | null;
-    board: WorkboardSnapshot;
-  };
+  private readonly artifacts: TaskObservationCollector;
+  private taskSnapshot?: TaskSnapshot;
+  private boardCache?: { tree: SubagentTree; board: WorkboardSnapshot };
   private thinJobs: ReturnType<typeof readThinJobs> = [];
   private rings = new ActivityRings();
   private jobDiffs = new DiffStatCollector();
   private thinObservation = { complete: false };
-  observation(tree: SubagentTree, legacy: DelegationViewModel | null, nativeQuiet: boolean) {
-    return jobPanelObservation(this.workboard(tree, legacy), this.thinObservation.complete, nativeQuiet);
-  }
-  private snapshot: JobSnapshot | null = null;
   private generation = 0;
   private closed = false;
-  /** Collection-only bridge; presentation never invokes it. Consumes this slice's remainder. */
+
   constructor(
     readonly home: string,
-    private root: string | null,
-    private readonly options: JobObserverOptions = {},
-    private readonly workspace: string | null = null,
+    workspace: string | null = null,
     private readonly thinScope: ThinJobScope = { project: workspace, pane: null },
     readonly openedAt = Date.now()
   ) {
-    this.observer = new JobObservationCollector(home, { ...options, root });
     this.artifacts = new TaskObservationCollector(workspace);
-  }
-  setRoot(root: string | null): void {
-    if (root === this.root) return;
-    this.generation++;
-    this.root = root;
-    this.snapshot = null;
-    this.observer.dispose();
-    this.artifacts.dispose();
-    this.taskSnapshot = null;
-    this.boardCache = undefined;
-    this.artifacts = new TaskObservationCollector(this.workspace);
-    this.observer = new JobObservationCollector(this.home, { ...this.options, root });
   }
   dispose(): void {
     this.closed = true;
-    this.generation++;
-    this.snapshot = null;
-    this.taskSnapshot = null;
+    this.taskSnapshot = undefined;
     this.boardCache = undefined;
     this.artifacts.dispose();
-    this.observer.dispose();
   }
   get artifactCost() {
     return this.taskSnapshot?.cost;
   }
-  workboard(tree: SubagentTree, legacy: DelegationViewModel | null = null): WorkboardSnapshot {
-    const cached = this.boardCache;
-    if (
-      cached &&
-      cached.tree === tree &&
-      cached.legacy === legacy &&
-      cached.jobs === this.snapshot &&
-      cached.tasks === this.taskSnapshot
-    )
-      return cached.board;
-    const jobs = this.snapshot ?? {
-      generation: this.generation,
-      root: this.root,
-      jobs: [],
-      coverage: { entries: 0, files: 0, bytes: 0, incomplete: true, omitted: null, diagnostics: [] },
-    };
-    const tasks = this.taskSnapshot ?? {
-      revision: 0,
-      lanes: [],
-      coverage: { incomplete: true, workspace: this.workspace, diagnostics: [] },
-      cost: { entries: 0, files: 0, bytes: 0, probes: 0, enumerations: 0, parses: 0, elapsedMs: 0 },
-    };
-    const base = buildWorkboard(this.observer.home, tasks, jobs, tree, legacy);
+  workboard(tree: SubagentTree): WorkboardSnapshot {
+    if (this.boardCache?.tree === tree) return this.boardCache.board;
+    const base = buildWorkboard(tree, this.taskSnapshot);
     let board = {
       ...base,
       lanes: [...this.thinJobs, ...base.lanes],
@@ -209,28 +150,18 @@ export class PanelJobPipeline {
       const swap = (w: OwnerWorker) => add.get(w) ?? w;
       board = { ...board, workers: board.workers.map(swap), lanes: board.lanes.map((l) => ({ ...l, workers: l.workers.map(swap) })) };
     }
-    this.boardCache = { tree, legacy, jobs: this.snapshot, tasks: this.taskSnapshot, board };
+    this.boardCache = { tree, board };
     return board;
   }
-  get live() {
-    return this.observer.live;
+  observation(tree: SubagentTree, nativeQuiet: boolean) {
+    return jobPanelObservation(this.workboard(tree), this.thinObservation.complete, nativeQuiet);
   }
-  async refresh(
-    charge?: (bytes: number, entries: number, elapsed: number) => void,
-    slice?: JobReadSlice,
-    inspecting?: string
-  ): Promise<boolean> {
-    const generation = this.generation;
-    const start = performance.now();
-    const snapshot = await this.observer.refresh({ ...slice, maxFiles: 24, maxEntries: 112 });
-    if (this.closed || generation !== this.generation) return false;
-    const tasks = this.artifacts.refresh(snapshot.jobs, this.observer.home, {
-      deadline: slice?.deadline,
-      maxFiles: 32 - snapshot.coverage.files,
-      maxEntries: 128 - snapshot.coverage.entries,
-      maxBytes: Math.max(0, Math.min(1024 * 1024, slice?.maxBytes ?? 1024 * 1024) - snapshot.coverage.bytes),
-    });
-    let lanes = readThinJobs(this.home, this.thinScope, JSON.parse, { openedAt: this.openedAt }, this.thinObservation);
+  async refresh(inspecting?: string): Promise<boolean> {
+    if (this.closed) return false;
+    const generation = ++this.generation;
+    const tasks = this.artifacts.refresh({ maxEntries: 32 });
+    const observation = { complete: false };
+    let lanes = readThinJobs(this.home, this.thinScope, JSON.parse, { openedAt: this.openedAt }, observation);
     const id = /^thin-job:(j[0-9a-f]{16})$/.exec(inspecting ?? '')?.[1];
     const lane = id && lanes.find((l) => l.workers.some((w) => w.id === inspecting));
     if (id && lane) {
@@ -242,179 +173,11 @@ export class PanelJobPipeline {
       });
     }
     this.thinJobs = lanes;
-    this.boardCache = undefined;
-    this.snapshot = snapshot;
+    this.thinObservation = observation;
     this.taskSnapshot = tasks;
-    charge?.(
-      snapshot.coverage.bytes + tasks.cost.bytes,
-      snapshot.coverage.entries + tasks.cost.entries + snapshot.coverage.files + tasks.cost.files + tasks.cost.probes,
-      performance.now() - start
-    );
+    this.boardCache = undefined;
     return true;
   }
-  afterPaint(tree: SubagentTree, legacy: DelegationViewModel | null, nowMs: number, boundRoot?: string): JobTreeResult {
-    return this.compose(tree, legacy, nowMs, boundRoot);
-  }
-  /** Always recompose from the unmodified native tree and newly committed legacy view. */
-  compose(tree: SubagentTree, legacy: DelegationViewModel | null, nowMs: number, boundRoot?: string): JobTreeResult {
-    const snapshot = this.snapshot ?? {
-      generation: this.generation,
-      root: this.root,
-      jobs: [],
-      coverage: {
-        entries: 0,
-        files: 0,
-        bytes: 0,
-        incomplete: true,
-        omitted: null,
-        diagnostics: [],
-      },
-    };
-    if (this.closed) return { tree, legacy, aliases: {}, coverage: snapshot.coverage, diagnostics: [] };
-    const nativeRefs = new Map<string, SessionRef>();
-    if (boundRoot && boundRoot.endsWith(`/${tree.rootId}`)) {
-      const sourceId = boundRoot.slice(0, boundRoot.indexOf('/'));
-      const add = (id: string) => nativeRefs.set(id, { harness: 'codex', sourceId, sessionId: id, threadId: null });
-      add(tree.rootId);
-      walkNodes(tree.nodes, (node) => {
-        if (!node.ref && !jobOnlyNode(node)) add(node.id);
-      });
-    }
-    if (this.root !== null) {
-      if (legacy) {
-        const admitted = new Set(
-          legacy.tree.nodes
-            .filter(
-              (node) =>
-                node.parentKey === null &&
-                node.identity.kind === 'session' &&
-                `${node.identity.ref.sourceId}/${node.identity.ref.sessionId}` === this.root
-            )
-            .map((node) => node.key)
-        );
-        for (let n = 0; n < legacy.tree.nodes.length; n++)
-          for (const node of legacy.tree.nodes)
-            if (node.parentKey && admitted.has(node.parentKey)) admitted.add(node.key);
-        const scoped = legacy.tree.nodes.filter((node) => admitted.has(node.key));
-        legacy = {
-          ...legacy,
-          tree: {
-            ...legacy.tree,
-            nodes: scoped,
-            counts: {
-              ...legacy.tree.counts,
-              confirmedSessions: scoped.filter((node) => node.identity.kind === 'session').length,
-              jobs: scoped.filter((node) => node.identity.kind === 'job').length,
-            },
-          },
-        };
-      }
-      return composeJobTree({ tree, legacy, snapshot, root: this.root, nowMs, nativeRefs });
-    }
-    const roots = new Set(snapshot.jobs.map((job) => job.root));
-    const nodes = tree.nodes.map((node) => ({ ...node, children: [...node.children] }));
-    const aliases: Record<string, string> = {};
-    const diagnostics: string[] = [];
-    let incomplete = snapshot.coverage.incomplete;
-    const remaining = () => {
-      let count = legacy?.tree.nodes.length ?? 0;
-      walkNodes(nodes, () => {
-        count++;
-      });
-      return Math.max(0, 200 - count);
-    };
-    for (const root of roots) {
-      const match = (ref: SessionRef | undefined) => ref && `${ref.sourceId}/${ref.sessionId}` === root;
-      let native = nodes.find((node) => match(node.ref));
-      const legacyRoot = legacy?.tree.nodes.find(
-        (node) => node.parentKey === null && node.identity.kind === 'session' && match(node.identity.ref)
-      );
-      if (!native && root !== boundRoot && remaining() < 2) {
-        incomplete = true;
-        continue;
-      }
-      // A known native root is represented by its original key/ref, never by job-root metadata.
-      if (!native && root !== boundRoot && legacyRoot?.identity.kind === 'session') {
-        native = displayOnlySummaryRoot({
-          id: legacyRoot.key,
-          name: legacyRoot.identity.ref.sessionId,
-          ref: legacyRoot.identity.ref,
-          status: 'unknown',
-          depth: 1,
-          children: [],
-        });
-        nodes.push(native);
-      }
-      if (!native && root === boundRoot) {
-        const result = composeJobTree({
-          tree: { ...tree, nodes },
-          legacy,
-          snapshot: { ...snapshot, jobs: snapshot.jobs.filter((job) => job.root === root) },
-          root,
-          nowMs,
-          nativeRefs,
-          maxAdditionalNodes: remaining(),
-        });
-        incomplete ||= result.coverage.incomplete;
-        nodes.splice(0, nodes.length, ...result.tree.nodes);
-        legacy = result.legacy;
-        Object.assign(aliases, result.aliases);
-        diagnostics.push(...result.diagnostics);
-        continue;
-      }
-      if (!native) {
-        if (remaining() < 2) {
-          incomplete = true;
-          continue;
-        }
-        native = { id: `job-root:${externalRootHash(root)}`, name: root, status: 'unknown', depth: 1, children: [] };
-        nodes.push(native);
-      }
-      const result = composeJobTree({
-        tree: { ...tree, rootId: native.id, nodes: native.children },
-        legacy,
-        snapshot: { ...snapshot, jobs: snapshot.jobs.filter((job) => job.root === root) },
-        root,
-        nowMs,
-        maxAdditionalNodes: remaining(),
-      });
-      incomplete ||= result.coverage.incomplete;
-      native.children = result.tree.nodes;
-      legacy = result.legacy;
-      Object.assign(aliases, result.aliases);
-      diagnostics.push(...result.diagnostics);
-    }
-    let count = 0;
-    const depth = (items: SubagentTreeNode[], n: number) => {
-      for (const node of items) {
-        node.depth = n;
-        count++;
-        depth(node.children, n + 1);
-      }
-    };
-    depth(nodes, 1);
-    return {
-      tree: { ...tree, nodes, totalCount: count },
-      legacy,
-      aliases,
-      coverage: { ...snapshot.coverage, incomplete, omitted: incomplete ? null : snapshot.coverage.omitted },
-      diagnostics,
-    };
-  }
-}
-
-/** Feed global observation uncertainty into the panel's existing empty-state and notice vocabulary. */
-export function panelJobRenderState(
-  result: Pick<JobTreeResult, 'coverage' | 'diagnostics'> | null,
-  loading: boolean
-): { loading: boolean; notice: string | null } {
-  if (!result) return { loading, notice: null };
-  const { coverage, diagnostics } = result;
-  const partial =
-    coverage.incomplete || (coverage.omitted ?? 0) > 0 || coverage.diagnostics.length > 0 || diagnostics.length > 0;
-  let notice: string | null = null;
-  if (partial) notice = coverage.omitted ? t('{n} not loaded', { n: coverage.omitted }) : t('tree partial');
-  return { loading: loading || partial, notice };
 }
 
 /** At most one tail read per agent per this long, however often we repaint. */
@@ -483,28 +246,15 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const selectedRoot = process.env.CODEX_HUD_PANEL_ROOT
     ? formatRosterRoot(parseRosterRoot(process.env.CODEX_HUD_PANEL_ROOT))
     : null;
+  // Keep the existing workspace scope for the remaining tmp/tasks collector.
   const allDelegations = !selectedRoot && process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
-  const nativeCalls = NativeCallCollector.fromEnv();
-  const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL, {
+  const jobPipeline = new PanelJobPipeline(getHudHome(), allDelegations ? null : HUD_CWD_REAL, {
     project: HUD_CWD_REAL,
     pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
   }, openedAt);
   let disposeLifetime: (() => void) | undefined;
   let disposeCaller: (() => void) | undefined;
-  let nativeTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
   let boundJobRoot = '';
-  let jobComposition: JobTreeResult | null = null;
-  const applyJobComposition = (legacy: DelegationViewModel | null, afterPaint = false) => {
-    const composed = afterPaint
-      ? jobPipeline.afterPaint(nativeTree, nativeCalls.merge(legacy), Date.now(), boundJobRoot)
-      : jobPipeline.compose(nativeTree, nativeCalls.merge(legacy), Date.now(), boundJobRoot);
-    jobComposition = composed;
-    tree = composed.tree;
-    delegation = composed.legacy;
-    const selected = state.tree.selectedId;
-    if (selected && composed.aliases[selected]) state.tree.selectedId = composed.aliases[selected]!;
-  };
-  let delegation: DelegationViewModel | null = null;
   // Opened again, the panel reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudDisplayHome(), 'scan')));
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
@@ -570,13 +320,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   };
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
-  let panelDelegation: DelegationViewModel | null = null;
-  const syncPanelView = () => {
-    panelDelegation = delegation;
-  };
   let tree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
-  // The root the tree was last built for: until then an empty tree is not news.
-  let treeBuiltFor: string | null = null;
+  // Don't reset the restored panel place on the first tree build.
+  let treeBuilt = false;
   let main: RolloutParseResult | null = null;
   // Size/mtime/inode as of the last parse: this page runs its own parser over
   // the same rollout as the HUD, so it re-reads nothing while the file is still.
@@ -623,7 +369,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   );
   const decisionLabels = new DecisionLabels(path.join(getHudDisplayHome(), 'model-cache'), () => render());
   const homeRecommendation = new HomeRecommendation(path.join(getHudDisplayHome(), 'model-cache'), model, () => render());
-  const displayBoard = () => decisionLabels.apply(decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation))));
+  const displayBoard = () => decisionLabels.apply(decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree))));
   const claudeNative = new ClaudeNativeTree();
   const configureModel = () => {
     modelOn =
@@ -674,7 +420,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const backupSkills = readBackupSkills();
   const render = () => {
     if (closed || (place && !collected)) return;
-    syncPanelView();
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
     const control = controlShown(state, Boolean(settingsPage)), chosen = shownRoot();
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
@@ -721,8 +466,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       } else {
         const width = process.stdout.columns || 30;
         const nowMs = Date.now();
-        const hud = currentHud();
-        const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
         frame = renderMonitor({
           tree,
           workboard: state.mainTab === 'home' && state.focus === 'agents' && !state.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
@@ -741,9 +484,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           error,
           publicationNotice: boardNotice || null,
           nowMs,
-          hud: hud ? { ...hud, delegation: panelDelegation } : hud,
-          notice: jobRender.notice || hudProblems(hud, nowMs, t)[0],
-          loading: jobRender.loading,
+          hud: currentHud(),
           width,
           height: process.stdout.rows || 24,
         });
@@ -907,9 +648,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       const data = currentHud();
       const native = collectionObservation(data, tree);
       const jobOnly = !boundJobRoot;
-      const jobQuiet = jobOnly && !selectedRoot && !nativeTree.nodes.length && native.activity !== 'active';
+      const jobQuiet = jobOnly && !selectedRoot && !tree.nodes.length && native.activity !== 'active';
       const observation = jobOnly
-        ? jobPipeline.observation(tree, panelDelegation, jobQuiet && nativeCalls.emptyAndComplete)
+        ? jobPipeline.observation(tree, jobQuiet)
         : { ...native, succeeded: data?.health?.sessionBound === true };
       adaptive = recordAdaptivePoll(adaptive, {
         scopeKey: collectionScope(),
@@ -934,8 +675,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
   };
   const collectNowBody = async () => {
-    const collectionStartedAt = performance.now();
-    const delegationDeadline = collectionStartedAt + 40;
     let session: ReturnType<typeof finder.check> = null;
     let stale = false;
     // Where a failure happened, for the health row.
@@ -950,16 +689,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         boundJobRoot = session ? `${makeSourceId('codex', fs.realpathSync(getCodexHome()))}/${session.sessionId}` : '';
         if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
       }
-      const observationRoot = allDelegations ? null : (selectedRoot ?? boundJobRoot);
-      jobPipeline.setRoot(allDelegations ? null : observationRoot || 'unbound/no-session');
       const inspect = !settingsPage && !state.help && state.focus === 'details' ? state.boardInspect : undefined;
-      const jobRead = jobPipeline.refresh(undefined, { deadline: delegationDeadline }, inspect?.kind === 'worker' ? inspect.workerId : undefined);
-      await jobRead;
+      await jobPipeline.refresh(inspect?.kind === 'worker' ? inspect.workerId : undefined);
       if (closed) return;
-      const nativeRead = selectedRoot
-        ? nativeCalls.collect()
-        : nativeCalls.collectCodex(session?.sessionId, getCodexHome(), allDelegations);
-      const legacyDelegation = null;
       stage = 'rollout';
       parser.setRolloutPath(session?.path ?? null);
       if (!session) {
@@ -983,10 +715,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       hudStatus.health.bind(Boolean(session));
       hudStatus.health.read();
-      await nativeRead;
-      await jobRead;
       if (closed) return;
-      delegation = nativeCalls.merge(legacyDelegation);
       stage = 'tree';
       const claude =
         selectedRoot && process.env.CODEX_HUD_PANEL_HARNESS === 'claude' && process.env.CODEX_HUD_PANEL_SOURCE
@@ -994,7 +723,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           : undefined;
       const rootId = main?.session?.id ?? session?.sessionId ?? claude?.rootId ?? selectedRoot ?? '';
       if (rootId !== tree.rootId) {
-        if (treeBuiltFor !== null) state = configuredState();
+        if (treeBuilt) state = configuredState();
         worktrees = null;
         // Cancel old-root writers before loading the next root's model log.
         decisionTitles.stop();
@@ -1030,15 +759,14 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             )
           : (claude ?? { rootId, nodes: [], totalCount: 0, updatedAt: new Date() });
       if (closed) return;
-      nativeTree = tree;
-      applyJobComposition(legacyDelegation);
-      treeBuiltFor = rootId;
+      treeBuilt = true;
       applyAgentContext();
-      state = reconcileMonitor(state, tree, Date.now(), delegation);
-      decisionTitles.inspect(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home,
+      state = reconcileMonitor(state, tree, Date.now());
+      const board = jobPipeline.workboard(tree);
+      decisionTitles.inspect(board, jobPipeline.home,
         !settingsPage && !state.help && state.focus === 'details' ? state.boardInspect : undefined);
-      decisionLabels.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
-      jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
+      decisionLabels.update(board, jobPipeline.home, tree);
+      jobSentences.update(board, jobPipeline.home, tree);
       homeRecommendation.update(displayBoard());
       // Only the shown project is collected; the list of projects is read again at most every five seconds.
       const shown = projectShown(state, Boolean(settingsPage)), control = controlShown(state, Boolean(settingsPage));
@@ -1052,7 +780,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (shown && !full) {
         if (Date.now() - overviewAt >= 5000) {
           overviewAt = Date.now();
-          overview = await overviews.read(projects.map((p) => p.root), jobPipeline.workboard(tree, panelDelegation), Date.now());
+          overview = await overviews.read(projects.map((p) => p.root), board, Date.now());
         }
       } else overviewAt = -Infinity;
       const root = shown || control ? shownRoot() : HUD_CWD_REAL;
@@ -1061,7 +789,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         control ? 'control' : shown ? full : state.focus === 'agents' && !state.help && !settingsPage
           ? state.acceptance === 'slice' ? 'home' : 'home-tasks'
           : false,
-        jobPipeline.workboard(tree, panelDelegation),
+        jobPipeline.workboard(tree),
         Date.now()
       );
       if (projectFacts) {
@@ -1081,12 +809,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     let built: ReturnType<HudStatus['build']> | null = null;
     try {
       built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree, skipGit: true });
-      if (delegation) Object.assign(built, { delegation });
     } catch (err) {
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
     }
     if (built && !stale) {
-      notifier.update(built, Date.now(), jobPipeline.workboard(tree, panelDelegation));
+      notifier.update(built, Date.now(), jobPipeline.workboard(tree));
       try {
         snapshotWriter.write(buildSnapshot(built, { width: 0, segments: [] }));
       } catch {
@@ -1095,7 +822,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     // Collect both EXP readings together; paint only consumes cached facts.
     if (expShown(state) && !settingsPage) expData = readExpData(jobPipeline.home);
-    syncPanelView();
     render();
     void refreshAgentContext();
   };
@@ -1246,7 +972,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (input.type === 'mouse' && !settings.mouse) continue;
       // Editors own unnamed printable keys; nowhere else do they trigger an action.
       if (input.type === 'key' && !input.key && !state.projectInput && !state.controlQuickModel && !state.expPage?.edit && !state.controlPresetInput && !state.controlChain?.sheet && !state.controlHarnessAdd) continue;
-      syncPanelView();
       const fromSettings = Boolean(settingsPage);
       if (settingsLeave && confirmationFrame) {
         const result = handleSettingsConfirmation(settingsLeave, input, confirmationFrame);
@@ -1323,7 +1048,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       });
       state = result.state;
       if (expShown(state) && !expShown(previous)) expData = readExpData(jobPipeline.home);
-      syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
       if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) ||
         (controlShown(state) && (!controlShown(previous) || state.projectRoot !== previous.projectRoot)) ||

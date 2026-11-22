@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { PanelJobPipeline } from '../../dist-test/src/tree-page.js';
-import { NativeCallCollector } from '../../dist-test/src/collectors/native-calls.js';
 import {
   createAdaptivePollState,
   recordAdaptivePoll,
@@ -52,7 +51,7 @@ function fixture(t, count = 1) {
     put(join(d, 'STATUS.json'), { state: 'done', settled_at: new Date().toISOString() });
     put(join(d, 'brief.md'), '# SYNTHETIC: backoff');
   }
-  const pipeline = new PanelJobPipeline(env.HUD_HOME, null, { live: false }, null, {
+  const pipeline = new PanelJobPipeline(env.HUD_HOME, null, {
     project: null,
     pane: 'w4E:p1',
   }, Date.now() - 60000);
@@ -60,17 +59,17 @@ function fixture(t, count = 1) {
     pipeline.dispose();
     rmSync(root, { recursive: true, force: true });
   });
-  const observe = async (nativeQuiet = true) => {
+  const observe = async () => {
     await pipeline.refresh();
-    return pipeline.observation(tree, null, nativeQuiet);
+    return pipeline.observation(tree, true);
   };
-  const cadence = async (nativeQuiet = true) => {
+  const cadence = async () => {
     let state = createAdaptivePollState(1000);
     for (let i = 0; i < 12; i++)
       state = recordAdaptivePoll(state, {
         scopeKey: 'w4E:p1',
         nowMs: i * 5000,
-        ...(await observe(nativeQuiet)),
+        ...(await observe()),
       });
     return state;
   };
@@ -96,11 +95,10 @@ test('completely observed empty and settled job scopes reach the existing 5s max
   }
 });
 
-test('working jobs, unanswered questions, failed reads, missing evidence and uncertain native coverage stay at base', async (t) => {
-  for (const variant of ['working', 'question', 'failed-read', 'missing-status', 'native', 'native-content', 'cap']) {
+test('working jobs, unanswered questions, failed reads, missing evidence and capped jobs stay at base', async (t) => {
+  for (const variant of ['working', 'question', 'failed-read', 'missing-status', 'cap']) {
     await t.test(variant, async (t) => {
       const f = fixture(t, variant === 'cap' ? 201 : 1);
-      let nativeQuiet = true;
       if (variant === 'working') f.put(join(f.dir, 'STATUS.json'), { state: 'working' });
       if (variant === 'question') f.put(join(f.dir, 'qa/q1.md'), '# Question\n\nSynthetic pending?');
       if (variant === 'failed-read') {
@@ -108,27 +106,9 @@ test('working jobs, unanswered questions, failed reads, missing evidence and unc
         mkdirSync(join(f.dir, 'STATUS.json'));
       }
       if (variant === 'missing-status') rmSync(join(f.dir, 'STATUS.json'));
-      if (variant.startsWith('native')) {
-        const collector = new NativeCallCollector(f.env.HUD_HOME);
-        assert.equal(collector.emptyAndComplete, false, 'unobserved is not idle');
-        await collector.collect();
-        assert.equal(collector.emptyAndComplete, true, 'successfully observed empty native scope');
-        await collector.collectCodex(undefined, f.env.CODEX_HOME);
-        assert.equal(collector.emptyAndComplete, false, 'skipped native coverage is not idle');
-        const relations = join(f.env.HUD_HOME, 'native-relations');
-        mkdirSync(relations, { mode: variant === 'native' ? 0o755 : 0o700 });
-        if (variant === 'native-content') {
-          await collector.collect();
-          assert.equal(collector.emptyAndComplete, true, 'physically empty native directory is complete');
-          for (let i = 0; i < 513; i++) f.put(join(relations, `ignored-${i}.txt`), 'synthetic');
-        }
-        await collector.collect();
-        nativeQuiet = collector.emptyAndComplete;
-        assert.equal(nativeQuiet, false, 'failed native collection with no retained rows is uncertain');
-      }
-      assert.equal((await f.cadence(nativeQuiet)).intervalMs, 1000);
+      assert.equal((await f.cadence()).intervalMs, 1000);
       assert.equal(
-        (await f.observe(nativeQuiet)).fingerprint,
+        (await f.observe()).fingerprint,
         undefined,
         'nonquiet polls do not serialize board history'
       );
@@ -138,7 +118,11 @@ test('working jobs, unanswered questions, failed reads, missing evidence and unc
 
 function live(t, f) {
   const runner = join(f.root, 'runner.mjs');
-  const module = (name) => pathToFileURL(resolve('dist-test/src/' + name + '.js')).href;
+  const module = (name) => pathToFileURL(resolve('dist/' + name + '.js')).href;
+  const bin = join(f.root, 'bin'), herdrLog = join(f.root, 'herdr.log');
+  mkdirSync(bin);
+  writeFileSync(herdrLog, '');
+  writeFileSync(join(bin, 'herdr'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HERDR_LOG"\nprintf "[]\\n"\n', { mode: 0o700 });
   // Delay, never replace, one actual collection to exercise force-during-await.
   f.put(
     runner,
@@ -152,7 +136,7 @@ await runLivePage();process.exit(0);`
   );
   const child = spawn(process.execPath, [runner], {
     cwd: f.env.CODEX_HUD_CWD,
-    env: f.env,
+    env: { ...f.env, PATH: `${bin}:${f.env.PATH}`, HERDR_LOG: herdrLog },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   });
   let output = '',
@@ -173,7 +157,7 @@ await runLivePage();process.exit(0);`
     assert.ok(condition(), `condition timed out; stderr=${stderr}`);
   };
   const collections = () => events.filter((e) => e.type === 'collected');
-  return { child, events, until, collections, output: () => output };
+  return { child, events, until, collections, output: () => output, herdrCalls: () => readFileSync(herdrLog, 'utf8') };
 }
 
 test('live working and capped scopes retain the original nonquiet base-tick timing', { timeout: 12000 }, async (t) => {
@@ -193,7 +177,7 @@ test('live working and capped scopes retain the original nonquiet base-tick timi
 });
 
 test(
-  'live panel: input wakes immediately, force during await is retained, and a new question appears within 5s',
+  'live panel: input wakes immediately, force during await is retained, and a new question appears within 5s without listing herdr agents',
   { timeout: 35000 },
   async (t) => {
     await Promise.all([
@@ -241,6 +225,7 @@ test(
           baseGap >= 1800 && baseGap < 2600,
           `question/working job restores original base-grid cadence: ${baseGap}ms`
         );
+        assert.doesNotMatch(p.herdrCalls(), /^agent list(?:\s|$)/m, 'live collection never lists herdr agents');
       })(),
     ]);
   }

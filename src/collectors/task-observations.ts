@@ -12,7 +12,6 @@ import {
   questionFields,
 } from './work-artifacts.js';
 import { dispatchWorkFacts, type ReviewFact } from './work-card.js';
-import type { JobDisplay } from './job-display-types.js';
 import type {
   DecisionRecord,
   EvidenceRef,
@@ -772,7 +771,7 @@ export class TaskObservationCollector {
     };
     this.revision++;
   }
-  refresh(invocations: readonly JobDisplay[] = [], home?: string, slice: ArtifactSlice = {}): TaskSnapshot {
+  refresh(slice: ArtifactSlice = {}): TaskSnapshot {
     const start = performance.now();
     this.cost = emptyCost();
     this.checked.clear();
@@ -833,18 +832,6 @@ export class TaskObservationCollector {
         for (const id of this.candidates.keys()) if (!admitted.has(id)) this.candidates.delete(id);
       } else this.fail('workspace_unavailable');
     } else this.diagnostics.push('workspace_not_bound');
-    if (home)
-      for (const job of invocations)
-        if (job.kind === 'role') {
-          const id = `invocation:${JSON.stringify([home, job.root, job.jobId])}`;
-          admitted.add(id);
-          this.admit(join(home, 'jobs', job.jobId), { kind: 'invocation', home, root: job.root, jobId: job.jobId }, id);
-        }
-    for (const [id, s] of this.sources)
-      if (s.identity.kind === 'invocation' && !admitted.has(id)) {
-        this.sources.delete(id);
-        this.revision++;
-      }
     const sources = [...this.sources.values()];
     // One source turn per pass, with persistent round-robin scheduling beyond a slice.
     for (let n = 0; n < sources.length && this.room(); n++) {

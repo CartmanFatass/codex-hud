@@ -4,7 +4,6 @@ import { theme, colors } from './colors.js';
 import { palette } from './palette.js';
 import { iconSet, displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
-import { effectiveStatus, jobSettledAt } from './job-details.js';
 
 /**
  * Icons stand in for the panel's words (a brief field's label, "ago" after a
@@ -52,8 +51,7 @@ export function nodeStatus(
   node: SubagentTreeNode,
   now: number
 ): { icon: string; label: string; paint: (s: string) => string } {
-  // A job's status is its own, and never running while its source is not corroborated.
-  switch (effectiveStatus(node)) {
+  switch (node.status) {
     case 'running':
       return { icon: '▸', label: node.turnStartedAt ? age(node.turnStartedAt, now) : 'run', paint: theme.info };
     case 'starting':
@@ -89,8 +87,7 @@ export const QUIET_MS = 5 * 60_000;
 export const FRESH_FINISH_MS = 60_000;
 
 export function isLive(node: SubagentTreeNode): boolean {
-  const status = effectiveStatus(node);
-  return status === 'running' || status === 'starting';
+  return node.status === 'running' || node.status === 'starting';
 }
 export function isQuiet(node: SubagentTreeNode, now: number): boolean {
   const at = node.lastEventAt?.getTime();
@@ -189,14 +186,9 @@ export function msUntilCountdownChanges(targetMs: number, nowMs: number): number
   return (seconds % span) * 1000 + REPAINT_SLACK_MS;
 }
 
-/**
- * When a finished agent finished: its completion event, else its last sign
- * of life. A node carrying a job takes the time its job's evidence carries
- * first, the status being the job's: an older native event does not date it
- * (and the job's own evidence is the only time a facade-only row has).
- */
+/** When a finished agent finished: its completion event, else its last sign of life. */
 export function finishedAt(node: SubagentTreeNode): Date | undefined {
-  return (node.job ? jobSettledAt(node) : undefined) ?? node.statusAt ?? node.lastEventAt;
+  return node.statusAt ?? node.lastEventAt;
 }
 
 /**

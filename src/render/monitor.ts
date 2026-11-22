@@ -1,6 +1,5 @@
 /** Pure Home, Project and retained passive pages. No legacy Agents layout. */
 import type { HudData, SubagentTree } from '../types.js';
-import type { DelegationViewModel, HudDelegationData } from '../core/link/view-model.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
 import { initialPanelState, type PanelState } from './panel-state.js';
@@ -217,7 +216,7 @@ export interface MonitorFrame {
   projectDisplayRoot?: string;
 }
 export interface MonitorData {
-  hud?: HudData & HudDelegationData;
+  hud?: HudData;
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
   project?: ProjectSnapshot;
@@ -235,11 +234,9 @@ export interface MonitorData {
   worktrees?: WorktreesSnapshot | null;
   expData?: ExpData;
   nowMs?: number;
-  notice?: string | null;
   error?: string | null;
   publicationNotice?: string | null;
   modelEnabled?: boolean;
-  loading?: boolean;
   linkNames?: boolean;
   mouse?: boolean;
 }
@@ -296,8 +293,7 @@ export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
 export function reconcileMonitor(
   state: MonitorState,
   _tree: SubagentTree,
-  _nowMs?: number,
-  _delegation?: DelegationViewModel | null
+  _nowMs?: number
 ): MonitorState {
   return { ...state, mainTab: mainTabOf(state), expPage: state.experiments ? state.expPage : undefined,
     tree: { ...state.tree }, scroll: { ...state.scroll }, modes: { ...state.modes } };
@@ -307,23 +303,6 @@ export function paneShown(state: MonitorState, id: MonitorPane): boolean {
 }
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();
-  const board =
-    input.workboard ??
-    buildWorkboard(
-      '',
-      {
-        revision: 0,
-        lanes: [],
-        coverage: { incomplete: false, diagnostics: [], workspace: null },
-        cost: { entries: 0, files: 0, bytes: 0, probes: 0, enumerations: 0, parses: 0, elapsedMs: 0 },
-      },
-      {
-        generation: 0,
-        root: null,
-        jobs: [],
-        coverage: { entries: 0, files: 0, bytes: 0, incomplete: false, omitted: null, diagnostics: [] },
-      },
-      input.tree
-    );
+  const board = input.workboard ?? buildWorkboard(input.tree);
   return renderWorkboardFrame(input, reconcileMonitor(input.state, input.tree), board, now);
 }

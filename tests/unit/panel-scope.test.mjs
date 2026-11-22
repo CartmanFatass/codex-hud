@@ -38,7 +38,7 @@ function fixture(t) {
     put(dir, 'sessions/session.jsonl', '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Synthetic progress"}]}}\n');
     return { id, dir };
   };
-  const pipeline = new PanelJobPipeline(home, null, { live: false }, null, scope, OPEN);
+  const pipeline = new PanelJobPipeline(home, null, scope, OPEN);
   t.after(() => { pipeline.dispose(); fs.rmSync(home, { recursive: true, force: true }); });
   const collect = async () => { await pipeline.refresh(); return pipeline.workboard(tree); };
   const draw = (board, nowMs = OPEN + MIN, state = initialMonitorState()) =>

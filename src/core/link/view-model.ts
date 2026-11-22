@@ -17,22 +17,7 @@ export interface DelegationViewModel {
   /** Bounded immediate merges still awaiting a later tick. */
   pendingStatus: number;
 }
-export interface NativeCallDisplay {
-  relation: import('../../managed/relations.js').DirectRelation;
-  snapshot: unknown;
-  latestEvent: import('../../managed/host.js').HostMessage | null;
-  unavailable: string | null;
-}
-export interface JevCallDisplay {
-  relation: import('../../managed/jev-host.js').JevRelation;
-  snapshot: unknown;
-  unavailable: string | null;
-  observationSource?: 'run_yield' | 'snapshot' | 'command';
-  receivedAt?: number;
-}
 export interface DelegationNodeDetails {
-  jevCall?: JevCallDisplay;
-  nativeCall?: NativeCallDisplay;
   action?: import('../interfaces/session-evidence.js').NativeAction;
   progress?: import('../interfaces/session-evidence.js').SessionEvidence['progress'];
   outputRate?: NonNullable<ReaderResult['outputRate']>;
