@@ -10,7 +10,7 @@ export async function pickSonicThinking(hudHome: string, task: string, purposes:
     const env = { ...process.env, HUD_HOME: hudHome };
     const settings = loadSettings(env);
     if (!settings.sonicAutoThinking) return;
-    const choices = ['low', 'high', 'max'].filter((level) => Object.hasOwn(purposes, level))
+    const choices = ['none', 'low', 'high', 'max'].filter((level) => Object.hasOwn(purposes, level))
       .map((value) => ({ value, description: purposes[value] }));
     if (!choices.length) return;
     const signal = AbortSignal.timeout(5_000);

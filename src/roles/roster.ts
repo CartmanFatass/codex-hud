@@ -190,7 +190,7 @@ function roleReason(value: unknown): string | null {
   const choices = raw.thinking_choices;
   if (choices !== undefined && (!choices || typeof choices !== 'object' || Array.isArray(choices) ||
     Object.keys(choices).length === 0 || Object.entries(choices).some(([level, purpose]) =>
-      !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(level) ||
+      !['none', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(level) ||
       typeof purpose !== 'string' || !purpose.trim() || /[\r\n\u2028\u2029]/u.test(purpose))))
     return 'bad thinking_choices';
   if (raw.active_preset !== undefined && raw.active_preset !== null && !validPresetName(raw.active_preset))

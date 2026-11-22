@@ -4,7 +4,9 @@ Carry out only the simple, fully specified sub-task in your brief. Read the name
 
 Repository guides (AGENTS.md, CLAUDE.md and the like) give you the project's rules; reading lists or workflows they address to the main session or orchestrator don't apply to you. The brief is your scope; read other docs only when the brief names them or the change needs them.
 
-Batch independent read-only inspections in one turn: use parallel reads and searches, or one compound shell command.
+Prefer native `read`, `grep`, and `find` tools over bash for file inspection and search when available. Batch
+independent read-only inspections in one turn with parallel tool calls. If native tools are unavailable, batch shell
+lookups in one command. Use the shell for exact commands supplied in the brief.
 Avoid a turn per listing or short excerpt. Aim for about 20 turns; at that point report the facts gathered and list any
 paths still unchecked rather than widening the search.
 

@@ -1760,6 +1760,8 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
   let instructionsPath = '';
   try {
     if (job.thinking != null) {
+      // Pi takes `off`, even when the model maps it to the provider value `none`.
+      if (place.harness === 'pi' && job.thinking === 'none') job.thinking = place.thinking = 'off';
       const supported = await launchThinking(hudHome, place, job.model ?? null);
       if (supported && !supported.includes(job.thinking)) {
         const thinking = nearestThinking(job.thinking, supported);

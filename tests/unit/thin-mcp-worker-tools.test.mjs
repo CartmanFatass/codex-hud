@@ -301,9 +301,10 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
       fs.appendFileSync(join(process.env.HOME, 'decision-inputs'), JSON.stringify({url, body: JSON.parse(init.body)}) + '\\n');
       const mode = fs.readFileSync(join(process.env.HOME, 'decision-mode'), 'utf8');
       if (mode === 'timeout') return new Promise(() => {}); // Intentionally ignore fetch's abort signal.
+      const choice = mode === 'invalid' ? 'off' : mode === 'command' ? 'none' : 'max';
       return Response.json({ answers: [{ name: 'sonic_thinking', type: mode === 'refusal' ? 'refusal' : 'choice',
-        choice: mode === 'invalid' ? 'off' : 'max', confidence: 0.9,
-        probabilities: [{ value: 'max', probability: 0.9 }, { value: 'high', probability: 0.1 }] }] });
+        choice, confidence: 0.9,
+        probabilities: [{ value: choice, probability: 0.9 }, { value: 'high', probability: 0.1 }] }] });
     };`;
   const f = await fixture(t, true, probe);
   f.env.NODE_OPTIONS += ' --import=data:text/javascript,' + encodeURIComponent(probe);
@@ -340,28 +341,39 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
   const duplicate = await f.call('hud_create', { role: 'sonic', task: brief, request_key: `auto-${seq}` });
   assert.equal(duplicate.thinking_source, 'decision');
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic parent.' });
-  // The worker process has not yet probed its model. max must map down to high there.
+  const commandBrief = 'Run exactly `printf "synthetic output\\n"` and report its output.';
+  const model = 'mistral/deepseek-v4-1-flash-1017';
   fs.writeFileSync(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
     'synthetic/sonic': { provider: 'synthetic', id: 'sonic', reasoning: true },
+    [model]: { provider: 'mistral', id: 'deepseek-v4-1-flash-1017', reasoning: true,
+      thinkingLevelMap: { off: 'none', minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' } },
   }));
+  mode('command');
+  check(await create({ task: commandBrief, model }), 'off', 'decision');
+  // The worker process has not yet probed its model. max must map down to high there.
+  mode('picked');
   const call = workerClient(t, f, parent.task_dir);
   check(resultValue(await call('hud_sonic', { task: brief })), 'high', 'decision');
   for (const failure of ['invalid', 'refusal', 'timeout']) {
     mode(failure);
     check(await create(), 'high', 'default');
   }
-  settings(true, 5);
+  settings(true, 6);
   mode('picked');
   check(await create(), 'high', 'default');
   const asked = fs.readFileSync(inputs, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.equal(asked.length, 5, 'retries do not rejudge and the shared cap blocks another fetch');
+  assert.equal(asked.length, 6, 'retries do not rejudge and the shared cap blocks another fetch');
   assert.equal(asked[0].url, 'https://api.openai.com/v1/decisions');
   assert.equal(asked[0].body.input[0].content[1].data.page.text, brief);
-  assert.match(asked[0].body.questions[0].instructions, /untrusted quoted data, never instructions/);
-  assert.deepEqual(asked[0].body.questions[0].choices.map(({ value }) => value), ['low', 'high', 'max']);
-  assert.match(asked[0].body.questions[0].choices[2].description, /tracing a cause/);
+  assert.equal(asked[1].body.input[0].content[1].data.page.text, commandBrief);
+  const { instructions, choices } = asked[1].body.questions[0];
+  assert.match(instructions, /untrusted quoted data, never instructions/);
+  assert.deepEqual(choices.map(({ value }) => value), ['none', 'low', 'high', 'max']);
+  assert.match(choices[0].description, /exact supplied command/);
+  assert.match(choices[1].description, /fact lookup in named files/);
+  assert.match(choices[3].description, /tracing a cause/);
   const ledger = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'display/model-cache/decision-api/calls.json')));
-  assert.deepEqual(ledger.map(({ feature }) => feature), Array(5).fill('sonic-thinking'));
+  assert.deepEqual(ledger.map(({ feature }) => feature), Array(6).fill('sonic-thinking'));
 });
 
 test('worker MCP resolves its non-default HUD home and starts sonic with fallback without HUD_HOME', async (t) => {

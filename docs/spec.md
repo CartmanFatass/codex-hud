@@ -81,9 +81,9 @@ machine, inside herdr. (10.02, 22.12)
 - HUD, not the model, manages launch parameters. Check each dispatch's model, thinking and place against
   model facts before opening a tab. Show only supported levels; map to nearest supported and report the
   level used. On pre-start failure close the tab and report the cause, not a timeout. (21.04)
-- Sonic thinking uses the role default (`high`), not caller choice or a tool prompt. Off by default:
-  Decision API chooses `low`/`high`/`max` using each brief and the role file's level purposes. Any failure
-  falls back to the default. (21.05)
+- Sonic thinking uses the role default (`high`), not caller choice or a tool prompt. When enabled (off by default),
+  the Decision API chooses `none`, `low`, `high` or `max` using each brief and the role file's level purposes.
+  Any failure falls back to the default. (21.05)
 
 #### 2.1.5 Lifecycle, settlement and cleanup
 
