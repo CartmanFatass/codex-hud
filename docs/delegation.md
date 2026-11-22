@@ -66,8 +66,8 @@ Every brief states:
 Design samples (owner, 2026-11-20): UI design starts with one self-contained HTML sample under `docs/design/<name>/`
 (synthetic data, no outside fetches; terminal frames drawn on the real grid, every row exactly the panel's width, as
 `docs/design/panel-v8/gen/` does). The worker (`frontend-imp`, no worktree) commits it and reports its path; the orchestrator opens it in the owner's
-browser right away (`google-chrome --password-store=basic file://<copy under tmp/preview/>`: a plain launch with
-no Chrome running shows a keyring dialog, and a worktree copy vanishes when the job lands) (a chat link alone gets missed) and the owner settles it; the build then takes that HTML as its template. One artifact, no screenshots, no separate preview after the
+browser right away (copy it to `tmp/preview/`, since a worktree copy vanishes when the job lands, and open it in the Windows default
+browser with `/mnt/c/Windows/explorer.exe "$(wslpath -w <copy>)"`; a WSLg Chrome window may not appear) (a chat link alone gets missed) and the owner settles it; the build then takes that HTML as its template. One artifact, no screenshots, no separate preview after the
 build: the owner tries the real panel. A plain feature slice with no design question goes straight to the build.
 No claude.ai Artifacts.
 
