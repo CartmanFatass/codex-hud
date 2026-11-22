@@ -26,6 +26,8 @@ import { RunnerWatches } from './runner-watches.js';
 import { RUNNER_READY } from '../utils/runner-lifetime.js';
 import { isProcAlive } from '../utils/proc.js';
 import { request } from '../runtime/herdr-socket.js';
+import { pruneDisplayFiles } from './display-retention.js';
+import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
 
 const bundled = BUNDLED_ROOT;
 
@@ -43,6 +45,8 @@ const MAX_REAP_BACKOFF_MS = 60 * 60_000;
 const REAP_BUDGET_MS = 135_000;
 const REAP_KILL_GRACE_MS = 2_000;
 const SHUTDOWN_DRAIN_MS = 3_000;
+const HOME_RETENTION_INTERVAL_MS = 60 * 60_000;
+let nextHomeRetention = 0;
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
 const jobCache = new JobIndexCache(home);
 type SessionEntry = { fields: SessionFields; stamp: string };
@@ -395,6 +399,14 @@ function scan(retryWatch = false) {
   if (stopped || pauseReady) return;
   clearTimeout(timer);
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
+  // Piggyback on the on-demand retention scan; never keep the watcher alive for housekeeping.
+  const scanAt = performance.now();
+  if (scanAt >= nextHomeRetention) {
+    nextHomeRetention = scanAt + HOME_RETENTION_INTERVAL_MS;
+    pruneDisplayFiles(join(home, 'display'));
+    const removed = pruneLegacyTrustBackups(home);
+    if (removed) log(`pruned legacy trust backups: ${removed}`);
+  }
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
   const busyWorktrees = new Set<string>(), worktreeChecks = [];
   const workingByRole = new Map<string, number>();

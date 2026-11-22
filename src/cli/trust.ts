@@ -1,7 +1,8 @@
 /** CLI trust checks and backed-up writes for `hud trust` and managed worktrees. */
 import * as fs from 'node:fs';
-import { basename, join } from 'node:path';
-import { writeFileAtomic, writePrivateFile } from '../utils/atomic-fs.js';
+import { join } from 'node:path';
+import { writeFileAtomic } from '../utils/atomic-fs.js';
+import { backupTrustFile } from '../utils/trust-backups.js';
 import * as TOML from '@iarna/toml';
 import type { HudIO } from './hud.js';
 import { CliError, privateHome } from './private-home.js';
@@ -96,8 +97,7 @@ function commit(file: string, agent: string, edit: (text: string) => string | nu
     const text = read.data.toString('utf8');
     const next = edit(text);
     if (next === null || next === text) return 'already trusted';
-    const backup = backupPath(agent, basename(file), env);
-    writePrivateFile(backup, read.data, { mkdir: false, exclusive: true });
+    backupTrustFile(privateHome(env), agent, file, read.data);
     const changed = new Error('file changed during edit');
     try {
       writeFileAtomic(file, next, { mode: read.mode, mkdir: false, dotPrefix: true, beforeRename: () => {
@@ -107,20 +107,6 @@ function commit(file: string, agent: string, edit: (text: string) => string | nu
     } catch (error) { if (error !== changed) throw error; }
   }
   throw new Error('file changed during edit');
-}
-
-function backupPath(agent: string, base: string, env: NodeJS.ProcessEnv): string {
-  const home = privateHome(env);
-  const dir = join(home, 'backups', 'trust');
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.chmodSync(join(home, 'backups'), 0o700);
-  fs.chmodSync(dir, 0o700);
-  const stamp = new Date()
-    .toISOString()
-    .replace(/\.\d{3}Z$/, (ms) => ms.slice(1, 4) + 'Z')
-    .replace(/[-:]/g, '');
-  const plain = join(dir, `${agent}-${stamp}-${base}`);
-  return fs.existsSync(plain) ? join(dir, `${agent}-${stamp}-${process.pid}-${base}`) : plain;
 }
 
 function readNoFollow(file: string): { data: Buffer; mode: number } {

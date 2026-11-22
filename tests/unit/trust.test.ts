@@ -199,6 +199,41 @@ test('claude honours CLAUDE_CONFIG_DIR and keeps the home file', async (t) => {
   assert.deepEqual(got.projects[f.project], { hasTrustDialogAccepted: true });
 });
 
+test('trust retains ten backups per canonical source and skips unchanged backup bytes', async (t) => {
+  const f = fixture(t);
+  const alt = join(f.root, 'alt-config');
+  const alias = join(f.root, 'config-alias');
+  fs.mkdirSync(alt);
+  fs.symlinkSync(alt, alias);
+  const backupDir = join(f.hud, 'backups', 'trust');
+  const backupNames = () => fs.readdirSync(backupDir).sort();
+  const homeFile = join(f.home, '.claude.json');
+  const altFile = join(alt, '.claude.json');
+
+  for (let i = 0; i < 15; i++) {
+    delete f.io.env.CLAUDE_CONFIG_DIR;
+    fs.writeFileSync(homeFile, JSON.stringify({ owner: 'home', i }));
+    assert.equal(await main(['trust', f.project], f.io), 0);
+    f.io.env.CLAUDE_CONFIG_DIR = i % 2 ? alias : alt;
+    fs.writeFileSync(altFile, JSON.stringify({ owner: 'alternate', i }));
+    assert.equal(await main(['trust', f.project], f.io), 0);
+    assert.equal(backupNames().length, 2 * Math.min(i + 1, 10));
+  }
+  const names = backupNames();
+  const backups = names.map((name) => JSON.parse(fs.readFileSync(join(backupDir, name), 'utf8')));
+  for (const owner of ['home', 'alternate']) {
+    assert.deepEqual(backups.filter((entry) => entry.owner === owner).map((entry) => entry.i),
+      [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  }
+
+  // A new grant from the same original bytes still succeeds without another archive.
+  fs.writeFileSync(altFile, JSON.stringify({ owner: 'alternate', i: 14 }));
+  f.reset();
+  assert.equal(await main(['trust', f.project], f.io), 0);
+  assert.match(f.out(), /claude: trusted/);
+  assert.deepEqual(backupNames(), names);
+});
+
 test('a bad directory exits 2; help lists trust', async (t) => {
   const f = fixture(t);
   assert.equal(await main(['trust'], f.io), 2);

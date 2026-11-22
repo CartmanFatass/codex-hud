@@ -431,13 +431,15 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control tab |
 | `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control tab |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |
-| `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
+| `backups/trust/` | `hud trust` keeps ten backups per canonical source path and skips byte-identical repeats of its newest backup. Legacy names assume one owner file per agent/basename; the watcher keeps the newest twenty per group. |
+| `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements. The watcher removes `pid-<pid>.json` only when the PID no longer exists. |
 | `display/state/claude-quota.json` | Last reported quota windows only; optional private cache from Claude statusline stdin |
 | `exp/config.json`, `exp/proxy.json` | Private EXP settings and the bound Codex profile's quota snapshot (windows, binding revision, observation time and retry state) |
 | `exp/codex-native-<profile hash>.json` | Last native MyHUD bar observed for that canonical local Codex profile (opt-in) |
 | `exp/ledger-<account>.jsonl` | Append-only private API grant events; a per-ledger writer lock excludes duplicate IDs, and reads deduplicate legacy entries |
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |
 | `display/model-cache/` | Shared text replies/reservations and revision-keyed overlays; Decision reservations have their own subdirectory |
+| `display/model-cache/decision-labels/`, `display/statusline/` | Rebuildable caches; the watcher evicts by filesystem recency (most recent read or write where available) at 30 days, 512 files or 8 MiB per directory |
 | `display/profile.log` | Optional stage timings |
 | `panel-actions.jsonl` | Append-only 0600 log of answers the owner gave from the panel; read by `hud watch` and the MCP `changes` |
 | `watch.pid`, `watch.log` | On-demand watcher PID and diagnostics |
@@ -454,6 +456,10 @@ one day after closure on a later scan, not a dedicated expiry timer. Before dele
 it moves legacy real JSONL sessions to pi's store; failures retain the job. No session-link
 target is deleted. CLI sessions stay in that CLI's store. Headless Sonic, CLI supervisors, land and adopted check helpers expose per-job, per-PID abstract sockets. `runner.ready` wakes a watcher that scanned during startup. Socket close prompts a fresh PID/receipt check, not a terminal verdict. A dead CLI supervisor with a live worker hands the job to the main session (`waiting_orchestrator`); the socketless orphan is rechecked with exponential backoff until it exits or `hud_send` restarts the supervisor. The watcher exits
 with no open job or failed deadline and restarts on demand.
+
+HUD-home housekeeping piggybacks on the startup scan. Later scans run it at most
+once an hour while the watcher is active. Housekeeping does not keep the watcher running.
+
 No HUD collection writes into Codex's transcripts/configuration; explicit installer
 registration and `hud import` are separate user actions.
 
