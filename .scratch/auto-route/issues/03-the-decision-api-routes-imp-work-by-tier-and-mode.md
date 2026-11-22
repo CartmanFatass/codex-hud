@@ -1,6 +1,6 @@
 # 03: The Decision API routes imp work by tier and mode
 
-**Status:** ready-for-agent
+**Status:** done
 **Blocked by:** 01
 **Owner try:** no
 
@@ -28,11 +28,11 @@ When on, an `imp` create asks the Decision API for `{tier, mode, reason}`. The i
 
 Record `route: {tier, mode, reason, source: "decision"|"default", fallback?}` in job.json. Show it in the create result and `hud_read`. Document the block in docs/reference.md and docs/reference.zh.md.
 
-- [ ] With a stub Decision API: a one-file doc brief routes light+headless (tab while agy lacks headless); a cross-module brief routes hard+tab
-- [ ] A role file without `routing`, or missing the `light` tier, never yields that tier
-- [ ] Unavailable tier preset falls to standard with `fallback`; API error or timeout falls back to default+tab and says so
-- [ ] Overflow keeps the routed chain; retry keeps the tier; a light job's land repair runs standard
-- [ ] job.json and hud_read carry the route; targeted tests pass
+- [x] With a stub Decision API: a one-file doc brief routes light+headless (tab while agy lacks headless); a cross-module brief routes hard+tab
+- [x] A role file without `routing`, or missing the `light` tier, never yields that tier
+- [x] Unavailable tier preset falls to standard with `fallback`; API error or timeout falls back to default+tab and says so
+- [x] Overflow keeps the routed chain; retry keeps the tier; a light job's land repair runs standard
+- [x] job.json and hud_read carry the route; targeted tests pass
 
 ## Comments
 
@@ -43,3 +43,5 @@ Record `route: {tier, mode, reason, source: "decision"|"default", fallback?}` in
 - 2026-11-22: owner ruled that only `general` takes `preset`/`on`/`model`/`thinking` (ticket role-overrides/01), so every `imp` create is routed when the toggle is on; the router applies the tier presets internally.
 - 2026-11-22 compatibility pass: tiers moved from code to the role file's `routing` block; standard follows the owner's active preset; headless follows harness support; unavailable tier falls to standard; overflow keeps the routed chain.
 - 2026-11-22 answer to q1: the Decision API returns enumerated choices only, so the one-line reason is the chosen tier's and mode's `use` texts from the role file (no second call). An explicit `mode` on create always wins; routing then picks only the tier. Without an explicit mode, every fallback runs in a tab.
+
+- Landed fc2f5dd40cf251397117eee4d0ec59b2be6a8fd2; gate 5/5 passed.

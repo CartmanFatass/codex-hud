@@ -7,7 +7,7 @@ import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings
 import { SETTING_ROWS, renderSettingsPage } from '../../dist/render/settings-page.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 
-test('Models exposes the master, provider, separate budgets, sonic opt-in and summary interval', () => {
+test('Models exposes the master, provider, separate budgets, dispatch opt-ins and summary interval', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-thin-'));
   const saved = { ...process.env };
   try {
@@ -46,7 +46,7 @@ test('Models exposes the master, provider, separate budgets, sonic opt-in and su
     );
     assert.deepEqual(
       SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
-      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour', 'decisionCallsPerHour', 'sonicAutoThinking', 'summaryIntervalMinutes']
+      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour', 'decisionCallsPerHour', 'sonicAutoThinking', 'impRouting', 'summaryIntervalMinutes']
     );
     const text = stripAnsi(
       renderSettingsPage(
@@ -61,6 +61,7 @@ test('Models exposes the master, provider, separate budgets, sonic opt-in and su
     assert.match(text, /Decision cap/);
     assert.match(text, /Sonic thinking 2/);
     assert.match(text, /Sonic auto-thinking\s+off/);
+    assert.match(text, /Imp routing\s+off/);
     assert.match(text, /Summary interval/);
     assert.doesNotMatch(text, /consent|Backend|AGY/);
     fs.unlinkSync(path.join(home, 'credentials.env'));
