@@ -590,6 +590,7 @@ const ZH: Record<string, string> = {
   'needs a native session ref': '需要原生会话引用',
   'requires authorization': '需要授权',
   '{label}: {value}': '{label}：{value}',
+  'Truncated: {files}': '已截断：{files}',
   // The review board (`hud board`, the panel's `w`).
   'Review board': '审阅看板',
   'Needs you': '需要你处理',

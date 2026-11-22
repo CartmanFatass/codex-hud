@@ -71,6 +71,8 @@ export interface ProjectSnapshot {
   counts: Record<SliceState, number>;
   summary: string;
   statePath?: string;
+  stateTruncated?: boolean;
+  specTruncated?: boolean;
   updatedAt?: number;
   last?: { text: string; at: number };
   next: ProjectItem[];
@@ -138,6 +140,25 @@ export class ProjectCollector {
     } finally { dir.closeSync(); }
     return names.sort();
   }) ?? [];
+  /** Rank the whole directory, retaining only the requested prefix of matching names. */
+  private orderedNames(path: string, limit: number, keep: (entry: fs.Dirent) => boolean, descending = false): string[] {
+    return this.cached(path, (st) => {
+      if (!st.isDirectory()) return [];
+      const dir = fs.opendirSync(path), names: string[] = [];
+      const before = (a: string, b: string) => descending ? a > b : a < b;
+      try {
+        for (let entry; (entry = dir.readSync());) {
+          if (!keep(entry)) continue;
+          const name = entry.name;
+          if (names.length === limit && !before(name, names[limit - 1])) continue;
+          const index = names.findIndex((n) => before(name, n));
+          names.splice(index < 0 ? names.length : index, 0, name);
+          if (names.length > limit) names.pop();
+        }
+      } finally { dir.closeSync(); }
+      return names;
+    }) ?? [];
+  }
   private body<T>(path: string, parse: (buffer: Buffer, truncated: boolean) => T): T | null {
     return this.cached(path, (st) => {
       if (!st.isFile()) throw Error('not_file');
@@ -154,9 +175,9 @@ export class ProjectCollector {
   };
   private tickets(): TicketFeature[] {
     const root = join(this.cwd, '.scratch'), features: TicketFeature[] = [];
-    for (const slug of this.names(root).slice(0, 16)) {
+    for (const slug of this.orderedNames(root, 16, (entry) => entry.isDirectory())) {
       const issues = join(root, slug, 'issues'), tickets: ProjectTicket[] = [];
-      for (const name of this.names(issues).filter((n) => /^\d+-[^/]+\.md$/.test(n)).slice(0, 64)) {
+      for (const name of this.orderedNames(issues, 64, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name))) {
         const path = join(issues, name);
         const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
           if (truncated) return null;
@@ -338,14 +359,18 @@ export class ProjectCollector {
       return out;
     }
     out.tickets = this.tickets();
-    const statePath = statePaths(this.cwd).find((p) => this.read(p));
-    const state = statePath ? this.read(statePath)!.text : '';
+    let stateFile;
+    for (const path of statePaths(this.cwd)) {
+      stateFile = this.read(path);
+      if (stateFile) { out.statePath = path; break; }
+    }
+    const statePath = out.statePath, state = stateFile?.text ?? '';
+    if (stateFile?.truncated) out.stateTruncated = true;
     const bullets = (heading: string, whole = false) => stateBullets(state, heading).map((text) => ({
       label: '', value: text.replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: text.replace(/\r/g, '') } : {}),
     }));
     out.waiting = bullets('Waiting for the owner', true);
     out.next = bullets('Next');
-    out.statePath = statePath;
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
     out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim() ?? '';
     const ledger = new Map<string, { state: string; text: string }>();
@@ -382,11 +407,13 @@ export class ProjectCollector {
       for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
       return out;
     }
-    const spec = this.read(join(this.cwd, 'docs/spec.md'))?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
+    const specPath = join(this.cwd, 'docs/spec.md'), specFile = this.read(specPath);
+    if (specFile?.truncated) out.specTruncated = true;
+    const spec = specFile?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
     out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+),/gm)].map((m) => m[1]);
-    if (milestone) out.docs.push({ label: 'spec', value: milestone, path: join(this.cwd, 'docs/spec.md') });
+    if (milestone) out.docs.push({ label: 'spec', value: milestone, path: specPath });
     const reviews = join(this.cwd, 'docs/reviews');
-    const review = this.names(reviews).filter((n) => n.endsWith('.md')).reverse().slice(0, 12)
+    const review = this.orderedNames(reviews, 12, (entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(entry.name), true)
       .flatMap((n) => {
         const path = join(reviews, n);
         try {

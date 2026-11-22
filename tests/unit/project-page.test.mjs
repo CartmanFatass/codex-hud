@@ -11,6 +11,7 @@ import { progressSegments } from '../../dist/render/project-view.js';
 import { renderWorkCard } from '../../dist/render/work-card.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
+import { STATE_BYTES } from '../../dist/collectors/state-ledger.js';
 import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -728,6 +729,60 @@ test('job lookup reads only job/STATUS in the newest 64 directories and resolves
     opened.every((p) => /\/(job|STATUS)\.json$/.test(p)),
     'no question, brief or report body reads'
   );
+});
+test('Project Docs finds the newest dated review beyond the first 128 entries', async (t) => {
+  const f = await fixture(t), reviews = join(f.cwd, 'docs/reviews');
+  const names = Array.from({ length: 200 }, (_, i) => `${new Date(Date.UTC(2026, 4, 1 + i)).toISOString().slice(0, 10)}-review.md`);
+  const newest = names.at(-1), order = [...names];
+  let seed = 42;
+  for (let i = order.length - 1; i > 0; i--) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  for (const name of order) f.put(join(reviews, name), '# Synthetic review', name === newest ? 5 : 60);
+  f.put(join(reviews, 'README.md'), '# Not a review');
+  f.put(join(reviews, 'notes.md'), '# Also not a review');
+
+  // Replay the shuffled creation order so the regression does not depend on the filesystem's enumeration order.
+  const opendir = fs.opendirSync;
+  fs.opendirSync = (path, ...args) => {
+    const dir = opendir(path, ...args);
+    if (path !== reviews) return dir;
+    const entries = new Map();
+    for (let entry; (entry = dir.readSync());) entries.set(entry.name, entry);
+    const ordered = ['README.md', 'notes.md', ...order].map((name) => entries.get(name)).values();
+    dir.readSync = () => ordered.next().value ?? null;
+    return dir;
+  };
+  syncBuiltinESMExports();
+  let data;
+  try { data = await f.collector.collect(true, f.board, NOW + 1); }
+  finally { fs.opendirSync = opendir; syncBuiltinESMExports(); }
+  assert.equal(data.docs.find((d) => d.label === 'review')?.value, newest);
+  assert.ok(plain(f.render(80, 'en', 'docs', 56, data)).some((line) => line.includes(newest)));
+});
+test('Project warns in EN and ZH when STATE or spec exceeds the byte cap', async (t) => {
+  const f = await fixture(t), statePath = join(f.cwd, 'docs/handoff/STATE.md'), specPath = join(f.cwd, 'docs/spec.md');
+  const stateHead = '# 合成状态\n\nMilestone: M4\n';
+  const stateAtLimit = stateHead + 'x'.repeat(STATE_BYTES - Buffer.byteLength(stateHead) - 1) + '\n';
+  f.put(statePath, stateAtLimit);
+  let data = await f.collector.collect(true, f.board, NOW + 1);
+  assert.equal(data.ladder.current, 'M4');
+  assert.doesNotMatch(plain(f.render(80, 'en', 'progress', 56, data)).join('\n'), /Truncated:/);
+
+  f.put(statePath, stateAtLimit + '## Slices\n- todo · M4 · SYNTHETIC-TAIL · Beyond the cap\n');
+  data = await f.collector.collect(true, f.board, NOW + 2);
+  assert.deepEqual(data.ledger, []);
+  assert.match(plain(f.render(80, 'en', 'progress', 56, data)).join('\n'), /Truncated: STATE\.md *\n/);
+  assert.match(plain(f.render(80, 'zh', undefined, 56, data)).join('\n'), /已截断：STATE\.md/);
+
+  f.put(statePath, stateAtLimit);
+  f.put(specPath, 'x'.repeat(STATE_BYTES) + '\n## 5. Milestones\n- **M4, beyond the cap**\n');
+  data = await f.collector.collect(true, f.board, NOW + 3);
+  assert.deepEqual(data.ladder.ids, []);
+  assert.match(plain(f.render(80, 'en', undefined, 56, data)).join('\n'), /Truncated: spec\.md/);
+  assert.match(plain(f.render(80, 'zh', 'docs', 56, data)).join('\n'), /已截断：spec\.md/);
 });
 test('changed/oversized sources, missing milestone and source fallback never invent facts', async (t) => {
   const f = await fixture(t);

@@ -190,7 +190,9 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
   ) : undefined;
   const controlTop = control && !pick ? controlHeader(input, state, width) : [];
+  const truncatedFiles = project && !list && [input.project?.stateTruncated && 'STATE.md', input.project?.specTruncated && 'spec.md'].filter(Boolean).join(', ');
   const headers = [...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
+    ...(truncatedFiles ? [fit(theme.board.attention(t('Truncated: {files}', { files: truncatedFiles })), width)] : []),
     ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
   const top = Math.min(headers.length, Math.max(0, height - 2));
   controlTop.slice(0, top).forEach((row, i) => {
