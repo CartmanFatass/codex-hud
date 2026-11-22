@@ -1,7 +1,15 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { scanScratch, slugify, ticketsCommand, writeFileAtomic } from '../cli/tickets.js';
+import type { ProjectTicket } from '../collectors/project-board.js';
+import { STATE_BYTES } from '../collectors/state-ledger.js';
+import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
+import { SETTLED_JOB_STATES, TicketRollup, ticketJobState } from '../collectors/ticket-rollup.js';
+import type { JobIndexCache } from '../roles/job-index-cache.js';
+import { projectJobFilter } from '../roles/job-project.js';
 import { TICKET_STATUSES } from '../roles/tool-definitions.js';
+import { readFileBounded } from '../utils/atomic-fs.js';
+import type { Job } from './job-contracts.js';
 
 const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
@@ -25,6 +33,48 @@ function directoryExists(path: string): boolean {
   const st = fs.lstatSync(path, { throwIfNoEntry: false });
   if (st && !st.isDirectory()) throw new Error(`not a directory: ${path}`);
   return !!st;
+}
+const list = (dir: string) =>
+  directoryExists(dir) && directoryExists(join(dir, 'issues'))
+    ? fs.readdirSync(join(dir, 'issues'), { withFileTypes: true }).flatMap((entry) => {
+        const match = /^(\d+)-.+\.md$/.exec(entry.name);
+        return match && entry.isFile() ? [{ number: Number(match[1]), path: join(dir, 'issues', entry.name) }] : [];
+      })
+    : [];
+
+export function readyTickets(cwd: string, jobs: JobIndexCache) {
+  const scratch = join(cwd, '.scratch');
+  if (!directoryExists(scratch)) return { ok: true, tickets: [] };
+  const features = fs.readdirSync(scratch, { withFileTypes: true }).filter(entry => entry.isDirectory())
+    .sort((a, b) => a.name.localeCompare(b.name)).map(({ name: slug }) => ({ slug, at: 0,
+      tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number, path }) => {
+        const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+        if (truncated) return [];
+        const body = bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
+        const heading = ticketHeading(body, number);
+        const { status, blocked, items, checked, landed } = ticketFileEvidence(body);
+        if (!heading || !status || blocked === undefined) return [];
+        const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
+          ?.replace(/\s+/g, ' ').trim() ?? '';
+        const ticket: ProjectTicket & { what: string } = { ...heading, path, what, status, at: 0, items, checked,
+          total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
+          state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
+        return [ticket];
+      }),
+    }));
+  const rollup = new TicketRollup(features), matches = projectJobFilter(cwd);
+  for (const id of jobs.listJobIds({ onError: error => { throw error; } })) {
+    const receipt = jobs.readJob<Job>(id);
+    if (receipt.status !== 'ok' || !receipt.value.ticket || receipt.value.reaped_at || !matches(receipt.value)) continue;
+    const job = receipt.value, status = jobs.readStatus(id);
+    const state = ticketJobState(job, status.status === 'ok' ? status.value : {});
+    if (!SETTLED_JOB_STATES.has(state)) rollup.link({ ticket: job.ticket, package: job.package }, '',
+      { role: job.role, state, created: Date.parse(job.created_at) || 0 });
+  }
+  rollup.derive([], new Set(), Date.now(), new Map());
+  return { ok: true, tickets: features.flatMap(({ slug, tickets }) => tickets.flatMap(t =>
+    t.state === 'ready' && /^ready-for-agent$/i.test(t.status)
+      ? [{ ticket: `${slug}/${nn(Number(t.number))}`, path: t.path, title: t.title, what: t.what }] : [])) };
 }
 
 function withStatus(body: string, label: string, ticket: number): string {
@@ -54,13 +104,6 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   if (op !== 'add' && op !== 'update') return invalid('op');
   const scratch = join(cwd, '.scratch');
   scanScratch(scratch, true);
-  const list = (dir: string) =>
-    directoryExists(dir) && directoryExists(join(dir, 'issues'))
-      ? fs.readdirSync(join(dir, 'issues'), { withFileTypes: true }).flatMap((entry) => {
-          const match = /^(\d+)-.+\.md$/.exec(entry.name);
-          return match && entry.isFile() ? [{ number: Number(match[1]), path: join(dir, 'issues', entry.name) }] : [];
-        })
-      : [];
   const resolveBlockers = (value: unknown, feat: string, known: Set<number>) => {
     if (!Array.isArray(value)) return invalid('blocked_by');
     const refs = value.map(ref => {

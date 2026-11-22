@@ -312,6 +312,10 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
 working directory; pass the project directory to target another project.
 
 - **`guide`** (or no `op`): returns the slicing method and local ticket template as Markdown.
+- **`ready`**: lists unblocked `ready-for-agent` tickets with no live job as `tickets: [{ticket, path, title, what}]`.
+  `what` is one line from the ticket's What to build section. Pass `ticket` (`feature/NN`) and `path` (as `brief_file`)
+  to `hud_create`. The live job claims the ticket in the panel and Home progress without a claim commit;
+  `hud_land` records `ready-for-human`.
 - **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?}]`.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing. `acceptance` is a list of checklist item strings.

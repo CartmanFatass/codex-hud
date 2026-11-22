@@ -12,10 +12,11 @@ import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
-import { ticketFileEvidence } from './ticket-evidence.js';
+import { ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
 import { TryLog } from './try-records.js';
-import { TicketRollup, ticketIds } from './ticket-rollup.js';
+import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
 import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
+export { SETTLED_JOB_STATES } from './ticket-rollup.js';
 export interface ProjectItem {
   label: string;
   value: string;
@@ -85,8 +86,6 @@ export interface ProjectSnapshot {
   next: ProjectItem[];
   editing: ProjectItem[];
 }
-/** A job in one of these has ended; Project shows only the others as running (the view reads the same list for tickets). */
-export const SETTLED_JOB_STATES: ReadonlySet<string> = new Set(['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace']);
 /**
  * A waiting item that ends with `(waits on ID, feature/NN)` is settled once every reference is: a ledger slice
  * `accepted` or `dropped`, a ticket done or dropped. Unknown references keep the item; so does an item naming none.
@@ -130,9 +129,6 @@ interface JobStatus {
   settled_at?: unknown;
   ended_at?: unknown;
 }
-/** A job's state from its STATUS.json; without one, a failed dispatch is failed and anything else is working. */
-const jobState = (job: { dispatch_exit_code?: unknown }, s: { state?: unknown }) => typeof s.state === 'string' && s.state ? s.state
-  : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
 const firstFile = (...paths: string[]) => paths.find((p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } });
 export const projectShown = (state: Pick<import('../render/monitor-state.js').MonitorState, 'activeTab' | 'subpage' | 'help'>, modal = false) =>
   state.activeTab === 'project' && !state.subpage && !state.help && !modal;
@@ -223,13 +219,13 @@ export class ProjectCollector {
         const path = join(issues, name);
         const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
           if (truncated) return null;
-          const text = buffer.toString('utf8'), heading = text.match(/^# (\d+):[ \t]*(\S[^\r\n]*)/m);
+          const text = buffer.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
           const { status, blocked, items, checked, landed } = ticketFileEvidence(text);
-          if (!heading || !heading[2].trim() || Number(heading[1]) !== Number(name.split('-')[0]) || !status || blocked === undefined) return null;
+          if (!heading || !status || blocked === undefined) return null;
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
           const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
-          return { number: heading[1], title: heading[2].trim(), path, at: fs.lstatSync(path).mtimeMs, status,
+          return { ...heading, path, at: fs.lstatSync(path).mtimeMs, status,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
             state: landed ?? (/^claimed\b/i.test(status) ? 'working' : 'ready') };
@@ -338,7 +334,7 @@ export class ProjectCollector {
       if (!job || typeof job.cwd !== 'string' || job.reaped_at) continue;
       const statusRes = cache.readStatus<JobStatus>(id);
       const status = statusRes.status === 'ok' ? statusRes.value : {};
-      if (!SETTLED_JOB_STATES.has(jobState(job, status))) cwds.push(canonicalPath(job.cwd));
+      if (!SETTLED_JOB_STATES.has(ticketJobState(job, status))) cwds.push(canonicalPath(job.cwd));
     }
     return cwds;
   }
@@ -465,7 +461,7 @@ export class ProjectCollector {
     if (!home) await this.fullDetails(out, board, now, shown === 'export', specPath, milestone);
     const rollup = new TicketRollup(out.tickets);
     const liveSlices = shown === 'overview' ? [] : this.joinJobs(out, board, home, shown === 'export', rollup, ledger);
-    const { totals, visible, running } = rollup.derive(out.ledger, shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup) : new Set(), now, SETTLED_JOB_STATES, marks);
+    const { totals, visible, running } = rollup.derive(out.ledger, shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup) : new Set(), now, marks);
     for (const row of [...running, ...liveSlices]) {
       const old = out.ledger.find(r => r.id === row.id);
       if (old) {
@@ -603,7 +599,7 @@ export class ProjectCollector {
       if (!inside && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const statusRes = jobCache.readStatus<JobStatus>(id);
       const s = statusRes.status === 'ok' ? statusRes.value : {};
-      const state = jobState(job, s);
+      const state = ticketJobState(job, s);
       const worker = workersByJob.get(id);
       if (inside && !SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
         const at = Date.parse(String(s.started_at ?? job.created_at ?? ''));

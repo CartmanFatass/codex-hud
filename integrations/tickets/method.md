@@ -36,7 +36,7 @@ Publish blockers first in dependency order. Do not close or rewrite a parent iss
 
 - **Single writer:** the main session is the only ticket writer and ticks acceptance checkboxes after checking results; workers never edit ticket files or issues. For local tickets, call `hud_tickets` with `op: update`, `feature`, `ticket` (number), and `status` (including `claimed` and `done`), `blocked_by` (replacement blockers), and/or `tick` (1-based acceptance item numbers). For GitHub with a `.scratch/` mirror, tick acceptance on the GitHub issue, then call `hud_tickets` with `op: sync` again—never edit mirror files.
 - **Dispatching:**
-  - **Local markdown:** pass `ticket: "<feature>/<NN>"` (and `slice` for a differently named STATE slice) to `hud_create` and name the ticket file path in the brief so the Project tab links the job.
+  - **Local markdown:** use `hud_tickets` with `op: ready` for dispatchable tickets. Pass the returned `ticket` (`<feature>/<NN>`) and `path` (as `brief_file`) to `hud_create`, and `slice` for a differently named STATE slice. The live job claims the ticket without a file edit or commit; `hud_land` records `ready-for-human`.
   - **GitHub with `.scratch/` mirror:** pass `package: "<slug>"` (the slug that sync reports from the parent title) to `hud_create` and name `.scratch/<slug>/issues/<N>-<slug>.md` or `#N` in the brief.
 
 <local-ticket-template>

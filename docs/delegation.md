@@ -21,7 +21,10 @@ agent proposes.
    finish in one session are one slice with one brief and its acceptance list, no tickets (owner, 2026-11-12: "没有拆的
    必要"). STATE.md's `## Slices` ledger keeps one line per work package either way.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per
-   slice. The implementer runs the main-path tests for what it changed, once, at the end. When a slice needs a lookup
+   slice. For ticketed work, call `hud_tickets({op: "ready"})` and pass the returned `ticket` and `path` to `hud_create`
+   as `ticket` and `brief_file`. A live job claims the ticket; leave the file at `ready-for-agent` until `hud_land`
+   records `ready-for-human`. Do not make a claim commit. The implementer runs the main-path tests for what it
+   changed, once, at the end. When a slice needs a lookup
    across several files first, pass `scout: "<question>"` on `hud_create` to attach a sonic dossier via `from_jobs`
    (prefixed with the unverified-facts reminder). Scout is for where/what/how-many questions; why/which/is-it-wrong
    questions (root cause, design, review) stay with the deciding model.

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { cliWorkerTools, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { panelDelivery } from './panel-delivery.js';
-import { editTickets } from './local-tickets.js';
+import { editTickets, readyTickets } from './local-tickets.js';
 import { startLand, landTask } from './land.js';
 import { isFlowId, landEvents, landView, readLand } from './land-state.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
@@ -2055,7 +2055,8 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_lease') return takeLease(args, { home: hudHome, cwd: process.cwd(), holder: callerPane });
   if (name === 'hud_tickets') {
     if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
-    return editTickets(jobCwd(args), args);
+    const cwd = jobCwd(args);
+    return args.op === 'ready' ? readyTickets(cwd, jobCache) : editTickets(cwd, args);
   }
   if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
   const detail = args.detail === true;
@@ -2415,7 +2416,7 @@ async function keyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 function mutationKey(name: string, args: Args): string | null {
-  if (name === 'hud_tickets' && !ticketGuide(args))
+  if (name === 'hud_tickets' && !ticketGuide(args) && args.op !== 'ready')
     return isWorker ? 'tickets' : `tickets:${fs.realpathSync(jobCwd(args))}`;
   if (name === 'hud_respond' && args.answers !== undefined) return null;
   if (name !== 'hud_respond' && name !== 'hud_close') return null;

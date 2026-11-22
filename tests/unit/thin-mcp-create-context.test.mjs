@@ -256,6 +256,47 @@ test('pi dispatch falls back to the role name for HUD instructions and passes th
   }
 });
 
+test('ready tickets are dispatchable briefs and live jobs claim them in MCP, Home, and Project', async (t) => {
+  const f = await fixture(t, false);
+  const ready = () => f.call('hud_tickets', { op: 'ready' });
+  assert.deepEqual(await ready(), { ok: true, tickets: [] });
+  const draft = { title: 'First slice', what: 'Build the first slice.', acceptance: ['It works.'], blocked_by: [] };
+  const { tickets: [first] } = await f.call('hud_tickets', { op: 'add', feature: 'alpha', tickets: [draft] });
+  const { tickets: [second] } = await f.call('hud_tickets', { op: 'add', feature: 'beta', tickets: [
+    { ...draft, title: 'Second slice', blocked_by: ['alpha/01'] },
+    { ...draft, title: 'Legacy claim', status: 'claimed' },
+    { ...draft, title: 'Owner question', status: 'needs-info' },
+  ] });
+  assert.deepEqual((await ready()).tickets, [{ ticket: 'alpha/01', path: first.path, title: draft.title, what: draft.what }]);
+  const original = fs.readFileSync(first.path, 'utf8');
+  const receipt = (n, cwd, state, worktree) => {
+    const dir = join(f.env.HUD_HOME, 'jobs', `j${String(n).padStart(16, '0')}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ cwd, role: 'imp', ticket: 'alpha/01', worktree,
+      created_at: new Date(n * 1000).toISOString() }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state }));
+    return dir;
+  };
+  receipt(3, resolve(f.root, '..'), 'working');
+  assert.equal((await ready()).tickets.length, 1);
+  const tree = join(f.env.HOME, 'isolated');
+  const live = receipt(1, tree, 'working', { root: tree, main_root: f.root, branch: 'wt/synthetic' });
+  receipt(2, f.root, 'failed'); // The newer failed attempt does not end the older live claim.
+  assert.deepEqual((await ready()).tickets, []);
+  const collector = new ProjectCollector(f.root, f.env.HUD_HOME, f.env, f.env.HOME);
+  for (const mode of ['home', true]) {
+    const data = await collector.collect(mode, { workers: [] }, Date.now());
+    const [ticket] = data.tickets.find(feature => feature.slug === 'alpha').tickets;
+    assert.deepEqual([ticket.state, ticket.status], ['working', 'claimed']);
+    assert.equal(data.ledger.find(row => row.id === 'ALPHA-01')?.state, 'working');
+  }
+  assert.equal(fs.readFileSync(first.path, 'utf8'), original);
+  writeFixtureFile(join(live, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  assert.deepEqual((await ready()).tickets.map(row => row.ticket), ['alpha/01']);
+  await f.call('hud_tickets', { op: 'update', feature: 'alpha', ticket: 1, status: 'ready-for-human' });
+  assert.deepEqual((await ready()).tickets, [{ ticket: 'beta/01', path: second.path, title: 'Second slice', what: draft.what }]);
+});
+
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   const initialized = await f.rpc('initialize', { protocolVersion: '2024-11-05' });

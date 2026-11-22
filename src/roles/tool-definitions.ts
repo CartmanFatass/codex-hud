@@ -159,9 +159,9 @@ export const ROLE_TOOLS = [
   LEASE_TOOL,
   tool(
     'hud_tickets',
-    'Read the ticket method (default), add or update local tickets (single or via updates: [...]), or sync a GitHub mirror. Only the main session can write.',
+    'Read the ticket method, list ready tickets, add or update local tickets, or sync a GitHub mirror.',
     {
-      op: { ...text, enum: ['guide', 'add', 'update', 'sync'], default: 'guide' },
+      op: { ...text, enum: ['guide', 'ready', 'add', 'update', 'sync'], default: 'guide' },
       cwd: { ...text, description: 'Project directory (default: server cwd).' },
       feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Feature slug for add and update.' },
       tickets: {

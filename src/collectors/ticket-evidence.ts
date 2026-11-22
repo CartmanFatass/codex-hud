@@ -1,7 +1,12 @@
-/** Shared by Project's rollup and the narrow, synchronous failed-job lookup. No project scan or Git call. */
+/** Shared ticket identity and file evidence. No project scan or Git call. */
 export function targetKey(id: string): string {
   const token = id.trim().toLowerCase(), m = /^([a-z0-9]+(?:-[a-z0-9]+)*)[-/#](\d+)$/.exec(token);
   return m ? `${m[1]}/${Number(m[2])}` : token;
+}
+
+export function ticketHeading(text: string, number: number) {
+  const match = text.match(/^# (\d+):[ \t]*(\S[^\r\n]*)/m);
+  return match && Number(match[1]) === number ? { number: match[1], title: match[2].trim() } : null;
 }
 
 export function ticketFileEvidence(text: string) {

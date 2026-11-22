@@ -2,6 +2,13 @@ import { basename } from 'node:path';
 import { targetKey } from './ticket-evidence.js';
 import type { LedgerSlice, ProjectTicket, TicketFeature } from './project-board.js';
 
+export const SETTLED_JOB_STATES: ReadonlySet<string> = new Set(['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace']);
+/** Without STATUS, a rejected dispatch has failed; otherwise the receipt still claims the work. */
+export const ticketJobState = (job: { dispatch_exit_code?: unknown }, status: { state?: unknown }) =>
+  typeof status.state === 'string' && status.state ? status.state
+    : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
+const live = (state: string | undefined) => !!state && !SETTLED_JOB_STATES.has(state);
+
 /** Both spellings denote one ticket; a token boundary keeps FEATURE-01 distinct from FEATURE-010 or OTHER-FEATURE-01. */
 const key = (feature: string, n: string) => targetKey(`${feature}/${n}`);
 export function ticketIds(text: string): string[] {
@@ -30,12 +37,15 @@ export class TicketRollup {
     }
     for (const id of targets) {
       const t = this.index.get(id);
-      if (!t || (t.job?.created ?? -Infinity) >= receipt.created) continue;
+      if (!t) continue;
+      // A newer settled attempt does not release another attempt's live claim.
+      const currentLive = live(t.job?.state), incomingLive = live(receipt.state);
+      if (currentLive !== incomingLive ? currentLive : (t.job?.created ?? -Infinity) >= receipt.created) continue;
       t.job = receipt;
       if (typeof job.slice === 'string') this.linkedSlices.set(t, job.slice); else this.linkedSlices.delete(t);
     }
   }
-  derive(ledger: LedgerSlice[], landed: Set<string>, now: number, settled: ReadonlySet<string>, marks: ReadonlyMap<string, string>) {
+  derive(ledger: LedgerSlice[], landed: Set<string>, now: number, marks: ReadonlyMap<string, string>) {
     const slices = new Map(ledger.map(r => [targetKey(r.id), r]));
     const accepted = new Set([...marks].filter(([, mark]) => mark === 'accept').map(([id]) => targetKey(id)));
     const running: LedgerSlice[] = [];
@@ -44,15 +54,16 @@ export class TicketRollup {
       const aliasKey = targetKey(alias ?? ''), linked = slices.get(aliasKey), numbered = slices.get(id);
       const slice = linked ?? numbered, states = [linked?.state, numbered?.state];
       if (t.state === 'done' || t.state === 'dropped') continue;
-      const state = slice?.state, job = t.job?.state;
+      const state = slice?.state, job = t.job?.state, claimed = live(job);
       if (states.includes('accepted') || accepted.has(id) || accepted.has(aliasKey)) t.state = 'done';
       else if (states.includes('dropped')) t.state = 'dropped';
       else if (states.includes('try') || landed.has(id) || t.state === 'try') t.state = 'try';
       else if (state === 'blocked' || job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
-      else if ((job && !settled.has(job)) || this.trees.has(t) || state === 'working') t.state = 'working';
+      else if (claimed || this.trees.has(t) || state === 'working') t.state = 'working';
       else if (/^claimed\b/i.test(t.status)) t.state = !job && now - t.at < 7200000 ? 'working' : 'blocked';
       else if (/^needs-(info|triage)\b/i.test(t.status)) t.state = 'blocked';
-      if ((t.state === 'working' || t.state === 'blocked') && ((job && !settled.has(job)) || this.trees.has(t))) {
+      if ((t.state === 'working' || t.state === 'blocked') && (claimed || this.trees.has(t))) {
+        if (claimed && /^ready-for-agent$/i.test(t.status)) t.status = 'claimed';
         const feature = id.split('/')[0];
         // Legacy dispatches sometimes already have a working feature-level row rather than a numbered slice.
         if (!slice && !alias && slices.get(feature)?.state === 'working') continue;
