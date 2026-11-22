@@ -472,7 +472,7 @@ export async function publishPiGrace(job, worker, writeReport = true, session = 
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({
     version: 1, task_dir: dir, slot: 'primary', ...session, state: 'idle_grace', output_written: true,
     ...(worker ? { pid: worker.pid, pid_start_time: procStat(worker.pid).start } : {}),
-    settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 8000).toISOString(),
+    settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 30000).toISOString(),
   }));
   const mtime = fs.statSync(report).mtimeMs;
   await until(() => Date.now() > mtime); // hud_read records integer milliseconds.

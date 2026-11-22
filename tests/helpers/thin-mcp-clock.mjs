@@ -15,6 +15,25 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
       scale = Number(process.env.HUD_TEST_CLOCK_SCALE ?? 20);
     Date.now = () => anchor + (now() - anchor) * scale;
     globalThis.setTimeout = (fn, ms, ...args) => timer(fn, ms === 250 ? 15 : ms / scale, ...args);
+    // Keep external done.json timestamps on the supervisor's accelerated clock so slow runs never expire declared turns early.
+    const parse = JSON.parse;
+    JSON.parse = (...args) => {
+      const value = parse(...args);
+      if (
+        value &&
+        typeof value === 'object' &&
+        typeof value.seq === 'number' &&
+        typeof value.sent_at === 'string' &&
+        typeof value.report_sig === 'string' &&
+        typeof value.at === 'string'
+      ) {
+        const realAt = Date.parse(value.at);
+        if (Number.isFinite(realAt) && realAt >= anchor) {
+          value.at = new Date(anchor + (realAt - anchor) * scale).toISOString();
+        }
+      }
+      return value;
+    };
     const opendir = fs.opendirSync;
     fs.opendirSync = (...args) => {
       if (/^\/proc\/\d+\/task$/.test(args[0])) fs.appendFileSync(join(process.env.HOME, 'proc-scans'), 'scan\n');

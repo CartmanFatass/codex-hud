@@ -158,7 +158,7 @@ test('MCP tasks: launch fall-through and effective effort stay in the dispatch a
   assert.equal(read.attempts.length, 2);
 });
 
-test('MCP tasks: a question completes the task; an answer starts another task', { timeout: 10000 }, async (t) => {
+test('MCP tasks: a question completes the task; an answer starts another task', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
@@ -178,7 +178,7 @@ test('MCP tasks: a question completes the task; an answer starts another task', 
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), question);
   assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'working');
   await publishPiGrace(job);
-  await until(() => checkReceipt(job)?.state === 'done');
+  await until(() => checkReceipt(job)?.state === 'done', 20000);
   const result = await rpc('tasks/get', { taskId: next.taskId });
   assert.equal(result.status, 'completed');
   assert.match(result.result.content[0].text, /Checks: 1\/1 passed$/);

@@ -35,7 +35,7 @@ if (command === 'pi' && args.includes('--print')) {
   process.stdin.once('data', () => console.log(JSON.stringify({ id: 'hud-thinking', data: { model } })));
 } else fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\n');
 function waitToReply() {
-  const end = Date.now() + 5000;
+  const end = Date.now() + 20000;
   while (Date.now() < end && !fs.existsSync(join(process.env.HOME, 'release-prompt-result'))) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
   }

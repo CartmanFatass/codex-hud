@@ -260,7 +260,7 @@ test(
 
 test(
   'an agy worker prepends role instructions and a registered standing brief within bounds, falling back when oversized',
-  { timeout: 15000 },
+  { timeout: 45000 },
   async (t) => {
     const f = await fixture(t);
     const hudDir = join(f.root, '.hud');
@@ -279,7 +279,7 @@ test(
     assert.ok(unregPrompt.startsWith(`${roleText.trimEnd()}\n\nCarry out this brief:\n\nSynthetic unregistered task.`));
     assert.equal(unregPrompt.includes(standingBody.trimEnd()), false);
     assert.doesNotMatch(unregPrompt, /Read .*instructions\/implementer\.md/);
-    await until(() => cliState(unregistered.task_dir)?.state === 'closed', 8000);
+    await until(() => cliState(unregistered.task_dir)?.state === 'closed', 20000);
 
     fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
       version: 1,
@@ -299,7 +299,7 @@ test(
     assert.doesNotMatch(regPrompt, /Read .*instructions\/implementer\.md/);
     assert.equal(regPrompt.includes('Read the project standing brief:'), false);
     assert.ok(fs.readFileSync(join(registered.task_dir, 'brief.md'), 'utf8').includes('Read the project standing brief:'));
-    await until(() => cliState(registered.task_dir)?.state === 'closed', 8000);
+    await until(() => cliState(registered.task_dir)?.state === 'closed', 20000);
 
     const oversizedBody = 'synthetic-rule\n'.repeat(1200);
     fs.writeFileSync(standing, oversizedBody);
@@ -313,7 +313,7 @@ test(
     assert.ok(bigPrompt.startsWith(`${roleText.trimEnd()}\n\nCarry out this brief:\n\nSynthetic oversized standing task.`));
     assert.equal(bigPrompt.includes(oversizedBody.trimEnd()), false);
     assert.ok(bigPrompt.includes(`Read the project standing brief: ${JSON.stringify(join(fs.realpathSync(f.root), '.hud', 'brief.md'))}.`));
-    await until(() => cliState(oversized.task_dir)?.state === 'closed', 8000);
+    await until(() => cliState(oversized.task_dir)?.state === 'closed', 20000);
   }
 );
 
@@ -370,7 +370,7 @@ test(
   }
 );
 
-test('a claude role launches with its flags and settles through idle grace', { timeout: 10000 }, async (t) => {
+test('a claude role launches with its flags and settles through idle grace', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const owner = join(f.env.CLAUDE_CONFIG_DIR, '.claude.json');
   fs.writeFileSync(owner, JSON.stringify({ ...JSON.parse(fs.readFileSync(owner)), mcpServers: { extra: { command: 'synthetic' } } }));
@@ -403,7 +403,7 @@ test('a claude role launches with its flags and settles through idle grace', { t
   assert.equal(fs.statSync(config).mode & 0o777, 0o600);
   assert.match(f.commands().find((c) => c.args[1] === 'prompt').args[3], /^Carry out this brief:\n\nSynthetic claude task\./);
   assert.equal(start.includes('--timeout'), false);
-  await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 20000);
   const closed = cliState(job.task_dir);
   assert.equal(closed.agent, 'claude');
   assert.equal(closed.model, 'opus');

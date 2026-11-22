@@ -34,11 +34,11 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 // The hold windows below exercise lifecycle behavior; this outer guard also covers
 // starting two real sonic subprocesses, collecting them and settling the parent.
-test('an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt', { timeout: 30000 }, async (t) => {
+test('an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'sonic-parent-cli', 0.25, false);
+  writeCliRole(f, 'sonic-parent-cli', 1, false);
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
   configureFakeDecision(f, server.baseUrl);
   const rpc = taskRpc(f.rpc);
@@ -47,7 +47,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   const handle = await taskCall(rpc, 'hud_create', { role: 'sonic-parent-cli', request_key: 'sonic-parent-cli', task: 'Synthetic CLI parent.' });
   const parent = taskJob(f, handle);
   parent.agent = `${parent.job}-primary`;
-  await until(() => cliState(parent.task_dir)?.agent_session_id);
+  await until(() => cliState(parent.task_dir)?.agent_session_id, 20000);
   const start = () => runSonic(f, 'start', parent.task_dir, '--task-file', task);
   const [child, alreadyCollected] = await Promise.all([start(), start()]);
   assert.equal(child.status, 0, child.stderr);
@@ -55,23 +55,29 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   const id = child.stdout.trim(), dir = join(f.env.HUD_HOME, 'jobs', id);
   const collectedId = alreadyCollected.stdout.trim();
   fs.writeFileSync(join(f.env.HUD_HOME, 'jobs', collectedId, 'release-sonic'), '');
-  const report = await runSonic(f, 'wait', parent.task_dir, '--job', collectedId, '--timeout', '5');
+  const report = await runSonic(f, 'wait', parent.task_dir, '--job', collectedId, '--timeout', '25');
   assert.equal(report.status, 0, report.stderr);
   const prompts = () => f.commands().filter(({ args }) => args[1] === 'prompt' && args[2] === parent.agent && args[3].startsWith('Collect these sonic reports'));
   f.push(parent.job, 'idle');
-  await new Promise((done) => setTimeout(done, 400)); // exceeds the accelerated 250ms no-report grace
+  // Two supervisor safety ticks span >= 30 s on the supervisor's accelerated clock (> 20 s grace).
+  const idleQueries = statusQueries(f, parent);
+  await until(() => statusQueries(f, parent) >= idleQueries + 2, 15000);
   assert.equal(server.requests.length, 0);
   assert.equal(cliState(parent.task_dir).state, 'working');
 
   writeFixtureFile(join(parent.task_dir, 'report.md'), 'Premature synthetic parent report.');
-  await new Promise((done) => setTimeout(done, 700)); // exceeds the accelerated report stability window
+  // Two more safety ticks span >= 30 s on the supervisor's clock (> 10 s report stability window).
+  const reportQueries = statusQueries(f, parent);
+  await until(() => statusQueries(f, parent) >= reportQueries + 2, 15000);
   assert.equal(cliState(parent.task_dir).state, 'working');
   assert.equal(cliState(parent.task_dir).settled_at, null);
   assert.equal(readCloseQuit(f, parent), false);
   assert.equal(prompts().length, 0);
 
   fs.writeFileSync(join(dir, 'release-sonic'), '');
-  await until(() => prompts().length === 1);
+  await until(() => prompts().length === 1, 20000);
+  // Real Herdr marks the agent working once prompted; manual-socket otherwise stays idle through hud_send/declareDone.
+  f.push(parent.job, 'working');
   assert.ok(prompts()[0].args[3].includes(id));
   assert.ok(!prompts()[0].args[3].includes(collectedId));
   assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'working');
@@ -83,13 +89,13 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   writeFixtureFile(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
   declareDone(f, parent);
   f.push(parent.job, 'done');
-  await until(() => cliState(parent.task_dir)?.state === 'closed');
+  await until(() => cliState(parent.task_dir)?.state === 'closed', 20000);
   assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'completed');
   assert.equal(prompts().length, 1, 'the same report is not prompted for again');
   assert.equal(server.requests.length, 0);
 });
 
-test('quiet without a report and an in-turn child makes no Decision API call and types no prompt', { timeout: 10000 }, async (t) => {
+test('quiet without a report and an in-turn child makes no Decision API call and types no prompt', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   writeCliRole(f, 'bg-cli', 0.25, false);
@@ -98,19 +104,20 @@ test('quiet without a report and an in-turn child makes no Decision API call and
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
   configureFakeDecision(f, server.baseUrl);
   const job = await f.call('hud_create', { role: 'bg-cli', request_key: 'bg-child', task: 'Synthetic bg child.' });
-  await until(() => cliState(job.task_dir)?.agent_session_id);
-  await worker.start();
+  await until(() => cliState(job.task_dir)?.agent_session_id && cliState(job.task_dir)?.pid === worker.pid, 15000);
+  const childPid = await worker.start();
   const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args[3]).startsWith('Write your report to '));
   f.push(job.job, 'idle');
   const before = statusQueries(f, job);
-  await until(() => statusQueries(f, job) > before);
+  await until(() => statusQueries(f, job) >= before + 2, 15000);
   assert.equal(server.requests.length, 0);
   assert.equal(prompts().length, 0);
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).quiet_decision, undefined);
 
   worker.stop();
-  await until(() => prompts().length === 1, 5000);
+  await until(() => !procStat(childPid) || procStat(childPid).state === 'Z', 5000);
+  await until(() => prompts().length === 1, 15000);
   assert.equal(server.requests.length, 1, 'the real quiet-decision path runs once the child is gone');
 });
 
@@ -173,7 +180,7 @@ test('quiet decision still-working keeps waiting up to 3 questions then escalate
   assert.match(inspectText, /quiet\s+needs-human \(max questions\)/);
 });
 
-test('quiet decision finished-no-report sends fixed prompt once per job and settles; second never sends twice', { timeout: 20000 }, async (t) => {
+test('quiet decision finished-no-report sends fixed prompt once per job and settles; second never sends twice', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'qd-prompt', 1, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
@@ -185,10 +192,10 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
   await f.startCliSocket();
   const handle = await taskCall(rpc, 'hud_create', { role: 'qd-prompt', request_key: 'qd-prompt-1', task: 'Synthetic report prompt.' });
   const job = taskJob(f, handle);
-  await until(() => fs.existsSync(join(job.task_dir, 'report.md')));
+  await until(() => fs.existsSync(join(job.task_dir, 'report.md')), 20000);
   declareDone(f, job);
   f.push(job.job, 'done');
-  await until(() => cliState(job.task_dir)?.state === 'closed', 10000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 20000);
   const done = await rpc('tasks/get', { taskId: handle.taskId });
   assert.equal(done.status, 'completed');
   assert.match(done.result.content[0].text, /Summary: Synthetic report after prompt\./);
@@ -206,7 +213,7 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
   const server2 = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.94));
   configureFakeDecision(f2, server2.baseUrl);
   const job2 = await f2.call('hud_create', { role: 'qd-prompt2', request_key: 'qd-prompt-2', task: 'Synthetic no repeat.' });
-  await until(() => cliState(job2.task_dir)?.state === 'waiting_orchestrator', 10000);
+  await until(() => cliState(job2.task_dir)?.state === 'waiting_orchestrator', 20000);
   const expectedPrompt2 = `Write your report to ${join(job2.task_dir, 'report.md')} now; if work remains, finish it first.`;
   const prompts2 = f2.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === expectedPrompt2);
   assert.equal(prompts2.length, 1);

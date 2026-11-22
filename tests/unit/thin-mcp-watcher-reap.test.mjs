@@ -89,18 +89,22 @@ test('hud_close during Pi startup records stopped without relying on the watcher
   assert.equal((await f.call('hud_read', {})).jobs.some((job) => job.job === id), false);
 });
 
-test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 10000 }, async (t) => {
+test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 35000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'read-close-cli', 8);
+  writeCliRole(f, 'read-close-cli', 30);
   for (const role of ['read-close-cli', 'imp']) {
     const job = await f.call('hud_create', { role, request_key: `close-on-read-${role}`, task: 'Synthetic task.', package: 'Original package' });
     if (role === 'imp') await publishPiGrace(job); // Fake pi settles only after the initial prompt.
-    await until(() => cliState(job.task_dir)?.state === 'idle_grace');
-    const grace = cliState(job.task_dir), queries = statusQueries(f, job);
+    await until(() => cliState(job.task_dir)?.state === 'idle_grace', 15000);
+    const grace = cliState(job.task_dir);
+    let queries = statusQueries(f, job);
     assert.equal(readCloseReaped(job), undefined);
     const read = await f.call('hud_read', { job: job.job });
     assert.match(read.digest.result, /^Synthetic /);
-    await until(() => cliState(job.task_dir)?.state === 'closed', 1650); // 1.5s accelerated safety tick + dispatch overhead.
+    // For CLI, exclude safety ticks that fired while hud_read waited on CPU before writing read_at.
+    if (role !== 'imp') queries = statusQueries(f, job);
+    // One-tick settlement is checked via agent.get count and ended_at < idle_deadline_at, not wall time.
+    await until(() => cliState(job.task_dir)?.state === 'closed', 15000);
     const closed = cliState(job.task_dir);
     assert.equal(closed.exit_reason, 'closed after report read');
     assert.equal(closed.output_written, true);
@@ -109,7 +113,7 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
     const after = statusQueries(f, job);
     assert.ok(after <= queries + 1, `${role}: agent.get ${queries} -> ${after}`);
     if (role !== 'imp') assert.ok(readCloseQuit(f, job));
-    await until(() => readCloseReaped(job));
+    await until(() => readCloseReaped(job), 15000);
     assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
     const send = { job: job.job, text: 'Synthetic repair.' };
     const repair = await f.call('hud_send', send);

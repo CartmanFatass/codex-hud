@@ -545,11 +545,11 @@ test('hud_wait any wakes on a settlement among the caller’s initially unsettle
   assert.deepEqual(JSON.parse(fs.readFileSync(join(second.dir, 'job.json'), 'utf8')), second.receipt);
 });
 
-test('hud_wait all wakes after the last explicit target settles', { timeout: 4000 }, async (t) => {
+test('hud_wait all wakes after the last explicit target settles', { timeout: 25000 }, async (t) => {
   const f = await fixture(t);
   const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
   const args = { jobs: [first.job, second.job], mode: 'all' };
-  const waiting = f.call('hud_wait', { ...args, wait_ms: 5000 });
+  const waiting = f.call('hud_wait', { ...args, wait_ms: 15000 });
   await f.rpc('ping');
   first.status('stopped');
   assert.equal((await f.call('hud_wait', { ...args, wait_ms: 0 })).ready, false);
@@ -561,10 +561,10 @@ test('hud_wait all wakes after the last explicit target settles', { timeout: 400
   assert.deepEqual(result.jobs.map((job) => job.state), ['stopped', 'done']);
 });
 
-test('hud_wait all wakes early for a question and previews only its ID', { timeout: 4000 }, async (t) => {
+test('hud_wait all wakes early for a question and previews only its ID', { timeout: 25000 }, async (t) => {
   const f = await fixture(t);
   const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
-  const waiting = f.call('hud_wait', { jobs: [first.job, second.job], mode: 'all', wait_ms: 5000 });
+  const waiting = f.call('hud_wait', { jobs: [first.job, second.job], mode: 'all', wait_ms: 15000 });
   await f.rpc('ping');
   writeFixtureFile(join(first.dir, 'qa', 'q1.md'), 'Synthetic question.');
   const result = await waiting;

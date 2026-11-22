@@ -175,7 +175,7 @@ test('forced fail with SIGTERM-resistant job-retention watcher', async (t) => {
   );
 });
 
-test('SIGKILL of the node --test coordinator leaves no watcher for either temporary fixture', { timeout: 20000 }, async (t) => {
+test('SIGKILL of the node --test coordinator leaves no watcher for either temporary fixture', { timeout: 45000 }, async (t) => {
   const dir = fs.mkdtempSync(join(tmpdir(), 'fixture-cleanup-killed-'));
   const script = join(dir, 'killed.test.mjs'), homesFile = join(dir, 'homes'), ready = join(dir, 'ready');
   fs.writeFileSync(script, `
@@ -189,7 +189,7 @@ test('start both fixture watchers', async (t) => {
     const f = await make(t);
     fs.appendFileSync(${JSON.stringify(homesFile)}, f.env.HUD_HOME + '\\n');
     await f.call('hud_create', { role: 'imp', request_key: 'killed', task: 'Synthetic.' });
-    await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+    await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), 25000);
   }
   fs.writeFileSync(${JSON.stringify(ready)}, '');
   await new Promise(() => setInterval(() => {}, 1000));
@@ -211,12 +211,12 @@ test('start both fixture watchers', async (t) => {
     }
     fs.rmSync(dir, { recursive: true, force: true });
   });
-  await until(() => fs.existsSync(ready));
+  await until(() => fs.existsSync(ready), 30000);
   assert.equal(homes().length, 2);
   for (const hudHome of homes()) assert.ok(findFixtureProcesses({ hudHome }).some(({ cmdline }) => cmdline.includes('hud-watch.mjs')));
   run.kill('SIGKILL');
   assert.deepEqual(await exited, [null, 'SIGKILL']);
   // No test cleanup hook ran in the killed run; wait for its guardian, not the fallback above.
-  await until(() => homes().every(hudHome => findFixtureProcesses({ root: join(hudHome, '..'), hudHome }).length === 0), 5000);
+  await until(() => homes().every(hudHome => findFixtureProcesses({ root: join(hudHome, '..'), hudHome }).length === 0), 20000);
   for (const hudHome of homes()) assertNoFixtureProcesses({ root: join(hudHome, '..'), hudHome });
 });

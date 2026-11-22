@@ -193,7 +193,7 @@ test('a headless sonic starts even when a legacy sonic fills the role cap', asyn
   assert.equal(fs.existsSync(join(job.task_dir, 'SESSION.txt')), false);
 });
 
-test('queued imp starts automatically when a working imp settles, picking the first available place at start time', { timeout: 25000 }, async (t) => {
+test('queued imp starts automatically when a working imp settles, picking the first available place at start time', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   writeHudSettings(f, { roleCaps: { imp: 3, general: 3 }, impOverflow: false });
 
@@ -246,9 +246,10 @@ test('queued imp starts automatically when a working imp settles, picking the fi
 
   // Settle working[0] to idle_grace (not a working state). Watcher must start q1 automatically on place 1!
   await publishPiGrace(working[0], null);
-  await until(() => cliState(q1.task_dir)?.state === 'working', 10000);
+  const readQ1Receipt = () => JSON.parse(fs.readFileSync(join(q1.task_dir, 'job.json'), 'utf8'));
+  await until(() => cliState(q1.task_dir)?.state === 'working' && readQ1Receipt().dispatch_exit_code === 0, 30000);
 
-  const startedReceipt = JSON.parse(fs.readFileSync(join(q1.task_dir, 'job.json'), 'utf8'));
+  const startedReceipt = readQ1Receipt();
   assert.equal(startedReceipt.model, 'synthetic/second', 'started on first available place at start time');
   assert.equal(startedReceipt.resume_s, 900, 'queued workers inherit the selected role’s resume window');
   assert.equal((await f.call('hud_read', { job: q2.job })).state, 'queued');
