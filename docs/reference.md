@@ -300,8 +300,10 @@ Reading a failure/block separately marks that attention as seen.
 Workers finish with `hud_report`, which publishes the report without repeating it in chat. They may supply a
 one-line `summary` (up to 160 Unicode code points) and a `files` list of up to 50 relative paths. Claude and Codex
 use their HUD MCP and pass the token from the prompt they are answering; pi has native tools and needs no token.
-Antigravity and Grok Build use the fallback commands in their briefs. Workers use `hud_sonic` to start sonic
-sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
+Antigravity and Grok Build use the fallback commands in their briefs. Both `hud_report` and `hud-progress --done`
+refuse to declare a report while the managed worktree has uncommitted changes. Ignored files do not block the report,
+and a clean worktree may report a no-op without making a commit. Workers use `hud_sonic` to start sonic sub-tasks
+without waiting, then collect their reports; HUD prompts once if they finish without collecting.
 `hud_send` queues a message for a working pi or CLI job. After a worker closes on its report, HUD checks the
 clock and native session. Within `resume_s`, it can open the same pi, Claude, Codex or Antigravity session in a
 new pane in the same checkout, as a new turn of the same job (`continuation: "resumed"`). After the window or if

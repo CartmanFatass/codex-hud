@@ -32,7 +32,7 @@ import {
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { initRepo } from '../fixtures/managed-worktree.mjs';
+import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 
 test('hud_ask does not block other worker MCP calls while Codex queue is slow', async (t) => {
   const f = await fixture(t);
@@ -691,6 +691,58 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
 });
 
 for (const mode of ['hud_report', 'shell fallback']) {
+  test(`${mode} refuses dirty managed worktree reports until the changes are committed`, async (t) => {
+    const f = await fixture(t), main_root = initRepo(f.root);
+    const root = join(f.root, 'demo-wt', 'synthetic-000001'), branch = 'wt/synthetic-000001';
+    const base_head = git(main_root, 'rev-parse', 'HEAD');
+    git(main_root, 'worktree', 'add', '-qb', branch, root);
+    const { dir, receipt } = waitFixtureJob(f, 1, 'working', undefined, root);
+    const worktree = { root, branch, main_root, base_head };
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, worktree, cli: true }));
+    const report = join(dir, 'report.md'), done = join(dir, 'done.json');
+    const call = mode === 'hud_report' ? workerClient(t, f, dir) : undefined;
+    const submitForTurn = (seq, text) => {
+      const current = { seq, sent_at: receipt.created_at, report_sig: reportSignature(dir) };
+      writeFixtureFile(join(dir, 'turn.json'), JSON.stringify(current));
+      const turn = turnToken(current);
+      if (!call) writeFixtureFile(report, text);
+      return async () => {
+        if (call) {
+          const result = await call('hud_report', { text, turn });
+          if (result.isError) return JSON.parse(result.content[0].text).error;
+          assert.deepEqual(resultValue(result), { path: report });
+        } else {
+          const { status, stderr } = runProgress(f, dir, '--done', '--turn', turn);
+          if (status === 1) return stderr;
+          assert.equal(status, 0, stderr);
+        }
+      };
+    };
+
+    fs.writeFileSync(join(root, 'ignored.txt'), 'Synthetic ignored output.\n');
+    fs.writeFileSync(join(main_root, 'tracked.txt'), 'Synthetic unrelated main-checkout change.\n');
+    const noOp = submitForTurn(1, 'Synthetic no-op report.\n');
+    assert.equal(await noOp(), undefined);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), base_head);
+    const oldDone = fs.readFileSync(done, 'utf8');
+
+    const changed = call ? 'tracked.txt' : 'new.txt';
+    fs.writeFileSync(join(root, changed), 'Synthetic pending change.\n');
+    const text = 'Synthetic implementation report.\n';
+    const submit = submitForTurn(2, text);
+    const hint = `Commit your changes on ${branch} first (git -c user.name='HUD worker' -c user.email=worker@hud.invalid commit -- <paths>), then report.`;
+    const rejected = call ? `Error: ${hint}` : `hud-progress: ${hint}\n`;
+    assert.equal(await submit(), rejected);
+    assert.equal(fs.readFileSync(done, 'utf8'), oldDone, 'rejection does not declare the new turn');
+    assert.equal(fs.readFileSync(report, 'utf8'), call ? 'Synthetic no-op report.\n' : text);
+    git(root, 'add', '--', changed);
+    assert.equal(await submit(), rejected, 'staged changes also block publishing');
+    git(root, 'commit', '-qm', 'Synthetic work', '--', changed);
+    assert.equal(await submit(), undefined);
+    assert.equal(JSON.parse(fs.readFileSync(done, 'utf8')).seq, 2);
+    assert.equal(fs.readFileSync(report, 'utf8'), text);
+  });
+
   test(`an agy CLI worker settles the current turn through ${mode}`, { timeout: 15000 }, async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -772,8 +824,9 @@ for (const mode of ['hud_report', 'shell fallback']) {
 }
 
 test('hud-progress --done accepts a summary and repeated file paths without changing the receipt', async (t) => {
-  const f = await fixture(t);
-  const { dir, receipt } = waitFixtureJob(f, 1);
+  const f = await fixture(t), cwd = initRepo(f.root);
+  fs.writeFileSync(join(cwd, 'tracked.txt'), 'Synthetic main-checkout change.\n');
+  const { dir, receipt } = waitFixtureJob(f, 1, 'working', undefined, cwd);
   const turn = { seq: 1, sent_at: receipt.created_at, report_sig: null };
   writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, cli: true }));
   writeFixtureFile(join(dir, 'turn.json'), JSON.stringify(turn));

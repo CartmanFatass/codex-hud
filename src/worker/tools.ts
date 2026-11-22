@@ -15,6 +15,8 @@ import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { dispatchJob } from '../mcp/thin-main.js'; // Cyclic binding, called only after startup.
 import { notify, taskDelivery } from '../roles/notify.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
+import { worktreeGit as git } from '../collectors/worktrees.js';
+import { neutralizeFilters } from '../utils/git-safety.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
 type Worker = ReturnType<typeof workerJob>;
@@ -49,6 +51,17 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
   if (text !== undefined && (typeof text !== 'string' || !text.trim())) throw new Error('write a nonempty report');
   const fields = normalizeReportMeta(metadata);
+  if (job.worktree) {
+    const { root, branch } = job.worktree;
+    let status: string;
+    try {
+      const filters = await neutralizeFilters(git, root);
+      status = await git(root, [...filters, 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=normal', '--ignore-submodules=dirty']);
+    } catch (cause) {
+      throw new Error('Could not check the worktree for uncommitted changes', { cause });
+    }
+    if (status) throw new Error(`Commit your changes on ${branch} first (git -c user.name='HUD worker' -c user.email=worker@hud.invalid commit -- <paths>), then report.`);
+  }
   const path = join(dir, jobFiles.report);
   if (job.cli) {
     const current = readTurn(dir);

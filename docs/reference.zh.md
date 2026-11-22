@@ -189,6 +189,7 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 CLI 声明后 120 秒仍未结束时，交由主会话处理，不强制中断。未回答的问题、未结束或未收取结果的 Sonic 子任务会阻止关闭。
 此变更前已启动的任务仍使用原有宽限期。读取失败或受阻状态会单独标记为已查看。
 工作者调用 `hud_report` 时可附带单行 `summary`（最多 160 个 Unicode 码点）和 `files`（最多 50 个相对路径），不在对话中重复报告正文。
+托管工作树若有未提交的改动，`hud_report` 和备用命令 `hud-progress --done` 都会拒绝声明报告。Git 忽略的文件不会阻止报告；干净的工作树即使没有新提交，也可以报告没有改动。
 `hud_send` 给工作中的 pi 或 CLI 任务排队消息。任务报告后关闭时，HUD 按时间与原生会话可用性自动选择：在 `resume_s` 内可在同一检出中新开窗格，恢复同一 pi、Claude、Codex 或 Antigravity 会话，开启同一任务的新回合（`continuation: "resumed"`）。超时或无法恢复时，启动引用原简报和报告的修正任务（`continuation: "repair"`、`continued_as` 为新任务 ID）。
 修正托管工作树任务，或用 `retry_of` 重试失败的修正任务（且未覆盖 `cwd` 或 `isolation`）时，若源工作树仍存在且工作区干净，HUD 会复用该工作树；否则新建工作树。
 用 `jobs` 代替 `job` 时，只把同一段文字发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不恢复已关闭任务。用 `messages: [{job, text, message_key?}]` 可在一次调用中给多个任务发送各自的消息（包括原生恢复和关闭后修复），按输入顺序返回 `messages` 且错误逐项隔离。
