@@ -17,7 +17,7 @@ import {
   readExpConfigAsync,
 } from './exp-store.js';
 import { readCodexProxy, type ProxyRpcResult } from './exp-codex-rpc.js';
-import { tryExpLock } from './exp-lock.js';
+import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 
 const stamp = (s: fs.Stats) => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
@@ -79,7 +79,7 @@ export async function refreshProxyIfDue(
 ): Promise<boolean> {
   if (!due(observed, now())) return false;
   const home = getHudHome(env);
-  const release = await fs.promises.realpath(home).then((key) => tryExpLock('proxy', key)).catch(() => undefined);
+  const release = await fs.promises.realpath(home).then((key) => tryAbstractLock('exp-proxy', key)).catch(() => undefined);
   if (!release) return false;
   try {
     const current = await observeProxy(env);

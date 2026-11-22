@@ -1,9 +1,8 @@
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { expMicros, type ExpAccount, type ExpBalance, type ExpGrant } from '../exp-config.js';
 import { grantCycle } from '../exp-cycle.js';
-import { tryExpLock } from './exp-lock.js';
+import { withAbstractLock } from '../utils/abstract-lock.js';
 
 export interface ExpTokens {
   input: number;
@@ -40,34 +39,32 @@ export async function appendExpEvent(
 ): Promise<void> {
   const dir = prepareExpDir(hudHome);
   const path = join(fs.realpathSync(dir), basename(ledgerFile(hudHome, account)));
-  const deadline = performance.now() + 2000;
-  for (;;) {
-    const release = await tryExpLock('ledger', path);
-    if (!release) {
-      if (performance.now() >= deadline) throw new Error('EXP ledger busy');
-      await sleep(5 + Math.random() * 10);
-      continue;
-    }
-    try {
-      if (stillEnabled && !stillEnabled()) return;
-      const { O_RDWR, O_APPEND, O_CREAT, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-      const fd = fs.openSync(path, O_RDWR | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0o600);
-      try {
-        const stat = fs.fstatSync(fd);
-        if (!stat.isFile()) throw new Error('EXP ledger is not a file');
-        if ((stat.mode & 0o777) !== 0o600) fs.fchmodSync(fd, 0o600);
-        const raw = fs.readFileSync(fd, 'utf8');
-        if (raw && !raw.endsWith('\n')) throw new Error('Incomplete EXP ledger line');
-        if (raw.split('\n').some((line) => line && JSON.parse(line).id === event.id)) return;
-        const line = Buffer.from(JSON.stringify(event) + '\n');
-        if (fs.writeSync(fd, line) !== line.length) throw new Error('Incomplete EXP ledger write');
-        return;
-      } finally {
-        fs.closeSync(fd);
-      }
-    } finally {
-      await release();
-    }
+  try {
+    await withAbstractLock(
+      'exp-ledger',
+      path,
+      () => {
+        if (stillEnabled && !stillEnabled()) return;
+        const { O_RDWR, O_APPEND, O_CREAT, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
+        const fd = fs.openSync(path, O_RDWR | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0o600);
+        try {
+          const stat = fs.fstatSync(fd);
+          if (!stat.isFile()) throw new Error('EXP ledger is not a file');
+          if ((stat.mode & 0o777) !== 0o600) fs.fchmodSync(fd, 0o600);
+          const raw = fs.readFileSync(fd, 'utf8');
+          if (raw && !raw.endsWith('\n')) throw new Error('Incomplete EXP ledger line');
+          if (raw.split('\n').some((line) => line && JSON.parse(line).id === event.id)) return;
+          const line = Buffer.from(JSON.stringify(event) + '\n');
+          if (fs.writeSync(fd, line) !== line.length) throw new Error('Incomplete EXP ledger write');
+        } finally {
+          fs.closeSync(fd);
+        }
+      },
+      { timeoutMs: 2000 }
+    );
+  } catch (err) {
+    if (err instanceof Error && err.message === 'abstract lock timeout (exp-ledger)') throw new Error('EXP ledger busy');
+    throw err;
   }
 }
 

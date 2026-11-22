@@ -1,5 +1,5 @@
-import { spawnSync } from 'node:child_process';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
+import { tryAbstractLock } from '../utils/abstract-lock.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId, listedPanes, runHerdr } from './herdr-run.js';
@@ -41,14 +41,14 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
   if (!orphans.length) return false;
 
   const root = join(home, 'jobs');
-  let fd: number;
-  try { fd = fs.openSync(root, 'r'); }
+  let key: string;
+  try { key = fs.realpathSync(root); }
   catch { return false; } // The jobs directory may disappear while herdr is answering.
+  // Concurrent MCP and watch scans may both see an orphan. Only the first can transfer it.
+  const release = await tryAbstractLock('job-adopt', key).catch(() => undefined);
+  if (!release) return false;
   let adopted = false;
   try {
-    // Concurrent MCP and watch scans may both see an orphan. Only the first can transfer it.
-    const lock = spawnSync('flock', ['-nx', '3'], { env, stdio: ['ignore', 'ignore', 'ignore', fd], timeout: 1000 });
-    if (lock.status !== 0) return false;
     for (const job of orphans) {
       if (typeof job.job !== 'string' || !JOB_ID_RE.test(job.job)) continue;
       const dir = join(root, job.job), file = join(dir, jobFiles.job);
@@ -71,6 +71,6 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
         // Keep scanning if a job disappears or its receipt cannot be updated.
       }
     }
-  } finally { fs.closeSync(fd); }
+  } finally { await release(); }
   return adopted;
 }
