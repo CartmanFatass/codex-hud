@@ -7,7 +7,7 @@
 **What to build:** Spec §2.1.2 "Imp routing" (22.22). Settings toggle "Imp routing" (off by default), which needs the Decision API like Sonic auto-thinking and reuses its client, budget and fallback code. When on, an `imp` create with no `preset`, `on`, `model` or `thinking` asks the Decision API for `{tier: light|standard|hard, mode: headless|tab, reason}`. The input is the brief, ticket text and context-file names and sizes. The guidance is tier and mode purposes written in the imp role file:
 - light (`hydrogen` preset): text or doc edits, one or two files, a single test fix, a small bug;
 - standard: an ordinary end-to-end slice;
-- hard (`astra`): cross-module, concurrency or process lifecycle, repeated conflicts;
+- hard (`sol`, owner 2026-11-22: no astra for imp): cross-module, concurrency or process lifecycle, repeated conflicts;
 - headless: likely one shot with no owner watching;
 - tab: likely questions, long runs, or the owner wants to watch.
 

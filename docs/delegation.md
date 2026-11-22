@@ -96,7 +96,7 @@ job and the land read the same requirement.
 | frontend-implementer | role `frontend-imp` | UI design and every user-facing UI build: panel, statusline, footers, rendered pages, design samples (`src/render/`) |
 | Hermes | Windows, computer use | tests that need human-like interaction |
 
-Where each role runs (harness, model, thinking) is what `hud_roster` reports as `runs_on`: the owner's role files, switched in the Control plane. A dispatch passes no `preset`, `on`, `model` or `thinking` unless the owner asks for it in that request, and an owner's pick for one task does not carry over to the next (owner, 2026-11-20). One standing exception (owner, 2026-11-22): `imp` runs its default `fast` preset (gpt-6.2-sol-fast), and the orchestrator passes `preset: "astra"` for hard slices: several modules, review fixes, or design-heavy work.
+Where each role runs (harness, model, thinking) is what `hud_roster` reports as `runs_on`: the owner's role files, switched in the Control plane. A dispatch passes no `preset`, `on`, `model` or `thinking` unless the owner asks for it in that request, and an owner's pick for one task does not carry over to the next (owner, 2026-11-20). One standing exception (owner, 2026-11-22): `imp` runs its default `fast` preset (gpt-6.2-sol-fast), and the orchestrator passes `preset: "sol"` for hard slices: several modules, review fixes, or design-heavy work. `astra` is not used for `imp` (owner, 2026-11-22: hydrogen and sol are capable enough); simple slices may use `preset: "hydrogen"`.
 
 Codex tests use `codex2` (the free account), never the main `codex` account.
 

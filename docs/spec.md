@@ -68,7 +68,8 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 
 - `hud_create` can override model and thinking for one job. Per `docs/delegation.md`, the main session
   passes `preset`, `on`, `model` or `thinking` only if the owner asks for it in that request; no carryover.
-  Exception: `preset: astra` for `imp` on hard slices (several modules, review fixes, design-heavy). (22.20)
+  Exception: `preset: sol` for `imp` on hard slices (several modules, review fixes, design-heavy); `astra` is not
+  used for `imp` (owner 2026-11-22: hydrogen and sol are capable enough). (22.20, 22.22)
   For pi roles, named switches cover pi-lens, MCP adapter, tokens/s, UI extensions, helper pane and personal
   skills; pass extra pi args as given. (11.02)
   Pi workers skip the MCP adapter when no MCP servers are configured unless `mcp: true` is set. (22.17)
@@ -89,7 +90,7 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   the Decision API chooses `none`, `low`, `high` or `max` using each brief and the role file's level purposes.
   Any failure falls back to the default. (21.05)
 - Imp routing (Settings, off by default; needs the Decision API): an `imp` create that passes no `preset`, `on`,
-  `model` or `thinking` gets a tier, light (`hydrogen`), standard (role default) or hard (`astra`), and a run mode,
+  `model` or `thinking` gets a tier, light (`hydrogen`), standard (role default) or hard (`sol`), and a run mode,
   headless or tab, chosen from the brief, ticket and context files against the role file's tier purposes. The
   create result, card and job record show tier, mode and a one-line reason. A land repair of a light job runs one
   tier up. Any failure or timeout falls back to the role default in a tab. (22.22)
