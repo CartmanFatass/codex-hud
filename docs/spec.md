@@ -131,6 +131,10 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   process/tab cleanup after closure until gone. Pre-input continuation refusal opens no turn. (18.05)
 - `hud_send` to a closed job past its resume window creates a new repair job referencing the old brief and report. `hud_create`
   and `hud_send` derive omitted idempotency keys. (21.06)
+- Retention (owner 2026-11-22: finished work need not be kept): a cleanly settled job's raw output logs
+  (`stdout.jsonl`, `stderr.log`) are removed once its resume window ends; a failed or stopped job keeps them until
+  its directory goes. A project may name scratch paths in `.hud/project.json` (`scratch`, default `keep_days` 7);
+  the watcher removes top-level entries there whose newest file is older, at most hourly, without following links.
 - Before deleting a closed job directory, the watcher appends one line of the job's facts (no report text) to `$HUD_HOME/archive/YYYY-MM.jsonl`; nothing reads it yet. (22.16)
 
 #### 2.1.6 Events, project scope and the worker surface

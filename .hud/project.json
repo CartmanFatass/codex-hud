@@ -36,5 +36,12 @@
       "npm run build"
     ],
     "push": true
+  },
+  "scratch": {
+    "paths": [
+      "tmp/tasks",
+      "tmp/preview"
+    ],
+    "keep_days": 7
   }
 }
