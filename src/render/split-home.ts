@@ -18,7 +18,7 @@ import { briefStack, currentRows, homeProgressRows, landedAge, landedInline, lan
 import { boardRow, homeDoneCount, mark, minuteAge, section } from './workboard-rows.js';
 import { splitSubValid, type SplitScene } from './split-frame.js';
 import { cutWords, fit, flowLines, monitorText, pair } from './monitor-text.js';
-import { theme, truncateAnsi, visualLength } from './colors.js';
+import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 
 const WAITING = 'home-progress:waiting', PROGRESS = 'home-progress:progress';
@@ -77,10 +77,11 @@ export function homeScene(
     const lead = own ? head : `${head} ${theme.board.muted(mid)}`;
     const rows: MonitorRow[] = [{ text: pair(lead, right, width), item }];
     if (own) rows.push({ text: fit(`  ${theme.board.muted(mid)}`, width), item });
+    if (top.superseded) for (const row of rows) row.text = theme.board.muted(stripAnsi(row.text));
     // A job at work shows what it is on in the row's free cells, while the cursor is elsewhere.
     const cue = card.state === 'in-progress' && top.settledAt === null ? laneCue(card, width - visualLength(lead) - visualLength(right) - 2) : '';
     // A question or a failure keeps its reason on a row of its own: it is what the owner opens the panel for.
-    const why = top.homeNeedsHuman ? top.work?.requestInfo?.question ?? top.ask ?? card.reason ?? '' : failed(card) ? workCardDetail(card) : '';
+    const why = top.homeNeedsHuman ? top.work?.requestInfo?.question ?? top.ask ?? card.reason ?? '' : failed(card) && !top.superseded && !top.failureObserved ? workCardDetail(card) : '';
     if (why) rows.push({ text: stemLines(why, width, ink, 1)[0], item });
     return { item, needs: group(lane) <= 2, rows, cued: cue ? { text: pair(`${lead} ${cue}`, right, width), item } : undefined, preview: () => {
       const slabs = board.workers.filter((w) => w.homeNeedsHuman && w.laneId === lane.id).flatMap((w) => askSlabRows(w, board, state, width, now, true));

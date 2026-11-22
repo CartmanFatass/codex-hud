@@ -123,14 +123,14 @@ test('a hide time before the fold time is the fold time; failed and protected ca
   const worker = (extra) => ({ ...card, ...settled, ...extra });
   assert.ok(!currentWorker(worker({}), NOW + 15 * MIN) && currentWorker(worker({}), NOW + 15 * MIN - 1));
   const failed = worker({ state: 'failed' });
-  assert.ok(currentWorker(failed, NOW + 29 * MIN) && !currentWorker(failed, NOW + 30 * MIN), 'failed stays at least 30 min');
-  assert.ok(currentWorker(failed, NOW + 89 * MIN, { cardHideMinutes: 90 }) && !currentWorker(failed, NOW + 90 * MIN, { cardHideMinutes: 90 }));
+  assert.ok(currentWorker(failed, NOW + 29 * MIN) && !currentWorker(failed, NOW + 30 * MIN), 'unhandled failure caps at 30 min');
+  assert.ok(!currentWorker(failed, NOW + 30 * MIN, { cardHideMinutes: 90 }), 'the cap also applies with a long hide time');
   assert.ok(foldedWorker(failed, NOW + 5 * MIN) && !foldedWorker(failed, NOW + 5 * MIN - 1));
   assert.ok(!foldedWorker(worker({ homeNeedsHuman: true }), NOW + 60 * MIN), 'a card needing the owner never folds');
   assert.ok(!foldedWorker(worker({ homeRank: 100 }), NOW + 60 * MIN), 'a protected card never folds');
   assert.ok(!foldedWorker(worker({ settledAt: null }), NOW + 60 * MIN), 'a running card never folds');
   const ranked = worker({ state: 'failed', homeRank: 100 });
-  assert.ok(currentWorker(ranked, NOW + 24 * 60 * MIN - 1), 'a protected failure stays for a day');
-  assert.ok(!currentWorker(ranked, NOW + 24 * 60 * MIN), 'a protected failure older than a day leaves Home');
+  assert.ok(currentWorker(ranked, NOW + 30 * MIN - 1));
+  assert.ok(!currentWorker(ranked, NOW + 30 * MIN), 'ranking cannot extend the cap');
   assert.ok(currentWorker(worker({ state: 'failed', homeRank: 100, homeNeedsHuman: true }), NOW + 48 * 60 * MIN), 'unless it still needs the owner');
 });

@@ -7,16 +7,18 @@ import { ageText, cardExpanded, failed, milestoneLine, pulseLine, renderWorkCard
 import { boardRow, mark } from './workboard-rows.js';
 import { pair, monitorText, fit } from './monitor-text.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
-import { currentWorker, foldedWorker } from './work-visibility.js';
+import { currentWorker, foldedWorker, unattendedFailure } from './work-visibility.js';
 import { t } from './i18n.js';
 export function workerPriority(w: OwnerWorker, now: number): number {
+  if (w.superseded) return 7;
+  if (w.failureObserved) return 6;
   if (w.homeRank !== undefined) return -w.homeRank;
   const card = projectWorkCard(w, now);
   return w.homeNeedsHuman
     ? 0
     : card.state === 'stalled'
       ? 1
-      : w.work?.failed
+      : unattendedFailure(w)
         ? 2
         : card.state === 'awaiting-acceptance'
           ? 3
@@ -63,7 +65,7 @@ export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room
   const width = (n: number) => 2 * n - 1 + (n < cards.length ? String(cards.length - n).length + 2 : 0);
   while (keep > 1 && width(keep) + visualLength(role) > room) keep--;
   const older = cards.length - keep ? theme.board.muted(`+${cards.length - keep}`) + ' ' : '';
-  const glyphs = kinds.slice(-keep).map((k) => glyph[k]);
+  const glyphs = kinds.slice(-keep).map((k, i) => cards[cards.length - keep + i].worker.superseded ? theme.board.muted(stripAnsi(glyph[k])) : glyph[k]);
   return older + glyphs.join(' ') + role;
 }
 /** A sonic child under its parent card as one row: `├─ ⚡ sonic · short title  3m ◉`, the last child `└─`. */

@@ -6,6 +6,7 @@ import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js
 import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
+import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkLane } from './workboard-types.js';
@@ -31,7 +32,7 @@ const watchCache = new Map<string, { stamp: string; snap: Snap }>();
 const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
-const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'parent_job', 'dispatch_exit_code',
+const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string): void {
   if (cacheHome === home) return;
@@ -45,6 +46,7 @@ function restore(home: string): void {
       if (!/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object'))) throw Error('cache');
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 2) continue; // Older projections lack supersession evidence.
       cache.set(join(home, 'jobs', rel), { stamp, snap: { ...snap, text: '' } });
     }
     saved = text;
@@ -53,8 +55,9 @@ function restore(home: string): void {
 function persist(home: string): void {
   const root = join(home, 'jobs') + '/';
   const rows = [...cache].filter(([p, { snap }]) => /\/(job|STATUS)\.json$/.test(p) && !snap.json?.checks).map(([p, { stamp, snap }]) =>
-    [p.slice(root.length), stamp, { at: snap.at, whole: snap.whole, json: snap.json ?
-      Object.fromEntries(Object.entries(snap.json).filter(([k]) => factKeys.has(k))) : null }]);
+    [p.slice(root.length), stamp, { ...(p.endsWith('/job.json') ? { factsVersion: 2 } : {}), at: snap.at, whole: snap.whole, json: snap.json ?
+      { ...Object.fromEntries(Object.entries(snap.json).filter(([k]) => factKeys.has(k))),
+        project_root: snap.json.project_root ?? (snap.json.worktree as { main_root?: unknown } | null)?.main_root } : null }]);
   const text = JSON.stringify(rows);
   if (text === saved || text.length > 1048576) return;
   const file = join(home, 'display/thin-jobs.json'), temp = `${file}.${process.pid}.tmp`;
@@ -273,13 +276,26 @@ export function failureUnobserved(dir: string, observedAt: unknown): boolean {
   } catch { return true; }
 }
 
-export function jobOwesCaller(dir: string, job: Record<string, unknown>): boolean {
+export const failedAttempt = (row: JobRow) => row.display_state === 'failed' || row.display_state === 'stopped';
+const evidenceText = (store: typeof cache | null) => (path: string) => {
+  const snap = read(path, 65536, store);
+  return snap?.whole ? snap.text : undefined; // A truncated list of checked boxes does not prove a ticket landed.
+};
+export const jobSupersession = (home: string, jobs: Receipt[], cwd: string) =>
+  supersession(home, jobs, evidenceText(null), cwd);
+
+export function adoptionAttention(home: string, jobs: Receipt[], cwd: string) {
+  const superseded = jobSupersession(home, jobs, cwd);
+  return (dir: string, job: Record<string, unknown>) => jobOwesCaller(dir, job, superseded);
+}
+function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (job: Receipt) => boolean): boolean {
   let status = null;
   try { status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8')); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const row = jobRow(job, status, { dir });
+  if (failedAttempt(row) && superseded(job)) return false;
   return row.display_state === 'working' || row.state === 'idle_grace' || row.report_unread || row.open_questions > 0 ||
-    (row.display_state === 'failed' && failureUnobserved(dir, job.observed_at));
+    (failedAttempt(row) && failureUnobserved(dir, job.observed_at));
 }
 
 export interface LeaseRecord {
@@ -434,7 +450,8 @@ export async function readSessionJobRows(home: string, pane: string, cwd: string
   const receipts = watchReceipts(home);
   // Capture the initial pane state before yielding, so writes just after watch starts are changes, not catch-up.
   const rows = watchRows(home, pane, receipts);
-  if (await adoptProjectJobs(home, pane, cwd, receipts.map(({ job }) => job), env, jobOwesCaller)) {
+  const jobs = receipts.map(({ job }) => job);
+  if (await adoptProjectJobs(home, pane, cwd, jobs, env, adoptionAttention(home, jobs, cwd))) {
     return readThinJobRows(home, { pane });
   }
   return rows;
@@ -466,6 +483,7 @@ export function readThinJobs(
     catch { complete = false; return []; }
   }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id));
   if (candidates.length > 200) complete = false;
+  const receipts: Receipt[] = [], outsideTimeWindow: string[] = [];
   const jobs = candidates.slice(0, 200)
     .flatMap(({ id }) => {
       // Filter from STATUS facts before reading receipts or artifacts; active/unknown jobs always stay.
@@ -475,12 +493,12 @@ export function readThinJobs(
         ['done', 'closed', 'idle_grace', 'failed', 'stopped'].includes(String(status.v.state)) &&
         ((when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at) < (options?.settledBefore ?? -Infinity) ||
           (when(status.v.settled_at) ?? when(status.v.ended_at) ?? status.at) < (options?.openedAt ?? -Infinity))
-      )
-        return [];
+      ) { outsideTimeWindow.push(id); return []; }
       const file = json(join(root, id, 'job.json'), parse),
         job = file?.v;
       // Bars may have read STATUS before the directory vanished during the receipt read.
       if (!file) seen.delete(join(root, id, 'STATUS.json'));
+      if (job?.job === id) receipts.push(job);
       if (!file || !job || job.job !== id || typeof job.role !== 'string') complete = false;
       if (
         !file ||
@@ -515,6 +533,14 @@ export function readThinJobs(
     const label = word(job.package) ?? (title.includes(':') ? title.split(':', 1)[0] : title);
     return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, label }];
   });
+  const titles = new Map(cards.map(({ id, title }) => [id, title]));
+  // An attempt on another pane or settled before open can retire a failure, but never becomes a card or model input.
+  if (cards.some(({ state }) => state === 'failed' || state === 'stopped')) for (const id of outsideTimeWindow) {
+    const job = json(join(root, id, 'job.json'), parse)?.v;
+    if (job?.job === id) receipts.push(job);
+  }
+  const superseded = supersession(home, receipts, evidenceText(cache), scope.project,
+    (j) => taskTarget(titles.get(String(j.job)) ?? ''));
   const labels = new Map(cards.map(({ id, label }) => [id, label]));
   for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, label: ownLabel } of cards) {
     const parent = word(job.parent_job);
@@ -676,6 +702,10 @@ export function readThinJobs(
       ...(briefTitle ? { briefTitle } : {}),
       ...(quietDecision ? { quietDecision } : {}),
       ...(row.report_unread ? { reportUnread: true as const } : {}),
+      ...(failedAttempt(row) ? {
+        superseded: superseded(job),
+        failureObserved: (when(job.observed_at) ?? -Infinity) >= (status ? Math.floor(status.at) : 0),
+      } : {}),
       state,
       startedAt: when(s.started_at) ?? created,
       settledAt,

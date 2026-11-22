@@ -372,7 +372,8 @@ test('a lane row ends in one glyph per job, oldest first, then the role of the n
     const id = `j${String(n).padStart(16, '0')}`,
       dir = join(f.env.HUD_HOME, 'jobs', id),
       at = (m) => new Date(now - m * 60000).toISOString();
-    f.put(join(dir, 'job.json'), { job: id, role: 'imp', package: pkg, herdr_pane: 'w4E:p1', created_at: at(started) });
+    // Distinct targets in one display lane: the stopped card has not been retried.
+    f.put(join(dir, 'job.json'), { job: id, role: 'imp', package: pkg, ticket: n, herdr_pane: 'w4E:p1', created_at: at(started) });
     f.put(join(dir, 'brief.md'), `# ${pkg} job ${n}`);
     f.put(join(dir, 'STATUS.json'), {
       state,

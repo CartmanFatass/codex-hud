@@ -54,6 +54,14 @@ export class TryLog {
     } catch { /* No readable log yet. */ }
     return this.records;
   }
+  /** Accepted targets remain landed even after their STATE rows have been archived. A later flag wins. */
+  accepted(root: string): string[] {
+    const ids = new Set<string>();
+    for (const r of this.read()) if (r.root === root) for (const id of r.slices) {
+      if (r.action === 'accept') ids.add(id); else ids.delete(id);
+    }
+    return [...ids];
+  }
   marks(root: string, ledger: Slice[]): Map<string, TryAction> {
     const byId = new Map(ledger.map((s) => [s.id, s])), marks = new Map<string, TryAction>();
     for (const r of this.read()) if (r.root === root) r.slices.forEach((id, i) => {

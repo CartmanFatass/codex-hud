@@ -140,6 +140,8 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   const receipt = JSON.parse(fs.readFileSync(join(next.task_dir, 'job.json'), 'utf8'));
   assert.equal(receipt.cwd, cwd);
   assert.equal(receipt.preset, 'two');
+  assert.equal(receipt.retry_of, original.job);
+  assert.ok(Date.parse(JSON.parse(fs.readFileSync(join(original.task_dir, 'job.json'))).observed_at));
   assert.equal(receipt.tps, false);
   assert.deepEqual(receipt.checks, ['true']);
   assert.equal((await f.call('hud_create', retry)).job, next.job);

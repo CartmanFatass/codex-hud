@@ -405,10 +405,12 @@ eligible regardless of age. Build reload preserves the original opening time.
 Native agents and Project's STATE slice lookup keep their own scope.
 
 **Card lifetimes.** Settled HUD/native cards fold to one row after 5 minutes and
-hide after 15 by default; failed/stopped cards stay at least 30, and a failure the
-model ranking protects leaves Home after a day unless it still asks. Settings → Panel
-changes both. A hide time below fold time counts as fold time. Running/asking cards
-stay. `a` reveals hidden cards in place as muted one-row titles; Enter
+hide after 15 by default (adjust both in Settings → Panel). A hide time below fold
+time counts as fold time. A failed or stopped job leaves Home immediately when a retry,
+repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
+`a` shows it muted as `superseded`. An observed failure follows the ordinary fold/hide times.
+An unhandled failure leaves Home after 30 minutes in either mode; `hud_read({})` still
+lists it until it is observed or superseded. Running/asking cards stay. `a` reveals hidden cards in place as muted one-row titles; Enter
 expands them. The job scan considers the newest 200 directories.
 
 Answered questions are still collected but have no Home block or dedicated panel view.
@@ -430,8 +432,8 @@ cards' bounded display facts to the selected Decision API for 0–4 ranking, at 
 once per two minutes per changed board. Questions, failures and human-needed cards
 are protected; native subtrees remain together. Low-ranked settled cards join the
 older fold, visible with `a`. A separate chat call writes a short progress brief
-at Summary interval. No key/error means default order; a pending/failed brief keeps
-the last good text and valid ranking. Models off hides both.
+at Summary interval. No key/error means default order. When the brief's inputs change,
+the old text disappears immediately, even while a replacement is pending or unavailable. Models off hides both.
 
 **Top line.** `? 5 waiting for you · 0 running` counts STATE's "Waiting for the owner" items
 with the job questions (the same items as the Project tab's count); `✓ Nothing needs you`

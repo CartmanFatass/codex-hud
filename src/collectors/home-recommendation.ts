@@ -7,16 +7,15 @@ import { validateChoice } from '../jev/model.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
 import type { SmallModel, ModelHandle } from './small-model.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
-import { currentWorker, type CardTimes } from '../render/work-visibility.js';
+import { currentWorker, unattendedFailure, type CardTimes } from '../render/work-visibility.js';
 import type { Language } from '../render/i18n.js';
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
-const protectedCard = (w: OwnerWorker) => w.homeNeedsHuman || w.work?.request || w.work?.failed || ['failed', 'error'].includes(w.state);
+const protectedCard = (w: OwnerWorker) => !w.superseded && (w.homeNeedsHuman || w.work?.request || unattendedFailure(w));
 type Ranking = { scores: Record<string, number> };
 export class HomeRecommendation {
   private enabled = false;
   private rankingEnabled = false;
   private summaries = new Map<string, string>();
-  private lastSuccessfulBrief?: string;
   private language: Language = 'en';
   private provider: DecisionProviderId = 'openai';
   private cap = 0;
@@ -40,22 +39,27 @@ export class HomeRecommendation {
     this.rankingEnabled = keyed;
     this.language = language; this.cap = cap; this.provider = provider; this.summaryMs = summaryMinutes * 60000;
   }
-  stop(): void { this.active?.abort(); this.brief?.cancel(); this.brief = undefined; this.lastSuccessfulBrief = undefined; this.key = ''; }
+  stop(): void { this.active?.abort(); this.brief?.cancel(); this.brief = undefined; this.key = ''; }
   private workers(board: WorkboardSnapshot): OwnerWorker[] {
-    return board.workers.filter((w) => currentWorker(w, this.clock(), this.life) || protectedCard(w)).slice(0, 200).sort((a, b) => a.id.localeCompare(b.id));
+    return board.workers.filter((w) => currentWorker(w, this.clock(), this.life)).slice(0, 200).sort((a, b) => a.id.localeCompare(b.id));
   }
   private fingerprint(workers: OwnerWorker[]): string {
     return hash(JSON.stringify([this.language, this.provider, workers.map((w) => [w.id, w.laneId, w.state, w.settledAt, !!protectedCard(w), w.work?.requestId, w.ask])]));
+  }
+  private digest(workers: OwnerWorker[]) {
+    // Stable, bounded facts: a ticking age is not a change to the work the paragraph describes.
+    return workers.map((w) => ({ id: w.id, lane: w.laneId, state: w.failureObserved ? `${w.state} (observed)` : w.state,
+      role: w.role?.slice(0, 80), title: (w.briefTitle ?? w.task).slice(0, 160),
+      sentence: (w.modelSentence ?? w.work?.reason ?? '').slice(0, 240), question: !!(w.ask || w.work?.request),
+      outcome: w.labels?.outcome?.value }));
   }
   update(board: WorkboardSnapshot): void {
     if (!this.enabled) return;
     const workers = this.workers(board);
     this.key = this.fingerprint(workers);
     if (!workers.length) return;
-    const digest = workers.map((w) => ({ id: w.id, lane: w.laneId, state: w.state, role: w.role?.slice(0, 80),
-      title: (w.briefTitle ?? w.task).slice(0, 160), ageMinutes: Math.max(0, Math.floor((this.clock() - (w.settledAt ?? w.startedAt ?? this.clock())) / 60000)),
-      sentence: (w.modelSentence ?? w.work?.reason ?? '').slice(0, 240), question: !!(w.ask || w.work?.request), outcome: w.labels?.outcome?.value }));
-    this.summarize(this.briefKey(workers), digest);
+    const digest = this.digest(workers);
+    this.summarize(this.briefKey(digest), digest);
     if (!this.rankingEnabled || this.rows.has(this.key) || this.active || this.clock() - this.last < 120000) return;
     this.last = this.clock();
     void this.run(this.key, digest);
@@ -94,9 +98,8 @@ export class HomeRecommendation {
       if (this.active === abort) this.active = undefined;
     }
   }
-  private briefKey(workers: OwnerWorker[]): string {
-    return hash(JSON.stringify([this.language, workers.map((w) => [w.id, w.laneId, w.state, w.settledAt,
-      w.role, w.briefTitle ?? w.task, w.modelSentence ?? w.work?.reason ?? '', !!(w.ask || w.work?.request), w.labels?.outcome?.value])]));
+  private briefKey(digest: unknown): string {
+    return hash(JSON.stringify([this.language, digest]));
   }
   private summarize(key: string, digest: unknown): void {
     if (this.brief || this.summaries.has(key) || this.clock() - this.lastBrief < this.summaryMs) return;
@@ -110,15 +113,16 @@ export class HomeRecommendation {
     void h.result.then((reply) => {
       if (this.brief !== h) return;
       this.brief = undefined;
-      if (reply.ok) { this.lastSuccessfulBrief = reply.text.trim(); this.summaries.set(key, this.lastSuccessfulBrief); this.changed(); }
+      if (reply.ok) { this.summaries.set(key, reply.text.trim()); this.changed(); }
     });
   }
   apply(board: WorkboardSnapshot): WorkboardSnapshot {
     if (!this.enabled) return board;
     const workers = this.workers(board), row = this.rankingEnabled ? this.rows.get(this.fingerprint(workers)) : undefined;
-    const homeBrief = this.summaries.get(this.briefKey(workers)) ?? this.lastSuccessfulBrief;
-    if (!row) return homeBrief ? { ...board, homeBrief } : board;
-    const rank = (w: OwnerWorker) => protectedCard(w) ? 100 : (row.scores[w.id] ?? 2);
+    const homeBrief = this.summaries.get(this.briefKey(this.digest(workers)));
+    if (!row) return board.homeBrief === homeBrief ? board : { ...board, homeBrief };
+    const eligible = new Set(workers.map((w) => w.id));
+    const rank = (w: OwnerWorker) => eligible.has(w.id) && protectedCard(w) ? 100 : (row.scores[w.id] ?? 2);
     const lanes = board.lanes.map((l) => {
       const groups: OwnerWorker[][] = [];
       for (const w of l.workers) {

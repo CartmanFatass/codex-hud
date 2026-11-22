@@ -11,6 +11,7 @@ import { keywordMarks } from '../utils/keyword-marks.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
 export const workStateWord = (card: WorkCard) => {
+  if (card.worker.superseded) return t('superseded');
   if (card.worker.state === 'stopped') return t('stopped');
   return t(
     failed(card)
@@ -37,7 +38,7 @@ export const workStateGlyph = (card: WorkCard) => {
           : mark('✓', '+');
 };
 export const workStateInk = (card: WorkCard) => {
-  if (card.worker.state === 'stopped') return theme.board.muted;
+  if (card.worker.superseded || card.worker.state === 'stopped') return theme.board.muted;
   return failed(card)
     ? theme.board.danger
     : card.state === 'needs-you'

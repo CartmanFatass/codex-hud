@@ -41,7 +41,7 @@ export function projectWorkCard(worker: OwnerWorker, now: number, stallMinutes =
   const result = worker.settledAt !== null;
   const inactive = workMinute(w?.activityAt, now);
   const state: WorkState =
-    worker.homeNeedsHuman || w?.failed
+    worker.homeNeedsHuman || (w?.failed && !worker.failureObserved && !worker.superseded)
       ? 'needs-you'
       : result
         ? w?.facadeClosed

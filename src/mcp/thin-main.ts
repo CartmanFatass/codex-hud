@@ -18,7 +18,8 @@ import { watcherReady } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
-import { failureUnobserved, jobChanges, jobOwesCaller, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
+import { taskTarget } from '../collectors/job-supersession.js';
+import { failureUnobserved, failedAttempt, jobChanges, jobSupersession, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse } from '../utils/report-summary.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
@@ -88,6 +89,8 @@ interface Job extends PiOptions {
   from_jobs?: string[];
   checks?: string[];
   repair_of?: string;
+  retry_of?: string;
+  target_hint?: string | null;
   task_length?: number;
   create_options?: Args;
   model?: string | null;
@@ -838,7 +841,8 @@ function listReportSummary(row: JobRow) {
 }
 
 function listJobs(recent: boolean) {
-  const newest = jobs().filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const receipts = jobs();
+  const newest = receipts.filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const recentLimit = 20;
   if (recent) {
     return newest.slice(0, recentLimit).map((job) => {
@@ -858,10 +862,12 @@ function listJobs(recent: boolean) {
       };
     });
   }
+  const superseded = jobSupersession(hudHome, receipts, process.cwd());
   return newest.flatMap((job, index) => {
     // Scanning beyond recent history must not widen the list's quota side effects.
     const { row } = readRow(job, !isWorker && index < recentLimit);
-    const failed = row.display_state === 'failed';
+    const failed = failedAttempt(row);
+    if (failed && superseded(job)) return [];
     if (
       row.display_state !== 'working' &&
       !row.blocked &&
@@ -1313,6 +1319,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     task_length: task.length,
     ...(checks?.length ? { checks } : {}),
     ...(repairOf ? { repair_of: repairOf } : {}),
+    ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
+    target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
     ...(parentJob ? { parent_job: parentJob } : {}),
     ...(args.package === undefined ? {} : { package: args.package as string }),
     ...(presetName === undefined ? {} : { preset: presetName }),
@@ -1379,6 +1387,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       // Persist before dispatch: an interrupted launch must not dispatch again on retry.
       save(job, attempts.length > 0);
       if (attempts.length === 0) {
+        if (job.retry_of) {
+          const source = findJob(job.retry_of);
+          if (source) save({ ...source, observed_at: new Date().toISOString() });
+        }
         if (parentJob) {
           const children = join(directory(parentJob), '.sonic');
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
@@ -1761,7 +1773,7 @@ async function call(name: string, args: Args): Promise<unknown> {
           continue;
         }
         const collected = 'report' in result && result.report_exists;
-        const observed = result.blocked || result.state === 'failed';
+        const observed = result.blocked || failedAttempt(currentRow);
         if (!isWorker && (collected || observed)) {
           const latest = json<Job>(join(dir, 'job.json'))!;
           const at = new Date().toISOString();
@@ -1852,7 +1864,9 @@ function deliveryHint(watcherAlive: boolean): string {
 }
 const createdJobs = new Set<string>();
 async function adoptSessionJobs() {
-  if (!callerPane || !await adoptProjectJobs(hudHome, callerPane, process.cwd(), jobs(), process.env, jobOwesCaller)) return false;
+  if (!callerPane) return false;
+  const receipts = jobs(), cwd = process.cwd();
+  if (!await adoptProjectJobs(hudHome, callerPane, cwd, receipts, process.env, adoptionAttention(hudHome, receipts, cwd))) return false;
   if (!taskClient) void ensureQueueWatcher(callerPane, hudHome);
   return true;
 }
