@@ -35,11 +35,23 @@ interface Snap {
 type ArtifactStore = Map<string, { stamp: string; snap: Snap }>;
 const artifactStores = new WeakMap<JobIndexCache, ArtifactStore>();
 const hydrated = new WeakSet<JobIndexCache>();
+const persistStates = new WeakMap<JobIndexCache, { file: string; fileStamp: string; stamps: Map<string, string> }>();
 const artifactStoreFor = (idx: JobIndexCache) => {
   let store = artifactStores.get(idx);
   if (!store) artifactStores.set(idx, (store = new Map()));
   return store;
 };
+function statFileStamp(file: string): string | null {
+  try {
+    const st = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
+    return st && st.isFile() ? fileStampOf(st) : null;
+  } catch { return null; }
+}
+function sameStamps(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'queued_at', 'overflow_from', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
@@ -48,32 +60,51 @@ function restore(home: string, idx: JobIndexCache): void {
   hydrated.add(idx);
   try {
     const file = join(home, 'display/thin-jobs.json');
-    if (fs.statSync(file).size > 1048576) return;
+    const st = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
+    if (!st || !st.isFile() || st.size > 1048576n) return;
     const text = fs.readFileSync(file, 'utf8'), rows = JSON.parse(text);
     if (!Array.isArray(rows) || rows.length > 400) return;
     const facts: PersistedFactRow[] = [];
+    const stamps = new Map<string, string>();
+    let allCurrent = true;
     for (const entry of rows) {
       if (!Array.isArray(entry)) throw Error('cache');
       const [rel, stamp, snap] = entry;
       if (typeof rel !== 'string' || !/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object' && !Array.isArray(snap.json)))) throw Error('cache');
-      if (rel.endsWith('/job.json') && snap.factsVersion !== 4) continue; // Older projections lack supersession/scout/queue evidence.
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 4) { allCurrent = false; continue; } // Older projections lack supersession/scout/queue evidence.
       facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
+      const kind = !snap.whole ? 'truncated' : snap.json === null ? 'invalid' : 'ok';
+      stamps.set(join(home, 'jobs', rel), `${kind}:${stamp}`);
     }
     idx.hydrateFacts(facts);
+    if (allCurrent && stamps.size === rows.length) persistStates.set(idx, { file, fileStamp: fileStampOf(st), stamps });
   } catch { /* Corrupt or missing display cache: rebuild on persist. */ }
 }
-function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string>): void {
+function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string>, seenStamps: Map<string, string>): void {
+  const file = join(home, 'display/thin-jobs.json');
+  const prev = persistStates.get(idx);
+  if (prev && prev.file === file && sameStamps(prev.stamps, seenStamps)) {
+    const liveStamp = statFileStamp(file);
+    if (liveStamp !== null && liveStamp === prev.fileStamp) return;
+  }
   // Entry order in JobIndexCache reflects recent lookups, not a change in facts.
   const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 4 }).sort(([a], [b]) => a.localeCompare(b)));
   if (text.length > 1048576) return;
-  const file = join(home, 'display/thin-jobs.json');
   try {
     const { bytes, truncated } = readFileBounded(file, 1048576);
-    if (!truncated && bytes.toString('utf8') === text) return;
+    if (!truncated && bytes.toString('utf8') === text) {
+      const liveStamp = statFileStamp(file);
+      if (liveStamp !== null) persistStates.set(idx, { file, fileStamp: liveStamp, stamps: seenStamps });
+      return;
+    }
   } catch { /* Missing or unreadable display cache: try to publish. */ }
-  try { writePrivateFile(file, text); }
+  try {
+    writePrivateFile(file, text);
+    const liveStamp = statFileStamp(file);
+    if (liveStamp !== null) persistStates.set(idx, { file, fileStamp: liveStamp, stamps: seenStamps });
+  }
   catch { /* An unavailable display cache must not stop collection. */ }
 }
 function readArtifact(path: string, max = 65536, store: ArtifactStore | null = null, seenSet?: Set<string>, onIncomplete?: () => void): Snap | null {
@@ -634,14 +665,14 @@ export function readThinJobs(
   let complete = herdrId(scope.pane) && inventory?.complete !== false;
   const markIncomplete = () => { complete = false; };
   const idx = getJobIndexCache(home), artifacts = artifactStoreFor(idx);
-  const seenFacts = new Set<string>(), seenArtifacts = new Set<string>();
+  const seenFacts = new Set<string>(), seenStamps = new Map<string, string>(), seenArtifacts = new Set<string>();
   restore(home, idx);
   const root = join(home, 'jobs');
   const readFact = (path: string): { v: Record<string, unknown>; at: number } | null => {
     const res = idx.readJson(path, { parse, acceptFacts: true });
-    if (res.status === 'ok') { seenFacts.add(path); return { v: res.value, at: res.at }; }
-    if (res.status === 'truncated' || res.status === 'invalid') seenFacts.add(path);
-    else seenFacts.delete(path);
+    if (res.status === 'ok') { seenFacts.add(path); seenStamps.set(path, `ok:${res.stamp}`); return { v: res.value, at: res.at }; }
+    if (res.status === 'truncated' || res.status === 'invalid') { seenFacts.add(path); seenStamps.set(path, `${res.status}:${res.stamp}`); }
+    else { seenFacts.delete(path); seenStamps.delete(path); }
     complete = false;
     return null;
   };
@@ -670,7 +701,7 @@ export function readThinJobs(
       const file = readFact(join(root, id, 'job.json')),
         job = file?.v;
       // Bars may have read STATUS before the directory vanished during the receipt read.
-      if (!file) seenFacts.delete(join(root, id, 'STATUS.json'));
+      if (!file) { const sp = join(root, id, 'STATUS.json'); seenFacts.delete(sp); seenStamps.delete(sp); }
       if (job?.job === id) receipts.push(job);
       if (!file || !job || job.job !== id || typeof job.role !== 'string') complete = false;
       if (
@@ -984,7 +1015,7 @@ export function readThinJobs(
   }
   // Retain only artifact signatures used by this bounded scan.
   for (const path of artifacts.keys()) if (!seenArtifacts.has(path)) artifacts.delete(path);
-  persist(home, idx, seenFacts);
+  persist(home, idx, seenFacts, seenStamps);
   if (observation) observation.complete = complete;
   return [...lanes.values()];
 }

@@ -82,15 +82,24 @@ export function helpLines(text: string, width: number): string[] {
  * inside a Latin word. A word longer than a line is split anyway. Takes
  * sanitized text.
  */
-const graphemes =
-  typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+let graphemeSegmenter: Intl.Segmenter | null | undefined;
+function getGraphemes(): Intl.Segmenter | null {
+  if (graphemeSegmenter === undefined) {
+    graphemeSegmenter =
+      typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+  }
+  return graphemeSegmenter;
+}
 /** What a line may break between: runs of ASCII, spaces, and each character of other text. */
 function flowTokens(text: string): string[] {
   const tokens: string[] = [];
   for (const run of text.match(/[\x21-\x7e]+|\s+|[^\s\x21-\x7e]+/gu) ?? []) {
     if (/^[\s\x21-\x7e]/u.test(run)) tokens.push(run);
-    else if (graphemes) for (const { segment } of graphemes.segment(run)) tokens.push(segment);
-    else tokens.push(...run);
+    else {
+      const graphemes = getGraphemes();
+      if (graphemes) for (const { segment } of graphemes.segment(run)) tokens.push(segment);
+      else tokens.push(...run);
+    }
   }
   return tokens;
 }
@@ -158,7 +167,8 @@ export function flowLines(text: string, width: number): string[] {
   if (parts.length) push();
   // A last line of one Chinese character, its closing marks aside, reads as
   // a stray: the character before it comes down with it.
-  if (lines.length > 1) {
+  if (lines.length > 1 && /[^\x00-\x7f]/.test(lines.at(-1)!)) {
+    const graphemes = getGraphemes();
     const split = (line: string) => (graphemes ? [...graphemes.segment(line)].map((part) => part.segment) : [...line]);
     const last = split(lines.at(-1)!);
     const before = split(lines.at(-2)!);

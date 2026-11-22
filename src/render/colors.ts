@@ -226,15 +226,16 @@ const WIDE_RANGES: Array<[number, number]> = [
 function codePointWidth(codePoint: number): number {
   // Below the first range every code point is one column: most text is ASCII.
   if (codePoint < 0x0300) return 1;
-  for (const [lo, hi] of ZERO_WIDTH_RANGES) {
-    if (codePoint >= lo && codePoint <= hi) {
-      return 0;
-    }
+  for (let i = 0; i < ZERO_WIDTH_RANGES.length; i++) {
+    const r = ZERO_WIDTH_RANGES[i];
+    if (codePoint < r[0]) break;
+    if (codePoint <= r[1]) return 0;
   }
-  for (const [lo, hi] of WIDE_RANGES) {
-    if (codePoint >= lo && codePoint <= hi) {
-      return 2;
-    }
+  if (codePoint < 0x1100) return 1;
+  for (let i = 0; i < WIDE_RANGES.length; i++) {
+    const r = WIDE_RANGES[i];
+    if (codePoint < r[0]) break;
+    if (codePoint <= r[1]) return 2;
   }
   return 1;
 }
@@ -246,19 +247,23 @@ function codePointWidth(codePoint: number): number {
  * truncated panel lines.
  */
 export function visualWidth(text: string): number {
+  const len = text.length;
   let width = 0;
   let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (ch === '\x1b' && text[i + 1] === '[') {
+  while (i < len) {
+    const c = text.charCodeAt(i);
+    if (c === 0x1b && i + 1 < len && text.charCodeAt(i + 1) === 0x5b) {
       const end = text.indexOf('m', i + 2);
-      if (end === -1) {
-        break;
-      }
+      if (end === -1) break;
       i = end + 1;
       continue;
     }
-    const codePoint = text.codePointAt(i) ?? 0;
+    if (c < 0x0300) {
+      width++;
+      i++;
+      continue;
+    }
+    const codePoint = c >= 0xd800 && c <= 0xdbff ? (text.codePointAt(i) ?? c) : c;
     width += codePointWidth(codePoint);
     i += codePoint > 0xffff ? 2 : 1;
   }
@@ -330,37 +335,35 @@ export function truncateAnsi(text: string, maxWidth: number, ellipsis = '…'): 
 
   const ellipsisWidth = codePointWidth(ellipsis.codePointAt(0) ?? 0);
   const limit = Math.max(0, maxWidth - ellipsisWidth);
-  let out = '';
+  const len = text.length;
   let visible = 0;
   let i = 0;
   let sawAnsi = false;
 
-  while (i < text.length && visible < limit) {
-    const ch = text[i];
-    if (ch === '\x1b' && text[i + 1] === '[') {
+  while (i < len && visible < limit) {
+    const c = text.charCodeAt(i);
+    if (c === 0x1b && i + 1 < len && text.charCodeAt(i + 1) === 0x5b) {
       const end = text.indexOf('m', i + 2);
-      if (end === -1) {
-        break;
-      }
-      out += text.slice(i, end + 1);
+      if (end === -1) break;
       sawAnsi = true;
       i = end + 1;
       continue;
     }
-    const codePoint = text.codePointAt(i) ?? 0;
-    const charWidth = codePointWidth(codePoint);
-    if (visible + charWidth > limit) {
-      break;
+    if (c < 0x0300) {
+      if (visible + 1 > limit) break;
+      visible++;
+      i++;
+      continue;
     }
-    const size = codePoint > 0xffff ? 2 : 1;
-    out += text.slice(i, i + size);
+    const codePoint = c >= 0xd800 && c <= 0xdbff ? (text.codePointAt(i) ?? c) : c;
+    const charWidth = codePointWidth(codePoint);
+    if (visible + charWidth > limit) break;
     visible += charWidth;
-    i += size;
+    i += codePoint > 0xffff ? 2 : 1;
   }
 
-  const truncated = out + ellipsis;
-  if (!sawAnsi) return truncated;
-  return truncated + RESET;
+  const prefix = i > 0 ? text.slice(0, i) : '';
+  return sawAnsi ? prefix + ellipsis + RESET : prefix + ellipsis;
 }
 
 /** Where a capacity reading turns to a warning, and to danger. */

@@ -134,6 +134,11 @@ interface JobStatus {
   ended_at?: unknown;
 }
 const firstFile = (...paths: string[]) => paths.find((p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } });
+const lstat = (path: string) => { try { return fs.lstatSync(path, { throwIfNoEntry: false }); } catch { return undefined; } };
+const stampOf = (st: fs.Stats) => `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
+const statKey = (path: string) => { const st = lstat(path); return st && (st.isFile() || st.isDirectory()) ? stampOf(st) : ''; };
+const cloneTickets = (features: TicketFeature[]): TicketFeature[] =>
+  features.map((f) => ({ ...f, tickets: f.tickets.map((t) => ({ ...t, blockers: [...t.blockers] })) }));
 export const HOME_TRY_DATES_LIMIT = 256;
 export const projectShown = (state: Pick<import('../render/monitor-state.js').MonitorState, 'activeTab' | 'subpage' | 'help'>, modal = false) =>
   state.activeTab === 'project' && !state.subpage && !state.help && !modal;
@@ -153,16 +158,18 @@ export class ProjectCollector {
   private packedHead?: { key: string; sha: string };
   private landed = new Set<string>();
   private ticketCommits = new Map<string, { sha: string; at: number }>();
+  private ticketsMemo?: { stamp: string; features: TicketFeature[]; paths: string[]; claimTimes: number[] };
+  private collectMemo = new Map<string, { key: string; claimFloor: number; claimExpiry: number; snapshot: ProjectSnapshot }>();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) { this.tries = new TryLog(hudHome); }
   /** Test seam: cached Home to-try commit timestamps currently retained. */
   get homeTryDatesSize(): number { return this.homeTryDates.size; }
-  private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
+  private cached<T>(path: string, load: (st: fs.Stats) => T, preStat?: fs.Stats | null): T | null {
     try {
-      const st = fs.lstatSync(path, { throwIfNoEntry: false });
+      const st = preStat !== undefined ? preStat : fs.lstatSync(path, { throwIfNoEntry: false });
       if (!st) { this.cache.delete(path); return null; }
       this.seen.add(path);
       if (!st.isFile() && !st.isDirectory()) return null;
-      const stamp = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
+      const stamp = stampOf(st);
       const hit = this.cache.get(path);
       if (hit?.stamp === stamp) return hit.value as T;
       const value = load(st);
@@ -179,7 +186,7 @@ export class ProjectCollector {
     return names.sort();
   }) ?? [];
   /** Rank the whole directory, retaining only the requested prefix of matching names. */
-  private orderedNames(path: string, limit: number, keep: (entry: fs.Dirent) => boolean, descending = false): string[] {
+  private orderedNames(path: string, limit: number, keep: (entry: fs.Dirent) => boolean, descending = false, preStat?: fs.Stats | null): string[] {
     return this.cached(path, (st) => {
       if (!st.isDirectory()) return [];
       const dir = fs.opendirSync(path), names: string[] = [];
@@ -195,37 +202,58 @@ export class ProjectCollector {
         }
       } finally { dir.closeSync(); }
       return names;
-    }) ?? [];
+    }, preStat) ?? [];
   }
-  private body<T>(path: string, parse: (buffer: Buffer, truncated: boolean) => T): T | null {
+  private body<T>(path: string, parse: (buffer: Buffer, truncated: boolean, st: fs.Stats) => T, preStat?: fs.Stats | null): T | null {
     return this.cached(path, (st) => {
       if (!st.isFile()) throw Error('not_file');
       const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
-      return parse(bytes, truncated || st.size > bytes.length);
-    });
+      return parse(bytes, truncated || st.size > bytes.length, st);
+    }, preStat);
   }
   private read = (path: string, limit = 65536) => {
     const file = this.body(path, (b, truncated) => ({ text: b.toString('utf8'), truncated }));
     return file && { text: file.text.slice(0, limit), truncated: file.truncated || Buffer.byteLength(file.text) > limit };
   };
   /** Features by when their issues folder last changed (a ticket added or renamed), name breaking ties. */
-  private recentFeatures(root: string, limit: number): string[] {
-    const at = (slug: string) => fs.lstatSync(join(root, slug, 'issues'), { throwIfNoEntry: false })?.mtimeMs ?? -1;
-    return this.orderedNames(root, 256, (entry) => entry.isDirectory()).map((slug) => ({ slug, at: at(slug) }))
-      .sort((a, b) => b.at - a.at || (a.slug < b.slug ? -1 : 1)).slice(0, limit).map((x) => x.slug);
-  }
-  private tickets(): TicketFeature[] {
-    const root = join(this.cwd, '.scratch'), features: TicketFeature[] = [];
+  private scanTickets() {
+    const root = join(this.cwd, '.scratch'), rootSt = lstat(root);
+    if (!rootSt || !rootSt.isDirectory()) {
+      this.cache.delete(root);
+      return (this.ticketsMemo = { stamp: '', features: [], paths: [], claimTimes: [] });
+    }
+    const ranked = this.orderedNames(root, 256, (entry) => entry.isDirectory(), false, rootSt)
+      .map((slug) => { const issues = join(root, slug, 'issues'), st = lstat(issues); return { slug, issues, st, at: st?.mtimeMs ?? -1 }; })
+      .sort((a, b) => b.at - a.at || (a.slug < b.slug ? -1 : 1)).slice(0, 64);
     // Bound the scan, not the totals to the subset of features displayed.
     let budget = 512;
-    for (const slug of this.recentFeatures(root, 64)) {
+    const stamps: string[] = [stampOf(rootSt)], paths: string[] = [root];
+    const groups: { slug: string; entries: { name: string; path: string; st: fs.Stats | undefined }[] }[] = [];
+    for (const { slug, issues, st } of ranked) {
       if (budget <= 0) break;
-      const issues = join(root, slug, 'issues'), tickets: ProjectTicket[] = [];
-      const names = this.orderedNames(issues, 64, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name)).slice(0, budget);
+      if (!st || !st.isDirectory()) { this.cache.delete(issues); continue; }
+      paths.push(issues);
+      stamps.push(`${slug}:${stampOf(st)}`);
+      const names = this.orderedNames(issues, 64, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name), false, st).slice(0, budget);
       budget -= names.length;
-      for (const name of names) {
-        const path = join(issues, name);
-        const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
+      const entries = names.map((name) => {
+        const path = join(issues, name), fst = lstat(path);
+        paths.push(path);
+        stamps.push(`${name}:${fst?.isFile() ? stampOf(fst) : ''}`);
+        return { name, path, st: fst };
+      });
+      groups.push({ slug, entries });
+    }
+    const stamp = stamps.join('|');
+    if (this.ticketsMemo?.stamp === stamp) {
+      for (const p of this.ticketsMemo.paths) this.seen.add(p);
+      return this.ticketsMemo;
+    }
+    const features: TicketFeature[] = [], claimTimes: number[] = [];
+    for (const { slug, entries } of groups) {
+      const tickets: ProjectTicket[] = [];
+      for (const { name, path, st } of entries) {
+        const ticket = this.body(path, (buffer, truncated, stat): ProjectTicket | null => {
           if (truncated) return null;
           const text = buffer.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
           const { status, blocked, items, checked, landed, commit } = ticketFileEvidence(text);
@@ -233,20 +261,22 @@ export class ProjectCollector {
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
           const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
-          return { ...heading, path, at: fs.lstatSync(path).mtimeMs, status,
+          return { ...heading, path, at: stat.mtimeMs, status,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
             ...(commit !== undefined ? { commit } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
             state: landed ?? (/^claimed\b/i.test(status) ? 'working' : 'ready') };
-        });
-        // Clone: dependency/job overlays must not mutate the signature-cached parse.
-        if (ticket) tickets.push({ ...ticket, blockers: [...ticket.blockers] });
+        }, st ?? null);
+        if (ticket) {
+          tickets.push(ticket);
+          if (/^claimed\b/i.test(ticket.status)) claimTimes.push(ticket.at);
+        }
       }
       tickets.sort((a, b) => Number(a.number) - Number(b.number) || a.path.localeCompare(b.path));
       if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets });
     }
     features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
-    return features;
+    return (this.ticketsMemo = { stamp, features, paths, claimTimes });
   }
   /** The newest 64 job directories: the one lookup behind Project's Now section and the Projects list. */
   private recentJobs(cache = getJobIndexCache(this.hudHome)) {
@@ -367,32 +397,38 @@ export class ProjectCollector {
   }
 
   /** Read the loose/detached HEAD or the shared ref of a linked checkout without starting Git. */
-  private async landedTickets(rollup: TicketRollup) {
+  private probeGitRefs() {
     const dot = join(this.cwd, '.git');
     const pointer = fs.lstatSync(dot, { throwIfNoEntry: false })?.isFile() && this.read(dot)?.text.match(/^gitdir: (.+)\s*$/)?.[1];
     const dir = pointer ? resolve(this.cwd, pointer.trim()) : dot;
     const common = pointer ? resolve(dir, this.read(join(dir, 'commondir'))?.text.trim() ?? '.') : dir;
-    const trees = join(common, 'worktrees');
+    const trees = join(common, 'worktrees'), branches: string[] = [];
     for (const name of this.names(trees, 64)) {
       const branch = this.read(join(trees, name, 'HEAD'))?.text.trim().match(/^ref: refs\/heads\/wt\/(.+)$/)?.[1];
       if (!branch || !ticketIds(branch).length) continue;
       const back = this.read(join(trees, name, 'gitdir'))?.text.trim();
-      if (back && basename(back) === '.git' && fs.lstatSync(back, { throwIfNoEntry: false })?.isFile()) rollup.worktree(branch);
+      if (back && basename(back) === '.git' && fs.lstatSync(back, { throwIfNoEntry: false })?.isFile()) branches.push(branch);
     }
-    let sha = this.read(join(dir, 'HEAD'))?.text.trim() ?? '';
+    let sha = this.read(join(dir, 'HEAD'))?.text.trim() ?? '', packedKey: string | undefined;
     if (sha.startsWith('ref: refs/') && !sha.includes('..')) {
       const ref = sha.slice(5);
       sha = this.read(join(common, ref))?.text.trim() ?? '';
       if (!sha) {
         const path = join(common, 'packed-refs'), packed = this.read(path);
         sha = packed?.text.split('\n').find(l => l.endsWith(' ' + ref))?.split(' ')[0] ?? '';
-        if (!sha && packed?.truncated) {
-          // A ref beyond our bounded file read: ask Git once for this ref/file signature, not on each tick.
-          const key = `${ref}:${this.cache.get(path)?.stamp}`;
-          if (this.packedHead?.key !== key) this.packedHead = { key, sha: (await worktreeGit(this.cwd, ['rev-parse', '--verify', 'HEAD']).catch(() => '')).trim() };
-          sha = this.packedHead.sha;
-        }
+        if (!sha && packed?.truncated) packedKey = `${ref}:${this.cache.get(path)?.stamp}`;
       }
+    }
+    return { sha, branches, packedKey, stamp: `${sha}\0${packedKey ?? ''}\0${branches.join('\0')}` };
+  }
+
+  private async landedTickets(rollup: TicketRollup, refs = this.probeGitRefs()) {
+    for (const branch of refs.branches) rollup.worktree(branch);
+    let sha = refs.sha;
+    if (!sha && refs.packedKey) {
+      // A ref beyond our bounded file read: ask Git once for this ref/file signature, not on each tick.
+      if (this.packedHead?.key !== refs.packedKey) this.packedHead = { key: refs.packedKey, sha: (await worktreeGit(this.cwd, ['rev-parse', '--verify', 'HEAD']).catch(() => '')).trim() };
+      sha = this.packedHead.sha;
     }
     if (sha !== this.head) {
       this.head = sha;
@@ -424,6 +460,25 @@ export class ProjectCollector {
     return { ids: this.landed, commits: this.ticketCommits };
   }
 
+  private homeJobsProbe(board: WorkboardSnapshot, hasTickets: boolean) {
+    const jobCache = getJobIndexCache(this.hudHome), jobs = this.recentJobs(jobCache), canonCache = new Map<string, string>();
+    const canon = (p: string) => canonCache.get(p) ?? (canonCache.set(p, canonicalPath(p)), canonCache.get(p)!);
+    const root = canon(this.cwd), inRoot = (p: string) => insideRoot(root, p), parts: string[] = [];
+    for (const { id } of jobs) {
+      const jobRes = jobCache.readJob<JobReceipt>(id);
+      if (jobRes.status !== 'ok' || typeof jobRes.value.cwd !== 'string') continue;
+      const job = jobRes.value, cwd = canon(job.cwd as string), wt = job.worktree;
+      const isolated = wt?.root === cwd && typeof wt.branch === 'string' && typeof wt.main_root === 'string';
+      if (!inRoot(cwd) && !(isolated && inRoot(wt.main_root as string))) continue;
+      const statusRes = jobCache.readStatus<JobStatus>(id);
+      const briefKey = hasTickets && !job.ticket && !job.slice && job.task == null && job.brief_path == null
+        ? statKey(join(jobCache.jobsRoot, id, 'brief.md')) : '';
+      parts.push(`${id}:${jobRes.stamp}:${statusRes.status === 'ok' ? statusRes.stamp : statusRes.status}:${briefKey}`);
+    }
+    parts.push(board.workers.map((w) => `${w.evidence[0]?.sourceId ?? ''}\0${w.task ?? ''}`).join('\x1f'));
+    return { stamp: parts.join('\n'), jobs };
+  }
+
   async collect(shown: boolean | 'home' | 'home-tasks' | 'export' | 'control' | 'overview', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
@@ -437,7 +492,23 @@ export class ProjectCollector {
       // This narrow read shares a collector with Project; keep its signature cache for the next Project visit.
       return out;
     }
-    out.tickets = this.tickets();
+    const home = shown === 'home' || shown === 'home-tasks' || shown === 'overview';
+    const ticketsScan = this.scanTickets();
+    let memoKey: string | undefined;
+    let gitRefs: ReturnType<ProjectCollector['probeGitRefs']> | undefined;
+    let prefetchedJobs: readonly { id: string }[] | undefined;
+    if (home) {
+      const stateStamps = statePaths(this.cwd).map(statKey).join('|');
+      const specStamp = shown === 'overview' ? '' : statKey(join(this.cwd, 'docs/spec.md'));
+      const triesStamp = statKey(join(this.hudHome, 'tries.jsonl'));
+      if (shown !== 'overview' && ticketsScan.features.length) gitRefs = this.probeGitRefs();
+      const jobsProbe = shown !== 'overview' ? this.homeJobsProbe(board, ticketsScan.features.length > 0) : undefined;
+      prefetchedJobs = jobsProbe?.jobs;
+      memoKey = [ticketsScan.stamp, stateStamps, specStamp, triesStamp, gitRefs?.stamp ?? '', jobsProbe?.stamp ?? ''].join('\x1e');
+      const hit = this.collectMemo.get(shown);
+      if (hit && hit.key === memoKey && now >= hit.claimFloor && now < hit.claimExpiry) return hit.snapshot;
+    }
+    out.tickets = cloneTickets(ticketsScan.features);
     let stateFile;
     for (const path of statePaths(this.cwd)) {
       stateFile = this.read(path);
@@ -495,11 +566,10 @@ export class ProjectCollector {
         if (out.ladder.current && out.ladder.ids.includes(prefix)) activeBlock = out.ladder.ids.indexOf(prefix) >= out.ladder.ids.indexOf(out.ladder.current);
       } else if (activeBlock && out.ladder.current) r.release = out.ladder.current;
     }
-    const home = shown === 'home' || shown === 'home-tasks' || shown === 'overview';
     const refreshedGit = !home ? await this.fullDetails(out, board, now, specPath, milestone) : false;
     const rollup = new TicketRollup(out.tickets);
-    const liveSlices = shown === 'overview' ? [] : this.joinJobs(out, board, home, shown === 'export', rollup, ledger);
-    const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup) : { ids: new Set<string>(), commits: new Map<string, { sha: string; at: number }>() };
+    const liveSlices = shown === 'overview' ? [] : this.joinJobs(out, board, home, shown === 'export', rollup, ledger, prefetchedJobs);
+    const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup, gitRefs) : { ids: new Set<string>(), commits: new Map<string, { sha: string; at: number }>() };
     const { totals, visible, running } = rollup.derive(out.ledger, landedInfo.ids, now, marks, landedInfo.commits);
     for (const row of [...running, ...liveSlices]) {
       const old = out.ledger.find(r => r.id === row.id);
@@ -550,6 +620,15 @@ export class ProjectCollector {
           row.at = at;
         }
       }
+    }
+    if (home && memoKey !== undefined) {
+      let claimFloor = -Infinity, claimExpiry = Infinity;
+      for (const at of ticketsScan.claimTimes) {
+        const edge = at + 7200000;
+        if (now < edge) claimExpiry = Math.min(claimExpiry, edge);
+        else claimFloor = Math.max(claimFloor, edge);
+      }
+      this.collectMemo.set(shown, { key: memoKey, claimFloor, claimExpiry, snapshot: out });
     }
     for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
     return out;
@@ -638,15 +717,17 @@ export class ProjectCollector {
     }
   }
 
-  private joinJobs(out: ProjectSnapshot, board: WorkboardSnapshot, home: boolean, exporting: boolean, rollup: TicketRollup, ledger: Map<string, {state: string; text: string}>) {
+  private joinJobs(out: ProjectSnapshot, board: WorkboardSnapshot, home: boolean, exporting: boolean, rollup: TicketRollup, ledger: Map<string, {state: string; text: string}>, prefetchedJobs?: readonly { id: string }[]) {
     const statePath = out.statePath;
-    const canonical = canonicalPath, root = canonical(this.cwd);
+    const canonCache = new Map<string, string>();
+    const canonical = (p: string) => { let r = canonCache.get(p); if (r === undefined) { r = canonicalPath(p); canonCache.set(p, r); } return r; };
+    const root = canonical(this.cwd);
     const inRoot = (path: string) => insideRoot(root, path);
     const jobCache = getJobIndexCache(this.hudHome);
     const jobsRoot = jobCache.jobsRoot;
     const workersByJob = new Map(board.workers.map((w) => [w.evidence[0]?.sourceId, w]));
     // An export only joins receipts for the caller's already pane-scoped workers.
-    const jobs = exporting ? [...workersByJob.keys()].filter((id): id is string => !!id && JOB_ID_RE.test(id)).map((id) => ({ id })) : this.recentJobs(jobCache);
+    const jobs = exporting ? [...workersByJob.keys()].filter((id): id is string => !!id && JOB_ID_RE.test(id)).map((id) => ({ id })) : (prefetchedJobs ?? this.recentJobs(jobCache));
     const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
     const managed = new Map<string, string>();
     const active: { created: number; entry: ActiveJob }[] = [];
