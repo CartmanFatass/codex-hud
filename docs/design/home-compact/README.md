@@ -29,3 +29,17 @@ Running the current panel against a synthetic `HUD_HOME` with 6 main workers (1 
 
 - **Worker summary:** matches `docs/design/statusline-workers/sample.html` Variant A (`provider mark`, short model name from catalog, `EFFORT_GLYPHS`, bold count, state marks `?` / `✗` / `✓●` / `✓`) plus `⚡N` for active sonic, narrowing in the same order (drop model name → drop effort glyph → compact `◉N ⚡M`).
 - **Marks:** provider glyphs from `src/render/providers.ts`, effort glyphs from `EFFORT_GLYPHS` (`src/render/model-glyphs.ts`), unread `✓●`, sonic `⚡N`, and board theme roles (`theme.board`) with zero raw ANSI escapes in `none` mode.
+
+## v2: one line per job (ticket `home-compact/02`)
+
+`sample.html` also has a `#v2` section: the shipped compact Home beside **v2** for one synthetic busy run (14 jobs: 1 asking, 1 failed, 3 landing, 4 running, 3 queued, 2 finished) at 120, 80 and 50 columns in 中文 and English (12 more frames, every row checked to be exactly the panel width). "Current" is `homeRows()` from `dist/` over the same fixture; v2 is composed from helpers the renderer already exports. The dashed red line marks the bottom of a 34-row terminal.
+
+| 80 columns | Current | v2 |
+| --- | --- | --- |
+| Job area (`homeRows`: summary row, blank, Ask Slab, lanes) | 38 rows | 21 rows |
+| Lane rows only (no summary, blank or Ask Slab) | 32 rows | 15 rows |
+| Whole frame (tab row, job area, Waiting / Latest / Progress / footer) | 51 rows | 34 rows |
+
+- One row per job: state glyph (fixed two-cell column), ticket id, ticket title, then role icon (`ROLE_GLYPHS`), model mark, `⚡N` and age on the right. A lane header only when a lane holds more than one job.
+- Landing: one sub-row (`land · gate[3] test:mjs · 1m`); the report sentence leaves Home. Failed keeps its card; asking keeps the Ask Slab. Queued jobs fold into one `◷ queued N · ids` row, read finished jobs into one `✓ done N · ids` row; Enter opens a fold.
+- The build needs a short ticket title on `OwnerWorker` (ticket file heading, else `briefTitle`), the report sentence in the Inspector, and two Chinese words (`排队 {n}`, `完成 {n}`).
