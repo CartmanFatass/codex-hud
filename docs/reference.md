@@ -535,7 +535,7 @@ filter. No extra read: the ledger is the one already parsed.
 Rows wrap onto a second row rather than cut their only line at 40 columns. Enter or `o`
 on a row opens STATE.md; on a fold, Enter folds and `o` folds only where the row has no file.
 
-Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, at most 16 features ×64 files,
+Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, every feature with open tickets plus the newest finished ones up to 16 features (at most 16×64 files read),
 64 KiB each. Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
 `hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh`
 (open parent issues with sub-issues, plus already-mirrored parents so closed features

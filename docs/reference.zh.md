@@ -350,7 +350,7 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 窄屏（40 列）时一行放不下就折到第二行，不截断唯一的一行。在行上 Enter 或 `o` 打开 STATE.md；
 在折叠行上 Enter 折叠／展开，`o` 只在该行没有文件时折叠。
 
-工单读取 `.scratch/<feature>/issues/<NN>-<slug>.md`，最多 16 功能 ×64 文件，每份 64 KiB。
+工单读取 `.scratch/<feature>/issues/<NN>-<slug>.md`，所有还有未完成工单的功能都显示，已完成的功能按最近变动补足到 16 个（最多读 16×64 个文件），每份 64 KiB。
 必须有匹配编号的 `# NN: title`、`**Blocked by:**`、`**Status:**`。
 `hud tickets sync [--cwd DIR]` 通过 `gh` 将 GitHub 议题单向镜像到 `.scratch/`
 （包含有子议题的开放父议题，以及已存在镜像目录的父议题以更新关闭后的最终状态），写入 `.gitignore`（`*`）、`spec.md` 与带生成标记的工单文件；若 `.scratch/` 中存在非生成的本地工单文件则拒绝写入。

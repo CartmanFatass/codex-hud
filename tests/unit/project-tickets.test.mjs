@@ -227,21 +227,45 @@ test('job matching uses package plus filename or bounded number in task/brief pa
   data = await f.collector.collect(true, f.board, NOW + 4);
   assert.ok(tickets(data).every((r) => !r.job));
 });
-test('ticket reads cap at 64 KiB and discovery at 16 features × 64 files; oversized/malformed files skip', async (t) => {
+test('ticket reads cap at 64 KiB and discovery at the 16 last-changed features × 64 files; oversized/malformed files skip', async (t) => {
   const f = await fixture(t);
   fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
   for (let feature = 0; feature < 17; feature++) for (let n = 1; n <= 65; n++)
     f.issue(`feature-${String(feature).padStart(2, '0')}`, String(n).padStart(2, '0'), 'ticket', `Synthetic ${n}`);
+  // The feature changed longest ago drops out, not the one last by name.
+  for (let feature = 0; feature < 17; feature++) {
+    const at = new Date(NOW - (feature === 5 ? 86400000 : feature * 1000));
+    fs.utimesSync(join(f.cwd, `.scratch/feature-${String(feature).padStart(2, '0')}/issues`), at, at);
+  }
   const oversized = join(f.cwd, '.scratch/feature-00/issues/01-ticket.md');
   fs.appendFileSync(oversized, 'x'.repeat(65536));
   const calls = observe(t), data = await f.collector.collect(true, f.board, NOW + 2);
   assert.equal(data.tickets.length, 16);
+  assert.ok(data.tickets.some((f) => f.slug === 'feature-16') && !data.tickets.some((f) => f.slug === 'feature-05'));
   assert.ok(data.tickets.every((f) => f.tickets.length <= 64));
   assert.equal(data.tickets.find((f) => f.slug === 'feature-00').tickets.length, 63);
   const opened = calls.openSync.map((args) => String(args[0])).filter((p) => p.includes('/.scratch/'));
   assert.equal(opened.length, 16 * 64);
-  assert.ok(opened.every((p) => !p.includes('/feature-16/') && !p.endsWith('/65-ticket.md')));
+  assert.ok(opened.every((p) => !p.includes('/feature-05/') && !p.endsWith('/65-ticket.md')));
   assert.ok(calls.readSync.every((args) => args[3] <= 65536));
+});
+test('features with open tickets always show; finished ones fill the rest of sixteen, newest first', async (t) => {
+  const f = await fixture(t);
+  fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
+  const slug = (n) => `feature-${String(n).padStart(2, '0')}`;
+  for (let n = 0; n < 20; n++) {
+    f.issue(slug(n), '01', 'ticket', `Synthetic ${n}`, n < 2 ? 'ready-for-agent' : 'resolved');
+    const file = join(f.cwd, `.scratch/${slug(n)}/issues/01-ticket.md`);
+    // The two open features are the oldest; the finished ones are newer.
+    const at = new Date(NOW - (n < 2 ? 86400000 + n : (20 - n) * 1000));
+    fs.utimesSync(file, at, at);
+    fs.utimesSync(join(f.cwd, `.scratch/${slug(n)}/issues`), at, at);
+  }
+  const data = await f.collector.collect(true, f.board, NOW + 2);
+  const shown = data.tickets.map((x) => x.slug);
+  assert.equal(shown.length, 16);
+  assert.ok(shown.includes(slug(0)) && shown.includes(slug(1)), shown.join(' '));
+  for (const n of [2, 3, 4, 5]) assert.ok(!shown.includes(slug(n)), `oldest finished ${slug(n)} drops out`);
 });
 test('tickets reuse only the newest 64 job directories, even when an older matching job exists', async (t) => {
   const f = await fixture(t);

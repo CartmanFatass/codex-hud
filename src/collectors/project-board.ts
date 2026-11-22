@@ -173,11 +173,22 @@ export class ProjectCollector {
     const file = this.body(path, (b, truncated) => ({ text: b.toString('utf8'), truncated }));
     return file && { text: file.text.slice(0, limit), truncated: file.truncated || Buffer.byteLength(file.text) > limit };
   };
+  /** Features by when their issues folder last changed (a ticket added or renamed), name breaking ties. */
+  private recentFeatures(root: string, limit: number): string[] {
+    const at = (slug: string) => fs.lstatSync(join(root, slug, 'issues'), { throwIfNoEntry: false })?.mtimeMs ?? -1;
+    return this.orderedNames(root, 256, (entry) => entry.isDirectory()).map((slug) => ({ slug, at: at(slug) }))
+      .sort((a, b) => b.at - a.at || (a.slug < b.slug ? -1 : 1)).slice(0, limit).map((x) => x.slug);
+  }
   private tickets(): TicketFeature[] {
     const root = join(this.cwd, '.scratch'), features: TicketFeature[] = [];
-    for (const slug of this.orderedNames(root, 16, (entry) => entry.isDirectory())) {
+    // At most 16 × 64 ticket files are read, last-changed features first.
+    let budget = 16 * 64;
+    for (const slug of this.recentFeatures(root, 256)) {
+      if (budget <= 0) break;
       const issues = join(root, slug, 'issues'), tickets: ProjectTicket[] = [];
-      for (const name of this.orderedNames(issues, 64, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name))) {
+      const names = this.orderedNames(issues, 64, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name)).slice(0, budget);
+      budget -= names.length;
+      for (const name of names) {
         const path = join(issues, name);
         const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
           if (truncated) return null;
@@ -218,7 +229,11 @@ export class ProjectCollector {
       }
       if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets });
     }
-    return features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
+    features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
+    // Every feature with open work stays; finished ones fill the rest of sixteen, newest first.
+    const open = (f: TicketFeature) => f.tickets.some((r) => r.state !== 'done' && r.state !== 'dropped');
+    let room = 16 - features.filter(open).length;
+    return features.filter((f) => open(f) || room-- > 0);
   }
   /** The newest 64 job directories: the one lookup behind Project's Now section and the Projects list. */
   private recentJobs() {
