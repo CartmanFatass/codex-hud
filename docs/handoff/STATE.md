@@ -3,7 +3,8 @@
 Milestone: 0.2.0 · MCP orchestration & Panel V2 (mcp-next + panel-v2)
 
 Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review rounds, night logs) moved to
-`docs/handoff/archive/STATE-2026-11-03-to-11-14.md`; they are not current.
+`docs/handoff/archive/STATE-2026-11-03-to-11-14.md`; the 2026-11-18 handoff to `docs/handoff/archive/STATE-2026-11-18-now.md`.
+They are not current. Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Waiting for the owner
 
@@ -38,7 +39,7 @@ board counts these; update at every landing or decision. -->
 - try · CODE-HEALTH · PRUNE-OBS-02 · neon 01 Slice 2 plan A: Home no longer scans <workspace>/tmp/tasks; task-observations and pi-dispatch-status deleted, net −1,415 lines; CODEX_HUD_PANEL_ALL_DELEGATIONS now does nothing (72b01067)
 - try · CODE-HEALTH · PRUNE-OBS-03 · neon 01 Slice 3: orphaned src/core and src/ledger observer modules deleted (15 files, 11 trimmed, net −1,906 lines), no visible change (7f695c5e)
 - try · CODE-HEALTH · TEST-SPLIT-01 · neon 09 S1: thin-mcp.test.mjs split into ten files behind tests/helpers/thin-mcp-harness.mjs, 175 cases kept; test:mjs 292 s → 71 s; teardown retries and one atomic test write fixed two flakes (e2c003de,46527cc5)
-- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Panel lane: PRUNE-OBS-04 (working) → I18N-CHECK-01 (proposal 12, zero visual change) → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-02 (working) → TEST-SPLIT-03..04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
+- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Panel lane: PRUNE-OBS-04 (working) → PROJECT-BOARD-LIMITS-01 (bug from proposal 17: reviews past 128 entries, 64 KiB reads) → I18N-CHECK-01 (proposal 12, zero visual change) → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-02 (working) → TEST-SPLIT-03..04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - try · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job (Settings row), fallback default; thinking_source recorded (f0baa540)
 - dropped · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9) [superseded the same day by SONIC-AUTO-THINKING: callers do not pick]
@@ -236,71 +237,3 @@ board counts these; update at every landing or decision. -->
   (2–8 min at high). Sonic briefs ask for facts, not recommendations; split wide surveys (convention, role texts).
 - Noted 2026-11-21: a sonic ran `agy models` despite offline instructions (network access, writes to Antigravity's local
   CLI state; job under RESTART-RECOVERY jed235679bed45e93). Not reverted.
-
-## Earlier Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
-
-State on 2026-11-18, checked against the ledger below (no working, blocked or todo slice), herdr (only the main session's tab) and origin (in sync).
-
-### 2026-11-17, what was decided and in what order (sources: the day's session transcripts and the commits)
-
-- 08:48 MATT-PARADIGM chosen (paradigm B: Matt's originals, patched only at collisions; cec69c09). 08:48–09:20 WORKER-UNIFY: oracle report 691b31b9,
-  addendum b99f5f72 recommending route (a); the owner decided nothing and asked for a handoff (9bcdc141).
-- 14:24–15:21, a later session, answered the skill half of it: MATT-OFF (74b1794c) supersedes paradigm B, so Matt's skills are an inactive,
-  on-demand collection and only `to-tickets` is installed; SKILL-ROLES (9dcd86f2) leaves oracle without a default skill and has a brief name a
-  method skill by path, which drops ORACLE-SKILL; ARCH-ALIAS (34bfabc4) makes `architect` another name for `oracle` and requires telling the
-  owner the change and reason before any spec edit. ROLE-PRESETS and SIDEBAR-ONE landed the same day (ledger).
-- From 15:24, the panel review: PANEL-TIDY, STATUSLINE-TPS, BAR-NOTICE and PANEL-NEXT landed. The architect's independent opinion cut a usage
-  total, a today view, change size on cards, a quota table, a quota ETA and TTFT; the main session withdrew its `↑N` branch suggestion (the bars
-  already show ahead/behind). A status-bar job counter and an always-shown running job were declined (docs/reference.md: the bar shows no task count).
-- The owner's workflow changes: reviews run one reviewer with no model-family rule (docs/delegation.md); a read report closes its worker and a live
-  child process counts as still working (WORKER-CLOSE, spec 38a27e21).
-- WORKER-UNIFY and PANEL-TRY decided late 2026-11-17 (ledger). `[✓●]` keeps hiding after 3 minutes (owner: no, 2026-11-17).
-
-### 2026-11-14 (was Next)
-
-- The owner tries 0.1.4 (then 0.1.3, 0.1.2, 0.1.1, M4). Orchestrator live check 2026-11-14 on 60a254b1: dispatch failure returned and its tab closed;
-  agy two turns with a supervisor kill and hud_send respawn; Control plane, hub, Tickets, Progress read through herdr. Found and fixed live:
-  ticket fields on a shared line were skipped (supervisor feature missing), STATE head was stale.
-- Leftovers closed 2026-11-14: hud_read waits between reads and returns `quiet_decision`; the retention test's fake clock is written atomically
-  (a torn read gave Date.now() 0 and a TimeoutOverflowWarning); pi-roles' dispatch test uses real-shaped herdr ids (Fishpref 1f91417). The
-  panel-reload width flake did not reproduce (6/6, full suite 564/564).
-- 2026-11-14: main fast-forwarded to universal-hud (owner chose fast-forward + tag); tag and GitHub release v0.1.4 (sha256 33f0c04f…).
-
-
-- 0.1.3 review (docs/reviews/2026-11-14-013-review-*.md): Sol changes-required (Codex prefix `[`/`]` unwired; active jobs
-  from other panes have no title), DS accept with 3 minors. FIX-013 landed 6359b958 (467/467); re-review: Sol accept (no findings), DS accept
-  (5 optional; the stale "top row" wording fixed). 0.1.3 waits for the owner's try.
-- SUPERVISOR (owner 2026-11-14: misjudged/killed workers are the bottleneck; the panel shows failures the session
-  never hears). Fable design opinion in: facts-only `failed`, one shared job-row reader for display + MCP, `hud_create`
-  returns dispatch failures, `changes` in every MCP response, `hud watch`. Owner answered (spec §2 amended 130a8eb1;
-  no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
-  01–03 landed (2c5d7e1d, 52b21b91, 458ef06b), 04–05 as a stopgap 90ef78cd (496/496); 08 landed 4ffe4d7b +
-  d880ee7b (oracle's event-driven design: herdr events, file watches, deadlines, 30 s tick, STATUS on change;
-  554/554). Real agy run 1 found pushes ignored (herdr sends `pane.agent_status_changed`, fake used `_`): fixed;
-  the safety tick re-reads status (one request/30 s). 09 (hud_send respawns a dead supervisor) landed (556/556). Real agy run
-  2 passed (working through a 150 s background command, idle_grace 25 s after the report). 0.1.4 milestone review
-  on 3e3edfc8: grok + DS changes-required (0d24ed0f); docs fixed a2b2b033; code fixes 7bd5e175 (roster expiry, failed
-  report prompt, prompt once per job, stale quiet card, ZH note, hud watch on one recursive fs.watch, open question
-  reason; 562/562). Re-review on 7bd5e175: grok and DS accept; follow-ups 86007c37 (563/563). 0.1.4 to the owner's try. Imp now dispatches on its default place (agy hydrogen high).
-- PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
-  Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
-  list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Page rows scroll, never trimmed (owner).
-- ROLE-BIND 03 landed 19333df8 (480/480): the Control plane switches places. ROLE-BIND 04 (model lists from the
-  harnesses, catalog fallback, typed model) running: agy imp j8a87fdd732834890 in MyHUD-wt/ROLE-BIND-04.
-- ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
-  `bro` replaces `jev`, browser work is oracle + flow, the control plane switches places, `on` kept. 01 and 02 (agy-imp)
-  after PROJECT-HUB 02; 03 (frontend) after 02 and PROJECT-HUB 03.
-- CLI-NOREPORT (bug, 2026-11-14; .scratch/cli-workers/issues/09): herdr's `done` is a screen heuristic; agy shows it
-  while waiting on a background command, and the supervisor failed and quit ROLE-BIND 01's first job. Fix: the report
-  is the completion signal; done without a report keeps the job open; background child processes count as busy; quiet past the
-  idle grace → waiting_orchestrator with a notice; the HUD sends the worker nothing and never quits it for a missing report. After ROLE-BIND 01 (same files).
-- QUIET-DECIDE (cli-workers 10, owner 2026-11-14, spec §2 "One exception"): after 09, a quiet CLI job without a report
-  gets one Decision API choice among fixed actions (keep waiting / one fixed report prompt / fail / main session);
-  below 0.8 or on any error → main session. Also: Mistral DeepSeek (reasoning off) as a Decision API provider if it
-  gives structured output with probabilities.
-
-
-
-Owner 2026-11-14: Project becomes a hub with progress, tickets, working tree, docs and control-plane pages and a
-project switch (spec §2, .scratch/project-hub/). Routing for this package: frontend work to frontend-implementer, data work to agy-imp (gemini-4-hydrogen-high),
-review only at the milestone by Sol xhigh (arena provider when quota runs out) and DS max, sonic unchanged.

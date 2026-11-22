@@ -1,0 +1,12 @@
+# 01: Latest review and ledger reads survive large docs folders
+
+**Status:** ready-for-agent
+**Blocked by:** none
+
+**What to build:** Bug from docs/neon-proposal/17-spec-and-docs-restructure.md Slice 2 (only that slice; the docs moves and spec rewrite wait for the owner). src/collectors/project-board.ts names() stops at the first 128 unsorted directory entries and sorts after, so with docs/reviews at 136 entries the Project page can miss the newest review; a README.md in docs/reviews would also win 'latest'. Fix: the review lookup sees every entry (or reads names bounded but sorted correctly) and only takes dated review files; when docs/spec.md or docs/handoff/STATE.md exceed STATE_BYTES (64 KiB) the Project page says the file is truncated instead of silently dropping milestones or slices.
+
+- [ ] A synthetic docs/reviews with 200 entries in random creation order shows the newest dated review; README.md is never picked
+- [ ] A synthetic STATE.md over 64 KiB shows a visible truncation note; under the limit nothing changes
+- [ ] project-page tests pass
+
+## Comments
