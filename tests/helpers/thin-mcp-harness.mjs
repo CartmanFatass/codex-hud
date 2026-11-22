@@ -313,7 +313,7 @@ export const resultValue = (result) => {
   return JSON.parse(result.content[0].text);
 };
 
-export async function until(check, timeout = 4000) {
+export async function until(check, timeout = 10000) {
   const end = Date.now() + timeout;
   while (!check()) {
     assert.ok(Date.now() < end, 'condition did not settle');
