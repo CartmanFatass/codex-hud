@@ -1,0 +1,128 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import { cliState, entry, fixture, until } from '../helpers/thin-mcp-harness.mjs';
+import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
+import { isProcAlive } from '../../dist/utils/proc.js';
+
+const url = path => new URL(path, import.meta.url).href;
+const read = path => JSON.parse(fs.readFileSync(path));
+const fakeCli = agent => `#!${process.execPath}
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import { rpcClient } from ${JSON.stringify(url('../helpers/thin-mcp-harness.mjs'))};
+const agent = ${JSON.stringify(agent)}, dir = process.env.HUD_JOB_DIR;
+const args = process.argv.slice(2), value = flag => args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
+const prompt = args.at(-1), resumed = value(agent === 'claude' ? '--resume' : '--conversation');
+assert.equal(process.env.HERDR_PANE_ID, undefined);
+assert.equal(value('--output-format'), 'stream-json');
+assert.ok(args.includes('-p'));
+let id, file;
+if (agent === 'claude') {
+  assert.ok(args.includes('--verbose') && args.includes('--strict-mcp-config'));
+  assert.equal(args.at(-2), '--');
+  assert.equal(value('--session-id') !== undefined, !resumed);
+  id = resumed ?? value('--session-id');
+  assert.match(id, /^[0-9a-f-]{36}$/);
+  file = value('--mcp-config');
+  assert.equal(file, join(dir, 'worker-mcp.json'));
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+} else {
+  assert.equal(args.at(-2), '-p');
+  assert.equal(value('--mcp-config'), undefined);
+  id = 'synthetic-agy-conversation';
+  file = join(process.env.HOME, '.gemini/config/mcp_config.json');
+}
+if (resumed) assert.equal(resumed, fs.readFileSync(join(dir, 'fake-session'), 'utf8'));
+else fs.writeFileSync(join(dir, 'fake-session'), id, { flag: 'wx' });
+const init = agent === 'claude' ? { type: 'system', subtype: 'init', session_id: id }
+  : { event: 'init', conversation_id: prompt.startsWith('Wrong init.') ? 'different-agy-conversation' : id };
+// Assistant output and earlier turns are not evidence of the current native session.
+console.log(JSON.stringify({ type: 'assistant', event: 'step_update', session_id: 'not-init', conversation_id: 'not-init' }));
+if (!prompt.startsWith('No init.')) console.log(JSON.stringify(init));
+console.log(JSON.stringify({ pid: process.pid, resumed, prompt: prompt.split('\\n')[0] }));
+if (prompt.startsWith('No init.') || prompt.startsWith('Wrong init.')) process.exit(0);
+const hud = JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers.hud;
+const child = spawn(hud.command, hud.args ?? [], { env: { ...process.env, ...hud.env }, stdio: ['pipe', 'pipe', 'inherit'] });
+const exited = once(child, 'exit');
+const rpc = rpcClient(child);
+try {
+  const { result } = await rpc('tools/list');
+  assert.deepEqual(result.tools.map(tool => tool.name), ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
+  assert.deepEqual(result.tools[0].inputSchema.required, ['text', 'turn']);
+  const call = async (name, args) => {
+    const { result, error } = await rpc('tools/call', { name, arguments: args });
+    assert.equal(error, undefined);
+    assert.equal(result.isError, undefined, JSON.stringify(result));
+    return result.content[0].text;
+  };
+  await call('hud_progress', { message: 'Synthetic headless CLI progress.' });
+  if (!resumed) {
+    assert.match(await call('hud_ask', { question: 'Which value?', default: 'A' }), /end this turn/);
+  } else {
+    const turn = /turn: (\\S+)/.exec(prompt)[1];
+    await call('hud_report', { turn, text: 'Synthetic report: ' + prompt.split('\\n')[0] });
+  }
+} finally { child.stdin.end(); }
+assert.deepEqual(await exited, [0, null]);
+`;
+
+for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
+  test(`${agent} headless runs one MCP-enabled process per question, answer, send and repair turn`, async t => {
+    const f = await fixture(t);
+    f.overrideBin(agent, fakeCli(agent));
+    const roles = join(f.env.HUD_HOME, 'roles');
+    fs.mkdirSync(roles, { recursive: true });
+    write(join(roles, `${role}.json`), JSON.stringify({ role, harness: 'cli', agent, can_continue: true,
+      instructions: agent === 'claude' ? 'frontend-implementer' : 'general' }));
+    const config = join(f.env.HOME, '.gemini/config/mcp_config.json');
+    const registered = JSON.stringify({ mcpServers: { hud: { command: entry, disabled: false, env: { HUD_MCP_SURFACE: 'roles' } } } });
+    if (agent === 'agy') {
+      fs.mkdirSync(join(f.env.HOME, '.gemini/config'), { recursive: true });
+      write(config, registered);
+    }
+    const job = await f.call('hud_create', { role, mode: 'headless', task: 'Synthetic CLI task.' });
+    assert.equal(job.mode, 'headless', JSON.stringify(job));
+    const dir = job.task_dir, status = () => cliState(dir);
+    const wait = state => until(() => {
+      if (state !== 'failed' && status()?.state === 'failed')
+        assert.fail(`${status().exit_reason}: ${fs.readFileSync(join(dir, 'stderr.log'), 'utf8')}`);
+      return status()?.state === state && (state === 'waiting_orchestrator' || read(join(dir, 'job.json')).reaped_at);
+    });
+    await wait('waiting_orchestrator');
+    const id = status().agent_session_id;
+    assert.ok(id && !isProcAlive(status().pid));
+    assert.equal(status().slot, 'headless');
+    assert.equal(status().agent, agent);
+    assert.deepEqual((await f.call('hud_peek', { job: job.job })).status.question_ids, ['q1']);
+    assert.equal((await f.call('hud_respond', { job: job.job, request_id: 'q1', answer: 'Choose B.' })).continuation, 'resumed');
+    await wait('closed');
+    assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Choose B\./);
+    assert.equal((await f.call('hud_send', { job: job.job, text: 'Check C.' })).continuation, 'resumed');
+    await wait('closed');
+    const land = `import { dispatchLandRepair } from ${JSON.stringify(url('../../dist/mcp/thin-main.js'))};
+      console.log(await dispatchLandRepair(process.argv[1], process.cwd(), 'Synthetic repair.', 'land:test', null));`;
+    assert.equal(execFileSync(process.execPath, ['--input-type=module', '-e', land, job.job], { cwd: f.root, env: f.env, encoding: 'utf8' }).trim(), job.job);
+    await wait('closed');
+    assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Synthetic repair\./);
+    assert.equal(status().agent_session_id, id);
+    const invocations = fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).filter(row => row.pid);
+    assert.equal(new Set(invocations.map(row => row.pid)).size, 4);
+    assert.deepEqual(invocations.map(row => row.resumed), [undefined, id, id, id]);
+    assert.deepEqual(invocations.slice(1).map(row => row.prompt), ['Choose B.', 'Check C.', 'Synthetic repair.']);
+    assert.ok(!fs.existsSync(join(dir, 'SESSION.txt')));
+    assert.ok(!f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'create'));
+    if (agent === 'agy') assert.equal(fs.readFileSync(config, 'utf8'), registered);
+
+    const text = agent === 'claude' ? 'No init.' : 'Wrong init.';
+    assert.equal((await f.call('hud_send', { job: job.job, text })).continuation, 'resumed');
+    await wait('failed');
+    assert.equal(status().agent_session_id, null);
+    assert.match(status().exit_reason, /did not open the recorded session/);
+  });
+}

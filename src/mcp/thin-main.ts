@@ -1,7 +1,7 @@
 /** Local HUD role tools and Codex statusline, newline-delimited JSON-RPC over stdio. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -718,11 +718,18 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       ...(place.args ?? []),
       ...startup.args,
     ];
-    const agentArgs = resume ? kind.resume!(resume.id, nativeArgs) : nativeArgs;
     // An arbitrary CLI option has no equivalent prompt fallback. Let the next
     // configured place run instead of dropping or changing the option.
-    if (!agentArgs.every(isHerdrAgentArg)) return reject(launchError('CLI startup arguments contain control characters'));
+    if (!nativeArgs.every(isHerdrAgentArg)) return reject(launchError('CLI startup arguments contain control characters'));
     if (job.cli && startup.warning) job.cli.mcp_scope_warning = startup.warning;
+    if (job.headless) {
+      const turn = writeTurn(dir, { restarted: !!resume, callerToken });
+      const prompt = withDonePrompt(resume?.message ?? startup.prompt, bundled, dir, turn, place.agent!);
+      const initialId = !resume && place.agent === 'claude' ? randomUUID() : undefined;
+      startHeadlessProcess(dir, job, [...nativeArgs, ...kind.headless!(prompt, resume?.id, initialId)], { id: resume?.id, initialId });
+      return { exit_code: 0, stdout: '', stderr: '' };
+    }
+    const agentArgs = resume ? kind.resume!(resume.id, nativeArgs) : nativeArgs;
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
@@ -1385,8 +1392,13 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
 function placeOptions(args: Args, configured: RolePlace) {
   const place = { ...configured };
   const invalid = (error?: string) => ({ ok: false, code: 'invalid_arguments', error } as const);
-  if (args.mode !== undefined && (args.mode !== 'headless' || place.harness !== 'pi'))
-    return invalid('headless mode requires pi');
+  if (args.mode !== undefined) {
+    if (args.mode !== 'headless' || (place.harness !== 'pi' && !(place.harness === 'cli' && cliKinds[place.agent!]?.headless)))
+      return invalid('headless mode requires pi, claude or agy');
+    if (place.harness === 'cli' && place.args?.some(value => value === '--' ||
+        /^(-[cpri]|--(?:continue|conversation|resume|fork-session|session-id|no-session-persistence|print|prompt|prompt-interactive|input-format|output-format))(?:=|$)/.test(value)))
+      return invalid('CLI place args cannot override the headless session lifecycle');
+  }
   if (args.idle_grace_s !== undefined) {
     if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
       return invalid('idle_grace_s must be an integer from 60 to 3600');
@@ -2904,7 +2916,7 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   if (job.headless && job.role !== 'sonic') {
     if (fs.existsSync(join(dir, jobFiles.qa, `${request}.answer.md`))) return { ok: true, written: false };
     if (!jobCache.readQa(dir).openIds.includes(request)) return { ok: false, code: 'question_not_open' };
-    // The question is visible before pi has flushed its session and the watcher has reaped this turn.
+    // The question can be visible before the harness has flushed its session and the watcher has reaped this turn.
     const status = await waitUntilFs({ targets: [{ dir }], timeoutMs: 30_000, check: ({ timedOut }) => {
       const fresh = readCachedStatus(id).status;
       return fresh?.state !== 'working' || timedOut ? { done: true, value: fresh } : { done: false };

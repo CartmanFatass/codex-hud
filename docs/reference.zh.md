@@ -151,7 +151,7 @@ HUD 排队取得 `main-checkout` 租约，在新的分离工作树中运行 `gat
 出现信任对话框则拒绝，失败原因写明 `hud trust <cwd>`。会话留在各 CLI 自己的存储里。
 herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
-对于 `imp`、`general` 等可继续的 pi 角色，`hud_create({role, task, mode: "headless"})` 不打开标签页，仍可在面板查看进度或停止任务。任务将原生会话保存在 `sessions/`，每轮输出追加到 `stdout.jsonl` 和 `stderr.log`。提问即结束本轮；通过 `hud_respond` 或面板作答后，用答案恢复同一会话。提交报告后工作者关闭。后续消息和落地修复在 `resume_s` 内恢复同一会话，超时则创建修复任务。
+对于 pi、Claude Code 或 Antigravity（`agy`）上可继续的角色，`hud_create({role, task, mode: "headless"})` 不打开标签页，仍可在面板查看进度或停止任务。每轮都启动新进程并沿用同一原生会话，输出追加到 `stdout.jsonl` 和 `stderr.log`。pi 的会话保存在任务的 `sessions/` 下；Claude Code 和 Antigravity 使用各自的原生会话存储。无界面 CLI 与标签页模式使用相同的提示词和工作者 MCP 配置：Claude Code 接收任务的 `--mcp-config`，Antigravity 使用已安装的 `hud` 服务并继承任务环境。提问即结束本轮；通过 `hud_respond` 或面板作答后，用答案恢复同一会话。提交报告后工作者关闭。后续消息和落地修复在 `resume_s` 内恢复同一会话，超时则创建修复任务。
 
 Sonic 以非交互方式运行一次 pi 查询，不打开工作标签页或窗格。主会话通过 `hud_create` 发起，工作任务通过 `hud_sonic` 发起并收取结果。两者都保留普通任务目录：`stdout.jsonl` 和 `stderr.log` 记录 pi 的输出，`report.md` 是已声明的报告。Sonic 可以发布进度和获取租约，但不能提问或接收后续消息，也没有空闲宽限期。sonic 角色文件可设置 `check_s`（默认 600）、`stall_s`（180）和 `max_s`（1800），均为正整数秒；`hud_roster({detail:true})` 显示生效值。HUD 在每个检查点停止陷入循环的查询（`looping`），否则发布一条进度并让同一个 pi 进程继续运行。若 `stall_s` 内标准输出未增长且没有工作任务进度，则以 `stalled` 停止；达到硬上限则以 `timeout` 停止。这些失败会保留已有的标准输出和最新进度。用 `hud_create({role:"sonic", retry_of:job})` 重试已停止的查询。新任务以一条说明停止原因的简短消息，从原任务 `sonic-session.jsonl` 的私有副本继续。如果会话不可用或 pi 在接收输入前拒绝打开它，pi 将收到原简报，以及未完成报告末尾最多 8 KiB 的内容（没有报告时取标准输出）。
 

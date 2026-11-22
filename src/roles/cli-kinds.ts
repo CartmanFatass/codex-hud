@@ -15,6 +15,7 @@ export interface CliKind {
   startTimeoutMs: number | null;
   startupQuirk: 'none' | 'done-before-prompt' | 'phantom-working';
   resume?: (id: string, args: string[]) => string[];
+  headless?: (prompt: string, resumeId?: string, newId?: string) => string[];
 }
 
 export const cliKinds: Record<CliAgent, CliKind> = {
@@ -34,6 +35,7 @@ export const cliKinds: Record<CliAgent, CliKind> = {
     startTimeoutMs: null,
     startupQuirk: 'done-before-prompt',
     resume: (id, args) => [...args, '--conversation', id],
+    headless: (prompt, id) => ['--output-format', 'stream-json', ...(id ? ['--conversation', id] : []), '-p', prompt],
   },
   claude: {
     model: (model) => ['--model', model],
@@ -43,6 +45,8 @@ export const cliKinds: Record<CliAgent, CliKind> = {
     startTimeoutMs: null,
     startupQuirk: 'none',
     resume: (id, args) => [...args, '--resume', id],
+    headless: (prompt, id, newId) => ['-p', '--output-format', 'stream-json', '--verbose',
+      ...(id ? ['--resume', id] : ['--session-id', newId!]), '--', prompt],
   },
   codex: {
     model: (model) => ['-m', model],

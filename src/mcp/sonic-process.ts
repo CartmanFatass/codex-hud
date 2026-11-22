@@ -1,7 +1,7 @@
-/** One detached runner per pi turn. Sonic is one-shot; other roles reopen their job's session. */
+/** One detached runner per headless turn. Sonic is one-shot; other roles reopen their job's session. */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ensureJobWatcher } from './watch-pid.js';
 import { sonicSession } from './sonic-session.js';
@@ -10,17 +10,23 @@ import { binScript, jobFiles } from './paths.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { procStat, readBootId } from '../utils/proc.js';
-import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
+import { readFileBounded, readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
-import { readDone, reportSignature } from '../roles/cli-turn.js';
+import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cli-turn.js';
+import { REPORT_SETTLED_EXIT } from './cli-judge.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 import { progress } from '../worker/tools.js';
 import { monitorSonic, sonicLimitDefaults, type SonicLimits, type SonicStop } from './sonic-policy.js';
 
-export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file: string; id?: string }, limits?: SonicLimits) {
+export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file?: string; id?: string; initialId?: string }, limits?: SonicLimits) {
   const env: NodeJS.ProcessEnv = { ...process.env, HUD_HOME: dirname(dirname(dir)), HUD_JOB_DIR: dir };
-  if (session?.id) env.HUD_RESUME_SESSION_ID = session.id;
+  if (session?.file && session.id) env.HUD_RESUME_SESSION_ID = session.id;
   else delete env.HUD_RESUME_SESSION_ID;
+  if (job.cli?.agent === 'claude') {
+    // Like a worker tab, this is a separate Claude session, not a nested Claude invocation.
+    delete env.CLAUDECODE;
+    if (env.CLAUDE_CONFIG_DIR) env.CLAUDE_CONFIG_DIR = resolve(env.CLAUDE_CONFIG_DIR);
+  }
   delete env.HERDR_PANE_ID;
   delete env.HERDR_ENV;
   const fds: number[] = [];
@@ -33,15 +39,19 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
     }
     const child = spawn(process.execPath, [binScript('sonic-run'), dir, ...args], { cwd: job.cwd, env, detached: true,
       stdio: ['pipe', fds[0]!, fds[1]!] });
-    child.once('error', () => {}); // A failed spawn has no PID; a failed handshake never starts pi.
+    child.once('error', () => {}); // A failed spawn has no PID; a failed handshake never starts the harness.
     child.stdin!.on('error', () => {});
     child.unref();
     try {
       const pid = child.pid, start = pid && procStat(pid)?.start, boot = readBootId();
       if (!pid || !start || !boot) throw Error('cannot identify sonic runner');
-      if (session?.id) for (const name of [jobFiles.sonicExit, jobFiles.done]) fs.rmSync(join(dir, name), { force: true });
-      const status: JobStatus = { state: 'working', slot: session ? 'headless' : 'sonic', task_dir: dir, harness: 'pi', role: job.role,
-        ...(session && { session_file: session.file, session_id: session.id }), ...(limits && { sonic_limits: limits }),
+      if (session?.id) {
+        fs.rmSync(join(dir, jobFiles.sonicExit), { force: true });
+        if (!job.cli) fs.rmSync(join(dir, jobFiles.done), { force: true });
+      }
+      const status: JobStatus = { state: 'working', slot: session ? 'headless' : 'sonic', task_dir: dir, role: job.role,
+        ...(job.cli ? { harness: 'cli', agent: job.cli.agent, agent_session_id: session?.id ?? session?.initialId }
+          : { harness: 'pi', session_file: session?.file, session_id: session?.id }), ...(limits && { sonic_limits: limits }),
         pid, pid_start_time: start, boot_id: boot, started_at: new Date().toISOString() };
       writeJsonPrivate(join(dir, jobFiles.status), status, { mkdir: false });
       const capture = rememberWorkerTree(dir, status);
@@ -51,9 +61,27 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
   } finally { for (const fd of fds) fs.closeSync(fd); }
 }
 
-function launchPi(dir: string, argv: string[], status: JobStatus) {
-  const child = spawn('pi', argv, { stdio: ['ignore', 'inherit', 'inherit'] });
-  const exit = new Promise<{ code: number | null; signal?: string | null; error?: string }>(resolve => {
+type HeadlessExit = { code: number | null; signal?: string | null; error?: string; agent_session_id?: string };
+
+function cliStreamSession(dir: string, agent: string, offset: number) {
+  // The native init record precedes conversation output. Read only this turn's bounded log prefix.
+  const stdout = fs.fstatSync(1);
+  const { bytes, truncated } = readFileBounded(join(dir, jobFiles.sonicStdout), 256 * 1024, { offset,
+    validate: stat => { if (stat.dev !== stdout.dev || stat.ino !== stdout.ino) throw Error('worker log changed'); } });
+  const lines = bytes.toString('utf8').split('\n');
+  if (truncated) lines.pop();
+  for (const line of lines) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const id = agent === 'claude' && event?.type === 'system' && event.subtype === 'init' ? event.session_id
+      : agent === 'agy' && event?.event === 'init' ? event.conversation_id : undefined;
+    if (typeof id === 'string' && /^[\w][\w.-]{0,127}$/.test(id)) return id;
+  }
+}
+
+function launchTurn(dir: string, argv: string[], status: JobStatus, command: string) {
+  const child = spawn(command, argv, { stdio: ['ignore', 'inherit', 'inherit'] });
+  const exit = new Promise<HeadlessExit>(resolve => {
     child.once('error', error => resolve({ code: null, error: error.message }));
     child.once('exit', (code, signal) => resolve({ code, signal }));
   });
@@ -67,17 +95,19 @@ function launchPi(dir: string, argv: string[], status: JobStatus) {
   return exit;
 }
 
-/** Run in the owned runner, after the dispatch handshake. Retain the pi PID before a runner crash could orphan it. */
-export async function runSonicPi(dir: string, argv: string[]) {
+/** Run in the owned runner, after the dispatch handshake. Capture the child before a crash could orphan it. */
+export async function runHeadlessTurn(dir: string, argv: string[]) {
   // No input until dispatch has durably bound this runner to STATUS. A lost launcher closes the pipe.
   await publishRunnerLifetime(dir);
   let go = '';
   for await (const chunk of process.stdin) go += chunk;
   if (go !== 'start') return;
-  process.umask(0o077); // pi creates and appends its native session file.
   const status = readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus;
+  const agent = status.harness === 'cli' ? status.agent : undefined;
+  const offset = agent ? fs.fstatSync(1).size : 0;
+  if (!agent) process.umask(0o077); // Pi creates and appends its native session file.
   const session = sonicSession(dir), resuming = status.slot === 'sonic' && fs.existsSync(session);
-  // Wake a replacement watcher if the original died while pi was running. The watcher is
+  // Wake a replacement watcher if the original died while the harness was running. The watcher is
   // the sole terminal writer, even when the dispatcher's MCP connection is already gone.
   const wake = () => ensureJobWatcher(dirname(dirname(dir)));
   const inspect = status.slot === 'sonic' && monitorSonic(dir, status.sonic_limits ?? sonicLimitDefaults, Date.parse(status.started_at!));
@@ -93,13 +123,17 @@ export async function runSonicPi(dir: string, argv: string[]) {
     }
   }, 1000) : undefined;
   try {
-    let result = await launchPi(dir, argv, status);
-    // JSON mode emits the session header before input. Only retry a rejected open,
-    // never replay work after pi may already have taken the continuation.
+    let result = await launchTurn(dir, argv, status, agent ?? 'pi');
+    // JSON mode emits the session header before input. Only retry a rejected Sonic open,
+    // never replay work after Pi may already have taken the continuation.
     if (resuming && result.code !== null && result.code !== 0 && fs.statSync(join(dir, jobFiles.sonicStdout)).size === 0 &&
         Date.now() < headlessDeadline(status) && ![jobFiles.stopRequested, jobFiles.sonicStop, jobFiles.sonicTimeout].some(f => fs.existsSync(join(dir, f)))) {
       fs.renameSync(session, `${session}.rejected`);
-      result = await launchPi(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status);
+      result = await launchTurn(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status, 'pi');
+    }
+    if (agent && result.code === 0) {
+      try { result.agent_session_id = cliStreamSession(dir, agent, offset); }
+      catch (error) { result.error = (error as Error).message; }
     }
     writeJsonPrivate(join(dir, jobFiles.sonicExit), { ...result, at: Date.now() }, { mkdir: false });
     wake();
@@ -108,7 +142,8 @@ export async function runSonicPi(dir: string, argv: string[]) {
 
 export const headlessDeadline = (status: Partial<JobStatus>) => status.slot === 'headless' ? Infinity : Date.parse(status.started_at!) + (status.sonic_limits ?? sonicLimitDefaults).max_s * 1000;
 
-export function sonicExit(dir: string, status: Partial<JobStatus>, asking = false): Pick<JobStatus, 'state' | 'exit_reason'> | null {
+export function sonicExit(dir: string, status: Partial<JobStatus>, asking = false):
+    Pick<JobStatus, 'state' | 'exit_reason' | 'agent_session_id' | 'declared_report_sig'> | null {
   if (fs.existsSync(join(dir, jobFiles.stopRequested))) return { state: 'stopped', exit_reason: 'stopped' };
   const deadline = headlessDeadline(status);
   const timeout = { state: 'failed', exit_reason: 'timeout' } as const;
@@ -120,14 +155,28 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
   // Check the exit receipt after observing liveness (the runner publishes it before exiting).
   const root = sonicRoot(dir, status.pid!, status.pid_start_time!, status.boot_id);
   let exit;
-  try { exit = readJsonBounded(join(dir, jobFiles.sonicExit), 4096) as { at: number; code: number | null; signal?: string; error?: string }; }
+  try { exit = readJsonBounded(join(dir, jobFiles.sonicExit), 4096) as HeadlessExit & { at: number }; }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     if (Date.now() >= deadline) return timeout;
     return root === 'owned' ? null : { state: 'failed', exit_reason: 'sonic runner exited without an exit receipt' };
   }
   if (exit.at >= deadline) return timeout;
-  if (exit.code !== 0) return { state: 'failed', exit_reason: exit.error || `pi exited: ${exit.signal || exit.code}` };
+  const agent = status.harness === 'cli' ? status.agent : undefined;
+  if (exit.code !== 0 || exit.error)
+    return { state: 'failed', exit_reason: exit.error || `${agent ?? 'pi'} exited: ${exit.signal || exit.code}`,
+      ...(agent && { agent_session_id: null }) };
+  if (agent) {
+    const id = exit.agent_session_id;
+    if (!id || (status.agent_session_id && status.agent_session_id !== id))
+      return { state: 'failed', agent_session_id: null, exit_reason: status.agent_session_id
+        ? `${agent} did not open the recorded session` : `${agent} exited without a native session ID` };
+    if (asking) return { state: 'waiting_orchestrator', agent_session_id: id };
+    const turn = readTurn(dir), done = readDone(dir);
+    return turn && receiptForTurn(turn, done) && done.report_sig === reportSignature(dir)
+      ? { state: 'closed', exit_reason: REPORT_SETTLED_EXIT, agent_session_id: id, declared_report_sig: done.report_sig }
+      : { state: 'failed', exit_reason: `${agent} exited without a declared report`, agent_session_id: id };
+  }
   if (asking) return { state: 'waiting_orchestrator' };
   const sig = readDone(dir)?.report_sig;
   return sig && sig === reportSignature(dir) ? { state: 'closed', exit_reason: 'settled' }

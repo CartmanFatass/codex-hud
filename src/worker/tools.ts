@@ -38,7 +38,7 @@ export function workerJob(path = process.env.HUD_JOB_DIR) {
   return { dir, root, job: readJob(dir) };
 }
 
-// Snapshot while pi is still the parent: exit on a question can orphan helpers just like a report.
+// Snapshot while the worker is still the parent: exit on a question can orphan helpers just like a report.
 export function capturePiTree(dir: string) {
   const { snapshot, issue } = rememberWorkerTree(dir, readJsonFile(join(dir, jobFiles.status)));
   if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
@@ -59,6 +59,7 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
     const latest = readTurn(dir);
     if (!latest || turnToken(latest) !== turn) throw new Error('the turn changed; no receipt recorded');
     writeReportMeta(dir, sig, fields);
+    if (job.headless) capturePiTree(dir);
     writeJsonPrivate(join(dir, DONE_FILE), { seq: current.seq, sent_at: current.sent_at, report_sig: sig, at: new Date().toISOString() } satisfies DoneReceipt, { mkdir: false });
   } else {
     // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
@@ -273,11 +274,12 @@ const strings = { type: 'array', items: string };
 // MCP checks calls against workerTools and advertises listWorkerTools; use the same role-aware list.
 export { workerTools as listWorkerTools };
 export async function workerTools(cli = false) {
-  let role: string | undefined;
+  let role: string | undefined, headless = false;
   try {
     const { job } = workerJob();
     role = job.role;
     cli = cli && Boolean(job.cli);
+    headless = cli && job.headless === true;
   } catch { /* Keep the caller's schema when no job receipt is available. */ }
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
@@ -290,7 +292,8 @@ export async function workerTools(cli = false) {
         files: { type: 'array', items: { ...string, maxLength: 260 }, maxItems: 50, description: 'Optional list of relative paths to files changed by code roles (up to 50).' },
       },
       cli ? ['text', 'turn'] : ['text']),
-    tool('hud_ask', 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
+    tool('hud_ask', headless ? 'Ask the orchestrator and end the turn. The answer resumes this session.'
+      : 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
       { question: string, default: string, options: strings, context: string }, ['question', 'default']),
     tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. Pi sends a ready notice. timeout_s defaults to 480.',
       { task: string, cwd: { ...string, description: "Start only. Defaults to the parent job's working directory. Resolve relative paths there; the destination must stay inside the parent project." },
@@ -361,7 +364,10 @@ export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: Ques
     const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
     pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
   }
-  if (job.headless) return `Question q${published.n} recorded (${pushed}); the orchestrator's answer resumes this session.`;
+  if (job.headless) {
+    if (job.cli) capturePiTree(dir);
+    return `Question q${published.n} recorded (${pushed}); end this turn without acting on a default. The orchestrator's answer resumes this session.`;
+  }
   const timeoutSec = timeoutRaw !== undefined && /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : 1200;
   const started = performance.now();
   let answer;

@@ -349,8 +349,8 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
       const stat = fs.lstatSync(join(dir, name), { throwIfNoEntry: false });
       return stat?.isFile() ? stat.size : undefined;
     };
-    const identity = status.slot === 'headless' && piSessionIdentity(job, status.session_file);
-    if (end.state === 'waiting_orchestrator' && (!identity || (status.session_id && identity.id !== status.session_id)))
+    const identity = !job.cli && status.slot === 'headless' && piSessionIdentity(job, status.session_file);
+    if (!job.cli && end.state === 'waiting_orchestrator' && (!identity || (status.session_id && identity.id !== status.session_id)))
       end = { state: 'failed', exit_reason: 'pi exited without the session needed to answer its question' };
     const waiting = !stopped && end.state === 'waiting_orchestrator';
     writeJsonAtomic(statusFile, { ...status, ...end, ...(identity && !status.session_id && { session_id: identity.id }), ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),

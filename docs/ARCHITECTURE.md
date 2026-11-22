@@ -307,6 +307,8 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 | Scouted dispatch | The scout question and target `context_files` go to sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
 | Settings Test API | Fixed synthetic messages only |
 
+Headless Claude Code and Antigravity dispatch use the same model inputs as worker tabs: the assembled brief, role instructions, and subsequent answers, sends or repair messages. The native stream's session ID is read locally to bind the next turn; the stream is not sent to a separate model.
+
 `JobSentences` replaces separate native labels/digests/causes/progress schedulers;
 there is no agent-log writer. Names and keyword-marked sentences share a request.
 Both settled-report consumers take a short report head plus sections on incomplete
