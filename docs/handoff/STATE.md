@@ -29,7 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
-- try · DOGFOOD-FIXES · DOGFOOD-FIXES-08 · Ticket 08 is ready-for-human in 3b4a0642: startup close and watcher settlement fixed; 1,143 tests passed, no flakes, nothing pushed. (e0290351af19d0f54115aa2a9216a188eccf237c)
+- try · DOGFOOD-FIXES · DOGFOOD-FIXES-08 · closing a job during startup leaves it stopped, and a stop-requested job whose worker died settles on the next watcher pass (e0290351)
 - try · FLOWS · FLOWS-02/03 · a failed hud_land gate goes back to the source imp for a repair (at most two rounds) and a landing marks its ticket ready-for-human and adds the STATE slice row (45645928; landed by hand: the land range bug is in dogfood-fixes/09)
 - try · FLOWS · FLOWS-04 · scouted dispatch: hud_create can send a sonic first to collect a fact dossier, then starts the real job with the dossier as context (f1de3c93; second live hud_land after a retry)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-07 · timing tests wait on events instead of wall-clock budgets; two full runs with every core busy pass 1,137/1,137 (12ae99ee; first live hud_land)
