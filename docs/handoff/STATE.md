@@ -26,7 +26,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 - working · CODE-HEALTH · PRUNE-OBS-01 · neon proposal 01 Slice 1: stop dead legacy observers, delete ~3,300 lines (imp, wt/PRUNE-OBS-01; prune-obs/01)
-- working · CODE-HEALTH · BUILD-DEDUP-01 · neon proposal 03 Slice 1: hud-mcp sources under src/mcp, one tsc project (imp, wt/BUILD-DEDUP-01; build-dedup/01)
+- try · CODE-HEALTH · BUILD-DEDUP-01 · hud-mcp sources under src/mcp, one tsc build, ./install builds once; old packages/hud-mcp/dist only warned about (f9de5b72, 78df68dd); release archive drops .hud/ (c13ea5f2); live: fresh hud-mcp lists 11 tools, a sonic settled through the new worker paths
 - todo · CODE-HEALTH · rest of the six neon proposals in two lanes. Panel lane: PRUNE-OBS-02..04 → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: BUILD-DEDUP-02..03 → ASYNC-WATCH-01..03 + focused review → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - working · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job, fallback default (imp, wt/SONIC-AUTO-THINKING)
