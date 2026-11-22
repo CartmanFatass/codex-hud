@@ -26,7 +26,7 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    (without `job`) includes them in the newest 20 full rows. A `report` token in `changes` means unread.
    Reading a settled pi or CLI report closes the worker; an unread report keeps its idle deadline.
    Workers publish with `hud_report` (or the provided fallback); no final chat marker is needed. Settled means finished, not accepted.
-   To integrate a settled `isolation: "worktree"` job, call `hud_land({ job })` (configured by the project's `.hud/project.json` `land` block): HUD runs the gate, up to two source-worker repairs, ticket/STATE records, fast-forward, `after`, optional push and worktree cleanup, and delivers one notice or MCP task. Use `hud_read({ job: "<flow>" })` to check flow state and current step.
+   To integrate a settled `isolation: "worktree"` job, call `hud_land({ job })` (configured by the project's `.hud/project.json` `land` block): HUD runs the gate, up to two source-worker repairs, the ticket record folded into the landed commit, fast-forward, `after`, optional push and worktree cleanup, and delivers one notice or MCP task. Use `hud_read({ job: "<flow>" })` to check flow state and current step.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role on its own; requested fixed flows (`scout`, `hud_land`) chain only their own steps. A review verdict is information for you, not permission to continue.
 

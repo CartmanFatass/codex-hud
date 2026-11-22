@@ -6,10 +6,13 @@ Applies to every worker job in this repository, after its own task.
   subsystem detail. `docs/spec.md` is the product boundary.
 - Run every build and test through `/home/fires/projects/MyHUD/tmp/env.sh <command>` (temporary HOME, HUD_HOME,
   CODEX_HOME). Never run tests against the real home.
-- Build with `npm run build && npm run build:test`. The full `npm run test:mjs` takes about 4–5 minutes: run it as
-  `timeout 600 npm run test:mjs`, once at the end, only when the brief asks for full suites.
-- Code jobs work in the worktree the brief names (`../MyHUD-wt/<WP>`, branch `wt/<WP>`); commit there, never push. The
-  main session integrates.
+- Build with `npm run build && npm run build:test`, then run the tests for the code you touched. The full suite
+  (`npm run test:mjs`, about 70 s) is the land gate's job; run it only when the brief asks.
+- Code jobs run in their HUD-managed worktree: commit there, never push or land, and leave ticket files alone; the
+  main session lands with `hud_land`, which records the ticket. Jobs without a worktree
+  (docs, design samples, studies) commit with a pathspec (`git commit -m ... -- <paths>`) in the main checkout.
+- Browser renders use `--password-store=basic --user-data-dir=$(mktemp -d)` (delete the dir after), or skip them:
+  a default Chrome launch pops a keyring dialog on the owner's desktop.
 - The repository is public: fixtures, docs and reports use synthetic data only; never copy keys, tokens or personal
   paths into the repo.
 - Node >= 24. No new dependencies unless the brief allows them.

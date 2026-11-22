@@ -6,6 +6,12 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   patch, to `sonic`; code and test changes to `imp`, except user-facing UI (panel, statusline and footers,
   rendered pages, design samples, src/render/), which goes to `frontend-imp`. Do it yourself only when it takes a couple of tool calls or
   needs a resource only the main session holds.
+- Pass `isolation: "worktree"` only when the job edits code or runs builds or tests; docs, design samples, tickets,
+  studies and read-only roles (`sonic`, `oracle`, `reviewer`) work in the main checkout and commit with a pathspec.
+- Per-role caps (Settings) queue jobs past the cap and start an `imp` at its cap as `general` when it has room; do not
+  count jobs yourself before dispatching.
+- Pass a role `preset` only when the user asks for it in that request or for a hard slice when the project's docs name
+  the preset for hard slices; otherwise the role's default runs.
 - A sonic brief asks for facts, not a recommendation, and fits one report of about 60 lines; split a wide survey
   across several sonics started together.
 - Shared resources (a real install, paid or live runs, the shared browser) stay with the main session. A brief that
@@ -22,8 +28,8 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
 - `hud_land({ job })` lands a settled managed worktree (`idle_grace`, `done` or `closed`) through the project's
   `.hud/project.json` `land` config: takes the `main-checkout` lease, cherry-picks into a detached checkout, runs `gate`
-  (one immediate rerun per red command; up to two source-worker repairs on persistent failure or conflict), writes
-  ticket/STATE landing records, fast-forwards the base, runs `after`, pushes when configured, and removes integration
+  (one immediate rerun per red command; up to two source-worker repairs on persistent failure or conflict), folds
+  the ticket landing record into the landed commit, fast-forwards the base, runs `after`, pushes when configured, and removes integration
   and job worktrees and branch. It returns a flow ID (`hud_read({ job: "<flow>" })` reads its state and step) and
   delivers one terminal notice or MCP task.
 - Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
@@ -41,7 +47,6 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   `hud_read({job, mode: "full"})` for the whole report, even if already read. A report read in idle grace marks it read too.
 - With live events, keep working until notified; the report notice points to `hud_read` and is not a read. Use `hud_peek` for non-consuming
   status and milestones; pass `lines` only for pane output and `detail: true` for launch diagnostics.
-- Give a ledger slice the milestone of the task the owner tries as one (a feature or milestone); the panel can group to-try rows by it.
 - The orchestrator writes Waiting items in the owner's panel language.
-- On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong. Never list a `try` slice under Waiting for the owner: the ledger's `try` rows are the to-try list, and Waiting holds only what is not a try (flagged slices, owner decisions). A Waiting item that depends on slices or tickets ends with `(waits on <slice ID>, <feature>/<NN>)`; the panel drops it once every one is accepted, dropped or done (a flagged slice: `(waits on <its ID>)`).
+- File tickets with `owner_try: false` when tests fully cover the behaviour; `true` only for visible UI, installs or live-session behaviour tests cannot cover. On a `try accepted` line, mark those tickets `done` (legacy STATE `try` rows: `accepted`); on a `try flagged` line, add the item under Waiting for the owner and ask what is wrong. Never list a to-try item under Waiting for the owner; Waiting holds flagged items and owner decisions. A Waiting item that depends on tickets ends with `(waits on <feature>/<NN>)`; the panel drops it once every one is done or dropped.
 The main session owns handoffs and decides the next step; HUD only chains the steps within a requested fixed flow.

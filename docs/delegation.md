@@ -86,7 +86,7 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups); never test authoring, bug hunting, design, review or why/which/is-it-wrong questions (those stay with the deciding model) |
 | oracle | role `oracle` | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |
-| frontend-implementer | role `frontend-imp` | UI design and frontend development |
+| frontend-implementer | role `frontend-imp` | UI design and every user-facing UI build: panel, statusline, footers, rendered pages, design samples (`src/render/`) |
 | Hermes | Windows, computer use | tests that need human-like interaction |
 
 Where each role runs (harness, model, thinking) is what `hud_roster` reports as `runs_on`: the owner's role files, switched in the Control plane. A dispatch passes no `preset`, `on`, `model` or `thinking` unless the owner asks for it in that request, and an owner's pick for one task does not carry over to the next (owner, 2026-11-20). One standing exception (owner, 2026-11-22): `imp` runs its default `fast` preset (gpt-6.2-sol-fast), and the orchestrator passes `preset: "astra"` for hard slices: several modules, review fixes, or design-heavy work.
@@ -99,7 +99,8 @@ Codex tests use `codex2` (the free account), never the main `codex` account.
 - One worktree per code imp (owner, 2026-11-12): the owner's statusline, pi footer and panel run from the main
   checkout's `dist/`, so an imp never builds there. Prefer `hud_create({ ..., isolation: "worktree" })`, which creates
   and tracks the linked checkout so `hud_land({ job })` can gate, record, fast-forward, push and clean it up. Manual
-  `tmp/wt-new.sh <slice>` checkouts are still removed by the orchestrator after landing.
+  `tmp/wt-new.sh <slice>` checkouts are still removed by the orchestrator after landing. Jobs that neither edit code
+  nor build or test (docs, design samples, tickets, studies, read-only roles) get no worktree.
 - Every test run uses a temporary HOME / HUD_HOME / CODEX_HOME / CLAUDE_CONFIG_DIR: `tmp/env.sh <command>`, run from
   inside the checkout or worktree it should act on.
 - Synthetic data only in the repo (public). Never print or commit keys.
