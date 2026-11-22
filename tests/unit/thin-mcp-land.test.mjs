@@ -298,3 +298,73 @@ for (const [heading, stale, description] of [
   if (description) assert.ok(ledger.includes(`- try · FEATURE · FEATURE-01 · ${description} (${done.landed_sha.slice(0, 8)})\n- try · SAMPLE`));
   else assert.doesNotMatch(ledger, /FEATURE-01/);
 });
+
+test('land cleanup removes clean source worktree when picked patch differs from source commit', async t => {
+  const f = await checkout(t, ['true']);
+  fs.writeFileSync(join(f.main, 'ticket.md'), 'status: open\n\nline 1\nline 2\nline 3\nitem: a\n');
+  f.git(f.main, 'add', 'ticket.md'); f.git(f.main, 'commit', '-qm', 'add ticket');
+  f.git(f.worktree, 'rebase', 'base');
+  // Base advances the status line that the source commit also changes to the same value.
+  fs.writeFileSync(join(f.main, 'ticket.md'), 'status: ready\n\nline 1\nline 2\nline 3\nitem: a\n');
+  f.git(f.main, 'commit', '-qam', 'advance status on base');
+  fs.writeFileSync(join(f.worktree, 'ticket.md'), 'status: ready\n\nline 1\nline 2\nline 3\nitem: b\n');
+  f.git(f.worktree, 'commit', '-qam', 'update ticket and item');
+  const sourceSha = f.git(f.worktree, 'rev-parse', 'HEAD');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.step, 'done');
+  assert.equal(done.error, undefined);
+  assert.equal(done.cleanup_note, undefined);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
+  assert.equal(f.git(f.main, 'show', 'base:ticket.md'), 'status: ready\n\nline 1\nline 2\nline 3\nitem: b');
+  assert.equal(f.git(f.main, 'rev-list', '--cherry-pick', '--right-only', '-1', `${done.landed_sha}...${sourceSha}`), sourceSha);
+  assert.equal(fs.existsSync(f.worktree), false);
+  assert.equal(f.git(f.main, 'branch', '--list', f.branch), '');
+  assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 2);
+  const receipt = JSON.parse(fs.readFileSync(join(jobDir(f), 'job.json'), 'utf8'));
+  assert.ok(receipt.worktree_removed_at);
+  assert.equal(receipt.worktree_kept_reason, undefined);
+});
+
+test('a cleanup error after push completes as landed with a cleanup note, not failed', async t => {
+  const f = await checkout(t, ['true']);
+  fs.writeFileSync(join(f.worktree, 'untracked-note.txt'), 'keep me\n');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.step, 'done');
+  assert.equal(done.error, undefined);
+  assert.match(done.cleanup_note ?? '', /dirty/);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
+  assert.equal(done.changes.filter(s => s.includes(flow)).length, 1);
+  assert.match(done.changes.find(s => s.includes(flow)) ?? '', new RegExp(`completed: done ${done.landed_sha} \\| Cleanup note: .*dirty`));
+  assert.equal(fs.readFileSync(join(f.worktree, 'untracked-note.txt'), 'utf8'), 'keep me\n');
+  assert.equal(f.git(f.main, 'branch', '--list', '--format=%(refname:short)', f.branch), f.branch);
+  assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 3);
+  const receipt = JSON.parse(fs.readFileSync(join(jobDir(f), 'job.json'), 'utf8'));
+  assert.match(receipt.worktree_kept_reason ?? '', /dirty/);
+  assert.equal((await f.call('hud_land', { job })).flow, flow);
+});
+
+test('land cleanup preserves commits added to the source worktree after landing and still reports completed with a note', async t => {
+  const f = await checkout(t, ['true']);
+  const configFile = join(f.main, '.hud/project.json'), config = JSON.parse(fs.readFileSync(configFile));
+  config.land.after = [`echo extra > ${JSON.stringify(join(f.worktree, 'extra'))} && git -C ${JSON.stringify(f.worktree)} add extra && git -C ${JSON.stringify(f.worktree)} commit -qm extra`];
+  fs.writeFileSync(configFile, JSON.stringify(config));
+  const rpc = taskRpc(f.rpc); await rpc('server/discover');
+  const { taskId: flow } = await taskCall(rpc, 'hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const state = f.flowState(flow);
+  assert.equal(state.state, 'completed', JSON.stringify(state));
+  assert.equal(state.error, undefined);
+  assert.match(state.cleanup_note ?? '', /unmerged commits/);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), state.landed_sha);
+  const done = await rpc('tasks/get', { taskId: flow });
+  assert.equal(done.status, 'completed');
+  assert.match(done.result.content[0].text, new RegExp(`completed: done ${state.landed_sha}\\nCleanup note: .*unmerged commits`));
+  assert.equal(fs.existsSync(join(f.worktree, 'extra')), true);
+  assert.equal(f.git(f.main, 'branch', '--list', '--format=%(refname:short)', f.branch), f.branch);
+});

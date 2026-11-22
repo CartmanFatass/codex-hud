@@ -185,14 +185,24 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         '--no-follow-tags', '--recurse-submodules=no', 'origin', `${tip}:${ref}`]);
     }
     step('cleanup');
-    await git(main, ['worktree', 'remove', '--', integration], 120000);
-    const receiptPath = join(home, 'jobs', f.job, 'job.json');
-    const result = await reapWorktree(f.job, { job: f.job, cwd: wt.root, worktree: wt }, home);
-    const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
-    const tmp = `${receiptPath}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mode: 0o600 });
-    fs.renameSync(tmp, receiptPath);
-    if ('worktree_kept_reason' in result) throw Error(result.worktree_kept_reason);
+    const notes: string[] = [];
+    const note = (e: unknown) => {
+      const line = (e instanceof Error ? e.message : String(e)).split('\n')[0].trim();
+      if (line) notes.push(line);
+    };
+    try { await git(main, ['worktree', 'remove', '--', integration], 120000); }
+    catch (e) { note(e); }
+    try {
+      const receiptPath = join(home, 'jobs', f.job, 'job.json');
+      const result = await reapWorktree(f.job, { job: f.job, cwd: wt.root, worktree: wt }, home,
+        { source_sha: f.source_sha, landed_sha: tested });
+      const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+      const tmp = `${receiptPath}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mode: 0o600 });
+      fs.renameSync(tmp, receiptPath);
+      if ('worktree_kept_reason' in result) notes.push(result.worktree_kept_reason);
+    } catch (e) { note(e); }
+    if (notes.length) f.cleanup_note = notes.join('; ');
     f.state = 'completed'; step('done');
   } catch (e) {
     if (f.state !== 'cancelled') f.state = 'failed';

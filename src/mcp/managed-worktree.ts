@@ -211,7 +211,12 @@ function disposablePaths(home: string, root: string): string[] {
     return Array.isArray(globs) && globs.every(g => typeof g === 'string') ? globs : [];
   } catch { return []; }
 }
-export async function reapWorktree(id: string, job: { job: string; cwd: string; worktree: ManagedWorktree }, home: string) {
+export async function reapWorktree(
+  id: string,
+  job: { job: string; cwd: string; worktree: ManagedWorktree },
+  home: string,
+  landed?: { source_sha: string; landed_sha: string },
+) {
   const wt = job.worktree;
   try {
     if (!managedReceiptMatches(id, job))
@@ -239,9 +244,18 @@ export async function reapWorktree(id: string, job: { job: string; cwd: string; 
       try { await git(wt.main_root, ['merge-base', '--is-ancestor', head, base]); }
       catch (error) {
         if ((error as { code?: number }).code !== 1) throw error;
+        let knownLanded = false;
+        if (landed && oid(landed.source_sha) && oid(landed.landed_sha) && head === landed.source_sha) {
+          try {
+            await git(wt.main_root, ['merge-base', '--is-ancestor', landed.landed_sha, base]);
+            knownLanded = true;
+          } catch (landError) {
+            if ((landError as { code?: number }).code !== 1) throw landError;
+          }
+        }
         // Look for even one slice-only commit without an equivalent patch. Unlike git cherry,
         // this includes unmerged merge commits, whose conflict resolutions have no patch ID.
-        if (await git(wt.main_root, ['rev-list', '--cherry-pick', '--right-only', '-1', `${base}...${head}`, '--']))
+        if (!knownLanded && await git(wt.main_root, ['rev-list', '--cherry-pick', '--right-only', '-1', `${base}...${head}`, '--']))
           return kept('worktree has unmerged commits', base);
         picked = true;
       }
