@@ -212,7 +212,10 @@ export async function waitSonic({ dir, root, job: parent }: Worker, ids?: string
     });
   }
   const working = states.filter(({ state }) => state === 'open').map(({ id }) => id);
-  const failed = states.filter(({ state }) => state === 'failed').map(({ id, reason }) => ({ id, reason }));
+  const failed = states.filter(({ state }) => state === 'failed').map(({ id, child, reason }) => {
+    const latest_progress = readJobProgress(child).latest_progress;
+    return { id, reason, ...(latest_progress ? { latest_progress } : {}) };
+  });
   const reports = [];
   for (const { id, child, state } of states) {
     if (state !== 'settled') continue;

@@ -28,7 +28,10 @@ export async function main() {
     } else {
       if (!values.job) throw new Error('--job must be a sonic child job id');
       const { reports, working, failed } = await waitSonic(context, [values.job], values.timeout?.trim() === '' ? NaN : Number(values.timeout ?? '480'));
-      if (failed.length) throw new Error(failed[0].reason);
+      if (failed.length) {
+        const { reason, latest_progress } = failed[0];
+        throw new Error(latest_progress ? `${reason} — ${latest_progress.text}` : reason);
+      }
       if (working.length) {
         console.log('still working: run wait again');
         process.exitCode = 3;

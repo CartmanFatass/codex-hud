@@ -240,24 +240,28 @@ test('hud_sonic accepts a project cwd relative to the parent and refuses paths o
   assert.equal(JSON.parse(fs.readFileSync(join(jobs, job, 'job.json'))).cwd, subdir);
 });
 
-test('a working pi parent gets a native sonic-ready message without polling or collecting', { timeout: 45000 }, async (t) => {
+test('a working pi parent gets native sonic checkpoint and ready notices without polling or collecting', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic pi parent.' });
   const native = spawnSync(process.execPath, ['--input-type=module', '-e', `
     import hud from ${JSON.stringify(new URL('../../integrations/pi/package/extensions/hud.mjs', import.meta.url).href)};
-    import { existsSync, writeFileSync } from 'node:fs';
+    import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
     import { join } from 'node:path';
     import assert from 'node:assert/strict';
     process.argv.push('--hud-worker-tools');
-    const tools = new Map(), notice = Promise.withResolvers();
+    const tools = new Map(), notice = Promise.withResolvers(), checkpoint = Promise.withResolvers();
     await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); },
       sendMessage(message, options) { notice.resolve({ message, options }); } });
     const sonic = tools.get('hud_sonic');
-    const { details: { job } } = await sonic.execute('start', { task: ${JSON.stringify(fs.readFileSync(task, 'utf8'))} });
+    const { details: { job } } = await sonic.execute('start', { task: ${JSON.stringify(fs.readFileSync(task, 'utf8'))} },
+      undefined, undefined, { ui: { notify: checkpoint.resolve } });
     const dir = join(process.env.HUD_HOME, 'jobs', job);
     await tools.get('hud_progress').execute('unrelated', { message: 'Parent still editing.' });
     const timeout = setTimeout(() => { throw Error('no sonic notice'); }, 20000);
+    const text = 'still working at 10 min: synthetic step';
+    appendFileSync(join(dir, 'progress.jsonl'), JSON.stringify({ at: new Date().toISOString(), text, source: 'checkpoint' }) + '\\n');
+    assert.equal(await checkpoint.promise, 'Sonic ' + job + ': ' + text);
     writeFileSync(join(dir, 'release-sonic'), '');
     const { message, options } = await notice.promise;
     clearTimeout(timeout);
