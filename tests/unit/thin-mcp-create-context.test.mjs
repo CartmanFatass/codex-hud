@@ -11,6 +11,7 @@ import {
   withoutHint,
   withoutCallerLookups,
   fixture,
+  enableOptionalRoles,
   until,
   reapAttempts,
   publishPiGrace,
@@ -569,6 +570,7 @@ test('a slow CLI launch blocks only retries with the same request key, not other
 
 test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses invalid/pi/browser overrides', async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'pro');
   for (const value of [59, 3601, 60.5, '60']) {
     const result = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: `bad-${value}`, task: 'Synthetic.', idle_grace_s: value });
     assert.equal(result.code, 'invalid_arguments');
@@ -700,6 +702,7 @@ function registerBriefProject(f) {
 
 test('browser dispatch inlines the registered standing brief once through the bounded context block', async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'pro');
   const hud = join(f.root, '.hud'), standing = join(hud, 'brief.md');
   fs.mkdirSync(hud);
   const args = { role: 'pro', task: 'Synthetic browser task' };
@@ -718,6 +721,7 @@ test('browser dispatch inlines the registered standing brief once through the bo
 
 test('hud_create inlines browser context with safe fences and caps both file and total bytes', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'pro', 'flow');
   const max = 64 * 1024;
   const upstream = waitFixtureJob(f, 1, 'idle_grace');
   const report = join(upstream.dir, 'report.md');
@@ -856,6 +860,7 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
 
 test('thin launch options reject Jev roles and invalid pi values before dispatch', async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'pro');
   const keys = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'];
   assert.deepEqual((await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'pro').accepts_options, ['on']);
   for (const key of keys) {
@@ -879,6 +884,7 @@ test('thin launch options reject Jev roles and invalid pi values before dispatch
 
 test('thin create rejects model or thinking overrides for Jev roles', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'pro');
   for (const override of [{ model: 'synthetic/other' }, { thinking: 'max' }]) {
     assert.deepEqual(
       withoutHint(await f.call('hud_create', {
@@ -898,6 +904,7 @@ test('thin create rejects model or thinking overrides for Jev roles', { timeout:
 
 test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate sends', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'pro', 'flow');
   const args = { role: 'pro', request_key: 'pro-once', task: 'Synthetic question.' };
   const job = await f.call('hud_create', args);
   assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), `${args.task}\n`);
@@ -975,6 +982,7 @@ test(
 
 test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'flow');
   for (const [key, task, confirmed] of [
     ['no-cost', 'Synthetic video.', false],
     ['cost', 'Synthetic video; cost: 20 credits', true],

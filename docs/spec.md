@@ -39,8 +39,8 @@ machine, inside herdr. (10.02, 22.12)
   with probabilities, not the browser. (11.01, 14.01)
 - `oracle`: strongest-model local, read-only advisor on a model harness for any judgement in the brief.
   `architect` and `oracle` share `oracle`, with former setups as presets. On create, `architect` aliases
-  `oracle` unless a role file defines `architect`. Strong web role `pro`: ChatGPT 6 Pro, then Gemini, then
-  AI Studio. (14.01, 17.03)
+  `oracle` unless a role file defines `architect`. (14.01, 17.03)
+- HUD ships `pro` (ChatGPT 6 Pro, then Gemini, then AI Studio) and `flow` (Google Flow images and video) as optional roles, off by default until enabled in Control or by the owner's configuration.
 - `general`: global ad-hoc work set by the brief, with any model (e.g. a pi provider's) via `hud_create`
   `model`/`thinking` for one job (§2.1.4). (16.01)
 - Named presets in role files are full chains. Owner switches places and presets in Control (§2.2.5).

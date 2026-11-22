@@ -83,11 +83,12 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
     ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser'], ['general', 'roles']]);
   assert.deepEqual(first('oracle').places.map((p) => [p.label, p.model, p.state]),
     [['claude', 'fable', 'missing'], ['pi', null, 'active']]);
-  assert.deepEqual(first('pro').places.map((p) => [p.label, p.model, p.state]),
-    [['chatgpt', '6 Pro', 'active'], ['gemini', null, 'standby'], ['aistudio', 'gemini-4-argon', 'missing']]);
-  assert.deepEqual([first('flow').places[0].label, first('flow').places[0].kind, first('flow').places[0].state], ['flow', 'image', 'missing']);
+  for (const name of ['pro', 'flow']) {
+    assert.equal(first(name).optionalEnabled, false);
+    assert.deepEqual(first(name).places, []);
+  }
   assert.deepEqual([first('imp').path, first('imp').source, first('sonic').source], [join(f.hud, 'roles/imp.json'), 'yours', 'default']);
-  assert.equal(f.data.roleCount, 7);
+  assert.equal(f.data.roleCount, 5);
   assert.deepEqual(f.data.harnesses.map((h) => [h.name, h.ok]), [['pi', true], ['agy', false], ['claude', false], ['codex', false],
     ['grok', false], ['jev-ask', true], ['jev-aistudio', false], ['jev-flow', false]]);
   assert.deepEqual(f.data.control.find((r) => r.label === 'pi role'), { label: 'pi role', value: 'implementer', path: join(f.root, 'roles/implementer.md') });
@@ -190,17 +191,17 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   const render = (state) => f.render(80, 'en', state, 64);
   let frame = render('control');
   let text = plain(frame).join('\n');
-  // flow has nowhere to run and bad.json does not load: they come first; the other roles are one folded row of names.
-  assert.match(text, /^Needs attention ─+ 2$/m);
-  assert.match(text, /^ {2}− flow → none$/m);
+  // Intentionally off roles have their own section, not an alert alongside bad.json.
+  assert.match(text, /^Needs attention ─+ 1$/m);
   assert.match(text, /^ {2}! bad\.json +unparseable JSON$/m);
-  assert.match(text, /^▸ Healthy ─+ 6$/m);
-  assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general {2}pro$/m);
+  assert.match(text, /^▸ Healthy ─+ 5$/m);
+  assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/m);
+  assert.match(text, /^Optional roles ─+\n {2}⊘ pro +Off\n {2}⊘ flow +Off$/m);
   assert.match(text, /^▸ Files ─+ keys 3\/5 · browser ✓$/m);
   assert.doesNotMatch(text, /synthetic\/model|project-agent\.md|▸ agents/);
   frame.state.control.roles.nav.cursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /^Healthy ─+ 6$/m);
+  assert.match(plain(frame).join('\n'), /^Healthy ─+ 5$/m);
   assert.match(plain(frame).join('\n'), /imp → synthetic\/model/);
   frame.state.control.roles.nav.cursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
@@ -215,7 +216,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
   frame.state.control.roles.nav.cursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 6$/m, 'a second Enter folds the roles again');
+  assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 5$/m, 'a second Enter folds the roles again');
 });
 test('arrows/Tab cycle main tabs with independent Project cursor/scroll; the digits switch none and f opens Changes', async (t) => {
   const f = await fixture(t),

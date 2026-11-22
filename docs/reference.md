@@ -221,7 +221,10 @@ A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_gra
 or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
 files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
 `imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one),
-`pro` (`chatgpt`, `gemini`, `argon`), and `flow` (`jev-flow`). A `cli` place requires `instructions/<instructions>.md`
+plus the optional `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
+Optional roles are off by default: `hud_roster` omits them and `hud_create` refuses them with an enablement hint.
+An existing valid role file under `$HUD_HOME/roles` enables the role by name unless an explicit switch says otherwise.
+A `cli` place requires `instructions/<instructions>.md`
 (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns
 `unsupported_harness`. Quota or rate-limit failures mark the place exhausted in
 `$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never
@@ -380,8 +383,9 @@ Codex and pi, asks; these commands only read or write.
 `--detect` prints one JSON document and writes nothing. It names the git root of
 `--cwd` (or `--cwd` itself), whether that root is registered, reference roles
 (shipped and `$HUD_HOME/roles`), project roles with their ordered `run` chains,
-the enabled set, invalid role files, skills and worker-skill links. Skill roots come from `$HUD_HOME/setup.json`
-`skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
+the enabled set, invalid role files, skills and worker-skill links. Optional roles in the inventory
+carry an `enabled` flag; enabling one is a machine-wide choice in Control, not a project setup change.
+Skill roots come from `$HUD_HOME/setup.json` `skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
 `~/.agents/skills`), always followed by the checkout's `integrations/skills`. A skill is a directory with `SKILL.md`; its name is the
 frontmatter `name`. Each skill includes `model_invocable`: false when that
 frontmatter has `disable-model-invocation: true`. Pi still loads such a skill, but
@@ -652,6 +656,8 @@ A role file can name additional MCP servers for Claude and Codex CLI workers, fo
 Claude appends the role instructions to its system prompt, Codex uses developer instructions, and Grok appends rules. Agy has no equivalent system-prompt flag or strict MCP selector for interactive workers: it uses its configured MCPs and its first message prepends the role instructions and, in a registered project, `.hud/brief.md` when each is under 16 KiB and contains no NUL (otherwise keeping the read instruction). For all four, the first message includes the assembled brief if it is under 16 KiB and contains no NUL; otherwise it points to `brief.md`.
 
 Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → registered project. At each layer, `hidden_presets` removes inherited names, then local definitions replace or append names. The winning role file's `active_preset` selects a name; `null` selects the file's own `run`. Without this field, the file chain still runs and the first exact normalized match still identifies the preset. If an explicitly selected name is missing, the file chain runs and Control and the roster report the missing name. A detailed `hud_roster` returns the effective `run`, `preset` and merged `presets`. `hud_create(preset: …)` uses that named chain for one job without saving it.
+
+In **Control → Roles**, off optional roles are listed under **Optional roles**. Select `pro` or `flow` and press Space (or click the footer's **Space on/off**) to toggle it for all projects. This atomically writes `$HUD_HOME/role-switches.json` (mode 0600) without touching role files. To set it by hand, use a JSON object such as `{ "pro": true, "flow": false }`; remove a key to fall back to whether an owner role file defines it. A project's role allowlist still applies; it cannot turn a globally off role on.
 
 On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from the file chain, first/last). `p` opens one list including the file chain and any preset named `default`: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` starts a draft copied from the current chain; `I` starts empty. Enter a unique name and press Enter to open the draft. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
 

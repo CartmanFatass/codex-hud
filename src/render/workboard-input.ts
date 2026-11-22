@@ -211,6 +211,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     };
     if (view && !harnesses) {
       const openChain = (role: RoleFact, at = 0) => {
+        if (role.optionalEnabled === false) return result();
         nav.cursor = controlRoleItem(role.role);
         nav.split.focus = 'list';
         next.overlay = { kind: 'control-chain', role, at, mode: { kind: 'places' } };
@@ -237,9 +238,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         ? frame?.controls.find((c) => c.kind.startsWith('preset-') && c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.item
         : undefined;
       const fact = (clickedRole ? rows.find((r) => r.item === clickedRole) : rows[at])?.roleFact;
+      if (fact?.optionalEnabled !== undefined && (key === 'space' || tab === 'role-toggle')) {
+        nav.revealed = undefined;
+        return result({ type: 'role-switch', role: fact.role, enabled: !fact.optionalEnabled });
+      }
       const op = tab?.startsWith('preset-') ? tab : key;
       if (fact && (key === 'enter' || key === 'activate')) return openChain(fact);
-      if (fact && fact.source !== 'project') {
+      if (fact && fact.source !== 'project' && fact.optionalEnabled !== false) {
         if (key === 'place-model' || tab === 'control-model') {
           next = openQuickModel(next, fact, roleModelIndex(fact), ctx);
           return result();

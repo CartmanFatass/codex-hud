@@ -12,7 +12,7 @@ import { finishChain } from '../../dist/render/chain-input.js';
 import { editPreset } from '../../dist/roles/role-control.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { plain, onControl, TREE } from '../fixtures/project-page.mjs';
-import { rolePlacesFixture as fixture, until } from '../helpers/thin-mcp-harness.mjs';
+import { enableOptionalRoles, rolePlacesFixture as fixture, until } from '../helpers/thin-mcp-harness.mjs';
 const bundled = resolve('packages/hud-mcp');
 
 test('empty draft cancel writes nothing; a reordered two-place draft is the chain used by roster and create', { timeout: 15000 }, async (t) => {
@@ -187,6 +187,7 @@ test('provider attribution uses local settings or the unfiltered cache; unknown 
   setHarnessDisabled(home, 'pi', true);
   assert.equal((await roster('imp')).off_by, 'pi');
   assert.equal((await create('imp', 'runner-off')).code, 'no_available_place');
+  enableOptionalRoles(f, 'pro');
   setHarnessDisabled(home, 'bro:jev-ask', true);
   for (const on of ['chatgpt', 'gemini']) assert.equal((await create('pro', `alias-${on}`, { on })).places[0].off_by, 'bro:jev-ask');
   const bad = join(home, 'harnesses.json');
@@ -357,10 +358,41 @@ test('hud_create on uses harnesses.json (and HUD_HOME override), and model still
   assert.equal(rec3.model_source, 'hud_create');
 });
 
+test('optional browser roles stay out of roster and dispatch until enabled, without changing owner definitions', async (t) => {
+  const f = await fixture(t), hud = f.env.HUD_HOME;
+  const names = async () => (await f.call('hud_roster')).roles.map(({ role }) => role);
+  const create = (role) => f.call('hud_create', { role, task: 'Synthetic request.' });
+  assert.deepEqual((await names()).filter((name) => ['pro', 'flow'].includes(name)), []);
+  const off = await create('pro');
+  assert.equal(off.code, 'role_unavailable');
+  assert.match(off.reason, /Optional role pro is off.*Control.*role-switches\.json/);
+
+  const registry = roleRegistry(hud, f.root, f.env);
+  registry.setOptionalRoleEnabled('pro', true);
+  assert.ok((await names()).includes('pro'));
+  assert.ok((await create('pro')).job);
+  assert.ok(!(await names()).includes('flow'));
+
+  const owner = join(hud, 'roles', 'my-flow.json');
+  const body = JSON.stringify({ role: 'flow', harness: 'bro', tool: 'jev-flow', kind: 'video' });
+  fs.mkdirSync(join(hud, 'roles'));
+  fs.writeFileSync(owner, body);
+  const flow = (await f.call('hud_roster', { detail: true })).roles.find(({ role }) => role === 'flow');
+  assert.equal(flow.kind, 'video');
+  assert.equal(flow.source_file, owner);
+  registry.setOptionalRoleEnabled('flow', false);
+  assert.ok(!(await names()).includes('flow'));
+  assert.equal((await create('flow')).code, 'role_unavailable');
+  assert.equal(fs.readFileSync(owner, 'utf8'), body);
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(hud, 'role-switches.json'), 'utf8')), { pro: true, flow: false });
+  assert.equal(fs.statSync(join(hud, 'role-switches.json')).mode & 0o777, 0o600);
+});
+
 test('pro falls back across chatgpt -> gemini -> argon and flow passes kind', { timeout: 45000 }, async (t) => {
   // Four independent dispatches: await their results within a test-only hang guard.
   const wait_ms = 30000;
   const f = await fixture(t);
+  enableOptionalRoles(f, 'pro', 'flow');
   fs.writeFileSync(join(f.env.HOME, 'bro-quota-fail'), '');
   const fail1 = await f.call('hud_create', { role: 'pro', request_key: 'pro-1', task: 'Ask 1.' });
   const read1 = await f.call('hud_read', { job: fail1.job, wait_ms });
@@ -402,12 +434,6 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
     { harness: 'cli', agent: 'claude', model: 'fable', thinking: 'high' },
     { harness: 'pi', pi_role: 'architect', split: false },
   ]);
-  const pro = roster.roles.find((r) => r.role === 'pro');
-  assert.equal(pro.harness, 'bro');
-  assert.equal(pro.provider, 'chatgpt');
-  assert.equal(pro.model, '6 Pro');
-  assert.equal(pro.run.length, 3);
-
   const job = await f.call('hud_create', { role: 'oracle', request_key: 'ora-cli', task: 'Design question?' });
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
   await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job)));

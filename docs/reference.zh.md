@@ -142,7 +142,7 @@ HUD 排队取得 `main-checkout` 租约，在新的分离工作树中运行 `gat
 
 调用立即返回流程 ID（MCP-task 客户端获得一个覆盖全程的任务）。再次调用 `hud_land` 时，若流程仍在进行或基分支已快进，则返回原流程；若在快进前失败或取消，则启动新流程，保留原 ID 下的记录，并在取得租约后清理旧的集成工作树。`hud_read({job: "<流程 ID>"})` 可查询任一次尝试的状态和当前步骤。每次尝试结束时只发一条通知，给出 SHA 或失败步骤和最后 40 行输出，并逐行列出每次修复。流程记录在 `$HUD_HOME/flows/`，watcher 重启不会重复集成，执行进程意外退出时报告中断。
 
-角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
+角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、以及可选角色 `pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。可选角色默认停用：`hud_roster` 不列出，`hud_create` 拒绝派发并提示如何启用。`$HUD_HOME/roles` 中定义同名角色的有效文件会启用该角色，除非显式开关另有设置。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
 `agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志
 和 `args`。不传 home、会话或配置标志，也不设这些环境变量，分发时也不替 CLI 信任目录：
@@ -244,7 +244,8 @@ hud setup --remove [--cwd DIR]
 
 `--detect` 打印一份 JSON，不写任何文件。它给出 `--cwd` 的 git 顶层（否则就是 `--cwd`）、
 该根是否已注册、参考角色（内置与 `$HUD_HOME/roles`）、项目角色及其有序的 `run` 链、启用集合、无效角色文件、
-技能，以及工作者技能链接。技能根目录来自 `$HUD_HOME/setup.json` 的 `skill_roots`
+技能，以及工作者技能链接。清单中的可选角色带有 `enabled` 标记；是否启用由控制标签中的全局开关决定，不属于项目设置。
+技能根目录来自 `$HUD_HOME/setup.json` 的 `skill_roots`
 （默认 `~/.pi/agent/skills`、`~/.claude/skills` 和 `~/.agents/skills`），其后总是包含本仓库自带的
 `integrations/skills`。技能是含 `SKILL.md`
 的目录，名字取 frontmatter 的 `name`。每项带 `model_invocable`：frontmatter 有
@@ -419,6 +420,8 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 Claude 将角色指令追加到系统提示，Codex 使用开发者指令，Grok 追加规则。Agy 的交互模式没有对应的系统提示参数，也不能按次严格选择 MCP 服务器，因此沿用原有 MCP 配置，并在首条消息前直接附上角色指令以及已注册项目的 `.hud/brief.md`（各自小于 16 KiB 且不含 NUL 字符时内联，否则保留读取提示）。四种 CLI 的首条消息都直接包含组装后的简报；达到 16 KiB 或含有 NUL 字符时，改为指向 `brief.md`。
 
 角色文件可带 `presets`：`[{ "name": "short-token", "run": [...] }]`，每项是完整有序位置列表，按 `run` 的规则校验。名称在同一文件内唯一，1–32 个 `[A-Za-z0-9._-]` 字符。预设按内置 → 用户 → 已登记项目合并，每一层先用 `hidden_presets` 隐藏继承的名称，再以本层定义替换同名项或追加新名称。由生效角色文件的 `active_preset` 选择名称，`null` 选择文件自身的 `run`。没有此字段时仍运行文件链，以首个规范化后完全匹配的名称作为预设名。指定的名称不存在时使用文件链，控制标签和名册会显示缺失的名称。`hud_roster` 的详情返回生效的 `run`、`preset` 和合并后的 `presets`。`hud_create(preset: …)` 只在本次任务中使用该预设，不保存。
+
+在**控制 → 角色**中，停用的可选角色列在**可选角色**下。选中 `pro` 或 `flow` 后按空格（或点击页脚的 **Space 开关**），即可为所有项目切换该角色。此操作原子写入 `$HUD_HOME/role-switches.json`（权限 0600），不改动角色文件。手动设置可使用 `{ "pro": true, "flow": false }` 这样的 JSON 对象；移除某个键后，是否启用取决于是否有用户角色文件定义该角色。项目角色白名单仍然生效，不能启用已全局停用的角色。
 
 在**角色行**上按 `c`/`C` 立即循环切换下一个／上一个命名预设（从文件链开始时选择首个／末个）。`p` 打开列表，文件链和名为 `default` 的预设都可选择。输入筛选，↑↓ 选择，Enter 应用，Esc 或 Ctrl+C 取消。列表显示每条链的下次位置；全部停用的预设仍可选，下次位置显示「无」。`N` 从当前链复制草稿，`I` 从空白新建草稿。输入唯一的名称并按 Enter 打开草稿。`R` 重命名当前命名预设，Enter 提交。`D` 预览删除当前命名预设以及之后使用的文件链，Enter 确认，Esc 取消。选择、复制、重命名和删除操作不会启动任务，也不会覆盖 `run`。耗尽标记仍按位置保留。
 

@@ -174,6 +174,8 @@ test('unregistered detect ignores project files and uses default skill roots', a
   const pro = doc.reference_roles.find((role: { role: string }) => role.role === 'pro');
   assert.equal(pro.harness, 'bro');
   assert.equal(pro.pi_role, undefined);
+  assert.equal(pro.enabled, false);
+  assert.equal(doc.enabled_roles.includes('pro'), false);
   assert.deepEqual(
     doc.enabled_roles,
     [...roleRegistry(f.hud, sub, f.io.env, undefined, undefined, bundled).roles().keys()].sort()

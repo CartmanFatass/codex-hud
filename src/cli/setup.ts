@@ -108,7 +108,7 @@ function detect(cwd: string, env: NodeJS.ProcessEnv) {
   );
   const open = roleRegistry(hudHome, cwd, env, undefined, undefined, bundled, skipJson);
   const pi = executable('pi-role', env);
-  const projectFiles = [...open.roles().values()].filter((role) => role.source_file.startsWith(projectRoles + sep));
+  const projectFiles = [...open.roles(true).values()].filter((role) => role.source_file.startsWith(projectRoles + sep));
   const skilled = projectFiles.filter((role): role is Role & { skills: string[] } => Array.isArray(role.skills));
   const roots = skillRoots(hudHome, env.HOME);
   return {
@@ -119,7 +119,7 @@ function detect(cwd: string, env: NodeJS.ProcessEnv) {
       hud_dir_exists: isDir(gate.hud_dir),
     },
     pi: { installed: pi !== null, pi_role: pi },
-    reference_roles: listed(reference, [...reference.roles().values()], bundled, hudHome),
+    reference_roles: listed(reference, [...reference.roles(true).values()], bundled, hudHome),
     project_roles: listed(open, projectFiles, bundled, hudHome, true),
     enabled_roles: [...full.roles().keys()].sort(cmp),
     invalid: full.invalid().map(({ path, reason }) => ({ path, reason })),
@@ -148,6 +148,7 @@ function roleRow(role: ReturnType<Registry['assignment']>, source: string) {
     ...(role.agent !== undefined ? { agent: role.agent } : {}),
     model: role.model ?? null,
     thinking: role.thinking ?? null,
+    ...(role.optionalEnabled === undefined ? {} : { enabled: role.optionalEnabled }),
     source,
   };
 }
@@ -383,7 +384,7 @@ function loadPlan(path: string, hudHome: string, root: string, env: NodeJS.Proce
   const reference = referenceRegistry(hudHome, root, env);
   const skills = loadSkills(parsed.skills);
   const pi_roles = loadPiRoles(parsed.pi_roles, new Set(Object.keys(skills)), reference);
-  const known = new Set([...reference.roles().keys(), ...Object.keys(pi_roles)]);
+  const known = new Set([...reference.roles(true).keys(), ...Object.keys(pi_roles)]);
   for (const name of parsed.roles as string[]) if (!known.has(name)) bad(`role ${name}`);
   const agents = loadAgents(parsed.agents, pi_roles, reference);
   const convention = parsed.convention === undefined ? 'keep' : parsed.convention;
@@ -402,7 +403,7 @@ function loadRuns(value: unknown, known: Set<string>, piRoles: Record<string, Pl
   for (const [name, chain] of Object.entries(value)) {
     if (!NAME.test(name) || !known.has(name) || !Array.isArray(chain)) bad(`runs.${name}`);
     const entry = Object.hasOwn(piRoles, name) ? piRoles[name] : undefined;
-    const base = reference.roles().get(entry?.from ?? name);
+    const base = reference.roles(true).get(entry?.from ?? name);
     const { role: _, can_continue, ...tuning } = entry
       ? tunedPiRole(name, entry, reference)
       : { can_continue: base?.can_continue ?? false };
@@ -449,10 +450,10 @@ function loadPiRoles(value: unknown, skillNames: Set<string>, reference: Registr
         bad(`pi_roles.${name}.skills`);
       role.skills = raw.skills as string[];
     }
-    const existing = reference.roles().get(name);
+    const definitions = reference.roles(true), existing = definitions.get(name);
     if (existing && existing.harness !== 'pi') bad(`pi_roles.${name} is not pi`);
     if (!existing && role.from === undefined) bad(`pi_roles.${name}.from`);
-    if (role.from !== undefined && reference.roles().get(role.from)?.harness !== 'pi') bad(`pi_roles.${name}.from`);
+    if (role.from !== undefined && definitions.get(role.from)?.harness !== 'pi') bad(`pi_roles.${name}.from`);
     roles[name] = role;
   }
   return roles;
@@ -462,7 +463,7 @@ function loadAgents(value: unknown, piRoles: Record<string, PlanRole>, reference
   if (!isRecord(value)) bad('agents');
   const agents: Record<string, string> = {};
   for (const [name, text] of Object.entries(value)) {
-    const pi = name in piRoles || reference.roles().get(name)?.harness === 'pi';
+    const pi = name in piRoles || reference.roles(true).get(name)?.harness === 'pi';
     if (!NAME.test(name) || !pi || typeof text !== 'string') bad(`agents.${name}`);
     if (Buffer.byteLength(text) > 65536) bad(`agents.${name} too long`);
     agents[name] = text;
@@ -489,7 +490,7 @@ function piRoleShape(role: Role, name = role.role): Record<string, unknown> {
   return shape;
 }
 function tunedPiRole(name: string, entry: PlanRole, reference: Registry) {
-  const base = reference.roles().get(entry.from ?? name);
+  const base = reference.roles(true).get(entry.from ?? name);
   if (!base || base.harness !== 'pi') bad(`pi_roles.${name}.from`);
   const next = piRoleShape(base, name);
   if (entry.pi_role !== undefined) next.pi_role = entry.pi_role;
@@ -502,7 +503,7 @@ function tunedPiRole(name: string, entry: PlanRole, reference: Registry) {
 }
 function roleBody(name: string, entry: PlanRole, reference: Registry): RoleBody {
   const next = tunedPiRole(name, entry, reference);
-  const same = reference.roles().get(name);
+  const same = reference.roles(true).get(name);
   return {
     text: JSON.stringify(next, null, 2) + '\n',
     differs: !same || same.harness !== 'pi' || stable(next) !== stable(piRoleShape(same)),

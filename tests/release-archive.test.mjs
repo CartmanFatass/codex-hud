@@ -252,8 +252,10 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
     ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close',
       'hud_land', 'hud_lease', 'hud_tickets', 'hud_statusline']);
   const roster = JSON.parse(replies.find(reply => reply.id === 3).result.content[0].text);
-  assert.deepEqual(roster.roles.map(role => role.role).sort(),
-    fs.readdirSync(path.join(tree, 'packages/hud-mcp/roles')).map(name => name.replace('.json', '')).sort());
+  const rolesDir = path.join(tree, 'packages/hud-mcp/roles');
+  const shipped = fs.readdirSync(rolesDir).map(name => json(path.join(rolesDir, name)));
+  assert.deepEqual(shipped.filter(role => role.optional).map(role => role.role).sort(), ['flow', 'pro']);
+  assert.deepEqual(roster.roles.map(role => role.role).sort(), shipped.filter(role => !role.optional).map(role => role.role).sort());
   assert.equal(roster.convention.path, path.join(tree, 'packages/hud-mcp/hud-convention.md'));
   assert.ok(roster.convention.text.length > 100);
 

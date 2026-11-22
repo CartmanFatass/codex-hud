@@ -15,6 +15,7 @@ import { controlRoleItem } from '../render/monitor-state.js';
 import type { MonitorOutcome, MonitorState } from '../render/monitor.js';
 import { HarnessSwitchError, setHarnessDisabled } from '../roles/harness-switches.js';
 import { editPlaces, editPreset } from '../roles/role-control.js';
+import { roleRegistry } from '../roles/roster.js';
 
 type ActionHost = {
   state: MonitorState;
@@ -138,6 +139,15 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           } catch (err) {
             host.notice(t(err instanceof HarnessSwitchError ? err.message : 'Could not save harness switch'));
           }
+          if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
+          break;
+        }
+        case 'role-switch': {
+          const root = host.shownRoot(), visit = visits.visit(root);
+          try {
+            roleRegistry(home, root).setOptionalRoleEnabled(action.role, action.enabled);
+            host.notice('');
+          } catch { host.notice(t('Could not save role switch')); }
           if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
           break;
         }

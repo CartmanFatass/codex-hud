@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { startSessionWatch } from '../../dist/cli/watch.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
-import { fixture, publishSonic, resultValue, sonicTask, taskCall, taskJob, taskRpc, until, workerClient } from '../helpers/thin-mcp-harness.mjs';
+import { enableOptionalRoles, fixture, publishSonic, resultValue, sonicTask, taskCall, taskJob, taskRpc, until, workerClient } from '../helpers/thin-mcp-harness.mjs';
 
 const receipt = (dir) => JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
 const brief = (dir) => fs.readFileSync(join(dir, 'brief.md'), 'utf8');
@@ -152,6 +152,7 @@ test('sonic reports attached via from_jobs carry the unverified-facts prefix in 
   const zhLocal = await f.call('hud_create', { role: 'imp', task: '实现 parser 模块的合成改动。', from_jobs: [sonic.job] });
   assert.ok(brief(zhLocal.task_dir).includes(`${zhPrefix}\n- ${sonic.job} report:`));
 
+  enableOptionalRoles(f, 'pro');
   const zhBro = await f.call('hud_create', { role: 'pro', task: '请分析合成架构方案。', from_jobs: [sonic.job] });
   assert.ok(brief(zhBro.task_dir).includes(`${zhPrefix}\n\n### ${sonic.job} report:`));
 });

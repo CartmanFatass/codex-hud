@@ -89,6 +89,7 @@ export interface MonitorControl {
     | 'control-harnesses'
     | 'control-open-file'
     | 'control-model'
+    | 'role-toggle'
     | 'model-cancel'
     | 'harness-add'
     | 'harness-toggle'
@@ -171,6 +172,7 @@ export interface MonitorOutcome {
     | ({ type: 'preset-edit'; modelIndex?: number } & PresetEdit)
     | { type: 'model-picked'; value: string }
     | { type: 'harness-switch'; id: string; off: boolean }
+    | { type: 'role-switch'; role: string; enabled: boolean }
     | { type: 'record-try'; action: TryAction | 'land'; target: TryTarget }
     | { type: 'request-retry'; home: string; jobId: string }
     | { type: 'refresh-models' }

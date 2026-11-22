@@ -1438,7 +1438,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const cwd = jobCwd(args);
   const found = registry(cwd);
   // `architect` names oracle unless a role file defines its own architect.
-  const role = asked === 'architect' && !found.roles().has(asked) ? 'oracle' : asked;
+  const configured = found.roles(true);
+  const role = asked === 'architect' && !configured.has(asked) ? 'oracle' : asked;
   if (args.scout !== undefined && (role === 'sonic' || typeof args.scout !== 'string' || !args.scout.trim())) {
     return { ok: false, code: 'invalid_arguments', error: role === 'sonic' ? 'scout is not available for role sonic' : 'scout must be a nonempty question' };
   }
@@ -1446,7 +1447,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (scoutQuestion && Array.isArray(args.from_jobs) && args.from_jobs.length >= 16) {
     return { ok: false, code: 'invalid_arguments', error: 'scouted dispatch reserves one of the 16 from_jobs entries' };
   }
-  const definition = found.roles().get(role);
+  const definition = configured.get(role);
+  if (definition?.optionalEnabled === false) return { ok: false, code: 'role_unavailable',
+    reason: `Optional role ${role} is off. Turn it on in Control → Roles (Space), or configure it in $HUD_HOME/role-switches.json.` };
   if (!definition) {
     const invalid = found.invalidRole(role);
     return { ok: false, code: 'role_unavailable', reason: `Role ${asked} is not configured or is hidden in this project`, ...invalid };

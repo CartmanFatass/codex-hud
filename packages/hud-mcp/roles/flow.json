@@ -1,5 +1,6 @@
 {
   "role": "flow",
+  "optional": true,
   "can_continue": false,
   "run": [
     {

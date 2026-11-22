@@ -263,7 +263,7 @@ export class ProjectCollector {
     try {
       const facts = controlFacts(this.registry(), this.hudHome, now, this.readJson, this.names);
       Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, harnessSwitches: facts.harnessSwitches,
-        harnessSwitchError: undefined, models: facts.models, roleCount: facts.roles.length });
+        harnessSwitchError: undefined, models: facts.models, roleCount: facts.roles.filter((r) => r.optionalEnabled !== false).length });
     } catch (error) { this.switchError(snapshot, error); }
   }
   private switchError(snapshot: ProjectSnapshot, error: unknown): void {
@@ -281,7 +281,7 @@ export class ProjectCollector {
       out.harnesses = facts.harnesses;
       out.harnessSwitches = facts.harnessSwitches;
       out.models = facts.models;
-      out.roleCount = facts.roles.length;
+      out.roleCount = facts.roles.filter((r) => r.optionalEnabled !== false).length;
       for (const bad of registry.invalid()) out.control.push({ label: 'invalid', value: bad.reason, path: bad.path });
       const ignored = registry.projectConfigIgnored();
       if (ignored) out.control.push({ label: 'ignored', value: '.hud', path: join(ignored, '.hud') });

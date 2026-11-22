@@ -18,6 +18,7 @@ import {
   withoutHint,
   withoutCallerLookups,
   fixture,
+  enableOptionalRoles,
   until,
   sonicTask,
 } from '../helpers/thin-mcp-harness.mjs';
@@ -303,6 +304,7 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
 // Breaks if roster omits the shipped convention/path, merges overrides, or reverses project/home/default precedence.
 test('thin roster returns the convention and its path with whole-file overrides', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
+  enableOptionalRoles(f, 'flow');
   const initialized = await f.rpc('initialize');
   assert.match(initialized.result.instructions, /hud_roster when project dispatch context is missing or stale/);
   const shipped = resolve('packages/hud-mcp/hud-convention.md');
@@ -426,7 +428,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     assert.deepEqual(r.presets[0].run, r.run);
   }
   assert.deepEqual(imp.presets.map((p) => p.name), ['default', 'hydrogen']);
-  for (const name of ['sonic', 'pro', 'flow', 'general']) {
+  for (const name of ['sonic', 'general']) {
     const r = roster.roles.find((r) => r.role === name);
     if (r) assert.deepEqual([r.presets, r.preset], [[], null]);
   }

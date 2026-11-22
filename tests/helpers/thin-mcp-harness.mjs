@@ -31,6 +31,9 @@ export const cardText = (worker) =>
 
 export const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
 export const withoutHint = ({ hint, ...result }) => result;
+export function enableOptionalRoles(f, ...names) {
+  fs.writeFileSync(join(f.env.HUD_HOME, 'role-switches.json'), JSON.stringify(Object.fromEntries(names.map((name) => [name, true]))));
+}
 export const withoutCallerLookups = (commands) => commands.filter(({ command, args }) =>
   !(command === 'herdr' && args[0] === 'pane' && args[1] === 'get' && args[2] === 'w4E:p1'));
 export function fixture(t, inHerdr = true, probe = '', watcherTickMs, worker = false) {

@@ -1,6 +1,6 @@
 /** Shared role resolution and owner role-file writes, without starting the MCP. */
 import { createHash } from 'node:crypto';
-import { readJsonFile as json, readDirSafe as entries, readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
+import { readJsonFile as json, readDirSafe as entries, readFileBounded, readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import type { Job } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -47,6 +47,8 @@ export const validPresetName = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(value);
 export interface Role {
   role: string;
+  /** Defined only for shipped optional roles, independently of the winning definition. */
+  optionalEnabled?: boolean;
   instructions?: string;
   mcp_servers?: string[];
   harness: 'pi' | 'bro' | 'cli';
@@ -523,6 +525,7 @@ export function roleRegistry(
       return null;
     }
   }
+  const switchesFile = join(hudHome, 'role-switches.json');
   const sources = new WeakMap<Role, { layers: RoleLayer[]; presets: ReturnType<typeof mergePresets> }>();
   function scan(): { roles: Map<string, Role>; invalid: (InvalidRole & { role?: string })[] } {
     const layers = new Map<string, RoleLayer[]>();
@@ -553,7 +556,15 @@ export function roleRegistry(
     };
     const info = project();
     take(join(bundled, 'roles'), false);
-    take(join(hudHome, 'roles'), false);
+    const optional = new Set([...layers].filter(([, stack]) => stack.at(-1)!.raw.optional === true).map(([name]) => name));
+    const ownerRoot = join(hudHome, 'roles');
+    take(ownerRoot, false);
+    const optedIn = new Set([...optional].filter((name) => dirname(layers.get(name)!.at(-1)!.file.source_file) === ownerRoot));
+    let switches: Record<string, boolean> = {};
+    if (optional.size) {
+      try { switches = readRoleSwitches(switchesFile); }
+      catch { invalid.push({ path: switchesFile, reason: 'invalid role switches' }); }
+    }
     if (info.registered) {
       take(join(info.root, '.hud', 'roles'), true);
       const names = allowed(join(info.root, '.hud', 'project.json'));
@@ -577,13 +588,24 @@ export function roleRegistry(
       if (choices) role.thinking_choices = choices;
       role.preset = raw.active_preset === undefined ? currentPreset(role) : selected?.name ?? null;
       if (raw.active_preset && !selected) role.preset_missing = raw.active_preset;
+      if (optional.has(name)) role.optionalEnabled = Object.hasOwn(switches, name) ? switches[name] : optedIn.has(name);
       sources.set(role, { layers: stack, presets: merged });
       roles.set(name, role);
     }
     return { roles, invalid };
   }
-  function roles(): Map<string, Role> {
-    return scan().roles;
+  function roles(includeOff = false): Map<string, Role> {
+    const found = scan().roles;
+    if (!includeOff) for (const [name, role] of found) if (role.optionalEnabled === false) found.delete(name);
+    return found;
+  }
+  function setOptionalRoleEnabled(name: string, enabled: boolean): void {
+    if (roles(true).get(name)?.optionalEnabled === undefined) throw new Error('not an optional role');
+    const switches = readRoleSwitches(switchesFile);
+    if (switches[name] === enabled) return;
+    const text = JSON.stringify({ ...switches, [name]: enabled }, null, 2) + '\n';
+    if (Buffer.byteLength(text) > ROLE_SWITCH_LIMIT) throw new Error('Role switch file is too large');
+    writePrivateFile(switchesFile, text);
   }
   function invalid(): InvalidRole[] {
     return scan().invalid.map(({ path, reason }) => ({ path, reason }));
@@ -788,7 +810,20 @@ export function roleRegistry(
     writeRoleRecord(rolesDir, target, next, owner ? raw : null);
   }
   return { roles, invalid, invalidRole, assignment, routing, placeDetails, convention, project, projectConfigIgnored,
-    revision, editableRun, savePreset };
+    revision, editableRun, savePreset, setOptionalRoleEnabled };
+}
+
+const ROLE_SWITCH_LIMIT = 64 * 1024;
+function readRoleSwitches(path: string): Record<string, boolean> {
+  let raw: unknown;
+  try { raw = readJsonBounded(path, ROLE_SWITCH_LIMIT); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.values(raw).some((value) => typeof value !== 'boolean'))
+    throw new Error('invalid role switches');
+  return raw as Record<string, boolean>;
 }
 
 export function recordFailureExhaustion(

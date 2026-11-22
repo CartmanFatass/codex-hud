@@ -18,6 +18,7 @@ import { finishChain } from '../../dist/render/chain-input.js';
 import { modelInput } from '../../dist/render/model-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { markExhausted, placeKey, roleRegistry } from '../../dist/roles/roster.js';
+import { createPanelActions } from '../../dist/panel/actions.js';
 
 const saveRun = (s, role, run) => assert.equal(editPreset(s.hud, s.cwd, s.env, { role, op: 'run', run }).ok, true);
 
@@ -31,13 +32,14 @@ function focus(s, name = 'imp', at = 0) {
 }
 
 /** The synthetic Project fixture with every CLI and browser tool but `codex` and `jev-flow` on PATH, and the shipped `imp`. */
-async function setup(t, { shippedImp = true, healthyOpen = true } = {}) {
+async function setup(t, { shippedImp = true, healthyOpen = true, browserRoles = false } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'role-control-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await projectFixture(root);
   for (const name of ['herdr', 'agy', 'claude', 'grok', 'jev-aistudio'])
     fs.writeFileSync(join(root, 'bin', name), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   if (shippedImp) fs.rmSync(join(f.hud, 'roles/imp.json'));
+  if (browserRoles) f.put(join(f.hud, 'role-switches.json'), { pro: true, flow: true });
   const session = { state: onControl(), snap: await f.collector.collect('control', f.board, NOW), done: null };
   if (healthyOpen) focus({ session });
   const decoder = new WorkbenchInputDecoder('workboard');
@@ -87,7 +89,7 @@ const discover = (s, pi = MODEL_LISTS.pi) => {
 };
 
 test('Control plane: what needs the owner first with the place the next job uses; healthy roles fold to names', async (t) => {
-  const s = await setup(t, { healthyOpen: false });
+  const s = await setup(t, { healthyOpen: false, browserRoles: true });
   // reviewer gets a fallback; pro's first place is exhausted, so its next one is the one in use.
   saveRun(s, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
   markExhausted(s.hud, placeKey({ harness: 'bro', tool: 'jev-ask', provider: 'chatgpt', model: '6 Pro' }), 'quota exceeded', NOW);
@@ -97,9 +99,9 @@ test('Control plane: what needs the owner first with the place the next job uses
   const at = (re) => lines.findIndex((l) => re.test(l));
   assert.deepEqual([...new Set(s.rows().map((r) => r.item))], ['project:role:pro', 'project:role:flow']);
   assert.match(lines[at(/^Needs attention ─/)], / 3$/);
-  assert.match(lines[at(/ pro /)], /^ {2}✗ pro → gemini$/);
+  assert.match(lines[at(/ pro /)], /^ {2}✗ pro → gemini +on$/);
   assert.match(lines[at(/ pro /) + 1], /^ {6}chatgpt exhausted 60m$/);
-  assert.match(lines[at(/ flow /)], /^ {2}− flow → none$/);
+  assert.match(lines[at(/ flow /)], /^ {2}− flow → none +on$/);
   assert.match(lines[at(/bad\.json/)], /^ {2}! bad\.json +unparseable JSON$/);
   assert.match(lines[at(/^▸ Healthy ─/)], / 5$/);
   assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/);
@@ -117,7 +119,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   s.session.state = onControl();
   const narrow = plain(s.frame(40, 'zh', 64)).join('\n');
   assert.match(narrow, /^需要处理 ─+ 3$/m);
-  assert.match(narrow, /^ {2}✗ pro → gemini$/m);
+  assert.match(narrow, /^ {2}✗ pro → gemini +开$/m);
   assert.match(narrow, /^ {6}chatgpt 已耗尽 60分$/m);
   assert.match(narrow, /^▸ 正常 ─+ 5$/m);
   s.session.state = select(s.session.state, 'project:fold:healthy');
@@ -127,6 +129,33 @@ test('Control plane: what needs the owner first with the place the next job uses
   await s.press('\r');
   assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');
 });
+test('Control switches optional roles on with Space and off with the footer in both layouts', async (t) => {
+  const s = await setup(t, { healthyOpen: false });
+  const visit = { collector: s.collector, control: s.session.snap };
+  const host = { state: s.session.state, shownRoot: () => s.cwd, notice: (text) => assert.equal(text, '') };
+  const actions = createPanelActions(s.hud, s.cwd, { visit: () => visit }, host);
+  const role = () => visit.control.roles.find((r) => r.role === 'pro');
+  for (const panelLayout of ['classic', 'split']) {
+    s.session.state = onControl({ cursor: 'project:role:pro' }, { prefs: { panelLayout } });
+    assert.equal(role().optionalEnabled, false);
+    assert.equal(role().editor, undefined);
+    const out = await s.press(' ');
+    assert.deepEqual(out.action, { type: 'role-switch', role: 'pro', enabled: true });
+    actions.execute(out.action, out.state);
+    assert.equal(role().places[0].state, 'active');
+    assert.equal(visit.control.roleCount, 6);
+    const frame = s.frame();
+    const target = frame.controls.find((c) => c.kind === 'role-toggle');
+    assert.ok(target, panelLayout);
+    const click = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: target.x, y: target.y }, { tree: TREE, frame, standalone: true });
+    assert.deepEqual(click.action, { type: 'role-switch', role: 'pro', enabled: false });
+    actions.execute(click.action, click.state);
+    assert.deepEqual(role().places, []);
+    assert.equal(visit.control.roleCount, 5);
+  }
+  assert.equal(fs.existsSync(join(s.hud, 'roles/pro.json')), false);
+});
+
 test('Control plane keeps the long model field usable when the role list scrolls', async (t) => {
   const s = await setup(t);
   const model = 'synthetic-provider/very-long-model-identifier-for-place-preview-20261117';
@@ -170,8 +199,7 @@ test('Control plane keeps the long model field usable when the role list scrolls
 
 test('Classic expands only the selected role’s numbered chain; o opens a role’s file without expanding', async (t) => {
   const s = await setup(t, { healthyOpen: false });
-  await s.press(DOWN); // invalid file
-  await s.press(DOWN); // Healthy
+  await s.press(DOWN); // Healthy (initial cursor is the invalid file)
   await s.press(ENTER);
   await s.press(DOWN); // imp
   assert.match(s.text(), /imp → synthetic\/model/);
@@ -262,7 +290,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
 });
 
 test('browser fields use the actual adapter: site/effort, AI Studio model/thinking, and Flow kind', async (t) => {
-  const s = await setup(t);
+  const s = await setup(t, { browserRoles: true });
   focus(s, 'pro');
   await s.press(ENTER);
   assert.match(s.text(), /target +chatgpt\n +Effort +6 Pro/);

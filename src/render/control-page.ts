@@ -51,11 +51,13 @@ export function controlHeader(input: MonitorData, state: MonitorState, width: nu
 export function controlHints(data: ProjectSnapshot | undefined, item?: string): string[] {
   const role = data?.roles.find((r) => r.role === controlRoleOf(item));
   if (role) {
-    if (role.source === 'project') return ['o file', '⏎ chain', 'h harnesses'];
+    const toggle = role.optionalEnabled === undefined ? [] : ['Space on/off'];
+    if (role.optionalEnabled === false) return [...toggle, 'o file', 'h harnesses'];
+    if (role.source === 'project') return [...toggle, 'o file', '⏎ chain', 'h harnesses'];
     const model = takesModel(role.editor?.places[roleModelIndex(role)]) ? ['m model'] : [];
     const names = role.presets?.length ? ['c C preset', 'p presets'] : [];
     const manage = role.preset ? ['R rename', 'D delete'] : [];
-    return [...model, ...names, '⏎ chain', 'N copy', 'I empty', ...manage, 'h harnesses', 'o file', 'r refresh'];
+    return [...toggle, ...model, ...names, '⏎ chain', 'N copy', 'I empty', ...manage, 'h harnesses', 'o file', 'r refresh'];
   }
   const enter = item?.startsWith('project:file:') ? ['⏎ open file'] : item?.startsWith('project:fold:') ? ['⏎ open'] : [];
   return [...enter, 'h harnesses', 'r refresh', '[ ] project'];
@@ -64,7 +66,10 @@ export function controlHints(data: ProjectSnapshot | undefined, item?: string): 
 export function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
   const next = active(role), dead = role.places.find((p) => p.state === 'exhausted'), why = dead ?? (!next ? role.places[0] : undefined);
   const extra = { item: controlRoleItem(role.role), files: [role.path], roleFact: role };
-  const tag = role.source === 'project' ? muted(t('project')) : '';
+  if (role.optionalEnabled === false) return [{ ...extra,
+    text: pair(`  ${glyph('off')} ${roleName(role)}`, muted(t('Off')), width) }];
+  const status = [role.source === 'project' ? t('project') : '', role.optionalEnabled ? t('on') : ''].filter(Boolean).join(' · ');
+  const tag = status ? muted(status) : '';
   const room = width - (tag ? visualLength(tag) + 1 : 0);
   const lead = `  ${role.missingPreset ? theme.board.attention('!') : glyph(!next ? 'missing' : dead ? 'exhausted' : 'active')} `;
   const arrow = ` ${mark('→', '>')} `, name = roleName(role), preset = presetName(role.preset);
@@ -92,6 +97,7 @@ function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: n
     ...(role.chainPath ? kvRows('chain source', role.chainPath, width) : []),
     ...(role.source === 'project' ? [...kvRows('pinned', locked, width), ...(available ? kvRows('Presets', available, width) : [])] : []),
   ];
+  if (role.optionalEnabled === false) return [...kvRows('status', t('Switched off'), width), ...metadata];
   const actions = role.source === 'project' ? [] : roleActions(role, width);
   const chain = role.places.flatMap<MonitorRow>((place, i) => {
     const prefix = `  ${i + 1} ${glyph(place.state)} `, indent = ' '.repeat(visualLength(prefix));
@@ -110,9 +116,11 @@ function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: n
 }
 
 function controlList(data: ProjectSnapshot, view: ControlViewState, width: number, now: number, classic: boolean): MonitorRow[] {
-  const needs = (r: RoleFact) => !!r.missingPreset || needsAttention(r);
+  const needs = (r: RoleFact) => r.optionalEnabled !== false && (!!r.missingPreset || needsAttention(r));
   const attention = data.roles.filter(needs).sort((a, b) => Number(!active(a)) - Number(!active(b)));
-  const healthy = (['roles', 'project', 'browser'] as const).flatMap((group) => data.roles.filter((r) => r.group === group && !needs(r)));
+  const healthy = (['roles', 'project', 'browser'] as const).flatMap((group) =>
+    data.roles.filter((r) => r.group === group && r.optionalEnabled !== false && !needs(r)));
+  const off = data.roles.filter((r) => r.optionalEnabled === false);
   const invalid = data.control.filter((r) => r.label === 'invalid'), folded = new Set(view.folded);
   // A quota or preset change can move the selected role into Healthy; don't lose the cursor.
   if (folded.has('healthy') && healthy.some((r) => r.role === controlRoleOf(view.nav.cursor))) {
@@ -126,7 +134,7 @@ function controlList(data: ProjectSnapshot, view: ControlViewState, width: numbe
     return { ...section(left, width, parts.join(' · ')), item: `project:fold:${id}` };
   };
   const entries = (role: RoleFact) => [...roleRows(role, width, now),
-    ...(classic && role.source !== 'project' && view.nav.cursor === controlRoleItem(role.role) ? roleActions(role, width) : [])];
+    ...(classic && role.source !== 'project' && role.optionalEnabled !== false && view.nav.cursor === controlRoleItem(role.role) ? roleActions(role, width) : [])];
   const radar = radarFacts(data.radar), usage = radarSummary(radar, false);
   if (radar.roles.length) usage.push(t('{n} jobs', { n: radar.roles.reduce((n, [, s]) => n + s.total, 0) }));
   const ok = (yes: boolean) => yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-'));
@@ -140,6 +148,7 @@ function controlList(data: ProjectSnapshot, view: ControlViewState, width: numbe
     ...(folded.has('healthy') ? pack(healthy.map(roleName), width - 2).map((line, i) => ({
       item: 'project:fold:healthy', text: fit(`${i ? '    ' : `  ${glyph('active')} `}${line.trimStart()}`, width),
     })) : healthy.flatMap(entries)),
+    ...(off.length ? [boardRow(''), section(t('Optional roles'), width), ...off.flatMap(entries)] : []),
     ...(data.leases?.length ? [boardRow(''), section(t('Leases'), width), ...data.leases.map((lease) => {
       const elapsed = age(new Date(lease.since), now);
       const holder = squeeze(monitorText(lease.holder), Math.max(1, width - visualLength(elapsed) - 12));
@@ -209,7 +218,7 @@ function roleActions(role: RoleFact, width: number): MonitorRow[] {
 /** Match the footer's whole translated hints and their cells (same alignment as footRow). */
 export function presetFooterControls(frame: MonitorFrame, hints: FooterHints, width: number, y: number) {
   const kinds: Record<string, MonitorControl['kind']> = {
-    'p presets': 'preset-list', 'N copy': 'preset-copy', 'I empty': 'preset-empty', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
+    'Space on/off': 'role-toggle', 'p presets': 'preset-list', 'N copy': 'preset-copy', 'I empty': 'preset-empty', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
     '⏎ apply': 'preset-accept', '⏎ delete': 'preset-accept', '⏎ rename': 'preset-accept',
     '⏎ continue': 'preset-accept', 'Esc cancel': 'preset-cancel', 'o file': 'control-open-file',
     'i add': 'chain-add', 's save': 'chain-save', '⏎ edit': 'chain-edit', '⏎ choose': 'chain-edit', '⏎ fill': 'chain-accept',

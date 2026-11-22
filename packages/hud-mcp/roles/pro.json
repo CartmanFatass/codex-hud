@@ -1,5 +1,6 @@
 {
   "role": "pro",
+  "optional": true,
   "can_continue": false,
   "run": [
     {

@@ -65,6 +65,7 @@ export interface RoleFact {
   source: 'default' | 'yours' | 'project';
   /** `project` roles come from the project's own `.hud/roles`, which wins and is never written here. */
   group: 'roles' | 'project' | 'browser';
+  optionalEnabled?: boolean;
   places: PlaceFact[];
   /** Null means the file chain; legacy equality can supply a displayed name. */
   preset?: string | null;
@@ -161,7 +162,18 @@ export function controlFacts(
   const uses = new Map<string, HarnessSwitchFact['uses']>();
   const destination = (p?: { place: RolePlace; provider?: string | null }) =>
     p ? placeDestination({ ...p.place, label: placeLabel(p.place), provider: p.provider }) : null;
-  for (const role of registry.roles().values()) {
+  for (const role of registry.roles(true).values()) {
+    const pinned = projectPinned(registry, role);
+    const identity = {
+      role: role.role, path: role.source_file,
+      source: pinned ? 'project' : inside(join(hudHome, 'roles'), role.source_file) ? 'yours' : 'default',
+      group: pinned ? 'project' : role.run.every((p) => p.harness === 'bro') ? 'browser' : 'roles',
+      ...(role.optionalEnabled === undefined ? {} : { optionalEnabled: role.optionalEnabled }),
+    } satisfies Omit<RoleFact, 'places'>;
+    if (role.optionalEnabled === false) {
+      roles.push({ ...identity, places: [] });
+      continue;
+    }
     const assigned = registry.assignment(role, now, undefined, context);
     const toFact = (entry: (typeof assigned.places)[number], collect = true): PlaceFact => {
       const { place, model, thinking, provider, state, until, missing, off_by } = entry;
@@ -210,7 +222,6 @@ export function controlFacts(
         next, switchedNext: destination(switched) });
       uses.set(id, list);
     }
-    const pinned = projectPinned(registry, role);
     const editorPlace = (raw: RolePlace, fact: PlaceFact): DraftPlace => {
       if (raw.harness !== 'pi') return { raw, fact };
       const defaults = registry.placeDetails(role, { ...raw, model: undefined, thinking: undefined });
@@ -223,11 +234,8 @@ export function controlFacts(
         toFact(registry.assignment(role, now, undefined, context, { run: [raw] }).places[0]!, false))),
     };
     roles.push({
+      ...identity,
       editor,
-      role: role.role,
-      path: role.source_file,
-      source: pinned ? 'project' : inside(join(hudHome, 'roles'), role.source_file) ? 'yours' : 'default',
-      group: pinned ? 'project' : role.run.every((p) => p.harness === 'bro') ? 'browser' : 'roles',
       places,
       preset: assigned.preset,
       missingPreset: assigned.preset_missing,
