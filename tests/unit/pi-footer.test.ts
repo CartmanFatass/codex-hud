@@ -265,15 +265,15 @@ test('pi footer prices provider-prefixed gateway model ids from the built-in cat
   assert.match(stripAnsi(f.top(160)), /~\$1\.51\b/);
 });
 
-test('pi footer counts the HUD workers as one group, `!` for the two asking; narrower it drops words, never the count', (t) => {
+test('pi footer counts the HUD workers by role, `!2` for the two asking; the zone is the same at every width', (t) => {
   const f = parityFixture({ name: 'workers', width: 120, delegation: 'complete' });
   t.after(() => f.dispose());
-  assert.match(stripAnsi(f.render(120)[0]!), /│ ◎ sol-fast◕ 5 +!2 +MCP 2 +skills 3$/);
+  assert.match(stripAnsi(f.render(120)[0]!), /│ ⚒5 +!2 +MCP 2 +skills 3$/);
   assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /imp|Question|Continue/);
-  // Narrower, the model name goes; the count and the mark stay.
-  assert.match(stripAnsi(f.render(60)[0]!), /◎◕5 +!2 *$/);
-  assert.match(stripAnsi(f.render(40)[0]!), /◎◕5 +!2 *$/);
+  // Narrower, the loaded counts go; the zone does not change.
+  assert.match(stripAnsi(f.render(60)[0]!), /│ ⚒5 +!2 *$/);
+  assert.match(stripAnsi(f.render(40)[0]!), /│ ⚒5 +!2 *$/);
   // The jobs are gone: so is the group.
   f.publish('unavailable');
-  assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /◎ sol-fast/);
+  assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /⚒/);
 });

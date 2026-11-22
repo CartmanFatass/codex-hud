@@ -13,6 +13,20 @@ export const MODEL_LABELS: Readonly<Record<ModelFamilyId, string>> = Object.from
 
 export const EFFORT_GLYPHS: Record<string, string> = { ...SHIPPED_MODELS_CATALOG.effortGlyphs };
 
+/**
+ * The worker zone's icon per HUD role, `[glyph, ascii]`, in the order the zone shows them: sonic last, and `other` (the
+ * icon of any role not listed) before it. The one table, so Home can reuse it.
+ */
+export const ROLE_GLYPHS: Readonly<Record<string, readonly [glyph: string, ascii: string]>> = {
+  imp: ['⚒', 'I'],
+  'frontend-imp': ['✎', 'F'],
+  general: ['✦', 'G'],
+  oracle: ['◈', 'O'],
+  reviewer: ['⚖', 'R'],
+  other: ['•', '.'],
+  sonic: ['⚡', '*'],
+};
+
 export type ModelFamily = ModelFamilyId;
 
 export function classifyModelFamily(model?: string | null): ModelFamily | null {

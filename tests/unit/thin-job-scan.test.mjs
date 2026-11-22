@@ -365,7 +365,7 @@ test('a settled job is not on the worker zone, unread, read or failed; a running
   assert.equal(bar().line, 'M');
   // A job still running is counted however long it has run.
   write('STATUS.json', JSON.stringify({ state: 'working', started_at: new Date(Date.now() - 30 * 60_000).toISOString() }));
-  assert.equal(bar().line, 'M │ ◎ sol-fast◕ 1');
+  assert.equal(bar().line, 'M │ ⚒1');
 });
 
 test('readThinJobs and readThinJobRows share JobIndexCache cleanly, jobRow stats report.md once, and panel answers invalidate qa', (t) => {

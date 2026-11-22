@@ -393,8 +393,8 @@ test('statusline notices and explicit detail counts read job folders with no rol
   });
   const result = run();
   assert.equal(result.status, 0, result.stderr);
-  // The three live imps in this pane (another pane's, settled and old ones stay out): one asking, two on another model.
-  assert.match(stripAnsi(result.stdout), /│ ◎ sol◕ 1 +! +ℤ glm◆ 2\s*$/, 'the shared bar counts live workers by provider and model; the asking one is a mark');
+  // The three live imps in this pane (another pane's, settled and old ones stay out): one asking.
+  assert.match(stripAnsi(result.stdout), /│ ⚒3 +!1\s*$/, 'the shared bar counts live workers by role; the asking one is a `!1`');
   assert.doesNotMatch(result.stdout, /thin job cards|asks|imp/, 'no job title or role in the zone');
   const details = run(['--details']);
   assert.equal(details.status, 0, details.stderr);

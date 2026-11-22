@@ -6,7 +6,7 @@
  *
  * The editor's top border carries the p10k ribbon and other extensions' statuses, after pi's native working
  * indicator. Context stays on the shared bottom bar; cost lives only in the ribbon. The notice zone counts the HUD's
- * workers by provider, model and effort (the footer host sees no skill loads, so none are told).
+ * workers by role (the footer host sees no skill loads, so none are told).
  */
 
 import { execFile } from 'node:child_process';

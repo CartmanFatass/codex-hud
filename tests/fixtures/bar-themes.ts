@@ -11,21 +11,10 @@ import type { BarWorker } from '../../dist/render/layout/bar-fields.js';
 
 export const THEME_NOW = FOOTER_NOW;
 
-/** A synthetic HUD worker, started ten minutes before `THEME_NOW` unless `extra` says otherwise. */
-export const worker = (
-  role: string,
-  model: string,
-  provider: string,
-  effort: string,
-  state: BarWorker['state'] = 'working',
-  extra: Partial<BarWorker> = {}
-): BarWorker => ({ role, model, provider, effort, state, startedAt: THEME_NOW - 600_000, ...extra });
+/** A synthetic HUD worker of a role, working unless it is asking. */
+export const worker = (role: string, state: BarWorker['state'] = 'working'): BarWorker => ({ role, state });
 /** The busy scenes' workers: two imps (one asking) and a sonic. */
-export const THEME_WORKERS: BarWorker[] = [
-  worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high'),
-  worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high', 'asking', { startedAt: THEME_NOW - 590_000 }),
-  worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'working', { startedAt: THEME_NOW - 60_000 }),
-];
+export const THEME_WORKERS: BarWorker[] = [worker('imp'), worker('imp', 'asking'), worker('sonic')];
 export function barThemeScene() {
   const footer = parityFixture({ name: 'bar-themes', width: 120, env: { NO_COLOR: '' } });
   footer.ctx.model!.id = 'deepseek-v4-1-flash-1017';

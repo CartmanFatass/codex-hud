@@ -49,3 +49,12 @@ Variant A with the owner's change: sonic shows no provider, model or effort, onl
 ## Only running workers (2026-11-22)
 
 The owner's change after trying the zone: it shows what runs now, not a census that keeps finished work. A worker is `working` or `asking`; the `✗`, `✓●` and `✓` marks, `BarWorker`'s `done`/`failed` states and its `unread`/`settledAt` fields are gone, and a settled worker (a sonic child included, failed or not) is not counted. With nothing running the zone is absent. `hud-statusline` and the Codex bar read the pane's jobs with `settledBefore: now`, so settled jobs are not read for the zone.
+
+## One icon and count per role (2026-11-22)
+
+The owner's change after trying the grouped zone: still too busy. The zone now shows how many workers of each role run, one icon per role followed by its count, the way sonic's `⚡N` already did. Provider marks, short model names, effort glyphs and the narrowing rungs of "The design in short" and "As built" are gone; the page's variants A to C describe what was replaced.
+
+- Icons (`ROLE_GLYPHS` in `src/render/model-glyphs.ts`, one table so Home can reuse it): imp `⚒` (`I`), frontend-imp `✎` (`F`), general `✦` (`G`), oracle `◈` (`O`), reviewer `⚖` (`R`), any other role `•` (`.`), sonic `⚡` (`*`); the bracket is the text-icons form. Order is that of the list, sonic last; two spaces between groups (`⚒3  ✦2  ◈1  ⚡4`, text `I3  G2  O1  *4`).
+- Ink: the icon is the `info` role, sonic's `warn` as before, the count bold. One `!N` (alert badge) follows the last group, N being the workers asking across all roles, separated by two spaces like a group.
+- Width: `⚒ ✎ ✦ ◈ ⚖ •` are one column as `visualLength` counts them; `⚡` is two, and the bar fits by that count, so the line stays exact. The zone has one form and never narrows; the two `title` rungs of `LADDER` now cut subagent titles only.
+- `workSignals` hands over `{ role, state }` per live worker (`BarWorker` lost model, provider, effort and `startedAt`). Home is unchanged.

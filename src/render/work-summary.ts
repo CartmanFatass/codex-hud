@@ -17,7 +17,7 @@ const wordOf = (worker: OwnerWorker, now: number): string => {
             ? 'running'
             : '';
 };
-/** What the bar's worker zone takes from the jobs: a census of the workers running now. */
+/** What the bar's worker zone takes from the jobs: a census of the workers running now, by role. */
 export interface WorkSignals {
   workers: BarWorker[];
 }
@@ -27,14 +27,7 @@ export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignal
     for (const worker of lane.workers) {
       // Settled and queued workers are not counted; one asking the owner is still live.
       if (worker.settledAt !== null || worker.state === 'queued') continue;
-      workers.push({
-        role: worker.role || 'job',
-        ...(worker.model ? { model: worker.model } : {}),
-        ...(worker.provider ? { provider: worker.provider } : {}),
-        ...(worker.effort ? { effort: worker.effort } : {}),
-        state: wordOf(worker, now) === 'needs you' ? 'asking' : 'working',
-        startedAt: worker.startedAt ?? now,
-      });
+      workers.push({ role: worker.role || 'job', state: wordOf(worker, now) === 'needs you' ? 'asking' : 'working' });
     }
   return { workers };
 }

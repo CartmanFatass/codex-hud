@@ -1,6 +1,6 @@
 # 03: The worker zone shows one icon and count per role
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Blocked by:** none
 **Owner try:** yes
 
@@ -19,6 +19,10 @@ Icons (single cell where the terminal allows; ASCII fallback in brackets; colour
 
 Order: imp, frontend-imp, general, oracle, reviewer, other, sonic last; two spaces between groups, e.g. `⚒3  ✦2  ◈1  ⚡4`. If any worker is asking, a single `!N` (alert colour, N = asking workers across roles) follows the last group. Keep one icon table in code (e.g. `ROLE_GLYPHS` beside `EFFORT_GLYPHS`) so Home can reuse it later. Applies to the Claude statusline, the Antigravity statusline and the pi footer (every `workSignals`/`rosterSeg` caller); Home is unchanged. Update docs/reference.md and docs/reference.zh.md.
 
-- [ ] Synthetic jobs: 3 imp, 2 general, 1 oracle, 4 running sonic → `⚒3  ✦2  ◈1  ⚡4`; one asking imp adds `!1`
-- [ ] No provider, model or effort text in the zone; ASCII mode prints `I3  G2  O1  *4`; `none` theme emits no escapes
-- [ ] Claude, Antigravity and pi footer outputs agree; targeted bar/statusline/pi-footer tests pass
+- [x] Synthetic jobs: 3 imp, 2 general, 1 oracle, 4 running sonic → `⚒3  ✦2  ◈1  ⚡4`; one asking imp adds `!1`
+- [x] No provider, model or effort text in the zone; ASCII mode prints `I3  G2  O1  *4`; `none` theme emits no escapes
+- [x] Claude, Antigravity and pi footer outputs agree; targeted bar/statusline/pi-footer tests pass
+
+## Comments
+
+- Landed 9418fe3dd75004448a1301bcb284033b83a96e9c; gate 5/5 passed.

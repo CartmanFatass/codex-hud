@@ -1110,19 +1110,16 @@ cost instead (in its top-right editor ribbon, not duplicated below). Missing fac
 are absent. The notice zone is, in order: what needs the owner, the HUD's workers, then what the client itself
 tells (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
 
-The workers are counts and marks, never titles, and only those running now: one group per provider mark, short model and
-thinking glyph, with the number of workers in it, oldest group first (`◎ sol-fast◕ 3  ▲ neon◕ 2  ✻ sonnet● 1  ⚡4`). sonic shows no provider, model
-or effort, only `⚡N`, and stands last. The zone reads a census of this pane's live jobs, so a worker that runs for hours is
-still counted; a settled one is not (the zone does not read settled jobs), and neither is a queued one; with none running
-the zone has no workers. The provider mark and its colour are the
-model field's (a worker with no known provider has a dot, `·`). The short model name is read from the model catalog, not a
-second table: a family is its id less the version (`sol`, `sol-fast`, `astra`); else the entry's alias or digit-free id
-(`opus`, `haiku`); else a Gemini codename (`neon`, `carbon`); else the vendor's tag (`ds`, `glm`, `mis`). The thinking glyph
-is `○ ◐ ◕ ● ◆ ✦` for low to ultra, none for off or unknown. After the count, `!` (the bar's alert badge) marks a worker
-asking the owner (`!2` for two), until it is answered; working has no mark, and there is no mark for a finished or failed
-worker. Open approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others,
-`! 3 needs` when even that does not fit; nothing open, nothing pinned. No clock, task count, hooks count, tool-at-work or
-idle fallback.
+The workers are counts, never titles, and only those running now: one icon and its count per role, in the order imp
+`⚒`, frontend-imp `✎`, general `✦`, oracle `◈`, reviewer `⚖`, any other role `•`, sonic `⚡` (`⚒3  ✦2  ◈1  ⚡4`), two
+spaces between groups; a role with no worker running is absent. Text icons draw `I`, `F`, `G`, `O`, `R`, `.` and `*`
+(`I3  G2  O1  *4`). No provider, model or thinking level appears. The zone reads a census of this pane's live jobs, so a
+worker that runs for hours is still counted; a settled one is not (the zone does not read settled jobs), and neither is a
+queued one; with none running the zone is absent. After the last group, one `!N` (the bar's alert badge) counts the
+workers asking the owner across all roles, until they are answered; working has no mark, and there is no mark for a
+finished or failed worker. `⚡` is two columns wide where `visualLength` counts it, and the bar fits by that count. Open
+approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others, `! 3 needs` when even that
+does not fit; nothing open, nothing pinned. No clock, task count, hooks count, tool-at-work or idle fallback.
 
 - Claude statusline: `~N t/s` estimates the latest response from transcript output tokens and elapsed time since its prompt or tool result.
 - Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same worker zone (this pane's jobs, read as Claude's is), without reading its transcript or forwarding its payload. `--details --lang en|zh` also shows reported input and output totals. The Linux launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws; a change may appear on the next refresh rather than immediately.
@@ -1134,12 +1131,10 @@ Tide tints need truecolor. Text icons/none keep meanings without colour. `barFie
 selects from `model,context,project,quota,tps,notice,loaded` without reordering them.
 If you use a field allowlist, include `tps` to show the rate. Narrow bars (a main pane beside
 the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts;
-both gauges' cells together; the quota's reset and the branch's `↑n`; the workers' model names, then their
-thinking glyphs (a subagent's title, a few words and then none, goes with them); the rate; the older of two
+both gauges' cells together; the quota's reset and the branch's `↑n`; a subagent's title (a few words, then none); the rate; the older of two
 subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context. The
-model is never dropped. The groups merge as the words go, so the counts stay true, and the marks and `⚡N` never
-shrink; the numbers keep their forms while a worker starts, which takes room from the extras and the zone's words, and
-what is left goes back to the zone one step at a time. pi's ribbon follows the look;
+model is never dropped. The worker zone has one form and never narrows; the numbers keep their forms while a worker
+starts, which takes room from the extras. pi's ribbon follows the look;
 other extensions' statuses remain visible. The bars stay English-only apart from a subagent's own description.
 
 ### EXP · Codex native status line (experimental)

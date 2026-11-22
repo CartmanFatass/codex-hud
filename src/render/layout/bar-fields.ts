@@ -4,8 +4,8 @@
  *
  *   model effort │ context %/window │ repo branch │ quota │ ~N t/s │ notice zone ········ MCP n  skills n
  *
- * The notice zone is the HUD's workers as counts and marks, one group per provider, short model and effort
- * (`◎ sol-fast◕ 3  ▲ neon◕ 2  ⚡4`), then what the client itself tells (a subagent's events, a skill load, an approval).
+ * The notice zone is the HUD's workers as an icon and a count per role (`⚒3  ✦2  ⚡4`), then what the client itself
+ * tells (a subagent's events, a skill load, an approval).
  *
  * Fields a client cannot supply are left out, never shown as zero. The fields shown are `barFields`; the style is
  * `barStyle`: `│` separators (`line`), or powerline capsules (`p10k`: each segment padded by a space on its own
@@ -17,7 +17,7 @@
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
 import { activeBarStyle, displayConfig, iconSet, isLightTheme, type BarField, type BarStyle } from '../hud-config.js';
-import { EFFORT_GLYPHS, workerModelName } from '../model-glyphs.js';
+import { ROLE_GLYPHS } from '../model-glyphs.js';
 import { providerMark } from '../providers.js';
 
 /**
@@ -87,12 +87,7 @@ export interface BarEvent {
 /** One HUD worker as the worker zone counts it: only a live one, working or asking the owner. */
 export interface BarWorker {
   role: string;
-  /** The model's id and the route's provider: the group's mark and short name are read from them. */
-  model?: string;
-  provider?: string;
-  effort?: string;
   state: 'working' | 'asking';
-  startedAt: number;
 }
 
 export interface BarQuotaWindow {
@@ -119,7 +114,7 @@ export interface BarFacts {
   /** What needs the owner now (an approval): pinned while it is open. */
   needs?: string[];
   events?: BarEvent[];
-  /** The HUD's workers: the zone's groups and counts. */
+  /** The HUD's workers: the zone's counts per role. */
   workers?: BarWorker[];
   loaded?: { counts: ReadonlyArray<readonly [string, number | null | undefined]>; words?: Form[] };
 }
@@ -507,95 +502,31 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
 
 // ─── The worker zone ───────────────────────────────────────────────────────────────────────────────────────────────
 
-interface Group {
-  /** The provider's mark and its colour; sonic has a mark of its own and no provider, model or effort. */
-  mark: string;
-  ink?: number;
-  sonic: boolean;
-  name: string;
-  effort: string;
-  effortRole: Role;
-  n: number;
-  since: number;
-  /** How many are asking the owner: `!` follows the count. */
-  asking: number;
-}
-
-const effortRole = (glyph: string): Role =>
-  glyph === EFFORT_GLYPHS.max || glyph === EFFORT_GLYPHS.ultra
-    ? 'warn'
-    : glyph === EFFORT_GLYPHS.high || glyph === EFFORT_GLYPHS.xhigh
-      ? 'name'
-      : 'dim';
-
 /**
- * The workers as groups at one rung of narrowing: `rung` 0 keeps each one's provider, short model and effort, 1 drops
- * the model name, 2 the effort too, so groups merge and their counts stay true. Oldest group first; sonic, which has
- * no provider, model or effort to tell, last.
- */
-function groupWorkers(workers: readonly BarWorker[], rung: number, ascii: boolean): Group[] {
-  const groups = new Map<string, Group>();
-  for (const worker of workers) {
-    const sonic = worker.role === 'sonic';
-    const lead = sonic ? null : providerMark({ provider: worker.provider, id: worker.model }, ascii);
-    const name = sonic || rung > 0 ? '' : workerModelName(worker.model);
-    const effort = sonic || rung > 1 ? '' : (EFFORT_GLYPHS[(worker.effort ?? '').trim().toLowerCase()] ?? '');
-    const mark = sonic ? (ascii ? '*' : '⚡') : (lead?.glyph ?? '·');
-    const key = sonic ? 'sonic' : [mark, name, effort].join('\u0000');
-    const group = groups.get(key) ?? {
-      mark,
-      ink: lead?.color,
-      sonic,
-      name,
-      effort,
-      effortRole: effortRole(effort),
-      n: 0,
-      since: worker.startedAt,
-      asking: 0,
-    };
-    group.n++;
-    group.since = Math.min(group.since, worker.startedAt);
-    if (worker.state === 'asking') group.asking++;
-    groups.set(key, group);
-  }
-  return [...groups.values()].sort((a, b) => Number(a.sonic) - Number(b.sonic) || a.since - b.since);
-}
-
-/**
- * A group as pieces: `◎ sol-fast◕ 3`, then its mark. `!` follows the count when workers are asking (the bar's alert
- * badge, with its own padding on a coloured bar), with its number when more than one. Working has no mark.
- */
-function groupForm(group: Group, pad: string, ascii: boolean): Form {
-  const lead: Form = [
-    group.sonic ? [group.mark, 'warn'] : [group.mark, 'lead', undefined, group.ink],
-    ...(group.name || ascii ? ([[' ']] as Form) : []),
-  ];
-  const marks: Form = group.asking
-    ? [[' '], [`${pad}!${group.asking > 1 ? group.asking : ''}${pad}`, pad ? 'alert' : 'warn']]
-    : [];
-  return [
-    ...lead,
-    ...(group.name ? ([[group.name, 'value']] as Form) : []),
-    ...(group.effort ? ([[group.effort, group.effortRole]] as Form) : []),
-    ...(group.name ? ([[' ']] as Form) : []),
-    [String(group.n), 'count'],
-    ...marks,
-  ];
-}
-
-/**
- * The census of live workers as one segment, a form per rung of narrowing (full, no model name, no effort glyph); null
- * when none is running.
+ * The census of live workers as one segment of one form, null when none is running: an icon and a count per role in
+ * `ROLE_GLYPHS`' order (`⚒3  ✦2  ◈1  ⚡4`; a role without an icon of its own counts under `•`), then one `!N` for the
+ * workers asking the owner (the bar's alert badge, with its own padding on a coloured bar). Nothing narrows it.
  */
 function rosterSeg(workers: readonly BarWorker[] | undefined, pad: string, ascii: boolean): Seg | null {
   if (!workers?.length) return null;
-  const forms = [0, 1, 2].map((rung) =>
-    groupWorkers(workers, rung, ascii).flatMap((group, i): Form => [
-      ...(i ? ([['  ']] as Form) : []),
-      ...groupForm(group, pad, ascii),
-    ])
-  );
-  return { id: 'notice', forms, ink: P10K.info, at: 0 };
+  const counts = new Map<string, number>();
+  for (const worker of workers) {
+    const role = worker.role.trim().toLowerCase();
+    const key = Object.hasOwn(ROLE_GLYPHS, role) ? role : 'other';
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const asking = workers.filter((worker) => worker.state === 'asking').length;
+  const form: Form = [
+    ...Object.entries(ROLE_GLYPHS)
+      .filter(([role]) => counts.has(role))
+      .flatMap(([role, glyph], i): Form => [
+        ...(i ? ([['  ']] as Form) : []),
+        [glyph[+ascii], role === 'sonic' ? 'warn' : 'info'],
+        [String(counts.get(role)), 'count'],
+      ]),
+    ...(asking ? ([['  '], [`${pad}!${asking}${pad}`, pad ? 'alert' : 'warn']] as Form) : []),
+  ];
+  return { id: 'notice', forms: [form], ink: P10K.info, at: 0 };
 }
 
 // ─── The six opt-in looks ──────────────────────────────────────────────────────────────────────────────────────────
@@ -938,7 +869,6 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     if (id === 'title') {
       stage = Math.min(stage + 1, 2);
       for (const s of noticeSegments) s.at = Math.max(s.at, stage);
-      if (roster) roster.at = stage;
       continue;
     }
     if (id === 'meters') {
@@ -957,16 +887,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
   // Last resort for the notice zone: keep the pinned/newest one and cut at a word, never split its metadata.
   if (!roomy && natural() > width && noticeSegments.length > 1) noticeSegments[1]!.at = noticeSegments[1]!.forms.length;
   if (!roomy && natural() > width && noticeSegments[0] && !fitNotice(0, notices[0]!)) noticeSegments[0].forms = [];
-  // What room is left goes back to the workers first, a rung at a time, then to the titles, the newest first: a few
-  // words each before any gets more.
-  if (!roomy && roster)
-    while (roster.at > 0) {
-      roster.at--;
-      if (natural() > width) {
-        roster.at++;
-        break;
-      }
-    }
+  // What room is left goes back to the titles, the newest first: a few words each before any gets more.
   if (!roomy && natural() < width)
     for (const cap of [TITLE_SHORT, TITLE_COLS])
       notices.forEach((n, i) => fitNotice(i, { ...n, title: cutWords(n.title, cap) }, true));
@@ -1029,12 +950,10 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
 /**
  * Who gives up the next form when the line is too wide, cheapest loss first. The vitals' numbers outrank everything
  * round them, and the worker zone's marks and counts outrank its words, so the order is: the loaded counts; both gauges'
- * cells (`meters`: the two go together); the quota's reset; the branch's marks; the zone's words (`title`, twice: the
- * workers lose their model names, then their effort glyphs, a subagent's title a few words, then altogether); the
- * output rate; the older of two subagent items (`notice`, which also cuts the newest at a word, and shortens a pinned
+ * cells (`meters`: the two go together); the quota's reset; the branch's marks; a subagent's title (`title`, twice: a few
+ * words, then altogether); the output rate; the older of two subagent items (`notice`, which also cuts the newest at a word, and shortens a pinned
  * need to `N needs`); the effort; the context's window; the branch; the quota; the project; the context. The model alone
- * is never dropped. What room is left afterwards goes back to the workers, a rung at a time, then to the titles, so a
- * worker starting takes room from the extras, not from the numbers.
+ * is never dropped. The worker zone has one form and is never narrowed.
  */
 const LADDER: Array<BarField | 'meters' | 'title'> = [
   'loaded',
@@ -1118,7 +1037,6 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     if (total() <= width) break;
     if (id === 'title') {
       stage = Math.min(stage + 1, 2);
-      if (roster) roster.at = stage;
       continue;
     }
     if (id === 'meters') {
@@ -1135,16 +1053,6 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     const seg = all.find((candidate) => candidate.id === id);
     if (seg && seg.at < seg.forms.length) seg.at = (zone || roster) && id === 'loaded' ? seg.forms.length : seg.at + 1;
   }
-  // What room is left goes back to the workers, a rung of narrowing at a time.
-  if (roster)
-    while (roster.at > 0) {
-      roster.at--;
-      if (total() > width) {
-        roster.at++;
-        break;
-      }
-    }
-
   const shown = fields();
   if (zone) {
     const events = zone.events;
