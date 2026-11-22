@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · OPTIONAL-ROLES · OPTIONAL-ROLES-01 · pro and flow are optional roles (0c7a3fc1)
 - try · JOB-INDEX · JOB-INDEX-03 · Collapse thin-jobs, hud-watch, watch and codex-statusline caches onto the shared one (6a4c1869)
 - try · ORCH-LEAN-2 · ORCH-LEAN2-02 · CLI workers start with role text and brief in the first message (9bd2698b)
 - try · ORCH-LEAN-2 · ORCH-LEAN2-03 · Ticket claims need no commit; hud_tickets lists ready tickets (b190db89)

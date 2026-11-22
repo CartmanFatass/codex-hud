@@ -7,8 +7,10 @@
 
 - [x] A fresh HUD_HOME roster lists no pro or flow; turning one on lists it and hud_create works
 - [x] hud_create role pro when off returns a clear hint
-- [ ] npm test and check:fixtures pass
+- [x] npm test and check:fixtures pass
 
 ## Comments
 
 - The fixture check passed. The full `npm test` run had three timeout cancellations; all three passed in an isolated serial rerun.
+
+- Landed 0c7a3fc1a1f4dd838fd14ea3ad8bbd89f565a0ba; gate 5/5 passed.
