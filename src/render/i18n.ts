@@ -286,6 +286,8 @@ const ZH: Record<string, string> = {
   '{ok} ok · {failed} failed': '{ok} 成功 · {failed} 失败',
   'avg {time}': '平均 {time}',
   'quiet {n}': '转交 {n}',
+  'launch {mark}{n}': '启动 {mark}{n}',
+  'quota {n}': '配额 {n}',
   Output: '输出',
   Working: '工作中',
   Idle: '空闲',

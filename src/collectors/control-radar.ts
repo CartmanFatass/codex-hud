@@ -5,11 +5,16 @@ import { join } from 'node:path';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { record } from '../statusline-parity/storage.js';
 import { CLAUDE_QUOTA_FILE } from '../statusline-parity/quota-cache.js';
+import { describePlace, type RolePlace } from '../roles/exhausted.js';
 import { jobRow } from './thin-jobs.js';
 
 type Client = 'codex' | 'claude';
 export interface Watermark { label?: string; remaining: number; resetsAt?: number }
-export interface RoleRadar { total: number; ok: number; failed: number; quietEscalated: number; avgMinutes: number | null }
+export interface PlaceRadar { launches: number; launchFailed: number; ok: number; failed: number; quietEscalated: number; quota: number }
+export interface RoleRadar {
+  total: number; ok: number; failed: number; quietEscalated: number; avgMinutes: number | null;
+  places?: Record<string, PlaceRadar>;
+}
 type PiSpend = { costUsd: number; tokens: number; sessions: number; sampled?: true };
 export interface ControlRadar {
   quotas?: Partial<Record<Client, Watermark[]>>;
@@ -109,8 +114,26 @@ function piRadar(root: string, today: string, cache: Cache): PiSpend | undefined
   return sum.sessions ? sum : undefined;
 }
 
+const placeName = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 64) : null;
+};
+const fallbackPlace = (job: Record<string, unknown>): string | null => {
+  const raw = record(job.place);
+  if (raw.harness !== 'pi' && raw.harness !== 'cli' && raw.harness !== 'bro') return null;
+  const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : undefined;
+  return placeName(describePlace({
+    harness: raw.harness,
+    agent: str(raw.agent) as RolePlace['agent'],
+    tool: str(raw.tool) as RolePlace['tool'],
+    provider: str(raw.provider) as RolePlace['provider'],
+    model: str(raw.model),
+  }, str(job.model) ?? null));
+};
+
 function roleRadar(root: string, today: string, cache: Cache): ControlRadar['roleStats'] {
-  const groups = new Map<string, RoleRadar & { elapsed: number; timed: number }>();
+  const groups = new Map<string, Omit<RoleRadar, 'places'> & { elapsed: number; timed: number; places: Map<string, PlaceRadar> }>();
   const jobs = candidates(root, (e) => e.isDirectory() && /^j[0-9a-f]{16}$/.test(e.name))
     .sort((a, b) => b.stat.birthtimeMs - a.stat.birthtimeMs || newest(a, b)).slice(0, 200);
   for (const { path } of jobs) {
@@ -118,19 +141,48 @@ function roleRadar(root: string, today: string, cache: Cache): ControlRadar['rol
     if (!job || dayOf(created) !== today) continue;
     const status = json(join(path, 'STATUS.json'), cache), row = jobRow(job, status);
     if (!row.role) continue;
-    const stats = groups.get(row.role) ?? { total: 0, ok: 0, failed: 0, quietEscalated: 0, avgMinutes: null, elapsed: 0, timed: 0 };
+    const stats = groups.get(row.role) ?? { total: 0, ok: 0, failed: 0, quietEscalated: 0, avgMinutes: null, elapsed: 0, timed: 0, places: new Map() };
     groups.set(row.role, stats);
+    const placeOf = (name: string) => {
+      let entry = stats.places.get(name);
+      if (!entry) {
+        entry = { launches: 0, launchFailed: 0, ok: 0, failed: 0, quietEscalated: 0, quota: 0 };
+        stats.places.set(name, entry);
+      }
+      return entry;
+    };
     stats.total++;
     const quietAction = record(status?.quiet_decision).action;
-    if (typeof quietAction === 'string' && quietAction.trim()) stats.quietEscalated++;
+    const quiet = typeof quietAction === 'string' && !!quietAction.trim();
+    if (quiet) stats.quietEscalated++;
     if (row.display_state === 'done' || row.display_state === 'failed') {
       stats[row.display_state === 'done' ? 'ok' : 'failed']++;
       const start = at(status?.started_at ?? job.created_at), end = at(status?.settled_at ?? status?.ended_at);
       if (end >= start) { stats.elapsed += end - start; stats.timed++; }
     }
+    const usedPlace = placeName(job.used_place);
+    const hasAttempts = Array.isArray(job.attempts);
+    if (hasAttempts) {
+      for (const raw of (job.attempts as unknown[]).slice(0, 8)) {
+        const attempt = record(raw), name = placeName(attempt.place);
+        if (!name) continue;
+        const entry = placeOf(name);
+        entry.launches++;
+        if (typeof attempt.reason === 'string' && attempt.reason.trim() && name !== usedPlace) entry.launchFailed++;
+      }
+    }
+    const adopted = usedPlace ?? (hasAttempts ? null : fallbackPlace(job));
+    if (adopted) {
+      const entry = placeOf(adopted);
+      if (!hasAttempts) entry.launches++;
+      if (row.display_state === 'done') entry.ok++;
+      else if (row.display_state === 'failed') entry.failed++;
+      if (quiet) entry.quietEscalated++;
+      if (job.exhaustion_marked === true) entry.quota++;
+    }
   }
-  return groups.size ? Object.fromEntries([...groups].map(([role, { elapsed, timed, ...stats }]) =>
-    [role, { ...stats, avgMinutes: timed ? elapsed / timed / 60000 : null }])) : undefined;
+  return groups.size ? Object.fromEntries([...groups].map(([role, { elapsed, timed, places, ...stats }]) =>
+    [role, { ...stats, avgMinutes: timed ? elapsed / timed / 60000 : null, ...(places.size ? { places: Object.fromEntries(places) } : {}) }])) : undefined;
 }
 
 let last: { home: string; pi: string; day: string; now: number; cache: Signatures; value: ControlRadar | undefined } | undefined;

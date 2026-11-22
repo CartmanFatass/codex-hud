@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { collectControlRadar } from '../../dist/collectors/control-radar.js';
 import { recordClaudeQuota } from '../../dist/statusline-parity/quota-cache.js';
-import { visualLength } from '../../dist/render/colors.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { setLanguage } from '../../dist/render/i18n.js';
+import { radarFacts, radarRows, roleToday } from '../../dist/render/control-view.js';
 import { NOW, onControl, plain, projectFixture, richControl } from '../fixtures/project-page.mjs';
 
 const MINUTE = 60_000, DAY = 86_400_000;
@@ -147,5 +150,143 @@ test('full Project collection and both Control views include radar without chang
     assert.match(preview, /Dispatch today|今日派发/);
     assert.match(plain(role).join('\n'), lang === 'en' ? /today\s+5 ok · 1 failed · avg 6m/ : /今日\s+5 成功 · 1 失败/);
     assert.doesNotMatch(plain(render(rich, split('project:role:oracle'))).join('\n'), /today|今日/);
+  }
+});
+
+test('per-place dispatch health attributes attempts, fallbacks, legacy places, quota marks and quiet escalations', (t) => {
+  const { put, job, collect } = fixture(t);
+  // 1. Pre-input launch failure then fallback success on second place.
+  job(1, 'imp', 30 * MINUTE, { state: 'done' }, {
+    attempts: [
+      { index: 0, place: 'cli/agy (h)', reason: 'launch timed out' },
+      { index: 1, place: 'pi (m)' },
+    ],
+    used_place: 'pi (m)',
+  });
+  // 2. All attempts fail before input (no used_place): only launchFailed on places, role still counts failed.
+  job(2, 'imp', 25 * MINUTE, { state: 'failed' }, {
+    attempts: [
+      { index: 0, place: 'cli/agy (h)', reason: 'spawn failed' },
+      { index: 1, place: 'cli/grok (g)', reason: 'launch timed out' },
+    ],
+  });
+  // 3. Legacy job without attempts: inferred from place + model with 1 launch.
+  job(3, 'imp', 20 * MINUTE, { state: 'done' }, {
+    place: { harness: 'pi' },
+    model: 'synthetic/legacy',
+  });
+  // 4. Quota-marked failure on an adopted place (post-input reason on used_place is not a launch failure).
+  job(4, 'imp', 15 * MINUTE, { state: 'failed' }, {
+    attempts: [{ index: 0, place: 'pi (m)', reason: 'rate limit exceeded' }],
+    used_place: 'pi (m)',
+    exhaustion_marked: true,
+  });
+  // 5. Quiet escalation increments place quietEscalated; ordinary open question does not.
+  job(5, 'imp', 10 * MINUTE, { state: 'waiting_orchestrator', quiet_decision: { action: 'needs-human' } }, {
+    attempts: [{ index: 0, place: 'pi (m)' }],
+    used_place: 'pi (m)',
+  });
+  const asking = job(6, 'imp', 5 * MINUTE, { state: 'waiting_orchestrator', reason: 'open question' }, {
+    attempts: [{ index: 0, place: 'pi (m)' }],
+    used_place: 'pi (m)',
+  });
+  put(join(asking, 'qa', 'q1.md'), 'Question: Synthetic question?');
+  // 6. Yesterday's job is ignored.
+  job(7, 'imp', DAY, { state: 'done' }, {
+    attempts: [{ index: 0, place: 'cli/claude (yesterday)' }],
+    used_place: 'cli/claude (yesterday)',
+  });
+  // 7. Bounded to first 8 attempts; place text truncated to 64 chars.
+  const longPlace = `pi (${'x'.repeat(80)})`;
+  job(8, 'bounded', 2 * MINUTE, { state: 'failed' }, {
+    attempts: [
+      { index: 0, place: longPlace, reason: 'fail 0' },
+      ...Array.from({ length: 9 }, (_, i) => ({ index: i + 1, place: `cli/p${i + 1}`, reason: `fail ${i + 1}` })),
+    ],
+  });
+
+  const radar = collect();
+  assert.equal(radar.roleStats.imp.total, 6);
+  assert.equal(radar.roleStats.imp.ok, 2);
+  assert.equal(radar.roleStats.imp.failed, 2);
+  assert.equal(radar.roleStats.imp.quietEscalated, 1);
+  assert.deepEqual(radar.roleStats.imp.places, {
+    'cli/agy (h)': { launches: 2, launchFailed: 2, ok: 0, failed: 0, quietEscalated: 0, quota: 0 },
+    'pi (m)': { launches: 4, launchFailed: 0, ok: 1, failed: 1, quietEscalated: 1, quota: 1 },
+    'cli/grok (g)': { launches: 1, launchFailed: 1, ok: 0, failed: 0, quietEscalated: 0, quota: 0 },
+    'pi (synthetic/legacy)': { launches: 1, launchFailed: 0, ok: 1, failed: 0, quietEscalated: 0, quota: 0 },
+  });
+  assert.equal(Object.keys(radar.roleStats.bounded.places).length, 8);
+  assert.ok(longPlace.slice(0, 64) in radar.roleStats.bounded.places);
+  assert.ok(!('cli/p8' in radar.roleStats.bounded.places));
+  assert.ok(!('cli/p9' in radar.roleStats.bounded.places));
+});
+
+test('Control Dispatch today splits by place at 40 and 80 columns in EN and ZH without changing compact or role detail views', async (t) => {
+  const { root } = fixture(t);
+  const f = await projectFixture(join(root, 'places-view'));
+  const baseline = { ...richControl(f.data), harnesses: [{ name: 'pi', ok: true }], radar: undefined };
+  const roleStats = {
+    imp: {
+      total: 5, ok: 3, failed: 1, quietEscalated: 1, avgMinutes: 12,
+      places: {
+        'cli/claude (opus)': { launches: 3, launchFailed: 0, ok: 3, failed: 0, quietEscalated: 0, quota: 0 },
+        'pi (deepseek-v4-1-flash)': { launches: 1, launchFailed: 0, ok: 0, failed: 1, quietEscalated: 1, quota: 0 },
+        'cli/agy (hydrogen)': { launches: 1, launchFailed: 1, ok: 0, failed: 0, quietEscalated: 0, quota: 1 },
+      },
+    },
+    reviewer: {
+      total: 2, ok: 2, failed: 0, quietEscalated: 0, avgMinutes: 4,
+      places: { 'pi (clean-only)': { launches: 2, launchFailed: 0, ok: 2, failed: 0, quietEscalated: 0, quota: 0 } },
+    },
+    oracle: {
+      total: 1, ok: 0, failed: 0, quietEscalated: 0, avgMinutes: null,
+      places: { 'cli/agy (single-fail)': { launches: 1, launchFailed: 1, ok: 0, failed: 0, quietEscalated: 0, quota: 0 } },
+    },
+    sonic: {
+      total: 6, ok: 5, failed: 1, quietEscalated: 1, avgMinutes: 1,
+      places: {
+        'pi (alpha)': { launches: 5, launchFailed: 0, ok: 5, failed: 0, quietEscalated: 0, quota: 0 },
+        'pi (beta)': { launches: 4, launchFailed: 1, ok: 0, failed: 1, quietEscalated: 1, quota: 1 },
+        'pi (gamma)': { launches: 3, launchFailed: 0, ok: 0, failed: 0, quietEscalated: 0, quota: 0 },
+        'cli/delta\x1b[31m': { launches: 2, launchFailed: 0, ok: 0, failed: 0, quietEscalated: 0, quota: 0 },
+        'pi (epsilon)': { launches: 1, launchFailed: 0, ok: 0, failed: 0, quietEscalated: 0, quota: 0 },
+      },
+    },
+  };
+  const roleStatsWithoutPlaces = Object.fromEntries(Object.entries(roleStats).map(([k, { places: _p, ...rest }]) => [k, rest]));
+  const rich = { ...baseline, radar: { roleStats } };
+  const split = (cursor, folded) => onControl({ cursor, folded }, { prefs: { panelLayout: 'split' } });
+
+  for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const theme of ['none', 'titanium']) {
+    const prevDisplay = setDisplayConfig({ theme, icons: 'unicode' }), prevLang = setLanguage(lang);
+    try {
+      // Compact mode and roleToday are byte-identical with or without places.
+      assert.deepEqual(
+        radarRows(radarFacts({ roleStats }), width, false),
+        radarRows(radarFacts({ roleStats: roleStatsWithoutPlaces }), width, false),
+      );
+      assert.equal(roleToday(roleStats.imp), roleToday(roleStatsWithoutPlaces.imp));
+      assert.equal(roleToday(roleStats.imp, true), roleToday(roleStatsWithoutPlaces.imp, true));
+    } finally {
+      setDisplayConfig(prevDisplay); setLanguage(prevLang);
+    }
+
+    const usageFrame = f.render(width, lang, split('project:fold:usage', new Set(['healthy', 'files', 'agents'])), 80, rich, true, 'unicode', theme);
+    const roleFrame = f.render(width, lang, split('project:role:imp'), 80, rich, true, 'unicode', theme);
+    for (const frame of [usageFrame, roleFrame]) {
+      assert.ok(frame.lines.every((line) => visualLength(line) === width), `width mismatch at ${width}/${lang}/${theme}`);
+    }
+    const text = plain(usageFrame).join('\n');
+    assert.match(text, /cli\/claude \(opus\).*3✓ 0✗/);
+    assert.match(text, lang === 'en' ? /0✓ 1✗ · quiet 1/ : /0✓ 1✗ · 转交 1/);
+    assert.match(text, lang === 'en' ? /launch ✗1 · quota 1/ : /启动 ✗1 · 配额 1/);
+    assert.doesNotMatch(text, /pi \(clean-only\)/, 'single clean place shows no sub-row');
+    assert.match(text, /cli\/agy \(single-fail\)|cli\/agy \(…fail\)|cli\/agy \(sin…fail\)/);
+    assert.match(text, lang === 'en' ? /\+1 more/ : /另 1 个/);
+    assert.doesNotMatch(text, /pi \(epsilon\)/, 'places beyond top 4 by launches are folded into +n');
+    assert.ok(!usageFrame.lines.some((line) => stripAnsi(line).includes('\x1b')), 'control characters in place names are escaped');
+    // Role detail preview has no chain-row dispatch note (§6 default #2).
+    assert.doesNotMatch(plain(roleFrame).join('\n'), /launch ✗|启动 ✗|quota \d|配额 \d/);
   }
 });

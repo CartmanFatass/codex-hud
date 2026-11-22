@@ -247,7 +247,7 @@ Reference: `docs/design/control-tab/design.md`, `docs/design/control-tab/index.h
 
 - Roles, Attention, Usage and Files for the selected project. Open on owner attention and next job place;
   fold healthy roles. Show role/harness/model/thinking/source, convention/source, available keys, browser
-  availability, client quota watermarks, today's pi spend and today's per-role dispatch health beside
+  availability, client quota watermarks, today's pi spend and today's per-role dispatch health, split by place, beside
   presets. (12.04, 14.04, 18.09, 20.01, 22.02)
 - List HUD roles, pi-roles definitions (model/thinking), native custom agents (`~/.claude/agents`,
   `.claude/agents`, `~/.codex/agents`), active convention, `CLAUDE.md`, `AGENTS.md`. Enter opens file beside

@@ -1,6 +1,6 @@
 /** Shared place presentation, model picker and usage radar. Pure. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
-import type { ControlRadar, RoleRadar } from '../collectors/control-radar.js';
+import type { ControlRadar, PlaceRadar, RoleRadar } from '../collectors/control-radar.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { placeDestination, placeItem, placeModels, type PlaceFact, type PlaceState, type RoleFact } from '../roles/role-control.js';
 import type { MonitorRow } from './monitor.js';
@@ -218,6 +218,38 @@ export function roleToday(s: RoleRadar, compact = false): string {
     s.avgMinutes === null ? '' : t('avg {time}', { time: t('{n}m', { n: Math.round(s.avgMinutes) }) }),
     s.quietEscalated ? t('quiet {n}', { n: s.quietEscalated }) : ''].filter(Boolean).join(' · ');
 }
+function placeStats(p: PlaceRadar): string {
+  const parts: string[] = [];
+  if (p.ok || p.failed || (!p.launchFailed && !p.quietEscalated && !p.quota)) {
+    parts.push(`${p.ok}${mark('✓', '+')} ${p.failed}${mark('✗', 'x')}`);
+  }
+  if (p.launchFailed) parts.push(t('launch {mark}{n}', { mark: mark('✗', 'x'), n: p.launchFailed }));
+  if (p.quietEscalated) parts.push(t('quiet {n}', { n: p.quietEscalated }));
+  if (p.quota) parts.push(t('quota {n}', { n: p.quota }));
+  return parts.join(' · ');
+}
+function placeRadarRows(s: RoleRadar, width: number): MonitorRow[] {
+  const entries = Object.entries(s.places ?? {}).filter(([, p]) =>
+    p.launches > 0 || p.ok > 0 || p.failed > 0 || p.launchFailed > 0 || p.quietEscalated > 0 || p.quota > 0);
+  if (entries.length < 2 && !entries.some(([, p]) => p.launchFailed > 0 || p.quota > 0)) return [];
+  entries.sort(([a, pa], [b, pb]) => pb.launches - pa.launches || a.localeCompare(b));
+  const shown = entries.slice(0, 4).map(([place, p]) => ({ name: monitorText(place), stats: placeStats(p) }));
+  const extra = entries.length - shown.length;
+  const maxName = Math.max(...shown.map((r) => visualLength(r.name)));
+  const rows: MonitorRow[] = [];
+  for (const { name, stats } of shown) {
+    const room = width - 4 - 2 - visualLength(stats);
+    if (room >= 12) {
+      const label = fit(squeeze(name, room), Math.min(maxName, room));
+      rows.push(boardRow(fit(`    ${theme.board.muted(`${label}  ${stats}`)}`, width)));
+    } else {
+      rows.push(boardRow(fit(`    ${theme.board.muted(squeeze(name, Math.max(1, width - 4)))}`, width)));
+      rows.push(...flowLines(stats, Math.max(1, width - 6)).map((part) => boardRow(fit(`      ${theme.board.muted(part)}`, width))));
+    }
+  }
+  if (extra > 0) rows.push(boardRow(fit(`    ${theme.board.muted(t('+{n} more', { n: extra }))}`, width)));
+  return rows;
+}
 export function radarRows(facts: RadarFacts, width: number, detail = false): MonitorRow[] {
   const { quotas, pi, roles } = facts, out: MonitorRow[] = [];
   const line = (value: string) => flowLines(value, Math.max(1, width - 2)).map((s) => boardRow(fit('  ' + s, width)));
@@ -236,5 +268,8 @@ export function radarRows(facts: RadarFacts, width: number, detail = false): Mon
     }
     if (row) out.push(...line(row));
   }
-  return out.concat(roles.flatMap(([role, s]) => line(`${monitorText(role)}  ${detail ? t('{n} jobs', { n: s.total }) + ' · ' : ''}${roleToday(s, !detail)}`)));
+  return out.concat(roles.flatMap(([role, s]) => [
+    ...line(`${monitorText(role)}  ${detail ? t('{n} jobs', { n: s.total }) + ' · ' : ''}${roleToday(s, !detail)}`),
+    ...(detail ? placeRadarRows(s, width) : []),
+  ]));
 }
