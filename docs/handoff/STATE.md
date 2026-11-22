@@ -7,6 +7,8 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
+- neon proposal 05 Q1: an optional `$HUD_HOME/models.json` overriding the built-in model catalog (new user file), or
+  built-in catalog only? (waits on PRIMITIVES-04, primitives/04)
 
 ## Next
 
@@ -25,7 +27,7 @@ board counts these; update at every landing or decision. -->
 
 - working · CODE-HEALTH · PRUNE-OBS-01 · neon proposal 01 Slice 1: stop dead legacy observers, delete ~3,300 lines (imp, wt/PRUNE-OBS-01; prune-obs/01)
 - working · CODE-HEALTH · BUILD-DEDUP-01 · neon proposal 03 Slice 1: hud-mcp sources under src/mcp, one tsc project (imp, wt/BUILD-DEDUP-01; build-dedup/01)
-- todo · CODE-HEALTH · PRUNE-OBS-02..04, BUILD-DEDUP-02..03, MCP-SPLIT-01..04 · rest of the three neon proposals; mcp-split after build-dedup, MCP-SPLIT-04 after prune-obs; one milestone review at the end (install touched)
+- todo · CODE-HEALTH · rest of the six neon proposals in two lanes. Panel lane: PRUNE-OBS-02..04 → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: BUILD-DEDUP-02..03 → ASYNC-WATCH-01..03 + focused review → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - working · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job, fallback default (imp, wt/SONIC-AUTO-THINKING)
 - dropped · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9) [superseded the same day by SONIC-AUTO-THINKING: callers do not pick]
