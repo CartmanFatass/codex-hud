@@ -68,6 +68,7 @@ machine, inside herdr. (10.02, 22.12)
   For pi roles, named switches cover pi-lens, MCP adapter, tokens/s, UI extensions, helper pane and personal
   skills; pass extra pi args as given. (11.02)
   Pi workers skip the MCP adapter when no MCP servers are configured unless `mcp: true` is set. (22.17)
+  Claude and Codex CLI workers load only the HUD worker MCP and servers named by their role, except that unreadable Codex configuration leaves its MCPs unchanged with a launch diagnostic. (22.18)
 - `context_files` and `from_jobs` write a reference index into local worker briefs and splice bounded file
   contents into browser briefs, without round-tripping through main-session context. (18.03)
 - `isolation: "worktree"` creates a clean Git worktree with linked `node_modules`; `hud_read` gives

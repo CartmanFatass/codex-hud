@@ -342,7 +342,7 @@ if (command === 'pi-dispatch') {
   }
   if (until.includes('done') && until.includes('blocked')) {
     const seenPrompt =
-      fs.existsSync(process.env.FAKE_LOG) && fs.readFileSync(process.env.FAKE_LOG, 'utf8').includes('brief.md');
+      fs.existsSync(process.env.FAKE_LOG) && fs.readFileSync(process.env.FAKE_LOG, 'utf8').includes('"agent","prompt"');
     if (fs.existsSync(join(home, 'startup-done')) && !seenPrompt) {
       matched('done');
       process.exit(0);

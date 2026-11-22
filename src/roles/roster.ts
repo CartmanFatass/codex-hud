@@ -45,6 +45,7 @@ export const validPresetName = (value: unknown): value is string =>
 export interface Role {
   role: string;
   instructions?: string;
+  mcp_servers?: string[];
   harness: 'pi' | 'bro' | 'cli';
   run: RolePlace[];
   presets?: RolePreset[];
@@ -191,6 +192,9 @@ function roleReason(value: unknown): string | null {
   if (raw.idle_grace_s !== undefined && (!Number.isInteger(raw.idle_grace_s) || (raw.idle_grace_s as number) < 0))
     return 'bad cli fields';
   if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
+  const servers = raw.mcp_servers;
+  if (servers !== undefined && (!Array.isArray(servers) || servers.some((name) =>
+    typeof name !== 'string' || !name.trim() || /[\x00-\x1f\x7f]/.test(name)))) return 'bad mcp_servers';
   const choices = raw.thinking_choices;
   if (choices !== undefined && (!choices || typeof choices !== 'object' || Array.isArray(choices) ||
     Object.keys(choices).length === 0 || Object.entries(choices).some(([level, purpose]) =>
@@ -284,6 +288,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     ...(instructions !== undefined ? { instructions } : {}),
     ...primaryFields(primary),
     run,
+    ...(parsed.mcp_servers === undefined ? {} : { mcp_servers: parsed.mcp_servers as string[] }),
     ...(parsed.thinking_choices === undefined ? {} : { thinking_choices: parsed.thinking_choices as Record<string, string> }),
     presets: ((parsed.presets ?? []) as RolePreset[]).map((p) => ({
       name: p.name, run: p.run.map((item) => normalizePlace(item, rawInstructions)),
@@ -578,8 +583,8 @@ export function roleRegistry(
       let role = { ...file, presets };
       if (selected) {
         // Launch fields follow the effective chain; the winning file still owns the role metadata.
-        const { role: name, instructions, idle_grace_s, source_file } = file;
-        role = { role: name, instructions, idle_grace_s, source_file, presets, run: selected.run,
+        const { role: name, instructions, mcp_servers, idle_grace_s, source_file } = file;
+        role = { role: name, instructions, mcp_servers, idle_grace_s, source_file, presets, run: selected.run,
           can_continue: selected.run.some((p) => p.harness !== 'bro') && Boolean(raw.can_continue),
           ...primaryFields(selected.run[0]!) };
       }

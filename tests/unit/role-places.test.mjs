@@ -419,7 +419,8 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.equal(start.args[4], 'claude');
   assert.deepEqual(start.args.slice(start.args.indexOf('--model'), start.args.indexOf('--model') + 2), ['--model', 'fable']);
   const prompt = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt');
-  assert.match(prompt.args[3], /packages\/hud-mcp\/instructions\/oracle\.md/);
+  assert.equal(start.args[start.args.indexOf('--append-system-prompt') + 1], fs.readFileSync(join(bundled, 'instructions/oracle.md'), 'utf8'));
+  assert.match(prompt.args[3], /^Carry out this brief:\n\nDesign question\?/);
 
   fs.unlinkSync(join(f.env.PATH, 'claude'));
   const fbRoster = (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'oracle');
@@ -441,7 +442,9 @@ test('reviewer and sonic use their instruction files on CLI; a role without one 
     const job = await f.call('hud_create', { role, on: 'claude', request_key: `${role}-cli`, task: 'Task.' });
     const promptOf = () => f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job));
     await until(promptOf);
-    assert.match(promptOf().args[3], new RegExp(`packages/hud-mcp/instructions/${role}\\.md`));
+    const { args } = f.commands().find((c) => c.args[1] === 'start' && c.args[2] === `${job.job}-primary`);
+    assert.equal(args[args.indexOf('--append-system-prompt') + 1], fs.readFileSync(join(bundled, `instructions/${role}.md`), 'utf8'));
+    assert.match(promptOf().args[3], /^Carry out this brief:\n\nTask\./);
   }
 
   // One role, one text on every harness (WORKER-UNIFY): a role whose instruction file is missing has no CLI place.

@@ -16,6 +16,7 @@ import { isFlowId, landEvents, landView, readLand } from './land-state.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
+import { cliWorkerStartup } from './cli-worker-startup.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
 import { watcherReady } from './watch-pid.js';
@@ -117,7 +118,7 @@ interface Job extends PiOptions {
   exhaustion_marked?: boolean;
   bro?: RolePlace;
   jev?: Role;
-  cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory' };
+  cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory'; mcp_scope_warning?: string };
   attempts?: LaunchAttempt[];
   used_place?: string;
   dispatch_exit_code: number | null;
@@ -679,7 +680,7 @@ async function rejectLaunch(result: DispatchResult, tab?: string): Promise<Dispa
   const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
   return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok) };
 }
-async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string): Promise<DispatchResult> {
+async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[]): Promise<DispatchResult> {
   let openedTab: string | undefined;
   let mayHaveInput = false;
   const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
@@ -690,12 +691,15 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
     if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
       return reject({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
     }
+    const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers);
+    if (job.cli && startup.warning) job.cli.mcp_scope_warning = startup.warning;
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
     const result = await run('herdr', [
       'tab',
       'create',
+      ...(place.agent === 'codex' ? ['--env', `CODEX_HOME=${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}`] : []),
       ...(await workspaceArgs(job)),
       '--cwd',
       job.cwd,
@@ -737,7 +741,8 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       ...(place.model ? kind.model(place.model) : []),
       ...(place.thinking ? kind.effort(place.thinking) : []),
       ...kind.bypass,
-      ...(place.args ?? [])
+      ...(place.args ?? []),
+      ...startup.args
     );
     const started = await run('herdr', argv);
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
@@ -758,7 +763,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       if (settled) return reject(settled);
     }
     const turn = writeTurn(dir);
-    const prompt = withDonePrompt(`Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`, bundled, dir, turn, place.agent!);
+    const prompt = withDonePrompt(startup.prompt, bundled, dir, turn, place.agent!);
     mayHaveInput = true;
     const submitted = await run('herdr', [
       'agent',
@@ -996,6 +1001,7 @@ function jobDiagnostics(job: Job) {
     thinking: job.thinking,
     model_source: job.model_source,
     ...(job.cli ? { idle_grace_s: job.cli.idle_grace_s } : {}),
+    ...(job.cli?.mcp_scope_warning ? { mcp_scope_warning: job.cli.mcp_scope_warning } : {}),
     ...Object.fromEntries([...piSwitches, 'pi_args' as const].map((key) => [key, job[key]])),
     ...(job.role_skills !== undefined
       ? {
@@ -1562,7 +1568,7 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
     // Worktree setup is shared; another place cannot repair it.
     return launchError(String(error));
   }
-  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task);
+  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task, definition.mcp_servers ?? []);
   if (place.harness === 'pi') return dispatchPi(job, definition, place, task);
   try { return await dispatchBro(job, task); }
   catch (error) { return launchError(String(error)); }

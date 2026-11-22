@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import * as TOML from '@iarna/toml';
+
+const roleText = fs.readFileSync('packages/hud-mcp/instructions/implementer.md', 'utf8');
 import {
   workerFor,
   cardText,
@@ -43,16 +46,15 @@ test(
       '--reasoning-effort',
       'high',
       '--permission-mode',
-      'bypassPermissions',
+      'bypassPermissions', '--rules', roleText,
     ]);
     assert.equal(
       start.some((arg) => /^--(home|session|config|profile|worktree)/.test(arg)),
       false
     );
     const prompt = f.commands().find((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit').args[3];
-    assert.match(prompt, /instructions\/implementer\.md/);
-    assert.match(prompt, /brief\.md/);
-    assert.match(prompt, /do exactly what the brief asks/);
+    assert.ok(prompt.includes(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8')));
+    assert.match(prompt, /Synthetic grok task/);
     const session = Object.fromEntries(
       fs
         .readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8')
@@ -136,7 +138,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     '--reasoning-effort',
     'low',
     '--permission-mode',
-    'bypassPermissions',
+    'bypassPermissions', '--rules', roleText,
   ]);
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
   assert.equal(receipt.model, 'grok-4.7-build-fast');
@@ -155,7 +157,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     '--permission-mode',
     'bypassPermissions',
     '--extra',
-    'literal space',
+    'literal space', '--rules', roleText,
   ]);
   await until(() => {
     const file = join(plain.task_dir, 'STATUS.json');
@@ -227,6 +229,7 @@ test(
     const commands = f.commands();
     const promptAt = commands.findIndex((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit');
     assert.ok(promptAt >= 0);
+    assert.match(commands[promptAt].args[3], /Read .*instructions\/implementer\.md[\s\S]*Carry out this brief:\n\nSynthetic agy task\./);
     assert.equal(commands.some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
     const closed = cliState(job.task_dir);
     assert.equal(closed.agent, 'agy');
@@ -295,6 +298,8 @@ test(
 
 test('a claude role launches with its flags and settles through idle grace', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
+  const owner = join(f.env.CLAUDE_CONFIG_DIR, '.claude.json');
+  fs.writeFileSync(owner, JSON.stringify({ ...JSON.parse(fs.readFileSync(owner)), mcpServers: { extra: { command: 'synthetic' } } }));
   const job = await f.call('hud_create', {
     role: 'imp',
     on: 'claude',
@@ -312,7 +317,14 @@ test('a claude role launches with its flags and settles through idle grace', { t
     '--pane',
     'w4E:p2',
   ]);
-  assert.deepEqual(start.slice(dash + 1), ['--model', 'opus', '--effort', 'high', '--dangerously-skip-permissions']);
+  const config = join(job.task_dir, 'worker-mcp.json');
+  assert.deepEqual(start.slice(dash + 1), ['--model', 'opus', '--effort', 'high', '--dangerously-skip-permissions',
+    '--strict-mcp-config', '--mcp-config', config, '--append-system-prompt', roleText]);
+  const { mcpServers } = JSON.parse(fs.readFileSync(config));
+  assert.deepEqual(Object.keys(mcpServers), ['hud']);
+  assert.equal(mcpServers.hud.env.HUD_JOB_DIR, job.task_dir);
+  assert.equal(fs.statSync(config).mode & 0o777, 0o600);
+  assert.match(f.commands().find((c) => c.args[1] === 'prompt').args[3], /^Carry out this brief:\n\nSynthetic claude task\./);
   assert.equal(start.includes('--timeout'), false);
   await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
   const closed = cliState(job.task_dir);
@@ -361,9 +373,65 @@ test(
   }
 );
 
+for (const agent of ['claude', 'codex']) test(`${agent}: role allowlist survives preset selection without changing owner config`, async (t) => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles);
+  const place = { harness: 'cli', agent };
+  fs.writeFileSync(join(roles, 'scoped.json'), JSON.stringify({ role: 'scoped', instructions: 'implementer',
+    can_continue: false, run: [place], active_preset: 'test', presets: [{ name: 'test', run: [place] }],
+    mcp_servers: ['chrome-devtools'] }));
+  let cwd = f.root;
+  const ownerFile = agent === 'claude' ? join(f.env.CLAUDE_CONFIG_DIR, '.claude.json') : join(f.env.CODEX_HOME, 'config.toml');
+  const owner = agent === 'claude' ? JSON.stringify({ ...JSON.parse(fs.readFileSync(ownerFile)), mcpServers: {
+    'chrome-devtools': { command: 'synthetic', args: ['private-value'] }, unrelated: { command: 'other' },
+  } }) : '[mcp_servers.chrome-devtools]\ncommand="synthetic"\nargs=["private-value"]\n[mcp_servers.other]\ncommand="other"\n';
+  fs.writeFileSync(ownerFile, owner);
+  if (agent === 'codex') {
+    cwd = join(f.root, 'nested');
+    fs.mkdirSync(join(f.root, '.git'));
+    for (const [dir, name] of [[f.root, 'root_only'], [cwd, 'nested_only']]) {
+      fs.mkdirSync(join(dir, '.codex'), { recursive: true });
+      fs.writeFileSync(join(dir, '.codex', 'config.toml'), `[mcp_servers.${name}]\ncommand="synthetic"\n`);
+    }
+  }
+  const task = agent === 'claude' ? 'synthetic'.repeat(2048) : 'Synthetic allowlist.';
+  const job = await f.call('hud_create', { role: 'scoped', cwd, task });
+  const args = f.commands().find((c) => c.args[1] === 'start').args;
+  assert.ok(!JSON.stringify(args).includes('private-value'));
+  if (agent === 'claude') {
+    const { mcpServers } = JSON.parse(fs.readFileSync(args[args.indexOf('--mcp-config') + 1]));
+    assert.deepEqual(Object.keys(mcpServers).sort(), ['chrome-devtools', 'hud']);
+    assert.deepEqual(mcpServers['chrome-devtools'].args, ['private-value']);
+    const prompt = f.commands().find((c) => c.args[1] === 'prompt').args[3];
+    assert.ok(prompt.startsWith(`Read ${join(job.task_dir, 'brief.md')} and do exactly what it asks.`));
+    assert.ok(!prompt.includes(task));
+  } else {
+    const scoped = TOML.parse(args.find((arg) => arg.startsWith('mcp_servers='))).mcp_servers;
+    assert.equal(scoped['chrome-devtools'], undefined, 'keeps configured transport and enabled state');
+    for (const name of ['root_only', 'nested_only', 'other']) assert.equal(scoped[name].enabled, false);
+    assert.equal(scoped.hud.env.HUD_JOB_DIR, job.task_dir);
+  }
+  assert.equal(fs.readFileSync(ownerFile, 'utf8'), owner);
+});
+
+test('unparseable Codex layer leaves MCPs untouched and reports the fallback without its contents', async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.CODEX_HOME, 'config.toml'), '[private-value');
+  const job = await f.call('hud_create', { role: 'imp', on: 'codex', task: 'Synthetic fallback.' });
+  const args = f.commands().find((c) => c.args[1] === 'start').args;
+  assert.ok(!args.some((arg) => arg.startsWith('mcp_servers=')));
+  const { diagnostics } = await f.call('hud_peek', { job: job.job, detail: true });
+  assert.match(diagnostics.mcp_scope_warning, /^mcp scope not applied: cannot read or parse /);
+  assert.ok(!JSON.stringify(diagnostics).includes('private-value'));
+});
+
 test('a codex role waits out a phantom startup and passes the start timeout', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
+  const owner = '[mcp_servers."unrelated.server"]\ncommand="synthetic"\n[mcp_servers.hud]\ncommand="old"\n';
+  const ownerFile = join(f.env.CODEX_HOME, 'config.toml');
+  fs.writeFileSync(ownerFile, owner);
   const job = await f.call('hud_create', {
     role: 'imp',
     on: 'codex',
@@ -383,7 +451,7 @@ test('a codex role waits out a phantom startup and passes the start timeout', { 
     '--timeout',
     '90000',
   ]);
-  assert.deepEqual(start.slice(dash + 1), [
+  assert.deepEqual(start.slice(dash + 1, dash + 6), [
     '-m',
     'gpt-6.1-sol',
     '-c',
@@ -394,7 +462,14 @@ test('a codex role waits out a phantom startup and passes the start timeout', { 
     start.some((arg) => /^--(home|session|config|profile|worktree)/.test(arg) || arg.includes('CODEX_HOME')),
     false
   );
+  const config = TOML.parse(start.find((arg) => arg.startsWith('mcp_servers='))).mcp_servers;
+  assert.equal(config['unrelated.server'].enabled, false);
+  assert.equal(config.hud.enabled, false);
+  assert.equal(config.hud_worker.env.HUD_JOB_DIR, job.task_dir);
+  assert.equal(fs.readFileSync(ownerFile, 'utf8'), owner);
+  assert.equal(TOML.parse(start.find((arg) => arg.startsWith('developer_instructions='))).developer_instructions, roleText);
   const commands = f.commands();
+  assert.match(commands.find((c) => c.args[1] === 'prompt').args[3], /^Carry out this brief:\n\nSynthetic codex task\./);
   const settleAt = commands.findIndex(
     (c) => c.args[1] === 'wait' && c.args.includes('done') && c.args.includes('idle') && !c.args.includes('blocked')
   );

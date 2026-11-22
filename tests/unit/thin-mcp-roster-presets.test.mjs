@@ -662,6 +662,7 @@ test('a bad role file is skipped; roster and create name it without dropping oth
     [JSON.stringify({ harness: 'pi', note: secret }), 'missing role', null],
     [JSON.stringify({ role: 'bad', harness: 'pi', split: false, can_continue: true }), 'bad pi fields', 'bad'],
     [JSON.stringify({ role: 'bad', harness: 'cli', agent: 'nope', can_continue: true }), 'bad cli fields', 'bad'],
+    [JSON.stringify({ role: 'bad', mcp_servers: [1] }), 'bad mcp_servers', 'bad'],
     [JSON.stringify({ role: 'bad', harness: 'jev', tool: 'jev-ask' }), 'bad bro fields', 'bad'],
     [
       JSON.stringify({
