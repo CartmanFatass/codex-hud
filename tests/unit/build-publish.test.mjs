@@ -1,0 +1,166 @@
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import * as fs from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { PanelReload } from '../../dist/utils/panel-reload.js';
+
+const exec = promisify(execFile);
+const script = new URL('../../scripts/build.mjs', import.meta.url);
+const compiler = fileURLToPath(new URL('../../node_modules/typescript', import.meta.url));
+const signature = (file) => {
+  const { ino, size, mtimeMs, ctimeMs } = fs.statSync(file);
+  return { ino, size, mtimeMs, ctimeMs };
+};
+
+function fixture(t) {
+  const root = fs.mkdtempSync(join(tmpdir(), 'hud-build-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = (name) => join(root, name);
+  const put = (name, body) => {
+    fs.mkdirSync(dirname(file(name)), { recursive: true });
+    fs.writeFileSync(file(name), body);
+  };
+  const run = (args = [], preload) =>
+    exec(process.execPath, [...(preload ? ['--import', file(preload)] : []), file('scripts/build.mjs'), ...args], { cwd: root });
+  const stages = () => fs.readdirSync(root).filter((name) => /^\.dist(?:-test)?-stage-/.test(name));
+  fs.mkdirSync(file('scripts'));
+  fs.copyFileSync(script, file('scripts/build.mjs'));
+  fs.mkdirSync(file('node_modules'));
+  fs.symlinkSync(compiler, file('node_modules/typescript'), 'dir');
+  put('package.json', '{"type":"module"}');
+  put('tsconfig.json', JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', rootDir: 'src', types: [], declaration: true, sourceMap: true, removeComments: true },
+    include: ['src/**/*.ts'],
+  }));
+  put('tsconfig.test.json', '{"extends":"./tsconfig.json","compilerOptions":{"rootDir":"."}}');
+  put('src/index.ts', 'export const index = true;\n');
+  put('src/tree-page.ts', 'export { generation } from "./render/sub.js";\n');
+  put('src/render/sub.ts', 'export const generation = 1;\n');
+  put('src/mcp/thin-main.ts', 'export const mcp = true;\n');
+  return { file, put, run, stages };
+}
+
+test('both targets prune orphan JS, maps, declarations and empty directories', async (t) => {
+  const f = fixture(t);
+  for (const [dist, args] of [['dist', []], ['dist-test', ['--target', 'test']]]) {
+    const prefix = dist === 'dist' ? dist : `${dist}/src`;
+    for (const suffix of ['js', 'js.map', 'd.ts']) f.put(`${prefix}/render/orphan.${suffix}`, 'obsolete');
+    f.put(`${dist}/obsolete/dead.js`, 'obsolete');
+    await f.run(args);
+    assert.deepEqual(fs.readdirSync(f.file(`${prefix}/render`)).sort(), ['sub.d.ts', 'sub.js', 'sub.js.map']);
+    assert.equal(fs.existsSync(f.file(`${dist}/obsolete`)), false);
+  }
+});
+
+test('TypeScript errors leave the live files and timestamps intact', async (t) => {
+  const f = fixture(t);
+  await f.run();
+  f.put('dist/orphan.js', 'not pruned on failure');
+  const files = ['dist/tree-page.js', 'dist/index.js', 'dist/orphan.js'].map(f.file);
+  const snapshot = () => files.map((file) => [signature(file), fs.readFileSync(file, 'utf8')]);
+  const before = snapshot();
+  f.put('src/render/sub.ts', 'export const generation: number = "wrong";\n');
+  await assert.rejects(f.run(), (error) => error.code === 1 && /error TS2322/.test(error.stdout));
+  assert.deepEqual(snapshot(), before);
+  assert.deepEqual(f.stages(), []);
+});
+
+test('concurrent readers see only complete old or new panel entry bytes', async (t) => {
+  const f = fixture(t);
+  await f.run();
+  const entry = f.file('dist/tree-page.js'), read = () => fs.readFileSync(entry, 'utf8');
+  const before = read(), seen = new Set([before]);
+  f.put('src/tree-page.ts', 'export const replacement = true;\n');
+  let samples = 0;
+  const timer = setInterval(() => {
+    samples++;
+    try { seen.add(read()); } catch (error) { seen.add(error.code); }
+  }, 5);
+  try { await f.run(); } finally { clearInterval(timer); }
+  const after = read();
+  assert.ok(samples > 0 && after.includes('replacement') && before !== after);
+  seen.add(after);
+  assert.deepEqual(seen, new Set([before, after]));
+});
+
+test('panel sentinel is last; no-op and MCP-only builds leave it alone', async (t) => {
+  const f = fixture(t);
+  await f.run();
+  const entry = f.file('dist/tree-page.js'), index = f.file('dist/index.js');
+  const before = signature(entry), oldIndex = signature(index);
+  f.put('src/render/sub.ts', 'export const generation = 2;\n');
+  // Assert at the rename itself rather than racing a watcher against synchronous publishing.
+  f.put('order.mjs', `import assert from 'node:assert/strict';
+import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+const rename = fs.renameSync;
+fs.renameSync = (src, dst) => {
+  if (dst.endsWith('/dist/tree-page.js')) {
+    assert.match(fs.readFileSync('dist/render/sub.js', 'utf8'), /generation = 2/);
+    assert.notEqual(fs.statSync('dist/index.js').ino, ${oldIndex.ino});
+  }
+  rename(src, dst);
+}; syncBuiltinESMExports();`);
+  await f.run([], 'order.mjs');
+  const updated = signature(entry), updatedIndex = signature(index);
+  assert.notEqual(updated.ino, before.ino);
+  f.put('src/render/sub.ts', 'export const generation = 2;\n// Not emitted\n');
+  await f.run();
+  assert.deepEqual(signature(entry), updated);
+  assert.equal(signature(index).ino, updatedIndex.ino);
+  assert.ok(signature(index).mtimeMs > updatedIndex.mtimeMs);
+  f.put('src/mcp/thin-main.ts', 'export const mcp = false;\n');
+  await f.run();
+  assert.match(fs.readFileSync(f.file('dist/mcp/thin-main.js'), 'utf8'), /mcp = false/);
+  assert.notEqual(signature(index).ino, updatedIndex.ino);
+  assert.deepEqual(signature(entry), updated);
+});
+
+test('concurrent targets serialize compilation and recover dead PID stages', async (t) => {
+  const f = fixture(t);
+  f.put('.dist-stage-2147483647/partial.js', 'crashed build');
+  f.put(`.dist-test-stage-${process.pid}/live.js`, 'live PID');
+  f.put('exclusive.mjs', `import cp from 'node:child_process'; import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
+const spawn = cp.spawnSync;
+cp.spawnSync = (...args) => {
+  fs.mkdirSync('compiler-active');
+  try { return spawn(...args); } finally { fs.rmdirSync('compiler-active'); }
+}; syncBuiltinESMExports();`);
+  const results = await Promise.allSettled([[], ['--target', 'test']].map((args) => f.run(args, 'exclusive.mjs')));
+  for (const result of results) if (result.status === 'rejected') throw result.reason;
+  assert.ok(fs.existsSync(f.file('dist/tree-page.js')));
+  assert.ok(fs.existsSync(f.file('dist-test/src/tree-page.js')));
+  assert.deepEqual(f.stages(), [`.dist-test-stage-${process.pid}`]);
+});
+
+test('the nested MCP package builds the root output; only explicit clean removes the legacy tree', async (t) => {
+  const f = fixture(t), legacy = 'packages/hud-mcp/dist/legacy.js';
+  f.put(legacy, 'kept for old workers');
+  const manifest = new URL('../../packages/hud-mcp/package.json', import.meta.url);
+  fs.copyFileSync(manifest, f.file('packages/hud-mcp/package.json'));
+  const { stderr } = await exec('npm', ['run', 'build'], { cwd: f.file('packages/hud-mcp') });
+  assert.match(stderr, /packages\/hud-mcp\/dist is obsolete/);
+  assert.ok(fs.existsSync(f.file('dist/mcp/thin-main.js')));
+  assert.equal(fs.readFileSync(f.file(legacy), 'utf8'), 'kept for old workers');
+  f.put('dist-test/src/orphan.js', 'test output');
+  const { stdout } = await f.run(['--clean']);
+  assert.match(stdout, /^Removing packages\/hud-mcp\/dist$/m);
+  for (const output of ['dist', 'dist-test', 'packages/hud-mcp/dist']) assert.equal(fs.existsSync(f.file(output)), false);
+});
+
+test('PanelReload probes a published non-MCP generation after its quiet window and when clean', async (t) => {
+  const f = fixture(t);
+  await f.run();
+  const reload = new PanelReload(f.file('dist/tree-page.js'));
+  f.put('src/render/sub.ts', 'export const generation = 2;\n');
+  await f.run();
+  assert.equal(await reload.poll(() => false, 10000), false);
+  assert.equal(await reload.poll(() => false, 11999), false);
+  assert.equal(await reload.poll(() => true, 12000), false);
+  assert.equal(await reload.poll(() => false, 12001), true);
+  assert.equal(reload.failed, false);
+});

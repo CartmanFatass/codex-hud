@@ -134,9 +134,10 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
     const name = member.slice(`hud-${version}/`.length).replace(/\/$/, '');
     assert.ok(!name.split('/').includes('..') && !path.isAbsolute(name), member);
     for (const excludedPath of excluded) assert.ok(name !== excludedPath && !name.startsWith(excludedPath + '/'), member);
+    assert.doesNotMatch(name, /^\.dist(?:-test)?-stage-/, member);
     assert.ok(!member.endsWith('/CLAUDE.md'), member);
   }
-  for (const required of ['install', 'install.d/pi.sh', 'bin/hud', 'src/mcp/thin-main.ts',
+  for (const required of ['install', 'install.d/pi.sh', 'bin/hud', 'src/mcp/thin-main.ts', 'scripts/build.mjs',
     'packages/hud-mcp/bin/hud-watch.mjs', 'packages/hud-mcp/bin/hud-jev.mjs', 'packages/hud-mcp/hud-convention.md',
     'packages/hud-mcp/roles/imp.json', 'integrations/skills/hud/SKILL.md', 'integrations/skills/hud-delegate/SKILL.md', 'integrations/skills/hud-setup/SKILL.md',
     'integrations/tickets/method.md', 'integrations/skills-optional/grill-with-docs/SKILL.md',
@@ -182,7 +183,9 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
 
   // README core command, with an empty npm cache and no build output: no --skip-build.
   console.log('Offline build: npm_config_offline=true; empty npm cache; PATH contains only temporary bin/tools.');
-  assert.match(run('./install'), /Dependencies already present/);
+  const installOutput = run('./install');
+  assert.match(installOutput, /Dependencies already present/);
+  assert.equal([...installOutput.matchAll(/^> node scripts\/build\.mjs$/gm)].length, 1);
   assert.ok(fs.statSync(path.join(tree, 'dist/cli/hud.js')).isFile());
   assert.ok(fs.statSync(path.join(tree, 'dist/mcp/thin-main.js')).isFile());
   assert.equal(fs.existsSync(path.join(tree, 'packages/hud-mcp/dist')), false);

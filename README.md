@@ -172,7 +172,11 @@ supported; macOS is not a qualified current product profile.
 ## Development
 
 Development commands need the git repository; the release archive does not ship tests.
-`npm run build` builds both the HUD and MCP into `dist/`.
+`npm run build` stages the HUD and MCP, then publishes to `dist/` and prunes
+obsolete output. `npm run dev` is a direct TypeScript watch build: it does not
+prune or take the build lock, so stop it before a regular build or cleanup.
+After stopping HUD processes, use `npm run clean` to remove build outputs,
+including the obsolete `packages/hud-mcp/dist/`.
 
 ```sh
 npm ci

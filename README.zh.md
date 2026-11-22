@@ -141,7 +141,10 @@ hud statusline --help
 
 ## 开发
 
-开发命令需要 git 仓库；发布包不含测试。`npm run build` 将 HUD 和 MCP 一起编译到 `dist/`。
+开发命令需要 git 仓库；发布包不含测试。`npm run build` 先暂存 HUD 和 MCP 的编译产物，再发布到
+`dist/` 并清除过期产物。`npm run dev` 是直接运行的 TypeScript watch，不清理旧产物也不加构建锁；
+常规构建或清理前请先停止 watch。停止 HUD 进程后，可用 `npm run clean` 清除构建产物，包括旧的
+`packages/hud-mcp/dist/`。
 
 ```sh
 npm ci
