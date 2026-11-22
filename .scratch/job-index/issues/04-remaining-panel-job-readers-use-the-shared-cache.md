@@ -1,6 +1,6 @@
 # 04: Remaining panel job readers use the shared cache
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 01
 
 **What to build:** Proposal 08 S4: project-board.ts recentJobs()/liveCwds(), control-radar.ts job enumeration, and (owner default Q3: include) session-finder.ts codexWorkerSessionIds()/workerSessionCache read through JobIndexCache.
