@@ -13,6 +13,7 @@ import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { reapFixtureProcesses, stopChild, trackFixture } from '../helpers/process-cleanup.mjs';
 
 const readHint = (job) => `hud_read job=${job} (mode: "full" for the whole report)`;
 
@@ -151,20 +152,33 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
 
 test('dead supervisor watcher preserves a live worker; both gone fail or close by the explicit report baseline', { timeout: 10000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'dead-supervisor-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), HUD_WATCH_CLI_CHECK_MS: '30' };
+  const hudHome = join(home, 'hud');
+  const untrack = trackFixture({ root: home, hudHome });
+  const env = { ...process.env, HOME: home, HUD_HOME: hudHome, HUD_WATCH_CLI_CHECK_MS: '30' };
   const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
   const supervisor = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
-  t.after(() => { worker.kill('SIGKILL'); supervisor.kill('SIGKILL'); });
+  const workerExited = once(worker, 'exit'), supervisorExited = once(supervisor, 'exit');
+  let watcher, watcherExited;
+  t.after(async () => {
+    if (watcher) await stopChild(watcher, watcherExited, { killMs: 300 });
+    await Promise.all([
+      stopChild(worker, workerExited, { killMs: 100 }),
+      stopChild(supervisor, supervisorExited, { killMs: 100 }),
+    ]);
+    const survivors = await reapFixtureProcesses({ root: home, hudHome });
+    untrack();
+    fs.rmSync(home, { recursive: true, force: true });
+    assert.equal(survivors.length, 0);
+  });
   await until(() => procStat(worker.pid) !== null);
   const initial = { state: 'working', pid: worker.pid, pid_start_time: procStat(worker.pid).start, supervisor_pid: supervisor.pid };
   const failed = writeJob(env.HUD_HOME, 'j00000000000000f1', 'w4E:p1', 'no-report', initial);
   const closed = writeJob(env.HUD_HOME, 'j00000000000000f2', 'w4E:p1', 'with-report', initial, true);
   for (const dir of [failed, closed]) fs.writeFileSync(join(dir, 'turn.json'), JSON.stringify({ seq: 1, sent_at: new Date().toISOString(), report_sig: null }));
-  const watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
-  t.after(() => watcher.kill('SIGKILL'));
+  watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
+  watcherExited = once(watcher, 'exit');
   supervisor.kill('SIGKILL');
-  await new Promise((r) => supervisor.once('exit', r));
+  await supervisorExited;
   const status = (dir) => JSON.parse(fs.readFileSync(join(dir, 'STATUS.json')));
   await until(() => status(failed).state === 'waiting_orchestrator');
   assert.equal(status(failed).reason, 'supervisor exited; worker still running');
@@ -175,7 +189,7 @@ test('dead supervisor watcher preserves a live worker; both gone fail or close b
   await wait(120);
   assert.equal(fs.statSync(join(failed, 'STATUS.json')).mtimeMs, stamp, 'unchanged observation does not rewrite STATUS');
   worker.kill('SIGKILL');
-  await new Promise((r) => worker.once('exit', r));
+  await workerExited;
   await until(() => status(failed).state === 'failed' && status(closed).state === 'closed');
   assert.equal(status(failed).exit_reason, 'worker exited');
   assert.equal(status(closed).output_written, true);
@@ -531,7 +545,7 @@ test('hud watch --all watches every pane and exits cleanly on help, usage errors
 
 test('CLI and pi question pushes use only watch while live, and fall back with missing or stale watcher PIDs', { timeout: 10000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-push-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const untrack = trackFixture({ root: home, hudHome: home });
   const bin = join(home, 'bin'), log = join(home, 'pushes');
   fs.mkdirSync(bin);
   fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}\nimport fs from 'node:fs'; if (process.argv[2] === 'agent') fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
@@ -540,7 +554,14 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
   const dir = writeJob(home, id, 'w4E:p1', 'push', { state: 'working' });
   fs.writeFileSync(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
   const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  const childExited = once(child, 'exit');
+  t.after(async () => {
+    await stopChild(child, childExited, { killMs: 300 });
+    const survivors = await reapFixtureProcesses({ root: home, hudHome: home });
+    untrack();
+    fs.rmSync(home, { recursive: true, force: true });
+    assert.equal(survivors.length, 0);
+  });
   const pidFile = join(home, 'watchers', 'w4E:p1.pid');
   await until(() => fs.existsSync(pidFile));
   assert.equal(Number(fs.readFileSync(pidFile)), child.pid);
@@ -571,7 +592,15 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
 
 function queueFixture(t, agent = 'codex', thread = '00000000-0000-4000-8000-000000000001', fail = false) {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-queue-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const untrack = trackFixture({ root: home, hudHome: home });
+  const cleanups = [];
+  t.after(async () => {
+    for (const cleanup of [...cleanups].reverse()) await cleanup();
+    const survivors = await reapFixtureProcesses({ root: home, hudHome: home });
+    untrack();
+    fs.rmSync(home, { recursive: true, force: true });
+    assert.equal(survivors.length, 0);
+  });
   const bin = join(home, 'bin'), log = join(home, 'deliveries'), agentFile = join(home, 'agent'), statusFile = join(home, 'agent-status');
   fs.mkdirSync(bin);
   fs.writeFileSync(agentFile, agent);
@@ -591,7 +620,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
   for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: home, CODEX_HOME: join(home, 'wrong-account'), HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
   const deliveries = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
-  return { home, env, agentFile, statusFile, deliveries };
+  return { home, env, agentFile, statusFile, deliveries, onCleanup: (fn) => cleanups.push(fn) };
 }
 
 test('a live pi watcher suppresses fallback, but dead, reused and mismatched PIDs do not', async (t) => {
@@ -703,7 +732,7 @@ await setTimeout(3000);
   fs.writeFileSync(join(dir, 'qa/q1.md'), 'Synthetic question.');
   const watcher = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--queue'], { env: f.env, stdio: 'ignore' });
   const exited = once(watcher, 'exit');
-  t.after(async () => { watcher.kill('SIGTERM'); await exited; });
+  f.onCleanup(() => stopChild(watcher, exited, { killMs: 1000 }));
   await until(() => fs.existsSync(started));
   const start = performance.now();
   watcher.kill('SIGTERM');
@@ -798,7 +827,7 @@ test('agy hook processes and the watcher racing an idle flush deliver each event
       { rescanMs: 50, settlementWindowMs: 30 });
   `], { env: f.env, stdio: 'ignore' });
   const exited = once(watcher, 'exit');
-  t.after(async () => { watcher.kill('SIGTERM'); await exited; });
+  f.onCleanup(() => stopChild(watcher, exited, { killMs: 1000 }));
   await until(() => fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes('race-1') && fs.readFileSync(file, 'utf8').includes('race-2'));
   const hooks = Array.from({ length: 6 }, async () => {
     const child = spawn(agyHook, [], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });

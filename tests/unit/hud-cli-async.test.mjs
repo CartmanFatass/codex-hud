@@ -13,6 +13,7 @@ import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { procStat } from '../../dist/roles/worker-tree.js';
 import { configureFakeDecision, decisionAnswer } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { reapFixtureProcesses, stopChild, trackFixture } from '../helpers/process-cleanup.mjs';
 
 // Leave room for subprocess startup, but never let the supervisor's own
 // 20 s Herdr timeout stand in for cancellation of a held effect.
@@ -28,6 +29,7 @@ async function until(t, ready) {
 async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-cli-async-'));
   const home = join(root, 'hud'), jobs = join(home, 'jobs'), bin = join(root, 'bin');
+  const untrack = trackFixture({ root, hudHome: home });
   const job = 'j0000000000000001', dir = join(jobs, job), herdrPath = join(root, 'herdr.sock');
   const env = { PATH: bin, HOME: join(root, 'home'), HUD_HOME: home, HERDR_SOCKET_PATH: herdrPath, TZ: 'UTC' };
   const subscribers = new Map(), sockets = new Set(), children = [];
@@ -52,12 +54,19 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
     });
   });
   t.after(async () => {
-    for (const { child } of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-    await Promise.all(children.map(({ exited }) => exited));
+    const killMs = t.signal?.aborted ? 200 : 1000;
+    await Promise.all(children.map(({ child, exited }) => stopChild(child, exited, { killMs })));
+    const survivors = await reapFixtureProcesses({ root, hudHome: home });
+    untrack();
     for (const conn of sockets) conn.destroy();
     http.closeAllConnections();
     await Promise.all([http, socket].map((server) => new Promise((done) => server.close(done))));
     fs.rmSync(root, { recursive: true, force: true });
+    assert.equal(
+      survivors.length,
+      0,
+      `Fixture left live process(es) for ${home}: ${survivors.map((p) => `${p.pid} (${p.state}) ${p.cmdline}`).join('; ')}`
+    );
   });
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(bin);

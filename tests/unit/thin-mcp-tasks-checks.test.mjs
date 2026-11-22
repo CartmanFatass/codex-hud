@@ -10,6 +10,7 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, reportSignature } from '../../dist/mcp/cli-judge.js';
 import { writeReportMeta } from '../../dist/roles/report-meta.js';
+import { stopChild } from '../helpers/process-cleanup.mjs';
 import {
   workerFor,
   cardText,
@@ -221,7 +222,14 @@ test('MCP tasks: a fresh server cannot cancel old tasks; legacy and failed dispa
   const job = taskJob(f, task);
   const child = spawn(process.execPath, [entry], { cwd: f.root, env: f.env, stdio: ['pipe', 'pipe', 'inherit'] });
   const exited = once(child, 'exit');
-  t.after(async () => { child.stdin.end(); assert.deepEqual(await exited, [0, null]); });
+  f.onCleanup(async () => {
+    const { forced, result } = await stopChild(child, exited, {
+      closeStdin: true,
+      graceMs: t.signal?.aborted ? 200 : 1500,
+      killMs: 400,
+    });
+    if (!forced && !t.signal?.aborted) assert.deepEqual(result, [0, null]);
+  });
   const next = taskRpc(rpcClient(child));
   await next('server/discover');
   const unknown = await next('tasks/get', { taskId: task.taskId });

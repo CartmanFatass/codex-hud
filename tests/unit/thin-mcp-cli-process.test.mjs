@@ -228,7 +228,7 @@ test('supervisor edges: outage with a report settles at 60s, PID death closes wi
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'outage-events', 10);
-  const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env: f.env, stdio: 'ignore' });
   t.after(() => worker.kill('SIGKILL'));
   writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(worker.pid));
   const job = await f.call('hud_create', { role: 'outage-events', request_key: 'outage-report', task: 'Synthetic outage.' });
@@ -242,7 +242,7 @@ test('supervisor edges: outage with a report settles at 60s, PID death closes wi
   await until(() => cliState(job.task_dir)?.state === 'closed', 3000);
   assert.equal(cliState(job.task_dir).exit_reason, 'settled');
   fs.unlinkSync(join(f.env.HOME, 'herdr-errors'));
-  const worker2 = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  const worker2 = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env: f.env, stdio: 'ignore' });
   t.after(() => worker2.kill('SIGKILL'));
   writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(worker2.pid));
   const failed = await f.call('hud_create', { role: 'outage-events', request_key: 'no-report-death', task: 'Task text says quota but that is not a quota fact.' });
@@ -355,7 +355,7 @@ test('an unread declared report closes at the idle deadline and reaps leftovers'
 test('exit is a /proc pid check: herdr errors keep working while pid lives, PID gone closes or fails, unknown PID asks after 3 ticks', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
   const spawnDummy = () => {
-    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { env: f.env, stdio: 'ignore' });
     t.after(() => { try { child.kill('SIGKILL'); } catch {} });
     return child;
   };
@@ -436,7 +436,7 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
   const f = await fixture(t);
   writeCliRole(f, 'respawn-cli', 1, true);
   const spawnDummy = () => {
-    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { env: f.env, stdio: 'ignore' });
     t.after(() => { try { child.kill('SIGKILL'); } catch {} });
     return child;
   };

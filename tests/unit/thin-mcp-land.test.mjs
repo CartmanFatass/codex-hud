@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { fixture, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
+import { stopChild } from '../helpers/process-cleanup.mjs';
 
 import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -65,7 +67,8 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   const pidFile = join(f.home, 'watch.pid');
   if (fs.existsSync(pidFile)) { process.kill(Number(fs.readFileSync(pidFile)), 'SIGTERM'); await until(() => !fs.existsSync(pidFile)); }
   const watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env: f.env, stdio: 'ignore' });
-  t.after(() => watcher.kill());
+  const watcherExited = once(watcher, 'exit');
+  f.onCleanup(() => stopChild(watcher, watcherExited, { killMs: 1000 }));
   await until(() => fs.existsSync(pidFile));
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
   await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 10000);

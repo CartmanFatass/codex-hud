@@ -5,12 +5,14 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
+import { reapFixtureProcesses, stopChild, trackFixture } from './process-cleanup.mjs';
 
 export const hour = 3600000;
 const watcher = resolve('packages/hud-mcp/bin/hud-watch.mjs');
 export function fixture(t, degradedMs) {
   const root = fs.mkdtempSync(join(tmpdir(), 'job-retention-'));
   const home = join(root, 'hud'), bin = join(root, 'bin'), jobs = join(home, 'jobs');
+  const untrack = trackFixture({ root, hudHome: home });
   const pi = join(root, 'pi'), defaultPi = join(root, 'home', '.pi', 'agent');
   fs.mkdirSync(jobs, { recursive: true });
   fs.mkdirSync(bin);
@@ -21,12 +23,24 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
 `, { mode: 0o700 });
   const children = [];
   t.after(async () => {
+    let firstError;
+    const record = (error) => { firstError ??= error; };
+    const killMs = t.signal?.aborted ? 200 : 1000;
     for (const { child, exited, stderr } of children) {
-      if (child.exitCode === null && child.signalCode === null) child.kill();
-      await exited;
-      assert.equal(stderr(), '');
+      const { forced } = await stopChild(child, exited, { killMs });
+      if (!forced && !t.signal?.aborted) {
+        try { assert.equal(stderr(), ''); } catch (error) { record(error); }
+      }
     }
+    const survivors = await reapFixtureProcesses({ root, hudHome: home });
+    untrack();
     fs.rmSync(root, { recursive: true, force: true });
+    if (survivors.length) {
+      record(new assert.AssertionError({
+        message: `Fixture left live process(es) for ${home}: ${survivors.map((p) => `${p.pid} (${p.state}) ${p.cmdline}`).join('; ')}`,
+      }));
+    }
+    if (firstError) throw firstError;
   });
   let next = 0;
   function job(status, receipt = {}, tab = false, name = `j${(++next).toString(16).padStart(16, '0')}`) {

@@ -15,6 +15,7 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, turnToken } from '../../dist/mcp/cli-judge.js';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
+import { reapFixtureProcesses, stopChild, trackFixture } from './process-cleanup.mjs';
 
 const fakeBin = fileURLToPath(new URL('./thin-mcp-fake-bin.mjs', import.meta.url));
 const clock = new URL('./thin-mcp-clock.mjs', import.meta.url).href;
@@ -107,6 +108,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     fs.mkdirSync(env.HUD_JOB_DIR, { recursive: true });
   } else delete env.HUD_JOB_DIR;
   const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
+  const untrack = trackFixture({ root, hudHome: env.HUD_HOME });
+  const cleanups = [];
   const child = spawn(process.execPath, [...preload, mcpEntry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
   let stderr = '';
@@ -115,31 +118,26 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   });
   const rpc = rpcClient(child);
   t.after(async () => {
-    const panePid = join(env.HUD_HOME, 'watchers/w4E:p1.pid');
-    try {
-      const pid = Number(fs.readFileSync(panePid));
-      if (pid > 1 && pid !== process.pid) process.kill(pid, 'SIGTERM');
-    } catch {}
-    const jobsDir = join(env.HUD_HOME, 'jobs');
-    if (fs.existsSync(jobsDir))
-      for (const id of fs.readdirSync(jobsDir)) {
-        const pidFile = join(jobsDir, id, 'supervisor.pid');
-        if (!fs.existsSync(pidFile)) continue;
-        try {
-          process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGTERM');
-        } catch {}
-      }
-    child.stdin.end();
-    await exited;
-    const watchLog = join(env.HUD_HOME, 'watch.log');
-    if (fs.existsSync(watchLog))
-      for (const match of fs.readFileSync(watchLog, 'utf8').matchAll(/start pid=(\d+)/g)) {
-        try {
-          process.kill(Number(match[1]), 'SIGTERM');
-        } catch {}
-      }
+    let firstError;
+    const record = (error) => { firstError ??= error; };
+    for (const cleanup of [...cleanups].reverse()) {
+      try { await cleanup(); } catch (error) { record(error); }
+    }
+    const stopped = await stopChild(child, exited, {
+      closeStdin: true,
+      graceMs: t.signal?.aborted ? 200 : 2000,
+      killMs: 400,
+    });
+    const survivors = await reapFixtureProcesses({ root, hudHome: env.HUD_HOME });
+    untrack();
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    assert.equal(stderr, '');
+    if (survivors.length) {
+      record(new assert.AssertionError({
+        message: `Fixture left live process(es) for ${env.HUD_HOME}: ${survivors.map((p) => `${p.pid} (${p.state}) ${p.cmdline}`).join('; ')}`,
+      }));
+    }
+    if (firstError) throw firstError;
+    if (!stopped.forced && !t.signal?.aborted) assert.equal(stderr, '');
   });
   let cliSocket, piStatus = () => 'idle';
   const socketRequests = [];
@@ -223,7 +221,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         if (client.state !== state) push(client, state);
       }
     }, 20);
-    t.after(() => { clearInterval(simulation); for (const client of subscribers) client.socket.destroy(); cliSocket.close(); });
+    cleanups.push(() => { clearInterval(simulation); for (const client of subscribers) client.socket.destroy(); cliSocket.close(); });
   }
   async function call(name, args = {}) {
     if (!routingOnly && name === 'hud_create') {
@@ -251,6 +249,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     env,
     rpc,
     call,
+    onCleanup: (fn) => cleanups.push(fn),
     // Rename replaces the fixture symlink itself, never the shared executable it points to.
     overrideBin: (name, body) => writeFixtureFile(join(bin, name), body, { mode: 0o700 }),
     socketRequests,
@@ -295,10 +294,16 @@ export function workerClient(t, f, dir, askTimeout = '30') {
     cwd: f.root, env: { ...f.env, HUD_JOB_DIR: dir, HUD_ASK_TIMEOUT: askTimeout }, stdio: ['pipe', 'pipe', 'inherit'],
   });
   const exited = once(child, 'exit');
-  t.after(async () => {
-    child.stdin.end();
-    assert.deepEqual(await exited, [0, null]);
-  });
+  const cleanup = async () => {
+    const { forced, result } = await stopChild(child, exited, {
+      closeStdin: true,
+      graceMs: t.signal?.aborted ? 200 : 1500,
+      killMs: 400,
+    });
+    if (!forced && !t.signal?.aborted) assert.deepEqual(result, [0, null]);
+  };
+  if (f.onCleanup) f.onCleanup(cleanup);
+  else t.after(cleanup);
   const rpc = rpcClient(child);
   const call = async (name, args = {}) => {
     const { result, error } = await rpc('tools/call', { name, arguments: args });
@@ -383,7 +388,14 @@ export function fakeCliWithChild(t, f) {
     });
   `], { env: f.env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   const exited = once(worker, 'exit');
-  t.after(async () => { if (worker.connected) worker.disconnect(); await exited; });
+  const cleanup = async () => {
+    if (worker.connected) {
+      try { worker.disconnect(); } catch {}
+    }
+    await stopChild(worker, exited, { graceMs: 400, killMs: 200 });
+  };
+  if (f.onCleanup) f.onCleanup(cleanup);
+  else t.after(cleanup);
   writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(worker.pid));
   return {
     pid: worker.pid,
@@ -536,7 +548,7 @@ export async function fakeDecisionServer(t, handler) {
     });
   });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
-  t.after(() => new Promise((done) => server.close(done)));
+  t.after(() => { server.closeAllConnections?.(); return new Promise((done) => server.close(done)); });
   const port = server.address().port;
   return { baseUrl: `http://127.0.0.1:${port}`, requests };
 }

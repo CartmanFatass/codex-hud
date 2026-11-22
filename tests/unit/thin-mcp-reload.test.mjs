@@ -6,9 +6,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { fixture, publishPiGrace, rpcClient, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
+import { reapFixtureProcesses, stopChild, trackFixture } from '../helpers/process-cleanup.mjs';
 
 test('a rebuild drains overlapping calls and a broken candidate leaves the old server connected', { timeout: 10000 }, async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-reload-drain-'));
+  const untrack = trackFixture({ root });
   const bin = join(root, 'packages/hud-mcp/bin'), dist = join(root, 'dist');
   fs.mkdirSync(join(dist, 'mcp'), { recursive: true });
   fs.cpSync(resolve('packages/hud-mcp/bin'), bin, { recursive: true });
@@ -31,7 +33,13 @@ test('a rebuild drains overlapping calls and a broken candidate leaves the old s
   const exit = once(child, 'exit');
   let stderr = '';
   child.stderr.on('data', (data) => stderr += data);
-  t.after(async () => { child.kill(); await exit; fs.rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => {
+    await stopChild(child, exit, { killMs: 500 });
+    const survivors = await reapFixtureProcesses({ root });
+    untrack();
+    fs.rmSync(root, { recursive: true, force: true });
+    assert.equal(survivors.length, 0);
+  });
   const rpc = rpcClient(child), held = rpc('hold');
   await until(() => fs.existsSync(join(root, 'entered')));
   publish('new');
