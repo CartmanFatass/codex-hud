@@ -3,7 +3,8 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   if the work will not fit, stop and report rather than expand it.
 - Build one end-to-end slice per imp job with the simplest change that works.
 - Keep the main session's context for decisions. Hand a lookup or inventory that spans several files, or a doc
-  patch, to `sonic`; code and test changes to `imp`. Do it yourself only when it takes a couple of tool calls or
+  patch, to `sonic`; code and test changes to `imp`, except user-facing UI (panel, statusline and footers,
+  rendered pages, design samples, src/render/), which goes to `frontend-imp`. Do it yourself only when it takes a couple of tool calls or
   needs a resource only the main session holds.
 - A sonic brief asks for facts, not a recommendation, and fits one report of about 60 lines; split a wide survey
   across several sonics started together.
