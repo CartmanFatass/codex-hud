@@ -30,13 +30,25 @@ export async function addWorktree(wt: ManagedWorktree) {
   await git(wt.main_root, ['worktree', 'add', '--no-checkout', '-b', wt.branch, '--', wt.root, wt.base_head]);
 }
 
+function linkMissingDependencies(source: string, target: string) {
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const src = join(source, entry.name), dst = join(target, entry.name);
+    const stat = fs.lstatSync(dst, { throwIfNoEntry: false });
+    if (!stat) fs.symlinkSync(src, dst);
+    else if (stat.isDirectory() && entry.isDirectory()) linkMissingDependencies(src, dst);
+  }
+}
+
 export async function populateWorktree(wt: ManagedWorktree) {
   // Discover filters after branch registration: includeIf may differ in the new worktree.
   const filters = await neutralizeFilters(git, wt.root);
   await git(wt.root, [...filters, 'read-tree', 'HEAD']);
   await git(wt.root, [...filters, 'checkout-index', '--all']);
   const source = join(wt.main_root, 'node_modules'), link = join(wt.root, 'node_modules');
-  if (fs.existsSync(source) && !fs.lstatSync(link, { throwIfNoEntry: false })) fs.symlinkSync(source, link);
+  if (!fs.statSync(source, { throwIfNoEntry: false })?.isDirectory()) return;
+  const linkStat = fs.lstatSync(link, { throwIfNoEntry: false });
+  if (!linkStat) fs.symlinkSync(source, link);
+  else if (linkStat.isDirectory()) linkMissingDependencies(source, link);
 }
 
 const status = (root: string, filters: string[], ignored: boolean, run: WorktreeGit = git) => run(root, [...filters,
@@ -44,10 +56,12 @@ const status = (root: string, filters: string[], ignored: boolean, run: Worktree
   ...(ignored ? ['--ignored'] : []),
 ]);
 const fields = (text: string) => text ? text.slice(0, -1).split('\0') : [];
-function dependencyLink(wt: ManagedWorktree) {
-  const link = join(wt.root, 'node_modules');
-  return fs.lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink() &&
-    fs.readlinkSync(link) === join(wt.main_root, 'node_modules');
+function dependencyLink(wt: ManagedWorktree, relPath = 'node_modules') {
+  if (relPath !== 'node_modules' && !relPath.startsWith('node_modules/')) return false;
+  if (relPath.split('/').includes('..')) return false;
+  const link = join(wt.root, relPath);
+  return fs.lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink() === true &&
+    fs.readlinkSync(link) === join(wt.main_root, relPath);
 }
 
 const diffNames = ['diff', '--name-only', '-z', '--no-renames', '--no-ext-diff', '--no-textconv'];
@@ -60,7 +74,7 @@ async function changedPaths(wt: ManagedWorktree, head: string, run: WorktreeGit)
     run(wt.root, [...diffNames, wt.base_head, head, '--']),
     neutralizeFilters(run, wt.root).then((filters) => status(wt.root, filters, false, run)),
   ]);
-  const paths = fields(pending).filter((row) => row !== '?? node_modules' || !dependencyLink(wt));
+  const paths = fields(pending).filter((row) => !(row.startsWith('?? ') && dependencyLink(wt, row.slice(3))));
   return { committed: fields(diff), dirty: paths.map((row) => row.slice(3)) };
 }
 
@@ -174,7 +188,7 @@ export async function reusableWorktree(
     if (fields(index).some((row) => /^[a-zS] /.test(row))) return null;
     const filters = await neutralizeFilters(git, wt.root);
     const pending = fields(await status(wt.root, filters, false));
-    if (pending.some((row) => row !== '?? node_modules' || !dependencyLink(wt))) return null;
+    if (pending.some((row) => !(row.startsWith('?? ') && dependencyLink(wt, row.slice(3))))) return null;
     return { ...wt, owner: wt.owner ?? source.job };
   } catch { return null; }
 }
@@ -225,12 +239,18 @@ export async function reapWorktree(
       return kept('worktree belongs to a different repository');
     const head = tree.head!, base = main.head!;
     const filters = await neutralizeFilters(git, wt.root);
-    const index = await git(wt.root, ['ls-files', '-v', '-z']);
-    if (fields(index).some((row) => /^[a-zS] /.test(row))) return kept('worktree has hidden index entries');
+    const indexRows = fields(await git(wt.root, ['ls-files', '-v', '-z']));
+    if (indexRows.some((row) => /^[a-zS] /.test(row))) return kept('worktree has hidden index entries');
+    const trackedDeps = indexRows.some((row) => row.slice(2).startsWith('node_modules/'));
     const pending = fields(await status(wt.root, filters, true));
     const globs = pending.some(row => row.startsWith('!! ')) ? disposablePaths(home, wt.main_root) : [];
-    if (pending.some(row => !(row.startsWith('!! ') && globs.some(glob => matchesGlob(row.slice(3), glob))) &&
-        (!/^(?:\?\?|!!) node_modules$/.test(row) || !dependencyLink(wt))))
+    const removable = (row: string) => {
+      const rel = row.slice(3);
+      return row.startsWith('!! ')
+        ? globs.some(g => matchesGlob(rel, g)) || (trackedDeps && (rel === 'node_modules' || rel.startsWith('node_modules/'))) || dependencyLink(wt, rel)
+        : row.startsWith('?? ') && dependencyLink(wt, rel);
+    };
+    if (pending.some(row => !removable(row)))
       return kept('worktree is dirty (tracked, untracked or ignored files)');
     const nested = nestedGitReason(wt.root);
     if (nested) return kept(nested);
@@ -255,7 +275,8 @@ export async function reapWorktree(
         picked = true;
       }
     }
-    if (pending.includes('?? node_modules')) fs.unlinkSync(join(wt.root, 'node_modules'));
+    for (const row of pending)
+      if (row.startsWith('?? ') && dependencyLink(wt, row.slice(3))) fs.unlinkSync(join(wt.root, row.slice(3)));
     await git(wt.main_root, [...filters, 'worktree', 'remove', '--', wt.root]);
     // Don't delete a branch advanced independently during cleanup; Git also checks merge/checkout safety.
     if ((await git(wt.main_root, ['rev-parse', '--verify', `refs/heads/${wt.branch}`])).trim() !== head)
@@ -267,4 +288,54 @@ export async function reapWorktree(
     } catch { return kept('worktree removed; Git refused to delete its branch'); }
     return { worktree_removed_at: new Date().toISOString() };
   } catch { return kept('worktree cleanup could not be verified or completed'); }
+}
+
+const MANAGED_WT_NAME = /^[a-z0-9-]+-([0-9a-f]{6})$/;
+const CLOSED_STATES = new Set(['closed', 'failed', 'stopped']);
+export interface ArchivedClosedJob { id: string; project?: string }
+
+export function archivedClosedJobs(home: string, liveIds: ReadonlySet<string>): Map<string, ArchivedClosedJob[]> {
+  const liveSuffixes = new Set([...liveIds].map((id) => id.slice(-6))), out = new Map<string, ArchivedClosedJob[]>();
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(join(home, 'archive'), { withFileTypes: true }); } catch { return out; }
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+    try {
+      const file = join(home, 'archive', entry.name);
+      if (fs.lstatSync(file).size > 16 * 1024 * 1024) continue;
+      for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+        if (!line) continue;
+        let row: { job?: unknown; state?: unknown; project?: unknown };
+        try { row = JSON.parse(line); } catch { continue; }
+        if (typeof row.job !== 'string' || !/^j[0-9a-f]{16}$/.test(row.job) || typeof row.state !== 'string' || !CLOSED_STATES.has(row.state)) continue;
+        const suffix = row.job.slice(-6);
+        if (liveSuffixes.has(suffix)) continue;
+        const rows = out.get(suffix) ?? [];
+        rows.push({ id: row.job, project: typeof row.project === 'string' ? row.project : undefined });
+        out.set(suffix, rows);
+      }
+    } catch { /* Best effort; skip unreadable archive files. */ }
+  }
+  return out;
+}
+
+export async function sweepArchivedWorktrees(
+  home: string, mainRoot: string, archived: ReadonlyMap<string, ArchivedClosedJob[]>, excludeRoots: ReadonlySet<string>,
+): Promise<{ removed: number; kept: number }> {
+  let removed = 0, keptCount = 0, realMain: string, trees: Awaited<ReturnType<typeof list>>;
+  try { realMain = fs.realpathSync(mainRoot); trees = await list(realMain); } catch { return { removed, kept: keptCount }; }
+  const [main, ...linked] = trees;
+  if (!main || main.bare || main.path !== realMain || !oid(main.head)) return { removed, kept: keptCount };
+  const sentinelBase = '0'.repeat(main.head!.length);
+  for (const tree of linked) {
+    if (tree.locked !== undefined || tree.prunable !== undefined || !tree.branch || !oid(tree.head) || excludeRoots.has(tree.path)) continue;
+    const name = basename(tree.path), match = MANAGED_WT_NAME.exec(name);
+    const owner = match && tree.branch === `wt/${name}` && tree.path === pathFor(realMain, name)
+      ? archived.get(match[1])?.find((c) => !c.project || c.project === realMain) : undefined;
+    if (!owner) continue;
+    const wt: ManagedWorktree = { main_root: realMain, root: tree.path, branch: tree.branch, base_head: sentinelBase };
+    if ('worktree_removed_at' in await reapWorktree(owner.id, { job: owner.id, cwd: tree.path, worktree: wt }, home)) removed++;
+    else keptCount++;
+  }
+  return { removed, kept: keptCount };
 }

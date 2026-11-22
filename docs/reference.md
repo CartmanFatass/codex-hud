@@ -207,7 +207,7 @@ the main checkout's HEAD. An empty list means no overlaps found, `null` means th
 if the worktree is clean and its branch is unchanged, merged, or every slice commit has a patch-equivalent commit
 on the base branch. It keeps dirty worktrees and those with unpicked or amended patches, recording
 `worktree_kept_reason`. A later scan can reconsider an unpicked branch if the base HEAD changed; it never retries
-a dirty checkout. A registered project's `worktree.disposable` in `.hud/project.json` lists globs of **ignored** build outputs that cleanup may discard (for example `["dist/**"]`, default `[]`). Other ignored files and untracked or tracked changes are preserved. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
+a dirty checkout. A registered project's `worktree.disposable` in `.hud/project.json` lists globs of **ignored** build outputs that cleanup may discard (for example `["dist/**"]`, default `[]`). When tracked files live under `node_modules/`, worktree setup links the untracked entries from the main checkout and cleanup treats ignored entries under `node_modules/` as removable dependency state. Other ignored files and untracked or tracked changes are preserved. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
 
 Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace`, `done` or `closed`). Configure `land` in the registered main checkout's `.hud/project.json`, for example:
 

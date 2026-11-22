@@ -128,7 +128,7 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 若工作树不干净，或仍有未摘取的补丁（包括集成时被修改的补丁），则保留并在 `job.json` 记录 `worktree_kept_reason`。
 基分支 HEAD 变化后，后续扫描可重新检查因补丁未摘取而保留的分支；不会重试脏工作树。Project 把这些检出视为任务自己的，不算未登记的 worktree。
 
-已注册项目可在主检出的 `.hud/project.json` 中设置 `worktree.disposable`（例如 `["dist/**"]`，默认为 `[]`）。清理时只豁免匹配的已忽略文件；其他忽略文件、未跟踪文件及已跟踪的改动仍会保留。
+已注册项目可在主检出的 `.hud/project.json` 中设置 `worktree.disposable`（例如 `["dist/**"]`，默认为 `[]`）。清理时豁免匹配的已忽略文件；当 `node_modules/` 下存在已跟踪文件时，建树会链接主检出中其余未跟踪项，清理也会把 `node_modules/` 下的已忽略项视为可移除的依赖状态。其他忽略文件、未跟踪文件及已跟踪的改动仍会保留。
 
 `hud_land({job})` 集成成功结算（`idle_grace`、`done` 或 `closed`）的托管工作树。主检出的项目配置示例：
 

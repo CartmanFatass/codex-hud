@@ -6,7 +6,7 @@ import { sonicChildren } from '../worker/sonic-jobs.js';
 import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
 import { piReportSettlement } from '../mcp/pi-read-settlement.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
-import { reapWorktree, mainHead } from '../mcp/managed-worktree.js';
+import { archivedClosedJobs, mainHead, reapWorktree, sweepArchivedWorktrees, type ArchivedClosedJob } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
@@ -30,6 +30,7 @@ import { isProcAlive } from '../utils/proc.js';
 import { request } from '../runtime/herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
+import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 
 const bundled = BUNDLED_ROOT;
 
@@ -48,6 +49,8 @@ const REAP_BUDGET_MS = 135_000;
 const REAP_KILL_GRACE_MS = 2_000;
 const SHUTDOWN_DRAIN_MS = 3_000;
 const HOME_RETENTION_INTERVAL_MS = 60 * 60_000;
+const WORKTREE_SWEEP_FILE = 'worktree-reap-sweep.json';
+const WORKTREE_SWEEP_VERSION = 1;
 let nextHomeRetention = 0;
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
 const jobCache = getJobIndexCache(home);
@@ -130,6 +133,9 @@ const inFlightReaps = new Map<string, ActiveReap>();
 const inFlightWorktrees = new Map<string, Promise<void>>();
 const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
 const worktreeLocks = new Set<string>(), checking = new Set<string>();
+const sweptWorktrees = new Set<string>(), sweptArchiveRoots = new Set<string>();
+let worktreeSweepDone = false;
+let sweepStats = { removed: 0, kept: 0 };
 const runners = new RunnerWatches(schedule);
 const checkRetries = new Map<string, number>();
 const orphanRetries = new Map<string, { pid: number; at: number; delay: number }>();
@@ -247,7 +253,38 @@ function readCloseTurn(dir: string, job: Job | null, status: Partial<JobStatus> 
 function writeJsonAtomic(file: string, value: Partial<JobStatus> | Job, indent?: number) {
   jobCache.writeJsonAtomic(file, value as Record<string, unknown>, { indent, mkdir: false });
 }
-function startWorktree(id: string, file: string, job: Job) {
+function readWorktreeSweepDone() {
+  try { return (readJsonBounded(join(home, WORKTREE_SWEEP_FILE), 4096) as { version?: unknown })?.version === WORKTREE_SWEEP_VERSION; }
+  catch { return false; }
+}
+function registeredRoots(): string[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(join(home, 'projects.json'), 'utf8')) as { version?: unknown; projects?: { root?: unknown }[] };
+    return parsed?.version === 1 && Array.isArray(parsed.projects)
+      ? parsed.projects.map((p) => p?.root).filter((r): r is string => typeof r === 'string' && r.length > 0) : [];
+  } catch { return []; }
+}
+function finishWorktreeSweep() {
+  worktreeSweepDone = true;
+  sweptWorktrees.clear(); sweptArchiveRoots.clear();
+  try { writeJsonPrivate(join(home, WORKTREE_SWEEP_FILE), { version: WORKTREE_SWEEP_VERSION, completed_at: new Date().toISOString(), ...sweepStats }); }
+  catch (error) { warn('worktree sweep', `worktree sweep marker: ${(error as Error).message}`); }
+  if (sweepStats.removed || sweepStats.kept) log(`worktree stale sweep: removed=${sweepStats.removed} kept=${sweepStats.kept}`);
+}
+function startArchivedSweep(root: string, archived: ReadonlyMap<string, ArchivedClosedJob[]>, excludeRoots: ReadonlySet<string>) {
+  if (worktreeLocks.has(root)) return;
+  const key = `sweep:${root}`;
+  worktreeLocks.add(root);
+  const promise = Promise.resolve().then(async () => {
+    const { removed, kept } = await sweepArchivedWorktrees(home, root, archived, excludeRoots);
+    sweepStats.removed += removed; sweepStats.kept += kept;
+  }).catch((error) => warn(`sweep ${root}`, `sweep ${root}: ${(error as Error).message}`)).finally(() => {
+    sweptArchiveRoots.add(root); worktreeLocks.delete(root); inFlightWorktrees.delete(key);
+    drained(); schedule();
+  });
+  inFlightWorktrees.set(key, promise);
+}
+function startWorktree(id: string, file: string, job: Job, sweep = false) {
   const root = job.worktree!.main_root;
   if (worktreeLocks.has(root)) return; // The owning task reschedules the scan on release.
   worktreeLocks.add(root);
@@ -256,6 +293,8 @@ function startWorktree(id: string, file: string, job: Job) {
     const latest = readJson<Job>(file);
     if (latest && !latest.worktree_removed_at && JSON.stringify(latest.worktree) === JSON.stringify(job.worktree))
       writeJsonAtomic(file, { ...latest, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }, 2);
+    if (!worktreeSweepDone) sweptWorktrees.add(id);
+    if (sweep) sweepStats['worktree_removed_at' in result ? 'removed' : 'kept']++;
     worktreeRetries.delete(id);
   }).catch((error) => {
     if (error.code !== 'ENOENT') {
@@ -410,7 +449,8 @@ function scan(retryWatch = false) {
     if (removed) log(`pruned legacy trust backups: ${removed}`);
   }
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
-  const busyWorktrees = new Set<string>(), worktreeChecks = [];
+  const busyWorktrees = new Set<string>(), knownWorktrees = new Set<string>(), knownWorktreeRoots = new Set<string>();
+  const worktreeChecks: { id: string; jobFile: string; job: Job; root: string; sweep: boolean }[] = [];
   const workingByRole = new Map<string, number>();
   const queuedJobs: { id: string; job: Job; queuedAt: number }[] = [];
   const countWorking = (role: string) => workingByRole.set(role, (workingByRole.get(role) ?? 0) + 1);
@@ -456,6 +496,10 @@ function scan(retryWatch = false) {
       try { job = readJson<Job & Record<string, unknown>>(jobFile); ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile)); session = jobCache.readSession(id, { throwOnError: true }); }
       // Unreadable lifecycle or tab evidence may still belong to an open job.
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') open = true; throw error; }
+      if (job?.worktree?.root) {
+        knownWorktrees.add(job.worktree.root);
+        knownWorktreeRoots.add(job.worktree.main_root);
+      }
       if (status?.state === 'queued' && job && !job.reaped_at) {
         open = true;
         queuedJobs.push({ id, job, queuedAt: queuedTimestamp(job) });
@@ -597,8 +641,9 @@ function scan(retryWatch = false) {
           const head = baseHeads.get(root);
           pending = !!head && head !== job.worktree_checked_head;
         }
-        if (pending) {
-          worktreeChecks.push({ id, jobFile, job, root });
+        const sweep = !pending && !worktreeSweepDone && Boolean(job.worktree_kept_reason) && !job.worktree_checked_head && !sweptWorktrees.has(id);
+        if (pending || sweep) {
+          worktreeChecks.push({ id, jobFile, job, root, sweep });
           continue; // A completing worktree task schedules the next scan for any backlog.
         }
       }
@@ -651,14 +696,26 @@ function scan(retryWatch = false) {
   for (const id of [...worktreeRetries.keys()]) if (!liveIds.has(id)) worktreeRetries.delete(id);
   const warnNow = Date.now();
   for (const [kind, at] of warnings) if (warnNow - at >= WARN_COOLDOWN_MS) warnings.delete(kind);
-  for (const { id, jobFile, job, root } of worktreeChecks) {
+  let pendingSweep = false;
+  for (const { id, jobFile, job, root, sweep } of worktreeChecks) {
     if (busyWorktrees.has(job.worktree!.root)) continue;
     const at = worktreeRetries.get(id);
-    if (at !== undefined && at > Date.now()) nearest = Math.min(nearest, at);
+    if (at !== undefined && at > Date.now()) { nearest = Math.min(nearest, at); if (sweep) pendingSweep = true; }
     else if (!worktreeLocks.has(root) && (!job.worktree_checked_head || rechecks < 4)) {
       if (job.worktree_checked_head) rechecks++;
-      startWorktree(id, jobFile, job);
-    }
+      if (sweep) pendingSweep = true;
+      startWorktree(id, jobFile, job, sweep);
+    } else if (sweep) pendingSweep = true;
+  }
+  if (!worktreeSweepDone && !pendingSweep && inFlightWorktrees.size === 0 && inFlightReaps.size === 0) {
+    const archived = archivedClosedJobs(home, liveIds);
+    const roots = archived.size ? [...new Set([...knownWorktreeRoots, ...registeredRoots()].flatMap((r) => {
+      try { return [fs.realpathSync(r)]; } catch { return []; }
+    }))].filter((r) => !sweptArchiveRoots.has(r)) : [];
+    if (roots.length) {
+      const exclude = new Set([...busyWorktrees, ...knownWorktrees]);
+      for (const root of roots) if (!worktreeLocks.has(root)) startArchivedSweep(root, archived, exclude);
+    } else finishWorktreeSweep();
   }
   if (queuedJobs.length) {
     ensureSettingsWatch();
@@ -766,6 +823,10 @@ export function openRuntime(emit: typeof notify) {
       if (state && state.version !== 1) throw new Error('incompatible watcher handoff');
       if (state) ({ reapRetries, preflightHold, worktreeRetries } = state);
       for (const id of tabs) rememberClosedTab(closedTabs, id);
+      worktreeSweepDone = readWorktreeSweepDone();
+      sweptWorktrees.clear();
+      sweptArchiveRoots.clear();
+      sweepStats = { removed: 0, kept: 0 };
       stopped = false;
       startWatch();
       scan();
