@@ -9,7 +9,7 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Waiting for the owner
 
-- 试用 agy 适配：`./install --with agy`，开一个新的 agy 会话，看底部状态行，并在 agy 里 hud_create 一个 imp（waits on AGY-ADAPTER-01, AGY-ADAPTER-02, AGY-ADAPTER-03, AGY-ADAPTER-04）
+- 试用 agy 适配：已安装并验证 agy 能调用 HUD（~/.gemini 里的 hud MCP、`mcp(hud/*)`、状态行、PreInvocation 钩子；8084d45c 修了空的 agy 配置装不上的问题）。剩下：开一个新的 agy 会话看底部状态行，并在 agy 里 hud_create 一个 imp（waits on AGY-ADAPTER-01, AGY-ADAPTER-02, AGY-ADAPTER-03, AGY-ADAPTER-04）
 
 ## Next
 
@@ -78,7 +78,7 @@ board counts these; update at every landing or decision. -->
 - try · CODE-HEALTH · CLAUDE-TAIL-FIRST-01 · open a Claude session with a long subagent: its card shows the subagent's latest step at once, and the nesting fills in after (3a9b7166)
 - try · AGY · AGY-ADAPTER-03 · in an agy main session, job events arrive by themselves: while agy works they are injected before its next model call; when it is idle they are typed into its prompt (an event right after a turn ends can take up to ~30 s); a resumed agy worker cannot use main-session tools (93471a3e)
 - try · AGY · AGY-ADAPTER-04 · agy's bottom line is the HUD bar: model, context bar, project, and quota watermarks for the model's family (e.g. `5h 91% left  7d 98% left`); it answers in ~17 ms from a cache refreshed about once a second
-- try · AGY · AGY-ADAPTER-01 · `./install --with agy` registers the hud MCP, the `mcp(hud/*)` permission, the HUD statusline and a (still empty) PreInvocation hook in agy's own config; `--uninstall --with agy` takes exactly those back out (83e4f931)
+- try · AGY · AGY-ADAPTER-01 · `./install --with agy` registers the hud MCP, the `mcp(hud/*)` permission, the HUD statusline and a (still empty) PreInvocation hook in agy's own config; `--uninstall --with agy` takes exactly those back out (83e4f931; 8084d45c: a 0-byte agy config file installs and keeps its blank state on uninstall)
 - try · AGY · AGY-ADAPTER-02 · an agy imp finishes with hud_report (its own one-line summary), can ask you questions and start sonic; if the tool is not loaded yet on its first turn it falls back to the shell command (9ce1fd81)
 - try · CODE-HEALTH · SPEC-DOCS-03 · the lean spec is live: docs/spec.md 39.8 → 29.8 KB with history in docs/decisions-log.md; the ten open points settled as approved; the Project ladder now highlights 0.2.0 (faceafcc)
 - try · CODE-HEALTH · MONITOR-STATE-04 · after a panel restart (build reload) Home and Project each come back to their own place; a panel from before this change still restores; v/f/Esc no longer rewrite hud-settings.json (603f8fd0)

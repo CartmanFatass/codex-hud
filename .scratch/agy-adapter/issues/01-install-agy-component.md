@@ -23,3 +23,4 @@ Update reference.md and reference.zh.md.
 ## Comments
 
 - 2026-11-22 main: landed 83e4f931. Official `agy mcp add` runs in a staged HOME and only the `hud` record is copied in (agy 1.5.14 reformats the file and widens 0640 to 0644). Hook: named `hud` PreInvocation entry in ~/.gemini/config/hooks.json (stub until 03). Suite 956/956, release green.
+- 2026-11-22 main: the owner's live install (`./install --with agy`, agy 1.5.14) failed on a 0-byte `~/.gemini/config/mcp_config.json`: the extension read it as malformed JSON. Fixed in 8084d45c (a blank config reads as an empty object; the HUD backup records it, so uninstall leaves the file in place); install-agy suite 5/5. Installed on the owner's HOME; in agy print mode `hud_roster` and `hud_read` ran through the registered MCP with only the `mcp(hud/*)` rule.
