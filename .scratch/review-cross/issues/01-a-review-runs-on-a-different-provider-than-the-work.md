@@ -1,6 +1,6 @@
 # 01: A review runs on a different provider than the work
 
-**Status:** ready-for-agent
+**Status:** wontfix
 **Blocked by:** none
 **Owner try:** no
 
@@ -15,3 +15,7 @@ Record `review_avoid: {providers, chosen, reason}` in job.json, and show it in t
 - [ ] Reviewing sol-fast jobs picks the Gemini place; reviewing hydrogen jobs picks the OpenAI place; reviewing a mix picks Claude
 - [ ] Explicit preset or on wins; no qualifying place falls back with a reason
 - [ ] Targeted roster/create tests pass
+
+## Comments
+
+- Owner 2026-11-22, same day: milestone reviews cover mixed implementers anyway, so drop the cross-provider rule. The reviewer runs on astra max by default instead (set in the owner's ~/.hud/roles/reviewer.json, active preset `max`, with neon xhigh as fallback).
