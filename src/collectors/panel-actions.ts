@@ -38,7 +38,7 @@ export function answerJobQuestion(home: string, job: string, qid: string, answer
 const oneLine = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').replace(/\s+/g, ' ').trim();
 /** Lines for the answers made since this reader started, for the jobs it watches: `[imp@j…] ANSWERED q1 from panel: <answer>`. */
 export class PanelActionLog {
-  private offset: number;
+  offset: number; // Live reader cursor; carried across an MCP rebuild.
   constructor(private home: string) {
     this.offset = this.size() ?? 0;
   }

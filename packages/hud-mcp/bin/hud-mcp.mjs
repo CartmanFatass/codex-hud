@@ -7,7 +7,9 @@ if (major < 24) {
   process.exit(1);
 }
 import { selectMcpEntry } from './surface.mjs';
-import { withDistLock } from '../../../scripts/dist-lock.mjs';
+import { buildStamp, withDistLock } from '../../../scripts/dist-lock.mjs';
+import { createInterface } from 'node:readline';
+import { openGeneration } from './generation.mjs';
 
 let entry;
 try {
@@ -17,8 +19,59 @@ try {
   process.exit(1);
 }
 try {
-  const { serveMcp } = await withDistLock(() => import(entry));
-  serveMcp();
+  const url = new URL(entry, import.meta.url);
+  let stamp, current;
+  await withDistLock(async () => {
+    current = await openGeneration(url, undefined, true);
+    stamp = buildStamp();
+  });
+  await current.call('start');
+  const calls = new Set();
+  let switching;
+  async function reload(seen) {
+    await Promise.all([...calls]); // Never move a mutation, long wait or its response across the boundary.
+    let next;
+    try {
+      await withDistLock(async () => {
+        seen = buildStamp();
+        next = await openGeneration(url);
+      });
+      await next.call('start', await current.call('snapshot'));
+      await current.call('stop');
+      current.retire();
+      current = next;
+    } catch (error) {
+      next?.retire();
+      console.error(`hud-mcp: keeping previous build: ${error.message}`);
+    }
+    stamp = seen;
+  }
+  const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  function dispatch(line) {
+    const call = current.call('request', line).catch((error) => {
+      // Never replay a failed mutation. Keep unrelated calls and the transport alive.
+      console.error(`hud-mcp request failed: ${error.message}`);
+      let id;
+      try { id = JSON.parse(line)?.id; } catch { id = null; }
+      if (id !== undefined) return { jsonrpc: '2.0', id, error: { code: -32603, message: 'Internal error' } };
+    }).then((reply) => {
+      if (reply !== undefined) process.stdout.write(JSON.stringify(reply) + '\n');
+    });
+    calls.add(call);
+    void call.finally(() => calls.delete(call));
+  }
+  input.on('line', (line) => {
+    if (!switching) {
+      const seen = buildStamp();
+      if (seen && seen !== stamp) switching = reload(seen).finally(() => { switching = undefined; });
+    }
+    if (switching) void switching.then(() => dispatch(line)); else dispatch(line);
+  });
+  input.on('close', async () => {
+    await switching;
+    await Promise.all(calls);
+    current.retire();
+  });
 } catch (error) {
   process.stderr.write(`hud-mcp startup failed: ${error instanceof Error ? error.message : 'unknown_error'}\n`);
   process.exitCode = 1;

@@ -4,7 +4,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -1995,7 +1994,7 @@ function deliveryHint(watcherAlive: boolean): string {
       return watcherAlive ? `HUD watch is live. ${live}` : fallback;
   }
 }
-const createdJobs = new Set<string>();
+let createdJobs = new Set<string>();
 async function adoptSessionJobs() {
   if (!callerPane) return false;
   const receipts = jobs(), cwd = process.cwd();
@@ -2061,10 +2060,17 @@ type TaskStatus = 'working' | 'completed' | 'failed' | 'cancelled';
 type TaskView = { status: TaskStatus; statusMessage: string; lastUpdatedAt: string; result?: ReturnType<typeof taskContent> };
 type HudTask = {
   id: string; job: string; role: string; pane: string; createdAt: string; fence?: string;
-  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number;
+  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number; expiresAt?: number;
 };
-const tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
-const landTasks = new Set<string>();
+let tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
+let landTasks = new Set<string>();
+const expiry = new Set<NodeJS.Timeout>();
+function armExpiry(task: HudTask) {
+  const timer = setTimeout(() => {
+    expiry.delete(timer); tasks.delete(task.id); releaseTask(task);
+  }, Math.max(0, task.expiresAt! - Date.now())).unref();
+  expiry.add(timer);
+}
 const markerFile = (task: HudTask) => join(directory(task.job), 'mcp-task.json');
 function claimTask(task: HudTask, job: Job) {
   if (!callerPane || job.herdr_pane !== callerPane) return;
@@ -2124,7 +2130,8 @@ function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: s
   if (launch) task.view.statusMessage += ` — ${launch}`;
   tasks.set(task.id, task);
   activeTasks.set(task.job, task);
-  setTimeout(() => { tasks.delete(task.id); releaseTask(task); }, TASK_TTL).unref();
+  task.expiresAt = Date.now() + TASK_TTL;
+  armExpiry(task);
   return { resultType: 'task', ...wireTask(task) };
 }
 function updateTask(task: HudTask, status: TaskStatus, statusMessage: string, text?: string): TaskView {
@@ -2216,10 +2223,8 @@ async function taskRequest(taskId: string, cancel: boolean) {
     return wireTask(task);
   });
 }
-const write = (value: unknown) => process.stdout.write(JSON.stringify(value) + '\n');
-const rpcError = (id: unknown, code: number, message: string) =>
-  write({ jsonrpc: '2.0', id, error: { code, message } });
-async function receive(line: string): Promise<void> {
+async function receive(line: string, write: (value: unknown) => void): Promise<void> {
+  const rpcError = (id: unknown, code: number, message: string) => write({ jsonrpc: '2.0', id, error: { code, message } });
   let request;
   try {
     request = JSON.parse(line);
@@ -2373,10 +2378,35 @@ async function receive(line: string): Promise<void> {
   }
   write({ jsonrpc: '2.0', id: request.id, result: discovered ? { resultType: 'complete', ...result as object } : result });
 }
-export function serveMcp() {
-  checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
-  if (!worker && !resumeRefusal) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
-  createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
-    void receive(line);
-  });
+// Private live-connection handoff, never a disk recovery or a new client's authority.
+function snapshot() {
+  return { version: 1, tasks, activeTasks, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
+    callerHarness, sentConventionVersion, sentCreateHint, createdJobs, cursor, triesAt: tries.delivered, answersAt: answers.offset };
+}
+export function openRuntime() {
+  return {
+    snapshot,
+    start(state?: ReturnType<typeof snapshot>) {
+      if (!state) {
+        checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
+        if (!worker && !resumeRefusal) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
+        return;
+      }
+      if (state.version !== 1) throw new Error('incompatible MCP session handoff');
+      ({ tasks, activeTasks, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
+        callerHarness, sentConventionVersion, sentCreateHint, createdJobs, cursor } = state);
+      tries.delivered = state.triesAt;
+      answers.offset = state.answersAt;
+      for (const task of tasks.values()) armExpiry(task);
+    },
+    stop() {
+      for (const timer of expiry) clearTimeout(timer);
+      expiry.clear(); tasks.clear(); activeTasks.clear(); landTasks.clear(); createdJobs.clear(); cursor?.clear();
+    },
+    async request(line: string) {
+      let reply: unknown;
+      await receive(line, (value) => { reply = value; });
+      return reply;
+    },
+  };
 }

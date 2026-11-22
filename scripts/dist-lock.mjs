@@ -1,10 +1,18 @@
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const releaseRoot = new URL('..', import.meta.url);
+
+// Published (or touched for a script-only rebuild) by each successful main build.
+export function buildStamp() {
+  try {
+    const s = statSync(new URL('../dist/index.js', import.meta.url), { bigint: true });
+    return `${s.ino}:${s.ctimeNs}`;
+  } catch { return null; }
+}
 
 export async function acquireBuildLock(kind, root = releaseRoot) {
   const name = `\0myhud-${kind}-${createHash('sha256').update(realpathSync(root)).digest('hex')}`;

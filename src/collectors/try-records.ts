@@ -35,7 +35,7 @@ const pending = (record: TryRecord, slice: Slice, i: number) => slice.state === 
 export class TryLog {
   private stamp = '';
   private records: TryRecord[] = [];
-  private delivered?: number;
+  delivered?: number; // Live reader cursor; carried across an MCP rebuild.
   constructor(private home: string) {}
   private read(): TryRecord[] {
     const path = join(this.home, TRIES_FILE);

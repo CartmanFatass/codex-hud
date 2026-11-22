@@ -41,7 +41,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20 }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const bin = join(root, 'bin');
   fs.mkdirSync(bin);
@@ -107,7 +107,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     fs.mkdirSync(env.HUD_JOB_DIR, { recursive: true });
   } else delete env.HUD_JOB_DIR;
   const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
-  const child = spawn(process.execPath, [...preload, entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [...preload, mcpEntry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
   let stderr = '';
   child.stderr.setEncoding('utf8').on('data', (data) => {

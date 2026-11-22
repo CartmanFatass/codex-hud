@@ -84,6 +84,17 @@ probe hold a per-checkout lock while loading their initial `dist/` module graph.
 The builder takes that lock only to publish or clean `dist/`, not to compile.
 A timed-out launcher fails rather than importing a partial build.
 
+The MCP stdio owner checks `dist/index.js` once per incoming line; the watcher checks it
+once per 30 s without scanning jobs. A successful main build publishes or touches this
+stamp, including script-only builds. At a change the MCP drains admitted calls; the
+watcher drains checks, reaps and worktree operations. Each loads the replacement in a
+fresh worker thread under the dist lock; a bad import leaves the previous runtime in use.
+The transport PID stays put (including the watcher's tab-close subscription). MCP task
+IDs, turn fences, baselines, terminal replies and expiry times travel only over this
+live connection's in-memory handoff. Polls still read current job facts, and the existing
+PID/start-time delivery marker remains valid. A fresh connection cannot adopt or cancel
+another connection's tasks. Launcher/transport changes themselves need a new launch.
+
 The installer backs up edited client files, uses official registration commands
 where available, and never edits shell rc files. `hud uninstall` invokes `./install --uninstall`, removes owned bindings
 and command links, and retains HUD data. See [installer extensions](../install.d/README.md).
