@@ -45,6 +45,9 @@ board counts these; update at every landing or decision. -->
 - todo · MCP-ORCH · IMP-MODEL-COST · owner 2026-11-22: imp's default is now openai/gpt-6.2-astra high (preset astra, from 11:43Z; before: 6.2-sol high, then 6.2-sol-fast); once every open ticket has landed, compare average time and cost per imp task across the three (pi session usage.cost)
 - accepted · MCP-ORCH · ORCH-LOAD · read docs/llm/orch-load-2026-11-22.md: ~73% of orch turns are chores (search 32%, land/test/poll 25%, STATE/tickets 6%, full reports 6%) and 30% of context is fixed schema/skill overhead; 10 ranked cuts (~80% fewer Opus tokens if ranks 1–8 land) and 5 questions (d61876c7)
 - accepted · PANEL · DESIGN-HOME-PROGRESS · open docs/design/home-progress/sample.html: the proposed Home in zh and en (milestone bar, one ticket meter, planned features folded into one row, failed jobs leave once retried); README has the diagnosis, 4 slices and 5 questions; pick before any build (3cf299cc)
+- try · DOGFOOD-FIXES · DOGFOOD-FIXES-03 · the hud MCP server checks the build stamp per call and switches to a rebuilt HUD on the same connection, handing over live MCP tasks; the watcher switches within ~30 s when idle; a broken build keeps the old code serving (d8b1f67b)
+- try · IMP-LEAN · IMP-LEAN-06 · Claude CLI workers start with a private strict MCP config (HUD worker MCP plus role mcp_servers) and role text as system prompt; Codex workers get per-run MCP scope from their TOML layers (fail open with a diagnostic); short briefs inline for all CLI workers; agy unchanged where its CLI can't (8c763005)
+- try · DOGFOOD-FIXES · DOGFOOD-FIXES-04/05/06 · hud_read({}) lists active jobs and the main session's unread reports only (worker children as a count); read/send/respond restart a missing watcher; notices and digests name the hud_read call instead of a report path (41d5bcd9)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-01 · a sonic a worker starts runs in the worker's own cwd (its worktree); a cwd outside the project is refused (c9f375e1)
 - try · HOME-PROGRESS · HOME-PROGRESS-04 · panel text follows the display language: waiting items, open worker questions and open ticket titles not in the panel language show a cached translation with the original folded; IDs read <ID> · localized short name; answers still send the original option (22bfbdbe)
 - try · FLOWS · FLOWS-01 · hud_land({job}) gates a settled worktree job in a fresh detached worktree by the project's .hud/project.json land config, fast-forwards, runs after commands, pushes and cleans up, in one call with one notice; worktree.disposable globs let the watcher reap worktrees whose only leftovers are build output (eda6382a)
@@ -107,7 +110,7 @@ board counts these; update at every landing or decision. -->
 
 ## Now (2026-11-22)
 
-- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–05 已落地；06 CLI worker 只载 HUD MCP 进行中。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
+- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–06 全部落地。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
 - FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land 已落地（eda6382a，需重连 hud MCP 才可用）→ 02 失败交回原 imp（最多 2 轮）、03 记工单与 STATE；04 先派 sonic 收集事实再派；05 面板与文档。等 ORCH-LEAN-02/03、IMP-LEAN-02 落地再开工（同改 thin-main）。工单队列自动推进放第二期。
 - 并行三条线：首页进度（HOME-PROGRESS，owner 已定 5 个问题）、orch 减负（ORCH-LEAN，owner 同意 A/B/C 三批）、MCP 线剩余（JOB-ARCHIVE-01 进行中）。
 - imp 默认已换成 6.2-astra high；所有工单做完后对比单任务时间与成本。
