@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · DOGFOOD-FIXES · DOGFOOD-FIXES-09 · a failed or cancelled hud_land can be started again; a failing gate test file is rerun once before failing; a rebased worker branch lands only its own commits; the auto STATE row uses the ticket title (1f3a6e92)
 - try · FLOWS · FLOWS-05 · work cards show the land (gate ▸ merge ▸ push) and scout (scout ▸ run) steps in zh and en; sonic reports passed via from_jobs carry an unverified-facts line; delegation.md, convention and hud-delegate use hud_land and scout (98150a6e; first agy neon imp)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-08 · closing a job during startup leaves it stopped, and a stop-requested job whose worker died settles on the next watcher pass (e0290351)
 - try · FLOWS · FLOWS-02/03 · a failed hud_land gate goes back to the source imp for a repair (at most two rounds) and a landing marks its ticket ready-for-human and adds the STATE slice row (45645928; landed by hand: the land range bug is in dogfood-fixes/09)
@@ -116,5 +117,5 @@ board counts these; update at every landing or decision. -->
 ## Now (2026-11-22)
 
 - IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–06 全部落地。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。 2026-11-22 15:35Z owner 起试用：imp 默认 agy gemini-4-neon-high（preset neon），astra 仍用于难切片；几个切片后给结论。
-- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01–05 全部落地（hud_land、失败交回原 imp、记工单与 STATE、先派 sonic 收集事实、面板与文档）；dogfood-fixes/09（失败的 land 可重试、只挑自己的提交、STATE 行用票据标题）rebase 中，10（续接关闭的 CLI 任务保留 worktree）待派。工单队列自动推进放第二期。
+- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01–05 全部落地，dogfood-fixes/09 修好 land 重试、重跑失败测试、只挑自己的提交；10（续接关闭的 CLI 任务保留 worktree）进行中。工单队列自动推进放第二期。
 - 并行三条线：首页进度（HOME-PROGRESS，owner 已定 5 个问题）、orch 减负（ORCH-LEAN，owner 同意 A/B/C 三批）、MCP 线剩余（JOB-ARCHIVE-01 进行中）。
