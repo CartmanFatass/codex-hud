@@ -686,7 +686,7 @@ Claude OAuth、第三方网关和无法归属的请求不计入。Claude Code �
 
 ## 底部状态行
 
-Claude 状态行、pi 页脚、Codex tmux 状态行共用事实渲染器：
+Claude 与 Antigravity 状态行、pi 页脚、Codex tmux 状态行共用事实渲染器：
 
 ```text
 model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s │ notices ··· MCP n  skills n
@@ -699,6 +699,7 @@ Claude/Codex 只显示各自最紧额度窗口，蓝、75% 起品红、90% 起�
 
 - Claude 状态行：`~N t/s` 根据转录中的输出词元数和从提示或工具结果到回复的耗时估算最新回复的速率。
 - Codex 状态行：`~N t/s` 显示从会话日志得出的现有输出速率估值。
+- Antigravity 状态行：同一个 `hud-statusline` 命令显示模型、上下文和可识别的额度（如 `5h 80% left`，按当前模型选 Gemini 或第三方模型那组），不读取其转录，也不转发其输入。`--details --lang en|zh` 另显示输入／输出词元总数。Linux 启动器对同一 agy 进程和工作目录复用上一次结果，重绘时约每秒刷新一次，变化可能在下次刷新时才出现。
 
 设置样式：`line`、`p10k`、`gauge`、`tide`、`micro`、`stacked`、`headline`、`triptych`。
 Stacked 在 Claude/pi 为两行，Codex 回退 line；Tide 底色需 truecolor。文字图标／无色仍保留含义。
