@@ -277,7 +277,8 @@ test('native build is content-keyed and only main publishes it; missing Cargo le
   f.put('native/src/main.rs', 'first');
   const artifact = f.file('dist/native/hud-statusline');
   const env = { ...process.env, PATH: f.file('tools'), CARGO_LOG: f.file('cargo.log') };
-  await f.run([], undefined, env);
+  const { stderr } = await f.run([], undefined, env);
+  assert.match(stderr, /Cargo unavailable; the TS statusline stays in use/);
   assert.equal(fs.existsSync(artifact), false);
   f.put('tools/cargo', `#!/bin/bash
 printf '%s\\n' "$1" >> "$CARGO_LOG"
@@ -307,6 +308,20 @@ out=$2/x86_64-unknown-linux-gnu/release
   await gate.run([], undefined, { ...env, HUD_NATIVE_REUSE_DIR: f.file('dist/native') });
   assert.equal(fs.readFileSync(gate.file('dist/native/hud-statusline'), 'utf8'), 'second');
   assert.equal(fs.readFileSync(env.CARGO_LOG, 'utf8'), '--version\nbuild\n--version\nbuild\n');
+
+  const args = ['--publish-from', gate.file('dist')], noCargo = { ...env, PATH: gate.file('empty-path') };
+  const stamp = fs.readFileSync(f.file('dist/native/source.sha256'), 'utf8');
+  gate.put('dist/native/hud-statusline', 'tampered');
+  await f.run(args, undefined, noCargo);
+  assert.equal(fs.readFileSync(artifact, 'utf8'), 'second');
+  assert.equal(fs.readFileSync(f.file('dist/native/source.sha256'), 'utf8'), stamp);
+  assert.equal(fs.readFileSync(gate.file('dist/native/hud-statusline'), 'utf8'), 'tampered');
+
+  // A missing or invalid tested artifact does not skip Cargo for the landed sources.
+  f.put('native/src/main.rs', 'third');
+  await f.run(args, undefined, env);
+  assert.equal(fs.readFileSync(artifact, 'utf8'), 'third');
+  assert.equal(fs.readFileSync(env.CARGO_LOG, 'utf8'), '--version\nbuild\n--version\nbuild\n--version\nbuild\n');
 });
 
 test('--publish-from publishes a prebuilt tree through the staged publisher without altering the source', async (t) => {
@@ -322,8 +337,8 @@ test('--publish-from publishes a prebuilt tree through the staged publisher with
   await f.run(['--publish-from', srcDist]);
   assert.match(fs.readFileSync(f.file('dist/render/sub.js'), 'utf8'), /generation = 99/);
   assert.equal(fs.existsSync(f.file('dist/stale.js')), false);
-  assert.equal(fs.readFileSync(f.file('dist/native/hud-statusline'), 'utf8'), 'synthetic tested binary');
-  assert.equal(fs.statSync(f.file('dist/native/hud-statusline')).mode & 0o111, 0o111);
+  assert.equal(fs.existsSync(f.file('dist/native/hud-statusline')), false);
+  assert.equal(fs.readFileSync(other.file('dist/native/hud-statusline'), 'utf8'), 'synthetic tested binary');
   assert.equal(fs.readFileSync(join(srcDist, 'render/sub.js'), 'utf8'), beforeSrc);
   assert.deepEqual(f.stages(), []);
   await assert.rejects(f.run(['--publish-from', f.file('missing-dir')]), /not a real directory/);

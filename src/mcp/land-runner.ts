@@ -4,6 +4,7 @@ import type { Job, JobStatus } from './job-contracts.js';
 import { jobFiles } from './paths.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
@@ -44,7 +45,7 @@ function collectTestFailures(cwd: string, stream: Readable, failures: TestFailur
 }
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
 function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, failures?: TestFailure[], env = process.env) {
-  return new Promise<void>((ok, fail) => {
+  return new Promise<string[]>((ok, fail) => {
     const child = spawn(bin, argv, { cwd, env: safeGitEnv(env), detached: deadlineMs !== undefined, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const append = (chunk: string) => { output = (output + chunk).slice(-65536); };
@@ -63,7 +64,7 @@ function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, 
     child.once('error', (e) => { clearTimeout(timer); fail(e); });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
-      if (code === 0) ok();
+      if (code === 0) ok(tail());
       else fail(new CommandError(`exit ${code ?? signal}`, tail()));
     });
   });
@@ -118,25 +119,32 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       if (kind === 'gate') checkCancel();
       const label = `${kind}[${i + 1}]: ${cmd}`;
       step(label);
-      if (kind === 'after' && reuse &&
-          await canPublishTestedBuild({ main, integration, testedSha: reuse.tested, mainHeadSha: await head(main), gateCommands: c.gate, cmd, filters: reuse.filters })) {
-        const t0 = performance.now();
-        try {
-          await command(main, process.execPath, [join(main, 'scripts/build.mjs'), '--publish-from', join(integration, 'dist')], deadlineMs);
-          recordTiming(label, t0, true, { skipped: true });
-        } catch (e) { recordTiming(label, t0, false); throw e; }
-        continue;
-      }
-      const env = kind === 'gate' && isMainBuildCommand(cmd)
-        ? { ...process.env, HUD_NATIVE_REUSE_DIR: join(main, 'dist/native') }
-        : process.env;
+      const build = isMainBuildCommand(cmd);
+      const publish = kind === 'after' && reuse && build &&
+        await canPublishTestedBuild({ main, integration, testedSha: reuse.tested, mainHeadSha: await head(main), gateCommands: c.gate, cmd, filters: reuse.filters });
+      const script = publish
+        ? [process.execPath, join(main, 'scripts/build.mjs'), '--publish-from', join(integration, 'dist')].map(quote).join(' ')
+        : cmd;
+      // The wrapper can isolate HOME without hiding the caller's installed Rust toolchain and offline registry.
+      const env = build ? {
+        ...process.env,
+        RUSTUP_HOME: process.env.RUSTUP_HOME || join(homedir(), '.rustup'),
+        CARGO_HOME: process.env.CARGO_HOME || join(homedir(), '.cargo'),
+        HUD_NATIVE_REUSE_DIR: join(kind === 'gate' ? main : integration, 'dist/native'),
+      } : process.env;
       const invoke = (script: string, failures?: TestFailure[]) => c.wrapper
         ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, failures, env)
         : command(cwd, 'sh', ['-c', script], deadlineMs, failures, env);
       const failures = kind === 'gate' ? [] as TestFailure[] : undefined;
       const t0 = performance.now();
-      try { await invoke(cmd, failures); recordTiming(label, t0, true); }
-      catch (e) {
+      try {
+        const output = await invoke(script, failures);
+        if (kind === 'after' && build) {
+          const prefix = 'HUD build: ';
+          f.after_note = output.find(line => line.startsWith(`${prefix}Cargo unavailable; `))?.slice(prefix.length);
+        }
+        recordTiming(label, t0, true, publish ? { skipped: true } : undefined);
+      } catch (e) {
         recordTiming(label, t0, false);
         // A command deadline can leave tests unrun; a red test (including a node:test timeout) identifies a safe rerun.
         if (!failures || !(e instanceof CommandError) || e instanceof CommandTimeout) throw e;

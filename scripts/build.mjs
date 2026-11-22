@@ -34,8 +34,9 @@ function cleanStages(all) {
 }
 
 // Postorder so pruning removes orphan files before their empty directories.
-function* inventory(dir, prefix = '') {
+function* inventory(dir, prefix = '', skipNative = false) {
   for (const entry of fs.readdirSync(join(dir, prefix), { withFileTypes: true })) {
+    if (skipNative && entry.name === 'native') continue;
     const name = join(prefix, entry.name);
     if (entry.isDirectory()) yield* inventory(dir, name);
     yield [name, entry];
@@ -85,7 +86,8 @@ function syncCache(cacheOut, expected) {
 }
 
 function publish(source, stage, dist, main, native) {
-  const staged = new Map(inventory(source));
+  // Native outputs are never trusted as part of a prebuilt TypeScript tree.
+  const staged = new Map(inventory(source, '', main));
   if (native) {
     staged.set('native', fs.statSync(native));
     for (const name of nativeOutputs) staged.set(name, fs.statSync(join(native, basename(name))));
@@ -183,13 +185,20 @@ async function run(args) {
       console.warn(`${legacy} is obsolete; run npm run clean after running workers have stopped.`);
     }
     fs.mkdirSync(stage);
+    const publishMain = (source, reuseDir) => {
+      const native = buildNative(root, join(root, cacheRoot, 'native'), {
+        reuseDir,
+        onCargoUnavailable: () => console.warn('HUD build: Cargo unavailable; the TS statusline stays in use.'),
+      });
+      return withDistLock(() => publish(source, stage, dist, true, native));
+    };
     try {
       if (publishFrom) {
         const source = resolve(root, publishFrom);
         if (!fs.lstatSync(source, { throwIfNoEntry: false })?.isDirectory()) {
           throw new Error(`Publish source is not a real directory: ${publishFrom}`);
         }
-        await withDistLock(() => publish(source, stage, dist, true));
+        await publishMain(source, join(source, 'native'));
         return;
       }
       const cacheOut = join(root, cacheRoot, main ? 'dist' : 'dist-test');
@@ -211,10 +220,8 @@ async function run(args) {
         }
       }
       if (status !== 0) process.exitCode = status;
-      else if (main) {
-        const native = buildNative(root, join(root, cacheRoot, 'native'));
-        await withDistLock(() => publish(cacheOut, stage, dist, main, native));
-      } else publish(cacheOut, stage, dist, main);
+      else if (main) await publishMain(cacheOut);
+      else publish(cacheOut, stage, dist, main);
     } finally {
       fs.rmSync(stage, { recursive: true, force: true });
     }

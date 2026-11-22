@@ -10,16 +10,19 @@ export const nativeFiles = ['hud-statusline', 'source.sha256'];
 const digest = (data) => createHash('sha256').update(data).digest('hex');
 function reuse(dir, sourceHash) {
   try {
+    if (!dir || !fs.lstatSync(dir).isDirectory()) return undefined;
     const [path, stamp] = nativeFiles.map(name => join(dir, name));
+    const binary = fs.lstatSync(path);
+    if (!binary.isFile() || !(binary.mode & 0o111) || !fs.lstatSync(stamp).isFile()) return undefined;
     const [key, hash] = fs.readFileSync(stamp, 'utf8').split('\n');
-    if (key !== sourceHash || !(fs.statSync(path).mode & 0o111)) return undefined;
+    if (key !== sourceHash) return undefined;
     const bytes = fs.readFileSync(path);
     if (digest(bytes) === hash) return bytes;
   } catch { /* Local build artifact is optional. */ }
 }
 
 /** Content-keyed outside the dist staging areas; an incremental TS build does not start Cargo. */
-export function buildNative(root, cache) {
+export function buildNative(root, cache, { reuseDir = process.env.HUD_NATIVE_REUSE_DIR, onCargoUnavailable } = {}) {
   if (process.platform !== 'linux' || process.arch !== 'x64') return undefined;
   const source = join(root, 'native');
   if (!fs.existsSync(join(source, 'Cargo.toml'))) return undefined;
@@ -39,12 +42,15 @@ export function buildNative(root, cache) {
   }
   inputs();
   const key = hash.digest('hex'), ready = join(cache, 'ready');
-  if (reuse(ready, key)) return ready;
-  // A gate starts in a new checkout. Reuse the landed artifact only when the candidate sources match exactly.
-  let bytes = reuse(join(root, 'dist/native'), key);
-  if (!bytes && process.env.HUD_NATIVE_REUSE_DIR) bytes = reuse(process.env.HUD_NATIVE_REUSE_DIR, key);
+  // Gates can borrow from main; after builds prefer the tested checkout's bytes. Both must match the local sources.
+  let bytes = reuse(reuseDir, key);
+  if (!bytes && reuse(ready, key)) return ready;
+  bytes ??= reuse(join(root, 'dist/native'), key);
   if (!bytes) {
-    if (spawnSync('cargo', ['--version'], { cwd: source, stdio: 'ignore' }).status !== 0) return undefined;
+    if (spawnSync('cargo', ['--version'], { cwd: source, stdio: 'ignore' }).status !== 0) {
+      onCargoUnavailable?.();
+      return undefined;
+    }
     const flags = [`--remap-path-prefix=${root}=/hud-source`];
     const result = spawnSync('cargo', ['build', '--offline', '--locked', '--release', '--target', target,
       '--target-dir', join(cache, 'cargo')], {
