@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · PRIMITIVES · PRIMITIVES-02 · One /proc reader (a865f39e)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-12 · The supervisor at-rest test holds under load (7e154115)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-13 · A land survives unrelated commits on main (b797cb8e)
 - try · EVENT-WAITS · EVENT-WAITS-02 · Event-driven waits for hud_sonic and hud_ask (9ee27fba)
