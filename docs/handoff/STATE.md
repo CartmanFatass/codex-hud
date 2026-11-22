@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · PRIMITIVES · PRIMITIVES-03 · hud-mcp sources and bins use the shared primitives (e0747c7a)
 - try · PRIMITIVES · PRIMITIVES-02 · One /proc reader (a865f39e)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-12 · The supervisor at-rest test holds under load (7e154115)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-13 · A land survives unrelated commits on main (b797cb8e)
