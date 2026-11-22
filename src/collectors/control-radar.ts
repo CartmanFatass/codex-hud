@@ -6,6 +6,7 @@ import { readFileBounded } from '../utils/atomic-fs.js';
 import { record } from '../statusline-parity/storage.js';
 import { CLAUDE_QUOTA_FILE } from '../statusline-parity/quota-cache.js';
 import { describePlace, type RolePlace } from '../roles/exhausted.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobRow } from './thin-jobs.js';
 
 type Client = 'codex' | 'claude';
@@ -132,14 +133,18 @@ const fallbackPlace = (job: Record<string, unknown>): string | null => {
   }, str(job.model) ?? null));
 };
 
-function roleRadar(root: string, today: string, cache: Cache): ControlRadar['roleStats'] {
+function roleRadar(hudHome: string, today: string): ControlRadar['roleStats'] {
   const groups = new Map<string, Omit<RoleRadar, 'places'> & { elapsed: number; timed: number; places: Map<string, PlaceRadar> }>();
-  const jobs = candidates(root, (e) => e.isDirectory() && /^j[0-9a-f]{16}$/.test(e.name))
-    .sort((a, b) => b.stat.birthtimeMs - a.stat.birthtimeMs || newest(a, b)).slice(0, 200);
-  for (const { path } of jobs) {
-    const job = json(join(path, 'job.json'), cache), created = at(job?.created_at);
+  const jobCache = getJobIndexCache(hudHome);
+  const { dirs: jobs } = jobCache.listJobDirsByMtime({ limit: 200, sortBy: 'birthtime' });
+  for (const { id } of jobs) {
+    const jobRes = jobCache.readJob(id);
+    const job = jobRes.status === 'ok' ? jobRes.value : undefined;
+    const created = at(job?.created_at);
     if (!job || dayOf(created) !== today) continue;
-    const status = json(join(path, 'STATUS.json'), cache), row = jobRow(job, status);
+    const statusRes = jobCache.readStatus(id);
+    const status = statusRes.status === 'ok' ? statusRes.value : undefined;
+    const row = jobRow(job, status);
     if (!row.role) continue;
     const stats = groups.get(row.role) ?? { total: 0, ok: 0, failed: 0, quietEscalated: 0, avgMinutes: null, elapsed: 0, timed: 0, places: new Map() };
     groups.set(row.role, stats);
@@ -193,7 +198,7 @@ export function collectControlRadar(hudHome: string, env: NodeJS.ProcessEnv, now
   // Keep signatures only for this scan's candidates, including on homes with long histories.
   const cache: Cache = { previous: previous?.cache, next: new Map() };
   const quotas = quotaRadar(join(hudHome, 'display', 'state'), nowMs, cache);
-  const piToday = piRadar(pi, day, cache), roleStats = roleRadar(join(hudHome, 'jobs'), day, cache);
+  const piToday = piRadar(pi, day, cache), roleStats = roleRadar(hudHome, day);
   const value = quotas || piToday || roleStats ? { ...(quotas && { quotas }), ...(piToday && { piToday }), ...(roleStats && { roleStats }) } : undefined;
   last = { home: hudHome, pi, day, now: nowMs, cache: cache.next, value };
   return value;

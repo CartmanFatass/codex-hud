@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { executable, roleRegistry } from '../roles/roster.js';
+import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
 import { controlFacts, type HarnessFact, type HarnessSwitchFact, type ModelLists, type RoleFact } from '../roles/role-control.js';
 import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
@@ -107,6 +108,28 @@ export const insideRoot = (root: string, path: string) => {
   const rel = relative(root, path);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 };
+interface JobReceipt {
+  cwd?: unknown;
+  worktree?: { root?: unknown; branch?: unknown; main_root?: unknown };
+  created_at?: unknown;
+  dispatch_exit_code?: unknown;
+  reaped_at?: unknown;
+  title?: unknown;
+  task?: unknown;
+  task_length?: unknown;
+  slice?: string;
+  ticket?: string | number;
+  package?: string;
+  role?: unknown;
+  brief_path?: unknown;
+  target_hint?: string;
+}
+interface JobStatus {
+  state?: unknown;
+  started_at?: unknown;
+  settled_at?: unknown;
+  ended_at?: unknown;
+}
 /** A job's state from its STATUS.json; without one, a failed dispatch is failed and anything else is working. */
 const jobState = (job: { dispatch_exit_code?: unknown }, s: { state?: unknown }) => typeof s.state === 'string' && s.state ? s.state
   : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
@@ -221,14 +244,8 @@ export class ProjectCollector {
     return features;
   }
   /** The newest 64 job directories: the one lookup behind Project's Now section and the Projects list. */
-  private recentJobs() {
-    const jobsRoot = join(this.hudHome, 'jobs');
-    return this.names(jobsRoot, Infinity).filter((id) => /^j[0-9a-f]{16}$/.test(id)).flatMap((id) => {
-      try {
-        const st = fs.lstatSync(join(jobsRoot, id));
-        return st.isDirectory() ? [{ id, at: st.mtimeMs }] : [];
-      } catch { return []; }
-    }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 64);
+  private recentJobs(cache = getJobIndexCache(this.hudHome)) {
+    return cache.listJobDirsByMtime({ limit: 64 }).dirs;
   }
   /** A job's short factual title: the task's first heading, else its first line. Signature-cached, size-bounded. */
   private briefTitle(path: string, taskLength: unknown): string | undefined {
@@ -238,9 +255,6 @@ export class ProjectCollector {
     const title = stripJobPrefix(line.replace(/^#{1,6}\s+/, '').replace(/\s+/g, ' ').trim());
     return title ? (title.length > 120 ? title.slice(0, 119) + '…' : title) : undefined;
   }
-  private json = (path: string) => this.body(path, (b, truncated) => {
-    try { return truncated ? null : JSON.parse(b.toString('utf8')); } catch { return null; }
-  });
   private readJson = (path: string) => {
     const file = this.read(path);
     if (!file) throw Object.assign(new Error('unreadable'), { code: 'EACCES' });
@@ -316,13 +330,16 @@ export class ProjectCollector {
   }
   /** Where each unsettled job of that lookup works (canonical paths), for the Projects list's per-root counts: no Git, no board. */
   liveCwds(): string[] {
-    this.seen.clear();
+    const cache = getJobIndexCache(this.hudHome);
     const cwds: string[] = [];
-    for (const { id } of this.recentJobs()) {
-      const dir = join(this.hudHome, 'jobs', id), job = this.json(join(dir, 'job.json'));
-      if (job && typeof job.cwd === 'string' && !job.reaped_at && !SETTLED_JOB_STATES.has(jobState(job, this.json(join(dir, 'STATUS.json')) ?? {}))) cwds.push(canonicalPath(job.cwd));
+    for (const { id } of this.recentJobs(cache)) {
+      const jobRes = cache.readJob<JobReceipt>(id);
+      const job = jobRes.status === 'ok' ? jobRes.value : null;
+      if (!job || typeof job.cwd !== 'string' || job.reaped_at) continue;
+      const statusRes = cache.readStatus<JobStatus>(id);
+      const status = statusRes.status === 'ok' ? statusRes.value : {};
+      if (!SETTLED_JOB_STATES.has(jobState(job, status))) cwds.push(canonicalPath(job.cwd));
     }
-    for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
     return cwds;
   }
   private async commitDates(hashes: string[]): Promise<Map<string, number>> {
@@ -496,12 +513,15 @@ export class ProjectCollector {
       }).sort((a, b) => b.at - a.at)[0];
     if (review) out.docs.push({ label: 'review', value: basename(review.path), ...review });
     this.collectControl(out, now);
+    const jobCache = getJobIndexCache(this.hudHome);
     for (const w of board.workers.filter((w) => w.state === 'working')) {
       const id = w.evidence[0]?.sourceId;
-      if (!id || !/^j[0-9a-f]{16}$/.test(id)) continue;
+      if (!id || !JOB_ID_RE.test(id)) continue;
       try {
-        const record = this.json(join(this.hudHome, 'jobs', id, 'job.json'));
-        if (record && resolve(record.worktree?.main_root ?? record.cwd) === resolve(this.cwd)) {
+        const res = jobCache.readJob<JobReceipt>(id);
+        const record = res.status === 'ok' ? res.value : null;
+        const target = record?.worktree?.main_root ?? record?.cwd;
+        if (typeof target === 'string' && resolve(target) === resolve(this.cwd)) {
           const label = board.lanes.find((l) => l.id === w.laneId)?.label ?? '';
           out.editing.push({
             label: 'editing', value: `${w.role ?? ''} · ${label}  ${w.task}`,
@@ -559,31 +579,34 @@ export class ProjectCollector {
     const statePath = out.statePath;
     const canonical = canonicalPath, root = canonical(this.cwd);
     const inRoot = (path: string) => insideRoot(root, path);
-    const jobsRoot = join(this.hudHome, 'jobs');
+    const jobCache = getJobIndexCache(this.hudHome);
+    const jobsRoot = jobCache.jobsRoot;
     const workersByJob = new Map(board.workers.map((w) => [w.evidence[0]?.sourceId, w]));
     // An export only joins receipts for the caller's already pane-scoped workers.
-    const jobs = exporting ? [...workersByJob.keys()].filter((id): id is string => !!id && /^j[0-9a-f]{16}$/.test(id)).map((id) => ({ id })) : this.recentJobs();
+    const jobs = exporting ? [...workersByJob.keys()].filter((id): id is string => !!id && JOB_ID_RE.test(id)).map((id) => ({ id })) : this.recentJobs(jobCache);
     const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
     const managed = new Map<string, string>();
     const active: { created: number; entry: ActiveJob }[] = [];
     const liveSlices = new Map<string, LedgerSlice>();
-    const json = this.json;
     for (const { id } of jobs) {
-      const dir = join(jobsRoot, id), job = json(join(dir, 'job.json'));
+      const dir = join(jobsRoot, id);
+      const jobRes = jobCache.readJob<JobReceipt>(id);
+      const job = jobRes.status === 'ok' ? jobRes.value : null;
       if (!job || typeof job.cwd !== 'string') continue;
       const cwd = canonical(job.cwd);
       const wt = job.worktree;
       const isolated = wt?.root === cwd && typeof wt.branch === 'string' && typeof wt.main_root === 'string';
-      if (isolated) managed.set(cwd, wt.branch);
-      const inside = inRoot(cwd) || (isolated && inRoot(wt.main_root));
+      if (isolated) managed.set(cwd, wt.branch as string);
+      const inside = inRoot(cwd) || (isolated && inRoot(wt.main_root as string));
       if (!inside && (home || exporting)) continue;
-      const created = Date.parse(job.created_at) || 0;
+      const created = Date.parse(String(job.created_at ?? '')) || 0;
       if (!inside && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
-      const s = json(join(dir, 'STATUS.json')) ?? {};
+      const statusRes = jobCache.readStatus<JobStatus>(id);
+      const s = statusRes.status === 'ok' ? statusRes.value : {};
       const state = jobState(job, s);
       const worker = workersByJob.get(id);
       if (inside && !SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
-        const at = Date.parse(s.started_at ?? job.created_at);
+        const at = Date.parse(String(s.started_at ?? job.created_at ?? ''));
         // The workboard's description, the job's own title or task; a job of another pane has neither, so its brief says.
         const title = [
           worker?.task && worker.task !== id.slice(-6) ? worker.task : undefined,
@@ -607,8 +630,8 @@ export class ProjectCollector {
       }
       const report = join(dir, 'report.md'), brief = join(dir, 'brief.md');
       if (inside && out.tickets.length) {
-        const material = job.ticket || job.slice ? '' : job.task ?? job.brief_path ?? this.read(brief, 4096)?.text.slice(0, job.task_length ?? 4096) ?? worker?.task ?? '';
-        const at = Date.parse(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at);
+        const material = job.ticket || job.slice ? '' : job.task ?? job.brief_path ?? this.read(brief, 4096)?.text.slice(0, typeof job.task_length === 'number' ? job.task_length : 4096) ?? worker?.task ?? '';
+        const at = Date.parse(String(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at ?? ''));
         rollup.link(job, String(material), { role: typeof job.role === 'string' ? job.role : '',
           state: job.reaped_at && !SETTLED_JOB_STATES.has(state) ? 'closed' : state,
           created, ...(Number.isFinite(at) ? { at } : {}) });
@@ -616,7 +639,7 @@ export class ProjectCollector {
       if (home) continue;
       if ((byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const path = firstFile(report, brief);
-      const at = Date.parse(s.started_at ?? job.created_at);
+      const at = Date.parse(String(s.started_at ?? job.created_at ?? ''));
       byTree.set(cwd, { jobId: id, role: typeof job.role === 'string' ? job.role : '', created,
         asking: s.state === 'waiting_orchestrator', path, ...(Number.isFinite(at) ? { at } : {}) });
     }

@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { collectControlRadar } from '../../dist/collectors/control-radar.js';
+import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { recordClaudeQuota } from '../../dist/statusline-parity/quota-cache.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -289,4 +291,41 @@ test('Control Dispatch today splits by place at 40 and 80 columns in EN and ZH w
     // Role detail preview has no chain-row dispatch note (§6 default #2).
     assert.doesNotMatch(plain(roleFrame).join('\n'), /launch ✗|启动 ✗|quota \d|配额 \d/);
   }
+});
+
+test('roleRadar shares JobIndexCache without re-opening unchanged job files after the 5-second throttle', (t) => {
+  const { home, job, put, collect } = fixture(t);
+  const dir1 = job(1, 'imp', 10 * MINUTE, { state: 'done', started_at: iso(now - 9 * MINUTE), settled_at: iso(now - 3 * MINUTE) });
+  job(2, 'reviewer', 5 * MINUTE, { state: 'working' });
+  const cache = getJobIndexCache(home);
+  // Pre-warm via the shared cache before Control radar runs.
+  for (const id of cache.listJobIds()) {
+    cache.readJob(id);
+    cache.readStatus(id);
+  }
+  const opened = [];
+  const origOpen = fs.openSync;
+  fs.openSync = (path, ...args) => { opened.push(String(path)); return origOpen(path, ...args); };
+  syncBuiltinESMExports();
+  t.after(() => { fs.openSync = origOpen; syncBuiltinESMExports(); });
+  const jobOpens = () => opened.filter((p) => /\/jobs\/j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(p));
+
+  const first = collect(now);
+  assert.deepEqual(jobOpens(), [], 'warm JobIndexCache avoids opening job.json and STATUS.json');
+  assert.deepEqual(first.roleStats, {
+    imp: { total: 1, ok: 1, failed: 0, quietEscalated: 0, avgMinutes: 6 },
+    reviewer: { total: 1, ok: 0, failed: 0, quietEscalated: 0, avgMinutes: null },
+  });
+
+  // Next scan after 5s still opens 0 job files when unchanged.
+  assert.deepEqual(collect(now + 5000).roleStats, first.roleStats);
+  assert.deepEqual(jobOpens(), []);
+
+  // Mutating one STATUS.json opens only that file on the next unthrottled scan.
+  const statusFile = join(dir1, 'STATUS.json');
+  put(statusFile, { state: 'failed', ended_at: iso(now - MINUTE) }, now + 6000);
+  const next = collect(now + 10000);
+  assert.deepEqual(jobOpens(), [statusFile]);
+  assert.equal(next.roleStats.imp.ok, 0);
+  assert.equal(next.roleStats.imp.failed, 1);
 });

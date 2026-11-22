@@ -7,6 +7,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
+import { clearJobIndexCaches } from '../../dist/roles/job-index-cache.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
 import { currentRows } from '../../dist/render/project-view.js';
 import { projectList } from '../../dist/roles/projects.js';
@@ -365,4 +367,78 @@ test('Home task ages query only uncached hashes, never an unchanged set of misse
   assert.deepEqual(calls.map((args) => args.slice(args.indexOf('--format=%h%x00%ct') + 1)), [
     ['0000000', a, '--'], [b, '--'],
   ]);
+});
+
+test('multiple ProjectCollectors, ProjectOverviews and Control share one JobIndexCache parse per job on the same HUD_HOME', async (t) => {
+  const f = makeTemp(t);
+  t.after(() => clearJobIndexCaches());
+  clearJobIndexCaches();
+  const rootA = fs.realpathSync(f.cwd);
+  const rootB = join(f.root, 'project-b');
+  fs.mkdirSync(rootB, { recursive: true });
+  const realB = fs.realpathSync(rootB);
+
+  const addJob = (n, job, status) => {
+    const id = `j${String(n).padStart(16, '0')}`;
+    const dir = join(f.hud, 'jobs', id);
+    f.put(join(dir, 'job.json'), { job: id, created_at: new Date(NOW - n * 60000).toISOString(), ...job });
+    f.put(join(dir, 'STATUS.json'), status);
+    return id;
+  };
+  const jAWork = addJob(1, { role: 'imp', cwd: rootA, title: 'Alpha work' }, { state: 'working', started_at: new Date(NOW - 5 * 60000).toISOString() });
+  const jBAsk = addJob(2, { role: 'reviewer', cwd: realB, title: 'Beta question' }, { state: 'waiting_orchestrator', started_at: new Date(NOW - 2 * 60000).toISOString() });
+  addJob(3, { role: 'imp', cwd: rootA }, { state: 'done', started_at: new Date(NOW - 10 * 60000).toISOString(), settled_at: new Date(NOW - 4 * 60000).toISOString() });
+  addJob(4, { role: 'oracle', cwd: realB }, { state: 'failed', started_at: new Date(NOW - 8 * 60000).toISOString(), ended_at: new Date(NOW - 3 * 60000).toISOString() });
+  addJob(5, { role: 'imp', cwd: rootA, reaped_at: new Date(NOW).toISOString() }, { state: 'working' });
+
+  const opened = [];
+  const origOpen = fs.openSync;
+  fs.openSync = (path, ...args) => { opened.push(String(path)); return origOpen(path, ...args); };
+  syncBuiltinESMExports();
+  t.after(() => { fs.openSync = origOpen; syncBuiltinESMExports(); });
+  const jobOpens = () => opened.filter((p) => /\/jobs\/j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(p));
+
+  const collectorA = new ProjectCollector(rootA, f.hud, f.env, f.home);
+  const collectorB = new ProjectCollector(realB, f.hud, f.env, f.home);
+  const overviews = new ProjectOverviews((r) => new ProjectCollector(r, f.hud, f.env, f.home), rootA);
+
+  // First full Project collection reads each job.json and STATUS.json once (and shares with Control radar in the same tick).
+  const projA = await collectorA.collect(true, EMPTY_BOARD, NOW);
+  assert.deepEqual(projA.active.map((a) => a.jobId), [jAWork]);
+  assert.equal(projA.radar.roleStats.imp.total, 3);
+  assert.equal(projA.radar.roleStats.imp.ok, 1);
+  assert.equal(projA.radar.roleStats.reviewer.total, 1);
+  assert.equal(projA.radar.roleStats.oracle.failed, 1);
+  const coldOpens = jobOpens();
+  assert.equal(coldOpens.length, 10, `expected 5 job.json + 5 STATUS.json opens once, got: ${coldOpens.join(', ')}`);
+  assert.equal(new Set(coldOpens).size, 10, 'no job file parsed twice across Project + Control radar');
+
+  // Home, second ProjectCollector (ProjectVisits), Projects list (liveCwds) and Control all reuse the shared cache.
+  opened.length = 0;
+  const homeA = await collectorA.collect('home', EMPTY_BOARD, NOW + 1000);
+  const projB = await collectorB.collect(true, EMPTY_BOARD, NOW + 1000);
+  const list = await overviews.read([rootA, realB], EMPTY_BOARD, NOW + 1000);
+  const ctrlA = await collectorA.collect('control', EMPTY_BOARD, NOW + 6000);
+  const ctrlB = await collectorB.collect('control', EMPTY_BOARD, NOW + 12000);
+
+  assert.deepEqual(jobOpens(), [], 'unchanged jobs are not re-opened across Home, Project, Projects, and Control');
+  assert.deepEqual(homeA.active.map((a) => a.jobId), [jAWork]);
+  assert.deepEqual(projB.active.map((a) => a.jobId), [jBAsk]);
+  assert.equal(list.get(rootA).running, 1);
+  assert.equal(list.get(realB).running, 1);
+  assert.deepEqual(ctrlA.radar.roleStats, projA.radar.roleStats);
+  assert.deepEqual(ctrlB.radar.roleStats, projA.radar.roleStats);
+
+  // Updating one job's STATUS.json invalidates only that file across all readers.
+  opened.length = 0;
+  const statusFile = join(f.hud, 'jobs', jAWork, 'STATUS.json');
+  f.put(statusFile, { state: 'done', started_at: new Date(NOW - 5 * 60000).toISOString(), settled_at: new Date(NOW - 1 * 60000).toISOString() });
+  const updatedList = await overviews.read([rootA, realB], EMPTY_BOARD, NOW + 18000);
+  const updatedHome = await collectorA.collect('home', EMPTY_BOARD, NOW + 18000);
+  const updatedCtrl = await collectorA.collect('control', EMPTY_BOARD, NOW + 18000);
+  assert.deepEqual(jobOpens(), [statusFile]);
+  assert.equal(updatedList.get(rootA).running, 0);
+  assert.equal(updatedList.get(realB).running, 1);
+  assert.deepEqual(updatedHome.active, []);
+  assert.equal(updatedCtrl.radar.roleStats.imp.ok, 2);
 });

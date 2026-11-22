@@ -1,7 +1,8 @@
 /** Codex bar fallback must not adopt a HUD CLI worker's rollout. Synthetic files only. */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -69,6 +70,19 @@ if (process.env[flag] === '1') {
   await new Promise((done) => setTimeout(done, 2100));
   assert.equal(sticky.check()?.sessionId, nextId);
   assert.notEqual(sticky.getCurrentSession()?.sessionId, workerId);
+
+  // Repeated lookups reuse the shared JobIndexCache without reopening unchanged STATUS.json.
+  const opened = [];
+  const origOpen = fs.openSync;
+  fs.openSync = (p, ...args) => { opened.push(String(p)); return origOpen(p, ...args); };
+  syncBuiltinESMExports();
+  try {
+    assert.equal(findMostRecentRollout(1, cwd).sessionId, nextId);
+    assert.deepEqual(opened.filter((p) => p.endsWith('/STATUS.json')), []);
+  } finally {
+    fs.openSync = origOpen;
+    syncBuiltinESMExports();
+  }
 } else {
   test('the Codex bar fallback skips a HUD CLI worker rollout', { timeout: 15000 }, () => {
     const root = fs.mkdtempSync(join(tmpdir(), 'codex-bar-'));

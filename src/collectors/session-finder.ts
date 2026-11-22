@@ -7,8 +7,8 @@ import { sessionParentId } from '../utils/session-parent.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getHudHome } from '../hud-home.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
-import { fileSignature } from '../utils/file-signature.js';
 import { time } from '../utils/profile.js';
 import { DaemonBinding } from './daemon-binding.js';
 
@@ -515,32 +515,6 @@ export async function findRolloutsInDaysYielding(
   return results;
 }
 
-const workerSessionCache = new Map<string, { signature: string; id: string | null }>();
-let workerSessionsHome = '';
-
-function cachedCodexSessionId(file: string): string | null {
-  const signature = fileSignature(file);
-  const cached = workerSessionCache.get(file);
-  if (signature !== null && cached && cached.signature === signature) {
-    return cached.id;
-  }
-  let id: string | null = null;
-  try {
-    const status = JSON.parse(fs.readFileSync(file, 'utf8')) as { agent?: unknown; agent_session_id?: unknown };
-    if (status.agent === 'codex' && typeof status.agent_session_id === 'string' && status.agent_session_id) {
-      id = status.agent_session_id;
-    }
-  } catch {
-    id = null;
-  }
-  if (signature !== null) {
-    cachePut(workerSessionCache, file, { signature, id });
-  } else {
-    workerSessionCache.delete(file);
-  }
-  return id;
-}
-
 /**
  * Codex CLI job session ids under `$HUD_HOME/jobs` (the open and recent set the HUD keeps).
  * A closed job still counts: its rollout must not become the bar's main session.
@@ -548,33 +522,12 @@ function cachedCodexSessionId(file: string): string | null {
  */
 function codexWorkerSessionIds(): Set<string> {
   const ids = new Set<string>();
-  const home = getHudHome();
-  if (home !== workerSessionsHome) {
-    workerSessionCache.clear();
-    workerSessionsHome = home;
-  }
-  const root = path.join(home, 'jobs');
-  let names: string[];
-  try {
-    names = fs.readdirSync(root);
-  } catch {
-    return ids;
-  }
-  const seen = new Set<string>();
-  for (const name of names) {
-    if (!/^j[0-9a-f]{16}$/.test(name)) {
-      continue;
-    }
-    const file = path.join(root, name, 'STATUS.json');
-    seen.add(file);
-    const id = cachedCodexSessionId(file);
-    if (id) {
-      ids.add(id);
-    }
-  }
-  for (const file of workerSessionCache.keys()) {
-    if (!seen.has(file)) {
-      workerSessionCache.delete(file);
+  const cache = getJobIndexCache(getHudHome());
+  for (const jobId of cache.listJobIds()) {
+    const res = cache.readStatus<{ agent?: unknown; agent_session_id?: unknown }>(jobId);
+    if (res.status !== 'ok') continue;
+    if (res.value.agent === 'codex' && typeof res.value.agent_session_id === 'string' && res.value.agent_session_id) {
+      ids.add(res.value.agent_session_id);
     }
   }
   return ids;
