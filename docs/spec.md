@@ -86,6 +86,10 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - Sonic thinking uses the role default (`high`), not caller choice or a tool prompt. When enabled (off by default),
   the Decision API chooses `none`, `low`, `high` or `max` using each brief and the role file's level purposes.
   Any failure falls back to the default. (21.05)
+- Soft per-role concurrency caps (Settings; defaults `imp` 3, `general` 3, other roles uncapped) count working jobs
+  machine-wide. With `imp→general` overflow on (default), an `imp` create at its cap starts as `general` when
+  `general` has room and says so; otherwise a create past the cap is `queued` with its position, the watcher starts
+  the oldest queued job when a slot frees or a cap rises, and `hud_close` removes a queued job. (22.22)
 
 #### 2.1.5 Lifecycle, settlement and cleanup
 
@@ -105,13 +109,16 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   the report on disk. A new turn or rewritten report invalidates it; terminal output and herdr idle neither
   declare nor invalidate. Pi native settlement plus changed report is equivalent. Without valid declaration
   the live-child rule applies. (19.01)
-- After declaration, leftover shells, test runners and daemons don't block settlement. An unread report
-  puts a continuable worker in idle grace. Close a settled worker as soon as main reads its report; else
-  keep it until its idle deadline. Terminate only the worker and proven descendants, including leftovers;
-  leave processes without captured ancestry alone. (17.08, 19.01)
+- After declaration, leftover shells, test runners and daemons don't block settlement. When a worker ends the
+  current turn with a valid report declaration and no open question or open or uncollected sonic child, close its
+  process and pane whether or not main has read the report (hand a CLI worker back to main if its turn has not
+  ended within 120 seconds of declaring); for `resume_s` after closure (default 1620 seconds), `hud_send` and land
+  repairs resume the verified native session in a new pane in the same checkout, or start a repair job if the
+  session is unavailable or the window has expired. Terminate only the worker and proven descendants, including
+  leftovers; leave processes without captured ancestry alone. (17.08, 19.01, 22.22)
 - Intentional stop records stopped regardless of first writer, even with simultaneous tab close. Retry failed
   process/tab cleanup after closure until gone. Pre-input continuation refusal opens no turn. (18.05)
-- `hud_send` to a closed job creates a new repair job referencing the old brief and report. `hud_create`
+- `hud_send` to a closed job past its resume window creates a new repair job referencing the old brief and report. `hud_create`
   and `hud_send` derive omitted idempotency keys. (21.06)
 - Before deleting a closed job directory, the watcher appends one line of the job's facts (no report text) to `$HUD_HOME/archive/YYYY-MM.jsonl`; nothing reads it yet. (22.16)
 
