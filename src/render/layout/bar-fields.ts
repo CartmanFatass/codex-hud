@@ -84,19 +84,15 @@ export interface BarEvent {
   key?: string;
 }
 
-/** One HUD worker as the worker zone counts it: every live one, and each settled one for `NOTICE_MS`. */
+/** One HUD worker as the worker zone counts it: only a live one, working or asking the owner. */
 export interface BarWorker {
   role: string;
   /** The model's id and the route's provider: the group's mark and short name are read from them. */
   model?: string;
   provider?: string;
   effort?: string;
-  state: 'working' | 'asking' | 'done' | 'failed';
-  /** A settled worker's report has not been read. */
-  unread?: true;
+  state: 'working' | 'asking';
   startedAt: number;
-  /** Only a settled worker has it. */
-  settledAt?: number;
 }
 
 export interface BarQuotaWindow {
@@ -521,8 +517,8 @@ interface Group {
   effortRole: Role;
   n: number;
   since: number;
-  /** How many are asking, failed or done, by `state` and `●` (report unread): `!`, `✗`, `✓●`, `✓` follow the count. */
-  states: Map<string, number>;
+  /** How many are asking the owner: `!` follows the count. */
+  asking: number;
 }
 
 const effortRole = (glyph: string): Role =>
@@ -555,46 +551,28 @@ function groupWorkers(workers: readonly BarWorker[], rung: number, ascii: boolea
       effortRole: effortRole(effort),
       n: 0,
       since: worker.startedAt,
-      states: new Map<string, number>(),
+      asking: 0,
     };
     group.n++;
     group.since = Math.min(group.since, worker.startedAt);
-    if (worker.state !== 'working') {
-      const state = worker.state + (worker.unread && worker.state !== 'asking' ? '●' : '');
-      group.states.set(state, (group.states.get(state) ?? 0) + 1);
-    }
+    if (worker.state === 'asking') group.asking++;
     groups.set(key, group);
   }
   return [...groups.values()].sort((a, b) => Number(a.sonic) - Number(b.sonic) || a.since - b.since);
 }
 
-/** A group's states in the order its marks stand: what the group's `states` keys read as. */
-const STATE_MARKS = [
-  ['asking', '!', 'alert'],
-  ['failed●', `${icons.cross}●`, 'bad'],
-  ['failed', icons.cross, 'bad'],
-  ['done●', `${icons.check}●`, 'ok'],
-  ['done', icons.check, 'ok'],
-] as const;
-
 /**
- * A group as pieces: `◎ sol-fast◕ 3`, then its marks. A mark follows the count, `!` (asking, the bar's alert badge, with
- * its own padding on a coloured bar), `✗` failed, `✓●` finished with the report unread and `✓` finished and read, each
- * with its number when more than one. Working has no mark.
+ * A group as pieces: `◎ sol-fast◕ 3`, then its mark. `!` follows the count when workers are asking (the bar's alert
+ * badge, with its own padding on a coloured bar), with its number when more than one. Working has no mark.
  */
 function groupForm(group: Group, pad: string, ascii: boolean): Form {
   const lead: Form = [
     group.sonic ? [group.mark, 'warn'] : [group.mark, 'lead', undefined, group.ink],
     ...(group.name || ascii ? ([[' ']] as Form) : []),
   ];
-  const marks = STATE_MARKS.flatMap(([state, glyph, role]): Form => {
-    const n = group.states.get(state);
-    if (!n) return [];
-    const number = n > 1 ? String(n) : '';
-    return role === 'alert'
-      ? [[' '], [`${pad}${glyph}${number}${pad}`, pad ? 'alert' : 'warn']]
-      : [[' '], [`${glyph}${number}`, role]];
-  });
+  const marks: Form = group.asking
+    ? [[' '], [`${pad}!${group.asking > 1 ? group.asking : ''}${pad}`, pad ? 'alert' : 'warn']]
+    : [];
   return [
     ...lead,
     ...(group.name ? ([[group.name, 'value']] as Form) : []),
@@ -606,14 +584,13 @@ function groupForm(group: Group, pad: string, ascii: boolean): Form {
 }
 
 /**
- * The census of workers as one segment, a form per rung of narrowing (full, no model name, no effort glyph); null when
- * none is live or settled within `NOTICE_MS`. A worker's time is judged here, at paint, so a cached census stays true.
+ * The census of live workers as one segment, a form per rung of narrowing (full, no model name, no effort glyph); null
+ * when none is running.
  */
-function rosterSeg(workers: readonly BarWorker[] | undefined, now: number, pad: string, ascii: boolean): Seg | null {
-  const shown = (workers ?? []).filter((w) => w.settledAt === undefined || now - w.settledAt < NOTICE_MS);
-  if (!shown.length) return null;
+function rosterSeg(workers: readonly BarWorker[] | undefined, pad: string, ascii: boolean): Seg | null {
+  if (!workers?.length) return null;
   const forms = [0, 1, 2].map((rung) =>
-    groupWorkers(shown, rung, ascii).flatMap((group, i): Form => [
+    groupWorkers(workers, rung, ascii).flatMap((group, i): Form => [
       ...(i ? ([['  ']] as Form) : []),
       ...groupForm(group, pad, ascii),
     ])
@@ -802,7 +779,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     return seg;
   });
   // The workers come after a pinned need and before the client's own events.
-  const roster = on.has('notice') ? rosterSeg(facts.workers, now, '', iconSet() === 'text') : null;
+  const roster = on.has('notice') ? rosterSeg(facts.workers, '', iconSet() === 'text') : null;
   const zoneSegments = [
     ...noticeSegments.slice(0, zone?.alert ? 1 : 0),
     ...(roster ? [roster] : []),
@@ -1096,7 +1073,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
   // Several needs: `first +2`, then `N needs` when the notice has to give way.
   if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
-  const roster = on.has('notice') ? rosterSeg(facts.workers, now, pad, ascii) : null;
+  const roster = on.has('notice') ? rosterSeg(facts.workers, pad, ascii) : null;
   const left = [
     on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,

@@ -20,16 +20,11 @@ export const worker = (
   state: BarWorker['state'] = 'working',
   extra: Partial<BarWorker> = {}
 ): BarWorker => ({ role, model, provider, effort, state, startedAt: THEME_NOW - 600_000, ...extra });
-/** The busy scenes' workers: two imps (one asking), two sonic (one finished, report unread). */
+/** The busy scenes' workers: two imps (one asking) and a sonic. */
 export const THEME_WORKERS: BarWorker[] = [
   worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high'),
   worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high', 'asking', { startedAt: THEME_NOW - 590_000 }),
   worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'working', { startedAt: THEME_NOW - 60_000 }),
-  worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'done', {
-    startedAt: THEME_NOW - 90_000,
-    settledAt: THEME_NOW - 20_000,
-    unread: true,
-  }),
 ];
 export function barThemeScene() {
   const footer = parityFixture({ name: 'bar-themes', width: 120, env: { NO_COLOR: '' } });

@@ -20,7 +20,7 @@ A is what was asked for, and four groups take 55 columns, so 120 columns show it
 ## The design in short
 
 - **Group**: provider mark (`providerMark`, catalog colour), short model, effort glyph (`EFFORT_GLYPHS`, inked as `paintEffort`; none for off/none/unknown), count in bold. Groups are joined by two spaces, in the order their oldest worker started.
-- **State**: today's glyphs and inks without the `[ ]` box. No mark means working; `!`/`!n` in the bar's alert badge means asking (pinned until answered); `✗` failed; `✓●` finished, report unread; `✓` finished and read, for three minutes. `◐` is not used for working: it would repeat on every group and collides with medium thinking.
+- **State**: today's glyphs and inks without the `[ ]` box. No mark means working; `!`/`!n` in the bar's alert badge means asking (pinned until answered). Settled workers are not shown (see "Only running workers" below). `◐` is not used for working: it would repeat on every group and collides with medium thinking.
 - **Ladder** (owner's order): drop the model name, then the effort glyph, leaving provider mark and count; groups regroup at each rung so counts stay true; B drops its letter last; marks never go.
 - **zh**: the bar stays English-only and the zone has no words, so zh rows differ only by the session's own text (a CJK project name); today's titles are what made zh wide.
 
@@ -31,7 +31,7 @@ Derived, not tabulated, from `src/models/models-catalog.json` through the existi
 ## For whoever builds it
 
 - `neon`, `carbon` and `gpt-6.2-sol-fast` are not catalog entries yet (the codename and family rules already read them from the id). `ModelEntry.shortLabel` exists and is unused: it is the place for any exception.
-- The zone needs a roster, not events: today `workSignals` gives recent starts and settlements (a start event lasts three minutes), so a worker running longer drops out. A census of live workers (role, model id, effort, state) is the input this design assumes; settled workers keep today's three-minute window.
+- The zone needs a roster, not events: today `workSignals` gives recent starts and settlements (a start event lasts three minutes), so a worker running longer drops out. A census of live workers (role, model id, effort, state) is the input this design assumes.
 - In `LADDER` (`bar-fields.ts`) the two `title` rungs become the zone's rungs, so the loaded counts, meters, quota reset and branch marks give way first and leftover room goes back to the zone. Moving them earlier favours the zone over those extras at 120 columns.
 - B's letter is the role's first letter; roles can collide (`frontend` and `flow`), so B needs a rule if chosen.
 - The ambiguous-width glyphs (`◎ ◕ ● ✻ ≋ ▲`) are one column as `visualLength` counts them, as the vitals' marks already are.
@@ -41,7 +41,11 @@ Derived, not tabulated, from `src/models/models-catalog.json` through the existi
 
 Variant A with the owner's change: sonic shows no provider, model or effort, only `⚡` and its count (`⚡4`), after the other groups whatever its start time; its marks follow the count like any group's. Text icons draw `*` for `⚡` and the provider's ASCII tag (`OAI sol-fast◕ 3`, a space after a tag that has no name).
 
-- `src/render/work-summary.ts`: `workSignals` is the census, `{ workers }`: every live HUD job of the pane (queued ones are not live) and each settled one for three minutes (a sonic child's normal finish is not told; its failure is). `BarFacts.workers` carries it; paint judges the three minutes, so a cached census stays true.
+- `src/render/work-summary.ts`: `workSignals` is the census, `{ workers }`: every live HUD job of the pane (queued ones are not live). `BarFacts.workers` carries it.
 - `src/render/layout/bar-fields.ts`: `rosterSeg` makes the zone's three forms (full, no model name, no effort glyph); `LADDER`'s two `title` rungs step them, and room left over goes back a rung at a time. Approvals stay pinned before the groups and a subagent's events follow them.
 - `src/render/model-glyphs.ts`: `workerModelName`, the catalog rules of "Short model names"; `neon`, `carbon` and `gpt-6.2-sol-fast` are catalog entries now. A worker with no known vendor has a dim dot, `·`.
 - `hud-statusline` (Claude Code and Antigravity), the Codex bar and the pi footer draw it; the six other looks draw the same groups without further design; B's letter was not built; the Codex native footer's `workReminder` still says `HUD: imp asks`.
+
+## Only running workers (2026-11-22)
+
+The owner's change after trying the zone: it shows what runs now, not a census that keeps finished work. A worker is `working` or `asking`; the `✗`, `✓●` and `✓` marks, `BarWorker`'s `done`/`failed` states and its `unread`/`settledAt` fields are gone, and a settled worker (a sonic child included, failed or not) is not counted. With nothing running the zone is absent. `hud-statusline` and the Codex bar read the pane's jobs with `settledBefore: now`, so settled jobs are not read for the zone.

@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { truncateAnsi, visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
 import { applyBarSettings } from '../bar-settings.js';
-import { NOTICE_MS } from '../render/layout/bar-fields.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
 import type { HudIO } from './hud.js';
 import { loadParitySettings, paritySettings } from '../statusline-parity/settings.js';
@@ -159,7 +158,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
         let work: ReturnType<typeof workSignals> | undefined;
         try {
           const scope = { project: null, pane: io.env.HERDR_PANE_ID ?? null };
-          work = workSignals(readThinJobs(getHudHome(io.env), scope, undefined, { settledBefore: now - NOTICE_MS }), now);
+          work = workSignals(readThinJobs(getHudHome(io.env), scope, undefined, { settledBefore: now }), now);
         } catch {
           work = undefined;
         }
@@ -169,7 +168,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
       const now = Date.now();
       recordClaudeQuota(value, io.env, now);
       const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null }, undefined,
-        parity && !options.details ? { settledBefore: now - NOTICE_MS } : undefined);
+        parity && !options.details ? { settledBefore: now } : undefined);
       // The bar is one line: what the jobs ask and just did are events of its notice zone, not a row below.
       if (parity && !options.details) {
         applyBarSettings();

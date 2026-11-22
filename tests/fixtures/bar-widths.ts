@@ -71,28 +71,19 @@ const vitals: BarFacts = {
     ],
   },
 };
-/** The worker-zone design sample's busy scenario: ten workers in four groups; one asking, one failed, one finished unread. */
+/** The worker-zone design sample's busy scenario: eight running workers in four groups, one of them asking. */
 export const BUSY_WORKERS: BarWorker[] = [
   worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high'),
   worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high', 'working', { startedAt: THEME_NOW - 590_000 }),
   worker('imp', 'gpt-6.2-sol-fast', 'openai', 'high', 'asking', { startedAt: THEME_NOW - 580_000 }),
   worker('general', 'gemini-4-neon-high', 'google-vertex', 'high', 'working', { startedAt: THEME_NOW - 500_000 }),
-  worker('general', 'gemini-4-neon-high', 'google-vertex', 'high', 'failed', {
-    startedAt: THEME_NOW - 400_000,
-    settledAt: THEME_NOW - 30_000,
-  }),
   ...[1, 2, 3].map((n) =>
     worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'working', { startedAt: THEME_NOW - n * 10_000 })
   ),
-  worker('sonic', 'deepseek-v4-1-flash-1017', 'deepseek', 'high', 'done', {
-    startedAt: THEME_NOW - 100_000,
-    settledAt: THEME_NOW - 20_000,
-    unread: true,
-  }),
   worker('frontend', 'claude-sonnet-5-5', 'anthropic', 'xhigh', 'working', { startedAt: THEME_NOW - 300_000 }),
 ];
 const sub = agentEvent('started', { id: 'a', name: 'Explore', title: 'Audit bar fitting ladder' }, THEME_NOW - 10_000);
-/** Idle; one worker running; the sample's ten workers; those and a subagent that just started. */
+/** Idle; one worker running; the sample's eight workers; those and a subagent that just started. */
 const WIDTH_SCENES: Record<string, BarFacts> = {
   quiet: vitals,
   one: { ...vitals, workers: BUSY_WORKERS.slice(0, 1) },

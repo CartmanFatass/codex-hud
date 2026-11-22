@@ -2,7 +2,7 @@
 import type { OwnerWorker, WorkLane } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { truncateAnsi } from './colors.js';
-import { NOTICE_MS, type BarWorker } from './layout/bar-fields.js';
+import type { BarWorker } from './layout/bar-fields.js';
 const wordOf = (worker: OwnerWorker, now: number): string => {
   const state = projectWorkCard(worker, now).state;
   return worker.work?.failed
@@ -17,7 +17,7 @@ const wordOf = (worker: OwnerWorker, now: number): string => {
             ? 'running'
             : '';
 };
-/** What the bar's worker zone takes from the jobs: a census of the live workers and the settled ones of the last three minutes. */
+/** What the bar's worker zone takes from the jobs: a census of the workers running now. */
 export interface WorkSignals {
   workers: BarWorker[];
 }
@@ -25,29 +25,15 @@ export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignal
   const workers: BarWorker[] = [];
   for (const lane of lanes)
     for (const worker of lane.workers) {
-      const live = worker.settledAt === null && worker.state !== 'queued';
-      // A settled worker keeps its place for NOTICE_MS; a sonic child's report goes to its parent, unless it failed.
-      const settled =
-        worker.settledAt !== null &&
-        now - worker.settledAt < NOTICE_MS &&
-        (!worker.parentJobId || worker.work?.failed === true);
-      if (!live && !settled) continue;
-      const state: BarWorker['state'] = live
-        ? wordOf(worker, now) === 'needs you'
-          ? 'asking'
-          : 'working'
-        : worker.work?.failed
-          ? 'failed'
-          : 'done';
+      // Settled and queued workers are not counted; one asking the owner is still live.
+      if (worker.settledAt !== null || worker.state === 'queued') continue;
       workers.push({
         role: worker.role || 'job',
         ...(worker.model ? { model: worker.model } : {}),
         ...(worker.provider ? { provider: worker.provider } : {}),
         ...(worker.effort ? { effort: worker.effort } : {}),
-        state,
-        ...(settled && !worker.parentJobId && worker.reportUnread === true ? { unread: true as const } : {}),
-        startedAt: worker.startedAt ?? worker.settledAt ?? now,
-        ...(worker.settledAt !== null && settled ? { settledAt: worker.settledAt } : {}),
+        state: wordOf(worker, now) === 'needs you' ? 'asking' : 'working',
+        startedAt: worker.startedAt ?? now,
       });
     }
   return { workers };

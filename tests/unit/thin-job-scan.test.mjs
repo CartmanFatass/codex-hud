@@ -319,7 +319,7 @@ test('readThinJobRows caches unchanged files by signature without reading bodies
   assert.equal(fs.existsSync(join(home, 'display')), false);
 });
 
-test('a settled job whose report is unread shows ✓● on its group until hud_read stamps read_at', (t) => {
+test('a settled job is not on the worker zone, unread, read or failed; a running one is counted', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-unread-'));
   const config = setDisplayConfig({ theme: 'none', barFields: ['model', 'notice'] });
   t.after(() => {
@@ -354,14 +354,15 @@ test('a settled job whose report is unread shows ✓● on its group until hud_r
       line: line.replace(/\x1b\[[0-9;]*m/g, ''),
     };
   };
-  assert.deepEqual(bar(), { unread: true, line: 'M │ ◎ sol-fast◕ 1 ✓●' });
-  // hud_read stamps read_at after the report was written: the dot goes, the report stays.
+  // The card keeps the report's unread dot; the zone counts nothing that has settled.
+  assert.deepEqual(bar(), { unread: true, line: 'M' });
+  // hud_read stamps read_at after the report was written: the dot goes, the zone stays empty.
   receipt({ read_at: new Date(Date.now() + 1000).toISOString() });
-  assert.deepEqual(bar(), { unread: undefined, line: 'M │ ◎ sol-fast◕ 1 ✓' });
+  assert.deepEqual(bar(), { unread: undefined, line: 'M' });
   receipt({ parent_job: 'j0000000000000001' });
   assert.deepEqual(bar(), { unread: true, line: 'M' }, "a child's settlement stays off the bar; its card keeps the report");
   write('STATUS.json', JSON.stringify({ state: 'failed', ended_at: settled }));
-  assert.equal(bar().line, 'M │ ◎ sol-fast◕ 1 ✗');
+  assert.equal(bar().line, 'M');
   // A job still running is counted however long it has run.
   write('STATUS.json', JSON.stringify({ state: 'working', started_at: new Date(Date.now() - 30 * 60_000).toISOString() }));
   assert.equal(bar().line, 'M │ ◎ sol-fast◕ 1');

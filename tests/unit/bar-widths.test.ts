@@ -44,10 +44,10 @@ test('the worker zone gives up its model names, then its effort glyphs, and keep
       assert.doesNotMatch(row, /frontend|general|sonic|imp\b|BAR-NARROW:/, `${scene} at ${width}`);
     }
   const zone = (width: number, scene: string) => frames[String(width)]![scene]![0]!.split(' │ ').pop()!;
-  // Ten workers, four groups: whole at 144; the model names go at 120 and 100; the effort glyphs at 80. The counts add up to ten.
-  assert.match(zone(144, 'busy'), /^◎ sol-fast◕ 3 +! +▲ neon◕ 2 ✗ +✻ sonnet● 1 +⚡4 ✓●$/);
-  for (const width of [120, 100]) assert.match(zone(width, 'busy'), /^◎◕3 +! +▲◕2 ✗ +✻●1 +⚡4 ✓●$/, `busy at ${width}`);
-  assert.match(zone(80, 'busy'), /^◎3 +! +▲2 ✗ +✻1 +⚡4 ✓●$/);
+  // Eight running workers, four groups: whole at 144 and 120; the model names go at 100; the effort glyphs at 80. The counts add up to eight.
+  for (const width of [144, 120]) assert.match(zone(width, 'busy'), /^◎ sol-fast◕ 3 +! +▲ neon◕ 1 +✻ sonnet● 1 +⚡3$/, `busy at ${width}`);
+  assert.match(zone(100, 'busy'), /^◎◕3 +! +▲◕1 +✻●1 +⚡3$/);
+  assert.match(zone(80, 'busy'), /^◎3 +! +▲1 +✻1 +⚡3$/);
   // One worker: the same ladder.
   for (const width of [144, 120, 100]) assert.match(zone(width, 'one'), /^◎ sol-fast◕ 1/, `one at ${width}`);
   assert.match(zone(80, 'one'), /^◎◕1$/);
@@ -56,7 +56,7 @@ test('the worker zone gives up its model names, then its effort glyphs, and keep
     for (const scene of ['quiet', 'one', 'busy', 'mixed'])
       assert.match(frames[String(width)]![scene]![0]!, /~42\.7 t\/s/);
   // A subagent beside the zone keeps its type down to 80 columns; its title is the first to go.
-  assert.match(frames['144']!.mixed![0]!, /◐ Explore Audit bar fitting ladder$/);
+  assert.match(frames['144']!.mixed![0]!, /◎ sol-fast◕ 3.*◐ Explore Audit bar…$/);
   for (const width of [120, 100, 80]) assert.match(frames[String(width)]!.mixed![0]!, /◐ Explore/, `mixed at ${width}`);
-  assert.doesNotMatch(frames['80']!.mixed![0]!, /Audit/);
+  assert.doesNotMatch(frames['80']!.mixed![0]!, /Audit bar/);
 });

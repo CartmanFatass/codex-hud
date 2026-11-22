@@ -330,16 +330,17 @@ test('worker zone: one group per provider, short model and effort with a count; 
       hudJob('s4', { role: 'sonic', state: 'done', settledAt: NOW - 8_000, reportUnread: true }),
     ]),
   ];
-  // Groups in the order their oldest worker started (the imps 90 s ago, the generals 50 s, the frontend 10 s); sonic last.
-  const wide = '◎ sol-fast◕ 3 !  ▲ neon◕ 2 ✗  ✻ sonnet● 1  ⚡4 ✓●';
+  // Groups in the order their oldest worker started (the imps 90 s ago, the general 40 s, the frontend 10 s); sonic last.
+  // The failed general and the finished sonic settled seconds ago: they are not counted.
+  const wide = '◎ sol-fast◕ 3 !  ▲ neon◕ 1  ✻ sonnet● 1  ⚡3';
   assert.equal(zoneOf(lanes), `M │ ${wide}`);
   assert.doesNotMatch(zoneOf(lanes), /Secret|heading|imp|general|frontend|sonic|deepseek|\d+[sm]\b/);
   // Neither the passing seconds nor a later paint change it while the same workers run.
   assert.equal(zoneOf(lanes, 160, NOW + 5_000), zoneOf(lanes));
   // The model goes first, then the effort: the marks and counts stay, groups merge so counts stay true, `⚡N` never shrinks.
-  assert.equal(zoneOf(lanes, 40), 'M │ ◎◕3 !  ▲◕2 ✗  ✻●1  ⚡4 ✓●');
-  assert.equal(zoneOf(lanes, 29), 'M │ ◎◕3 !  ▲◕2 ✗  ✻●1  ⚡4 ✓●');
-  assert.equal(zoneOf(lanes, 28), 'M │ ◎3 !  ▲2 ✗  ✻1  ⚡4 ✓●');
+  assert.equal(zoneOf(lanes, 40), 'M │ ◎◕3 !  ▲◕1  ✻●1  ⚡3');
+  assert.equal(zoneOf(lanes, 24), 'M │ ◎◕3 !  ▲◕1  ✻●1  ⚡3');
+  assert.equal(zoneOf(lanes, 23), 'M │ ◎3 !  ▲1  ✻1  ⚡3');
   assert.equal(zoneOf(lanes, 160, NOW, { model: { name: 'M', effort: 'high' } }).slice(0, 14), 'M high │ ◎ sol');
   // Two models of one provider and effort are one group once the name is gone.
   const two = [hudLane('x', [hudJob('x1'), hudJob('x2', { model: 'gpt-6.2-astra' })])];
@@ -347,17 +348,13 @@ test('worker zone: one group per provider, short model and effort with a count; 
   assert.equal(zoneOf(two, 12), 'M │ ◎◕2');
 });
 
-test('worker zone: a worker running for 30 minutes is still counted; a settled one stays three minutes; queued is not live', (t) => {
+test('worker zone: a worker running for 30 minutes is still counted; a settled one is not; queued is not live', (t) => {
   noColour(t);
   const long = hudJob('l1', { startedAt: NOW - 30 * 60_000 });
   assert.equal(zoneOf([hudLane('p', [long])]), 'M │ ◎ sol-fast◕ 1');
   assert.equal(zoneOf([hudLane('p', [long])], 160, NOW + 3 * 3_600_000), 'M │ ◎ sol-fast◕ 1');
-  const done = hudJob('d1', { state: 'done', settledAt: NOW - 120_000 });
-  assert.equal(zoneOf([hudLane('p', [done])]), 'M │ ◎ sol-fast◕ 1 ✓');
-  // Gone at three minutes: the census drops it, and so does a paint of a census read earlier.
-  assert.equal(zoneOf([hudLane('p', [done])], 160, NOW + 60_001), 'M');
-  const census = workSignals([hudLane('p', [done])], NOW);
-  assert.equal(stripAnsi(renderBar({ model: { name: 'M' }, workers: census.workers }, 160, NOW + 60_001).line), 'M');
+  const done = hudJob('d1', { state: 'done', settledAt: NOW - 10_000 });
+  assert.equal(zoneOf([hudLane('p', [done])]), 'M');
   assert.equal(zoneOf([hudLane('p', [hudJob('q1', { state: 'queued', startedAt: NOW - 60_000 })])]), 'M');
   // A worker with no model says no model; one with no provider mark a dot, never a guess.
   assert.equal(zoneOf([hudLane('p', [hudJob('u1', { model: undefined, provider: undefined, effort: undefined })])]), 'M │ ·1');
@@ -365,25 +362,23 @@ test('worker zone: a worker running for 30 minutes is still counted; a settled o
   assert.equal(zoneOf([hudLane('p', [hudJob('o1', { effort: 'off' })])]), 'M │ ◎ sol-fast 1');
 });
 
-test('worker zone marks: asking, failed, unread and read; a sonic child reports to its parent, not the bar', (t) => {
+test('worker zone marks: `!` for asking only; a settled worker, failed or not, leaves no mark and no count', (t) => {
   noColour(t);
   const asking = (id: string) => hudJob(id, { homeNeedsHuman: true });
   assert.equal(zoneOf([hudLane('p', [asking('a1')])]), 'M │ ◎ sol-fast◕ 1 !');
   assert.equal(zoneOf([hudLane('p', [asking('a1'), asking('a2'), hudJob('a3')])]), 'M │ ◎ sol-fast◕ 3 !2');
-  const failed = hudJob('f1', { state: 'failed', settledAt: NOW - 5_000, work: { failed: true } });
-  assert.equal(zoneOf([hudLane('p', [failed])]), 'M │ ◎ sol-fast◕ 1 ✗');
-  const unread = hudJob('u1', { state: 'done', settledAt: NOW - 5_000, reportUnread: true });
-  assert.equal(zoneOf([hudLane('p', [unread])]), 'M │ ◎ sol-fast◕ 1 ✓●');
-  assert.equal(zoneOf([hudLane('p', [unread, { ...(unread as object), id: 'thin-job:u2' }])]), 'M │ ◎ sol-fast◕ 2 ✓●2');
-  // Every mark of one group stands in a fixed order.
-  assert.equal(zoneOf([hudLane('p', [asking('a1'), failed, unread, hudJob('r1', { state: 'done', settledAt: NOW - 9_000 })])]), 'M │ ◎ sol-fast◕ 4 ! ✗ ✓● ✓');
-  // A sonic child's report belongs to its parent: only a failure of it reaches the bar.
-  const child = hudJob('k1', { role: 'sonic', parentJobId: 'thin-job:p0', state: 'done', settledAt: NOW - 5_000 });
-  assert.equal(zoneOf([hudLane('p', [child])]), 'M');
-  assert.equal(
-    zoneOf([hudLane('p', [{ ...(child as object), state: 'failed', work: { failed: true } }])]),
-    'M │ ⚡1 ✗'
-  );
+  // Settled 10 s ago, however it ended: not counted, and with only these in scope the zone is absent.
+  const failed = hudJob('f1', { state: 'failed', settledAt: NOW - 10_000, work: { failed: true } });
+  const unread = hudJob('u1', { state: 'done', settledAt: NOW - 10_000, reportUnread: true });
+  const read = hudJob('r1', { state: 'done', settledAt: NOW - 10_000 });
+  assert.equal(zoneOf([hudLane('p', [failed, unread, read])]), 'M');
+  assert.equal(zoneOf([hudLane('p', [asking('a1'), hudJob('w1'), failed, unread, read])]), 'M │ ◎ sol-fast◕ 2 !');
+  // A sonic child counts while it runs and not once settled, failed or not.
+  const child = hudJob('k1', { role: 'sonic', parentJobId: 'thin-job:p0' });
+  assert.equal(zoneOf([hudLane('p', [child])]), 'M │ ⚡1');
+  const settledChild = { ...(child as object), state: 'done', settledAt: NOW - 5_000 };
+  assert.equal(zoneOf([hudLane('p', [settledChild])]), 'M');
+  assert.equal(zoneOf([hudLane('p', [{ ...settledChild, state: 'failed', work: { failed: true } }])]), 'M');
   // The coloured bar paints an asking mark as the alert badge; the plain one needs no padding.
   setDisplayConfig({ theme: 'terminal' });
   const colour = (width: number) =>

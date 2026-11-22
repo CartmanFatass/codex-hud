@@ -1119,17 +1119,17 @@ cost instead (in its top-right editor ribbon, not duplicated below). Missing fac
 are absent. The notice zone is, in order: what needs the owner, the HUD's workers, then what the client itself
 tells (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
 
-The workers are counts and marks, never titles: one group per provider mark, short model and thinking glyph, with the
-number of workers in it, oldest group first (`◎ sol-fast◕ 3  ▲ neon◕ 2  ✻ sonnet● 1  ⚡4`). sonic shows no provider, model
+The workers are counts and marks, never titles, and only those running now: one group per provider mark, short model and
+thinking glyph, with the number of workers in it, oldest group first (`◎ sol-fast◕ 3  ▲ neon◕ 2  ✻ sonnet● 1  ⚡4`). sonic shows no provider, model
 or effort, only `⚡N`, and stands last. The zone reads a census of this pane's live jobs, so a worker that runs for hours is
-still counted; a settled one stays three minutes; a queued one is not counted. The provider mark and its colour are the
+still counted; a settled one is not (the zone does not read settled jobs), and neither is a queued one; with none running
+the zone has no workers. The provider mark and its colour are the
 model field's (a worker with no known provider has a dot, `·`). The short model name is read from the model catalog, not a
 second table: a family is its id less the version (`sol`, `sol-fast`, `astra`); else the entry's alias or digit-free id
 (`opus`, `haiku`); else a Gemini codename (`neon`, `carbon`); else the vendor's tag (`ds`, `glm`, `mis`). The thinking glyph
-is `○ ◐ ◕ ● ◆ ✦` for low to ultra, none for off or unknown. After the count, a mark says what is not plain working: `!` the
-bar's alert badge, for a worker asking the owner (`!2` for two), until it is answered; `✗` failed; `✓●` finished with its
-report unread, until `hud_read` reads it; `✓` finished and read. A sonic child's own finish is not shown (its report goes
-to its parent), its failure is. Open approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others,
+is `○ ◐ ◕ ● ◆ ✦` for low to ultra, none for off or unknown. After the count, `!` (the bar's alert badge) marks a worker
+asking the owner (`!2` for two), until it is answered; working has no mark, and there is no mark for a finished or failed
+worker. Open approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others,
 `! 3 needs` when even that does not fit; nothing open, nothing pinned. No clock, task count, hooks count, tool-at-work or
 idle fallback.
 

@@ -95,7 +95,7 @@ let jobSignals: { at: number; signals?: WorkSignals } = { at: 0 };
 function readJobSignals(now: number): WorkSignals | undefined {
   if (now - jobSignals.at >= 5000) {
     try {
-      const lanes = readThinJobs(getHudHome(), { project: null, pane: process.env.HERDR_PANE_ID ?? null });
+      const lanes = readThinJobs(getHudHome(), { project: null, pane: process.env.HERDR_PANE_ID ?? null }, undefined, { settledBefore: now });
       jobSignals = { at: now, signals: workSignals(lanes, now) };
     } catch {
       jobSignals = { at: now };
