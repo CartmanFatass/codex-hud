@@ -26,6 +26,7 @@ import {
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { initRepo } from '../fixtures/managed-worktree.mjs';
 
 test('hud_ask does not block other worker MCP calls while Codex queue is slow', async (t) => {
   const f = await fixture(t);
@@ -173,6 +174,50 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   const outside = await runSonic(f, 'start', foreignDir, '--task-file', task);
   assert.equal(outside.status, 1);
   assert.match(outside.stderr, /under HUD_HOME/);
+});
+
+test('hud_sonic inherits the parent managed worktree cwd, not the worker MCP server cwd', async (t) => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  sonicTask(f);
+  const parent = await f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', task: 'Synthetic parent.' });
+  const parentJob = JSON.parse(fs.readFileSync(join(parent.task_dir, 'job.json')));
+  const worktree = parentJob.worktree.root;
+  assert.notEqual(worktree, f.root); // workerClient launches MCP from f.root.
+  assert.notEqual(worktree, cwd);
+
+  const call = workerClient(t, f, parent.task_dir);
+  const { job, error } = resultValue(await call('hud_sonic', { task: 'Synthetic child.' }));
+  assert.equal(error, undefined);
+  const dir = join(f.env.HUD_HOME, 'jobs', job);
+  const child = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
+  assert.equal(child.parent_job, parent.job);
+  assert.equal(child.cwd, worktree);
+  const tab = f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'create' && args.includes(`HUD_JOB_DIR=${dir}`));
+  assert.equal(tab.args[tab.args.indexOf('--cwd') + 1], worktree);
+});
+
+test('hud_sonic accepts a project cwd relative to the parent and refuses paths outside the project', async (t) => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  sonicTask(f);
+  const parent = await f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', task: 'Synthetic parent.' });
+  const { worktree } = JSON.parse(fs.readFileSync(join(parent.task_dir, 'job.json')));
+  const subdir = join(worktree.root, 'subdir');
+  fs.mkdirSync(subdir);
+  fs.symlinkSync(f.root, join(worktree.root, 'outside'));
+  const jobs = join(f.env.HUD_HOME, 'jobs');
+  const call = workerClient(t, f, parent.task_dir);
+  for (const outside of [f.root, 'outside']) {
+    const result = await call('hud_sonic', { task: 'Synthetic child.', cwd: outside });
+    assert.equal(result.isError, true);
+    const error = JSON.parse(result.content[0].text);
+    assert.equal(error.code, 'invalid_arguments');
+    assert.match(error.error, /cwd.*inside the parent project/);
+  }
+  assert.deepEqual(fs.readdirSync(jobs), [parent.job]);
+
+  const { job, error } = resultValue(await call('hud_sonic', { task: 'Synthetic child.', cwd: 'subdir' }));
+  assert.equal(error, undefined);
+  assert.equal(JSON.parse(fs.readFileSync(join(jobs, job, 'job.json'))).cwd, subdir);
 });
 
 test('a working pi parent gets a native sonic-ready message without polling or collecting', { timeout: 15000 }, async (t) => {

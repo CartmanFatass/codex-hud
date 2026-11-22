@@ -134,8 +134,10 @@ HUD release, or use the script's absolute path. `--dir` defaults to `HUD_JOB_DIR
   Use the turn token from the CLI prompt you are answering. No final chat marker is needed.
 - `hud_ask({question, default, options?, context?})`: asks the orchestrator. Pi also accepts `mode: "async"`;
   continue only unrelated work until the native answer arrives.
-- `hud_sonic({task})`: starts one sonic child without waiting for its report. Collect with
-  `hud_sonic({wait: [ids], timeout_s?})`; omit the ids for all uncollected children. It returns report paths and bodies,
+- `hud_sonic({task, cwd?})`: starts one sonic child without waiting for its report. The child runs in the parent
+  job's working directory (including a managed worktree) unless `cwd` names another directory in the same project.
+  Relative paths are resolved from the parent's working directory. Collect with `hud_sonic({wait: [ids], timeout_s?})`;
+  omit the ids for all uncollected children. It returns report paths and bodies,
   still-working ids and any failures. `timeout_s: 0` checks once. Sonic cannot start sonic. Sonic starts return the
   effective `thinking` (mapped to the nearest supported level when known) and `thinking_source`.
 - `hud_progress({message})` publishes a milestone. It stores one line of up to 240 characters as `{at,text}` in the

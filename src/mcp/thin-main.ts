@@ -1238,7 +1238,26 @@ function originalTask(job: Job): string {
   return brief.split(/\n## Context References\n\nRead these files for task context:\n|\n## Context\n\n### |\nFinish with `hud_report`\.\n$|\nThis harness uses the commands below instead of the worker tools named in your role\./, 1)[0].trimEnd();
 }
 
-export async function dispatchJob(input: Args, pane: string | undefined, parentJob?: string, repair?: { job: string; derived: boolean }) {
+type SonicParent = Pick<Job, 'job' | 'cwd' | 'project_root' | 'worktree'>;
+function sonicCwd(parent: SonicParent, args: Args): string {
+  // Use the actual launch cwd from the receipt, not the worktree's main checkout or process.cwd().
+  if (typeof parent.cwd !== 'string' || !isAbsolute(parent.cwd)) throw new Error('missing parent cwd');
+  if (args.cwd === undefined) return jobCwd({ cwd: parent.cwd });
+
+  const cwd = jobCwd({ cwd: fs.realpathSync(resolve(parent.cwd, required(args, 'cwd'))) });
+  const root = fs.realpathSync(parent.project_root ?? parent.worktree?.main_root ?? sharedRoot(parent.cwd));
+  const rel = relative(root, cwd);
+  const inside = rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  // Linked worktrees can sit outside their main checkout's directory.
+  if (inside || sharedRoot(cwd) === root) return cwd;
+  throw new Error('outside parent project');
+}
+
+export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { job: string; derived: boolean }) {
+  if (parent) {
+    try { input = { ...input, cwd: sonicCwd(parent, input) }; }
+    catch { return { ok: false, code: 'invalid_arguments', error: 'sonic cwd must be an existing directory inside the parent project' }; }
+  }
   const retryOf = input.retry_of === undefined ? undefined : required(input, 'retry_of');
   let args = input;
   let repairOf = repair?.job;
@@ -1261,7 +1280,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parentJ
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parentJob, repairOf, retryOf ? input : undefined));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined));
 }
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean, parentJob?: string, repairOf?: string, retryInput?: Args) {

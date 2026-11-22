@@ -94,13 +94,13 @@ export function progress({ dir }, message) {
   return { ok: true };
 }
 
-export async function startSonic({ job: parent }, task) {
+export async function startSonic({ job: parent }, task, cwd) {
   if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
   if (!task.trim()) throw new Error('the sub-task is empty');
   const { dispatchJob } = await withDistLock(() => import('../../../dist/mcp/thin-main.js'));
   const result = await dispatchJob({
-    role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd: parent.cwd, task,
-  }, parent.herdr_pane, parent.job);
+    role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd, task,
+  }, parent.herdr_pane, parent);
   if (!result.job) {
     const message = result.error ?? result.code;
     if (result.code === 'invalid_arguments') {
@@ -206,8 +206,9 @@ export async function callWorkerTool(name, args, signal) {
       if (args.thinking !== undefined) throw new Error('invalid_arguments: unexpected thinking');
       if (args.task !== undefined) {
         if (args.wait !== undefined || args.timeout_s !== undefined) throw new Error('start or wait for sonic, not both');
-        return startSonic(context, string('task'));
+        return startSonic(context, string('task'), args.cwd);
       }
+      if (args.cwd !== undefined) throw new Error('cwd is only used when starting sonic');
       if (args.timeout_s !== undefined && typeof args.timeout_s !== 'number') {
         throw new Error('invalid_arguments: sonic wait');
       }
@@ -242,7 +243,8 @@ export async function workerTools(cli = false) {
     tool('hud_ask', 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
       { question: string, default: string, options: strings, context: string }, ['question', 'default']),
     tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. Pi sends a ready notice. timeout_s defaults to 480.',
-      { task: string, wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
+      { task: string, cwd: { ...string, description: "Start only. Defaults to the parent job's working directory. Resolve relative paths there; the destination must stay inside the parent project." },
+        wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
     LEASE_TOOL,
   ].filter(({ name }) => role !== 'sonic' || name !== 'hud_sonic');
