@@ -1,7 +1,7 @@
 /** Owner gate for a project's `.hud/`. Writing `projects.json` is setup apply, not this module. */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
 
 export interface ProjectGate {
@@ -16,9 +16,25 @@ export interface ListedProject {
 }
 
 const MAX_LISTED_PROJECTS = 16;
+const ROOT_TTL_MS = 2_000;
+const MAX_ROOTS = 256;
+
+function memoRoot(lookup: (cwd: string) => string) {
+  const cache = new Map<string, { root: string; expires: number }>();
+  return (cwd: string): string => {
+    const key = isAbsolute(cwd) ? cwd : `${process.cwd()}${sep}${cwd}`;
+    const prior = cache.get(key);
+    if (prior && prior.expires > performance.now()) return prior.root;
+    const root = lookup(cwd);
+    cache.delete(key);
+    if (cache.size >= MAX_ROOTS) cache.delete(cache.keys().next().value!);
+    cache.set(key, { root, expires: performance.now() + ROOT_TTL_MS });
+    return root;
+  };
+}
 
 /** Realpath of `git rev-parse --show-toplevel` in cwd, else realpath of cwd. Never throws. */
-export function projectRoot(cwd: string): string {
+export const projectRoot = memoRoot((cwd) => {
   let top = '';
   try {
     const git = spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--show-toplevel'], {
@@ -40,10 +56,10 @@ export function projectRoot(cwd: string): string {
     }
   }
   return cwd;
-}
+});
 
 /** The main checkout's root for cwd (shared by its linked worktrees), else projectRoot(cwd). Never throws. */
-export function sharedRoot(cwd: string): string {
+export const sharedRoot = memoRoot((cwd) => {
   try {
     const git = spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
       cwd,
@@ -57,7 +73,7 @@ export function sharedRoot(cwd: string): string {
     /* Not a usable checkout: fall back. */
   }
   return projectRoot(cwd);
-}
+});
 
 function sameRoot(stored: string, root: string): boolean {
   if (stored === root) return true;

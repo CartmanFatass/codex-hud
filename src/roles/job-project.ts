@@ -26,7 +26,7 @@ export function projectJobFilter(cwd: string) {
 
 /** Missing/malformed herdr evidence cannot transfer ownership. Never use a workspace-filtered list. */
 export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv,
-  owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache) {
+  owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache, onAdopt?: (id: string) => void) {
   const other = jobs.filter((job) => herdrId(job.herdr_pane) && job.herdr_pane !== pane);
   if (!other.length) return false;
   const matches = projectJobFilter(cwd);
@@ -67,6 +67,7 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
         if (cache) cache.writeJsonAtomic(file, updated, { indent: 2, mkdir: false });
         else writePrivateFile(file, JSON.stringify(updated, null, 2) + '\n', { mkdir: false });
         adopted = true;
+        onAdopt?.(job.job);
       } catch {
         // Keep scanning if a job disappears or its receipt cannot be updated.
       }

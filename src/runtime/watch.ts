@@ -110,6 +110,7 @@ export async function openWatcher() {
   process.on('SIGTERM', () => void finish('signal=SIGTERM'));
   process.on('SIGINT', () => void finish('signal=SIGINT'));
   writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
+  if (process.connected) process.send?.('ready', () => {});
   log(`start pid=${process.pid}`);
   return async () => {
     function checkBuild() {

@@ -1,4 +1,5 @@
 /** Local HUD role tools and Codex statusline, newline-delimited JSON-RPC over stdio. */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -162,12 +163,14 @@ function save(job: Job, newAttempt = false): void {
   }
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
   jobCache.writeJsonAtomic(file, job as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
+  writeScan.getStore()?.record(job);
 }
-function jobs(): Job[] {
+function jobs(onMissing?: () => void): Job[] {
   const out: Job[] = [];
   for (const id of jobCache.listJobIds({ onError: (error) => { throw error; } })) {
     const job = findJob(id);
     if (job) out.push(job);
+    else onMissing?.();
   }
   return out;
 }
@@ -808,16 +811,52 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
     return mayHaveInput ? result : reject(result);
   }
 }
-function queuePositionsForJobs(allJobs = jobs()): Map<string, number> {
+function queuePositionsForJobs(allJobs = jobs(), statusFor = readCachedStatus): Map<string, number> {
   return computeQueuePositions(
     allJobs.map((item) => ({
       id: item.job,
       role: item.role,
-      state: readCachedStatus(item.job).status?.state ?? null,
+      state: statusFor(item.job).status?.state ?? null,
       queuedAt: queuedTimestamp(item),
     }))
   );
 }
+function scanForCall() {
+  let receipts: Job[] | undefined, missingReceipt = false;
+  let positions: Map<string, number> | undefined;
+  const statuses = new Map<string, ReturnType<typeof readCachedStatus>>();
+  const all = () => receipts ??= jobs(() => { missingReceipt = true; });
+  const status = (id: string) => statuses.get(id) ?? statuses.set(id, readCachedStatus(id)).get(id)!;
+  return {
+    all, status,
+    position: (id: string) => (positions ??= queuePositionsForJobs(all(), status)).get(id),
+    watcherNeeded(waiting: boolean) {
+      try {
+        return all().some(job => {
+          const state = (waiting ? readCachedStatus : status)(job.job).status?.state;
+          if (state !== 'done' && state !== 'closed' && state !== 'failed' && state !== 'stopped') return true;
+          // A terminal state does not prove the watcher has finished reaping or cleaning the checkout.
+          return !!(job.worktree && !job.worktree_removed_at && !job.worktree_kept_reason) ||
+            (!job.reaped_at && !!fs.lstatSync(join(directory(job.job), jobFiles.session), { throwIfNoEntry: false }));
+        }) || missingReceipt;
+      } catch {
+        return true; // An unreadable store is not evidence that nothing needs watching.
+      }
+    },
+    record(job: Job) {
+      statuses.delete(job.job);
+      if (!receipts) return;
+      const index = receipts.findIndex(item => item.job === job.job);
+      if (index === -1) receipts.push({ ...job });
+      else receipts[index] = { ...job };
+    },
+    clear() { receipts = positions = undefined; statuses.clear(); },
+  };
+}
+type JobScan = ReturnType<typeof scanForCall>;
+// Track receipt writes made by a tool without using its display snapshot for dispatch admission.
+const writeScan = new AsyncLocalStorage<JobScan>();
+
 function countWorkingByRole(allJobs = jobs()): Map<string, number> {
   const counts = new Map<string, number>();
   for (const item of allJobs) {
@@ -827,11 +866,15 @@ function countWorkingByRole(allJobs = jobs()): Map<string, number> {
   }
   return counts;
 }
-function readRow(job: Job, markExhaustion = true, queuePosition?: number) {
+// Pass null for wait samples, which need fresh status but no FIFO lookup yet.
+function readRow(job: Job, markExhaustion = true, lookup?: number | JobScan | null) {
   const dir = directory(job.job);
   const file = join(dir, jobFiles.status);
-  let { status, at: statusAt } = readCachedStatus(job.job);
-  const pos = status?.state === 'queued' ? (queuePosition ?? queuePositionsForJobs().get(job.job)) : undefined;
+  const scan = typeof lookup === 'object' ? lookup : undefined;
+  let { status, at: statusAt } = (scan?.status ?? readCachedStatus)(job.job);
+  const pos = status?.state === 'queued' && lookup !== null
+    ? (typeof lookup === 'number' ? lookup : scan ? scan.position(job.job) : queuePositionsForJobs().get(job.job))
+    : undefined;
   let row = jobRow(job, status, { dir, cache: jobCache, queuePosition: pos });
   let currentJob = job;
   if (markExhaustion && row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
@@ -850,6 +893,7 @@ function readRow(job: Job, markExhaustion = true, queuePosition?: number) {
       } catch {
         /* Ignore transient STATUS.json write error. */
       }
+      (scan ?? writeScan.getStore())?.record(currentJob);
       row = jobRow(currentJob, status, {
         dir,
         cache: jobCache,
@@ -877,9 +921,9 @@ function compactRow(row: JobRow) {
   };
 }
 
-async function peekJob(job: Job, { lines, detail }: Args) {
+async function peekJob(job: Job, { lines, detail }: Args, scan: JobScan) {
   const dir = directory(job.job);
-  const { row } = readRow(job, false);
+  const { row } = readRow(job, false, scan);
   const summary = {
     status: compactRow(row),
     ...readJobProgress(dir),
@@ -901,15 +945,8 @@ function listReportSummary(row: JobRow) {
   return summary ? { summary: [...summary].slice(0, 120).join('') } : {};
 }
 
-function listJobs(recent: boolean) {
-  const all = jobs();
-  const newest = all.filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
-  let queuePos: Map<string, number> | undefined;
-  const positionFor = (job: Job) => {
-    if (readCachedStatus(job.job).status?.state !== 'queued') return undefined;
-    queuePos ??= queuePositionsForJobs(all);
-    return queuePos.get(job.job);
-  };
+function listJobs(recent: boolean, scan: JobScan) {
+  const newest = scan.all().filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const children = new Map<string, number>();
   for (const { parent_job } of newest) {
     if (parent_job) children.set(parent_job, (children.get(parent_job) ?? 0) + 1);
@@ -918,7 +955,7 @@ function listJobs(recent: boolean) {
   const recentLimit = 20;
   if (recent) {
     const rows = newest.slice(0, recentLimit).map((job) => {
-      const { row } = readRow(job, !isWorker, positionFor(job));
+      const { row } = readRow(job, !isWorker, scan);
       return {
         job: row.job,
         ...(row.parent_job ? { parent_job: row.parent_job } : {}),
@@ -942,7 +979,7 @@ function listJobs(recent: boolean) {
   const candidates = newest.flatMap((job, index) => {
     if (job.parent_job) return [];
     // Scanning beyond recent history must not widen the list's quota side effects.
-    const { row } = readRow(job, !isWorker && index < recentLimit, positionFor(job));
+    const { row } = readRow(job, !isWorker && index < recentLimit, scan);
     const active = row.display_state === 'working' || row.display_state === 'queued';
     if (!active && !(ownsJob(job) && row.report_unread)) return [];
     return [{ row, active, compact: { ...compactRow(row), ...childCount(row.job) } }];
@@ -988,7 +1025,7 @@ function jobWatchTargets(dir: string): WatchTarget[] {
   return list;
 }
 
-async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
+async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args, scan: JobScan) {
   if (mode !== 'any' && mode !== 'all') throw new Error('invalid_arguments: mode');
   if (typeof wait_ms !== 'number' || !Number.isInteger(wait_ms) || wait_ms < 0 || wait_ms > 120000)
     throw new Error('invalid_arguments: wait_ms');
@@ -997,19 +1034,19 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
   let initial: JobRow[];
   if (ids === undefined) {
     // Existing session jobs may settle while herdr is listing panes; keep the call-start targets.
-    const atStart = new Map(sessionJobs().map((job) => [job.job, readRow(job, false).row]));
-    if (await adoptSessionJobs()) {
-      for (const job of sessionJobs()) if (!atStart.has(job.job)) atStart.set(job.job, readRow(job, false).row);
+    const atStart = new Map(sessionJobs(scan).map((job) => [job.job, readRow(job, false, null).row]));
+    if (await adoptSessionJobs(scan)) {
+      for (const job of sessionJobs(scan)) if (!atStart.has(job.job)) atStart.set(job.job, readRow(job, false, null).row);
     }
     initial = [...atStart.values()].filter((row) => !settled(row.state));
   } else {
     if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string' || !JOB_ID_RE.test(id)))
       throw new Error('invalid_arguments: jobs');
-    await adoptSessionJobs();
+    await adoptSessionJobs(scan);
     initial = [...new Set<string>(ids)].map((id) => {
       const job = readJob(id);
       if (!job) throw new Error(`invalid_arguments: unknown job ${id}`);
-      return readRow(job, false).row;
+      return readRow(job, false, null).row;
     });
   }
   const targets = new Set(initial.map((row) => row.job));
@@ -1019,11 +1056,14 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
       row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' || row.open_questions > 0
     ).map((row) => row.job);
     const ready = targets.size === 0 || triggered.length > 0;
-    return { ready, timed_out: !ready && (timedOut || performance.now() >= deadline), triggered, jobs: rows.map(compactRow) };
+    const timed_out = !ready && (timedOut || performance.now() >= deadline);
+    const jobs = ready || timed_out ? rows.map(row => compactRow(row.state === 'queued'
+      ? { ...row, queue_position: scan.position(row.job) } : row)) : [];
+    return { ready, timed_out, triggered, jobs };
   }
   const sample = () => [...targets].flatMap((id) => {
     const job = readJob(id);
-    return job ? [readRow(job, false).row] : [];
+    return job ? [readRow(job, false, null).row] : [];
   });
   let first = true;
   const watchTargets = (): WatchTarget[] =>
@@ -2629,7 +2669,7 @@ async function sendJobs(args: Args) {
   return { sent, skipped };
 }
 
-async function call(name: string, args: Args): Promise<unknown> {
+async function call(name: string, args: Args, scan: JobScan): Promise<unknown> {
   if (name === 'hud_land') {
     const id = required(args, 'job'), job = findJob(id);
     const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, taskClient);
@@ -2748,7 +2788,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     }));
     return { answers };
   }
-  if (name === 'hud_wait') return waitJobs(args);
+  if (name === 'hud_wait') return waitJobs(args, scan);
   if (name === 'hud_read') {
     const { view } = args;
     if (view !== undefined) {
@@ -2759,25 +2799,25 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
-    ensureWatcher();
+    ensureJobWatcher(hudHome, () => scan.watcherNeeded(Number(args.wait_ms) > 0));
     if (args.jobs !== undefined) {
       if (args.job !== undefined || !Array.isArray(args.jobs) || !args.jobs.length) throw new Error('invalid_arguments: jobs');
       return { jobs: await Promise.all(args.jobs.map(async (job) => {
-        try { return { job, ...await callJob(name, { ...args, job }, detail) }; }
+        try { return { job, ...await callJob(name, { ...args, job }, detail, scan) }; }
         catch (error) { return { job, ok: false, code: 'tool_error', error: String(error) }; }
       })) };
     }
     if (args.job === undefined) {
       if (args.mode !== undefined) throw new Error('invalid_arguments: mode requires job or jobs');
       if (args.detail !== undefined) throw new Error('invalid_arguments: detail requires job');
-      return listJobs(view === 'recent');
+      return listJobs(view === 'recent', scan);
     }
   }
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
-  return callJob(name, args, detail);
+  return callJob(name, args, detail, scan);
 }
 
-async function callJob(name: string, args: Args, detail: boolean) {
+async function callJob(name: string, args: Args, detail: boolean, scan: JobScan) {
   const id = required(args, 'job');
   if (name === 'hud_read' && isFlowId(id)) {
     const flow = readLand(hudHome, id);
@@ -2785,7 +2825,7 @@ async function callJob(name: string, args: Args, detail: boolean) {
   }
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
-  if (name === 'hud_peek') return job.job === id ? peekJob(job, args) : { ok: false, code: 'job_not_found' };
+  if (name === 'hud_peek') return job.job === id ? peekJob(job, args, scan) : { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   if (name === 'hud_read') {
     const full = args.mode === 'full' || (args.mode === undefined && args.full === true);
@@ -2806,28 +2846,25 @@ async function callJob(name: string, args: Args, detail: boolean) {
       check: async ({ timedOut }) => {
         const polledJob = firstCheck ? job : (findJob(job.job) ?? job);
         firstCheck = false;
-        const polled = readRow(polledJob, !isWorker);
+        let polled = readRow(polledJob, !isWorker, null);
         initial ??= polled.row;
         if (!timedOut && !isReady(polled.row)) return { done: false };
-        let obsJob = polled.job;
-        let preRead: ReturnType<typeof readRow> | undefined = polled;
+        const obsJob = polled.job;
         const wt = obsJob.worktree;
         // Only probe once per read, even if a concurrent answer or continuation resumes the wait.
         if (wt && summary === undefined) {
-          summary = await gitSummary(wt, () => jobs()
+          summary = await gitSummary(wt, () => scan.all()
             .flatMap((other) => other.job !== obsJob.job && other.worktree?.main_root === wt.main_root &&
               other.worktree.root !== wt.root && !other.worktree_removed_at
               ? [{ job: other.job, worktree: other.worktree, created_at: other.created_at }] : [])
             .sort((a, b) => b.created_at.localeCompare(a.created_at)));
           // Async gitSummary yielded; re-read job and status fresh before observing.
-          obsJob = findJob(job.job) ?? obsJob;
-          preRead = undefined;
+          polled = readRow(findJob(job.job) ?? obsJob, !isWorker, null);
+          // The fresh read disagrees with the quick one (answered or continued meanwhile): wait, never spin.
+          if (!timedOut && !isReady(polled.row)) return { done: false, minDelayMs: 50 };
         }
-        const { value: result, row: currentRow } = observation(obsJob, full, detail, summary, preRead);
-        // The full read disagrees with the quick one (answered or continued meanwhile): wait, never spin.
-        if (!timedOut && !isReady(currentRow)) {
-          return { done: false, minDelayMs: 50 };
-        }
+        if (polled.row.state === 'queued') polled.row.queue_position = scan.position(job.job);
+        const { value: result, row: currentRow } = observation(polled.job, full, detail, summary, polled);
         const collected = ('report' in result || 'digest' in result) && result.report_exists;
         const observed = result.blocked || failedAttempt(currentRow);
         if (!isWorker && (collected || observed)) {
@@ -3020,26 +3057,31 @@ function deliveryHint(watcherAlive: boolean): string {
 let createdJobs = new Set<string>();
 const trackCreatedJob = (id: string) => rememberCreatedJob(createdJobs, id, (jobId) => !!findJob(jobId));
 const landActive = (id: string) => { const flow = readLand(hudHome, id); return !!flow && activeLand(flow); };
-async function adoptSessionJobs() {
+async function adoptSessionJobs(scan: JobScan) {
   if (!callerPane) return false;
-  const receipts = jobs(), cwd = process.cwd();
-  if (!await adoptProjectJobs(hudHome, callerPane, cwd, receipts, process.env, adoptionAttention(hudHome, receipts, cwd, jobCache), jobCache)) return false;
+  const receipts = scan.all(), cwd = process.cwd();
+  const onAdopt = (id: string) => {
+    const job = findJob(id);
+    if (job) scan.record(job);
+  };
+  if (!await adoptProjectJobs(hudHome, callerPane, cwd, receipts, process.env,
+    adoptionAttention(hudHome, receipts, cwd, jobCache), jobCache, onAdopt)) return false;
   if (!taskClient) void ensureQueueWatcher(callerPane, hudHome);
   return true;
 }
 function ownsJob(job: Job) {
   return !job.scout_only && (callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
 }
-function sessionJobs() {
-  const own = jobs().filter(ownsJob);
+function sessionJobs(scan: JobScan) {
+  const own = scan.all().filter(ownsJob);
   return own.length ? own.filter(projectJobFilter(process.cwd())) : own;
 }
-function sessionRows(markExhaustion: boolean): JobRow[] {
-  return sessionJobs()
+function sessionRows(markExhaustion: boolean, scan = scanForCall()): JobRow[] {
+  return sessionJobs(scan)
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.job.localeCompare(b.job))
     .slice(0, 200)
     .map((job) => {
-      const { row } = readRow(job, markExhaustion);
+      const { row } = readRow(job, markExhaustion, scan);
       const reportMeta = jobRowReportMeta(row, directory(job.job));
       return reportMeta ? { ...row, report_meta: reportMeta } : row;
     });
@@ -3064,14 +3106,14 @@ async function syncPanelDelivery() {
     await stopBatchDelivery(true);
   }
 }
-async function withChanges(value: unknown, markExhaustion: boolean): Promise<unknown> {
+async function withChanges(value: unknown, markExhaustion: boolean, scan: JobScan): Promise<unknown> {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   if (taskClient) {
     const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges())];
     return changes.length ? { ...value, changes } : value;
   }
-  const rows = sessionRows(markExhaustion);
+  const rows = sessionRows(markExhaustion, scan);
   const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...landEvents(hudHome, callerPane).lines];
   cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
@@ -3638,10 +3680,11 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         result = { content: [{ type: 'text', text: `Codex statusline resource: ${statuslineResource.uri}` }] };
         break;
       }
-      const invoke = () => call(name, args);
+      const scan = scanForCall();
+      const invoke = () => writeScan.run(scan, () => call(name, args, scan));
       try {
         if (taskClient && name === 'hud_wait') throw new Error('unknown_tool');
-        if (name !== 'hud_wait') await adoptSessionJobs();
+        if (name !== 'hud_wait') await adoptSessionJobs(scan);
         const key = mutationKey(name, args);
         const value = key === null ? await invoke() : await keyLock(key, invoke);
         const markExhaustion = name !== 'hud_peek';
@@ -3649,11 +3692,11 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
           result = value;
         } else if (typeof value === 'string') {
           const content = [{ type: 'text', text: value }];
-          const delta = await withChanges({}, markExhaustion) as { changes?: unknown[] };
+          const delta = await withChanges({}, markExhaustion, scan) as { changes?: unknown[] };
           if (delta.changes) content.push({ type: 'text', text: JSON.stringify(delta) });
           result = { content };
         } else {
-          result = { content: [{ type: 'text', text: JSON.stringify(await withChanges(value, markExhaustion)) }] };
+          result = { content: [{ type: 'text', text: JSON.stringify(await withChanges(value, markExhaustion, scan)) }] };
         }
       } catch (error) {
         result = {
@@ -3669,6 +3712,8 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
           ],
           isError: true,
         };
+      } finally {
+        scan.clear();
       }
       break;
     }

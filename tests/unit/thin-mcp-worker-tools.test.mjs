@@ -591,7 +591,7 @@ test('hud_lease wakes on release and terminal status without lock or wait subpro
     assert.equal(stats.active, 0);
     assert.deepEqual(await lease(waiter, { release: true }), { released: true });
   }
-  assert.deepEqual(subprocesses, Array(7).fill('git'), 'only the existing project lookup may spawn');
+  assert.deepEqual(subprocesses, ['git'], 'only the first project lookup for this cwd may spawn');
 });
 
 test('hud-progress validates the job directory, normalizes text, and retains the newest 50', async (t) => {
