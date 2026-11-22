@@ -426,6 +426,82 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   assert.equal(turnToken(JSON.parse(fs.readFileSync(file, 'utf8'))), second);
 });
 
+for (const mode of ['hud_report', 'shell fallback']) {
+  test(`an agy CLI worker settles the current turn through ${mode}`, { timeout: 15000 }, async (t) => {
+    const f = await fixture(t);
+    fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+    writeCliRole(f, 'agy-worker', 20, true, 'agy');
+    const job = await f.call('hud_create', { role: 'agy-worker', request_key: 'agy-report', task: 'Synthetic agy task.' });
+    assert.equal(job.agent, `${job.job}-primary`, JSON.stringify(job));
+    const dir = job.task_dir, report = join(dir, 'report.md');
+    const tab = f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'create');
+    const prefix = 'HUD_JOB_DIR=';
+    const inheritedDir = tab.args.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+    assert.equal(inheritedDir, dir);
+    assert.equal(fs.readFileSync(join(dir, 'brief.md'), 'utf8').trim(), 'Synthetic agy task.');
+    const receipt = () => JSON.parse(fs.readFileSync(join(dir, 'done.json'), 'utf8'));
+    const prompt = () => f.commands().filter(({ args }) => args[1] === 'prompt').at(-1).args[3];
+    const fallback = (token) => `node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${token} [--summary "…"] [--file path]`;
+    const assertPrompt = (token) => assert.equal(prompt().split('\n\n').at(-1), [
+      `Finish with hud_report. Use the token in the prompt you are answering, not a newer turn. turn: ${token}`,
+      `Only if hud_report is unavailable, write your report to ${JSON.stringify(report)} and run:`,
+      fallback(token),
+      '',
+    ].join('\n'));
+
+    let declare;
+    if (mode === 'hud_report') {
+      const { rpc } = workerClient(t, f, inheritedDir);
+      const listed = await rpc('tools/list');
+      assert.deepEqual(listed.result.tools.map(({ name }) => name), ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
+      assert.deepEqual(listed.result.tools[0].inputSchema.required, ['text', 'turn']);
+      declare = async (turn, text) => {
+        const { result, error } = await rpc('tools/call', {
+          name: 'hud_report', arguments: { text, turn, summary: 'Synthetic agy result.', files: ['src/synthetic.ts'] },
+          _meta: { 'antigravity.google/conversation_id': 'synthetic-agy-session', 'antigravity.google/root_conversation_id': 'synthetic-agy-root' },
+        });
+        assert.equal(error, undefined);
+        if (result.isError) return JSON.parse(result.content[0].text).error;
+        assert.deepEqual(resultValue(result), { path: report });
+      };
+    } else {
+      declare = (turn) => {
+        const { status, stderr } = runProgress(f, dir, '--done', '--turn', turn, '--summary', 'Synthetic agy result.', '--file', 'src/synthetic.ts');
+        assert.ok(status === 0 || status === 1);
+        return status === 1 ? stderr : undefined;
+      };
+    }
+
+    const first = cliToken(dir);
+    assertPrompt(first);
+    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.agent_session_id);
+    const session = cliState(dir).agent_session_id;
+    if (mode === 'shell fallback') writeFixtureFile(report, 'Synthetic first agy report.\n');
+    assert.equal(await declare(first, 'Synthetic first agy report.\n'), undefined);
+    const done = receipt();
+    assert.equal(turnToken(done), first);
+    assert.equal(done.report_sig, reportSignature(dir));
+    await until(() => cliState(dir)?.state === 'idle_grace');
+
+    assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).sent, true);
+    const second = cliToken(dir);
+    assert.notEqual(first, second);
+    assertPrompt(second);
+    await until(() => cliState(dir)?.state === 'working');
+    if (mode === 'shell fallback') writeFixtureFile(report, 'Synthetic second agy report.\n');
+    assert.match(await declare(first, 'Stale agy report.\n'), /use the turn token from the prompt you are answering/);
+    assert.deepEqual(receipt(), done);
+    if (mode === 'hud_report') assert.equal(fs.readFileSync(report, 'utf8'), 'Synthetic first agy report.\n');
+    assert.equal(await declare(second, 'Synthetic second agy report.\n'), undefined);
+    assert.equal(turnToken(receipt()), second);
+    assert.equal(receipt().report_sig, reportSignature(dir));
+    assert.equal(readReportMeta(dir).summary, 'Synthetic agy result.');
+    assert.deepEqual(readReportMeta(dir).files, ['src/synthetic.ts']);
+    await until(() => cliState(dir)?.state === 'idle_grace' && cliState(dir)?.output_written === true);
+    assert.equal(cliState(dir).agent_session_id, session);
+  });
+}
+
 test('hud-progress --done accepts a summary and repeated file paths without changing the receipt', async (t) => {
   const f = await fixture(t);
   const { dir, receipt } = waitFixtureJob(f, 1);

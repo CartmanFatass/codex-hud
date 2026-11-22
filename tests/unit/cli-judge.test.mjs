@@ -7,7 +7,15 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reapWorkerTree, rememberWorkerTree } from '../../dist/roles/worker-tree.js';
-import { judge, procStat, workerAlive, workerHasChild } from '../../dist/mcp/cli-judge.js';
+import { judge, procStat, withDonePrompt, workerAlive, workerHasChild } from '../../dist/mcp/cli-judge.js';
+
+test('Claude and Codex CLI finishing prompts stay unchanged', () => {
+  const turn = { seq: 1, sent_at: '2026-11-22T00:00:00.000Z', report_sig: null };
+  const expected = 'Synthetic task.\n\nFinish with hud_report. Use the token in the prompt you are answering, not a newer turn. turn: 1@2026-11-22T00:00:00.000Z\n';
+  for (const agent of ['claude', 'codex']) {
+    assert.equal(withDonePrompt('Synthetic task.', '/synthetic/hud-mcp', '/synthetic/job', turn, agent), expected, agent);
+  }
+});
 
 test('worker identity: missing start is unknown for a live PID, but absence is still an exit fact', async () => {
   assert.equal(workerAlive(process.pid, procStat(process.pid).start), true);

@@ -7,11 +7,19 @@ export { procStat };
 export { DONE_FILE, readDone, readTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 
 export const firstInput = (turn: Turn) => turn.first_sent_at ?? (turn.seq === 1 ? turn.sent_at : undefined);
-export const cliWorkerTools = (agent: string) => agent === 'claude' || agent === 'codex';
-export const withDonePrompt = (text: string, bundled: string, dir: string, turn: Turn, agent: string) =>
-  `${text}\n\n${cliWorkerTools(agent)
-    ? `Finish with hud_report. Use the token in the prompt you are answering, not a newer turn. turn: ${turnToken(turn)}`
-    : `After writing the report for this turn, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${turnToken(turn)}\nUse the command from the prompt you are answering, not a newer turn.`}\n`;
+export const cliWorkerTools = (agent: string) => agent === 'claude' || agent === 'codex' || agent === 'agy';
+export function withDonePrompt(text: string, bundled: string, dir: string, turn: Turn, agent: string): string {
+  const token = turnToken(turn);
+  const command = `node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${token}`;
+  if (!cliWorkerTools(agent)) {
+    return `${text}\n\nAfter writing the report for this turn, run: ${command}\nUse the command from the prompt you are answering, not a newer turn.\n`;
+  }
+  const finish = `Finish with hud_report. Use the token in the prompt you are answering, not a newer turn. turn: ${token}`;
+  const fallback = agent === 'agy'
+    ? `\nOnly if hud_report is unavailable, write your report to ${JSON.stringify(join(dir, 'report.md'))} and run:\n${command} [--summary "…"] [--file path]`
+    : '';
+  return `${text}\n\n${finish}${fallback}\n`;
+}
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
 export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?: boolean; send?: Turn['send'] } = {}): Turn {
