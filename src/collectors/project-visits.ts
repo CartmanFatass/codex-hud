@@ -54,7 +54,7 @@ const latestOf = (ledger: ProjectSnapshot['ledger']): ProjectOverview['latest'] 
 };
 const overviewOf = (data: ProjectSnapshot, running: number): ProjectOverview => {
   const newest = Math.max(data.updatedAt ?? 0, data.tickets[0]?.at ?? 0), latest = latestOf(data.ledger);
-  return { hasState: !!data.statePath, milestone: data.ladder.current, waiting: data.waiting.length, running, counts: data.counts,
+  return { hasState: !!data.statePath || data.ledger.length > 0, milestone: data.ladder.current, waiting: data.waiting.length, running, counts: data.counts,
     tryTasks: acceptanceTasks(data.ledger).length,
     open: data.tickets.flatMap((f) => f.tickets).filter((r) => r.state !== 'done' && r.state !== 'dropped').length,
     ...(latest ? { latest } : {}), ...(newest ? { at: newest } : {}) };

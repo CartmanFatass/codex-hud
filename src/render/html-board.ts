@@ -117,7 +117,8 @@ function feature(f: TicketFeature, only: ReadonlySet<number> | undefined, limit:
 
 function tryCard(slice: LedgerSlice, project: ProjectSnapshot, now: number): string {
   const mentions = new Map<string, Set<number>>();
-  for (const m of slice.text.matchAll(/\.scratch\/([\w.-]+)(?:\/issues\/(\d+)-)?/g)) {
+  const sources = slice.ticketPath ? `${slice.text} ${slice.ticketPath}` : slice.text;
+  for (const m of sources.matchAll(/\.scratch\/([\w.-]+)(?:\/issues\/(\d+)-)?/g)) {
     const set = mentions.get(m[1]) ?? new Set<number>();
     if (m[2]) set.add(Number(m[2]));
     mentions.set(m[1], set);

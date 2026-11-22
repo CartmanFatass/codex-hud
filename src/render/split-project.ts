@@ -56,7 +56,8 @@ export function hubTryRows(data: ProjectSnapshot, state: MonitorState, width: nu
     const fits = visualLength(head) + 2 + visualLength(body) + visualLength(age) + 1 <= width;
     const lines = sentence ? briefStack(head, sentence, age, width) : fits && body ? [pair(`${head}  ${muted(body)}`, age, width)]
       : [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))];
-    return lines.map((text) => ({ item, ...(data.statePath ? { files: [data.statePath] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text }));
+    const file = r.path ?? data.statePath;
+    return lines.map((text) => ({ item, ...(file ? { files: [file] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text }));
   };
   return {
     rows: queue.length ? [boardRow(''), plain(muted(t('To try')), width), ...todo.flatMap((x) => tryRows(x, true)), ...done.flatMap((x) => tryRows(x, false))] : [],
@@ -140,8 +141,9 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
       const item = `project:slice:${r.id}`;
       // Keep a stored brief's first sentence; otherwise give the room to the ledger text.
       const head = `${trySelectionMark(state, item)}${st === 'try' ? landedMark(r, marks?.get(r.id)) : SLICE_MARK[st]!()} ${fit(monitorText(r.id), col)}`, sentence = trySentence(r);
+      const sliceFiles = r.path ? { files: [r.path] } : files;
       for (const text of sentence ? briefStack(head, sentence, right, width, 2) : [sliceLedgerLine(r, head, right, width)])
-        list.push({ item, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text });
+        list.push({ item, ...sliceFiles, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text });
     }
   }
   list.push(...looseJobRows(data, width, now));

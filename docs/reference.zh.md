@@ -202,8 +202,8 @@ MCP 每个任务返回一条结果；是否合并成一次唤醒由客户端决�
 没有后台任务的工作，以及 MCP 重启后无法识别的任务，仍可用 `hud_read` 查询。这类会话不提供 `hud_wait`、`changes`（面板意图和未送达的批量通知除外）、
 `watcher_alive` 或 `hud watch` 提示。
 
-`hud_tickets` 在各客户端提供本地工单方法与操作（仅主会话可写，拒绝改写 GitHub 镜像）：默认 `guide` 返回方法模板；`ready` 返回无阻塞且无活动任务的 `ready-for-agent` 工单，格式为 `tickets: [{ticket, path, title, what}]`。将 `ticket`（`feature/NN`）及 `path`（作为 `brief_file`）传给 `hud_create`；活动任务在项目面板和首页进度中即算认领，无需提交认领记录，`hud_land` 会记录 `ready-for-human`。
-`add` 按 `feature` 和 `tickets` 批量建单；`update` 可单条更新（`feature`、`ticket` 及 `status`／`tick`／`blocked_by`），也可传 `updates: [{feature?, ticket, status?, tick?, blocked_by?}]` 按输入顺序批量更新并返回逐项结果（每项可覆盖 `feature`，单项错误不阻塞其余项）；`sync` 执行 `hud tickets sync`。
+`hud_tickets` 在各客户端提供本地工单方法与操作（仅主会话可写，拒绝改写 GitHub 镜像）：默认 `guide` 返回方法模板；`ready` 返回无阻塞且无活动任务的 `ready-for-agent` 工单，格式为 `tickets: [{ticket, path, title, what}]`。将 `ticket`（`feature/NN`）及 `path`（作为 `brief_file`）传给 `hud_create`；活动任务在项目面板和首页进度中即算认领，无需提交认领记录，`hud_land` 将工单更新并入落地提交（`**Owner try:** no` 记为 `done`，`yes` 或省略记为 `ready-for-human`），不再追加 `STATE.md`。
+`add` 按 `feature` 和 `tickets` 批量建单（可选 `owner_try` 布尔值，在状态行下写入 `**Owner try:** yes` 或 `no`）；`update` 可单条更新（`feature`、`ticket` 及 `status`／`owner_try`／`tick`／`blocked_by`），也可传 `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` 按输入顺序批量更新并返回逐项结果（每项可覆盖 `feature`，单项错误不阻塞其余项）；`sync` 执行 `hud tickets sync`。
 
 其他客户端的 MCP 工具响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
 与 `hud watch` 用同一个 `jobRow` 推导任务状态，所以结论一致。`hud watch` 默认只打印需要关注的事件，如提问、结算、受阻或新的静置原因；

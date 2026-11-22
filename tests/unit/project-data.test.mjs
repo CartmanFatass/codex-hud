@@ -9,8 +9,11 @@ import { join } from 'node:path';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
 import { clearJobIndexCaches } from '../../dist/roles/job-index-cache.js';
-import { appendTry } from '../../dist/collectors/try-records.js';
-import { currentRows } from '../../dist/render/project-view.js';
+import { appendTry, TryLog } from '../../dist/collectors/try-records.js';
+import { currentRows, homeProgressRows, pageRows } from '../../dist/render/project-view.js';
+import { renderHtmlBoard } from '../../dist/render/html-board.js';
+import { initialMonitorState } from '../../dist/render/monitor.js';
+import { stripAnsi } from '../../dist/render/colors.js';
 import { projectList } from '../../dist/roles/projects.js';
 
 const NOW = Date.parse('2026-11-14T10:00:00Z');
@@ -441,4 +444,95 @@ test('multiple ProjectCollectors, ProjectOverviews and Control share one JobInde
   assert.equal(updatedList.get(realB).running, 1);
   assert.deepEqual(updatedHome.active, []);
   assert.equal(updatedCtrl.radar.roleStats.imp.ok, 2);
+});
+
+test('Progress, To-try, Home, HTML board and TryLog read landed slices from .scratch tickets while keeping STATE rows as history', async (t) => {
+  const f = makeTemp(t);
+  const git = (args, date) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
+    cwd: f.cwd, stdio: 'pipe', encoding: 'utf8',
+    env: { ...process.env, ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}) },
+  }).trim();
+  git(['init', '-b', 'synthetic-main']);
+  const t1 = '.scratch/orch-lean-2/issues/01-auto-done.md';
+  const t2 = '.scratch/orch-lean-2/issues/02-needs-try.md';
+  const t3 = '.scratch/orch-lean-2/issues/03-legacy-state.md';
+  f.put(join(f.cwd, 'src/a.txt'), 'v1\n');
+  f.put(join(f.cwd, t1), '# 01: Automated slice\n\n**Status:** done\n**Owner try:** no\n**Blocked by:** none\n- [x] covered by tests\n\n## Comments\n\n- Landed a1b2c3d4; gate 1/1 passed.\n');
+  git(['add', '.']); git(['commit', '-m', 'land auto slice'], '2026-11-11T09:00:00Z');
+  const h1 = git(['rev-parse', 'HEAD']);
+
+  f.put(join(f.cwd, 'src/b.txt'), 'v2\n');
+  f.put(join(f.cwd, t2), '# 02: Visible panel change\n\n**Status:** ready-for-human\n**Owner try:** yes\n**Blocked by:** 01\n- [x] panel works\n\n## Comments\n\n- Landed b2c3d4e5; gate 1/1 passed.\n');
+  git(['add', '.']); git(['commit', '-m', 'land ui slice'], '2026-11-12T10:00:00Z');
+  const h2 = git(['rev-parse', 'HEAD']);
+
+  f.put(join(f.cwd, 'src/c.txt'), 'v3\n');
+  git(['add', 'src/c.txt']); git(['commit', '-m', 'legacy state slice'], '2026-11-10T08:00:00Z');
+  const h3 = git(['rev-parse', 'HEAD']);
+  f.put(join(f.cwd, t3), `# 03: Legacy state slice\n\n**Status:** ready-for-human\n**Blocked by:** none\n- [x] done\n\n## Comments\n\n- Landed ${h3}; gate 1/1 passed.\n`);
+  f.put(join(f.cwd, 'docs/handoff/STATE.md'), [
+    '# State', 'Milestone: 0.2.0', '', '## Now: Shipping lean orchestration', '',
+    '## Waiting for the owner', '- Verify UI change (waits on ORCH-LEAN-2-02)', '',
+    '## Slices',
+    `- try · ORCH-LEAN-2 · ORCH-LEAN2-03 · Legacy state slice (${h3.slice(0, 8)})`,
+    `- accepted · M1 · LEGACY-OLD · Old milestone history (${h3.slice(0, 7)})`,
+  ].join('\n'));
+  f.put(join(f.cwd, 'docs/spec.md'), '## 5. Milestones\n- **M1, usable**\n- **0.2.0, current**\n');
+
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
+  const full = await collector.collect(true, EMPTY_BOARD, NOW);
+  // Existing STATE history kept; ORCH-LEAN2-03 deduplicated by commit against t3; t1 (owner_try: no -> done) is accepted, NOT to-try; t2 (ready-for-human) is to-try.
+  assert.deepEqual(full.ledger.map((r) => [r.id, r.state, r.milestone]), [
+    ['ORCH-LEAN2-03', 'try', 'ORCH-LEAN-2'],
+    ['LEGACY-OLD', 'accepted', 'M1'],
+    ['ORCH-LEAN-2-01', 'accepted', 'ORCH-LEAN-2'],
+    ['ORCH-LEAN-2-02', 'try', 'ORCH-LEAN-2'],
+  ]);
+  const s1 = full.ledger.find((r) => r.id === 'ORCH-LEAN-2-01');
+  const s2 = full.ledger.find((r) => r.id === 'ORCH-LEAN-2-02');
+  assert.equal(s1.commit, h1);
+  assert.equal(s1.at, Date.parse('2026-11-11T09:00:00Z'));
+  assert.equal(s2.commit, h2);
+  assert.equal(s2.at, Date.parse('2026-11-12T10:00:00Z'));
+  assert.equal(s2.diff?.totalFiles, 2);
+  assert.equal(s2.ticketPath, t2);
+  assert.equal(full.counts.accepted, 2);
+  assert.equal(full.counts.try, 2);
+  assert.equal(full.slices.length, 0, 'landed ticket slices do not pollute in-flight Now slices');
+
+  // Home progress, Classic To-try and HTML review board only list ready-for-human (try) slices in To-try, not done (owner_try: no).
+  const home = await collector.collect('home', EMPTY_BOARD, NOW);
+  const homeText = homeProgressRows(home, 80, 20, false, 'slice').map((r) => stripAnsi(r.text)).join('\n');
+  assert.match(homeText, /1\/3/);
+  assert.match(homeText, /✓ 1 accepted.*◇ 2 to try/);
+  const tryState = { ...initialMonitorState(), activeTab: 'project', prefs: { ...initialMonitorState().prefs, acceptance: 'slice' },
+    project: { ...initialMonitorState().project, view: { kind: 'progress', onlyTry: { scroll: 0 } } } };
+  const tryText = pageRows('progress', full, tryState, 80, NOW, EMPTY_BOARD).map((r) => stripAnsi(r.text)).join('\n');
+  assert.match(tryText, /ORCH-LEAN-2-02/);
+  assert.doesNotMatch(tryText, /ORCH-LEAN-2-01/);
+  const html = renderHtmlBoard({ projectName: 'Synthetic', root: f.cwd, project: full, workboard: EMPTY_BOARD, generatedAt: NOW, lang: 'en', acceptance: 'slice' });
+  assert.match(html, /ORCH-LEAN-2-02/);
+  assert.match(html, /panel works/, 'HTML board links ticket checklist from ticketPath');
+  assert.doesNotMatch(html, /<article class="card try"><header><span class="id">ORCH-LEAN-2-01</);
+
+  // Flagging and accepting a ticket-derived try slice works in panel, waiting settlement, and TryLog catch-up.
+  appendTry(f.hud, f.cwd, 'flag', { milestone: s2.milestone, slices: [{ id: s2.id, text: s2.text }] });
+  const flagged = await collector.collect('home', EMPTY_BOARD, NOW + 1);
+  assert.ok(flagged.waiting.some((w) => w.value.includes('⚑ ORCH-LEAN-2-02')));
+  assert.deepEqual(new TryLog(f.hud).changes(f.cwd), [`try flagged project ${s2.id}`]);
+
+  appendTry(f.hud, f.cwd, 'accept', { milestone: s2.milestone, slices: [{ id: s2.id, text: s2.text }] });
+  const accepted = await collector.collect('home', EMPTY_BOARD, NOW + 2);
+  assert.equal(accepted.ledger.find((r) => r.id === 'ORCH-LEAN-2-02').state, 'accepted');
+  assert.equal(accepted.tickets[0].tickets.find((tk) => tk.number === '02').state, 'done');
+  assert.equal(accepted.waiting.length, 0, 'accepting ticket-derived try slice settles waits-on item');
+  assert.deepEqual(new TryLog(f.hud).changes(f.cwd), [`try accepted project ${s2.milestone}: ${s2.id}`]);
+
+  // Projects list overview derives counts/latest from tickets even with no STATE.md at all.
+  fs.unlinkSync(join(f.cwd, 'docs/handoff/STATE.md'));
+  const overviews = new ProjectOverviews((r) => new ProjectCollector(r, f.hud, f.env, f.home), f.cwd);
+  const overview = (await overviews.read([f.cwd], EMPTY_BOARD, NOW + 3)).get(f.cwd);
+  assert.equal(overview.hasState, true);
+  assert.equal(overview.latest.state, 'try');
+  assert.deepEqual(overview.latest.ids, ['ORCH-LEAN-2-03']);
 });

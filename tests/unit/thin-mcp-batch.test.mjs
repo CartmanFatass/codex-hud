@@ -165,6 +165,49 @@ test('hud_tickets updates applies batch updates in input order with per-item err
   assert.match(JSON.parse(refused.result.content[0].text).error, /GitHub mirror/);
 });
 
+test('hud_tickets add and update support optional owner_try boolean under Status', async (t) => {
+  const f = await fixture(t);
+  const added = await f.call('hud_tickets', {
+    op: 'add',
+    feature: 'try-flag',
+    tickets: [
+      { title: 'UI change', blocked_by: [], what: 'Visible panel change.', acceptance: ['Check panel'], owner_try: true },
+      { title: 'Pure helper', blocked_by: [], what: 'Unit-tested helper.', acceptance: ['Tests pass'], owner_try: false },
+      { title: 'Default ticket', blocked_by: [], what: 'No explicit flag.', acceptance: ['Works'] },
+    ],
+  });
+  const [p1, p2, p3] = added.tickets.map((x) => x.path);
+  assert.match(fs.readFileSync(p1, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* yes\n\*\*Blocked by:\*\* none/);
+  assert.match(fs.readFileSync(p2, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* no\n\*\*Blocked by:\*\* none/);
+  assert.doesNotMatch(fs.readFileSync(p3, 'utf8'), /\*\*Owner try:\*\*/);
+
+  // Single update inserts Owner try under Status when absent, and replaces in place when present.
+  await f.call('hud_tickets', { op: 'update', feature: 'try-flag', ticket: 3, owner_try: false });
+  assert.match(fs.readFileSync(p3, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* no\n\*\*Blocked by:\*\* none/);
+  await f.call('hud_tickets', { op: 'update', feature: 'try-flag', ticket: 1, owner_try: false });
+  assert.match(fs.readFileSync(p1, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* no\n\*\*Blocked by:\*\* none/);
+
+  // Batch update supports owner_try and rejects invalid type per item; mixing top-level owner_try with updates fails.
+  const batch = await f.call('hud_tickets', {
+    op: 'update',
+    feature: 'try-flag',
+    updates: [
+      { ticket: 2, owner_try: true },
+      { ticket: 3, owner_try: 'yes' },
+    ],
+  });
+  assert.equal(batch.updates[0].ok, true);
+  assert.equal(batch.updates[1].ok, false);
+  assert.equal(batch.updates[1].code, 'invalid_arguments');
+  assert.match(fs.readFileSync(p2, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* yes\n\*\*Blocked by:\*\* none/);
+
+  const mixed = await f.rpc('tools/call', {
+    name: 'hud_tickets',
+    arguments: { op: 'update', feature: 'try-flag', owner_try: false, updates: [{ ticket: 1, status: 'done' }] },
+  });
+  assert.equal(mixed.result.isError, true);
+});
+
 test('hud_respond answers writes multiple answers once in input order with per-item errors', async (t) => {
   const f = await fixture(t);
   const j1 = waitFixtureJob(f, 1, 'working');

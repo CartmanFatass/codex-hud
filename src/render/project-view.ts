@@ -195,7 +195,7 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
     const toTry = pending && t('{n} to try', { n: pending });
     const lead = tasks ? [toTry, tasks.length && taskCountText(tasks.length), milestone] : [milestone, toTry];
     return parts(...lead, blocked && `${blocked} ${t('blocked')}`,
-      working && `${working} ${t('working')}`, !data.statePath && t('no STATE.md'));
+      working && `${working} ${t('working')}`, !data.statePath && !data.ledger.length && t('no STATE.md'));
   }
   if (page === 'tickets') {
     if (acceptance !== 'slice') return data.tickets.length ? [featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length)] : [];
@@ -500,8 +500,9 @@ export function taskHeaderRows(task: AcceptanceTask, data: ProjectSnapshot, stat
   const firstMark = marks?.get(first.id), action = task.slices.every((r) => marks?.get(r.id) === firstMark) ? firstMark : undefined;
   const head = `${' '.repeat(options.indent ?? 2)}${trySelectionMark(state, item)}${landedMark(first, action)} ${taskLabel(task)}`;
   const right = [sliceCountText(task.slices.length), options.status && t('to try'), sinceText(task.oldest, now)].filter(Boolean).join(' · ');
+  const file = first.path ?? data.statePath;
   return withTaskSentence({ item, text: pair(head, theme.board.muted(right), width), tryTarget: { milestone: task.milestone, slices: task.slices },
-    ...(data.statePath ? { files: [data.statePath] } : {}) }, task.slices, width);
+    ...(file ? { files: [file] } : {}) }, task.slices, width);
 }
 export function taskDetailRows(task: AcceptanceTask, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>, folded = state.project.folded): MonitorRow[] {
   return task.slices.flatMap((r) => [
@@ -540,8 +541,9 @@ export function progressTaskHeader(task: AcceptanceTask, data: ProjectSnapshot, 
   const receipt = [flagged ? `${theme.board.attention(mark('⚑', '!'))} ${flagged}` : '', accepted ? `${theme.board.success(mark('✓', '+'))} ${accepted}` : ''].filter(Boolean).join('  ');
   const oldest = tries.reduce<number | undefined>((n, r) => r.at === undefined ? n : Math.min(n ?? r.at, r.at), undefined);
   const age = sinceText(oldest, now), right = [counts, receipt && `· ${receipt}`, age].filter(Boolean).join('  ');
+  const file = task.slices[0]?.path ?? data.statePath;
   return withTaskSentence({ item, text: pair(label, visualLength(label + right) + 1 <= width ? right : [counts, receipt && `· ${receipt}`].filter(Boolean).join('  '), width),
-    ...(tries.length ? { tryTarget: { milestone: task.milestone, slices: tries } } : {}), ...(data.statePath ? { files: [data.statePath] } : {}) }, tries, width);
+    ...(tries.length ? { tryTarget: { milestone: task.milestone, slices: tries } } : {}), ...(file ? { files: [file] } : {}) }, tries, width);
 }
 
 /** Slice details shared by the existing Split slice preview and task drill-down in either panel layout. */
@@ -696,7 +698,8 @@ export function pageRows(
       const id = `hist:${r.id}`, item = `project:fold:${id}`, selected = tried ? trySelectionMark(state, item) : '';
       const open = folded.has(id), head = `${' '.repeat(indent)}${selected}${landedMark(r, action)} ${monitorText(r.id)}`;
       const meta = ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · '));
-      const row = (text: string, own?: string): MonitorRow => ({ text: fit(text, width), item: own ?? item, tryTarget, ...(data.statePath ? { files: [data.statePath] } : {}) });
+      const file = r.path ?? data.statePath;
+      const row = (text: string, own?: string): MonitorRow => ({ text: fit(text, width), item: own ?? item, tryTarget, ...(file ? { files: [file] } : {}) });
       if (trySentence(r) && !open) rows.push(...briefStack(head, trySentence(r), right, width, indent + 2).map((line) => row(line)));
       else if (trySentence(r)) rows.push(row(pair(head, right, width)), row(meta),
         ...tryDetailRows(r, width, indent + 4, folded.has(`ledger:${r.id}`)).map((d) => row(d.text, d.item)));
@@ -770,7 +773,7 @@ export function pageRows(
         const counts = cur.counts;
         const words = SLICE_STATES.filter((s) => s !== 'accepted' && counts[s]).map((s) => sliceInk(s)(`${counts[s]} ${t(s === 'try' ? 'to try' : s)}`));
         // The to-try count is the way into the to-try filter; `o` still opens STATE.md from it.
-        for (const line of pack(words, width)) counts.try && data.statePath ? rows.push({ text: fit(line, width), item: 'project:try', files: [data.statePath] }) : fileRow(line, 'counts');
+        for (const line of pack(words, width)) counts.try ? rows.push({ text: fit(line, width), item: 'project:try', ...(data.statePath ? { files: [data.statePath] } : {}) }) : fileRow(line, 'counts');
         const order = milestoneOrder(data), before = order.slice(0, Math.max(0, order.indexOf(data.ladder.current ?? ''))), earlier = data.ledger.filter((r) => r.state === 'accepted' && before.includes(r.milestone));
         const places = new Set(earlier.map((r) => r.milestone)).size;
         if (!cur.whole && earlier.length) fileRow(`  ${sliceInk('accepted')(mark('✓', '+'))} ${theme.board.muted(t(places === 1 ? '{n} accepted in {m} earlier milestone' : '{n} accepted in {m} earlier milestones', { n: earlier.length, m: places }))}`, 'earlier');

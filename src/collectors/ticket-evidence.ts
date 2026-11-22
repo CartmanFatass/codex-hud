@@ -10,15 +10,20 @@ export function ticketHeading(text: string, number: number) {
 }
 
 export function ticketFileEvidence(text: string) {
-  const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
+  const [body, commentsSection = ''] = text.split(/^## Comments[ \t]*\r?$/m, 2);
+  const comments = commentsSection.split(/^## /m, 1)[0];
   const field = (key: string) => body.match(new RegExp(`(?:^|·)[ \\t]*\\*\\*${key}:\\*\\*[ \\t]*([^·\\r\\n]*)`, 'mi'))?.[1]?.trim();
   const status = field('Status'), blocked = field('Blocked by');
   const items = [...body.matchAll(/^[ \t]*[-*] \[([ xX])\][ \t]*([^\r\n]*)/gm)].map(b => ({
     done: b[1].toLowerCase() === 'x', text: b[2].replace(/\s+/g, ' ').trim(),
   }));
   const checked = items.filter(i => i.done).length;
+  const commit = [...comments.matchAll(/^[ \t]*[-*][ \t]+Landed:?(?:[ \t]+(?:in|at))?[ \t]+`?([0-9a-f]{7,40})`?\b/gim)].at(-1)?.[1];
+  const allChecked = items.length > 0 && checked === items.length;
+  const readyForHuman = /^ready-for-human\b/i.test(status ?? '');
   const landed = /^(wontfix|dropped)\b/i.test(status ?? '') ? 'dropped'
-    : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') || (items.length > 0 && checked === items.length) ? 'done'
-    : /^try\b/i.test(status ?? '') ? 'try' : undefined;
-  return { status, blocked, items, checked, landed } as const;
+    : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') ? 'done'
+    : /^try\b/i.test(status ?? '') || (readyForHuman && (!!commit || allChecked)) ? 'try'
+    : !readyForHuman && allChecked ? 'done' : undefined;
+  return { status, blocked, items, checked, landed, ...(commit ? { commit } : {}) } as const;
 }

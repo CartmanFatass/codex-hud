@@ -50,9 +50,10 @@ export function readyTickets(cwd: string, jobs: JobIndexCache) {
       tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number, path }) => {
         const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
         if (truncated) return [];
-        const body = bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
+        const text = bytes.toString('utf8');
+        const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
         const heading = ticketHeading(body, number);
-        const { status, blocked, items, checked, landed } = ticketFileEvidence(body);
+        const { status, blocked, items, checked, landed } = ticketFileEvidence(text);
         if (!heading || !status || blocked === undefined) return [];
         const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
           ?.replace(/\s+/g, ' ').trim() ?? '';
@@ -77,16 +78,29 @@ export function readyTickets(cwd: string, jobs: JobIndexCache) {
       ? [{ ticket: `${slug}/${nn(Number(t.number))}`, path: t.path, title: t.title, what: t.what }] : [])) };
 }
 
+function ownerTry(value: unknown): 'yes' | 'no' {
+  if (typeof value !== 'boolean') return invalid('owner_try');
+  return value ? 'yes' : 'no';
+}
 function withStatus(body: string, label: string, ticket: number): string {
   const field = /((?:^|·)[ \t]*\*\*Status:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
   if (!field.test(body)) throw new Error(`missing Status field in ticket: ${ticket}`);
   return body.replace(field, (_, prefix, _old, suffix) => `${prefix}${label}${suffix}`);
 }
+function withOwnerTry(body: string, value: 'yes' | 'no', ticket: number): string {
+  const field = /((?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+  if (field.test(body)) return body.replace(field, (_, prefix, _old, suffix) => `${prefix}${value}${suffix}`);
+  const statusLine = /^[^\r\n]*\*\*Status:\*\*[^\r\n]*$/im;
+  if (!statusLine.test(body)) throw new Error(`missing Status field in ticket: ${ticket}`);
+  return body.replace(statusLine, (line) => `${line}\n**Owner try:** ${value}`);
+}
 
 /** Acceptance is the checklist before Comments; checkboxes in discussion aren't acceptance. */
 export function landedTicket(original: string, ticket: number, comment: string) {
   const start = original.search(/^## Comments[ \t]*\r?$/m);
-  const body = withStatus(start < 0 ? original : original.slice(0, start), 'ready-for-human', ticket)
+  const before = start < 0 ? original : original.slice(0, start);
+  const skipTry = /(?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*no\b/im.test(before);
+  const body = withStatus(before, skipTry ? 'done' : 'ready-for-human', ticket)
     .replace(/^([ \t]*[-*] \[) \]/gm, '$1x]');
   return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
 }
@@ -132,6 +146,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
       const title = line(ticket.title, 'title'),
         what = line(ticket.what, 'what');
       const label = ticket.status === undefined ? 'ready-for-agent' : status(ticket.status);
+      const tryLine = ticket.owner_try === undefined ? [] : [`**Owner try:** ${ownerTry(ticket.owner_try)}`];
       const blocked = resolveBlockers(ticket.blocked_by, feature, known);
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
@@ -139,6 +154,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
         `# ${nn(next)}: ${title}`,
         '',
         `**Status:** ${label}`,
+        ...tryLine,
         `**Blocked by:** ${blocked}`,
         '',
         `**What to build:** ${what}`,
@@ -162,7 +178,8 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   const updateOne = (feat: unknown, item: Record<string, unknown>) => {
     if (typeof feat !== 'string' || !/^[a-z0-9-]+$/.test(feat)) return invalid('feature');
     if (!number(item.ticket)) return invalid('ticket');
-    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined) return invalid('status, tick or blocked_by');
+    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.owner_try === undefined)
+      return invalid('status, tick, blocked_by or owner_try');
     const existing = list(join(scratch, feat));
     const known = new Set(existing.map(t => t.number));
     const matches = existing.filter(({ number }) => number === item.ticket);
@@ -173,6 +190,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
     const comments = original.search(/^## Comments[ \t]*\r?$/m);
     let body = comments < 0 ? original : original.slice(0, comments);
     if (item.status !== undefined) body = withStatus(body, status(item.status), item.ticket);
+    if (item.owner_try !== undefined) body = withOwnerTry(body, ownerTry(item.owner_try), item.ticket);
     if (item.blocked_by !== undefined) {
       const field = /((?:^|·)[ \t]*\*\*Blocked by:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
       if (!field.test(body)) throw new Error(`missing Blocked by field in ticket: ${item.ticket}`);
@@ -193,7 +211,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   };
 
   if (args.updates !== undefined) {
-    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined)
+    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.owner_try !== undefined)
       return invalid('updates');
     if (!Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
     if (feature !== undefined && (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature))) return invalid('feature');

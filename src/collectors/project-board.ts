@@ -12,7 +12,7 @@ import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
-import { ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
+import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
 import { TryLog } from './try-records.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
 import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
@@ -35,6 +35,10 @@ export interface LedgerSlice {
   /** Laid on by the panel from its stored briefs (`TryBriefs.apply`), never collected. */
   brief?: TryBrief;
   diff?: DiffStatSummary;
+  /** Relative ticket path for ticket-derived slices (TryBriefs and HTML board). */
+  ticketPath?: string;
+  /** Absolute file path for ticket-derived slices (opened on `o`). */
+  path?: string;
 }
 export interface ActiveJob {
   jobId: string; role: string; state: string; package?: string; title?: string; at?: number; asking: boolean;
@@ -44,7 +48,7 @@ export interface ActiveJob {
 export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
   number: string; title: string; originalTitle?: string; path: string; at: number; status: string;
-  checked: number; total: number; items: TicketItem[]; comment?: string;
+  checked: number; total: number; items: TicketItem[]; comment?: string; commit?: string;
   blockers: string[]; state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { role: string; state: string; at?: number; created: number };
 }
@@ -147,6 +151,7 @@ export class ProjectCollector {
   private head = '';
   private packedHead?: { key: string; sha: string };
   private landed = new Set<string>();
+  private ticketCommits = new Map<string, { sha: string; at: number }>();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) { this.tries = new TryLog(hudHome); }
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
     try {
@@ -220,13 +225,14 @@ export class ProjectCollector {
         const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
           if (truncated) return null;
           const text = buffer.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
-          const { status, blocked, items, checked, landed } = ticketFileEvidence(text);
+          const { status, blocked, items, checked, landed, commit } = ticketFileEvidence(text);
           if (!heading || !status || blocked === undefined) return null;
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
           const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
           return { ...heading, path, at: fs.lstatSync(path).mtimeMs, status,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
+            ...(commit !== undefined ? { commit } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
             state: landed ?? (/^claimed\b/i.test(status) ? 'working' : 'ready') };
         });
@@ -388,12 +394,31 @@ export class ProjectCollector {
     if (sha !== this.head) {
       this.head = sha;
       this.landed.clear();
+      this.ticketCommits.clear();
       if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) try {
-        const subjects = await worktreeGit(this.cwd, ['log', '-n', '64', '--no-show-signature', '--format=%s', sha, '--']);
-        this.landed = new Set(ticketIds(subjects));
+        const log = await worktreeGit(this.cwd, ['log', '-n', '64', '--no-show-signature', '--name-only', '--format=%x1e%H%x00%ct%x00%s', sha, '--']);
+        const subjects: string[] = [];
+        for (const chunk of log.split('\x1e')) {
+          if (!chunk) continue;
+          const [header, ...rest] = chunk.split(/\r?\n/);
+          const [commitSha, ct, subject = ''] = header.split('\0');
+          subjects.push(subject);
+          if (!commitSha || /^Record landing\b/.test(subject)) continue;
+          const files = rest.filter(Boolean);
+          if (!files.some((p) => !p.startsWith('.scratch/'))) continue;
+          const ts = Number(ct) * 1000;
+          if (!Number.isFinite(ts)) continue;
+          for (const file of files) {
+            const m = /^\.scratch\/([^/]+)\/issues\/(\d+)-[^/]+\.md$/.exec(file);
+            if (!m) continue;
+            const id = targetKey(`${m[1]}/${m[2]}`);
+            if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at: ts });
+          }
+        }
+        this.landed = new Set(ticketIds(subjects.join('\n')));
       } catch { /* Git unavailable: rely on the ledger. */ }
     }
-    return this.landed;
+    return { ids: this.landed, commits: this.ticketCommits };
   }
 
   async collect(shown: boolean | 'home' | 'home-tasks' | 'export' | 'control' | 'overview', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
@@ -426,7 +451,17 @@ export class ProjectCollector {
     out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim()
       ?? state.match(/^## Now(?: \([^\r\n]+\))?[ \t]*\r?\n\s*[-*] ([^\r\n]+)/m)?.[1]?.trim() ?? '';
     const ledger = new Map<string, { state: string; text: string }>();
-    const parsed = parseLedger(state), marks = this.tries.marks(this.cwd, parsed, true);
+    const parsed = parseLedger(state);
+    const stateKeys = new Set(parsed.map((r) => targetKey(r.id)));
+    const stateCommits = new Set(parsed.flatMap((r) => [...r.text.matchAll(/\b[0-9a-f]{7,40}\b/gi)].map((m) => m[0].slice(0, 7).toLowerCase())));
+    const milestoneFor = (slug: string) => parsed.find((r) => r.milestone.toLowerCase() === slug.toLowerCase())?.milestone ?? slug;
+    const ticketTryRaw = out.tickets.flatMap(({ slug, tickets }) => tickets.flatMap((t) => {
+      if (t.state !== 'try') return [];
+      const id = `${slug.toUpperCase()}-${t.number}`;
+      if (stateKeys.has(targetKey(id)) || (t.commit && stateCommits.has(t.commit.slice(0, 7).toLowerCase()))) return [];
+      return [{ id, state: 'try', milestone: milestoneFor(slug), text: t.commit ? `${t.title} (${t.commit.slice(0, 8)})` : t.title }];
+    }));
+    const marks = this.tries.marks(this.cwd, [...parsed, ...ticketTryRaw], true);
     for (const { state: raw, milestone, id, text } of parsed) {
       const status = raw === 'done' || marks.get(id) === 'accept' ? 'accepted' : raw;
       if (marks.get(id) === 'flag') out.waiting.push({ label: id, value: `⚑ ${id} · ${text}`, path: statePath });
@@ -458,27 +493,37 @@ export class ProjectCollector {
       } else if (activeBlock && out.ladder.current) r.release = out.ladder.current;
     }
     const home = shown === 'home' || shown === 'home-tasks' || shown === 'overview';
-    if (!home) await this.fullDetails(out, board, now, shown === 'export', specPath, milestone);
+    const refreshedGit = !home ? await this.fullDetails(out, board, now, specPath, milestone) : false;
     const rollup = new TicketRollup(out.tickets);
     const liveSlices = shown === 'overview' ? [] : this.joinJobs(out, board, home, shown === 'export', rollup, ledger);
-    const { totals, visible, running } = rollup.derive(out.ledger, shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup) : new Set(), now, marks);
+    const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup) : { ids: new Set<string>(), commits: new Map<string, { sha: string; at: number }>() };
+    const { totals, visible, running } = rollup.derive(out.ledger, landedInfo.ids, now, marks, landedInfo.commits);
     for (const row of [...running, ...liveSlices]) {
       const old = out.ledger.find(r => r.id === row.id);
       if (old) {
         if (old.state === row.state || !['todo', 'working'].includes(old.state)) continue;
         out.counts[old.state]--;
         old.state = row.state;
-      } else out.ledger.push({ ...row, release: out.ladder.current });
+      } else {
+        out.ledger.push(out.ladder.current ? { ...row, release: out.ladder.current } : { ...row });
+        if (row.state === 'try' && marks.get(row.id) === 'flag') {
+          out.waiting.push({ label: row.id, value: `⚑ ${row.id} · ${row.text}`, path: row.path ?? statePath });
+        }
+        ledger.set(row.id, { state: row.state, text: row.text });
+      }
       out.counts[row.state]++;
-      const entry = out.slices.find(s => s.label === row.id);
-      if (entry) entry.ledgerState = row.state;
-      else out.slices.push({ label: row.id, value: row.text, ledgerState: row.state });
+      if (row.state === 'working' || row.state === 'blocked') {
+        const entry = out.slices.find(s => s.label === row.id);
+        if (entry) entry.ledgerState = row.state;
+        else out.slices.push({ label: row.id, value: row.text, ...(row.path ? { path: row.path } : {}), ledgerState: row.state });
+      }
     }
+    if (!home) await this.fullLedgerDetails(out, now, shown === 'export', refreshedGit);
     out.ticketTotals = totals;
     out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
     out.tickets = visible;
     if (shown === 'home-tasks') {
-      const tries = out.ledger.filter((r) => r.state === 'try');
+      const tries = out.ledger.filter((r) => r.state === 'try' && r.at === undefined);
       const hashes = [...new Set(tries.flatMap((r) => r.commit ? [r.commit.toLowerCase()] : []))]
         .filter((hash) => !this.homeTryDates.has(hash)).sort();
       const key = hashes.join(' ');
@@ -496,7 +541,7 @@ export class ProjectCollector {
     return out;
   }
 
-  private async fullDetails(out: ProjectSnapshot, board: WorkboardSnapshot, now: number, exporting: boolean, specPath: string, milestone?: string) {
+  private async fullDetails(out: ProjectSnapshot, board: WorkboardSnapshot, now: number, specPath: string, milestone?: string): Promise<boolean> {
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: specPath });
     const reviews = join(this.cwd, 'docs/reviews');
     const review = this.orderedNames(reviews, 12, (entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(entry.name), true)
@@ -526,7 +571,9 @@ export class ProjectCollector {
         }
       } catch { /* invalid job */ }
     }
+    let refreshedGit = false;
     if (now - this.gitAt >= 5000) {
+      refreshedGit = true;
       this.gitAt = now;
       this.git = undefined;
       this.last = undefined;
@@ -542,6 +589,15 @@ export class ProjectCollector {
         ])).trim().split('\0');
         if (hash && at && Number.isFinite(Number(at))) this.last = { text: `${hash} ${subject}`, at: Number(at) * 1000 };
       } catch { /* No repo, unborn HEAD or failed probe: unknown, not zero. */ }
+    }
+    out.git = this.git;
+    out.worktreeCount = this.git ? this.worktrees.length : undefined;
+    out.last = this.last;
+    return refreshedGit;
+  }
+
+  private async fullLedgerDetails(out: ProjectSnapshot, now: number, exporting: boolean, refreshedGit: boolean) {
+    if (refreshedGit) {
       const hashes = [...new Set(out.ledger.map((r) => r.commit?.toLowerCase()).filter((c): c is string => !!c))];
       this.commitAt = await this.commitDates(hashes);
     }
@@ -549,11 +605,10 @@ export class ProjectCollector {
       const at = row.commit ? this.commitAt.get(row.commit.toLowerCase()) : undefined;
       if (at !== undefined) row.at = at;
     }
-    out.git = this.git;
     const toTry = out.ledger.filter((r) => r.state === 'try').reverse()
       .sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
     const attachDiff = async (row: LedgerSlice) => {
-      const diff = await this.diffs.commits(this.cwd, row.text, now);
+      const diff = await this.diffs.commits(this.cwd, row.ticketPath && row.commit ? row.commit : row.text, now);
       if (diff) row.diff = diff;
     };
     if (exporting) {
@@ -567,8 +622,6 @@ export class ProjectCollector {
         ...toTry.slice(0, 12).map(attachDiff),
       ]);
     }
-    out.worktreeCount = this.git ? this.worktrees.length : undefined;
-    out.last = this.last;
   }
 
   private joinJobs(out: ProjectSnapshot, board: WorkboardSnapshot, home: boolean, exporting: boolean, rollup: TicketRollup, ledger: Map<string, {state: string; text: string}>) {

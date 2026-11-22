@@ -318,12 +318,13 @@ working directory; pass the project directory to target another project.
 - **`ready`**: lists unblocked `ready-for-agent` tickets with no live job as `tickets: [{ticket, path, title, what}]`.
   `what` is one line from the ticket's What to build section. Pass `ticket` (`feature/NN`) and `path` (as `brief_file`)
   to `hud_create`. The live job claims the ticket in the panel and Home progress without a claim commit;
-  `hud_land` records `ready-for-human`.
-- **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?}]`.
+  `hud_land` folds the ticket update into the landed commit (`done` with the sha when `**Owner try:** no`, else `ready-for-human`) without touching `STATE.md`.
+- **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?}]`.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing. `acceptance` is a list of checklist item strings.
+  Optional `owner_try` writes `**Owner try:** yes` or `no` under Status (`yes` or omitted requires owner trial on land; `no` lands straight to `done`).
   The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
-- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers); or pass `updates: [{feature?, ticket, status?, tick?, blocked_by?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
+- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `owner_try`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers); or pass `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
   Unknown tickets or items are refused; other lines are unchanged.
 - **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
 

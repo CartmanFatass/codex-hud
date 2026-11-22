@@ -88,16 +88,17 @@ export class TryLog {
     for (const r of catchup ? fresh.reverse() : fresh) {
       if (root !== undefined && r.root !== root) continue;
       let ids = r.slices;
-      // Live changes are events; catch-up asks only for the latest decisions not yet reflected in STATE.
+      // Live changes are events; catch-up asks only for the latest decisions not yet reflected in STATE or tickets.
       if (catchup) {
-        const ledger = ledgers.get(r.root) ?? new Map(readStateLedger(r.root).map((s) => [s.id, s]));
+        const ledger = ledgers.get(r.root) ?? new Map(readStateLedger(r.root).map((s) => [targetKey(s.id), s]));
         ledgers.set(r.root, ledger);
         const handled = seen.get(r.root) ?? new Set<string>();
         seen.set(r.root, handled);
         ids = r.slices.filter((id, i) => {
-          if (handled.has(id)) return false;
-          handled.add(id);
-          const slice = ledger.get(id);
+          const key = targetKey(id);
+          if (handled.has(key)) return false;
+          handled.add(key);
+          const slice = ledger.get(key);
           return slice && pending(r, slice, i);
         });
       }

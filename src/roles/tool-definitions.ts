@@ -176,6 +176,7 @@ export const ROLE_TOOLS = [
             what: text,
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
+            owner_try: { type: 'boolean', description: 'Whether the owner needs to try it after landing (default: yes).' },
           },
           required: ['title', 'blocked_by', 'what', 'acceptance'],
           additionalProperties: false,
@@ -183,6 +184,7 @@ export const ROLE_TOOLS = [
       },
       ticket: { ...ticketNumber, description: 'Ticket number for update.' },
       status: { ...ticketStatus, description: 'New status for update.' },
+      owner_try: { type: 'boolean', description: 'For update: set Owner try yes/no.' },
       blocked_by: { ...blockers, description: 'For update: replace blockers (local numbers or feature/NN).' },
       tick: { type: 'array', items: ticketNumber, description: 'For update: 1-based acceptance items to check.' },
       updates: {
@@ -195,6 +197,7 @@ export const ROLE_TOOLS = [
             feature: { ...text, pattern: '^[a-z0-9-]+$' },
             ticket: ticketNumber,
             status: ticketStatus,
+            owner_try: { type: 'boolean' },
             blocked_by: blockers,
             tick: { type: 'array', items: ticketNumber },
           },

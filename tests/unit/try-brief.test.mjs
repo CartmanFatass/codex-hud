@@ -307,3 +307,14 @@ test('a clamped brief sentence ends at a word, never inside one (EN at 40 column
   const zh = clampClean('台账历史、进行中的任务和工单详情现在都能在进度页直接看到。其余页面不变。', 20, 2).lines;
   assert.match(zh[1], /…$/);
 });
+
+test('TryBriefs reads commit and ticket file from ticketPath and commit fields on ticket-derived slices', async (t) => {
+  const s = service(t, 'on');
+  const row = { id: 'DEMO-01', state: 'try', milestone: 'demo', text: 'Synthetic ticket title (00000000)', commit: s.hash, ticketPath: '.scratch/demo/issues/01-thing.md' };
+  s.briefs.update(s.root, [row]);
+  await until(() => s.briefs.apply(s.root, s.snapshot(row)).ledger[0].brief);
+  assert.equal(s.calls.length, 1);
+  const sent = JSON.stringify(s.calls[0]);
+  for (const word of ['Synthetic ticket title', 'synthetic subject', 'SYNTHBODY', 'TICKETWORD'])
+    assert.ok(sent.includes(word), `${word} reaches the model for ticket-derived slice`);
+});

@@ -176,9 +176,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     checkCancel(); await checkSource();
     step('records');
     const tested = f.tested_sha!, base = f.base_sha!;
-    let records = await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who);
-    f.records_sha = records;
-    let landed = tested, tip = records ?? landed;
+    let landed = (await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who)) ?? tested;
     checkCancel(); step('fast-forward');
     const touched = async (from: string, to: string) => [...new Set([
       ...fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', from, to, '--'])),
@@ -193,7 +191,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         if (status || hidden) throw Error('Main checkout has dirty or hidden changes on paths the landing touches');
       }
     };
-    const paths = await touched(base, tip);
+    const paths = await touched(base, landed);
     await checkClean(paths);
     checkCancel(); await checkSource();
     if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref)
@@ -216,38 +214,30 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
           checkCancel();
           await command(integration, 'git', [...SAFE_GIT_ARGS, ...filters, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
         }
-        landed = await head(integration);
-        if (records) {
-          checkCancel();
-          await command(integration, 'git', [...SAFE_GIT_ARGS, ...filters, ...who, 'cherry-pick', '--no-gpg-sign', records]);
-          await git(integration, [...filters, 'reset', '--hard', landed]);
-          const replayedRecords = await recordLanding(integration, join(home, 'jobs', f.job), landed, c.gate.length, who);
-          if (replayedRecords && pathsOverlap(await touched(landed, replayedRecords), mainPaths))
-            throw Error('Main checkout is not at the recorded base tip');
-          records = replayedRecords;
-        }
+        const replayed = await head(integration);
+        landed = (await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who)) ?? replayed;
+        if (landed !== replayed && pathsOverlap(await touched(replayed, landed), mainPaths))
+          throw Error('Main checkout is not at the recorded base tip');
       } catch (e) {
         if (f.state === 'cancelled') throw e;
         if (e instanceof CommandError) throw new CommandError('Main checkout is not at the recorded base tip', e.tail);
         throw e;
       }
-      tip = records ?? landed;
       target = current;
-      await checkClean(await touched(current, tip));
+      await checkClean(await touched(current, landed));
       checkCancel(); await checkSource(); await checkMain(target);
     } else {
       await checkMain(base);
     }
-    await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', tip], 120000);
+    await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
     if (target !== base) f.replayed_onto = target;
-    f.records_sha = records;
     f.landed_sha = landed; writeLand(home, f);
-    await checkMain(tip);
+    await checkMain(landed);
     await commands('after', main);
     if (c.push) {
-      step('push'); await checkMain(tip);
+      step('push'); await checkMain(landed);
       await command(main, 'git', ['-c', 'core.hooksPath=/dev/null', '-c', 'remote.origin.mirror=false', 'push',
-        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${tip}:${ref}`]);
+        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${landed}:${ref}`]);
     }
     step('cleanup');
     const notes: string[] = [];

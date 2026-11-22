@@ -30,14 +30,17 @@ export function parseBrief(reply: string): TryBrief | undefined {
 
 /** What leaves the machine for one slice: its ledger line, up to five commit messages, up to four ticket files (3000 bytes each). */
 async function inputs(root: string, row: LedgerSlice) {
-  const hashes = [...new Set([...row.text.matchAll(/\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/gi)].map((m) => m[0].toLowerCase()))].slice(0, COMMITS);
+  const hashes = row.ticketPath && row.commit
+    ? [row.commit.toLowerCase()]
+    : [...new Set([...row.text.matchAll(/\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/gi)].map((m) => m[0].toLowerCase()))].slice(0, COMMITS);
   let commits: string[] = [];
   try {
     if (hashes.length) commits = (await worktreeGit(root, ['log', '--no-walk', '--ignore-missing', '--no-show-signature', '--format=%B%x00', ...hashes, '--']))
       .split('\0').map((c) => c.trim().slice(0, COMMIT_CHARS)).filter(Boolean);
   } catch { /* No repository or no such commit: the ledger line and the tickets still tell. */ }
   const tickets: { file: string; text: string }[] = [], seen = new Set<string>();
-  for (const [named, slug, file] of row.text.matchAll(/\.scratch\/(?!\.+(?:\/|$))([\w.-]+)(?:\/issues\/([\w.-]+\.md))?/g)) {
+  const sources = row.ticketPath ? `${row.text} ${row.ticketPath}` : row.text;
+  for (const [named, slug, file] of sources.matchAll(/\.scratch\/(?!\.+(?:\/|$))([\w.-]+)(?:\/issues\/([\w.-]+\.md))?/g)) {
     if (seen.has(named)) continue;
     seen.add(named);
     try {
