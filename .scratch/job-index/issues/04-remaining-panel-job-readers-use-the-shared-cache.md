@@ -9,3 +9,5 @@
 - [x] Home/Project/Projects/Control show the same jobs as before on a synthetic HUD_HOME
 
 ## Comments
+
+- Landed 5745f591814c10bf78333401109f260adced55a7; gate 6/6 passed.

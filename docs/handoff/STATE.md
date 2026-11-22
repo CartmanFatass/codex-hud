@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · JOB-INDEX · JOB-INDEX-04 · Remaining panel job readers use the shared cache (5745f591)
 - try · PLACE-HEALTH · PLACE-HEALTH-01 · Control's Dispatch today splits by place (c68b2026)
 - try · MCP-SPLIT · MCP-SPLIT-01 · Typed job contracts and one atomic write helper (2b50bd0b)
 - try · JOB-INDEX · JOB-INDEX-01 · Shared job-index mtime cache core (0f3d1968)
