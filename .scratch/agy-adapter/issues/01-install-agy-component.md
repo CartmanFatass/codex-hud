@@ -1,6 +1,6 @@
 # 01: `./install --with agy` wires agy to the HUD and uninstalls cleanly
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Blocked by:** none
 
 **What to build:** Proposal docs/neon-proposal/25-agy-adapter.md §2.1 (owner, 2026-11-22: installation may edit agy's own config; delivery A+B). New `install.d/agy.sh` modelled on `install.d/claude.sh`:
@@ -16,8 +16,10 @@ Also land the approved spec sentences:
 - §2.4: the `agy` extension.
 Update reference.md and reference.zh.md.
 
-- [ ] Install then uninstall against a temp HOME with synthetic agy config files leaves them byte-identical, apart from deliberately foreign edits made in between
-- [ ] Re-install is idempotent; an owner's own statusLine is kept
-- [ ] npm test, check:fixtures and test:release pass
+- [x] Install then uninstall against a temp HOME with synthetic agy config files leaves them byte-identical, apart from deliberately foreign edits made in between
+- [x] Re-install is idempotent; an owner's own statusLine is kept
+- [x] npm test, check:fixtures and test:release pass
 
 ## Comments
+
+- 2026-11-22 main: landed 83e4f931. Official `agy mcp add` runs in a staged HOME and only the `hud` record is copied in (agy 1.5.14 reformats the file and widens 0640 to 0644). Hook: named `hud` PreInvocation entry in ~/.gemini/config/hooks.json (stub until 03). Suite 956/956, release green.
