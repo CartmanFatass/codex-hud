@@ -288,7 +288,9 @@ if omitted, the same job and text are treated as a retry only within 10 minutes.
 an active MCP task or the `QUESTION` notice, and `hud_respond` answers it. A synchronous question waits up to 20 minutes;
 pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner; task clients can see it
 in `hud_read`, and other clients receive it through `changes` or their live job notices. `hud_respond` writes a
-`qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer
+`qN.answer.md` once. `hud_close` reaps early. A stopped Pi worker is recorded as `stopped` even if it
+exits during startup without publishing its final status. Normal cleanup belongs to the watcher, which also
+records `stopped` on its next scan if a stop was requested and the recorded Pi process is gone. The owner can also answer
 an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line,
 `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the
 reader runs; a question answered earlier is simply gone).

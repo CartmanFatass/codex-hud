@@ -185,7 +185,8 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 显式 `message_key` 始终用于去重；省略时，只有 10 分钟内发给同一任务的相同消息才视为重试。
 CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
 CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得知。
-`hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收，正常清理由 watcher 负责。主人也可在面板里回答未答的问题
+`hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收：即使 Pi 工作者在启动期间退出、未写入最终状态，也会记为 `stopped`。
+正常清理由 watcher 负责；如果任务已收到停止请求且记录的 Pi 进程已经退出，watcher 会在下次扫描时将任务记为 `stopped`。主人也可在面板里回答未答的问题
 （`r`，再按数字或 `d`）；主会话通过一行 `changes` / `hud watch` 得知：`[role@job] ANSWERED qN from panel: <答案>`，
 取自 `$HUD_HOME/panel-actions.jsonl`（读取方运行期间作出的回答；更早回答的问题只是不再出现）。
 主会话决定所有下一步，MCP 不知道工作流。工具参数见 [MCP README](../packages/hud-mcp/README.md)。

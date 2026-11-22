@@ -54,9 +54,14 @@ if (command === 'pi-dispatch') {
   const at = args.indexOf('--task-dir');
   if (!routingOnly && at >= 0) {
     const dir = args[at + 1];
-    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
+    const holdPi = kind === 'pi' && fs.existsSync(join(process.env.HOME, 'hold-pi-start'));
+    const stat = holdPi && fs.readFileSync('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ');
+    const identity = holdPi ? { version: 1, task_dir: dir, slot: 'primary', pid: process.pid, pid_start_time: stat[19] } : {};
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...identity, state: 'working', exit_reason: null }));
     if (!fs.existsSync(join(process.env.HOME, 'defer-pi-report')))
       writeFixtureFile(join(dir, 'report.md'), 'Synthetic implementation report.');
+    // This stand-in for pi publishes working, then exits without a shutdown write.
+    if (holdPi) waitToReply();
   }
   if (
     ['cli-exit', 'cli-unknown', 'cli-gone', 'grace-quiet-gone', 'blocked-quiet-gone', 'exit-after-done'].some((name) =>

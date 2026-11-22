@@ -18,6 +18,7 @@ import { briefPrompt } from './brief-prompt.js';
 import { cliWorkerStartup } from './cli-worker-startup.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
+import { settleStoppedPi } from './pi-stop-settlement.js';
 import { watcherReady } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
@@ -2106,7 +2107,11 @@ async function closeJob(job: Job, stop = false) {
     }
     return runCommand('pi-role-reap', [dir], process.env, { budgetMs: 135_000 });
   }, (run) => run.ok);
-  if (issue) ensureWatcher();
+  const statusFile = join(dir, 'STATUS.json');
+  const stoppingPi = !job.cli && !job.bro && !job.jev && fs.existsSync(`${statusFile}.stop-requested`);
+  // Reaping can succeed even when Pi exited before its shutdown hook wrote STATUS.
+  if (stoppingPi) settleStoppedPi(statusFile, json<Record<string, unknown>>(statusFile));
+  if (issue || stoppingPi) ensureWatcher();
   if (!isWorker && complete && row.display_state === 'failed') {
     const latest = json<Job>(join(dir, 'job.json')) ?? job;
     save({ ...latest, observed_at: new Date().toISOString() });

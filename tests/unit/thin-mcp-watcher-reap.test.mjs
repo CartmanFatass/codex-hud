@@ -58,6 +58,37 @@ test('TERM during the watcher startup dist-lock wait leaves no advertised PID', 
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), false);
 });
 
+test('hud_close during Pi startup records stopped without relying on the watcher', { timeout: 10000 }, async (t) => {
+  const skipWatcher = 'data:text/javascript,' + encodeURIComponent(
+    `if (process.argv[1]?.endsWith('/hud-watch.mjs')) process.exit(0);`);
+  const f = await fixture(t, true, `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify(skipWatcher)};`);
+  fs.writeFileSync(join(f.env.HOME, 'hold-pi-start'), '');
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const launching = f.call('hud_create', { role: 'imp', task: 'Synthetic startup stop.' });
+  const jobs = join(f.env.HUD_HOME, 'jobs');
+  let dir, id, closing;
+  try {
+    await until(() => {
+      if (!fs.existsSync(jobs)) return false;
+      [id] = fs.readdirSync(jobs);
+      if (!id) return false;
+      dir = join(jobs, id);
+      return cliState(dir)?.state === 'working';
+    });
+    assert.equal(procStat(cliState(dir).pid)?.start, cliState(dir).pid_start_time);
+    closing = f.call('hud_close', { job: id });
+  } finally {
+    fs.writeFileSync(join(f.env.HOME, 'release-prompt-result'), '');
+    await launching;
+  }
+  assert.equal((await closing).exit_code, 0);
+  assert.ok(fs.existsSync(join(dir, 'STATUS.json.stop-requested')));
+  assert.equal(cliState(dir).state, 'stopped');
+  assert.equal(cliState(dir).exit_reason, 'stop requested');
+  assert.ok(cliState(dir).ended_at);
+  assert.equal((await f.call('hud_read', {})).jobs.some((job) => job.job === id), false);
+});
+
 test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'read-close-cli', 8);
@@ -497,6 +528,24 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
   assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
   assert.ok(!f.commands().some((c) => c.command === 'herdr' && c.args[1] === 'get' && c.args[2] !== 'w4E:p1'));
+});
+
+test('the watcher settles a dead stop-requested Pi worker on its initial scan', { timeout: 5000 }, async (t) => {
+  const f = await fixture(t);
+  const worker = fakeCliWithChild(t, f), start = procStat(worker.pid).start;
+  await worker.exit();
+  const id = 'j0000000000000001', dir = join(f.env.HUD_HOME, 'jobs', id);
+  fs.mkdirSync(dir, { recursive: true });
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, dispatch_exit_code: 0 }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', pid: worker.pid, pid_start_time: start }));
+  fs.writeFileSync(join(dir, 'STATUS.json.stop-requested'), '');
+  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env: f.env, stdio: 'ignore' });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  const exited = once(child, 'exit');
+  await until(() => cliState(dir)?.state === 'stopped', 4000);
+  assert.equal(cliState(dir).exit_reason, 'stop requested');
+  assert.ok(cliState(dir).ended_at);
+  assert.deepEqual(await exited, [0, null]);
 });
 
 test('thin watcher catches up without a new file event and exits', { timeout: 5000 }, async (t) => {

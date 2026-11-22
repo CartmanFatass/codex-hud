@@ -346,6 +346,15 @@ function scan(retryWatch = false) {
             else if (status?.state !== 'waiting_orchestrator' || status.reason !== reason)
               update = { state: 'waiting_orchestrator', reason, blocked: false, ended_at: null, exit_reason: null, error: null };
           }
+        } else if (!job?.bro && !job?.jev && fs.existsSync(`${statusFile}.stop-requested`)) {
+          // Stop intent takes precedence over a tab closing while the worker is exiting.
+          const terminal = settleStoppedPi(statusFile, status);
+          if (terminal) status = terminal;
+          else if (status) {
+            // The marker or tab event can arrive before the PID is gone.
+            open = safetyCheck = true;
+            continue;
+          }
         } else if (tabClosed) update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };
         if (update) {
           status = { ...status, ...update };
@@ -475,7 +484,7 @@ function startWatch() {
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
       const path = filename?.toString();
-      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json|SESSION\.txt|job\.json|checks\.json|report\.md|done\.json|turn\.json)$/.test(path)) schedule();
+      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json(?:\.stop-requested)?|SESSION\.txt|job\.json|checks\.json|report\.md|done\.json|turn\.json)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;
       warn('watch error', `watch error: ${error.message}`);
@@ -489,11 +498,13 @@ const [
   { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
   { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
   { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree, mainHead }, { runCommand }, { archiveJob }, { readLand, flowId, activeLand },
+  { settleStoppedPi },
 ] = await Promise.all([
     import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),
     import('../../../dist/roles/worker-tree.js'), import('../../../dist/mcp/pi-read-settlement.js'),
     import('../../../dist/roles/job-checks.js'), import('../../../dist/mcp/managed-worktree.js'),
     import('../../../dist/roles/herdr-run.js'), import('../../../dist/roles/job-archive.js'), import('../../../dist/mcp/land-state.js'),
+    import('../../../dist/mcp/pi-stop-settlement.js'),
   ]);
 
 export function openRuntime(emit) {

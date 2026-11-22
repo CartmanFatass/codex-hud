@@ -438,14 +438,17 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 
 An EXP-enabled pi footer draw initiates asynchronous snapshot collection. A per-HUD-home Linux abstract socket excludes concurrent refreshes; the bounded Codex app-server stdio request is only for account rate limits, not inference. The panel reads the snapshot but never starts refreshes. Pi keeps direct subscription windows in memory for the current request only.
 
-Pi history lives in pi's own session store; job directories contain links. The watcher
-reaps finished tabs, keeps failed tabs for two hours, and deletes settled job directories
+Pi history lives in pi's own session store; job directories contain links. If a Pi worker
+exits before publishing shutdown status, `hud_close` and the watcher can record `stopped`
+from `STATUS.json.stop-requested` and the confirmed exit of the recorded process instance.
+The watcher scans on the marker and rechecks on its slow tick if the process has not exited yet.
+It reaps finished tabs, keeps failed tabs for two hours, and deletes settled job directories
 one day after closure on a later scan, not a dedicated expiry timer. Before deletion
 it moves legacy real JSONL sessions to pi's store; failures retain the job. No session-link
 target is deleted. CLI sessions stay in that CLI's store. An open CLI job is also checked
-on `HUD_WATCH_CLI_CHECK_MS` (default 30 s); a dead supervisor with a live worker hands the job to the main
-session (`waiting_orchestrator`), and `hud_send` restarts it. It exits
-with no open job or failed deadline; a later create restarts it.
+on the same slow tick (`HUD_WATCH_CLI_CHECK_MS`, default 30 s); a dead supervisor with a live worker hands the job to the main
+session (`waiting_orchestrator`), and `hud_send` restarts the supervisor. The watcher exits
+with no open job or failed deadline and restarts on demand.
 No HUD collection writes into Codex's transcripts/configuration; explicit installer
 registration and `hud import` are separate user actions.
 
