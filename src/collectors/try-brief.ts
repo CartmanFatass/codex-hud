@@ -7,7 +7,8 @@
 import * as fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { writePrivateFile, type ModelHandle, type SmallModel } from './small-model.js';
+import type { ModelHandle, SmallModel } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { readJobFile } from './job-sentences.js';
 import { worktreeGit } from './worktrees.js';
 import type { LedgerSlice, ProjectSnapshot, TryBrief } from './project-board.js';

@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { getHudHome } from '../hud-home.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
 import { importableSettings } from '../settings.js';
@@ -121,17 +122,12 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
         safeAncestors(path.dirname(item.destination));
         if (original !== undefined) {
           const backup = `${item.destination}.bak.${new Date().toISOString().replace(/[:.]/g, '-')}.${randomUUID()}`;
-          fs.writeFileSync(backup, original, { flag: 'wx', mode: 0o600 });
+          writePrivateFile(backup, original, { mkdir: false, exclusive: true });
           lines.push(`backup: ${backup}`);
         }
-        const temp = `${item.destination}.${randomUUID()}.tmp`;
-        try {
-          fs.writeFileSync(temp, staged.get(item.destination)!, { flag: 'wx', mode: 0o600 });
+        writePrivateFile(item.destination, staged.get(item.destination)!, { mkdir: false, beforeRename: () => {
           if (!equal(readSafe(item.destination, true, item.destination.endsWith('.env')), original)) throw new Error();
-          fs.renameSync(temp, item.destination);
-        } finally {
-          fs.rmSync(temp, { force: true });
-        }
+        } });
       }
       lines.push(`applied ${touched.size} destination(s)`);
     }

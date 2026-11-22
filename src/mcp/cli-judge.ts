@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
+import { writeJsonPrivate } from '../utils/atomic-fs.js';
 import type { QuietDecision } from './quiet-decision.js';
 import { procStat } from '../roles/worker-tree.js';
 import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
@@ -39,9 +40,7 @@ export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?:
 }
 
 export function saveTurn(dir: string, turn: Turn): void {
-  const file = join(dir, 'turn.json');
-  fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(turn) + '\n', { mode: 0o600 });
-  fs.renameSync(`${file}.${process.pid}.tmp`, file);
+  writeJsonPrivate(join(dir, 'turn.json'), turn, { mkdir: false });
 }
 
 export function workerAlive(pid: number | null, start: string | null): boolean | null {

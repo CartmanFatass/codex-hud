@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { readJobFile } from './job-sentences.js';
-import { writePrivateFile, type SmallModel, type ModelHandle } from './small-model.js';
+import type { SmallModel, ModelHandle } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { targetKey, type DecisionRecord, type WorkboardSnapshot, type WorkTarget } from './workboard-types.js';
 import type { Language } from '../render/i18n.js';
 import { summarySentence } from '../utils/summary-sentence.js';

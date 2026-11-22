@@ -1,5 +1,6 @@
 /** Runs in its own process so rebuilding HUD or restarting a watcher cannot replay the landing. */
 import { spawn } from 'node:child_process';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -197,9 +198,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       const result = await reapWorktree(f.job, { job: f.job, cwd: wt.root, worktree: wt }, home,
         { source_sha: f.source_sha, landed_sha: tested });
       const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
-      const tmp = `${receiptPath}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mode: 0o600 });
-      fs.renameSync(tmp, receiptPath);
+      writePrivateFile(receiptPath, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mkdir: false });
       if ('worktree_kept_reason' in result) notes.push(result.worktree_kept_reason);
     } catch (e) { note(e); }
     if (notes.length) f.cleanup_note = notes.join('; ');

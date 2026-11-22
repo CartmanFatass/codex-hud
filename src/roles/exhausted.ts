@@ -1,5 +1,5 @@
 /** Quota/rate-limit exhausted place marks under `$HUD_HOME/exhausted.json`. */
-import { randomUUID } from 'node:crypto';
+import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { CliAgent } from './cli-kinds.js';
@@ -103,9 +103,7 @@ export function describePlace(
 function readMap(file: string, nowMs: number): Map<string, ExhaustedMark> {
   const marks = new Map<string, ExhaustedMark>();
   try {
-    const st = fs.lstatSync(file);
-    if (st.isSymbolicLink() || !st.isFile() || st.size > 65536) return marks;
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as { version?: unknown; places?: unknown };
+    const parsed = readJsonBounded(file, 65536) as { version?: unknown; places?: unknown };
     if (!parsed || typeof parsed !== 'object' || parsed.version !== 1 || !parsed.places || typeof parsed.places !== 'object') {
       return marks;
     }
@@ -140,23 +138,9 @@ function assertExhaustedFile(file: string): boolean {
 }
 
 function writeExhausted(file: string, marks: Map<string, ExhaustedMark>): void {
-  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(
-      temp,
-      JSON.stringify({ version: 1, places: Object.fromEntries(marks) }, null, 2) + '\n',
-      { flag: 'wx', mode: 0o600 }
-    );
-    assertExhaustedFile(file);
-    fs.renameSync(temp, file);
-    fs.chmodSync(file, 0o600);
-  } finally {
-    try {
-      fs.unlinkSync(temp);
-    } catch {
-      /* Renamed or failed before creation. */
-    }
-  }
+  writePrivateFile(file, JSON.stringify({ version: 1, places: Object.fromEntries(marks) }, null, 2) + '\n', {
+    mkdir: false, beforeRename: () => assertExhaustedFile(file),
+  });
 }
 
 export function readExhausted(hudHome: string, nowMs = Date.now()): Map<string, ExhaustedMark> {

@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { writePrivateFile } from '../collectors/small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 
 /** A Pi worker can exit without publishing its shutdown status. Don't replace a live writer. */

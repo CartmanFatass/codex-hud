@@ -13,7 +13,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { writePrivateFile } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 
 /**
  * What the scan reads from a line: subagent-tree.ts `applyRolloutLine` and

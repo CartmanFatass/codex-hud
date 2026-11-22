@@ -3,6 +3,7 @@
  * line in `$HUD_HOME/panel-actions.jsonl` so `hud watch` and the MCP `changes` tell the main session who answered. Append-only, private.
  */
 import * as fs from 'node:fs';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { basename, join } from 'node:path';
 
 export const PANEL_ACTIONS_FILE = 'panel-actions.jsonl';
@@ -28,7 +29,7 @@ export function answerJobQuestion(home: string, job: string, qid: string, answer
   const qa = join(home, 'jobs', job, 'qa');
   try {
     if (!fs.lstatSync(join(qa, `${qid}.md`)).isFile()) return { ok: false, reason: 'no such question' };
-    fs.writeFileSync(join(qa, `${qid}.answer.md`), text, { flag: 'wx', mode: 0o600 });
+    writePrivateFile(join(qa, `${qid}.answer.md`), text, { exclusive: true, mkdir: false });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'EEXIST') return { ok: true, written: false };

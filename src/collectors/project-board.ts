@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { readFileBounded } from '../utils/atomic-fs.js';
 import { executable, roleRegistry } from '../roles/roster.js';
 import { controlFacts, type HarnessFact, type HarnessSwitchFact, type ModelLists, type RoleFact } from '../roles/role-control.js';
 import { HarnessSwitchError } from '../roles/harness-switches.js';
@@ -172,11 +173,8 @@ export class ProjectCollector {
   private body<T>(path: string, parse: (buffer: Buffer, truncated: boolean) => T): T | null {
     return this.cached(path, (st) => {
       if (!st.isFile()) throw Error('not_file');
-      const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-      try {
-        const buffer = Buffer.alloc(STATE_BYTES), size = fs.readSync(fd, buffer, 0, buffer.length, 0);
-        return parse(buffer.subarray(0, size), st.size > size);
-      } finally { fs.closeSync(fd); }
+      const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+      return parse(bytes, truncated || st.size > bytes.length);
     });
   }
   private read = (path: string, limit = 65536) => {

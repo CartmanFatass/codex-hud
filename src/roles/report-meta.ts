@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { reportSignature } from './cli-turn.js';
@@ -83,13 +83,7 @@ export function writeReportMeta(
   }
   const body = JSON.stringify({ ...meta, ...(paths.length ? { files: paths } : {}) });
   if (Buffer.byteLength(body) > MAX_META_BYTES) throw new Error('report metadata exceeds 16 KiB');
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(tmp, body, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(tmp, file);
-  } finally {
-    fs.rmSync(tmp, { force: true });
-  }
+  writePrivateFile(file, body, { mkdir: false });
 }
 
 /** If supplied, expectedSig is a signature the caller has already read for the current report. */

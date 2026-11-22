@@ -4,7 +4,8 @@ import type { Language } from '../render/i18n.js';
 import { readJobFile } from './job-sentences.js';
 import type { ProjectSnapshot, ProjectTicket } from './project-board.js';
 import { needsTranslation } from './reply-language.js';
-import { writePrivateFile, type SmallModel, type ModelHandle } from './small-model.js';
+import type { SmallModel, ModelHandle } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
 
 const open = (t: ProjectTicket) => t.state !== 'done' && t.state !== 'dropped';

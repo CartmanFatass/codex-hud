@@ -1,5 +1,6 @@
 /** Shared role resolution and owner role-file writes, without starting the MCP. */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { readJsonFile as json, readDirSafe as entries, readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { isDeepStrictEqual } from 'node:util';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -94,17 +95,6 @@ export function executable(command: string, env: NodeJS.ProcessEnv = process.env
     }
   }
   return null;
-}
-function json(file: string): unknown {
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-function entries(directory: string): string[] {
-  try {
-    return fs.readdirSync(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  }
 }
 function normalizeHarness(value: unknown): unknown {
   return value === 'jev' ? 'bro' : value;
@@ -347,19 +337,12 @@ function readReason(error: unknown): string | null {
   return typeof code === 'string' ? 'unreadable' : 'unparseable JSON';
 }
 function slice(file: string, limit: number): { text: string; truncated: boolean } | null {
-  let fd: number;
   try {
-    fd = fs.openSync(file, 'r');
+    const { bytes, truncated } = readFileBounded(file, limit, { followSymlinks: true });
+    return { text: bytes.toString('utf8'), truncated };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
-  }
-  try {
-    const buffer = Buffer.alloc(limit + 1);
-    const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    return { text: buffer.subarray(0, Math.min(size, limit)).toString('utf8'), truncated: size > limit };
-  } finally {
-    fs.closeSync(fd);
   }
 }
 export function harnessDefaults(
@@ -800,7 +783,7 @@ export function roleRegistry(
     }
     if (next.can_continue === undefined && next.presets?.some((p) => p.run.some((place) => place.harness !== 'bro')))
       next.can_continue = false;
-    writeRoleRecord(rolesDir, target, roleName, next, owner ? raw : null);
+    writeRoleRecord(rolesDir, target, next, owner ? raw : null);
   }
   return { roles, invalid, invalidRole, assignment, routing, placeDetails, convention, project, projectConfigIgnored,
     revision, editableRun, savePreset };
@@ -850,9 +833,7 @@ export function recordFailureExhaustion(
       : `${reason.slice(0, Math.max(0, 500 - suffix.length))}${suffix}`;
   if (diskJob) {
     try {
-      const temp = `${jobFile}.${process.pid}.tmp`;
-      fs.writeFileSync(temp, JSON.stringify({ ...diskJob, exhaustion_marked: true }, null, 2) + '\n', { mode: 0o600 });
-      fs.renameSync(temp, jobFile);
+      writePrivateFile(jobFile, JSON.stringify({ ...diskJob, exhaustion_marked: true }, null, 2) + '\n', { mkdir: false });
     } catch {
       /* Ignore transient write error. */
     }
@@ -1010,24 +991,13 @@ function replaceFileRun(next: Record<string, unknown>, run: readonly RolePlace[]
   if (next.can_continue === undefined && run.some((p) => p && (p.harness === 'pi' || p.harness === 'cli')))
     next.can_continue = false;
 }
-function writeRoleRecord(rolesDir: string, target: string, role: string, next: Record<string, unknown>, expected: Record<string, unknown> | null) {
+function writeRoleRecord(rolesDir: string, target: string, next: Record<string, unknown>, expected: Record<string, unknown> | null) {
   const err = roleReason(next);
   if (err) throw new Error(`invalid role places: ${err}`);
-  fs.mkdirSync(rolesDir, { recursive: true, mode: 0o700 });
-  const temp = join(rolesDir, `.${role}.${process.pid}.${randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temp, JSON.stringify(next, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-    fs.chmodSync(temp, 0o600);
+  writePrivateFile(target, JSON.stringify(next, null, 2) + '\n', { dotPrefix: true, beforeRename: () => {
     lstatKind(rolesDir, true, rolesDir);
     const exists = lstatKind(target, false, target);
     if (expected === null ? exists : !exists || !isDeepStrictEqual(json(target), expected))
       throw new Error('Role changed on disk; reopen the action');
-    fs.renameSync(temp, target);
-  } finally {
-    try {
-      fs.unlinkSync(temp);
-    } catch {
-      /* Renamed or failed before creation. */
-    }
-  }
+  } });
 }

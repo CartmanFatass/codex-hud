@@ -1,7 +1,8 @@
 /** Bounded, private display-only state. Never follows a link or opens a FIFO for reading. */
 import * as fs from 'node:fs';
 import { dirname, join, isAbsolute } from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { getHudDisplayHome } from '../hud-home.js';
 export const record = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -18,22 +19,15 @@ export function noLinks(file: string): void {
 }
 export function readBytes(file: string, limit = 1024 * 1024): Buffer | null {
   noLinks(file);
-  let fd: number;
   try {
-    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const { bytes, truncated } = readFileBounded(file, limit, { validate: (s) => {
+      if (!s.isFile() || s.size > limit) throw new Error('bounded_regular_file_required');
+    } });
+    if (truncated) throw new Error('file_too_large');
+    return bytes;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw e;
-  }
-  try {
-    const s = fs.fstatSync(fd);
-    if (!s.isFile() || s.size > limit) throw new Error('bounded_regular_file_required');
-    const b = Buffer.alloc(Math.min(limit + 1, s.size + 1));
-    const n = fs.readSync(fd, b, 0, b.length, 0);
-    if (n > limit) throw new Error('file_too_large');
-    return b.subarray(0, n);
-  } finally {
-    fs.closeSync(fd);
   }
 }
 export function readJson(file: string): Record<string, unknown> | null {
@@ -53,17 +47,7 @@ export function saveJson(file: string, value: unknown): void {
   noLinks(file);
   const bytes = JSON.stringify(value) + '\n';
   if (Buffer.byteLength(bytes) > 1024 * 1024) throw new Error('cache_limit');
-  const tmp = file + '.' + randomUUID();
-  try {
-    fs.writeFileSync(tmp, bytes, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(tmp, file);
-  } finally {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* absent after rename */
-    }
-  }
+  writePrivateFile(file, bytes, { mkdir: false });
 }
 export function cachePath(env: NodeJS.ProcessEnv, kind: string, identity: string): string {
   return join(

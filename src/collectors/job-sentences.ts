@@ -2,7 +2,8 @@
 import * as fs from 'node:fs';
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { writePrivateFile, type SmallModel, type ModelHandle } from './small-model.js';
+import type { SmallModel, ModelHandle } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import type { WorkboardSnapshot, OwnerWorker } from './workboard-types.js';
 import type { Language } from '../render/i18n.js';
 import { summarySentence } from '../utils/summary-sentence.js';

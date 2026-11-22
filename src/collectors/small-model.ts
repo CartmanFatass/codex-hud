@@ -19,8 +19,6 @@
  */
 import { readHudCredentials } from '../jev/ask/config.js';
 import { createHash, randomUUID } from 'node:crypto';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { t, type Language } from '../render/i18n.js';
 import { wrongLanguage } from './reply-language.js';
@@ -314,21 +312,7 @@ export function callsToday(calls: readonly (number | ModelCall)[], now: number):
   return count;
 }
 
-/** Write a file whole or not at all, readable by its owner only. */
-export function writePrivateFile(file: string, content: string): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(temporary, file);
-  } finally {
-    try {
-      fs.unlinkSync(temporary);
-    } catch {
-      /* Renamed, or the write itself failed. */
-    }
-  }
-}
+export { writePrivateFile } from '../utils/atomic-fs.js';
 
 function outputTokens(value?: number): number | undefined {
   return value !== undefined && Number.isFinite(value) ? Math.max(1, Math.min(8192, Math.floor(value))) : undefined;

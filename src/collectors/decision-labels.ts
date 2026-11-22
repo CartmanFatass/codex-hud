@@ -8,7 +8,7 @@ import type { JudgmentChoice } from '../jev/judge.js';
 import type { Answer } from '../jev/decide.js';
 import { ModelRuntimeStore, callsByFeature } from './model-runtime-store.js';
 import { readJobFile, readJobReport, jobActivity } from './job-sentences.js';
-import { writePrivateFile } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { eachThread } from './subagent-tree.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import type { WorkboardSnapshot, OwnerWorker } from './workboard-types.js';

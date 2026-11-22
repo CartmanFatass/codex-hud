@@ -1,6 +1,7 @@
 /** Private, local-filesystem coordination for panels sharing a model budget. */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { writeJsonPrivate as atomicWrite } from '../utils/atomic-fs.js';
 import * as os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
@@ -61,21 +62,6 @@ function alive(owner: Owner): boolean {
   const current = processIdentity(owner.pid);
   if (current?.state === 'Z' || current?.state === 'X') return false;
   return !owner.start || !current || current.start === owner.start;
-}
-
-function atomicWrite(file: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(value)}\n`, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(temporary, file);
-  } finally {
-    try {
-      fs.unlinkSync(temporary);
-    } catch {
-      /* Already renamed. */
-    }
-  }
 }
 
 function read(file: string): unknown {

@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import * as fs from 'node:fs';
+import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
 
 const LIMIT = 1024 * 1024;
@@ -16,10 +15,12 @@ export class HarnessSwitchError extends Error {
 }
 
 function readFile(file: string) {
-  const st = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!st) return { data: {}, disabled: new Set<string>() };
-  if (!st.isFile() || st.size > LIMIT) throw new HarnessSwitchError(file);
-  const raw: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+  let raw: unknown;
+  try { raw = readJsonBounded(file, LIMIT); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { data: {}, disabled: new Set<string>() };
+    throw error;
+  }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new HarnessSwitchError(file);
   const data = raw as Record<string, unknown>;
   const disabled = data.disabled;
@@ -46,12 +47,5 @@ export function setHarnessDisabled(home: string, id: string, off: boolean): void
   else disabled.delete(id);
   const text = JSON.stringify({ ...data, disabled: [...disabled] }, null, 2) + '\n';
   if (Buffer.byteLength(text) > LIMIT) throw new Error('Harness switch file is too large');
-  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
-  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temp, text, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(temp, file);
-  } finally {
-    try { fs.unlinkSync(temp); } catch { /* Renamed or not created. */ }
-  }
+  writePrivateFile(file, text);
 }

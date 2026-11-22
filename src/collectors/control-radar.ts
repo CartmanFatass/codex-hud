@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { readFileBounded } from '../utils/atomic-fs.js';
 import { record } from '../statusline-parity/storage.js';
 import { CLAUDE_QUOTA_FILE } from '../statusline-parity/quota-cache.js';
 import { jobRow } from './thin-jobs.js';
@@ -41,16 +42,12 @@ function read<T>(path: string, limit: number, tail: boolean, cache: Cache, parse
       cache.next.set(path, hit);
       return hit.value as T;
     }
-    const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-    try {
-      const offset = tail ? Math.max(0, stat.size - limit) : 0;
-      const bytes = Buffer.alloc(Math.min(stat.size + 1, limit + 1));
-      const len = fs.readSync(fd, bytes, 0, bytes.length, offset);
-      if ((!tail && len > limit) || len < stat.size - offset) return;
-      const value = parse(bytes.toString('utf8', 0, len), offset > 0);
-      cache.next.set(path, { signature, value });
-      return value;
-    } finally { fs.closeSync(fd); }
+    const offset = tail ? Math.max(0, stat.size - limit) : 0;
+    const { bytes, truncated } = readFileBounded(path, limit, { offset });
+    if ((!tail && truncated) || bytes.length < stat.size - offset) return;
+    const value = parse(bytes.toString('utf8'), offset > 0);
+    cache.next.set(path, { signature, value });
+    return value;
   } catch { return; }
 }
 const json = (path: string, cache: Cache) => read(path, 65536, false, cache, (text) => {

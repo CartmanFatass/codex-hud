@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expNativePath, readExpNativeSeen } from '../collectors/exp-native.js';
-import { writePrivateFile } from '../collectors/small-model.js';
+import { writePrivateFile, readFileBounded } from '../utils/atomic-fs.js';
 import { jobRow } from '../collectors/thin-jobs.js';
 import { truncateAnsi } from '../render/colors.js';
 import { askOf, NOTICE_MS } from '../render/layout/bar-fields.js';
@@ -35,19 +35,11 @@ const compact = (value: unknown, cols: number): string =>
 
 /** Only open fixed local files; reject special files and cap each read before parsing. */
 function readJson(file: string, maxBytes: number): unknown {
-  const { O_RDONLY, O_NONBLOCK, O_NOFOLLOW } = fs.constants;
-  let fd: number | undefined;
   try {
-    fd = fs.openSync(file, O_RDONLY | O_NONBLOCK | O_NOFOLLOW);
-    const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.size > maxBytes) return;
-    const buffer = Buffer.alloc(st.size + 1);
-    const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    if (bytes === st.size) return JSON.parse(buffer.toString('utf8', 0, bytes));
+    const { bytes, stat, truncated } = readFileBounded(file, maxBytes);
+    if (!truncated && bytes.length === stat.size) return JSON.parse(bytes.toString('utf8'));
   } catch {
     // A missing or unreadable optional cache is not a statusline failure.
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 

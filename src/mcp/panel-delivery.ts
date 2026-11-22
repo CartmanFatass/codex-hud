@@ -6,7 +6,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { panelActionLine, PANEL_ACTIONS_FILE } from '../collectors/panel-actions.js';
 import { liveTryLine, TRIES_FILE } from '../collectors/try-records.js';
-import { writePrivateFile } from '../collectors/small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 
 const files = [TRIES_FILE, PANEL_ACTIONS_FILE] as const;
 const maxBytes = 256 * 1024;
@@ -22,9 +22,8 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
   const dir = join(home, 'panel-cursors', scope), cursor = join(dir, 'offsets.json');
   let offsets = logs.map(size);
   if (pane) {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     // A brand new reader starts at the live edge. Never replace a reconnecting reader's cursor.
-    try { fs.writeFileSync(cursor, JSON.stringify(offsets), { flag: 'wx', mode: 0o600 }); }
+    try { writePrivateFile(cursor, JSON.stringify(offsets), { exclusive: true }); }
     catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
     offsets = JSON.parse(fs.readFileSync(cursor, 'utf8'));
   }

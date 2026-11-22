@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { writePrivateFile } from '../collectors/small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import type { RolePlace } from '../roles/roster.js';
 import { briefPrompt } from './brief-prompt.js';
 import { codexWorkerMcp } from './codex-worker-mcp.js';

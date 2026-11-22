@@ -1,5 +1,6 @@
 /** Read-only thin jobs. Package labels are display grouping, never execution identity. */
 import * as fs from 'node:fs';
+import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
 import { herdrId } from '../roles/herdr-run.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
@@ -61,15 +62,12 @@ function persist(home: string): void {
         project_root: snap.json.project_root ?? (snap.json.worktree as { main_root?: unknown } | null)?.main_root } : null }]);
   const text = JSON.stringify(rows);
   if (text === saved || text.length > 1048576) return;
-  const file = join(home, 'display/thin-jobs.json'), temp = `${file}.${process.pid}.tmp`;
   try {
-    fs.mkdirSync(join(home, 'display'), { recursive: true });
-    fs.writeFileSync(temp, text, { mode: 0o600 }); fs.renameSync(temp, file); saved = text;
+    writePrivateFile(join(home, 'display/thin-jobs.json'), text);
+    saved = text;
   } catch { /* An unavailable display cache must not stop collection. */ }
-  finally { try { fs.unlinkSync(temp); } catch { /* renamed or unavailable */ } }
 }
 function read(path: string, max = 65536, store: typeof cache | null = cache): Snap | null {
-  let fd: number | undefined;
   try {
     const st = fs.lstatSync(path);
     if (!st.isFile()) throw new Error('nonregular_job_file');
@@ -78,10 +76,8 @@ function read(path: string, max = 65536, store: typeof cache | null = cache): Sn
     const hit = store?.get(path);
     if (hit?.stamp === stamp && !hit.snap.whole) complete = false;
     if (hit?.stamp === stamp) return hit.snap;
-    fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-    const buffer = Buffer.alloc(max + 1);
-    const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    const snap = { text: buffer.subarray(0, Math.min(size, max)).toString('utf8'), at: st.mtimeMs, whole: size <= max };
+    const { bytes, truncated } = readFileBounded(path, max);
+    const snap = { text: bytes.toString('utf8'), at: st.mtimeMs, whole: !truncated };
     complete &&= snap.whole;
     store?.set(path, { stamp, snap });
     return snap;
@@ -90,8 +86,6 @@ function read(path: string, max = 65536, store: typeof cache | null = cache): Sn
     if (store) seen.delete(path);
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
     return null;
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 function json(path: string, parse: (text: string) => unknown, store: typeof cache | null = cache): { v: Record<string, unknown>; at: number } | null {

@@ -18,7 +18,7 @@ import {
 } from './exp-store.js';
 import { readCodexProxy, type ProxyRpcResult } from './exp-codex-rpc.js';
 import { tryExpLock } from './exp-lock.js';
-import { writePrivateFile } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 
 const stamp = (s: fs.Stats) => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
 export type ProxyObservation = ExpProxyReading & {

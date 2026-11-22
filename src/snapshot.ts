@@ -14,6 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { writePrivateFile } from './utils/atomic-fs.js';
 import { collectAttention } from './render/attention.js';
 import { readQuotaWindows } from './render/quota.js';
 import { agentCounts, eachThread, type StatusCounts, type ThreadKind } from './collectors/subagent-tree.js';
@@ -303,12 +304,8 @@ export class SnapshotWriter {
       return false;
     }
 
-    const temporary = `${this.file}.${process.pid}.tmp`;
     try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(temporary, body, { mode: 0o600 });
-      const ownedFile = fs.statSync(temporary);
-      fs.renameSync(temporary, this.file);
+      const ownedFile = writePrivateFile(this.file, body);
       // Ownership travels with the atomically renamed inode, not a separate
       // pid file that can lag behind it during a bar/panel handoff.
       this.ownedFile = ownedFile;
@@ -316,11 +313,6 @@ export class SnapshotWriter {
       this.lastWriteAt = nowMs;
       return true;
     } catch {
-      try {
-        fs.unlinkSync(temporary);
-      } catch {
-        // Nothing to clean up, or nothing we can do about it.
-      }
       return false;
     }
   }

@@ -1,9 +1,8 @@
 import type { DecisionProviderId } from './jev/decide.js';
 import { readHudConfig, resolveDecisions, readHudCredentials } from './jev/ask/config.js';
 import { resolveHudEnv } from './utils/hud-env.js';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { readFileBounded, writePrivateFile } from './utils/atomic-fs.js';
 import {
   BAR_FIELDS,
   BAR_STYLES,
@@ -175,26 +174,13 @@ export function settingsPath(env = process.env): string {
 }
 
 function readSettings(file: string): HudSettings {
-  let fd: number;
   try {
-    fd = fs.openSync(file, 'r');
+    const { bytes, truncated } = readFileBounded(file, MAX_SETTINGS_BYTES, { followSymlinks: true });
+    if (truncated) throw new Error('HUD settings file is too large (maximum 64 KiB).');
+    return mergeValidated(defaultSettings(), JSON.parse(bytes.toString('utf8')));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return defaultSettings();
     throw error;
-  }
-  try {
-    const buffer = Buffer.alloc(MAX_SETTINGS_BYTES + 1);
-    let bytesRead = 0;
-    while (bytesRead < buffer.length) {
-      const count = fs.readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
-      if (count === 0) break;
-      bytesRead += count;
-    }
-    if (bytesRead > MAX_SETTINGS_BYTES) throw new Error('HUD settings file is too large (maximum 64 KiB).');
-    const raw: unknown = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
-    return mergeValidated(defaultSettings(), raw);
-  } finally {
-    fs.closeSync(fd);
   }
 }
 
@@ -218,22 +204,8 @@ export function saveSettings(patch: Partial<HudSettings>): HudSettings {
   if (settings.decisionApi !== current.decisionApi) {
     const configFile = path.join(getHudHome(), 'config.json'), root = readHudConfig(configFile);
     root.decisions = { ...(root.decisions as object ?? {}), primary: settings.decisionApi };
-    fs.mkdirSync(path.dirname(configFile), { recursive: true });
-    const temp = `${configFile}.${randomUUID()}.tmp`;
-    try { fs.writeFileSync(temp, JSON.stringify(root, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); fs.renameSync(temp, configFile); }
-    finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); }
+    writePrivateFile(configFile, JSON.stringify(root, null, 2) + '\n');
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(settings, (key, value) => key === 'decisionApi' ? undefined : value, 2)}\n`, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(temporary, file);
-  } finally {
-    try {
-      fs.unlinkSync(temporary);
-    } catch {
-      /* Renamed successfully, or cleanup failed after the original error. */
-    }
-  }
+  writePrivateFile(file, JSON.stringify(settings, (key, value) => key === 'decisionApi' ? undefined : value, 2) + '\n');
   return settings;
 }

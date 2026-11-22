@@ -1,8 +1,8 @@
 /** `hud tickets sync [--cwd DIR]`: one-way GitHub Issues -> `.scratch/` mirror. */
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { writeFileAtomic as replaceFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
@@ -344,14 +344,7 @@ function validateWriteSafety(plans: FeaturePlan[]): void {
 }
 
 export function writeFileAtomic(filePath: string, content: string, mode?: number): void {
-  const tmpPath = join(dirname(filePath), `.${basename(filePath)}.tmp-${randomUUID()}`);
-  try {
-    fs.writeFileSync(tmpPath, content, { flag: 'wx', mode });
-    fs.renameSync(tmpPath, filePath);
-  } catch (err) {
-    fs.rmSync(tmpPath, { force: true });
-    throw err;
-  }
+  replaceFile(filePath, content, { mkdir: false, dotPrefix: true, mode: (mode ?? 0o666) & ~process.umask() });
 }
 
 function applyPlans(plans: FeaturePlan[]): void {

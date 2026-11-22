@@ -1,5 +1,6 @@
 /** `hud watch`: push only actionable events; --verbose retains the MCP change stream. */
 import * as fs from 'node:fs';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
 import { checksJustFinished, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
@@ -290,8 +291,7 @@ export async function watchCommand(
   process.once('exit', cleanup);
   try {
     if (pidFile) {
-      fs.mkdirSync(join(home, 'watchers'), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
+      writePrivateFile(pidFile, `${process.pid}\n`);
     }
     // Attach before catch-up so events during the scan are not lost.
     inputs.attach();

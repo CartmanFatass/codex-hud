@@ -31,7 +31,7 @@ import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
-import { writePrivateFile } from '../collectors/small-model.js';
+import { writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { TryLog } from '../collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
 import { herdrId, runCommand, runHerdr } from '../roles/herdr-run.js';
@@ -206,9 +206,7 @@ function save(job: Job, newAttempt = false): void {
       job[key] = existing[key];
   }
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
-  fs.renameSync(temp, file);
+  writePrivateFile(file, JSON.stringify(job, null, 2) + '\n', { mkdir: false });
 }
 function jobs(): Job[] {
   return entries(jobsRoot)
@@ -507,12 +505,12 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
           PRIMARY: name,
         };
         if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
-        fs.writeFileSync(
+        writePrivateFile(
           join(dir, 'SESSION.txt'),
           Object.entries(fields)
             .map(([k, v]) => `${k}=${v}\n`)
             .join(''),
-          { mode: 0o600 }
+          { mkdir: false }
         );
       };
       record();
@@ -596,10 +594,10 @@ async function dispatchBro(job: Job, task: string): Promise<DispatchResult> {
   }
   const { tab, root_pane } = created;
   if (!herdrId(tab?.tab_id) || !herdrId(root_pane?.pane_id)) throw new Error('tab create missing ids');
-  fs.writeFileSync(
+  writePrivateFile(
     join(dir, 'SESSION.txt'),
     `TASK=${job.job}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
-    { mode: 0o600 }
+    { mkdir: false }
   );
   const script = binScript('hud-jev.mjs');
   return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir, String(task.length)].map(quote).join(' ')]);
@@ -675,7 +673,7 @@ function spawnCliSupervisor(dir: string): number | null {
   const script = binScript('hud-cli.mjs');
   const child = spawn(process.execPath, [script, dir], { detached: true, stdio: 'ignore' });
   child.on('error', (error) => console.error(`hud-cli: ${error.message}`));
-  if (child.pid) fs.writeFileSync(join(dir, 'supervisor.pid'), `${child.pid}\n`, { mode: 0o600 });
+  if (child.pid) writePrivateFile(join(dir, 'supervisor.pid'), `${child.pid}\n`, { mkdir: false });
   child.unref();
   return child.pid ?? null;
 }
@@ -767,12 +765,12 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
         PRIMARY: name,
       };
       if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
-      fs.writeFileSync(
+      writePrivateFile(
         join(dir, 'SESSION.txt'),
         Object.entries(fields)
           .map(([k, v]) => `${k}=${v}\n`)
           .join(''),
-        { mode: 0o600 }
+        { mkdir: false }
       );
       const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
       if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
@@ -844,9 +842,7 @@ function readRow(job: Job, markExhaustion = true) {
         ...(status.error ? { error: outcome.reason } : {}),
       };
       try {
-        const temp = `${file}.${process.pid}.tmp`;
-        fs.writeFileSync(temp, JSON.stringify(status) + '\n', { mode: 0o600 });
-        fs.renameSync(temp, file);
+        writeJsonPrivate(file, status, { mkdir: false });
       } catch {
         /* Ignore transient STATUS.json write error. */
       }
@@ -1784,7 +1780,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
     brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
   // Standing brief and context references follow the task; labels read the brief's opening lines.
-  fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: first ? 'wx' : 'w', mode: 0o600 });
+  writePrivateFile(join(dir, 'brief.md'), brief, { exclusive: first, mkdir: false });
 }
 
 async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
@@ -1842,9 +1838,7 @@ function launchReason(result: DispatchResult) {
 }
 
 function writeCreateStatus(dir: string, status: object) {
-  const file = join(dir, 'STATUS.json'), temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(status) + '\n', { mode: 0o600 });
-  fs.renameSync(temp, file);
+  writeJsonPrivate(join(dir, 'STATUS.json'), status, { mkdir: false });
 }
 
 function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string, advanceCursor = true) {
@@ -2291,7 +2285,7 @@ function respondJob(args: Args, batch: boolean) {
   const row = taskClient ? readRow(job, false).row : undefined;
   const task = row?.question_ids.includes(request) ? beginTask(job, oldTask?.reportBefore, request, row) : undefined;
   try {
-    fs.writeFileSync(join(dir, 'qa', `${request}.answer.md`), answer, { flag: 'wx', mode: 0o600 });
+    writePrivateFile(join(dir, 'qa', `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
     if (batch) {
       registerBatchTask(task, job, true);
       return { ok: true, written: true };
@@ -2477,11 +2471,9 @@ function armExpiry(task: HudTask) {
 const markerFile = (task: HudTask) => join(directory(task.job), 'mcp-task.json');
 function claimTask(task: HudTask, job: Job) {
   if (!callerPane || job.herdr_pane !== callerPane) return;
-  const file = markerFile(task), temp = `${file}.${process.pid}.tmp`;
   try {
-    fs.writeFileSync(temp, JSON.stringify({ id: task.id, pane: callerPane, pid: process.pid,
-      start: procStat(process.pid)?.start, expires: Date.parse(task.createdAt) + TASK_TTL }), { mode: 0o600 });
-    fs.renameSync(temp, file);
+    writePrivateFile(markerFile(task), JSON.stringify({ id: task.id, pane: callerPane, pid: process.pid,
+      start: procStat(process.pid)?.start, expires: Date.parse(task.createdAt) + TASK_TTL }), { mkdir: false });
   } catch { /* If not recorded, question delivery keeps its ordinary fallback. */ }
 }
 function releaseTask(task: HudTask) {

@@ -21,7 +21,7 @@ import { expCycle, grantCycle, grantTerms } from '../exp-cycle.js';
 import { PROXY_ERRORS, proxyTime, proxyWindows, type ExpProxySnapshot } from '../exp-proxy.js';
 import { appendExpEvent, prepareExpDir, readExpBalance } from './exp-ledger.js';
 import { expNativePath, readExpNativeSeen } from './exp-native.js';
-import { writePrivateFile } from './small-model.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 
 const expConfigPath = (hudHome: string) => join(hudHome, 'exp', 'config.json');
 export const expProxyPath = (hudHome: string) => join(hudHome, 'exp', 'proxy.json');

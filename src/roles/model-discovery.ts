@@ -3,7 +3,7 @@
  * Runs only when the Control plane opens or on its refresh key; never on the refresh tick.
  */
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -138,9 +138,7 @@ export function parseGrokModels(stdout: string): string[] {
 }
 
 function defaultReadJson(file: string): unknown {
-  const st = fs.lstatSync(file);
-  if (st.isSymbolicLink() || !st.isFile() || st.size > 1024 * 1024) throw new Error('unusable cache file');
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  return readJsonBounded(file, 1024 * 1024);
 }
 
 function cleanList(value: unknown): string[] | undefined {
@@ -219,21 +217,7 @@ export function writeModelListCache(hudHome: string, cache: ModelListCache): voi
   const dir = dirname(file);
   assertRegularOrMissing(dir, true);
   assertRegularOrMissing(file, false);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    // Keep the capability tuples compact under the existing cache read limit.
-    fs.writeFileSync(temp, JSON.stringify(cache) + '\n', { flag: 'wx', mode: 0o600 });
-    assertRegularOrMissing(file, false);
-    fs.renameSync(temp, file);
-    fs.chmodSync(file, 0o600);
-  } finally {
-    try {
-      fs.unlinkSync(temp);
-    } catch {
-      /* Renamed or failed before creation. */
-    }
-  }
+  writeJsonPrivate(file, cache, { beforeRename: () => assertRegularOrMissing(file, false) });
 }
 
 function runBoundedCommand(

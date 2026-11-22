@@ -1,6 +1,7 @@
 /** CLI trust checks and backed-up writes for `hud trust` and managed worktrees. */
 import * as fs from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, join } from 'node:path';
+import { writeFileAtomic, writePrivateFile } from '../utils/atomic-fs.js';
 import * as TOML from '@iarna/toml';
 import type { HudIO } from './hud.js';
 import { CliError, privateHome } from './private-home.js';
@@ -96,21 +97,14 @@ function commit(file: string, agent: string, edit: (text: string) => string | nu
     const next = edit(text);
     if (next === null || next === text) return 'already trusted';
     const backup = backupPath(agent, basename(file), env);
-    fs.writeFileSync(backup, read.data, { flag: 'wx', mode: 0o600 });
-    fs.chmodSync(backup, 0o600);
-    const tmp = join(dirname(file), `.hud-trust-${process.pid}-${attempt}.tmp`);
-    let renamed = false;
+    writePrivateFile(backup, read.data, { mkdir: false, exclusive: true });
+    const changed = new Error('file changed during edit');
     try {
-      fs.writeFileSync(tmp, next, { mode: 0o600 });
-      fs.chmodSync(tmp, read.mode);
-      if (readNoFollow(file).data.equals(read.data)) {
-        fs.renameSync(tmp, file);
-        renamed = true;
-      }
-    } finally {
-      if (!renamed && fs.existsSync(tmp)) fs.unlinkSync(tmp);
-    }
-    if (renamed) return 'trusted';
+      writeFileAtomic(file, next, { mode: read.mode, mkdir: false, dotPrefix: true, beforeRename: () => {
+        if (!readNoFollow(file).data.equals(read.data)) throw changed;
+      } });
+      return 'trusted';
+    } catch (error) { if (error !== changed) throw error; }
   }
   throw new Error('file changed during edit');
 }

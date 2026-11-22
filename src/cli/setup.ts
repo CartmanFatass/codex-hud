@@ -1,6 +1,7 @@
 /** `hud setup --detect`, `--apply PLAN` and `--remove`. */
 import * as fs from 'node:fs';
 import { basename, dirname, isAbsolute, join, sep } from 'node:path';
+import { readJsonFile as readJson, writeFileAtomic } from '../utils/atomic-fs.js';
 import { fileURLToPath } from 'node:url';
 import { getHudHome } from '../hud-home.js';
 import { projectRoot, registeredProject } from '../roles/projects.js';
@@ -281,9 +282,6 @@ function realDir(path: string): string {
     return path;
   }
 }
-function readJson(file: string): unknown {
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
 function unreadable(): never {
   throw new Error('unreadable');
 }
@@ -512,19 +510,7 @@ function roleBody(name: string, entry: PlanRole, reference: Registry): RoleBody 
 }
 let tmpSeq = 0;
 function atomicWrite(file: string, text: string): void {
-  const tmp = join(dirname(file), `.${basename(file)}.${process.pid}.${tmpSeq++}.tmp`);
-  try {
-    fs.writeFileSync(tmp, text, { flag: 'wx', mode: 0o644 });
-    fs.chmodSync(tmp, 0o644);
-    fs.renameSync(tmp, file);
-  } catch (error) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* Already renamed, or never created. */
-    }
-    throw error;
-  }
+  writeFileAtomic(file, text, { mkdir: false, dotPrefix: true, mode: 0o644 });
 }
 function atomicSymlink(target: string, link: string): void {
   const tmp = join(dirname(link), `.${basename(link)}.${process.pid}.${tmpSeq++}.tmp`);

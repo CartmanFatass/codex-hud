@@ -1,6 +1,7 @@
 /** Display lifetime only. None of these documents is a job receipt or a caller credential. */
 import * as fs from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { readFileBounded, writePrivateFile } from '../../utils/atomic-fs.js';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { getHudDisplayHome } from '../../hud-home.js';
 import { makeSourceId } from '../../core/identity.js';
@@ -142,23 +143,16 @@ export function safePath(file: string): void {
 }
 export function readJson(file: string): unknown | null {
   safePath(file);
-  let fd: number;
   try {
-    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const { bytes, truncated } = readFileBounded(file, 16384, { validate: (stat) => {
+      if (!stat.isFile() || stat.size > 16384 || stat.uid !== process.getuid?.() || stat.mode & 0o077)
+        throw new Error('panel_file_unsafe');
+    } });
+    if (truncated) throw new Error('panel_file_oversize');
+    return JSON.parse(bytes.toString('utf8')) as unknown;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw e;
-  }
-  try {
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || stat.size > 16384 || stat.uid !== process.getuid?.() || stat.mode & 0o077)
-      throw new Error('panel_file_unsafe');
-    const buffer = Buffer.alloc(16385);
-    const n = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    if (n > 16384) throw new Error('panel_file_oversize');
-    return JSON.parse(buffer.subarray(0, n).toString('utf8')) as unknown;
-  } finally {
-    fs.closeSync(fd);
   }
 }
 export function saveJson(file: string, value: unknown, exclusive = false): void {
@@ -166,22 +160,7 @@ export function saveJson(file: string, value: unknown, exclusive = false): void 
   fs.mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const text = JSON.stringify(value) + '\n';
   if (Buffer.byteLength(text) > 16384) throw new Error('panel_file_oversize');
-  if (exclusive) {
-    fs.writeFileSync(file, text, { mode: 0o600, flag: 'wx' });
-    return;
-  }
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(tmp, text, { mode: 0o600, flag: 'wx' });
-    safePath(file);
-    fs.renameSync(tmp, file);
-  } finally {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* renamed */
-    }
-  }
+  writePrivateFile(file, text, { exclusive, mkdir: false, beforeRename: () => safePath(file) });
 }
 export class PanelStore {
   readonly directory: string;

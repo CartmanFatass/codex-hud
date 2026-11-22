@@ -1,5 +1,5 @@
 /** A land helper outlives its MCP and watcher. Never replay a step whose outcome is unknown. */
-import { randomUUID } from 'node:crypto';
+import { writeJsonPrivate } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { sharedRoot } from '../roles/projects.js';
@@ -21,10 +21,7 @@ export const activeLand = (f: LandFlow) => f.state === 'queued' || f.state === '
 export const landFile = (home: string, id: string) => join(home, 'flows', `${id}.json`);
 export function writeLand(home: string, f: LandFlow, create = false) {
   f.updated_at = new Date().toISOString();
-  const path = landFile(home, f.flow), tmp = `${path}.${randomUUID()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(f) + '\n', { mode: 0o600, flag: 'wx' });
-  try { if (create) fs.linkSync(tmp, path); else fs.renameSync(tmp, path); }
-  finally { if (create) fs.unlinkSync(tmp); }
+  writeJsonPrivate(landFile(home, f.flow), f, { mkdir: false, exclusive: create });
 }
 export function readLand(home: string, id: string): LandFlow | null {
   if (!isFlowId(id)) return null;

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId, listedPanes, runHerdr } from './herdr-run.js';
@@ -49,16 +49,13 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
     for (const job of orphans) {
       if (typeof job.job !== 'string' || !/^j[0-9a-f]{16}$/.test(job.job)) continue;
       const dir = join(root, job.job), file = join(dir, 'job.json');
-      const temp = `${file}.${randomUUID()}.tmp`;
       try {
         const latest = JSON.parse(fs.readFileSync(file, 'utf8'));
         if (latest?.job !== job.job || latest.herdr_pane !== job.herdr_pane || !matches(latest) || !owesCaller(dir, latest)) continue;
-        fs.writeFileSync(temp, JSON.stringify({ ...latest, herdr_pane: pane }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-        fs.renameSync(temp, file);
+        writePrivateFile(file, JSON.stringify({ ...latest, herdr_pane: pane }, null, 2) + '\n', { mkdir: false });
         adopted = true;
       } catch {
         // Keep scanning if a job disappears or its receipt cannot be updated.
-        try { fs.unlinkSync(temp); } catch { /* No temp to clean up. */ }
       }
     }
   } finally { fs.closeSync(fd); }

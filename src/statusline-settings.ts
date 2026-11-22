@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { writeFileAtomic, writeJsonPrivate } from './utils/atomic-fs.js';
 import { loadParitySettings } from './statusline-parity/settings.js';
 const LIMIT = 1024 * 1024;
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -212,20 +213,11 @@ function currentHash(file: string): string | null {
   return current ? hash(current.bytes) : null;
 }
 function replace(file: string, bytes: Buffer, mode: number, expected: string | null, check: () => void): void {
-  const temporary = file + '.hud-statusline-tmp-' + randomUUID();
-  const fd = fs.openSync(temporary, 'wx', 0o600);
-  try {
-    fs.writeFileSync(fd, bytes);
-    fs.fchmodSync(fd, mode);
-    fs.fsyncSync(fd);
+  writeFileAtomic(file, bytes, { mode, mkdir: false, fsync: true, beforeRename: () => {
     check();
     if (currentHash(file) !== expected) throw new Error('settings_changed');
-    fs.renameSync(temporary, file);
-    syncDirectory(file);
-  } finally {
-    fs.closeSync(fd);
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
+  } });
+  syncDirectory(file);
 }
 export function applyStatusline(
   home: string,
@@ -249,13 +241,7 @@ export function applyStatusline(
         mode: current?.mode ?? 0o600,
         installedHash: plan.proposedHash,
       };
-      const fd = fs.openSync(backup, 'wx', 0o600);
-      try {
-        fs.writeFileSync(fd, JSON.stringify(record) + '\n');
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
+      writeJsonPrivate(backup, record, { mkdir: false, fsync: true, exclusive: true });
       syncDirectory(backup);
       replace(dir.file, bytes, record.mode, plan.currentHash, dir.check);
       return { target: plan.target, backup: plan.target + suffix, installedHash: plan.proposedHash };

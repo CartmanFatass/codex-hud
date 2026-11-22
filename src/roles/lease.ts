@@ -1,6 +1,7 @@
 /** Project-local leases; flock covers only short file mutations, never a wait. */
 import { spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { writeJsonPrivate } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -36,13 +37,7 @@ function locked<T>(dir: string, flock: string, run: () => T): T {
 }
 
 function publish(file: string, lease: LeaseRecord): void {
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  const fd = fs.openSync(tmp, 'wx', 0o600);
-  try {
-    try { fs.writeFileSync(fd, JSON.stringify(lease) + '\n'); } finally { fs.closeSync(fd); }
-    // Publish the complete record exclusively, so a crashed writer cannot leave a partial claim.
-    fs.linkSync(tmp, file);
-  } finally { fs.unlinkSync(tmp); }
+  writeJsonPrivate(file, lease, { mkdir: false, exclusive: true });
 }
 
 export async function takeLease(args: Record<string, unknown>, caller: Caller, signal?: AbortSignal): Promise<Result> {

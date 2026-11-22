@@ -1,4 +1,4 @@
-import * as fs from 'node:fs';
+import { readJsonBounded } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
 import { readDone, readTurn, receiptForTurn, turnToken } from './cli-turn.js';
 import { cachedReportSignature } from './report-meta.js';
@@ -45,9 +45,7 @@ export function checkBinding(dir: string, job: Record<string, unknown>, status: 
 }
 export function readCheckReceipt(dir: string): Receipt | null {
   try {
-    const file = join(dir, CHECKS_FILE), st = fs.lstatSync(file);
-    if (!st.isFile() || st.size > 192 * 1024) return null;
-    const r: Receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const r = readJsonBounded(join(dir, CHECKS_FILE), 192 * 1024) as Receipt;
     return typeof r.turn === 'string' && typeof r.report_sig === 'string' &&
       (r.state === 'running' || r.state === 'done') && Array.isArray(r.results) ? r : null;
   } catch { return null; }

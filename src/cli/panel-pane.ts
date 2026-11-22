@@ -1,6 +1,7 @@
 /** Simple local herdr pane operations shared by the CLI and pi package. */
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
+import { readJsonFile } from '../utils/atomic-fs.js';
 import { loadSettings } from '../settings.js';
 import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { truncateAnsi } from '../render/colors.js';
@@ -48,7 +49,7 @@ export async function focusJobTab(jobDir: string, env: NodeJS.ProcessEnv): Promi
 
 const readJson = (file: string): Record<string, unknown> | null => {
   try {
-    const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const value = readJsonFile(file);
     return isRecord(value) ? value : null;
   } catch { return null; }
 };
