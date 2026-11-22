@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 if (!process.argv.includes('--print')) process.exit(1);
 const { callWorkerTool } = await import(${JSON.stringify(moduleUrl('../../packages/hud-mcp/bin/worker-tools.mjs'))});
-if (process.argv.includes('--no-session')) {
+if (process.argv.includes(join(process.env.HUD_JOB_DIR, 'sonic-session.jsonl'))) {
   await callWorkerTool('hud_report', { text: 'Synthetic sonic facts.' });
   process.exit(0);
 }

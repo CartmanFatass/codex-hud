@@ -21,6 +21,7 @@ import { briefPrompt } from './brief-prompt.js';
 import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from './cli-worker-startup.js';
 import { startHeadlessProcess, stopSonic } from './sonic-process.js';
 import { sonicLimits } from './sonic-policy.js';
+import { prepareSonicRetry, sonicSession } from './sonic-session.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
 import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
@@ -388,7 +389,12 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
       output = join(dir, jobFiles.report);
     const sessionWorker = job.headless && job.role !== 'sonic';
     const sessionFile = sessionWorker ? resume?.file ?? join(dir, 'sessions', `${job.job}.jsonl`) : undefined;
-    const prompt = resume?.message ?? briefPrompt(join(dir, jobFiles.brief));
+    let continuation = resume?.message;
+    if (job.role === 'sonic' && job.retry_of) {
+      const source = findJob(job.retry_of);
+      if (source?.role === 'sonic') continuation = prepareSonicRetry(dir, job.cwd, source, directory(source.job), readCachedStatus(source.job).status);
+    }
+    const prompt = continuation ?? briefPrompt(join(dir, jobFiles.brief));
     const piRole = place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
     const argv = ['--args-json', piRole];
@@ -418,7 +424,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
     argv.push(...resources, ...(job.pi_args ?? []));
     // Pi expands even a positional @path into file contents. A follow-up is literal text, not a file grant.
     if (sessionFile) argv.push('--session', sessionFile, '--print', '--mode', 'json', '--', prompt.startsWith('@') ? ` ${prompt}` : prompt);
-    else if (job.headless) argv.push('--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic', '--no-session', '--print', '--mode', 'json', '--', prompt);
+    else if (job.headless) argv.push('--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic', '--session', sonicSession(dir), '--print', '--mode', 'json', '--', prompt);
     else if (resume?.file) argv.push('--session', resume.file);
     const built = await run(launcher, argv, job.cwd, job.headless ? { ...process.env, HERDR_ENV: undefined } : undefined);
     if (built.exit_code !== 0) return reject(built);
@@ -1401,7 +1407,7 @@ function placeOptions(args: Args, configured: RolePlace) {
       piArgs.some((value) => typeof value !== 'string' || value.length > 4096)) return invalid();
     if (piArgs.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
       return invalid('pi_args cannot override --orchestrator or --notify caller binding');
-    if (args.role === 'sonic' && piArgs.some(value => value === '--' || /^(-c|-r|--(?:continue|resume|fork|session|session-id|mode|task-dir|dispatch-slot|role-output))(?:=|$)/.test(value)))
+    if (args.role === 'sonic' && piArgs.some(value => value === '--' || /^(-c|-r|--(?:continue|resume|fork|session|no-session|session-id|mode|task-dir|dispatch-slot|role-output))(?:=|$)/.test(value)))
       return invalid('pi_args cannot override the one-shot sonic lifecycle');
     if (args.mode === 'headless' && piArgs.some(value => value === '--' || /^(-c|-r|--(?:no-session|continue|resume|fork|session(?:-id|-dir)?|mode|task-dir|dispatch-slot|role-output|qa-dir|qa-timeout))(?:=|$)/.test(value)))
       return invalid('pi_args cannot override the headless session lifecycle');

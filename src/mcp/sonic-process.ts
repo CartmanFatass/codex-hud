@@ -4,6 +4,8 @@ import * as fs from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ensureJobWatcher } from './watch-pid.js';
+import { sonicSession } from './sonic-session.js';
+import { briefPrompt } from './brief-prompt.js';
 import { binScript, jobFiles } from './paths.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
@@ -49,14 +51,7 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
   } finally { for (const fd of fds) fs.closeSync(fd); }
 }
 
-/** Run in the owned runner, after the dispatch handshake. Retain the pi PID before a runner crash could orphan it. */
-export async function runSonicPi(dir: string, argv: string[]) {
-  // No input until dispatch has durably bound this runner to STATUS. A lost launcher closes the pipe.
-  await publishRunnerLifetime(dir);
-  let go = '';
-  for await (const chunk of process.stdin) go += chunk;
-  if (go !== 'start') return;
-  const status = readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus;
+function launchPi(dir: string, argv: string[], status: JobStatus) {
   const child = spawn('pi', argv, { stdio: ['ignore', 'inherit', 'inherit'] });
   const exit = new Promise<{ code: number | null; signal?: string | null; error?: string }>(resolve => {
     child.once('error', error => resolve({ code: null, error: error.message }));
@@ -69,6 +64,19 @@ export async function runSonicPi(dir: string, argv: string[]) {
       throw Error(capture.issue ?? 'cannot capture sonic child');
     }
   }
+  return exit;
+}
+
+/** Run in the owned runner, after the dispatch handshake. Retain the pi PID before a runner crash could orphan it. */
+export async function runSonicPi(dir: string, argv: string[]) {
+  // No input until dispatch has durably bound this runner to STATUS. A lost launcher closes the pipe.
+  await publishRunnerLifetime(dir);
+  let go = '';
+  for await (const chunk of process.stdin) go += chunk;
+  if (go !== 'start') return;
+  process.umask(0o077); // pi creates and appends its native session file.
+  const status = readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus;
+  const session = sonicSession(dir), resuming = status.slot === 'sonic' && fs.existsSync(session);
   // Wake a replacement watcher if the original died while pi was running. The watcher is
   // the sole terminal writer, even when the dispatcher's MCP connection is already gone.
   const wake = () => ensureJobWatcher(dirname(dirname(dir)));
@@ -85,7 +93,14 @@ export async function runSonicPi(dir: string, argv: string[]) {
     }
   }, 1000) : undefined;
   try {
-    const result = await exit;
+    let result = await launchPi(dir, argv, status);
+    // JSON mode emits the session header before input. Only retry a rejected open,
+    // never replay work after pi may already have taken the continuation.
+    if (resuming && result.code !== null && result.code !== 0 && fs.statSync(join(dir, jobFiles.sonicStdout)).size === 0 &&
+        Date.now() < headlessDeadline(status) && ![jobFiles.stopRequested, jobFiles.sonicStop, jobFiles.sonicTimeout].some(f => fs.existsSync(join(dir, f)))) {
+      fs.renameSync(session, `${session}.rejected`);
+      result = await launchPi(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status);
+    }
     writeJsonPrivate(join(dir, jobFiles.sonicExit), { ...result, at: Date.now() }, { mkdir: false });
     wake();
   } finally { clearInterval(timer); }

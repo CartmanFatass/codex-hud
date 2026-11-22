@@ -120,7 +120,8 @@ test('an unavailable scout leaves a failure note, but sonic cannot request a sco
 });
 
 test('a scout that exceeds its time cap is closed and the target still starts', async (t) => {
-  const f = await fixture(t);
+  // As with a direct Sonic timeout, a missed watcher event must not outlast the fixture.
+  const f = await fixture(t, { watcherTickMs: 250 });
   sonicTask(f);
   const role = join(f.env.HUD_HOME, 'roles', 'sonic.json');
   fs.writeFileSync(role, JSON.stringify({ ...JSON.parse(fs.readFileSync(role, 'utf8')), max_s: 2 }));

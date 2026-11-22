@@ -26,13 +26,16 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   await new Promise((r) => setTimeout(r, 750));
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).quiet_decision, undefined);
-  f.push(job.job, 'done');
-  // One virtual second per flap. No advisory event may create/re-baseline a turn.
-  for (let i = 0; i < 6; i++) {
-    await new Promise((r) => setTimeout(r, 50));
-    f.push(job.job, i % 2 ? 'done' : 'working');
+  // Each transient done is immediately revoked. Sleeping while done could legitimately
+  // exceed Grok's accelerated 2 s stability window when the test runner is descheduled.
+  for (let i = 0; i < 3; i++) {
+    f.push(job.job, 'done');
+    f.push(job.job, 'working');
   }
+  const queries = statusQueries(f, job);
+  await until(() => statusQueries(f, job) > queries);
   assert.equal(cliState(job.task_dir).state, 'working');
+  f.push(job.job, 'done');
   await until(() => cliState(job.task_dir)?.state === 'idle_grace');
   assert.equal(cliState(job.task_dir).output_written, true);
   assert.equal(cliState(job.task_dir).quiet_decision, undefined);

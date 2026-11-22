@@ -25,6 +25,7 @@ export const jobFiles = {
   sonicTimeout: 'STATUS.json.timeout-requested', // Legacy scout stop intent.
   sonicStop: 'sonic-stop.json',
   sonicStdout: 'stdout.jsonl',
+  sonicSession: 'sonic-session.jsonl',
   sonicStderr: 'stderr.log',
   supervisorPid: 'supervisor.pid',
   stopRequested: 'STATUS.json.stop-requested',

@@ -82,6 +82,18 @@ renameSync(processes + '.tmp', processes);
   assert.ok(status.stdout_bytes > 0 && status.stderr_bytes > 0);
   assert.ok(pids.every(pid => !isProcAlive(pid)));
   assert.equal((await f.call('hud_read', { job })).reason, 'timeout');
+  // This killed process never persisted a pi session. Replay its partial report, not the event log.
+  f.overrideBin('pi', `#!${process.execPath}
+if (!process.argv.includes('--print')) process.exit(1);
+const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
+await callWorkerTool('hud_report', { text: process.argv.at(-1) });
+`);
+  const retry = await f.call('hud_create', { role: 'sonic', retry_of: job });
+  await until(() => cliState(retry.task_dir)?.state === 'closed');
+  const prompt = fs.readFileSync(join(retry.task_dir, 'report.md'), 'utf8');
+  assert.match(prompt, /Synthetic long query/);
+  assert.match(prompt, /\(timeout\):\nPartial result/);
+  assert.doesNotMatch(prompt, /synthetic partial output/);
 });
 
 test('hud_report captures a detached helper before pi exits; settlement reaps it without a tab', async (t) => {
@@ -185,6 +197,62 @@ setInterval(${reason === 'looping' ? 'log' : '() => {}'}, 50);
     assert.equal((await f.call('hud_read', { job })).latest_progress.text, 'Synthetic partial milestone.');
   });
 }
+
+test('retry_of resumes the stopped Sonic history or starts fresh with the partial result', async (t) => {
+  const f = await fixture(t, { watcherTickMs: 250 });
+  f.overrideBin('pi', `#!${process.execPath}
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+if (!process.argv.includes('--print')) process.exit(1);
+const file = process.argv[process.argv.indexOf('--session') + 1], prompt = process.argv.at(-1);
+const history = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+const header = history ? JSON.parse(history.split('\\n')[0]) : { type: 'session', id: randomUUID(), cwd: process.cwd() };
+if (history && fs.existsSync(join(process.env.HOME, 'reject-open'))) process.exit(2);
+console.log(JSON.stringify(header));
+if (!history) fs.writeFileSync(file, JSON.stringify(header) + '\\n');
+fs.appendFileSync(file, JSON.stringify({ type: 'message', message: { role: 'user', content: prompt } }) + '\\n');
+if (!fs.existsSync(join(process.env.HOME, 'retry'))) {
+  console.log('Synthetic partial finding.');
+  setInterval(() => {}, 10000);
+} else {
+  const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
+  await callWorkerTool('hud_report', { text: JSON.stringify({ header, history, prompt }) });
+}
+`);
+  const task = 'Investigate the synthetic input.';
+  const source = await f.call('hud_create', { role: 'sonic', task });
+  const session = join(source.task_dir, 'sonic-session.jsonl');
+  await until(() => fs.existsSync(session) && fs.readFileSync(join(source.task_dir, 'stdout.jsonl'), 'utf8').includes('Synthetic partial finding.'));
+  await f.call('hud_close', { job: source.job });
+  assert.equal(cliState(source.task_dir).state, 'stopped');
+  const original = fs.readFileSync(session, 'utf8'), id = JSON.parse(original.split('\n')[0]).id;
+  assert.equal(fs.statSync(session).mode & 0o777, 0o600);
+  writeFixtureFile(join(f.env.HOME, 'retry'), '');
+  const retry = async key => {
+    const job = await f.call('hud_create', { role: 'sonic', retry_of: source.job, request_key: key });
+    await until(() => cliState(job.task_dir)?.state === 'closed');
+    return JSON.parse(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'));
+  };
+  const resumed = await retry('resumed');
+  assert.equal(resumed.header.id, id);
+  assert.equal(resumed.history, original);
+  assert.match(resumed.prompt, /^Continue; you were stopped for stopped\./);
+  assert.ok(!resumed.prompt.includes(task));
+  assert.equal(fs.readFileSync(session, 'utf8'), original);
+  writeFixtureFile(join(f.env.HOME, 'reject-open'), '');
+  for (const key of ['open-rejected', 'identity-mismatch']) {
+    if (key === 'identity-mismatch') {
+      fs.unlinkSync(join(f.env.HOME, 'reject-open'));
+      writeFixtureFile(session, original.replace(id, 'another-session'));
+    }
+    const fresh = await retry(key);
+    assert.notEqual(fresh.header.id, id);
+    assert.equal(fresh.history, '');
+    assert.ok(fresh.prompt.includes(task));
+    assert.match(fresh.prompt, /Synthetic partial finding/);
+  }
+});
 
 test('exit zero without hud_report is a final failure, not an idle or continuable worker', async (t) => {
   const f = await fixture(t);

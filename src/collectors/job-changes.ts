@@ -12,7 +12,7 @@ const WATCH_PID = 'watch.pid';
 const RECHECK_MS = 30_000;
 export const jobNoticeFile = (path: string) =>
   !path.endsWith('.tmp') && !path.endsWith('supervisor.pid') && !path.endsWith(`/${RUNNER_READY}`) && !path.endsWith('/stdout.jsonl') && !path.endsWith('/stderr.log') &&
-  !path.endsWith('/report-meta.json') && !path.includes('/sessions/');
+  !path.endsWith('/sonic-session.jsonl') && !path.endsWith('/report-meta.json') && !path.includes('/sessions/');
 
 type Revision = { owner: number; epoch: number; notice: number; change: number; through: number; jobs: Record<string, number> };
 const MAX_DELTA = 64;

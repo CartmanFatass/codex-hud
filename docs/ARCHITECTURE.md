@@ -301,6 +301,7 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 | `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
 | `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240, can include the worker summary), question flag and outcome; no file bodies |
 | Sonic auto-thinking | First 4000 characters of the dispatched task (the scout question for scouted dispatch), plus sonic role scope and thinking purposes; no standing brief or referenced files |
+| Stopped Sonic retry | The new pi job receives its saved native session context and a short continuation naming the stop reason. Fresh fallback uses the brief plus the last 8 KiB of partial report or stdout. |
 | Scouted dispatch | The scout question and target `context_files` go to sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
 | Settings Test API | Fixed synthetic messages only |
 
