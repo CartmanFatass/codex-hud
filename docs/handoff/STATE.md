@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · SONIC-LITE · SONIC-LITE-02 · Sonic thinking can be none; lookups lean low; native tools (620260ab)
 - try · ORCH-LEAN-2 · ORCH-LEAN2-01 · A reloaded HUD refreshes the client's tool list (099df7ed)
 - try · MCP-SPLIT · MCP-SPLIT-02 · Worker and runtime bins become TypeScript (5d595bdb)
 - try · JOB-INDEX · JOB-INDEX-02 · MCP server reads jobs through the shared cache (1fe4da44)
