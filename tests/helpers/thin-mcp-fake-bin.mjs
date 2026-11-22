@@ -9,7 +9,25 @@ const [, invocation, ...args] = process.argv;
 const name = basename(invocation);
 const command = name === 'thin-mcp-fake-bin.mjs' ? args.shift() : name;
 const routingOnly = process.env.FAKE_ROUTING_ONLY === '1';
-if (command === 'pi') {
+if (command === 'pi' && args.includes('--print')) {
+  const dir = process.env.HUD_JOB_DIR;
+  fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args, dir, cwd: process.cwd() }) + '\n');
+  const { callWorkerTool } = await import('../../packages/hud-mcp/bin/worker-tools.mjs');
+  await callWorkerTool('hud_progress', { message: 'Checking synthetic input.' });
+  console.log(JSON.stringify({ type: 'synthetic' }));
+  console.error('Synthetic diagnostic.');
+  if (fs.existsSync(join(process.env.HOME, 'hold-sonic'))) {
+    await new Promise((resolve) => {
+      const release = () => { if (fs.existsSync(join(dir, 'release-sonic'))) { watcher.close(); resolve(); } };
+      const watcher = fs.watch(dir, release);
+      release();
+    });
+  }
+  if (fs.existsSync(join(dir, 'fail-sonic'))) process.exit(4);
+  const report = join(dir, 'report.md');
+  await callWorkerTool('hud_report', { text: fs.existsSync(report) ? fs.readFileSync(report, 'utf8') : 'Synthetic implementation report.' });
+  process.exit(0);
+} else if (command === 'pi') {
   const caps = join(process.env.HOME, 'pi-model-caps.json');
   if (!fs.existsSync(caps)) process.exit(1);
   const model = JSON.parse(fs.readFileSync(caps, 'utf8'))[args[args.indexOf('--model') + 1]];

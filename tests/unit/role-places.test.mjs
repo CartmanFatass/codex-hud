@@ -457,17 +457,18 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.equal((await f.call('hud_read', { job: alias.job })).role, 'oracle');
 });
 
-test('reviewer and sonic use their instruction files on CLI; a role without one returns unsupported_harness', { timeout: 10000 }, async (t) => {
+test('reviewer uses its CLI instructions; sonic refuses interactive overrides; missing instructions are unsupported', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, { withPi: false });
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
-  for (const role of ['reviewer', 'sonic']) {
-    const job = await f.call('hud_create', { role, on: 'claude', request_key: `${role}-cli`, task: 'Task.' });
-    const promptOf = () => f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job));
-    await until(promptOf);
-    const { args } = f.commands().find((c) => c.args[1] === 'start' && c.args[2] === `${job.job}-primary`);
-    assert.equal(args[args.indexOf('--append-system-prompt-file') + 1], join(bundled, `instructions/${role}.md`));
-    assert.match(promptOf().args[3], /^Carry out this brief:\n\nTask\./);
-  }
+  const sonic = await f.call('hud_create', { role: 'sonic', on: 'claude', task: 'Task.' });
+  assert.equal(sonic.code, 'invalid_arguments');
+  assert.match(sonic.error, /headless on pi only/);
+  const job = await f.call('hud_create', { role: 'reviewer', on: 'claude', request_key: 'reviewer-cli', task: 'Task.' });
+  const promptOf = () => f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job));
+  await until(promptOf);
+  const { args } = f.commands().find((c) => c.args[1] === 'start' && c.args[2] === `${job.job}-primary`);
+  assert.equal(args[args.indexOf('--append-system-prompt-file') + 1], join(bundled, 'instructions/reviewer.md'));
+  assert.match(promptOf().args[3], /^Carry out this brief:\n\nTask\./);
 
   // One role, one text on every harness (WORKER-UNIFY): a role whose instruction file is missing has no CLI place.
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });

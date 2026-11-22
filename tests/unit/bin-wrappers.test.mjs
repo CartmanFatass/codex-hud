@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const bin = 'packages/hud-mcp/bin';
 const wrappers = ['herdr-request', 'hud-ask', 'hud-check', 'hud-cli', 'hud-jev', 'hud-lease', 'hud-notify',
-  'hud-progress', 'hud-sonic', 'hud-watch', 'sonic-jobs', 'watch-runtime', 'worker-tools'];
+  'hud-progress', 'hud-sonic', 'hud-watch', 'sonic-jobs', 'sonic-run', 'watch-runtime', 'worker-tools'];
 function release(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud wrapper test '));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

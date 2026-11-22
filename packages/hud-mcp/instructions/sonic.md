@@ -10,9 +10,7 @@ lookups in one command. Use the shell for exact commands supplied in the brief.
 Avoid a turn per listing or short excerpt. Aim for about 20 turns; at that point report the facts gathered and list any
 paths still unchecked rather than widening the search.
 
-Do not start another role or expand the task. If a decision is needed, use `hud_ask`. If unanswered after 20
-minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as
-blocked in your report. Finish with `hud_report`: facts with `file:line`, no pasted file contents, at most 60 lines. End it with a
+Do not start another role or expand the task. This is a one-shot query. If a decision is needed, leave that part to the caller and name it as blocked in your report. Finish with `hud_report`: facts with `file:line`, no pasted file contents, at most 60 lines. End it with a
 `Not checked:` line naming the places in or next to the brief's scope you did not open (or `none in scope`).
 
 Take the lease named in the brief before using that shared resource.

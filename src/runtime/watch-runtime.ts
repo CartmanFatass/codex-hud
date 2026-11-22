@@ -8,6 +8,7 @@ import { reapWorktree, mainHead } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
+import { killSonicRoot, sonicExit, SONIC_TIMEOUT_MS } from '../mcp/sonic-process.js';
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { JobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
 import type { Job, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
@@ -69,7 +70,7 @@ let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   stopped = false,
   reapBacklog = false;
 type Retry = { ownership: string; readClose: boolean; at: number; snapshot?: WorkerTreeSnapshot };
-type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: SessionEntry; tab: string;
+type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: SessionEntry | null; tab: string;
   ownership: string; retry: Retry | null; readInGrace: string | null; resumeReadReap?: boolean; jobFile: string; statusFile: string };
 type ActiveReap = { tab: string; ownership: string; readClose: boolean; busy: string[]; phase: 'preflight' | 'reaping';
   controller: AbortController; promise?: Promise<void> };
@@ -215,8 +216,30 @@ const reapOwner = (session: SessionEntry | null, status: Partial<JobStatus> | nu
   JSON.stringify([session?.fields ?? null, status?.pid, status?.pid_start_time]);
 async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, retry, readInGrace, resumeReadReap, jobFile, statusFile }: ReapInput) {
   const { controller: { signal }, ownership, readClose } = entry;
+  if (job?.headless) {
+    const end = sonicExit(dir, status);
+    if (!end) return true;
+    entry.phase = 'reaping';
+    const cleanup = await reapWorkerTree(dir, status, () => killSonicRoot(dir, status), gone => gone,
+      { expectSnapshot: true, carry: retry?.snapshot, signal });
+    if (signal.aborted) return true;
+    if (!cleanup.complete) {
+      warn(`reap ${id}`, `reap ${id}: ${cleanup.issue ?? 'sonic runner still exiting'}`);
+      reapRetries.set(id, { ownership, readClose: false, at: Date.now() + cliCheck, snapshot: cleanup.snapshot });
+      return true;
+    }
+    const now = new Date().toISOString();
+    const stopped = fs.existsSync(join(dir, jobFiles.stopRequested));
+    writeJsonAtomic(statusFile, { ...status, ...end, ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
+      output_written: fs.existsSync(join(dir, jobFiles.report)), settled_at: now, ended_at: now,
+      stdout_bytes: fs.statSync(join(dir, jobFiles.sonicStdout)).size, stderr_bytes: fs.statSync(join(dir, jobFiles.sonicStderr)).size });
+    const latest = readJson<Job>(jobFile);
+    if (latest) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
+    reapRetries.delete(id);
+    return true;
+  }
   if (readInGrace) {
-    const target = session.fields.primary;
+    const target = session?.fields.primary;
     const agent = target ? (await request('agent.get', { target }, { signal }))?.result?.agent : undefined;
     if (signal.aborted || closedTabs.has(tab)) return true;
     const latest = readJson<JobStatus>(statusFile);
@@ -366,6 +389,15 @@ function scan(retryWatch = false) {
       const retry = !job?.reaped_at && previous?.ownership === ownership ? previous : null;
       // A previous read-close attempt may have closed its own tab before retrying cleanup.
       const tabClosed = !retry?.readClose && !!tab && closedTabs.has(tab);
+      if (job?.headless && status?.state === 'working') {
+        open = safetyCheck = true;
+        markBusy(job);
+        if (retry && retry.at > Date.now()) nearest = Math.min(nearest, retry.at);
+        else if (!sonicExit(dir, status)) nearest = Math.min(nearest, Date.parse(status.started_at!) + SONIC_TIMEOUT_MS);
+        else if (inFlightReaps.size >= MAX_CONCURRENT_REAPS) reapBacklog = true;
+        else startReap({ id, dir, job, status, session, tab: '', ownership, retry, readInGrace: null, jobFile, statusFile });
+        continue;
+      }
       if (!['closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
         let update: JobStatus | undefined;
         const now = new Date().toISOString();
@@ -501,7 +533,7 @@ function scan(retryWatch = false) {
         continue;
       }
       preflightHold.delete(id);
-      startReap({ id, dir, job, status, session: session!, tab, retry, readInGrace, resumeReadReap, jobFile, statusFile, ownership });
+      startReap({ id, dir, job, status, session, tab, retry, readInGrace, resumeReadReap, jobFile, statusFile, ownership });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         const retry = reapRetries.get(id);
@@ -590,7 +622,7 @@ function startWatch() {
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
       const path = filename?.toString();
-      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json(?:\.stop-requested)?|SESSION\.txt|job\.json|checks\.json|report\.md|done\.json|turn\.json)$/.test(path)) schedule();
+      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-exit\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;
       warn('watch error', `watch error: ${error.message}`);

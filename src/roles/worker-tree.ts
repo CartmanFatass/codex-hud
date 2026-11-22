@@ -8,9 +8,10 @@ import {
   listProcPids,
   procStat,
   readBootId,
+  readProcCmdline,
   readProcStat as readStat,
 } from '../utils/proc.js';
-import { jobFiles } from '../mcp/paths.js';
+import { binScript, jobFiles } from '../mcp/paths.js';
 import type { WorkerTreeSnapshot as Snapshot } from '../mcp/job-contracts.js';
 
 export { procStat };
@@ -33,6 +34,16 @@ export function workerTreeRootGone(pid: unknown, start: unknown) {
   catch { return false; } // Unreadable /proc is not confirmation of exit.
 }
 
+/** Headless roots are HUD's own per-job runner, not a herdr pane. Verify the actual launch argv. */
+export function sonicRoot(dir: string, pid: number, start: string, bootId: unknown): 'owned' | 'gone' {
+  if (!validPid(pid) || !validStart(start) || !bootId) throw Error('missing sonic process identity');
+  if (boot() !== bootId || !recordedRootAlive(pid, start)) return 'gone';
+  const args = readProcCmdline(pid);
+  if (args?.[1] === binScript('sonic-run') && args[2] === dir && recordedRootAlive(pid, start)) return 'owned';
+  if (!recordedRootAlive(pid, start)) return 'gone';
+  throw Error('sonic runner identity unresolved');
+}
+
 /** Capture only individually verified parent/child links, before quit or native shutdown can orphan them. */
 export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapshot): Capture {
   let snapshot: Snapshot | undefined, issue: string | undefined;
@@ -41,18 +52,24 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
   try {
     if (!status || typeof status !== 'object') return {};
     const { pid, pid_start_time: start, slot, task_dir } = status as Record<string, unknown>;
-    if (slot !== 'primary' || !validPid(pid) || !validStart(start) ||
-        (task_dir !== dir && task_dir !== fs.realpathSync(dir))) return {};
-    const session = fs.readFileSync(join(dir, jobFiles.session), 'utf8');
-    const pane = /^LEFT=([^\r\n]+)$/m.exec(session)?.[1];
-    if (!pane || pane === /^ORCH=([^\r\n]+)$/m.exec(session)?.[1]) return {};
+    if (!validPid(pid) || !validStart(start) || (task_dir !== dir && task_dir !== fs.realpathSync(dir))) return {};
+    if (slot === 'sonic') {
+      const bootId = (status as Record<string, unknown>).boot_id;
+      if (bootId !== boot()) return {};
+      sonicRoot(dir, pid, start, bootId);
+    } else {
+      if (slot !== 'primary') return {};
+      const session = fs.readFileSync(join(dir, jobFiles.session), 'utf8');
+      const pane = /^LEFT=([^\r\n]+)$/m.exec(session)?.[1];
+      if (!pane || pane === /^ORCH=([^\r\n]+)$/m.exec(session)?.[1]) return {};
+    }
     const bootId = boot(), file = join(dir, jobFiles.workerTree);
     if (!bootId) throw Error('boot identity unavailable');
     // Version 1 included group/tag guesses; none of that evidence is eligible for signalling.
     const matches = (value: Snapshot | undefined): value is Snapshot => value?.version === 2 && value.bootId === bootId &&
       value.pid === pid && value.start === start && Array.isArray(value.members);
     const add = (member: Stamp) => {
-      if (!member || !validPid(member.pid) || !validStart(member.start) || member.pid === pid || member.pid === process.pid) return;
+      if (!member || !validPid(member.pid) || !validStart(member.start) || member.pid === pid || (slot !== 'sonic' && member.pid === process.pid)) return;
       const previous = owned.get(member.pid);
       if (!previous || Number(member.start) > Number(previous.start)) owned.set(member.pid, member);
     };
@@ -87,7 +104,7 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
       snapshot ??= { version: 2, bootId, pid, start, members: [] };
       const children = new Map<number, Stamp[]>();
       for (const id of listProcPids()) {
-        if (!validPid(id) || id === pid || id === process.pid) continue;
+        if (!validPid(id) || id === pid || (slot !== 'sonic' && id === process.pid)) continue;
         const child = readProcStat(id);
         if (!child || !active(child.state) || Number(child.start) < Number(start)) continue;
         const member = { pid: id, start: child.start };

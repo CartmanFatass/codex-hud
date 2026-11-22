@@ -149,6 +149,8 @@ HUD 排队取得 `main-checkout` 租约，在新的分离工作树中运行 `gat
 出现信任对话框则拒绝，失败原因写明 `hud trust <cwd>`。会话留在各 CLI 自己的存储里。
 herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
+Sonic 以非交互方式运行一次 pi 查询，不打开工作标签页或窗格。主会话通过 `hud_create` 发起，工作任务通过 `hud_sonic` 发起并收取结果。两者都保留普通任务目录：`stdout.jsonl` 和 `stderr.log` 记录 pi 的输出，`report.md` 是已声明的报告。Sonic 可以发布进度和获取租约，但不能提问或接收后续消息，也没有空闲宽限期。运行满十分钟时，HUD 停止查询，并以 `timeout` 为原因记为 `failed`；如需重试，请重新发起查询。
+
 Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。主人通过 `hud_create` 指定 `thinking` 时跳过选择。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。
 
 按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位且有兼容可用位置，则改以 `general` 启动并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
@@ -295,7 +297,7 @@ apply 把项目根记入 `$HUD_HOME/projects.json`。项目配置只有注册之
 提问条展开后在选项旁显示答复按键；`o` 仍可打开提问文件。
 
 **sonic 子任务。** HUD 任务派出的 `sonic` 任务（`parent_job`）不再是卡片，而是父卡片下的一行：
-`├─ ⚡ sonic · 短标题  3分 ◉`（最后一个用 `└─`，ascii 为 `|-` 和 `` `- ``），带用时和状态符号，经典和分栏预览都一样。
+`├─ ⚡ sonic · 短标题  3分 ◉`（最后一个用 `└─`，ascii 为 `|-` 和 `` `- ``），带用时和状态符号，经典和分栏预览都一样。有进度消息时，最新一条取代短标题。
 父卡片折成标题行时隐藏这些行，右侧写 `⚡ N sonic`（仍在运行的个数）。`/` 过滤命中 sonic 任务时，其父任务一并保留。
 
 **流程。** 带有落地流程（`$HUD_HOME/flows/<flow>.json`）或带侦察派发的任务在卡片和详情中显示一行流程步骤（`门禁 ▸ 合并 ▸ 推送`

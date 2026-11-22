@@ -25,7 +25,9 @@ machine, inside herdr. (10.02, 22.12)
 - `hud_land({ job })` lands a settled managed worktree through the project's configured gate, fast-forward, after commands, optional push and cleanup as one flow. (22.19)
 - `hud_read` returns a digest by default (state, result line, changed files, verdict and blockers when the report gives them); `mode: "full"` returns the whole report; `jobs` reads several at once. (22.15)
 - Thin tools over local herdr and unbundled pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
-  `pi-role-reap`). The MCP opens the job's herdr tab. Jobs are plain JSON under `$HUD_HOME/jobs`. (10.01)
+  `pi-role-reap`). The MCP opens a herdr tab for interactive workers. Jobs are plain JSON under `$HUD_HOME/jobs`. (10.01)
+
+Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens no tab or pane, takes a brief and publishes a report. It keeps a normal job record, progress and `hud_lease`; child queries appear under their parent. Sonic cannot ask questions or continue, has no idle grace, and a failure is final: the caller can dispatch a new query.
 
 #### 2.1.2 Roles, routing and presets
 

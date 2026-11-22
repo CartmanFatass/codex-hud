@@ -180,6 +180,8 @@ defaults; split defaults to the place. `ui_ext: false` disables UI extensions;
 `--orchestrator`/`--notify` pi-argument overrides refuse. Browser (`bro`) places
 reject pi options.
 
+Sonic runs one non-interactive pi query, with no worker tab or pane. A main session uses `hud_create`; a worker uses `hud_sonic` and collects the result. Both use a normal job directory: `stdout.jsonl` and `stderr.log` hold pi's output; `report.md` is the declared result. Sonic can publish milestones and take a lease, but it cannot ask questions or receive follow-ups. There is no idle grace. At ten minutes HUD stops the query and records `failed` with reason `timeout`; dispatch a new query to try again.
+
 Callers leave sonic's thinking at the role default (`high` as shipped). The optional **Sonic auto-thinking** setting (`sonicAutoThinking`, off by default) sends the task to the Decision API to choose `none`, `low`, `high` or `max` using the role file's `thinking_choices`. Use `none` for running an exact command and reporting its output, copying exact text, or listing files; narrow fact lookups in named files use `low`. Pi calls `none` `off`. If no key is available, the call cap is reached, the decision times out (about five seconds), or the provider refuses or returns an invalid answer, the role default applies. An owner-requested `hud_create` thinking override skips the decision; `hud_sonic` takes no thinking argument. Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
 
 Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic). With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap starts as `general` when `general` has a free slot and a compatible available place, returning `overflowed: true` and `overflow_from: "imp"`. When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel). The watcher starts the oldest queued job when a slot frees or a cap is raised in Settings, picking the first available place at start time. `hud_close` (or panel `X`) removes a queued job.
@@ -450,7 +452,7 @@ Question slabs show answer keys beside the expanded options; `o` still opens the
 
 **Sonic children.** A `sonic` job a HUD job dispatched (its `parent_job`) is not a card: it is one row under the parent's
 card, `├─ ⚡ sonic · short title  3m ◉` (the last `└─`, ascii `|-` and `` `- ``), with its elapsed time and state glyph, in
-Classic and in Split's preview. A parent folded to its title row hides the rows and says `⚡ N sonic` (the ones still
+Classic and in Split's preview. Its latest milestone replaces the short title when available. A parent folded to its title row hides the rows and says `⚡ N sonic` (the ones still
 running) on its right. A `/` filter that matches a sonic job keeps its parent with it.
 
 **Flows.** A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows a flow row on its card

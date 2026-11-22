@@ -53,7 +53,7 @@ test('scouted create returns one MCP task, shares the managed cwd and appends th
   fs.writeFileSync(join(scout, 'report.md'), 'Synthetic dossier.');
   assert.equal((await get()).status, 'working', 'writing a report alone does not settle the scout');
   assert.ok(!fs.existsSync(join(target.task_dir, 'SESSION.txt')));
-  publishSonic(scout, { state: 'done' });
+  fs.writeFileSync(join(scout, 'release-sonic'), '');
   await waitLaunch(target);
   assert.equal(receipt(target.task_dir).cwd, scouted.cwd);
   assert.deepEqual(receipt(target.task_dir).from_jobs, [upstream.job, scouted.job]);
@@ -71,7 +71,7 @@ test('scouted create returns one MCP task, shares the managed cwd and appends th
   assert.ok(!done.result.content[0].text.includes(scouted.job));
 });
 
-test('a scout question is handled, the scout is closed, and only the target notifies', async (t) => {
+test('a scout cannot ask; a failed query leaves a note and only the target notifies', async (t) => {
   const f = await fixture(t);
   sonicTask(f);
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
@@ -81,12 +81,13 @@ test('a scout question is handled, the scout is closed, and only the target noti
   const scout = await getScout(f, target.job);
   const scouted = receipt(scout);
   const worker = workerClient(t, f, scout, '0');
-  assert.match((await worker('hud_ask', { question: 'Which synthetic parser?', default: 'A' })).content[0].text,
-    /handled by scouted dispatch/);
+  assert.equal((await worker('hud_ask', { question: 'Which synthetic parser?', default: 'A' })).isError, true);
+  fs.writeFileSync(join(scout, 'fail-sonic'), '');
+  fs.writeFileSync(join(scout, 'release-sonic'), '');
   await waitLaunch(target);
-  assert.match(brief(target.task_dir), /^Scout failed: asked a question$/m);
+  assert.match(brief(target.task_dir), /^Scout failed: pi exited: 4$/m);
   assert.equal(receipt(target.task_dir).from_jobs, undefined);
-  assert.ok(f.commands().some(({ command, args }) => command === 'pi-role-reap' && args[0] === scout));
+  assert.equal(JSON.parse(fs.readFileSync(join(scout, 'STATUS.json'))).state, 'failed');
   assert.ok(!f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === f.env.HERDR_PANE_ID));
   fs.writeFileSync(join(target.task_dir, 'report.md'), 'Synthetic target result.');
   publishSonic(target.task_dir, { state: 'done' });
@@ -129,14 +130,15 @@ test('a scout that exceeds its time cap is closed and the target still starts', 
   fs.writeFileSync(join(f.env.HOME, 'expire-scout'), '');
   await waitLaunch(target);
   assert.match(brief(target.task_dir), /^Scout failed: timed out$/m);
-  assert.ok(f.commands().some(({ command, args }) => command === 'pi-role-reap' && args[0] === scout));
+  const status = JSON.parse(fs.readFileSync(join(scout, 'STATUS.json')));
+  assert.equal(status.state, 'failed');
+  assert.equal(status.exit_reason, 'timeout');
 });
 
 test('sonic reports attached via from_jobs carry the unverified-facts prefix in the brief language (EN/ZH, local and browser)', async (t) => {
   const f = await fixture(t);
   const sonic = await f.call('hud_create', { role: 'sonic', task: 'Find the synthetic entry points.' });
-  fs.writeFileSync(join(sonic.task_dir, 'report.md'), 'Synthetic sonic facts.\n');
-  publishSonic(sonic.task_dir, { state: 'done' });
+  await until(() => JSON.parse(fs.readFileSync(join(sonic.task_dir, 'STATUS.json'))).state === 'closed');
   const imp = await f.call('hud_create', { role: 'imp', task: 'Synthetic non-sonic upstream.' });
   fs.writeFileSync(join(imp.task_dir, 'report.md'), 'Synthetic imp report.\n');
   publishSonic(imp.task_dir, { state: 'done' });

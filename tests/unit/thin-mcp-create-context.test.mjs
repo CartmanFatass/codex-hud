@@ -957,7 +957,7 @@ test(
   { timeout: 15000 },
   async (t) => {
     const f = await fixture(t);
-    const create = (request_key, task) => f.call('hud_create', { role: 'sonic', request_key, task });
+    const create = (request_key, task) => f.call('hud_create', { role: 'imp', request_key, task });
     const task = '# Fix the panel footer\n\nA longer description.';
     const [first, second] = [await create('a', task), await create('b', task)];
     const cjk = await create('c', '大型任务：请把面板底部的按键提示改成不会被截断的版本，并且保持中文宽度正确');
@@ -965,10 +965,10 @@ test(
       .commands()
       .filter((c) => c.command === 'herdr' && c.args[0] === 'tab' && c.args[1] === 'create')
       .map((c) => c.args[c.args.indexOf('--label') + 1]);
-    assert.equal(labels[0], 'sonic Fix the panel footer');
-    assert.match(labels[1], /^sonic Fix the panel \S+ [0-9a-f]{4}$/);
+    assert.equal(labels[0], 'imp Fix the panel footer');
+    assert.match(labels[1], /^imp Fix the panel \S+ [0-9a-f]{4}$/);
     assert.ok(labels[1].endsWith(second.job.slice(-4)));
-    assert.match(labels[2], /^sonic 大型任务.*…$/);
+    assert.match(labels[2], /^imp 大型任务.*…$/);
     for (const label of labels) assert.ok(label.replace(/[\u2e80-\ua4cf\uff00-\uff60]/g, 'xx').length <= 28, label);
     // pi-role-reap compares the recorded name with the tab, so it must be the same single line.
     for (const [job, label] of [

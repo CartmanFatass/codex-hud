@@ -99,10 +99,15 @@ test('roster rejects a role file with a multiline thinking purpose', async (t) =
   assert.ok(roster.roles.some(({ role, thinking_choices }) => role === 'sonic' && thinking_choices.low));
 });
 
-test('every bundled role uses the same unanswered-question policy', () => {
+test('interactive roles share the unanswered-question policy; sonic reports blockers instead', () => {
   const dir = resolve('packages/hud-mcp/instructions');
   for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.md'))) {
     const body = fs.readFileSync(join(dir, file), 'utf8').replace(/\s+/g, ' ');
+    if (file === 'sonic.md') {
+      assert.doesNotMatch(body, /hud_ask/);
+      assert.match(body, /name it as blocked in your report/);
+      continue;
+    }
     assert.match(body, /If unanswered after 20 minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report/, file);
   }
 });

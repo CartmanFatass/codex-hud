@@ -62,6 +62,7 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
     writeReportMeta(dir, sig, fields);
     const { snapshot, issue } = rememberWorkerTree(dir, status);
     if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
+    if (job.headless) writeJsonPrivate(join(dir, DONE_FILE), { report_sig: sig }, { mkdir: false });
   }
   return { path };
 }
@@ -274,7 +275,7 @@ export async function workerTools(cli = false) {
         wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
     LEASE_TOOL,
-  ].filter(({ name }) => role !== 'sonic' || name !== 'hud_sonic');
+  ].filter(({ name }) => role !== 'sonic' || (name !== 'hud_sonic' && name !== 'hud_ask'));
 }
 
 function questionBody(q: Question) {
@@ -320,6 +321,7 @@ function orchestrator(dir: string) {
 }
 
 export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: QuestionInput, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal?: AbortSignal) {
+  if (job.role === 'sonic') throw new Error('sonic cannot ask questions');
   const { notify, taskDelivery } = await withDistLock(() => import('../roles/notify.js'));
   signal?.throwIfAborted();
   const tag = `${typeof job.role === 'string' ? job.role : 'cli'}@${basename(job.cwd || dir)}`;

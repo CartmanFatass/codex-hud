@@ -17,12 +17,13 @@ import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
 import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from './cli-worker-startup.js';
+import { SONIC_TIMEOUT_MS, startSonicProcess, stopSonic } from './sonic-process.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
 import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
 import { piReadSettlement, sendHistory } from './pi-read-settlement.js';
 import { settleStoppedPi } from './pi-stop-settlement.js';
-import { watcherReady } from './watch-pid.js';
+import { ensureJobWatcher } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, reusableWorktree } from './managed-worktree.js';
@@ -212,10 +213,11 @@ function created(job: Job, initialRow?: JobRow) {
 function run(
   command: string,
   argv: string[],
-  cwd?: string
+  cwd?: string,
+  env?: NodeJS.ProcessEnv
 ): Promise<{ exit_code: number; stdout: string; stderr: string; notStarted: boolean }> {
   return new Promise((done) => {
-    const child = spawn(command, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, argv, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '',
       stderr = '';
     child.stdout.setEncoding('utf8').on('data', (data: string) => {
@@ -274,12 +276,7 @@ async function workspaceArgs(job: Job): Promise<string[]> {
   } // An unavailable caller lookup keeps herdr's default workspace.
 }
 function ensureWatcher(): void {
-  fs.mkdirSync(jobsRoot, { recursive: true, mode: 0o700 });
-  const script = binScript('hud-watch.mjs');
-  if (watcherReady(join(hudHome, 'watch.pid'), script)) return;
-  const child = spawn(process.execPath, [script], { detached: true, stdio: 'ignore' });
-  child.on('error', (error) => console.error(`hud-watch: ${error.message}`));
-  child.unref();
+  ensureJobWatcher(hudHome);
 }
 const wideChar = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\uff00-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;
 function cut(text: string, max: number): string {
@@ -385,23 +382,11 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     const prompt = briefPrompt(join(dir, jobFiles.brief));
     const piRole = place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
-    const argv: string[] = [
-      '--args-json',
-      piRole,
-      '--task-dir',
-      dir,
-      '--role-output',
-      output,
-      '--dispatch-slot',
-      'primary',
-      '--dispatch-label',
-      job.role,
-      '--allow-write',
-      output,
-      '--qa-dir',
-      join(dir, jobFiles.qa),
-    ];
-    if (job.herdr_pane) {
+    const argv = ['--args-json', piRole];
+    if (!job.headless) argv.push('--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role);
+    argv.push('--allow-write', output);
+    if (!job.headless) argv.push('--qa-dir', join(dir, jobFiles.qa));
+    if (!job.headless && job.herdr_pane) {
       const notify = binScript('hud-notify.mjs');
       argv.push('--notify', [process.execPath, notify, hudHome, job.herdr_pane, job.job].map(quote).join(' '));
     }
@@ -415,15 +400,20 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     for (const key of ['lens', 'mcp', 'tps'] as const)
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
     if (job.mcp === undefined && piMcpConfigEmpty(job.cwd, job.pi_args)) argv.push('--no-mcp');
-    if (job.ui_ext === false) argv.push('--no-ui-ext');
+    if (job.headless || job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
-    argv.push('--', '--tui-mode', 'regular', '--hud-worker-tools', '-e',
+    argv.push('--', ...(job.headless ? [] : ['--tui-mode', 'regular']), '--hud-worker-tools', '-e',
       join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
     for (const key of ['model', 'thinking'] as const) if (place[key] !== undefined) argv.push(`--${key}`, place[key]);
     argv.push(...resources, ...(job.pi_args ?? []));
-    const built = await run(launcher, argv, job.cwd);
+    if (job.headless) argv.push('--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic', '--no-session', '--print', '--mode', 'json', '--', prompt);
+    const built = await run(launcher, argv, job.cwd, job.headless ? { ...process.env, HERDR_ENV: undefined } : undefined);
     if (built.exit_code !== 0) return reject(built);
     const piArgs: string[] = JSON.parse(built.stdout);
+    if (job.headless) {
+      startSonicProcess(dir, job, piArgs);
+      return { exit_code: 0, stdout: '', stderr: '' };
+    }
     fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
@@ -1334,6 +1324,8 @@ function placeOptions(args: Args, configured: RolePlace) {
       piArgs.some((value) => typeof value !== 'string' || value.length > 4096)) return invalid();
     if (piArgs.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
       return invalid('pi_args cannot override --orchestrator or --notify caller binding');
+    if (args.role === 'sonic' && piArgs.some(value => value === '--' || /^(-c|-r|--(?:continue|resume|fork|session|session-id|mode|task-dir|dispatch-slot|role-output))(?:=|$)/.test(value)))
+      return invalid('pi_args cannot override the one-shot sonic lifecycle');
     options.pi_args = piArgs;
   }
   return { place, options };
@@ -1436,12 +1428,12 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
 
 const pendingScouts = new Map<string, AbortController>();
 const scoutedCreates = new Set<Promise<void>>();
-const SCOUT_WAIT_MS = 10 * 60_000;
 
 async function runCreateScout(target: Job, question: string, contextCwd: string, contextFiles: unknown, signal: AbortSignal): Promise<{ id?: string; failure?: string }> {
   let scout: Job | null = null;
   let discard = false;
-  const deadline = performance.now() + SCOUT_WAIT_MS;
+  let timedOut = false;
+  const deadline = performance.now() + SONIC_TIMEOUT_MS;
   try {
     const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
       target.herdr_pane, `scout:${target.job}`, false, target.job, undefined, undefined, { scoutContextCwd: contextCwd });
@@ -1462,6 +1454,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
       const left = deadline - performance.now();
       if (attention || left <= 0) {
         discard = true;
+        timedOut = !attention;
         return { failure: attention ? (row.open_questions ? 'asked a question' : row.reason ?? 'needed attention') : 'timed out' };
       }
       await sleep(Math.min(500, left), undefined, { signal });
@@ -1471,7 +1464,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
     discard = !!scout;
     return { failure: error instanceof Error ? error.message : String(error) };
   } finally {
-    if (discard && scout) await closeJob(scout, true).catch(() => ensureWatcher());
+    if (discard && scout) await stopSonic(directory(scout.job), timedOut).catch(() => ensureWatcher());
   }
 }
 
@@ -1591,6 +1584,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (onName && !onEntry) {
     return { ok: false, code: 'invalid_arguments', error: `unknown harness: ${onName}` };
   }
+  if (role === 'sonic' && ((onEntry && onEntry.harness !== 'pi') || preset?.run.some(p => p.harness !== 'pi'))) {
+    return { ok: false, code: 'invalid_arguments', error: 'sonic runs headless on pi only' };
+  }
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
   const choiceFor = (def: Role) =>
@@ -1618,7 +1614,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
   }
 
-  const enforceCap = !parentJob && !scoutContextCwd && !landCwd;
+  const enforceCap = role !== 'sonic' && !parentJob && !scoutContextCwd && !landCwd;
   let overflowFrom: string | undefined;
   let initial: Exclude<ReturnType<typeof placeOptions>, { code: 'invalid_arguments' }> | undefined;
   let inline = false;
@@ -1751,6 +1747,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(landCwd ? { land_turn: request_key } : {}),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
+      ...(role === 'sonic' ? { headless: true } : {}),
       ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
@@ -1769,15 +1766,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   };
 
   let admissionError: Awaited<ReturnType<typeof admit>>;
-  if (enforceCap) {
-    if (slotGate) await slotGate.wait;
-    try {
-      admissionError = await keyLock('concurrency', admit);
-    } finally {
-      slotGate?.release();
-    }
-  } else {
-    admissionError = await admit();
+  if (slotGate) await slotGate.wait;
+  try {
+    admissionError = enforceCap ? await keyLock('concurrency', admit) : await admit();
+  } finally {
+    slotGate?.release();
   }
   if (admissionError !== undefined) return admissionError;
   if (queuedReply !== undefined) return queuedReply;
@@ -1886,7 +1879,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if (!result.preInput || result.cleanupFailed) break;
+      if (job.headless || !result.preInput || result.cleanupFailed) break;
       save(job);
     }
     const launchRow = finishLaunch(job, dir, result, reason, !scoutQuestion);
@@ -2016,7 +2009,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       existing.overflow_from = existing.role;
       existing.role = role;
     }
-    const base: Job = { ...existing, role, attempts: [] };
+    const base: Job = { ...existing, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [] };
     const project = found.project();
     const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, existing.repair_of);
     const inline = initial.place.harness === 'bro';
@@ -2126,7 +2119,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if (!result.preInput || result.cleanupFailed) break;
+      if (job.headless || !result.preInput || result.cleanupFailed) break;
       save(job);
     }
     finishLaunch(job, dir, result, reason, false);
@@ -2277,6 +2270,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   const matchKey = explicitKey ?? derivedKey('send', id, message);
   const current = findJobMutable(id);
   if (!current) return { ok: false, code: 'job_not_found' };
+  if (current.role === 'sonic') return { ok: false, code: 'not_continuable' };
   const dir = directory(current.job);
   const now = Date.now();
   const duplicate = explicitKey === undefined
@@ -2382,6 +2376,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
 export async function dispatchLandRepair(id: string, cwd: string, task: string, key: string, pane: string | null) {
   const source = findJob(id);
   if (!source || source.cwd !== cwd) throw Error('Repair source checkout changed');
+  if (source.role === 'sonic') throw Error('Sonic cannot continue; dispatch a new query');
   const { row, status } = readRow(source, false);
   if (row.open_questions || !['idle_grace', 'done', 'closed'].includes(row.state ?? ''))
     throw Error(`Repair source needs attention: ${id}`);
@@ -2731,9 +2726,16 @@ async function closeJob(job: Job, stop = false) {
       jobCache.invalidateJob(job.job);
       const refreshed = findJob(job.job);
       if (!refreshed) return { exit_code: 0, last_line: 'removed queued job', removed: true };
-      ({ row, status } = readRow(refreshed));
+      job = refreshed;
+      ({ row, status } = readRow(job));
       if (row.state !== 'queued' || fs.existsSync(join(dir, jobFiles.session))) break;
     }
+  }
+  if (job.headless) {
+    const closed = await stopSonic(dir);
+    if (closed && !isWorker && readRow(job).row.display_state === 'failed')
+      save({ ...(findJob(job.job) ?? job), observed_at: new Date().toISOString() });
+    return { exit_code: closed ? 0 : 1, last_line: closed ? 'sonic closed' : 'sonic cleanup pending' };
   }
   const { result, complete, issue } = await reapWorkerTree(dir, status, () => {
     // Idle grace already finished: reap quits and the supervisor closes. A working job is stopped.

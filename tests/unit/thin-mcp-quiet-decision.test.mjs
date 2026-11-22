@@ -18,7 +18,6 @@ import {
   taskJob,
   runSonic,
   sonicTask,
-  publishSonic,
   fakeCliWithChild,
   statusQueries,
   readCloseQuit,
@@ -53,8 +52,8 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.equal(alreadyCollected.status, 0, alreadyCollected.stderr);
   const id = child.stdout.trim(), dir = join(f.env.HUD_HOME, 'jobs', id);
   const collectedId = alreadyCollected.stdout.trim();
-  publishSonic(join(f.env.HUD_HOME, 'jobs', collectedId), { state: 'closed', output_written: true });
-  const report = await runSonic(f, 'wait', parent.task_dir, '--job', collectedId, '--timeout', '0');
+  fs.writeFileSync(join(f.env.HUD_HOME, 'jobs', collectedId, 'release-sonic'), '');
+  const report = await runSonic(f, 'wait', parent.task_dir, '--job', collectedId, '--timeout', '5');
   assert.equal(report.status, 0, report.stderr);
   const prompts = () => f.commands().filter(({ args }) => args[1] === 'prompt' && args[2] === parent.agent && args[3].startsWith('Collect these sonic reports'));
   f.push(parent.job, 'idle');
@@ -69,7 +68,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.equal(readCloseQuit(f, parent), false);
   assert.equal(prompts().length, 0);
 
-  publishSonic(dir, { state: 'closed', output_written: true });
+  fs.writeFileSync(join(dir, 'release-sonic'), '');
   await until(() => prompts().length === 1);
   assert.ok(prompts()[0].args[3].includes(id));
   assert.ok(!prompts()[0].args[3].includes(collectedId));

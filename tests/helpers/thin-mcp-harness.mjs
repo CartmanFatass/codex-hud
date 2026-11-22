@@ -366,6 +366,7 @@ export function runSonic(f, action, dir, ...args) {
   ));
 }
 export function sonicTask(f) {
+  fs.writeFileSync(join(f.env.HOME, 'hold-sonic'), '');
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'sonic.json'), JSON.stringify({
     role: 'sonic', instructions: 'sonic', can_continue: false, run: [{

@@ -127,9 +127,14 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
     assert.equal(job.model, 'synthetic/sonic');
     assert.equal(job.thinking, 'high');
     assert.equal(job.thinking_source, 'default');
-    const launched = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${id}-primary`).args;
+    await until(() => f.commands().some((cmd) => cmd.dir === dir(id)));
+    const launched = f.commands().find((cmd) => cmd.dir === dir(id)).args;
+    assert.ok(launched.includes('--print'));
+    assert.ok(launched.includes('--exclude-tools'));
     assert.equal(launched[launched.indexOf('--thinking') + 1], 'high');
-    assert.match(fs.readFileSync(join(dir(id), 'SESSION.txt'), 'utf8'), /^ORCH=w4E:p1$/m);
+    assert.equal(fs.existsSync(join(dir(id), 'SESSION.txt')), false);
+    assert.ok(!f.commands().some(({ args }) => args.includes(`HUD_JOB_DIR=${dir(id)}`)));
+    assert.equal((await f.call('hud_send', { job: id, text: 'Follow-up?' })).code, 'not_continuable');
     assert.equal(cliState(dir(id)).state, 'working');
   }
   const wait = (id, timeout = '0', own = parent.task_dir) => runSonic(f, 'wait', own, '--job', id, '--timeout', timeout);
@@ -137,16 +142,17 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.deepEqual(await wait(first), stillWorking, 'a report file alone does not settle a child');
   assert.deepEqual(await wait(second, '0.2'), stillWorking);
   assert.deepEqual(resultValue(await call('hud_sonic', { timeout_s: 0 })), { reports: [], working: [first, second].sort(), failed: [] });
-  const qa = join(dir(first), 'qa');
-  fs.mkdirSync(qa, { recursive: true });
-  writeFixtureFile(join(qa, 'q1.md'), 'Synthetic child question.');
+  await until(() => workerFor(f, first)?.latest_progress?.text === 'Checking synthetic input.');
+  writeFixtureFile(join(dir(first), 'report.md'), 'Synthetic implementation report.');
+  assert.deepEqual(await wait(first), stillWorking, 'an undeclared report does not end a live query');
   const changes = async () => (await f.call('hud_read')).changes ?? [];
-  assert.ok((await changes()).some((line) => line.startsWith(first) && line.includes('QUESTION') && !line.includes(' | report')));
-  const waiting = call('hud_sonic', { timeout_s: 2 });
-  writeFixtureFile(join(qa, 'q1.answer.md'), 'Answer.');
-  publishSonic(dir(first), { state: 'closed', output_written: true });
+  const waiting = call('hud_sonic', { timeout_s: 10 });
+  fs.writeFileSync(join(dir(first), 'release-sonic'), '');
+  await until(() => cliState(dir(first))?.state === 'closed');
+  assert.ok(fs.statSync(join(dir(first), 'stdout.jsonl')).size > 0);
+  assert.match(fs.readFileSync(join(dir(first), 'stderr.log'), 'utf8'), /Synthetic diagnostic/);
   assert.ok(!(await changes()).some((line) => line.startsWith(first)), 'child settlement stays quiet');
-  publishSonic(dir(second), { state: 'closed', output_written: true });
+  fs.writeFileSync(join(dir(second), 'release-sonic'), '');
   assert.deepEqual(resultValue(await waiting), { working: [], failed: [], reports: [first, second].sort().map((id) => ({
     id, path: `${dir(id)}/report.md`, body: 'Synthetic implementation report.',
   })) });
@@ -155,6 +161,7 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.deepEqual(compact.map(({ job, child_count }) => [job, child_count]), [[parent.job, 2]]);
   assert.equal((await f.call('hud_read', { view: 'recent' })).jobs.find((job) => job.job === first).report_unread, true);
   assert.match((await f.call('hud_read', { job: first, full: true })).report, /Synthetic implementation report/);
+  assert.equal((await f.call('hud_send', { job: first, text: 'Another query?' })).code, 'not_continuable');
 
   const other = await f.call('hud_create', { role: 'imp', request_key: 'not-the-parent', task: 'Synthetic other job.' });
   const refused = await wait(first, '0', other.task_dir);
@@ -166,10 +173,11 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   const inline = await runSonic(f, 'start', parent.task_dir, '--task', 'Synthetic inline sub-task.');
   assert.equal(inline.status, 0, inline.stderr);
   assert.match(fs.readFileSync(join(dir(inline.stdout.trim()), 'brief.md'), 'utf8'), /^Synthetic inline sub-task\./);
-  publishSonic(dir(inline.stdout.trim()), { state: 'failed', exit_reason: 'synthetic child failed' });
-  const failed = await wait(inline.stdout.trim());
+  fs.writeFileSync(join(dir(inline.stdout.trim()), 'fail-sonic'), '');
+  fs.writeFileSync(join(dir(inline.stdout.trim()), 'release-sonic'), '');
+  const failed = await wait(inline.stdout.trim(), '5');
   assert.equal(failed.status, 1);
-  assert.match(failed.stderr, /synthetic child failed/);
+  assert.match(failed.stderr, /pi exited: 4/);
   for (const opts of [[], ['--task', 'Synthetic.', '--task-file', task], ['--task', ' ']]) {
     const bad = await runSonic(f, 'start', parent.task_dir, ...opts);
     assert.equal(bad.status, 1);
@@ -199,8 +207,7 @@ test('hud_sonic inherits the parent managed worktree cwd, not the worker MCP ser
   const child = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
   assert.equal(child.parent_job, parent.job);
   assert.equal(child.cwd, worktree);
-  const tab = f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'create' && args.includes(`HUD_JOB_DIR=${dir}`));
-  assert.equal(tab.args[tab.args.indexOf('--cwd') + 1], worktree);
+  await until(() => f.commands().some((cmd) => cmd.dir === dir && cmd.cwd === worktree));
 });
 
 test('hud_sonic accepts a project cwd relative to the parent and refuses paths outside the project', async (t) => {
@@ -233,7 +240,7 @@ test('a working pi parent gets a native sonic-ready message without polling or c
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic pi parent.' });
   const native = spawnSync(process.execPath, ['--input-type=module', '-e', `
     import hud from ${JSON.stringify(new URL('../../integrations/pi/package/extensions/hud.mjs', import.meta.url).href)};
-    import { existsSync, renameSync, writeFileSync } from 'node:fs';
+    import { existsSync, writeFileSync } from 'node:fs';
     import { join } from 'node:path';
     import assert from 'node:assert/strict';
     process.argv.push('--hud-worker-tools');
@@ -245,8 +252,7 @@ test('a working pi parent gets a native sonic-ready message without polling or c
     const dir = join(process.env.HUD_HOME, 'jobs', job);
     await tools.get('hud_progress').execute('unrelated', { message: 'Parent still editing.' });
     const timeout = setTimeout(() => { throw Error('no sonic notice'); }, 3000);
-    writeFileSync(join(dir, 'status.tmp'), JSON.stringify({ state: 'idle_grace' }));
-    renameSync(join(dir, 'status.tmp'), join(dir, 'STATUS.json'));
+    writeFileSync(join(dir, 'release-sonic'), '');
     const { message, options } = await notice.promise;
     clearTimeout(timeout);
     assert.equal(message.customType, 'hud-sonic-ready');
@@ -283,7 +289,8 @@ test('sonic tooling offers no per-task choice, but hud_create keeps explicit ove
   assert.equal(main.thinking_source, 'explicit');
   const child = workerClient(t, f, main.task_dir);
   assert.deepEqual((await child.rpc('tools/list')).result.tools.map(({ name }) => name),
-    ['hud_report', 'hud_ask', 'hud_progress', 'hud_lease']);
+    ['hud_report', 'hud_progress', 'hud_lease']);
+  assert.equal((await child('hud_ask', { question: 'Choose?', default: 'none' })).isError, true);
   assert.equal((await child('hud_sonic', {})).isError, true);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic parent.' });
   const call = workerClient(t, f, parent.task_dir);
@@ -325,7 +332,7 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
     const receipt = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'jobs', reply.job, 'job.json')));
     assert.equal(receipt.thinking, thinking);
     assert.equal(receipt.thinking_source, source);
-    const launch = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${reply.job}-primary`).args;
+    const launch = f.commands().findLast(({ command, args }) => command === 'pi-role' && args.includes('--print')).args;
     assert.equal(launch[launch.indexOf('--thinking') + 1], thinking);
   };
   mode('picked');
@@ -378,17 +385,15 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
   assert.deepEqual(ledger.map(({ feature }) => feature), Array(6).fill('sonic-thinking'));
 });
 
-test('worker MCP resolves its non-default HUD home and starts sonic with fallback without HUD_HOME', async (t) => {
+test('worker MCP resolves its non-default HUD home and skips interactive places for sonic', async (t) => {
   const f = await fixture(t);
   const parent = await f.call('hud_create', { role: 'imp', request_key: 'no-home-parent', task: 'Synthetic parent.' });
   const call = workerClient(t, { ...f, env: { ...f.env, HUD_HOME: undefined } }, parent.task_dir);
   assert.equal(resultValue(await call('hud_progress', { message: 'Synthetic milestone.' })).ok, true);
   assert.match(fs.readFileSync(join(parent.task_dir, 'progress.jsonl'), 'utf8'), /Synthetic milestone/);
   fallbackRole(f, 'sonic');
-  fs.writeFileSync(join(f.env.HOME, 'fail-start-grok'), 'synthetic sonic startup failure');
   const sonic = resultValue(await call('hud_sonic', { task: 'Synthetic child.' }));
   assert.deepEqual(sonic.attempts, [
-    { index: 0, place: 'cli/grok (synthetic-first)', reason: 'synthetic sonic startup failure' },
     { index: 1, place: 'pi (synthetic/second)' },
   ]);
   assert.equal(sonic.used_place, 'pi (synthetic/second)');
@@ -1094,8 +1099,9 @@ syncBuiltinESMExports();`;
   assert.equal(watchStats().active, 0);
 
   // 2. hud_sonic wait via MCP wakes within 100 ms of child report settlement.
-  const child = resultValue(await call('hud_sonic', { task: 'Synthetic child task.' })).job;
-  const childDir = join(f.env.HUD_HOME, 'jobs', child);
+  const { job: child, dir: childDir, receipt } = waitFixtureJob(f, 33);
+  writeFixtureFile(join(childDir, 'job.json'), JSON.stringify({ ...receipt, role: 'sonic', parent_job: parent.job }));
+  writeFixtureFile(join(childDir, 'report.md'), 'Synthetic implementation report.');
   const pendingSonic = call('hud_sonic', { wait: [child], timeout_s: 5 });
   await until(() => watchStats().active > 0);
   const settleAt = performance.now();

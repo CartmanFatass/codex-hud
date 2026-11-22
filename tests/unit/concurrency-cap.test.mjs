@@ -174,6 +174,23 @@ test('three working imps overflow fourth imp to general and queue once both caps
   assert.equal((await f.call('hud_read', { job: q2.job })).queue_position, 1);
 });
 
+test('a headless sonic starts even when a legacy sonic fills the role cap', async (t) => {
+  const f = await fixture(t);
+  writeHudSettings(f, { roleCaps: { sonic: 1 } });
+  const id = 'j00000000000000a1';
+  const dir = join(f.env.HUD_HOME, 'jobs', id);
+  fs.mkdirSync(dir, { recursive: true });
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'sonic', cwd: f.root,
+    herdr_pane: 'w4E:p1', created_at: new Date().toISOString() }));
+  writeStatus(dir, { state: 'working' });
+
+  const job = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query at cap.' });
+  assert.notEqual(job.state, 'queued');
+  await until(() => cliState(job.task_dir)?.state === 'closed');
+  assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).headless, true);
+  assert.equal(fs.existsSync(join(job.task_dir, 'SESSION.txt')), false);
+});
+
 test('queued imp starts automatically when a working imp settles, picking the first available place at start time', { timeout: 25000 }, async (t) => {
   const f = await fixture(t);
   writeHudSettings(f, { roleCaps: { imp: 3, general: 3 }, impOverflow: false });

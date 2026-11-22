@@ -76,7 +76,7 @@ export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room
 /** A sonic child under its parent card as one row: `├─ ⚡ sonic · short title  3m ◉`, the last child `└─`. */
 function sonicBranch(card: WorkCard, last: boolean, width: number): string {
   const ink = workStateInk(card), role = monitorText(card.role);
-  const left = `${theme.board.muted(mark(last ? '└─' : '├─', last ? '`-' : '|-'))} ${ink(`${mark('⚡', '*')} ${role}`)} ${theme.board.muted('·')} ${theme.board.body(monitorText(card.title))}`;
+  const left = `${theme.board.muted(mark(last ? '└─' : '├─', last ? '`-' : '|-'))} ${ink(`${mark('⚡', '*')} ${role}`)} ${theme.board.muted('·')} ${theme.board.body(monitorText(card.worker.latest_progress?.text ?? card.title))}`;
   return pair(left, `${theme.board.muted(ageText(card.elapsedMinutes ?? 0))} ${ink(workStateGlyph(card))}`, width);
 }
 export function laneRows(

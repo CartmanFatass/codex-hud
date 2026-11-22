@@ -7,6 +7,7 @@ import { loadSettings } from '../settings.js';
 import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
+import { stopSonic } from '../mcp/sonic-process.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { QUEUE_START_MARKER } from '../roles/concurrency.js';
 
@@ -70,6 +71,7 @@ export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{
     }
   }
   try {
+    if (readJson(join(jobDir, jobFiles.job))?.headless) return await stopSonic(jobDir) ? { ok: true } : { ok: false, reason: 'sonic cleanup pending' };
     const { result, complete, issue } = await reapWorkerTree(jobDir, status, () => {
       if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {
         try { fs.writeFileSync(join(jobDir, jobFiles.closeRequested), '', { flag: 'wx', mode: 0o600 }); }

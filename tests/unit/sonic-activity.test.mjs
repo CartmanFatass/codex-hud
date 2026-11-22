@@ -21,9 +21,9 @@ async function scene(t, { parent = {}, kids = [['check retry flags', null], ['li
   const f = await splitFixture(join(root, 'busy'));
   const lane = f.board.lanes.find((l) => l.label === 'AUTH-REFRESH'), base = lane.workers[0];
   const main = { ...base, ...parent, ...(activity ? { activity } : {}) };
-  const child = ([task, settledAt], i) => ({
+  const child = ([task, settledAt, progress], i) => ({
     ...base, id: `thin-job:j00000000000000c${i}`, parentJobId: base.id, role: 'sonic', task, startedAt: NOW - 3 * MIN, settledAt,
-    state: settledAt === null ? 'working' : 'done', work: { ...base.work, activityAt: NOW, result: settledAt !== null },
+    latest_progress: progress && { text: progress }, state: settledAt === null ? 'working' : 'done', work: { ...base.work, activityAt: NOW, result: settledAt !== null },
   });
   const workers = [main, ...kids.map(child)];
   const lanes = f.board.lanes.map((l) => (l === lane ? { ...l, workers } : l));
@@ -77,6 +77,13 @@ test('Sonic children hang under their parent as one-line branches, in Classic an
     for (const line of lines) assert.equal(visualLength(line), width, `${name} ${lang} ${width}: ${line}`);
   }
   assert.ok(text(s.render(40, 'en', initialMonitorState(), 60, { icons: 'text' })).some((l) => /^ {2}\|- \* sonic · check retry flags/.test(l)), 'ascii');
+});
+
+test('A sonic branch shows its latest milestone while working and after settlement', async (t) => {
+  const s = await scene(t, { kids: [['First query', null, 'Reading inputs'], ['Second query', NOW - MIN, 'Checked inputs']] });
+  const lines = text(s.render(80, 'en', initialMonitorState()));
+  assert.ok(lines.some(line => /├─ ⚡ sonic · Reading inputs .*◉/.test(line)));
+  assert.ok(lines.some(line => /└─ ⚡ sonic · Checked inputs .*✓/.test(line)));
 });
 
 test('A folded parent shows how many sonic children still run on its title row, and not the branches', async (t) => {

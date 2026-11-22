@@ -670,7 +670,7 @@ export function roleRegistry(
       const switch_ids = place.harness === 'pi' ? provider ? ['pi', `pi:${provider}`] : ['pi']
         : place.harness === 'cli' ? [`cli:${place.agent}`] : [`bro:${place.tool}`];
       return { index, place, ...details, key, until: mark?.until, quota_reason: mark?.reason,
-        missing: missingCommand(place, context.has), switch_ids, provider, provider_source };
+        missing: role.role === 'sonic' && place.harness !== 'pi' ? 'headless pi place for sonic' : missingCommand(place, context.has), switch_ids, provider, provider_source };
     }), context.disabled, overrideModel !== undefined && !inheritedModel);
     const chosen = evaluated.find((entry) => entry.state === 'active') ?? null;
     const activeEntry = chosen ?? evaluated[0]!;
@@ -687,7 +687,7 @@ export function roleRegistry(
       effort: active.harness === 'bro' ? active.effort : undefined,
       kind: active.harness === 'bro' ? active.kind : undefined,
       args: active.harness === 'cli' ? active.args : undefined,
-      can_continue: active.harness === 'bro' ? false : canContinue,
+      can_continue: active.harness === 'bro' || role.role === 'sonic' ? false : canContinue,
       model: model.value,
       thinking: thinking.value,
       model_source: model.source,

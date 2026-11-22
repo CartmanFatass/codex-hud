@@ -30,7 +30,7 @@ export interface Job extends PiOptions {
   queued_at?: string;
   overflow_from?: string;
   scout_question?: string;
-  headless?: boolean;
+  headless?: boolean; // Older sonic receipts may own a herdr tab.
   package?: string;
   title?: string;
   ticket?: string;
@@ -96,6 +96,9 @@ export type JobStatus = {
   output_written?: boolean;
   pid?: number | null;
   pid_start_time?: string | null;
+  boot_id?: string;
+  stdout_bytes?: number;
+  stderr_bytes?: number;
   supervisor_pid?: number | null;
   agent_session_id?: string | null;
   session_id?: string | null;
