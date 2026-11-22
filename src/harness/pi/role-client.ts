@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { PiPackageBinding } from './package-context.js';
+import { v8HeapArgs } from '../../../scripts/dist-lock.mjs';
 
 type Result = { content: { type: 'text'; text: string }[]; isError?: boolean };
 type Connection = {
@@ -19,9 +20,10 @@ export class PiRoleClient {
     private cwd: string
   ) {}
   private connect(): Connection {
-    const child = spawn(this.binding.node, [join(this.binding.release, 'packages/hud-mcp/bin/hud-mcp.mjs')], {
+    const env = { ...this.env, HUD_HOME: this.binding.hudHome, HUD_MCP_SURFACE: 'roles' };
+    const child = spawn(this.binding.node, [...v8HeapArgs('mcp', env), join(this.binding.release, 'packages/hud-mcp/bin/hud-mcp.mjs')], {
       cwd: this.cwd,
-      env: { ...this.env, HUD_HOME: this.binding.hudHome, HUD_MCP_SURFACE: 'roles' },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let id = 0;

@@ -1228,6 +1228,7 @@ are needed; unchanged counters do not refresh it. Old samples say last, not live
 | `CODEX_HUD_NOTIFY`, `CODEX_HUD_NOTIFY_DESKTOP`, `CODEX_HUD_NOTIFY_COOLDOWN` | Notification opt-ins, cooldown (300 seconds default) |
 | `CODEX_HUD_PROFILE` | 1 writes stage timing summaries to `display/profile.log` |
 | `CODEX_HUD_FONT_DIR` | Override optional `bin/codex-hud-fonts` install/check directory |
+| `HUD_HEAP_CAPS` | V8 heap caps for panel (`128/4`) and `hud-watch`/`hud-mcp` (`96/2`); `off`/`default`/`0` restores Node defaults, or `<old>[/<semi>]` MB |
 
 Notifications default off. They report observed failures, approvals and completions
 through tmux, optionally desktop OSC/notify-send; they never auto-approve or retry.

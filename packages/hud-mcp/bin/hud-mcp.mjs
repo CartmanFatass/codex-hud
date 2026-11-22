@@ -8,7 +8,7 @@ if (major < 24) {
   process.exit(1);
 }
 import { selectMcpEntry } from './surface.mjs';
-import { buildStamp, withDistLock } from '../../../scripts/dist-lock.mjs';
+import { applyV8HeapCaps, buildStamp, withDistLock } from '../../../scripts/dist-lock.mjs';
 import { createInterface } from 'node:readline';
 import { openGeneration } from './generation.mjs';
 
@@ -19,6 +19,7 @@ try {
   process.stderr.write(`${error instanceof Error ? error.message : 'unknown_surface'}\n`);
   process.exit(1);
 }
+applyV8HeapCaps('mcp');
 try {
   const url = new URL(entry, import.meta.url);
   let stamp, current;

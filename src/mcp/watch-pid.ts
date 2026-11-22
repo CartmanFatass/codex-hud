@@ -2,13 +2,15 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { binScript } from './paths.js';
+import { v8HeapArgs } from '../../scripts/dist-lock.mjs';
 import { isProcAlive, isValidPid, readProcCmdline } from '../utils/proc.js';
 
 export function ensureJobWatcher(home: string) {
   mkdirSync(join(home, 'jobs'), { recursive: true, mode: 0o700 });
   const script = binScript('hud-watch');
   if (watcherReady(join(home, 'watch.pid'), script)) return;
-  const child = spawn(process.execPath, [script], { detached: true, stdio: 'ignore', env: { ...process.env, HUD_HOME: home } });
+  const env = { ...process.env, HUD_HOME: home };
+  const child = spawn(process.execPath, [...v8HeapArgs('watch', env), script], { detached: true, stdio: 'ignore', env });
   child.on('error', (error) => console.error(`hud-watch: ${error.message}`));
   child.unref();
 }

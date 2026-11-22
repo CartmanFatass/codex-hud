@@ -1,12 +1,11 @@
 import { homedir } from 'node:os';
-import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { ModelProbe } from '../collectors/model-probe.js';
 import { decisionKeys, readHudCredentials } from '../jev/ask/config.js';
 import { getHudHome } from '../hud-home.js';
-import { binScript, jobFiles } from '../mcp/paths.js';
-import { watcherReady } from '../mcp/watch-pid.js';
+import { jobFiles } from '../mcp/paths.js';
+import { ensureJobWatcher } from '../mcp/watch-pid.js';
 import { t } from '../render/i18n.js';
 import { handleMonitorInput, initialMonitorState, type MonitorContext, type MonitorState } from '../render/monitor.js';
 import {
@@ -46,11 +45,7 @@ function wakeWatcherIfQueued() {
       }
     });
     if (!hasQueued) return;
-    const script = binScript('hud-watch.mjs');
-    if (watcherReady(join(home, 'watch.pid'), script)) return;
-    const child = spawn(process.execPath, [script], { detached: true, stdio: 'ignore' });
-    child.on('error', () => {});
-    child.unref();
+    ensureJobWatcher(home);
   } catch { /* Best effort; running watcher already watches hud-settings.json. */ }
 }
 

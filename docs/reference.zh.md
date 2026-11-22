@@ -838,6 +838,7 @@ Version 2 含会话、项目、上下文、额度、tokens、代理、注意事�
 | `CODEX_HUD_NOTIFY`、`CODEX_HUD_NOTIFY_DESKTOP`、`CODEX_HUD_NOTIFY_COOLDOWN` | 提醒开关、冷却（默认三百秒） |
 | `CODEX_HUD_PROFILE` | 1 将阶段计时写入 `display/profile.log` |
 | `CODEX_HUD_FONT_DIR` | 可选 `bin/codex-hud-fonts` 字体安装／检查目录 |
+| `HUD_HEAP_CAPS` | 面板（`128/4`）与 `hud-watch`／`hud-mcp`（`96/2`）的 V8 堆上限；`off`／`default`／`0` 恢复 Node 默认，或设 `<old>[/<semi>]` MB |
 
 提醒默认关闭，经 tmux、可选桌面 OSC/notify-send 报告观察到的失败、审批和完成，不自动批准或重试。
 

@@ -44,3 +44,37 @@ export async function withDistLock(load, root = releaseRoot) {
     lock.close();
   }
 }
+
+const HEAP_CAPS = {
+  panel: { old: 128, semi: 4 },
+  watch: { old: 96, semi: 2 },
+  mcp: { old: 96, semi: 2 },
+};
+
+function hasHeapFlag(name, execArgv, nodeOptions) {
+  const flag = name.replace(/-/g, '[-_]');
+  if (execArgv.some((arg) => new RegExp(`^--${flag}(?:=|$)`).test(arg))) return true;
+  return typeof nodeOptions === 'string' && new RegExp(`(?:^|\\s)--${flag}(?:=|\\s|$)`).test(nodeOptions);
+}
+
+/** Resolve V8 heap cap flags for a long-lived process; HUD_HEAP_CAPS=off/0/default restores Node defaults. */
+export function v8HeapArgs(profile, env = process.env, execArgv = []) {
+  const raw = env.HUD_HEAP_CAPS?.trim().toLowerCase();
+  if (raw && /^(?:0|off|false|default|none)$/.test(raw)) return [];
+  const custom = raw ? /^([1-9]\d*)(?:\/([1-9]\d*))?$/.exec(raw) : null;
+  const cap = custom ? { old: Number(custom[1]), semi: custom[2] ? Number(custom[2]) : undefined } : HEAP_CAPS[profile];
+  if (!cap) return [];
+  const args = [];
+  if (cap.old && !hasHeapFlag('max-old-space-size', execArgv, env.NODE_OPTIONS)) args.push(`--max-old-space-size=${cap.old}`);
+  if (cap.semi && !hasHeapFlag('max-semi-space-size', execArgv, env.NODE_OPTIONS)) args.push(`--max-semi-space-size=${cap.semi}`);
+  return args;
+}
+
+/** Re-exec in-place with V8 heap caps when launched directly (e.g. shebang) without them. */
+export function applyV8HeapCaps(profile) {
+  if (['win32', 'os400'].includes(process.platform) || typeof process.execve !== 'function') return;
+  const args = v8HeapArgs(profile, process.env, process.execArgv);
+  if (!args.length) return;
+  const env = Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined));
+  process.execve(process.execPath, [process.execPath, ...args, ...process.execArgv, ...process.argv.slice(1)], env);
+}
