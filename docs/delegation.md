@@ -76,6 +76,12 @@ The implementer asks only when blocked, or when the choice changes what the owne
 Everything else it decides itself, choosing the simplest option, and notes in its report. The orchestrator's default
 answer is the simplest option; anything beyond the spec goes to the owner.
 
+Recurring questions become standing rules (survey 2026-11-22: 66 worker questions and 164 main follow-ups; 27 answers
+just accepted the worker's default, and 25 follow-ups only restated a rule). When an answer would apply to other jobs,
+add it to `.hud/brief.md` ("Decide these yourself") in the same turn, not only in the reply. An owner addendum to
+running work goes into its ticket (What to build or Comments) first; the `hud_send` points to that line, so the next
+job and the land read the same requirement.
+
 ## Roles and models
 
 | Role | Runs on | Used for |

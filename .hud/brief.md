@@ -5,7 +5,8 @@ Applies to every worker job in this repository, after its own task.
 - Rules from `docs/ARCHITECTURE.md` §8 are inlined below; open `docs/ARCHITECTURE.md` only when your change needs
   subsystem detail. `docs/spec.md` is the product boundary.
 - Run every build and test through `/home/fires/projects/MyHUD/tmp/env.sh <command>` (temporary HOME, HUD_HOME,
-  CODEX_HOME). Never run tests against the real home.
+  CODEX_HOME); `tmp/` is not in worktrees, so use this absolute path and do not copy it. Never run tests against the
+  real home.
 - Build with `npm run build && npm run build:test`, then run the tests for the code you touched. The full suite
   (`npm test`, `npm run test:mjs`, `check:fixtures`; about 70 s) is the land gate's job, including a ticket's
   "npm test … pass" line; do not run it even once unless the brief says so. Other jobs share this machine.
@@ -19,6 +20,24 @@ Applies to every worker job in this repository, after its own task.
 - Node >= 24. No new dependencies unless the brief allows them.
 - Shared resources (the real install under `~/.hud`, live harness runs, the shared browser) are the main session's
   unless the brief names a lease to take with `hud_lease`.
+
+## Decide these yourself (do not ask)
+
+- A test outside your change fails: rerun that one file once. If it fails again, leave it, name it in the report as a
+  baseline failure, and fix it only when the brief asks.
+- Scope: edit what the brief names plus the tests and reference docs (`docs/reference.md`, `docs/reference.zh.md`) the
+  change needs. Another file you need: change it and give one line why in the report. Past the size budget: stop and
+  report.
+- A choice the brief and `docs/spec.md` leave open that the owner would not see: take the simplest and list it under
+  Decisions in the report. Ask only when the owner would see the difference or the brief contradicts the spec.
+- Do not rebase or merge main into your branch and do not wait for another job's land: build on your worktree's base
+  and say in the report what your change assumes. `hud_land` replays onto current main and sends conflicts back to
+  you as a repair; follow that repair's instructions.
+- Git: amend only your own unpushed commits; do not reformat code you did not change; never write git config. Commit
+  as `git -c user.name='HUD worker' -c user.email=worker@hud.invalid commit ...`.
+- The owner's real `~/.hud`, `~/.claude`, `~/.codex`, `~/.gemini` and `~/.pi` may be read to learn formats; never
+  write, lock or signal anything there. Copy real data only to `/dev/shm` and delete it after.
+- State you add under `$HUD_HOME` has a bound (count or age) and is written private; prefer no new dependency.
 
 ## Rules every change keeps (`docs/ARCHITECTURE.md` §8)
 
