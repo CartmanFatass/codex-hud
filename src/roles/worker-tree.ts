@@ -53,7 +53,8 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
     if (!status || typeof status !== 'object') return {};
     const { pid, pid_start_time: start, slot, task_dir } = status as Record<string, unknown>;
     if (!validPid(pid) || !validStart(start) || (task_dir !== dir && task_dir !== fs.realpathSync(dir))) return {};
-    if (slot === 'sonic') {
+    const headless = slot === 'sonic' || slot === 'headless';
+    if (headless) {
       const bootId = (status as Record<string, unknown>).boot_id;
       if (bootId !== boot()) return {};
       sonicRoot(dir, pid, start, bootId);
@@ -69,7 +70,7 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
     const matches = (value: Snapshot | undefined): value is Snapshot => value?.version === 2 && value.bootId === bootId &&
       value.pid === pid && value.start === start && Array.isArray(value.members);
     const add = (member: Stamp) => {
-      if (!member || !validPid(member.pid) || !validStart(member.start) || member.pid === pid || (slot !== 'sonic' && member.pid === process.pid)) return;
+      if (!member || !validPid(member.pid) || !validStart(member.start) || member.pid === pid || (!headless && member.pid === process.pid)) return;
       const previous = owned.get(member.pid);
       if (!previous || Number(member.start) > Number(previous.start)) owned.set(member.pid, member);
     };
@@ -104,7 +105,7 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
       snapshot ??= { version: 2, bootId, pid, start, members: [] };
       const children = new Map<number, Stamp[]>();
       for (const id of listProcPids()) {
-        if (!validPid(id) || id === pid || (slot !== 'sonic' && id === process.pid)) continue;
+        if (!validPid(id) || id === pid || (!headless && id === process.pid)) continue;
         const child = readProcStat(id);
         if (!child || !active(child.state) || Number(child.start) < Number(start)) continue;
         const member = { pid: id, start: child.start };

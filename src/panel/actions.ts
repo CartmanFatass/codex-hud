@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { openBoard, writeBoard } from '../cli/board.js';
 import { focusJobTab, openEditorPane, stopJob } from '../cli/panel-pane.js';
 import { readExpData, saveExpEdit } from '../collectors/exp-store.js';
-import { answerJobQuestion, appendPanelAction } from '../collectors/panel-actions.js';
+import { answerJobQuestion, appendPanelAction, recordPanelAnswer, type AnswerResult } from '../collectors/panel-actions.js';
 import type { ProjectVisits } from '../collectors/project-visits.js';
 import { appendTry } from '../collectors/try-records.js';
 import { finishChain } from '../render/chain-input.js';
@@ -16,6 +16,19 @@ import type { MonitorOutcome, MonitorState } from '../render/monitor.js';
 import { HarnessSwitchError, setHarnessDisabled } from '../roles/harness-switches.js';
 import { editPlaces, editPreset } from '../roles/role-control.js';
 import { roleRegistry } from '../roles/roster.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { resumePanelAnswer } from '../mcp/thin-main.js';
+
+/** A tab consumes the answer file itself. A paused headless session needs the same handoff as hud_respond. */
+export async function answerFromPanel(home: string, id: string, qid: string, answer: string, role: string | null): Promise<AnswerResult> {
+  try {
+    const job = getJobIndexCache(home).readJob(id);
+    if (job.status !== 'ok' || !job.value.headless) return answerJobQuestion(home, id, qid, answer, role);
+    const result = await resumePanelAnswer(home, id, qid, answer.trim());
+    if (result.ok && result.written) recordPanelAnswer(home, id, qid, answer.trim(), role);
+    return result;
+  } catch (error) { return { ok: false, reason: (error as Error).message }; }
+}
 
 type ActionHost = {
   state: MonitorState;
@@ -91,9 +104,11 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           });
           break;
         case 'answer-job': {
-          const { home, jobId, qid, answer, role } = action, done = answerJobQuestion(home, jobId, qid, answer, role);
-          host.notice(!done.ok ? `${t('Could not answer')}: ${done.reason}` : done.written ? '' : t('Already answered'));
-          host.collect();
+          const { home, jobId, qid, answer, role } = action;
+          void answerFromPanel(home, jobId, qid, answer, role).then(done => {
+            host.notice(!done.ok ? `${t('Could not answer')}: ${done.reason}` : done.written ? '' : t('Already answered'));
+            host.collect();
+          });
           break;
         }
         case 'stop-job':

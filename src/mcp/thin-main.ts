@@ -18,7 +18,7 @@ import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
 import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from './cli-worker-startup.js';
-import { SONIC_TIMEOUT_MS, startSonicProcess, stopSonic } from './sonic-process.js';
+import { SONIC_TIMEOUT_MS, startHeadlessProcess, stopSonic } from './sonic-process.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
 import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
@@ -34,7 +34,7 @@ import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta,
 import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
-import { PanelActionLog } from '../collectors/panel-actions.js';
+import { PanelActionLog, type AnswerResult } from '../collectors/panel-actions.js';
 import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { isProcAlive, procStat } from '../utils/proc.js';
 import { TryLog } from '../collectors/try-records.js';
@@ -190,7 +190,7 @@ function created(job: Job, initialRow?: JobRow) {
     ...(job.thinking == null ? {} : { thinking: job.thinking }),
     ...(job.thinking_source ? { thinking_source: job.thinking_source } : {}),
   };
-  const launch = { attempts: job.attempts, used_place: job.used_place ?? null };
+  const launch = { attempts: job.attempts, used_place: job.used_place ?? null, ...(job.headless && { mode: 'headless' }) };
   const queued = row.state === 'queued'
     ? { queued: true as const, ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}) }
     : {};
@@ -382,14 +382,17 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
     if (!launcher) throw new Error('pi-role not found on PATH');
     const dir = directory(job.job),
       output = join(dir, jobFiles.report);
+    const sessionWorker = job.headless && job.role !== 'sonic';
+    const sessionFile = sessionWorker ? resume?.file ?? join(dir, 'sessions', `${job.job}.jsonl`) : undefined;
     const prompt = resume?.message ?? briefPrompt(join(dir, jobFiles.brief));
     const piRole = place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
     const argv = ['--args-json', piRole];
     if (!job.headless) argv.push('--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role);
     argv.push('--allow-write', output);
-    if (!job.headless) argv.push('--qa-dir', join(dir, jobFiles.qa));
-    if (!job.headless && job.herdr_pane) {
+    if (!job.headless || sessionWorker) argv.push('--qa-dir', join(dir, jobFiles.qa));
+    if (sessionWorker) argv.push('--qa-timeout', '0');
+    if ((!job.headless || sessionWorker) && job.herdr_pane) {
       const notify = binScript('hud-notify.mjs');
       argv.push('--notify', [process.execPath, notify, hudHome, job.herdr_pane, job.job].map(quote).join(' '));
     }
@@ -409,13 +412,23 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
       join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
     for (const key of ['model', 'thinking'] as const) if (place[key] !== undefined) argv.push(`--${key}`, place[key]);
     argv.push(...resources, ...(job.pi_args ?? []));
-    if (job.headless) argv.push('--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic', '--no-session', '--print', '--mode', 'json', '--', prompt);
+    // Pi expands even a positional @path into file contents. A follow-up is literal text, not a file grant.
+    if (sessionFile) argv.push('--session', sessionFile, '--print', '--mode', 'json', '--', prompt.startsWith('@') ? ` ${prompt}` : prompt);
+    else if (job.headless) argv.push('--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic', '--no-session', '--print', '--mode', 'json', '--', prompt);
     else if (resume?.file) argv.push('--session', resume.file);
     const built = await run(launcher, argv, job.cwd, job.headless ? { ...process.env, HERDR_ENV: undefined } : undefined);
     if (built.exit_code !== 0) return reject(built);
     const piArgs: string[] = JSON.parse(built.stdout);
     if (job.headless) {
-      startSonicProcess(dir, job, piArgs);
+      if (sessionFile) {
+        if (!resume) {
+          fs.mkdirSync(dirname(sessionFile), { recursive: true, mode: 0o700 });
+          writePrivateFile(sessionFile, '', { exclusive: true, mkdir: false });
+        }
+        job.pi_sent_at = new Date().toISOString();
+        save(job);
+      }
+      startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined);
       return { exit_code: 0, stdout: '', stderr: '' };
     }
     fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
@@ -1315,6 +1328,8 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
 function placeOptions(args: Args, configured: RolePlace) {
   const place = { ...configured };
   const invalid = (error?: string) => ({ ok: false, code: 'invalid_arguments', error } as const);
+  if (args.mode !== undefined && (args.mode !== 'headless' || place.harness !== 'pi'))
+    return invalid('headless mode requires pi');
   if (args.idle_grace_s !== undefined) {
     if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
       return invalid('idle_grace_s must be an integer from 60 to 3600');
@@ -1346,6 +1361,8 @@ function placeOptions(args: Args, configured: RolePlace) {
       return invalid('pi_args cannot override --orchestrator or --notify caller binding');
     if (args.role === 'sonic' && piArgs.some(value => value === '--' || /^(-c|-r|--(?:continue|resume|fork|session|session-id|mode|task-dir|dispatch-slot|role-output))(?:=|$)/.test(value)))
       return invalid('pi_args cannot override the one-shot sonic lifecycle');
+    if (args.mode === 'headless' && piArgs.some(value => value === '--' || /^(-c|-r|--(?:no-session|continue|resume|fork|session(?:-id|-dir)?|mode|task-dir|dispatch-slot|role-output|qa-dir|qa-timeout))(?:=|$)/.test(value)))
+      return invalid('pi_args cannot override the headless session lifecycle');
     options.pi_args = piArgs;
   }
   return { place, options };
@@ -1354,7 +1371,7 @@ function placeOptions(args: Args, configured: RolePlace) {
 // An in-place land retry uses its original worktree but still belongs to the registered main project's roster.
 const roleCwd = (job: Job) => job.worktree?.main_root ?? (job.land_turn ? job.project_root : undefined) ?? job.cwd;
 const piOptionKeys = [...piSwitches, 'pi_args'] as const;
-const replayOptions = ['on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
+const replayOptions = ['mode', 'on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
 function jobOptions(job: Job): Args {
   return {
     role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, ticket: job.ticket, slice: job.slice, preset: job.preset,
@@ -1522,7 +1539,7 @@ export function canOverflowImpJob(job: Job): boolean {
   const cwd = roleCwd(job);
   const found = registry(cwd);
   const generalDef = found.roles().get('general');
-  if (!generalDef) return false;
+  if (!generalDef || (job.headless && !generalDef.can_continue)) return false;
   if (job.preset !== undefined && !generalDef.presets?.some((p) => p.name === job.preset)) return false;
   let routing;
   try { routing = found.routing(Date.now()); } catch { return false; }
@@ -1574,6 +1591,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if (!taskClient) void ensureQueueWatcher(pane, hudHome);
     return created(existing);
   }
+  if (args.mode !== undefined && !definition.can_continue)
+    return { ok: false, code: 'invalid_arguments', error: 'explicit headless mode requires a continuable role' };
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
   const task = required(args, 'task');
@@ -1655,7 +1674,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           const generalCap = capForRole(concurrency, 'general');
           const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
           const presetOk = presetName === undefined || !!generalDef?.presets?.some((p) => p.name === presetName);
-          if (generalDef && generalHasRoom && presetOk) {
+          if (generalDef && generalHasRoom && presetOk && (args.mode !== 'headless' || generalDef.can_continue)) {
             const genEffective = found.assignment(generalDef, now, modelOverride, routing, choiceFor(generalDef), !!retryInput && retryInput.model === undefined);
             const genPlaces = genEffective.places;
             const genDetails = genPlaces.find((p) => p.state === 'active');
@@ -1696,6 +1715,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         herdr_pane: pane,
         created_at: nowIso,
         queued_at: nowIso,
+        ...(args.mode === 'headless' && { headless: true }),
         task_length: task.length,
         ...queuedContext.metadata,
         ...(checks?.length ? { checks } : {}),
@@ -1767,7 +1787,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(landCwd ? { land_turn: request_key } : {}),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
-      ...(role === 'sonic' ? { headless: true } : {}),
+      ...(role === 'sonic' || args.mode === 'headless' ? { headless: true } : {}),
       ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
@@ -1835,7 +1855,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
-        ...(place.harness === 'bro' || base.headless ? {} : { resume_s: definition!.resume_s ?? DEFAULT_RESUME_S }),
+        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: definition!.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd: landCwd ?? cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
         },
@@ -2003,6 +2023,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const found = registry(cwd);
     const definition = found.roles(true).get(role);
     if (definition?.optionalEnabled === false) return failQueued(`Optional role ${role} is off`);
+    if (args.mode === 'headless' && !definition?.can_continue) return failQueued('headless mode requires a continuable role', 'invalid_arguments');
     if (!definition) return failQueued(`Role ${role} is not configured or is hidden in this project`);
     const now = Date.now();
     let routing;
@@ -2097,7 +2118,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
-        ...(place.harness === 'bro' || base.headless ? {} : { resume_s: definition.resume_s ?? DEFAULT_RESUME_S }),
+        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: definition.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
         },
@@ -2296,7 +2317,7 @@ function ticketGuide(args: Args): boolean {
   return args.op === undefined || args.op === 'guide';
 }
 async function resumeJob(current: Job, status: JobStatus, row: JobRow, message: string,
-  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean) {
+  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest?: string) {
   const dir = directory(current.job);
   const fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
   try {
@@ -2306,28 +2327,30 @@ async function resumeJob(current: Job, status: JobStatus, row: JobRow, message: 
     if (lock.status !== 0) return;
     const latest = findJob(current.job);
     const fresh = readCachedStatus(current.job).status;
-    if (!latest || latest.reaped_at !== current.reaped_at || !fresh || fresh.ended_at !== status.ended_at || fresh.state !== 'closed')
+    const expected = answerRequest ? 'waiting_orchestrator' : 'closed';
+    if (!latest || latest.reaped_at !== current.reaped_at || !fresh || fresh.ended_at !== status.ended_at ||
+        fresh.state !== expected || fresh.pid !== status.pid)
       return { ok: false, code: 'worker_reopening' };
-    return await reopenJob(latest, fresh, row, message, matchKey, explicitKey, land, batch);
+    return await reopenJob(latest, fresh, row, message, matchKey, explicitKey, land, batch, answerRequest);
   } finally { fs.closeSync(fd); }
 }
 
 async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: string,
-  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean) {
+  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest?: string) {
   const { job: id, place } = current, dir = directory(id);
-  const until = resumeDeadline(current, status);
+  const until = answerRequest ? Infinity : resumeDeadline(current, status);
   if (!until || Date.now() >= until || !place || (place.harness !== 'cli' && place.harness !== 'pi') ||
       !fs.statSync(current.cwd, { throwIfNoEntry: false })?.isDirectory()) return;
   const identity = resumeIdentity(current, status);
   const role = registry(roleCwd(current)).roles().get(current.role);
   if (!identity || !role) return;
-  const priorSession = slice(join(dir, jobFiles.session), 8192);
-  if (!priorSession || priorSession.truncated || fs.existsSync(join(dir, jobFiles.stopRequested)) ||
+  const priorSession = current.headless ? null : slice(join(dir, jobFiles.session), 8192);
+  if ((!current.headless && (!priorSession || priorSession.truncated)) || fs.existsSync(join(dir, jobFiles.stopRequested)) ||
       fs.existsSync(join(dir, jobFiles.closeRequested))) return;
   const priorTurn = current.cli ? readTurn(dir) : null;
   if (current.cli && !priorTurn) return;
   const oldTask = activeTasks.get(id);
-  if (oldTask) sampleTask(oldTask);
+  if (oldTask && !(answerRequest && current.herdr_pane === oldTask.pane && taskFence(current) === oldTask.fence)) sampleTask(oldTask);
   const carryTask = oldTask && !land && activeTasks.get(id) === oldTask && oldTask.view.status === 'working'
     ? oldTask : undefined;
   const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
@@ -2335,13 +2358,26 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     recorded_at: new Date().toISOString(), exit_code: null as number | null, stderr_tail: '', resumed: true as const };
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
     send_outcomes: [...(current.send_outcomes ?? []), outcome] };
-  const taskEntry = taskClient && !land && !carryTask ? beginTask(next, row.report_mtime) : undefined;
-  // The reaper has finished the old tab. Publish a nonterminal status before replacing its ownership.
+  const answerFile = answerRequest && join(dir, jobFiles.qa, `${answerRequest}.answer.md`);
+  if (answerRequest && answerFile) {
+    if (!jobCache.readQa(dir).openIds.includes(answerRequest)) return { ok: false, code: 'question_not_open' };
+    writePrivateFile(answerFile, message, { exclusive: true, mkdir: false });
+    jobCache.invalidateQa(id);
+    if (jobCache.readQa(dir).openIds.length) {
+      if (carryTask) { carryTask.seenQuestions.add(`${answerRequest}.md`); extendTask(carryTask, current); }
+      return { ok: true, written: true };
+    }
+    if (jobCache.readQa(dir).allQuestionFiles.length > 1)
+      message = `Answer to ${answerRequest}: ${message}\nOther decisions are in ${join(dir, jobFiles.qa)}.`;
+  }
+  const taskEntry = taskClient && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;
+  // The reaper has finished the old turn. Publish a nonterminal status before replacing its ownership.
   writeCreateStatus(dir, { state: 'working' });
   save(next, true);
   const result = await launchPlace(next, role, place, dir, message, undefined, undefined, { resume: { ...identity, message } });
   if (result.preInput && !result.cleanupFailed) {
-    writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
+    if (priorSession) writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
+    if (answerFile) { fs.unlinkSync(answerFile); jobCache.invalidateQa(id); }
     if (priorTurn) saveTurn(dir, priorTurn);
     writeCreateStatus(dir, status);
     const touched = findJob(id);
@@ -2360,20 +2396,21 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const ok = result.exit_code === 0;
   if (carryTask && activeTasks.get(id) === carryTask) {
     if (ok) {
+      if (answerRequest) carryTask.seenQuestions.add(`${answerRequest}.md`);
       carryTask.fence = taskFence(latest);
       carryTask.reportBefore = row.report_mtime;
       carryTask.attentionBefore = undefined;
       extendTask(carryTask, latest);
     } else if (batchTasks.get(id) !== carryTask) sampleTask(carryTask);
   }
-  if (ok && !taskClient && !land) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+  if (ok && !taskClient && !land) void ensureQueueWatcher(latest.herdr_pane, hudHome);
   const continuation = 'resumed' as const;
   if (batch) registerBatchTask(taskEntry, latest, ok);
   else {
     const task = finishTask(taskEntry, latest, ok, continuation);
     if (task) return { ...task, job: id, continuation };
   }
-  return { ok, sent: ok, job: id, continuation, ...(ok ? {} : { code: 'send_failed', stderr_tail: result.stderr }) };
+  return { ok, sent: ok, ...(answerRequest && { written: true }), job: id, continuation, ...(ok ? {} : { code: 'send_failed', stderr_tail: result.stderr }) };
 }
 
 async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean, land = false, batch = false) {
@@ -2396,7 +2433,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   }
   let { row, status, statusAt } = readRow(current);
   const closingPi = current.resume_s !== undefined && row.state === 'idle_grace' && !row.open_questions && piReportSettlement(dir, current, status);
-  if (!workingOnly && !row.open_questions && (closingPi || (closedReport(current, status) && !current.reaped_at && primary(id)))) {
+  if (!workingOnly && !row.open_questions && (closingPi || (closedReport(current, status) && !current.reaped_at && (current.headless || primary(id))))) {
     ensureWatcher();
     // Never replace a SESSION receipt while the watcher still owns that tab and process tree.
     const ready = await waitUntilFs({ targets: [{ dir }], timeoutMs: 30_000, check: ({ timedOut }) => {
@@ -2808,7 +2845,14 @@ async function callJob(name: string, args: Args, detail: boolean) {
   return closeJob(job);
 }
 
-function respondJob(args: Args, batch: boolean) {
+export async function resumePanelAnswer(home: string, job: string, request_id: string, answer: string): Promise<AnswerResult> {
+  if (resolve(home) !== hudHome) return { ok: false, reason: 'job belongs to another HUD home' };
+  const result = await keyLock(`job:${job}`, () => respondJob({ job, request_id, answer }, false));
+  return 'code' in result && result.code ? { ok: false, reason: result.code } :
+    { ok: true, written: 'written' in result ? result.written === true : true };
+}
+
+async function respondJob(args: Args, batch: boolean) {
   const id = required(args, 'job');
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
@@ -2818,6 +2862,19 @@ function respondJob(args: Args, batch: boolean) {
   const answer = required(args, 'answer');
   ensureWatcher();
   fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
+  if (job.headless && job.role !== 'sonic') {
+    if (fs.existsSync(join(dir, jobFiles.qa, `${request}.answer.md`))) return { ok: true, written: false };
+    if (!jobCache.readQa(dir).openIds.includes(request)) return { ok: false, code: 'question_not_open' };
+    // The question is visible before pi has flushed its session and the watcher has reaped this turn.
+    const status = await waitUntilFs({ targets: [{ dir }], timeoutMs: 30_000, check: ({ timedOut }) => {
+      const fresh = readCachedStatus(id).status;
+      return fresh?.state !== 'working' || timedOut ? { done: true, value: fresh } : { done: false };
+    } });
+    if (status?.state !== 'waiting_orchestrator') return { ok: false, code: 'worker_not_waiting' };
+    const key = `answer:${request}`;
+    return await resumeJob(job, status, readRow(job, false).row, answer, key, key, false, batch, request) ??
+      { ok: false, code: 'resume_failed' };
+  }
   const oldTask = activeTasks.get(id);
   const polled = taskClient ? readRow(job, false) : undefined;
   const row = polled?.row;
@@ -2899,7 +2956,7 @@ async function closeJob(job: Job, stop = false) {
     const closed = await stopSonic(dir);
     if (closed && !isWorker && readRow(job).row.display_state === 'failed')
       save({ ...(findJob(job.job) ?? job), observed_at: new Date().toISOString() });
-    return { exit_code: closed ? 0 : 1, last_line: closed ? 'sonic closed' : 'sonic cleanup pending' };
+    return { exit_code: closed ? 0 : 1, last_line: `${job.role} ${closed ? 'closed' : 'cleanup pending'}` };
   }
   const { result, complete, issue } = await reapWorkerTree(dir, status, () => {
     // Idle grace already finished: reap quits and the supervisor closes. A working job is stopped.

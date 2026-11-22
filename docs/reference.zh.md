@@ -149,6 +149,8 @@ HUD 排队取得 `main-checkout` 租约，在新的分离工作树中运行 `gat
 出现信任对话框则拒绝，失败原因写明 `hud trust <cwd>`。会话留在各 CLI 自己的存储里。
 herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
+对于 `imp`、`general` 等可继续的 pi 角色，`hud_create({role, task, mode: "headless"})` 不打开标签页，仍可在面板查看进度或停止任务。任务将原生会话保存在 `sessions/`，每轮输出追加到 `stdout.jsonl` 和 `stderr.log`。提问即结束本轮；通过 `hud_respond` 或面板作答后，用答案恢复同一会话。提交报告后工作者关闭。后续消息和落地修复在 `resume_s` 内恢复同一会话，超时则创建修复任务。
+
 Sonic 以非交互方式运行一次 pi 查询，不打开工作标签页或窗格。主会话通过 `hud_create` 发起，工作任务通过 `hud_sonic` 发起并收取结果。两者都保留普通任务目录：`stdout.jsonl` 和 `stderr.log` 记录 pi 的输出，`report.md` 是已声明的报告。Sonic 可以发布进度和获取租约，但不能提问或接收后续消息，也没有空闲宽限期。运行满十分钟时，HUD 停止查询，并以 `timeout` 为原因记为 `failed`；如需重试，请重新发起查询。
 
 Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。主人通过 `hud_create` 指定 `thinking` 时跳过选择。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。

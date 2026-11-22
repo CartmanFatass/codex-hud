@@ -227,15 +227,19 @@ test('failed Pi read-close retries its live root after the tab disappears', asyn
   fs.utimesSync(join(dir, 'report.md'), reportTime, reportTime);
   tab(dir, 'pi');
   reapStub(f, `if (!fs.existsSync(join(dir, 'tab-gone'))) {
+    fs.writeFileSync(join(dir, 'waiting-for-tab-close'), '');
     while (!fs.existsSync(join(dir, 'tab-gone'))) await delay(10);
     process.exit(1);
-  }`);
+  }
+  while (!fs.existsSync(join(dir, 'allow-retry-to-finish'))) await delay(10);`);
   const { exited } = f.start(herdr.preload);
-  await until(() => herdr.ready() && attempts(f, dir) === 1);
+  // The shared attempts log records entry, not which branch the reaper took.
+  await until(() => herdr.ready() && fs.existsSync(join(dir, 'waiting-for-tab-close')));
   herdr.closeTab('pi');
   fs.writeFileSync(join(dir, 'tab-gone'), '');
   await until(() => f.log().includes('state=idle_grace exit=1'));
   assert.equal(status(dir).state, 'idle_grace');
+  fs.writeFileSync(join(dir, 'allow-retry-to-finish'), '');
   await until(() => reaped(dir));
   assert.deepEqual(await exited, [0, null]);
   assert.equal(attempts(f, dir), 2);

@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { sonicState } from '../worker/sonic-jobs.js';
+import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { dispatchJob } from '../mcp/thin-main.js'; // Cyclic binding, called only after startup.
 import { notify, taskDelivery } from '../roles/notify.js';
 
@@ -37,6 +37,12 @@ export function workerJob(path = process.env.HUD_JOB_DIR) {
   return { dir, root, job: readJob(dir) };
 }
 
+// Snapshot while pi is still the parent: exit on a question can orphan helpers just like a report.
+export function capturePiTree(dir: string) {
+  const { snapshot, issue } = rememberWorkerTree(dir, readJsonFile(join(dir, jobFiles.status)));
+  if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
+}
+
 // Omit text for the fallback command, which declares a report the worker wrote itself.
 export async function finishReport({ dir, job }: Worker, turn: unknown, text?: string, metadata: Parameters<typeof normalizeReportMeta>[0] = {}) {
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
@@ -56,13 +62,15 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
   } else {
     // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
     if (turn !== undefined) throw new Error('pi does not use a turn token');
+    if (job.headless && job.role !== 'sonic') {
+      const children = sonicChildren(dir);
+      if (children.open || children.uncollected.length) throw new Error('collect outstanding children with hud_sonic before reporting');
+    }
     if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
     const sig = reportSignature(dir);
     if (!sig) throw new Error('write the pi report first');
-    const status = readJsonFile(join(dir, jobFiles.status));
     writeReportMeta(dir, sig, fields);
-    const { snapshot, issue } = rememberWorkerTree(dir, status);
-    if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
+    capturePiTree(dir);
     if (job.headless) writeJsonPrivate(join(dir, DONE_FILE), { report_sig: sig }, { mkdir: false });
   }
   return { path };
@@ -339,6 +347,7 @@ export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: Ques
     const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
     pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
   }
+  if (job.headless) return `Question q${published.n} recorded (${pushed}); the orchestrator's answer resumes this session.`;
   const timeoutSec = timeoutRaw !== undefined && /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : 1200;
   const started = performance.now();
   let answer;

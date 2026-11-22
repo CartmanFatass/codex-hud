@@ -71,7 +71,7 @@ export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{
     }
   }
   try {
-    if (readJson(join(jobDir, jobFiles.job))?.headless) return await stopSonic(jobDir) ? { ok: true } : { ok: false, reason: 'sonic cleanup pending' };
+    if (readJson(join(jobDir, jobFiles.job))?.headless) return await stopSonic(jobDir) ? { ok: true } : { ok: false, reason: 'headless worker cleanup pending' };
     const { result, complete, issue } = await reapWorkerTree(jobDir, status, () => {
       if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {
         try { fs.writeFileSync(join(jobDir, jobFiles.closeRequested), '', { flag: 'wx', mode: 0o600 }); }

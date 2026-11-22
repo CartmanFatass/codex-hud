@@ -1,4 +1,4 @@
-/** One-shot pi launch and lifecycle. No herdr session, idle grace or turn driver. */
+/** One detached runner per pi turn. Sonic is one-shot; other roles reopen their job's session. */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -14,13 +14,20 @@ import { readDone, reportSignature } from '../roles/cli-turn.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 
 export const SONIC_TIMEOUT_MS = 10 * 60_000;
-export function startSonicProcess(dir: string, job: Job, args: string[]) {
+export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file: string; id?: string }) {
   const env: NodeJS.ProcessEnv = { ...process.env, HUD_HOME: dirname(dirname(dir)), HUD_JOB_DIR: dir };
+  if (session?.id) env.HUD_RESUME_SESSION_ID = session.id;
+  else delete env.HUD_RESUME_SESSION_ID;
   delete env.HERDR_PANE_ID;
   delete env.HERDR_ENV;
   const fds: number[] = [];
   try {
-    for (const name of [jobFiles.sonicStdout, jobFiles.sonicStderr]) fds.push(fs.openSync(join(dir, name), 'wx', 0o600));
+    const { O_WRONLY, O_APPEND, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
+    for (const name of [jobFiles.sonicStdout, jobFiles.sonicStderr]) {
+      const fd = fs.openSync(join(dir, name), session?.id ? O_WRONLY | O_APPEND | O_NOFOLLOW | O_NONBLOCK : 'wx', 0o600);
+      fds.push(fd);
+      if (!fs.fstatSync(fd).isFile()) throw Error('worker log is not a regular file');
+    }
     const child = spawn(process.execPath, [binScript('sonic-run'), dir, ...args], { cwd: job.cwd, env, detached: true,
       stdio: ['pipe', fds[0]!, fds[1]!] });
     child.once('error', () => {}); // A failed spawn has no PID; a failed handshake never starts pi.
@@ -29,7 +36,9 @@ export function startSonicProcess(dir: string, job: Job, args: string[]) {
     try {
       const pid = child.pid, start = pid && procStat(pid)?.start, boot = readBootId();
       if (!pid || !start || !boot) throw Error('cannot identify sonic runner');
-      const status: JobStatus = { state: 'working', slot: 'sonic', task_dir: dir, harness: 'pi', role: 'sonic',
+      if (session?.id) for (const name of [jobFiles.sonicExit, jobFiles.done]) fs.rmSync(join(dir, name), { force: true });
+      const status: JobStatus = { state: 'working', slot: session ? 'headless' : 'sonic', task_dir: dir, harness: 'pi', role: job.role,
+        ...(session && { session_file: session.file, session_id: session.id }),
         pid, pid_start_time: start, boot_id: boot, started_at: new Date().toISOString() };
       writeJsonPrivate(join(dir, jobFiles.status), status, { mkdir: false });
       const capture = rememberWorkerTree(dir, status);
@@ -62,7 +71,8 @@ export async function runSonicPi(dir: string, argv: string[]) {
   // Wake a replacement watcher if the original died while pi was running. The watcher is
   // the sole terminal writer, even when the dispatcher's MCP connection is already gone.
   const wake = () => ensureJobWatcher(dirname(dirname(dir)));
-  const timer = setTimeout(wake, Math.max(1, Date.parse(status.started_at!) + SONIC_TIMEOUT_MS - Date.now()));
+  const deadline = headlessDeadline(status);
+  const timer = Number.isFinite(deadline) ? setTimeout(wake, Math.max(1, deadline - Date.now())) : undefined;
   try {
     const result = await exit;
     writeJsonPrivate(join(dir, jobFiles.sonicExit), { ...result, at: Date.now() }, { mkdir: false });
@@ -70,9 +80,11 @@ export async function runSonicPi(dir: string, argv: string[]) {
   } finally { clearTimeout(timer); }
 }
 
-export function sonicExit(dir: string, status: Partial<JobStatus>): Pick<JobStatus, 'state' | 'exit_reason'> | null {
+export const headlessDeadline = (status: Partial<JobStatus>) => status.slot === 'headless' ? Infinity : Date.parse(status.started_at!) + SONIC_TIMEOUT_MS;
+
+export function sonicExit(dir: string, status: Partial<JobStatus>, asking = false): Pick<JobStatus, 'state' | 'exit_reason'> | null {
   if (fs.existsSync(join(dir, jobFiles.stopRequested))) return { state: 'stopped', exit_reason: 'stopped' };
-  const deadline = Date.parse(status.started_at!) + SONIC_TIMEOUT_MS;
+  const deadline = headlessDeadline(status);
   const timeout = { state: 'failed', exit_reason: 'timeout' } as const;
   if (fs.existsSync(join(dir, jobFiles.sonicTimeout))) return timeout;
   // Check the exit receipt after observing liveness (the runner publishes it before exiting).
@@ -86,6 +98,7 @@ export function sonicExit(dir: string, status: Partial<JobStatus>): Pick<JobStat
   }
   if (exit.at >= deadline) return timeout;
   if (exit.code !== 0) return { state: 'failed', exit_reason: exit.error || `pi exited: ${exit.signal || exit.code}` };
+  if (asking) return { state: 'waiting_orchestrator' };
   const sig = readDone(dir)?.report_sig;
   return sig && sig === reportSignature(dir) ? { state: 'closed', exit_reason: 'settled' }
     : { state: 'failed', exit_reason: 'pi exited without a declared report' };
@@ -104,11 +117,15 @@ export async function stopSonic(dir: string, timeout = false) {
   const read = () => (readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus).state;
   const terminal = (state: string) => ['closed', 'failed', 'stopped'].includes(state);
   if (!fs.existsSync(join(dir, jobFiles.status)) || !terminal(read())) {
-    writePrivateFile(join(dir, timeout ? jobFiles.sonicTimeout : jobFiles.stopRequested), '', { mkdir: false });
-    ensureJobWatcher(dirname(dirname(dir)));
+    const request = () => {
+      writePrivateFile(join(dir, timeout ? jobFiles.sonicTimeout : jobFiles.stopRequested), '', { mkdir: false });
+      ensureJobWatcher(dirname(dirname(dir)));
+    };
+    request();
     return waitUntilFs<boolean>({ targets: [{ dir, filter: (name) => !name || name === jobFiles.status }], timeoutMs: 10000,
-      check: ({ timedOut }) => {
+      check: ({ timedOut, reason }) => {
         const done = fs.existsSync(join(dir, jobFiles.status)) && terminal(read());
+        if (!done && reason === 'fallback') request(); // Re-signal if watcher startup raced the file event.
         return done || timedOut ? { done: true, value: done } : { done: false };
       } });
   }

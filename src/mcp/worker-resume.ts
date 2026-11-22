@@ -26,12 +26,18 @@ export function resumeIdentity(job: Job, status: JobStatus): Omit<NativeResume, 
     return cliKinds[job.cli.agent]?.resume && id && /^[\w][\w.-]{0,127}$/.test(id) ? { id } : null;
   }
   const id = status.session_id, file = status.session_file;
-  if (!id || !file || !isAbsolute(file)) return null;
+  const native = piSessionIdentity(job, file);
+  return id && native?.id === id ? native : null;
+}
+
+/** Read pi's own header, never the model's JSON output. */
+export function piSessionIdentity(job: Job, file: string | null | undefined): Omit<NativeResume, 'message'> | null {
+  if (!file || !isAbsolute(file)) return null;
   try {
     const path = fs.realpathSync(file);
     const { bytes } = readFileBounded(path, 64 * 1024);
     const head = JSON.parse(bytes.toString('utf8').split('\n', 1)[0]);
-    if (head.type === 'session' && head.id === id && head.cwd === job.cwd) return { id, file: path };
+    if (head.type === 'session' && typeof head.id === 'string' && head.id && head.cwd === job.cwd) return { id: head.id, file: path };
   } catch { /* Missing or unreadable native session: the caller will repair instead. */ }
   return null;
 }

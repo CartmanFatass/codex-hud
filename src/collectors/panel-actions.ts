@@ -41,10 +41,13 @@ export function answerJobQuestion(home: string, job: string, qid: string, answer
     return { ok: false, reason: code === 'ENOENT' ? 'no such question' : String(code ?? error) };
   }
   getJobIndexCache(home).invalidateQa(job);
-  try {
-    appendPanelAction(home, { type: 'answer', job, qid, role, answer: text.slice(0, 400) });
-  } catch { /* Logged next time, or heard from the job's own state. */ }
+  recordPanelAnswer(home, job, qid, text, role);
   return { ok: true, written: true };
+}
+
+export function recordPanelAnswer(home: string, job: string, qid: string, text: string, role: string | null) {
+  try { appendPanelAction(home, { type: 'answer', job, qid, role, answer: text.slice(0, 400) }); }
+  catch { /* The job's own answer receipt remains authoritative. */ }
 }
 
 const oneLine = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').replace(/\s+/g, ' ').trim();

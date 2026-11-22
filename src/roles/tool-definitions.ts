@@ -57,6 +57,7 @@ export const ROLE_TOOLS = [
         default: 'none',
         description: 'Managed Git checkout from HEAD (local only).',
       },
+      mode: { ...text, enum: ['headless'], description: 'Run a continuable pi worker without a tab; retain its native session.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI only.' },
       on: { ...text, description: 'Harness/provider: pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow.' },
       preset: { ...text, description: 'Named role preset; mutually exclusive with on.' },

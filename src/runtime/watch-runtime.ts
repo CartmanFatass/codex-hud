@@ -1,7 +1,7 @@
 /** On-demand file-event reaper. Native pi owns settlement; pi-role-reap owns tab safety. */
 import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT } from '../mcp/cli-judge.js';
-import { resumeDeadline } from '../mcp/worker-resume.js';
+import { piSessionIdentity, resumeDeadline } from '../mcp/worker-resume.js';
 import { sonicChildren } from '../worker/sonic-jobs.js';
 import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
 import { piReportSettlement } from '../mcp/pi-read-settlement.js';
@@ -11,7 +11,7 @@ import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
-import { killSonicRoot, sonicExit, SONIC_TIMEOUT_MS } from '../mcp/sonic-process.js';
+import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
@@ -328,7 +328,7 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   let { status } = input;
   const { controller: { signal }, ownership, readClose } = entry;
   if (job?.headless) {
-    const end = sonicExit(dir, status);
+    let end = sonicExit(dir, status, status.slot === 'headless' && jobCache.readQa(dir).openIds.length > 0);
     if (!end) return;
     entry.phase = 'reaping';
     const cleanup = await reapWorkerTree(dir, status, () => killSonicRoot(dir, status), gone => gone,
@@ -339,17 +339,23 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
       deferReap(entry, input, `reap ${id}: ${cleanup.issue ?? 'sonic runner still exiting'}`);
       return;
     }
+    // A panel Stop can race reopening a paused turn. Never publish an old runner's terminal facts over its successor.
+    if (reapOwner(session, readJson<JobStatus>(statusFile)) !== ownership) return;
     const now = new Date().toISOString();
     const stopped = fs.existsSync(join(dir, jobFiles.stopRequested));
     const size = (name: string) => {
       const stat = fs.lstatSync(join(dir, name), { throwIfNoEntry: false });
       return stat?.isFile() ? stat.size : undefined;
     };
-    writeJsonAtomic(statusFile, { ...status, ...end, ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
-      output_written: fs.existsSync(join(dir, jobFiles.report)), settled_at: now, ended_at: now,
+    const identity = status.slot === 'headless' && piSessionIdentity(job, status.session_file);
+    if (end.state === 'waiting_orchestrator' && (!identity || (status.session_id && identity.id !== status.session_id)))
+      end = { state: 'failed', exit_reason: 'pi exited without the session needed to answer its question' };
+    const waiting = !stopped && end.state === 'waiting_orchestrator';
+    writeJsonAtomic(statusFile, { ...status, ...end, ...(identity && !status.session_id && { session_id: identity.id }), ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
+      output_written: !waiting && fs.existsSync(join(dir, jobFiles.report)), ...(waiting ? {} : { settled_at: now, ended_at: now }),
       stdout_bytes: size(jobFiles.sonicStdout), stderr_bytes: size(jobFiles.sonicStderr) });
     const latest = readJson<Job>(jobFile);
-    if (latest) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
+    if (latest && !waiting) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
     if (cleanup.unrecoverable) log(`reap ${id}: ${cleanup.unrecoverable}; ${UNVERIFIED_TREE_NOTE}`);
     reapRetries.delete(id);
     return;
@@ -518,15 +524,17 @@ function scan(retryWatch = false) {
       const retry = !job?.reaped_at && previous?.ownership === ownership ? previous : null;
       // A previous read-close attempt may have closed its own tab before retrying cleanup.
       const tabClosed = !retry?.readClose && !!tab && closedTabs.has(tab);
-      if (job?.headless && status?.state === 'working') {
+      if (job?.headless && status?.pid && (status.state === 'working' ||
+          (status.state === 'waiting_orchestrator' && fs.existsSync(join(dir, jobFiles.stopRequested))))) {
         markBusy(job);
+        if (isWorkingForCap(job, status)) countWorking(job.role);
         if (retry?.at === Infinity) continue;
         open = true;
         if (retry && retry.at > Date.now()) nearest = Math.min(nearest, retry.at);
         else {
           // Keep the close/reconnect edge even if /proc cannot resolve an exiting runner's argv yet.
           if (status.pid) watch(dir, status.pid);
-          if (!sonicExit(dir, status)) nearest = Math.min(nearest, Date.parse(status.started_at!) + SONIC_TIMEOUT_MS);
+          if (!sonicExit(dir, status)) nearest = Math.min(nearest, headlessDeadline(status));
           else if (inFlightReaps.size < MAX_CONCURRENT_REAPS)
             startReap({ id, dir, job, status, session, tab: '', ownership, retry, readInGrace: null, jobFile, statusFile });
         }

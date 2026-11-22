@@ -25,7 +25,7 @@ export function capForRole(settings: Pick<HudSettings, 'roleCaps'>, role: string
 /** Sonic children, scout children, headless sonic and already-reaped jobs are excluded from caps. */
 export function isCountedJob(job: Partial<Job> | null | undefined): boolean {
   if (!job || typeof job !== 'object') return false;
-  if (job.parent_job || job.scout_only === true || job.headless === true || job.reaped_at) return false;
+  if (job.parent_job || job.scout_only === true || (job.headless === true && job.role === 'sonic') || job.reaped_at) return false;
   return typeof job.role === 'string' && job.role.length > 0;
 }
 
