@@ -1,52 +1,27 @@
 import { withState, sliceState } from '../fixtures/state-helpers.mjs';
 /** PROJECT-LAYOUTS 01: `projectLayout` setting and the Board project layout (Split and Classic, EN and ZH at 40 columns). */
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
-import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
+import { initialMonitorState } from '../../dist/render/monitor.js';
 import { SETTING_ROWS, handleSettingsInput, renderSettingsPage, resetSettingsGroup } from '../../dist/render/settings-page.js';
 import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { setLanguage } from '../../dist/render/i18n.js';
-import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { tryCount } from '../../dist/render/project-view.js';
-import { splitFixture, split } from '../fixtures/split-layout.mjs';
+import { splitFixture, split, layoutDriver as driver, assertWidth, assertNoMidWordCut } from '../fixtures/split-layout.mjs';
 import { listFixture } from '../fixtures/project-list.mjs';
-import { NOW, TREE, onPage, plain } from '../fixtures/project-page.mjs';
+import { NOW, onPage, plain } from '../fixtures/project-page.mjs';
 
-async function fixture(t) {
-  const root = fs.mkdtempSync(join(tmpdir(), 'project-board-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const busy = await splitFixture(join(root, 'busy'));
-  const lists = await listFixture(join(root, 'lists'));
-  return { root, busy, lists };
-}
-
-function driver(f, { width = 40, height = 36, lang = 'en', data = f.data, state = split() } = {}) {
-  let frame = f.render(width, lang, height, state, data);
-  const run = (input) => {
-    const out = handleMonitorInput(frame.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame, nowMs: NOW, standalone: true });
-    frame = f.render(width, lang, height, out.state, data);
-    return out;
-  };
-  return { run, get frame() { return frame; }, get state() { return frame.state; }, lines: () => plain(frame) };
-}
-
-const assertWidth = (frame, width, label) => {
-  for (const [i, line] of frame.lines.entries()) assert.equal(visualLength(line), width, `${label} line ${i}: "${stripAnsi(line)}"`);
-};
-/** Check every line that ends with `…` (prose cut) ends at a whole word in `corpus`, never inside a word. */
-const assertNoMidWordCut = (lines, corpus, label) => {
-  for (const line of lines) {
-    const clean = line.replace(/[┃│]+$/, '').trimEnd();
-    const m = /([A-Za-z]+)…(?:\s+\S+)?$/.exec(clean);
-    if (!m) continue;
-    const word = m[1];
-    assert.ok(new RegExp(`\\b${word}\\b`).test(corpus), `${label}: mid-word cut "${word}…" in "${line}"`);
-  }
-};
+let sharedRoot, busy, lists;
+before(async () => {
+  sharedRoot = fs.mkdtempSync(join(tmpdir(), 'project-board-'));
+  [busy, lists] = await Promise.all([splitFixture(join(sharedRoot, 'busy')), listFixture(join(sharedRoot, 'lists'))]);
+});
+after(() => fs.rmSync(sharedRoot, { recursive: true, force: true }));
+async function fixture() { return { root: sharedRoot, busy, lists }; }
 
 test('Settings → Panel → Project layout defaults to Timeline, cycles Timeline/Board/Inbox, saves, resets and translates', (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'board-settings-'));
@@ -90,14 +65,22 @@ test('Settings → Panel → Project layout defaults to Timeline, cycles Timelin
   } finally { setLanguage(prev); }
 });
 
-test('Board leaves Home and Tickets unchanged', async (t) => {
+test('Board leaves Home, Control plane and Tickets unchanged and has no Control page on the hub', async (t) => {
   const { busy } = await fixture(t);
+  const control = { ...busy.control, radar: undefined };
   for (const panelLayout of ['classic', 'split']) {
     const base = (extra) => (withState(sliceState(), { prefs: { panelLayout } }, extra));
     assert.deepEqual(plain(busy.render(40, 'en', 32, base({ activeTab: 'home', prefs: { projectLayout: 'board' } }))),
       plain(busy.render(40, 'en', 32, base({ activeTab: 'home', prefs: { projectLayout: 'timeline' } }))), `${panelLayout}: Home unchanged`);
     assert.deepEqual(plain(busy.render(40, 'en', 32, base({ activeTab: 'project', prefs: { projectLayout: 'board' }, project: { view: { kind: 'tickets' } } }))),
       plain(busy.render(40, 'en', 32, base({ activeTab: 'project', prefs: { projectLayout: 'timeline' }, project: { view: { kind: 'tickets' } } }))), `${panelLayout}: Tickets unchanged`);
+    for (const lang of ['en', 'zh']) {
+      const board = { prefs: { panelLayout, projectLayout: 'board' } };
+      const hub = busy.render(40, lang, 36, onPage(undefined, board), control);
+      assert.ok(!hub.workboard.rows.some((r) => r.item === 'project:page:control'));
+      const controlState = withState(split(), { activeTab: 'control', prefs: { panelLayout } });
+      assert.deepEqual(busy.render(40, lang, 36, { ...controlState, ...board }, control).lines, busy.render(40, lang, 36, controlState, control).lines);
+    }
   }
 });
 
@@ -189,19 +172,6 @@ test('Board Progress at 40 cols EN and ZH (Split and Classic): cell order, brief
   assert.match(cl.lines().join('\n'), /▸ Ledger line/);
   cl.run('space');
   assert.deepEqual(cl.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
-});
-
-test('Board has no Control page and does not change the standalone Control tab', async (t) => {
-  const { busy } = await fixture(t);
-  const control = { ...busy.control, radar: undefined };
-  for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
-    const board = { prefs: { panelLayout, projectLayout: 'board' } };
-    const hub = busy.render(40, lang, 36, onPage(undefined, board), control);
-    assert.ok(!hub.workboard.rows.some((r) => r.item === 'project:page:control'));
-    const controlState = withState(split(), { activeTab: 'control', prefs: { panelLayout } });
-    const draw = (state) => busy.render(40, lang, 36, state, control).lines;
-    assert.deepEqual(draw({ ...controlState, ...board }), draw(controlState));
-  }
 });
 
 test('Board Projects list at 40 and 80 cols EN and ZH: aligned one-row-per-project table, exact width, no STATE.md whole', async (t) => {

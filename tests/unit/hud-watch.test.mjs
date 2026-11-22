@@ -388,26 +388,26 @@ for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbo
   const lines = [], id = 'j00000000000000a1', head = `${id} imp life:`;
   const running = watchCommand(verbose ? ['--verbose'] : [], {
     env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(s.trim()), stderr: () => {},
-  }, { signal: ac.signal, rescanMs: 100, settlementWindowMs: 1800 });
+  }, { signal: ac.signal, rescanMs: 50, settlementWindowMs: 1000 });
   const dir = writeJob(home, id, 'w4E:p1', 'life', { state: 'working' });
   const status = async (state, reason) => {
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
-    await wait(180);
+    await wait(90);
   };
-  await wait(180);
+  await wait(90);
   fs.mkdirSync(join(dir, 'qa'));
   const qfile = join(dir, 'qa/q1.md');
   writeFixtureFile(qfile, '# Question q1 from imp@demo\n\nWhich\nlayout?\n\nOptions:\n- rows\n- columns\n\nDefault if unanswered: rows\n');
   await status('waiting_orchestrator', 'question');
   writeFixtureFile(join(dir, 'qa/q1.answer.md'), 'rows');
-  await wait(180);
+  await wait(90);
   await status('working');
   writeFixtureFile(join(dir, 'report.md'), 'First report');
   await status('idle_grace');
   const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
   const markRead = async () => {
     writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
-    await wait(180);
+    await wait(90);
   };
   await markRead();
   await status('working');
@@ -455,17 +455,17 @@ test('hud watch holds unconfigured settlements for exactly 3000ms', async (t) =>
   assert.equal(await running, 0);
 });
 
-test('hud watch batches jobs settling within the default three seconds into one notice', async (t) => {
+test('hud watch batches jobs settling within the settlement window into one notice', async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-batch-'));
   const ac = new AbortController(), writes = [], pane = 'w4E:p1';
   t.after(() => { ac.abort(); fs.rmSync(home, { recursive: true, force: true }); });
   const ids = ['j0000000000000001', 'j0000000000000002', 'j0000000000000003'];
   const dirs = ids.map((id) => writeJob(home, id, pane, 'batch', { state: 'working' }));
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
-    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100 });
+    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 50, settlementWindowMs: 450 });
   for (const dir of dirs) {
     writeFixtureFile(join(dir, 'STATUS.json'), '{"state":"done"}');
-    await wait(150);
+    await wait(80);
     assert.deepEqual(writes, [], 'hold settlements across scans');
   }
   await until(() => writes.length > 0, 6000);

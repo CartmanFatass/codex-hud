@@ -2,7 +2,7 @@ import { splitOf, viewFor, withState, sliceState } from '../fixtures/state-helpe
 import { homeAnchor, homeTarget, onlyTry } from '../../dist/render/monitor-state.js';
 import { projectPageOf } from '../../dist/render/project-view.js';
 /** The Split layout (spec §2.2 "Panel layouts"): a list above, the cursor row's preview below; frames at 40 columns and how the keys and the mouse move through it. */
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,11 +19,14 @@ import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/split-frames.json', import.meta.url), 'utf8'));
-async function fixtures(t) {
-  const root = fs.mkdtempSync(join(tmpdir(), 'split-layout-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { busy: await splitFixture(join(root, 'busy')), idle: await splitFixture(join(root, 'idle'), { idle: true }) };
-}
+let sharedRoot, busy, idle;
+before(async () => {
+  sharedRoot = fs.mkdtempSync(join(tmpdir(), 'split-layout-'));
+  busy = await splitFixture(join(sharedRoot, 'busy'));
+  idle = await splitFixture(join(sharedRoot, 'idle'), { idle: true });
+});
+after(() => fs.rmSync(sharedRoot, { recursive: true, force: true }));
+async function fixtures() { return { busy, idle }; }
 const page = (p, extra) => split(withState({ activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(p) } }, extra));
 const control = (cursor) => onControl({ cursor }, { prefs: { panelLayout: 'split' } });
 /** One input against a frame, then the next frame from the state it left. */
@@ -361,7 +364,9 @@ test('Tickets, Working tree and Docs: a row each, the whole text or the checklis
 
 test('a saved retired layout renders Classic, Split keeps its Home frame, and the 40-column Layout row offers only Classic and Split', async (t) => {
   const { busy } = await fixtures(t);
-  const path = join(busy.hud, 'hud-settings.json');
+  const dir = fs.mkdtempSync(join(tmpdir(), 'split-settings-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'hud-settings.json');
   const env = { ...process.env, HUD_SETTINGS_PATH: path };
   const select = (panelLayout) => {
     fs.writeFileSync(path, JSON.stringify({ panelLayout, language: 'en', theme: 'none' }));
@@ -473,6 +478,11 @@ test('One meaning per key on the Control plane: = + - size the Split, i and Dele
   assert.ok(d.state.prefs.splitRatio);
   const before = d.state.prefs.splitRatio;
   d.run('enter');
+  for (const key of ['list-grow', 'list-shrink']) {
+    const out = d.run(key);
+    assert.equal(out.action, undefined, `${key} edits no place`);
+  }
+  assert.equal(d.state.prefs.splitRatio, before, 'and in the preview the ratio keys leave the share alone');
   assert.equal(d.run('place-add').state.overlay.mode.field, 'target', 'on a place i opens the add sheet');
   d.run('escape');
   assert.equal(d.run('place-remove').state.overlay.draft.run.length, 2, 'Delete removes a place from the draft');

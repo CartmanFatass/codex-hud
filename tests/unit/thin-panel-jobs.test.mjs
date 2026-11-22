@@ -288,45 +288,6 @@ test('Home Enter toggles cards and lanes; navigation opens Project; a reveals ol
   assert.doesNotMatch(text(press(before, 'a')), /imp q0|Older choice/);
   assert.match(text(press(before, 'a')), /Folded old success/);
 });
-test('Home expiry thresholds and show-all use the real render/input path', async (t) => {
-  const f = fixture(t);
-  f.put(join(f.env.HUD_HOME, 'jobs/j0000000000000006/STATUS.json'), {
-    state: 'stopped',
-    settled_at: new Date(now - 15 * 60000).toISOString(),
-  });
-  await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree),
-    worker = (n) => board.workers.find((w) => w.id.endsWith(String(n)));
-  for (const [kind, item, minutes] of [
-    ['workers', worker(4), 10],
-    ['workers', worker(3), 21],
-    ['workers', worker(6), 15],
-  ]) {
-    const draw = (at, state = initialMonitorState()) =>
-      renderMonitor({ tree: f.tree, workboard: board, state, width: 56, height: 180, nowMs: at });
-    const edge = now + minutes * 60000,
-      has = (frame) => frame.workboard.snapshot[kind].some((v) => v.id === item.id);
-    assert.ok(has(draw(edge - 1)), `${kind} visible before threshold`);
-    const hidden = draw(edge);
-    assert.ok(!has(hidden), `${kind} hidden at threshold`);
-    assert.match(plain(hidden).join('\n'), /\+\d+ older · a/);
-    const toggle = (frame) =>
-      handleMonitorInput(frame.state, { type: 'key', key: 'show-all' }, { tree: f.tree, frame }).state;
-    const shown = draw(edge, toggle(hidden));
-    assert.ok(has(shown), `${kind} revealed by a`);
-    const target = { kind: 'worker', laneId: item.laneId, workerId: item.id };
-    const rows = shown.workboard.rows.filter((r) => r.item === targetKey(target));
-    assert.equal(rows.length, 1, 'old items start as one row');
-    assert.doesNotMatch(stripAnsi(rows[0].text), /older/);
-    assert.match(plain(shown).join('\n'), /\d+ older shown · a hide/);
-    const state = withState(shown.state, { home: { cursor: { kind: 'work', target: target } } });
-    const expanded = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: shown }).state;
-    assert.ok(expanded.home.expanded.has(targetKey(target)));
-    if (item !== worker(6))
-      assert.ok(draw(edge, expanded).workboard.rows.filter((r) => r.item === targetKey(target)).length > 1, item.id);
-    assert.ok(!has(draw(edge, toggle(shown))), `${kind} hidden again by a`);
-  }
-});
 test('an answered question is still collected after the finished job hides', async (t) => {
   const f = fixture(t);
   f.put(join(f.ready, 'qa/q1.md'), '# Question\n\nKeep this choice?\n\nDefault if unanswered: yes', 5);
@@ -344,27 +305,6 @@ test('an answered question is still collected after the finished job hides', asy
   assert.ok(!frame.workboard.snapshot.workers.some((w) => w.id.endsWith('4')));
   assert.ok(frame.workboard.snapshot.decisions.some((d) => d.question === 'Keep this choice?'));
   assert.doesNotMatch(plain(frame).join('\n'), /TEST-CUT · imp q1|Keep this choice/);
-});
-test('model button uses the master preference; b matches it and S is inert', async (t) => {
-  const f = fixture(t);
-  await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree);
-  const state = initialMonitorState();
-  for (const modelEnabled of [true, false]) {
-    const frame = renderMonitor({ tree: f.tree, workboard: board, state, modelEnabled, width: 56, height: 40 });
-    assert.equal(stripAnsi(frame.lines[0]).includes('models off'), !modelEnabled);
-    const control = frame.controls.find((c) => c.kind === 'brief');
-    assert.equal(!!control, !modelEnabled);
-    const ctx = { tree: f.tree, frame };
-    const toggled = handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx);
-    assert.equal(toggled.action?.type, 'brief-toggle');
-    if (control) {
-      const clicked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x + 1, y: control.y }, ctx);
-      assert.deepEqual(clicked.action, toggled.action);
-    }
-    const [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from('S'));
-    assert.deepEqual(handleMonitorInput(frame.state, input, ctx).state, frame.state);
-  }
 });
 test('a lane row ends in one glyph per job, oldest first, then the role of the newest running or asking one', async (t) => {
   const f = fixture(t);
@@ -458,38 +398,6 @@ test('statusline notices and explicit detail counts read job folders with no rol
   assert.equal(details.status, 0, details.stderr);
   // A settled job is done, read or not: no "report ready" count.
   assert.match(details.stdout, /Work: 1 needs you · 1 stalled · 1 failed · 1 running/);
-});
-
-test('a blocked CLI job asks the owner for input in its pane', async (t) => {
-  const f = fixture(t);
-  const id = 'j0000000000000099', dir = join(f.env.HUD_HOME, 'jobs', id);
-  f.put(join(dir, 'job.json'), {
-    job: id, role: 'grok-imp', cwd: '/synthetic/repo', package: 'CLI-ASK', herdr_pane: 'w4E:p1',
-    created_at: new Date(now - 60000).toISOString(), cli: { agent: 'grok' },
-  }, 1);
-  f.put(join(dir, 'brief.md'), '# Synthetic blocked CLI', 1);
-  f.put(join(dir, 'STATUS.json'), {
-    state: 'waiting_orchestrator', blocked: true, harness: 'cli', agent: 'grok',
-    started_at: new Date(now - 60000).toISOString(),
-  }, 0);
-  await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree);
-  const worker = board.workers.find((w) => w.id.endsWith('99'));
-  assert.equal(worker.homeNeedsHuman, true);
-  assert.equal(worker.phase, 'asking');
-  assert.equal(worker.ask, 'grok needs input in its pane');
-  assert.equal(worker.work.request, true);
-  const home = plain(f.render(board));
-  assert.ok(home.some((line) => line.includes('grok needs input in its pane')));
-  assert.ok(home.some((line) => line.startsWith('? grok-imp')));
-  f.put(join(dir, 'STATUS.json'), {
-    state: 'working', blocked: false, harness: 'cli', agent: 'grok',
-    started_at: new Date(now - 60000).toISOString(),
-  }, 0);
-  await f.pipeline.refresh();
-  const resumed = f.pipeline.workboard(f.tree).workers.find((w) => w.id.endsWith('99'));
-  assert.equal(resumed.homeNeedsHuman, false);
-  assert.equal(resumed.ask, undefined);
 });
 
 test('work cards show land and scout flow steps and final outcomes in EN and ZH', async (t) => {

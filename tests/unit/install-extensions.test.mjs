@@ -87,26 +87,28 @@ test('browser only reports PATH tools; repeat install and no-op uninstall leave 
   assert.deepEqual(fs.readdirSync(f.hud), ['config.json']);
 });
 
-for (const missing of [['google-chrome'], ['jev-ask'], ['google-chrome', 'jev-ask']]) test(`browser preflight refuses missing ${missing.join(' + ')} without changes; Project agrees`, async (t) => {
-  const f = fixture(t);
-  for (const name of ['google-chrome', 'jev-ask', 'jev-aistudio', 'jev-flow']) if (!missing.includes(name)) f.fake(name);
-  const text = f.run('browser', false, 1);
-  for (const name of missing) assert.match(text, new RegExp(`Missing: ${name}`));
-  assert.match(text, /Chrome \(google-chrome\) and jev-ask are required/);
-  assert.equal(fs.existsSync(f.home), false);
-  assert.equal(fs.existsSync(f.hud), false);
-  assert.equal(await browserAvailable(f), false);
-  // An old owned-runtime record and a jev.chrome value must not authorize readiness.
-  fs.mkdirSync(path.join(f.hud, 'jev-runtime'), { recursive: true });
-  fs.writeFileSync(path.join(f.hud, 'jev-runtime/runtime.json'), '{}');
-  const before = '{"jev":{"chrome":"/synthetic/chrome"},"owner":"keep"}\n';
-  fs.writeFileSync(f.config, before);
-  f.run('browser', false, 1);
-  assert.equal(await browserAvailable(f), false);
-  assert.equal(fs.readFileSync(f.config, 'utf8'), before);
-  assert.deepEqual(fs.readdirSync(f.hud).sort(), ['config.json', 'jev-runtime']);
-  assert.equal(fs.readFileSync(path.join(f.hud, 'jev-runtime/runtime.json'), 'utf8'), '{}');
-  assert.equal(fs.existsSync(f.home), false);
+test('browser preflight refuses missing google-chrome, jev-ask, or both without changes; Project agrees', async (t) => {
+  for (const missing of [['google-chrome'], ['jev-ask'], ['google-chrome', 'jev-ask']]) {
+    const f = fixture(t);
+    for (const name of ['google-chrome', 'jev-ask', 'jev-aistudio', 'jev-flow']) if (!missing.includes(name)) f.fake(name);
+    const text = f.run('browser', false, 1);
+    for (const name of missing) assert.match(text, new RegExp(`Missing: ${name}`));
+    assert.match(text, /Chrome \(google-chrome\) and jev-ask are required/);
+    assert.equal(fs.existsSync(f.home), false);
+    assert.equal(fs.existsSync(f.hud), false);
+    assert.equal(await browserAvailable(f), false);
+    // An old owned-runtime record and a jev.chrome value must not authorize readiness.
+    fs.mkdirSync(path.join(f.hud, 'jev-runtime'), { recursive: true });
+    fs.writeFileSync(path.join(f.hud, 'jev-runtime/runtime.json'), '{}');
+    const before = '{"jev":{"chrome":"/synthetic/chrome"},"owner":"keep"}\n';
+    fs.writeFileSync(f.config, before);
+    f.run('browser', false, 1);
+    assert.equal(await browserAvailable(f), false);
+    assert.equal(fs.readFileSync(f.config, 'utf8'), before);
+    assert.deepEqual(fs.readdirSync(f.hud).sort(), ['config.json', 'jev-runtime']);
+    assert.equal(fs.readFileSync(path.join(f.hud, 'jev-runtime/runtime.json'), 'utf8'), '{}');
+    assert.equal(fs.existsSync(f.home), false);
+  }
 });
 
 test('browser checks reject non-executable PATH tools, and Project refresh notices availability changes', async (t) => {
@@ -125,28 +127,30 @@ test('browser checks reject non-executable PATH tools, and Project refresh notic
   assert.equal(fs.existsSync(f.hud), false);
 });
 
-for (const config of [undefined, {}, { decisions: { primary: 'openai' }, owner: true }]) test(`Decision API and panel without jev (${JSON.stringify(config) ?? 'no config file'})`, async (t) => {
-  const f = fixture(t);
-  fs.mkdirSync(f.hud);
-  if (config !== undefined) fs.writeFileSync(f.config, JSON.stringify(config));
-  // Explicit synthetic credentials and injected HTTP exercise the real selector/provider, with no network.
-  const env = { HOME: f.home, HUD_HOME: f.hud, OPENAI_API_KEY: 'synthetic-not-a-real-key', PATH: f.bin };
-  let calls = 0;
-  const provider = await selectDecisionProvider(undefined, env, async () => {
-    calls++;
-    return Response.json({ answers: [{ name: 'pick', type: 'choice', choice: 'YES', probabilities: { YES: 1, NO: 0 }, confidence: 1 }] });
-  });
-  const result = await provider.decide({ page: { url: 'https://example.invalid', title: 'Synthetic', text: 'Ready' }, elements: [], recentActions: [], goal: 'Is it ready?', questions: [{ name: 'pick', rules: ['Use the facts'], choices: [{ value: 'YES', description: 'Ready' }, { value: 'NO', description: 'Not ready' }] }] }, { cacheKey: 'synthetic' });
-  assert.equal(result.provider, 'openai');
-  assert.equal(result.answers[0].choice, 'YES');
-  assert.equal(calls, 1);
-  const settings = loadSettings(env);
-  assert.equal(settings.decisionApi, 'openai');
-  const frame = renderSettingsPage({ draft: settings, original: settings, selected: 0, offset: 0, message: '' }, 80, 40);
-  assert.ok(frame.lines.length > 0);
-  const collector = new ProjectCollector(f.repo, f.hud, env, f.home);
-  const project = await collector.collect(true, board, Date.now());
-  assert.equal(project.browser, false);
-  assert.ok(project.control.length > 0);
-  assert.equal(fs.existsSync(path.join(f.hud, 'browser')), false);
+test('Decision API and panel without jev across missing, empty and configured config files', async (t) => {
+  for (const config of [undefined, {}, { decisions: { primary: 'openai' }, owner: true }]) {
+    const f = fixture(t);
+    fs.mkdirSync(f.hud);
+    if (config !== undefined) fs.writeFileSync(f.config, JSON.stringify(config));
+    // Explicit synthetic credentials and injected HTTP exercise the real selector/provider, with no network.
+    const env = { HOME: f.home, HUD_HOME: f.hud, OPENAI_API_KEY: 'synthetic-not-a-real-key', PATH: f.bin };
+    let calls = 0;
+    const provider = await selectDecisionProvider(undefined, env, async () => {
+      calls++;
+      return Response.json({ answers: [{ name: 'pick', type: 'choice', choice: 'YES', probabilities: { YES: 1, NO: 0 }, confidence: 1 }] });
+    });
+    const result = await provider.decide({ page: { url: 'https://example.invalid', title: 'Synthetic', text: 'Ready' }, elements: [], recentActions: [], goal: 'Is it ready?', questions: [{ name: 'pick', rules: ['Use the facts'], choices: [{ value: 'YES', description: 'Ready' }, { value: 'NO', description: 'Not ready' }] }] }, { cacheKey: 'synthetic' });
+    assert.equal(result.provider, 'openai');
+    assert.equal(result.answers[0].choice, 'YES');
+    assert.equal(calls, 1);
+    const settings = loadSettings(env);
+    assert.equal(settings.decisionApi, 'openai');
+    const frame = renderSettingsPage({ draft: settings, original: settings, selected: 0, offset: 0, message: '' }, 80, 40);
+    assert.ok(frame.lines.length > 0);
+    const collector = new ProjectCollector(f.repo, f.hud, env, f.home);
+    const project = await collector.collect(true, board, Date.now());
+    assert.equal(project.browser, false);
+    assert.ok(project.control.length > 0);
+    assert.equal(fs.existsSync(path.join(f.hud, 'browser')), false);
+  }
 });

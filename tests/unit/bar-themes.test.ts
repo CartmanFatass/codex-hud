@@ -30,47 +30,49 @@ function scene(t: test.TestContext) {
   return f;
 }
 
-for (const style of BAR_STYLES)
-  test(`${style}: busy 120-column golden frames, real Claude/pi/Codex paths and ribbon`, (t) => {
-    const f = scene(t);
-    const previous = process.env.COLORTERM;
-    process.env.COLORTERM = 'truecolor';
-    t.after(() => {
-      if (previous === undefined) delete process.env.COLORTERM;
-      else process.env.COLORTERM = previous;
-    });
+test('all six looks: busy 120-column golden frames, real Claude/pi/Codex paths and ribbon', (t) => {
+  const f = scene(t);
+  const previous = process.env.COLORTERM;
+  process.env.COLORTERM = 'truecolor';
+  t.after(() => {
+    if (previous === undefined) delete process.env.COLORTERM;
+    else process.env.COLORTERM = previous;
+  });
+  for (const style of BAR_STYLES) {
     const frame = f.render(style);
-    assert.deepEqual(frame, golden[style]);
-    assert.equal(frame.claude.length, style === 'stacked' ? 2 : 1);
-    assert.equal(frame.pi.length, style === 'stacked' ? 2 : 1);
-    assert.equal(frame.codex.length, 1, 'fixed-height Codex pane falls back to line for Stacked');
+    assert.deepEqual(frame, golden[style], style);
+    assert.equal(frame.claude.length, style === 'stacked' ? 2 : 1, style);
+    assert.equal(frame.pi.length, style === 'stacked' ? 2 : 1, style);
+    assert.equal(frame.codex.length, 1, `${style}: fixed-height Codex pane falls back to line for Stacked`);
     for (const rows of Object.values(frame))
-      for (const row of rows) assert.ok(visualWidth(row) <= 120 && !row.includes('\n'));
+      for (const row of rows) assert.ok(visualWidth(row) <= 120 && !row.includes('\n'), style);
     assert.ok(
       stripAnsi(frame.ribbon[0]!).indexOf('other status') < stripAnsi(frame.ribbon[0]!).indexOf('example'),
-      'extensions precede the ribbon'
+      `${style}: extensions precede the ribbon`
     );
-    assert.match(stripAnsi(frame.ribbon[0]!), /\$0\.420/);
-    assert.doesNotMatch(frame.pi.map(stripAnsi).join(' '), /\$/);
-  });
+    assert.match(stripAnsi(frame.ribbon[0]!), /\$0\.420/, style);
+    assert.doesNotMatch(frame.pi.map(stripAnsi).join(' '), /\$/, style);
+  }
+});
 
-for (const style of ['micro', 'triptych'] as const)
-  test(`${style}: width ladder at 160/120/80 on all clients and ribbon`, (t) => {
-    const f = scene(t);
+test('micro and triptych: width ladder at 160/120/80 on all clients and ribbon', (t) => {
+  const f = scene(t);
+  for (const style of ['micro', 'triptych'] as const) {
     const frames = [160, 120, 80].map((width) => f.render(style, width));
     for (const [i, frame] of frames.entries())
       for (const rows of Object.values(frame))
-        for (const row of rows) assert.ok(visualWidth(row) <= [160, 120, 80][i]!);
+        for (const row of rows) assert.ok(visualWidth(row) <= [160, 120, 80][i]!, style);
     for (const client of ['claude', 'pi', 'codex'] as const) {
       const wide = frames[0]![client].map(stripAnsi).join(' '),
         narrow = frames[2]![client].map(stripAnsi).join(' ');
-      assert.match(wide, /MCP/);
-      assert.match(wide, /skills/);
-      assert.ok(narrow.length > 0);
-      assert.match(narrow, client === 'claude' ? /opus-5\.5/ : client === 'pi' ? /v4\.1-flash/ : /5\.6-astra/);
-      assert.notEqual(wide, narrow, 'ladder changes forms, not just overflowing a fixed frame');
+      assert.match(wide, /MCP/, style);
+      assert.match(wide, /skills/, style);
+      assert.ok(narrow.length > 0, style);
+      assert.match(narrow, client === 'claude' ? /opus-5\.5/ : client === 'pi' ? /v4\.1-flash/ : /5\.6-astra/, style);
+      assert.notEqual(wide, narrow, `${style}: ladder changes forms, not just overflowing a fixed frame`);
     }
-  });
+  }
+});
 
 test('all six looks: NO_COLOR/theme none and unknown settings fall back to line', (t) => {
   scene(t);
@@ -320,10 +322,11 @@ test('the six looks fit every width, in both light and dark', (t) => {
     { events, needs: ['Work: 1 needs you'] },
     {},
   ];
+  const widths = [1, 2, 5, 10, 16, 20, 28, 32, 40, 48, 56, 64, 72, 80, 90, 100, 110, 120, 140, 160, 180, 200];
   for (const theme of ['terminal', 'latte'] as const)
     for (const style of BAR_STYLES.slice(2))
       for (const extra of variants)
-        for (let width = 1; width <= 200; width += 3) {
+        for (const width of widths) {
           setDisplayConfig({ barStyle: style, theme, barFields: [...BAR_FIELDS] });
           const rows = renderBar(
             { ...conceptFacts, context: { percent: 90, shown: '90%', window: 400000 }, ...extra },

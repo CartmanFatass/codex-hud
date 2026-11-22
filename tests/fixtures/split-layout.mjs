@@ -1,16 +1,43 @@
 import { viewFor, withState } from './state-helpers.mjs';
 /** The Split layout's synthetic scene: several package lanes (one asks, one failed, one with a finished report), a native lane, decisions, tickets. */
+import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
-import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
+import { handleMonitorInput, renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { ticketFixture } from './project-tickets.mjs';
 import { NOW, TREE, plain, onControl, richProgress, richControl } from './project-page.mjs';
 
 export const split = (extra) => (withState(initialMonitorState(), { prefs: { panelLayout: 'split', acceptance: 'slice' } }, extra));
+
+export function layoutDriver(f, { width = 40, height = 36, lang = 'en', data = f.data, state = split() } = {}) {
+  let frame = f.render(width, lang, height, state, data);
+  const run = (input) => {
+    const out = handleMonitorInput(frame.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame, nowMs: NOW, standalone: true });
+    frame = f.render(width, lang, height, out.state, data);
+    return out;
+  };
+  return { run, get frame() { return frame; }, get state() { return frame.state; }, lines: () => plain(frame) };
+}
+
+export const assertWidth = (frame, width, label) => {
+  for (const [i, line] of frame.lines.entries()) assert.equal(visualLength(line), width, `${label} line ${i}: "${stripAnsi(line)}"`);
+};
+
+/** Every prose cut ending in `…` must end at a whole word in `corpus`, never inside a word. */
+export const assertNoMidWordCut = (lines, corpus, label) => {
+  for (const line of lines) {
+    const clean = line.replace(/[┃│]+$/, '').trimEnd();
+    const m = /([A-Za-z]+)…(?:\s+\S+)?$/.exec(clean);
+    if (!m) continue;
+    const word = m[1];
+    assert.ok(new RegExp(`\\b${word}\\b`).test(corpus), `${label}: mid-word cut "${word}…" in "${line}"`);
+  }
+};
 /** `idle`: every job has settled and nothing asks, so Home's list is what finished plus Waiting and Progress. */
 export async function splitFixture(root, { idle = false } = {}) {
   const f = await ticketFixture(root);

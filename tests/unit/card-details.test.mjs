@@ -68,44 +68,48 @@ test('Home opens only the newest current result by itself; running cards stay tw
   frame = f.render(enter(f, frame, job));
   assert.match(frame.lines.map(stripAnsi).join('\n'), /QUESTION-CONTEXT/);
 });
-for (const language of ['en', 'zh']) test(`all mark inks and deterministic unmarked files: ${language}`, (t) => {
+test('all mark inks and deterministic unmarked files in EN and ZH', (t) => {
   fixture(t);
-  const words = language === 'en' ? ['keyword', 'accept', 'reject', 'recommends X'] : ['关键词', '批准', '拒绝', '认为更简单'];
-  const raw = `«${words[0]}» «+${words[1]}» «-${words[2]}» «!${words[3]}» report.md src/tree-page.ts`;
-  const painted = paintSentence(raw);
-  assert.equal(painted, [theme.board.identifier(words[0]), theme.board.success(words[1]), theme.board.danger(words[2]),
-    theme.board.opinion(words[3]), theme.board.identifier('report.md'), theme.board.identifier('src/tree-page.ts')].join(' '));
-  assert.ok(identifiers('检查report.md，修改src/tree-page.ts。').includes(theme.board.identifier('report.md')));
-  assert.ok(identifiers('检查report.md，修改src/tree-page.ts。').includes(theme.board.identifier('src/tree-page.ts')));
-  assert.equal(paintSentence('«!prefer report.md»'), theme.board.opinion('prefer ') + theme.board.identifier('report.md'));
-  for (const width of [16, 40, 80]) for (const full of [false, true]) {
-    const rows = jobSentenceRows(raw, width, theme.board.muted, full);
-    assert.ok(rows.every((r) => visualLength(r) === width));
-    assert.doesNotMatch(rows.map(stripAnsi).join(''), /[«»!+]/);
+  for (const language of ['en', 'zh']) {
+    const words = language === 'en' ? ['keyword', 'accept', 'reject', 'recommends X'] : ['关键词', '批准', '拒绝', '认为更简单'];
+    const raw = `«${words[0]}» «+${words[1]}» «-${words[2]}» «!${words[3]}» report.md src/tree-page.ts`;
+    const painted = paintSentence(raw);
+    assert.equal(painted, [theme.board.identifier(words[0]), theme.board.success(words[1]), theme.board.danger(words[2]),
+      theme.board.opinion(words[3]), theme.board.identifier('report.md'), theme.board.identifier('src/tree-page.ts')].join(' '));
+    assert.ok(identifiers('检查report.md，修改src/tree-page.ts。').includes(theme.board.identifier('report.md')));
+    assert.ok(identifiers('检查report.md，修改src/tree-page.ts。').includes(theme.board.identifier('src/tree-page.ts')));
+    assert.equal(paintSentence('«!prefer report.md»'), theme.board.opinion('prefer ') + theme.board.identifier('report.md'));
+    for (const width of [16, 40, 80]) for (const full of [false, true]) {
+      const rows = jobSentenceRows(raw, width, theme.board.muted, full);
+      assert.ok(rows.every((r) => visualLength(r) === width));
+      assert.doesNotMatch(rows.map(stripAnsi).join(''), /[«»!+]/);
+    }
   }
 });
-for (const language of ['en', 'zh']) test(`flag marks retain prefixes as identifiers, stance marks still work: ${language}`, (t) => {
+test('flag marks retain prefixes as identifiers, stance marks still work in EN and ZH', (t) => {
   fixture(t);
-  const lead = language === 'en' ? 'Use ' : '使用';
-  for (const [raw, plain] of [
-    ['«--orchestrator»', '--orchestrator'], ['«--notify»', '--notify'],
-    ['`«-x»`', '`-x`'], ['«`-x`»', '`-x`'],
-    ['«++value»', '++value'], ['«!!value»', '!!value'], ['«!-value»', '!-value'],
-  ]) {
-    const parsed = keywordMarks(lead + raw);
-    assert.equal(parsed.valid, true, raw);
-    assert.equal(parsed.plain, lead + plain, raw);
-    assert.equal(parsed.spans[0].type, '', raw);
-    const painted = paintSentence(lead + raw);
-    assert.equal(stripAnsi(painted), lead + plain);
-    assert.equal(painted, lead + theme.board.identifier(plain));
-    const title = markedTitle(lead + raw, language);
-    assert.equal(keywordMarks(title).plain, lead + plain);
-    assert.equal(paintSentence(title), painted);
+  for (const language of ['en', 'zh']) {
+    const lead = language === 'en' ? 'Use ' : '使用';
+    for (const [raw, plain] of [
+      ['«--orchestrator»', '--orchestrator'], ['«--notify»', '--notify'],
+      ['`«-x»`', '`-x`'], ['«`-x`»', '`-x`'],
+      ['«++value»', '++value'], ['«!!value»', '!!value'], ['«!-value»', '!-value'],
+    ]) {
+      const parsed = keywordMarks(lead + raw);
+      assert.equal(parsed.valid, true, raw);
+      assert.equal(parsed.plain, lead + plain, raw);
+      assert.equal(parsed.spans[0].type, '', raw);
+      const painted = paintSentence(lead + raw);
+      assert.equal(stripAnsi(painted), lead + plain);
+      assert.equal(painted, lead + theme.board.identifier(plain));
+      const title = markedTitle(lead + raw, language);
+      assert.equal(keywordMarks(title).plain, lead + plain);
+      assert.equal(paintSentence(title), painted);
+    }
+    const words = language === 'en' ? ['reject', 'approve', 'recommends simplicity'] : ['拒绝', '批准', '认为更简单'];
+    const raw = `«-${words[0]}» «+${words[1]}» «!${words[2]}»`;
+    assert.equal(paintSentence(raw), [theme.board.danger(words[0]), theme.board.success(words[1]), theme.board.opinion(words[2])].join(' '));
   }
-  const words = language === 'en' ? ['reject', 'approve', 'recommends simplicity'] : ['拒绝', '批准', '认为更简单'];
-  const raw = `«-${words[0]}» «+${words[1]}» «!${words[2]}»`;
-  assert.equal(paintSentence(raw), [theme.board.danger(words[0]), theme.board.success(words[1]), theme.board.opinion(words[2])].join(' '));
 });
 test('malformed, prefix-only, five marks and nesting strip syntax without colouring keywords; old grammar still paints', (t) => {
   fixture(t);

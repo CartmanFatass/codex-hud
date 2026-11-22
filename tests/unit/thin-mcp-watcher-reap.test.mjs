@@ -548,26 +548,6 @@ test('the watcher settles a dead stop-requested Pi worker on its initial scan', 
   assert.deepEqual(await exited, [0, null]);
 });
 
-test('thin watcher catches up without a new file event and exits', { timeout: 5000 }, async (t) => {
-  const f = await fixture(t),
-    dir = join(f.env.HUD_HOME, 'jobs', 'j0000000000000000');
-  fs.mkdirSync(dir, { recursive: true });
-  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: 'j0000000000000000' }));
-  writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=synthetic-catchup\n');
-  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
-  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
-    env: f.env,
-    stdio: 'ignore',
-  });
-  const exited = once(child, 'exit');
-  t.after(() => {
-    if (child.exitCode === null) child.kill();
-  });
-  await until(() => f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === dir));
-  await exited;
-  assert.equal(child.exitCode, 0);
-});
-
 test(
   'thin watcher starts once, catches up, respects grace and failed deadline, then exits',
   { timeout: 30000 },

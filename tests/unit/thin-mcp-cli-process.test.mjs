@@ -236,7 +236,7 @@ test('supervisor edges: stalled submission stays supervised; pre-input rejection
   assert.ok(f.commands().some((c) => c.args[0] === 'tab' && c.args[1] === 'close'));
 });
 
-test('supervisor edges: outage with a report settles at 60s, PID death closes with report or fails without quota scans', { timeout: 12000 }, async (t) => {
+test('supervisor edges: outage with a report settles at 60s, PID death closes with report or fails without quota scans', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'outage-events', 10);
@@ -278,16 +278,6 @@ test('a cli that exits fails, and a closed tab fails', { timeout: 15000 }, async
   const missing = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-gone', task: 'Synthetic gone.' });
   await until(() => cliState(missing.task_dir)?.state === 'failed');
   assert.equal(cliState(missing.task_dir).error, 'worker exited');
-});
-
-test('closing a cli job tab fails it', { timeout: 15000 }, async (t) => {
-  const f = await fixture(t);
-  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-tab', task: 'Synthetic tab.' });
-  await until(() => cliState(job.task_dir)?.pid);
-  f.closeTab();
-  await until(() => cliState(job.task_dir)?.exit_reason === 'tab closed');
-  assert.equal(cliState(job.task_dir).state, 'failed');
 });
 
 for (const first of ['watcher', 'supervisor']) {

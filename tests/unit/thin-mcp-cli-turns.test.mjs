@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import {
   workerFor,
   cardText,
@@ -15,6 +15,7 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
+describe('thin-mcp cli turns', { concurrency: 2 }, () => {
 test('supervisor events: report then long summary, flapping, explicit continuation and rewritten report', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -67,7 +68,7 @@ test('supervisor events: a report with a missed status push settles on the safet
 // Two independent turns each settle through the configured grace and real /quit subprocess.
 test('done without report keeps the job open and a later report settles it', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'short-cli', 4, true);
+  writeCliRole(f, 'short-cli', 1, true);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const job = await f.call('hud_create', { role: 'short-cli', request_key: 'grok-missing', task: 'Synthetic missing.' });
   await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.pid);
@@ -358,43 +359,46 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
   assert.equal(cliState(gone.task_dir).error, 'worker exited');
 });
 
-test('report written while working settles only at turn end, not mid-turn slice timeout', { timeout: 15000 }, async (t) => {
-  const f = await fixture(t);
-  writeCliRole(f, 'mid-report-cli', 1, true);
-  fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
-  const job = await f.call('hud_create', {
-    role: 'mid-report-cli',
-    request_key: 'mid-report',
-    task: 'Write report mid-turn while still working.',
-  });
-  await until(() => fs.existsSync(join(job.task_dir, 'report.md')), 5000);
-  await new Promise((r) => setTimeout(r, 250));
-  assert.equal(cliState(job.task_dir).state, 'working');
-  assert.equal(cliState(job.task_dir).output_written, false);
-  assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
-
-  fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
-  await until(() => cliState(job.task_dir)?.state === 'closed', 5000);
-  assert.equal(cliState(job.task_dir).output_written, true);
-  assert.equal(cliState(job.task_dir).exit_reason, 'settled');
+test('report written while working settles only at turn end, not mid-turn slice timeout, for continuable and noncontinuable CLIs', { timeout: 15000 }, async (t) => {
+  await Promise.all([
+    (async () => {
+      const f = await fixture(t);
+      writeCliRole(f, 'mid-report-cli', 1, true);
+      fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
+      const job = await f.call('hud_create', {
+        role: 'mid-report-cli',
+        request_key: 'mid-report',
+        task: 'Write report mid-turn while still working.',
+      });
+      await until(() => fs.existsSync(join(job.task_dir, 'report.md')), 5000);
+      await new Promise((r) => setTimeout(r, 250));
+      assert.equal(cliState(job.task_dir).state, 'working');
+      assert.equal(cliState(job.task_dir).output_written, false);
+      assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
+      fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
+      await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
+      await until(() => cliState(job.task_dir)?.state === 'closed', 5000);
+      assert.equal(cliState(job.task_dir).output_written, true);
+      assert.equal(cliState(job.task_dir).exit_reason, 'settled');
+    })(),
+    (async () => {
+      const f = await fixture(t);
+      writeCliRole(f, 'no-cont-mid', 1, false);
+      fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
+      const noCont = await f.call('hud_create', {
+        role: 'no-cont-mid',
+        request_key: 'no-quit-early',
+        task: 'Must not send /quit before done.',
+      });
+      await until(() => fs.existsSync(join(noCont.task_dir, 'report.md')), 5000);
+      await new Promise((r) => setTimeout(r, 250));
+      assert.equal(cliState(noCont.task_dir).state, 'working');
+      assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
+      fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
+      await until(() => cliState(noCont.task_dir)?.state === 'closed', 5000);
+      assert.equal(cliState(noCont.task_dir).output_written, true);
+      assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+    })(),
+  ]);
 });
-
-test('no /quit before done for a noncontinuable CLI', { timeout: 15000 }, async (t) => {
-  const f = await fixture(t);
-  writeCliRole(f, 'no-cont-mid', 1, false);
-  fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
-  const noCont = await f.call('hud_create', {
-    role: 'no-cont-mid',
-    request_key: 'no-quit-early',
-    task: 'Must not send /quit before done.',
-  });
-  await until(() => fs.existsSync(join(noCont.task_dir, 'report.md')), 5000);
-  await new Promise((r) => setTimeout(r, 250));
-  assert.equal(cliState(noCont.task_dir).state, 'working');
-  assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
-  fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
-  await until(() => cliState(noCont.task_dir)?.state === 'closed', 5000);
-  assert.equal(cliState(noCont.task_dir).output_written, true);
-  assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
 });

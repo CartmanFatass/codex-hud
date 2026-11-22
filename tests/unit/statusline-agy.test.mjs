@@ -50,66 +50,93 @@ function fixture(t) {
     if (/^(?:CODEX_)?HUD_(THEME|ICONS|BAR_FIELDS|BAR_STYLE|SETTINGS_PATH)$/.test(key) || key === 'HERDR_PANE_ID')
       delete env[key];
   }
-  const run = (value, args = [], executable = bin) => {
-    const result = spawnSync(executable, args, {
-      input: typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value),
-      env, encoding: 'utf8', timeout: 10000,
+  const run = (value, args = [], executable = bin) =>
+    new Promise((resolveRun, rejectRun) => {
+      const child = spawn(executable, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '';
+      const timer = setTimeout(() => { child.kill('SIGKILL'); rejectRun(new Error('timeout')); }, 10000);
+      child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+      child.on('error', (err) => { clearTimeout(timer); rejectRun(err); });
+      child.on('close', (status) => {
+        clearTimeout(timer);
+        try {
+          assert.equal(status, 0, stderr);
+          assert.equal(stderr, '');
+          assert.ok(!stdout.includes(email), 'email never goes to stdout');
+          resolveRun(strip(stdout));
+        } catch (err) { rejectRun(err); }
+      });
+      child.stdin.end(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value));
     });
-    assert.ifError(result.error);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stderr, '');
-    assert.ok(!result.stdout.includes(email), 'email never goes to stdout');
-    return strip(result.stdout);
-  };
   return { home, hud, env, run };
 }
 
-test('Antigravity renders fresh/mid-turn/quotas, EN/ZH details and the caller width', (t) => {
+test('Antigravity renders fresh/mid-turn/quotas, EN/ZH details and the caller width', async (t) => {
   const { run } = fixture(t);
-  assert.equal(run(fresh), '▲ Gemini 4 Carbon (High) │ ░░░░░░░░░░ 0% │ demo');
-  assert.equal(run({ ...payload, quota: null }), plain);
-  assert.equal(run(payload), wide);
-  assert.equal(run({ ...payload, terminal_width: 40 }), '▲ Gemini 4 Carbon (High) │ 35%');
-  assert.equal(run({ ...payload, terminal_width: 40 }, ['--width', '220']), wide);
-  assert.equal(run(payload, ['--details', '--lang', 'en']),
-    'model Gemini 4 Carbon (High) · ctx [###-------] 35% · cwd /synthetic/work/demo · left 65% · in 70000 tokens · out 700 tokens · window 200000 tokens · 5h 91% left · 7d 98% left');
-  assert.equal(run(payload, ['--details', '--lang', 'zh']),
-    '模型 Gemini 4 Carbon (High) · 上下文 [###-------] 35% · 目录 /synthetic/work/demo · 剩余 65% · 输入 70000 词元 · 输出 700 词元 · 容量 200000 词元 · 5h 91% left · 7d 98% left');
-  assert.equal(run(fresh, ['--details', '--lang', 'en']),
-    'model Gemini 4 Carbon (High) · ctx [----------] 0% · cwd /synthetic/work/demo · left 0% · in 0 tokens · out 0 tokens');
-  assert.equal(run(fresh, ['--details', '--lang', 'zh']),
-    '模型 Gemini 4 Carbon (High) · 上下文 [----------] 0% · 目录 /synthetic/work/demo · 剩余 0% · 输入 0 词元 · 输出 0 词元');
+  const results = await Promise.all([
+    run(fresh),
+    run({ ...payload, quota: null }),
+    run(payload),
+    run({ ...payload, terminal_width: 40 }),
+    run({ ...payload, terminal_width: 40 }, ['--width', '220']),
+    run(payload, ['--details', '--lang', 'en']),
+    run(payload, ['--details', '--lang', 'zh']),
+    run(fresh, ['--details', '--lang', 'en']),
+    run(fresh, ['--details', '--lang', 'zh']),
+  ]);
+  assert.deepEqual(results, [
+    '▲ Gemini 4 Carbon (High) │ ░░░░░░░░░░ 0% │ demo',
+    plain,
+    wide,
+    '▲ Gemini 4 Carbon (High) │ 35%',
+    wide,
+    'model Gemini 4 Carbon (High) · ctx [###-------] 35% · cwd /synthetic/work/demo · left 65% · in 70000 tokens · out 700 tokens · window 200000 tokens · 5h 91% left · 7d 98% left',
+    '模型 Gemini 4 Carbon (High) · 上下文 [###-------] 35% · 目录 /synthetic/work/demo · 剩余 65% · 输入 70000 词元 · 输出 700 词元 · 容量 200000 词元 · 5h 91% left · 7d 98% left',
+    'model Gemini 4 Carbon (High) · ctx [----------] 0% · cwd /synthetic/work/demo · left 0% · in 0 tokens · out 0 tokens',
+    '模型 Gemini 4 Carbon (High) · 上下文 [----------] 0% · 目录 /synthetic/work/demo · 剩余 0% · 输入 0 词元 · 输出 0 词元',
+  ]);
 });
 
-test('Antigravity quota follows the model id or display name without falling back to another family', (t) => {
+test('Antigravity quota follows the model id or display name without falling back to another family', async (t) => {
   const { run } = fixture(t);
   const thirdPartyPlain = '✻ Claude Example │ ████░░░░░░ 35%/200K │ demo';
-  assert.equal(run({ ...payload, model: thirdParty }), `${thirdPartyPlain} │ 5h 100% left  7d 100% left`);
-  assert.equal(run({ ...payload, quota: { '3p-5h': quota['3p-5h'] } }), plain);
-  assert.equal(run({ ...payload, model: thirdParty, quota: { 'gemini-5h': quota['gemini-5h'] } }), thirdPartyPlain);
-  assert.match(run({ ...payload, model: { id: thirdParty.id, display_name: 'gEmInI Example' } }), /5h 91% left  7d 98% left$/);
-  assert.match(run({ ...payload, model: { id: 'GEMINI-example', display_name: 'Carbon Example' } }), /5h 91% left  7d 98% left$/);
+  const [tp, only3p, tpGem, mixedName, mixedId] = await Promise.all([
+    run({ ...payload, model: thirdParty }),
+    run({ ...payload, quota: { '3p-5h': quota['3p-5h'] } }),
+    run({ ...payload, model: thirdParty, quota: { 'gemini-5h': quota['gemini-5h'] } }),
+    run({ ...payload, model: { id: thirdParty.id, display_name: 'gEmInI Example' } }),
+    run({ ...payload, model: { id: 'GEMINI-example', display_name: 'Carbon Example' } }),
+  ]);
+  assert.equal(tp, `${thirdPartyPlain} │ 5h 100% left  7d 100% left`);
+  assert.equal(only3p, plain);
+  assert.equal(tpGem, thirdPartyPlain);
+  assert.match(mixedName, /5h 91% left  7d 98% left$/);
+  assert.match(mixedId, /5h 91% left  7d 98% left$/);
 });
 
-test('Antigravity skips expired, invalid and unknown quota buckets and clamps finite fractions', (t) => {
+test('Antigravity skips expired, invalid and unknown quota buckets and clamps finite fractions', async (t) => {
   const { run } = fixture(t);
-  assert.equal(run({ ...payload, quota: {
-    'gemini-5h': { ...quota['gemini-5h'], reset_time: '2000-01-01T00:00:00Z' },
-    'gemini-weekly': quota['gemini-weekly'],
-    'gemini-monthly': quota['gemini-5h'],
-  } }), `${plain} │ 7d 98% left`);
-  assert.equal(run({ ...payload, quota: {
-    'gemini-5h': { ...quota['gemini-5h'], remaining_fraction: '0.9' },
-    'gemini-weekly': { ...quota['gemini-weekly'], reset_time: 'not a date' },
-  } }), plain);
-  assert.equal(run({ ...payload, quota: {
-    'gemini-5h': { window_minutes: 300, remaining_percentage: 80 },
-    'gemini-weekly': { remaining_fraction: 0.9 },
-  } }), plain);
-  assert.equal(run({ ...payload, quota: {
-    'gemini-5h': bucket(-0.25, 7143),
-    'gemini-weekly': bucket(1.25, 593943),
-  } }), `${plain} │ 5h 0% left  7d 100% left`);
+  const results = await Promise.all([
+    run({ ...payload, quota: {
+      'gemini-5h': { ...quota['gemini-5h'], reset_time: '2000-01-01T00:00:00Z' },
+      'gemini-weekly': quota['gemini-weekly'],
+      'gemini-monthly': quota['gemini-5h'],
+    } }),
+    run({ ...payload, quota: {
+      'gemini-5h': { ...quota['gemini-5h'], remaining_fraction: '0.9' },
+      'gemini-weekly': { ...quota['gemini-weekly'], reset_time: 'not a date' },
+    } }),
+    run({ ...payload, quota: {
+      'gemini-5h': { window_minutes: 300, remaining_percentage: 80 },
+      'gemini-weekly': { remaining_fraction: 0.9 },
+    } }),
+    run({ ...payload, quota: {
+      'gemini-5h': bucket(-0.25, 7143),
+      'gemini-weekly': bucket(1.25, 593943),
+    } }),
+  ]);
+  assert.deepEqual(results, [`${plain} │ 7d 98% left`, plain, plain, `${plain} │ 5h 0% left  7d 100% left`]);
 });
 
 test('Antigravity ignores transcript, Claude quota publication and raw forwarding; unknown input degrades', async (t) => {
@@ -121,10 +148,15 @@ test('Antigravity ignores transcript, Claude quota publication and raw forwardin
   fs.writeFileSync(script, `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(receipt)}, 'called');`);
   fs.writeFileSync(join(hud, 'config.json'), JSON.stringify({ statusline: { forward: [process.execPath, script] } }));
   const input = { ...payload, transcript_path, rate_limits: { five_hour: { used_percentage: 20 } } };
-  assert.equal(run(input), wide);
-  assert.equal(run(input, [bin], process.execPath), wide, 'node bin/hud-statusline stays compatible');
-  for (const bad of ['', '{broken', '{}', '[1]', { product: 'unsupported', model }, { product: 'antigravity', email }, Buffer.alloc(65537, 32)])
-    assert.equal(run(bad), 'HUD unavailable');
+  const badInputs = ['', '{broken', '{}', '[1]', { product: 'unsupported', model }, { product: 'antigravity', email }, Buffer.alloc(65537, 32)];
+  const [direct, viaNode, ...badOut] = await Promise.all([
+    run(input),
+    run(input, [bin], process.execPath),
+    ...badInputs.map((bad) => run(bad)),
+  ]);
+  assert.equal(direct, wide);
+  assert.equal(viaNode, wide, 'node bin/hud-statusline stays compatible');
+  for (const out of badOut) assert.equal(out, 'HUD unavailable');
   await delay(200);
   assert.ok(!fs.existsSync(receipt));
   assert.ok(!fs.existsSync(join(hud, 'display', 'statusline')), 'no transcript or context cache');

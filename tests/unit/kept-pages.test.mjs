@@ -26,12 +26,11 @@ function fixture(t) {
   t.after(() => rmSync(home, { recursive: true, force: true }));
   return pageFixture(home);
 }
-for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes'])
-  test(`frame: ${page} in Home's kit`, (t) => {
-    const f = fixture(t),
-      frames = pageFrames(f);
-    for (const [key, text] of Object.entries(frames).filter(([key]) => key.startsWith(page + '-')))
-      assert.deepEqual(text, expected[key], key);
+test("frames: all seven kept pages in Home's kit", (t) => {
+  const f = fixture(t),
+    frames = pageFrames(f);
+  assert.deepEqual(frames, expected);
+  for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes']) {
     // Read the scrolling Help body separately from the visible frame.
     const frame = f.render(page, 80, 'en', page === 'help' ? 54 : 40),
       text = plainFrame(frame).join('\n');
@@ -81,7 +80,8 @@ for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'chang
       assert.match(text, /branch\s+universal-hud/);
       assert.match(text, /untracked\s+2/);
     }
-  });
+  }
+});
 
 test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
   const f = fixture(t);

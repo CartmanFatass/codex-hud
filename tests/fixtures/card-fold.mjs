@@ -45,7 +45,7 @@ export function nativeBoard(home) {
   tree.nodes[0].children[0].statusAt = new Date(NOW);
   return { tree, board: f.board(tree) };
 }
-export const EMPTY_TREE = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) };
+const EMPTY_TREE = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) };
 export function drawAt(board, state, minutes, width = 80, lang = 'en', tree = EMPTY_TREE) {
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }), language = setLanguage(lang);
   try {

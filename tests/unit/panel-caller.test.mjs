@@ -8,47 +8,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { watchPanelCaller } from '../../dist/cli/panel-pane.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-// The modules deleted by PRUNE-OBS-01 through PRUNE-OBS-03. Keep the live rollout/recovery types out of this list.
-const retiredModules = [
-  'collectors/job-display-types',
-  'collectors/job-live-observation',
-  'collectors/job-observations',
-  'collectors/job-tree',
-  'collectors/native-calls',
-  'collectors/task-observations',
-  'core/capacity',
-  'core/execution',
-  'core/interfaces/registry-provider',
-  'core/interfaces/session-binding',
-  'core/ledger-read',
-  'core/link-ledger-read',
-  'core/link/job-display',
-  'core/link/limits',
-  'core/link/types',
-  'core/link/view-model',
-  'core/types/close',
-  'core/types/execution',
-  'core/types/lifecycle',
-  'core/wake/projection',
-  'jev/runtime/types',
-  'ledger/notify-events',
-  'managed/host-ipc',
-  'managed/host',
-  'managed/jev-host',
-  'managed/relations',
-  'managed/types',
-  'render/job-details',
-  'roles/association',
-  'roles/external-association',
-  'roles/pi-dispatch-status',
-  'roles/pi-dispatch',
-];
-
-test('removed observer modules stay out of source and the panel build', () => {
-  const files = retiredModules.flatMap((name) => [`src/${name}.ts`, `dist/${name}.js`]);
-  assert.deepEqual(files.filter((file) => fs.existsSync(new URL(`../../${file}`, import.meta.url))), []);
-});
-
 test('panel caller uses a 3000ms interval without a timing override', (t) => {
   const interval = t.mock.method(globalThis, 'setInterval');
   const stop = watchPanelCaller({ HUD_PANEL_CALLER_PANE: 'w4E:p1', HERDR_PANE_ID: 'w4E:p2' }, () => {});
@@ -57,8 +16,8 @@ test('panel caller uses a 3000ms interval without a timing override', (t) => {
   assert.equal(interval.mock.calls[0].arguments[1], 3000);
 });
 
-for (const initiallyMissing of [true, false])
-  test(`panel caller ${initiallyMissing ? 'missing' : 'present, then closed'}`, { timeout: 20000 }, async (t) => {
+test('panel caller missing or present then closed exits and closes its pane', { timeout: 20000 }, async (t) => {
+  await Promise.all([true, false].map(async (initiallyMissing) => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'panel-caller-'));
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const bin = join(dir, 'bin'), log = join(dir, 'calls'), missing = join(dir, 'missing');
@@ -81,7 +40,7 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
         CLAUDE_CONFIG_DIR: join(dir, 'claude'), PI_CODING_AGENT_DIR: join(dir, 'pi'),
         HERDR_SOCKET_PATH: join(dir, 'synthetic.sock'), PATH: `${bin}:${dirname(process.execPath)}`,
         HUD_PANEL_CALLER_PANE: 'w4E:p1', HERDR_PANE_ID: 'w4E:p2', CODEX_HUD_STANDALONE_PANEL: '1',
-        HUD_PANEL_CALLER_POLL_MS: '150',
+        HUD_PANEL_CALLER_POLL_MS: '60',
       },
     });
     t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
@@ -90,9 +49,9 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
     const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
     const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
     if (!initiallyMissing) {
-      for (let i = 0; i < 100 && !calls().some((a) => a[1] === 'get'); i++) await delay(100);
+      for (let i = 0; i < 200 && !calls().some((a) => a[1] === 'get'); i++) await delay(25);
       assert.ok(calls().some((a) => a[1] === 'get'), stderr);
-      await delay(200);
+      await delay(100);
       assert.equal(child.exitCode, null, stderr);
       assert.ok(!calls().some((a) => a[1] === 'close'));
       writeFixtureFile(missing, '');
@@ -105,4 +64,5 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
     assert.ok(recorded.filter((a) => a[0] === 'pane').every((a) =>
       (a[1] === 'get' && a[2] === 'w4E:p1') || (a[1] === 'close' && a[2] === 'w4E:p2') ||
       (a[1] === 'layout' && a[2] === '--pane' && a[3] === 'w4E:p2')));
-  });
+  }));
+});

@@ -51,6 +51,8 @@ test('a settled job and a settled native subagent: full before 5 min, one row at
       assert.match(text(gone), lang === 'en' ? /\+\d+ older · a/ : /另有 \d+ 项较早 · a/);
       const shown = at(15, press(gone, 'show-all', undefined, tree));
       assert.equal(rowsOf(shown, card).length, 1, `${label}: a shows it on one muted row`);
+      if (lang === 'en') assert.match(text(shown), /\d+ older shown · a hide/);
+      assert.equal(rowsOf(at(15, press(shown, 'show-all', undefined, tree)), card).length, 0, `${label}: a hides it again`);
       for (const frame of [early, folded, open, gone, shown]) for (const line of frame.lines) assert.equal(visualLength(line), width, label);
     }
 });
@@ -123,7 +125,10 @@ test('a hide time before the fold time is the fold time; failed and protected ca
   const worker = (extra) => ({ ...card, ...settled, ...extra });
   assert.ok(!currentWorker(worker({}), NOW + 15 * MIN) && currentWorker(worker({}), NOW + 15 * MIN - 1));
   const failed = worker({ state: 'failed' });
-  assert.ok(currentWorker(failed, NOW + 29 * MIN) && !currentWorker(failed, NOW + 30 * MIN), 'unhandled failure caps at 30 min');
+  for (const state of ['failed', 'stopped']) {
+    const item = worker({ state });
+    assert.ok(currentWorker(item, NOW + 29 * MIN) && !currentWorker(item, NOW + 30 * MIN), `unhandled ${state} caps at 30 min`);
+  }
   assert.ok(!currentWorker(failed, NOW + 30 * MIN, { cardHideMinutes: 90 }), 'the cap also applies with a long hide time');
   assert.ok(foldedWorker(failed, NOW + 5 * MIN) && !foldedWorker(failed, NOW + 5 * MIN - 1));
   assert.ok(!foldedWorker(worker({ homeNeedsHuman: true }), NOW + 60 * MIN), 'a card needing the owner never folds');

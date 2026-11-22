@@ -19,7 +19,7 @@ import type {
   TokenUsageInfo,
 } from '../../dist/types.js';
 
-export const FIXED_NOW = new Date('2026-03-01T12:00:00.000Z');
+const FIXED_NOW = new Date('2026-03-01T12:00:00.000Z');
 
 export function at(offsetSeconds: number): Date {
   return new Date(FIXED_NOW.getTime() + offsetSeconds * 1000);
@@ -38,7 +38,7 @@ export function makeContextUsage(percent: number, total = 272000): ContextUsage 
   };
 }
 
-export function makeTokenUsage(totalTokens = 84000, contextWindow = 272000): TokenUsageInfo {
+function makeTokenUsage(totalTokens = 84000, contextWindow = 272000): TokenUsageInfo {
   return {
     total_token_usage: {
       input_tokens: Math.round(totalTokens * 0.7),
@@ -56,7 +56,7 @@ export function makeTokenUsage(totalTokens = 84000, contextWindow = 272000): Tok
   };
 }
 
-export function makeRateLimits(overrides: Partial<RateLimitSnapshot> = {}): RateLimitSnapshot {
+function makeRateLimits(overrides: Partial<RateLimitSnapshot> = {}): RateLimitSnapshot {
   return {
     primary: { used_percent: 61, window_minutes: 300, resets_at: Math.floor(at(4980).getTime() / 1000) },
     secondary: { used_percent: 23, window_minutes: 10080, resets_at: Math.floor(at(320000).getTime() / 1000) },
@@ -65,7 +65,7 @@ export function makeRateLimits(overrides: Partial<RateLimitSnapshot> = {}): Rate
   };
 }
 
-export function makePlanProgress(): PlanProgress {
+function makePlanProgress(): PlanProgress {
   return {
     steps: [
       { step: 'Read the collectors', status: 'completed' },
@@ -83,7 +83,7 @@ export function makePlanProgress(): PlanProgress {
   };
 }
 
-export function makeToolActivity(): ToolActivity {
+function makeToolActivity(): ToolActivity {
   const calls: ToolCall[] = [
     { id: 'c1', name: 'Read', timestamp: at(-90), status: 'completed', duration: 120, target: 'src/render/header.ts' },
     { id: 'c2', name: 'Bash', timestamp: at(-60), status: 'error', duration: 4200, target: 'npm test' },
@@ -97,7 +97,7 @@ export function makeToolActivity(): ToolActivity {
   };
 }
 
-export function makeSubagents(): SubagentInfo[] {
+function makeSubagents(): SubagentInfo[] {
   return [
     {
       id: 'agent-aaa1',
@@ -154,12 +154,12 @@ export function node(
   };
 }
 
-export function treeOf(nodes: SubagentTreeNode[], rootId = 'root-session-id'): SubagentTree {
+function treeOf(nodes: SubagentTreeNode[], rootId = 'root-session-id'): SubagentTree {
   const count = (items: SubagentTreeNode[]): number => items.reduce((sum, item) => sum + 1 + count(item.children), 0);
   return { rootId, nodes, totalCount: count(nodes), updatedAt: FIXED_NOW };
 }
 
-export function makeSubagentTree(agents: SubagentInfo[] = makeSubagents()): SubagentTree {
+function makeSubagentTree(agents: SubagentInfo[] = makeSubagents()): SubagentTree {
   return treeOf(
     agents.map((agent) =>
       node(agent.id, agent.name, agent.status, {
@@ -170,27 +170,6 @@ export function makeSubagentTree(agents: SubagentInfo[] = makeSubagents()): Suba
       })
     )
   );
-}
-
-/** A three-level tree, for navigation and folding. */
-export function makeNestedTree(): SubagentTree {
-  return treeOf([
-    node('a1', 'explorer', 'running', {
-      model: 'gpt-5.6-astra',
-      effort: 'high',
-      lastActivityAt: at(-3),
-      children: [
-        node('a1b1', 'reader', 'completed', { depth: 2, lastActivityAt: at(-200) }),
-        node('a1b2', 'writer', 'error', {
-          depth: 2,
-          lastActivityAt: at(-40),
-          children: [node('a1b2c1', 'linter', 'unknown', { depth: 3 })],
-        }),
-      ],
-    }),
-    node('a2', 'reviewer', 'completed', { model: 'gpt-5.6-sol', effort: 'medium', lastActivityAt: at(-600) }),
-    node('a3', 'ghost', 'unknown', {}),
-  ]);
 }
 
 export function makeHudData(overrides: Partial<HudData> = {}): HudData {
@@ -254,6 +233,3 @@ export function makeHudData(overrides: Partial<HudData> = {}): HudData {
   };
   return { ...base, ...overrides };
 }
-
-/** The widths every layout test must survive. */
-export const TEST_WIDTHS = [40, 60, 80, 100, 120, 160] as const;

@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { PanelReload } from '../../dist/utils/panel-reload.js';
@@ -47,6 +47,7 @@ function fixture(t) {
   return { file, put, run, stages };
 }
 
+describe('build publish', { concurrency: 3 }, () => {
 test('both targets prune orphan JS, maps, declarations and empty directories', async (t) => {
   const f = fixture(t);
   for (const [dist, dir, stem, args] of [['dist', 'render', 'sub', []], ['dist-test', 'unit', 'sub.test', ['--target', 'test']]]) {
@@ -239,4 +240,5 @@ test('PanelReload probes a published non-MCP generation after its quiet window a
   assert.equal(await reload.poll(() => true, 12000), false);
   assert.equal(await reload.poll(() => false, 12001), true);
   assert.equal(reload.failed, false);
+});
 });

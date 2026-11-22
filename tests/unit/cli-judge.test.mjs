@@ -264,11 +264,13 @@ const rows = [
   ['error without report never decides', initial, { status: null }, 60_000, { state: 'working', wakeAt: null, action: null }],
   ['supervisor error', initial, { supervisorError: 'supervisor error' }, 2, { state: 'waiting_orchestrator', reason: 'supervisor error' }],
 ];
-for (const [name, prev, patch, now, expected] of rows) test('judge: ' + name, () => {
-  const before = JSON.stringify(prev);
-  const result = judge(prev, { ...facts, ...patch }, now);
-  for (const [key, value] of Object.entries(expected)) assert.deepEqual(result[key], value, key);
-  assert.equal(JSON.stringify(prev), before, 'pure: previous judgment is unchanged');
+test('judge: pure state transitions across working, quiet, decision, grace and terminal inputs', () => {
+  for (const [name, prev, patch, now, expected] of rows) {
+    const before = JSON.stringify(prev);
+    const result = judge(prev, { ...facts, ...patch }, now);
+    for (const [key, value] of Object.entries(expected)) assert.deepEqual(result[key], value, `${name}: ${key}`);
+    assert.equal(JSON.stringify(prev), before, `${name}: pure: previous judgment is unchanged`);
+  }
 });
 
 test('judge: 60s continuous errors include the stability window, and recovery resets the outage', () => {

@@ -1,48 +1,24 @@
 import { withState, sliceState } from '../fixtures/state-helpers.mjs';
 /** PROJECT-LAYOUTS 02: the Inbox project layout (Split and Classic, EN and ZH at 40 columns). */
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handleMonitorInput } from '../../dist/render/monitor.js';
-import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { stripAnsi } from '../../dist/render/colors.js';
 import { tryCount } from '../../dist/render/project-view.js';
-import { splitFixture, split } from '../fixtures/split-layout.mjs';
+import { splitFixture, split, layoutDriver, assertWidth, assertNoMidWordCut } from '../fixtures/split-layout.mjs';
 import { listFixture } from '../fixtures/project-list.mjs';
-import { NOW, TREE, onPage, plain } from '../fixtures/project-page.mjs';
+import { NOW, onPage, plain } from '../fixtures/project-page.mjs';
 
-async function fixture(t) {
-  const root = fs.mkdtempSync(join(tmpdir(), 'project-inbox-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const busy = await splitFixture(join(root, 'busy'));
-  const lists = await listFixture(join(root, 'lists'));
-  return { root, busy, lists };
-}
-
-function driver(f, { width = 40, height = 38, lang = 'en', data = f.data, state = split() } = {}) {
-  let frame = f.render(width, lang, height, state, data);
-  const run = (input) => {
-    const out = handleMonitorInput(frame.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame, nowMs: NOW, standalone: true });
-    frame = f.render(width, lang, height, out.state, data);
-    return out;
-  };
-  return { run, get frame() { return frame; }, get state() { return frame.state; }, lines: () => plain(frame) };
-}
-
-const assertWidth = (frame, width, label) => {
-  for (const [i, line] of frame.lines.entries()) assert.equal(visualLength(line), width, `${label} line ${i}: "${stripAnsi(line)}"`);
-};
-/** Every prose cut ending in `…` must end at a whole word in `corpus`, never inside a word. */
-const assertNoMidWordCut = (lines, corpus, label) => {
-  for (const line of lines) {
-    const clean = line.replace(/[┃│]+$/, '').trimEnd();
-    const m = /([A-Za-z]+)…(?:\s+\S+)?$/.exec(clean);
-    if (!m) continue;
-    const word = m[1];
-    assert.ok(new RegExp(`\\b${word}\\b`).test(corpus), `${label}: mid-word cut "${word}…" in "${line}"`);
-  }
-};
+let sharedRoot, busy, lists;
+before(async () => {
+  sharedRoot = fs.mkdtempSync(join(tmpdir(), 'project-inbox-'));
+  [busy, lists] = await Promise.all([splitFixture(join(sharedRoot, 'busy')), listFixture(join(sharedRoot, 'lists'))]);
+});
+after(() => fs.rmSync(sharedRoot, { recursive: true, force: true }));
+async function fixture() { return { root: sharedRoot, busy, lists }; }
+const driver = (f, opts = {}) => layoutDriver(f, { height: 38, ...opts });
 
 test('Inbox leaves Home, Control plane and Tickets identical to Timeline in both Split and Classic', async (t) => {
   const { busy } = await fixture(t);

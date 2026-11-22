@@ -229,8 +229,9 @@ test('the Split layout takes the same keys for the job its list cursor is on', (
   assert.equal(run('X').state.overlay?.jobId, RUNNING);
   assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
   assert.deepEqual(run('y').action, { type: 'stop-job', dir: f.dir(RUNNING) });
-  // The Home key still moves the list's cursor.
+  // The Home key still moves the list's cursor to the top.
   assert.equal(run('\x1b[H').action, undefined);
+  assert.equal(frame.state.home.split.listCursor, targetKey({ kind: 'lane', laneId: asked.laneId }));
   const zh = f.render(withState(split, { home: { expanded: new Set([targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id })]) } }), 60, 'zh', 30);
   assert.match(plain(zh).join('\n'), /1-2 答复 {2}d 默认/);
 });

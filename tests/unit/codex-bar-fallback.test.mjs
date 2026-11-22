@@ -67,9 +67,14 @@ if (process.env[flag] === '1') {
   const sticky = new SessionFinder(cwd);
   assert.equal(sticky.check()?.sessionId, workerId);
   writeStatus({ agent: 'codex', agent_session_id: workerId, state: 'working' });
-  await new Promise((done) => setTimeout(done, 2100));
-  assert.equal(sticky.check()?.sessionId, nextId);
-  assert.notEqual(sticky.getCurrentSession()?.sessionId, workerId);
+  const realNow = Date.now;
+  Date.now = () => realNow() + 2500;
+  try {
+    assert.equal(sticky.check()?.sessionId, nextId);
+    assert.notEqual(sticky.getCurrentSession()?.sessionId, workerId);
+  } finally {
+    Date.now = realNow;
+  }
 
   // Repeated lookups reuse the shared JobIndexCache without reopening unchanged STATUS.json.
   const opened = [];

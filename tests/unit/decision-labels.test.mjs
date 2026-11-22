@@ -104,11 +104,13 @@ for (const [report, evidence, outcome, excluded] of [
   f.now += 1000; f.put(id, 'STATUS.json', { state: 'done', settled_at: new Date(f.now).toISOString() });
   await f.pump(); assert.equal(f.calls.length, 2, 'a new settlement is eligible');
 });
-for (const mode of ['off', 'no-key']) test(`01: ${mode} hides labels and sends nothing`, async (t) => {
-  const f = fixture(t, mode === 'off' ? undefined : {});
-  const id = f.job(); f.put(id, 'report.md', 'Done');
-  if (mode === 'off') f.service.configure(false, 60);
-  const board = await f.pump(); assert.equal(f.calls.length, 0); assert.equal(board.workers[0].labels, undefined);
+test('01: off and no-key hide labels and send nothing', async (t) => {
+  for (const mode of ['off', 'no-key']) {
+    const f = fixture(t, mode === 'off' ? undefined : {});
+    const id = f.job(); f.put(id, 'report.md', 'Done');
+    if (mode === 'off') f.service.configure(false, 60);
+    const board = await f.pump(); assert.equal(f.calls.length, 0, mode); assert.equal(board.workers[0].labels, undefined, mode);
+  }
 });
 
 test('02: multi-kind once, bounded title/goal, newest-first within one day; no two-day backfill', async (t) => {
@@ -225,40 +227,43 @@ test('06: a reviewer job classifies findings from its own report', async (t) => 
   const board = await f.pump(); assert.equal(f.calls.length, 2); assert.deepEqual(board.workers[0].labels.severity, [1, 0, 0]);
 });
 
-for (const lang of ['en', 'zh']) for (const width of [80, 120]) test(`01–06: Home, Inspector and progress rows ${lang}/${width}`, async (t) => {
+test('01–06: Home, Inspector and progress rows in EN/ZH at 80 and 120 columns', async (t) => {
   const f = fixture(t), id = f.job();
   f.put(id, 'brief.md', '# Synthetic UI feature\n\nGoal: build interface');
   f.put(id, 'report.md', 'Live validation not run');
   f.put(id, 'review-1.md', '## Observations\n- Fix boundary\n- Improve style\n- Optional name');
   const board = await f.pump();
-  const previous = setLanguage(lang); t.after(() => setLanguage(previous));
-  const state = initialMonitorState(), w = board.workers[0];
-  const project = { waiting: [], docs: [], control: [], agents: [], keys: [], editing: [], roleCount: 0,
-    ladder: { ids: [] }, ledger: [{ id: 'SYNTHETIC', milestone: 'M1', state: 'working', text: 'synthetic slice' }],
-    active: [], counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
-    slices: [{ label: 'SYNTHETIC', value: 'synthetic slice', jobId: id }], next: [], tickets: [] };
-  const inspector = workInspectorRows(w, state, width, f.now), progress = projectRows(project,
-    withState(state, { project: { folded: new Set(['task:milestone:M1']), view: { kind: 'progress' } } }), width, f.now, board, true);
-  const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
-    modelEnabled: true, state, width, height: 80, nowMs: f.now });
-  for (const rows of [inspector, progress]) for (const r of rows) assert.ok(visualLength(r.text) <= width, stripAnsi(r.text));
-  for (const line of frame.lines) assert.equal(visualLength(line), width);
-  assert.match(frame.lines.map(stripAnsi).join('\n'), new RegExp(tr('partial')));
-  const inspectText = inspector.map((r) => stripAnsi(r.text)).join('\n');
-  for (const label of ['kind', 'feature', 'ui', 'partial', 'must fix', 'should fix', 'optional']) assert.ok(inspectText.includes(tr(label)), inspectText);
-  assert.match(inspectText, /90%/);
-  const projectText = progress.map((r) => stripAnsi(r.text)).join('\n');
-  for (const label of ['partial', 'must fix']) assert.ok(projectText.includes(tr(label)), projectText);
-  assert.doesNotMatch(projectText, /Model fit|模型适配/, 'Model fit was removed (owner, 2026-11-12)');
-  // Pending category and looping marks use translated bounded rows.
-  const running = { ...w, settledAt: null, homeNeedsHuman: true, labels: { ...w.labels, looping: 0.9, category: 'owner authorisation' } };
-  const d = { id: 'q1', laneId: w.laneId, title: 'Synthetic choice', option: 'Keep fixture', departure: false, evidence: [], kind: 'answer', stale: false };
-  const live = { ...empty([running], [d]), lanes: [{ ...board.lanes[0], workers: [running], decisions: [d] }] };
-  const rows = homeRows(live, state, width, f.now, { workboard: live });
-  assert.ok(rows.map((r) => stripAnsi(r.text)).join('\n').includes(tr('owner authorisation')));
-  for (const r of rows) assert.ok(visualLength(r.text) <= width);
-  const loopInspector = workInspectorRows(running, state, width, f.now).map((r) => stripAnsi(r.text)).join('\n');
-  assert.ok(loopInspector.includes(tr('looping'))); assert.match(loopInspector, /90%/);
+  const previous = setLanguage('en'); t.after(() => setLanguage(previous));
+  for (const lang of ['en', 'zh']) for (const width of [80, 120]) {
+    setLanguage(lang);
+    const state = initialMonitorState(), w = board.workers[0];
+    const project = { waiting: [], docs: [], control: [], agents: [], keys: [], editing: [], roleCount: 0,
+      ladder: { ids: [] }, ledger: [{ id: 'SYNTHETIC', milestone: 'M1', state: 'working', text: 'synthetic slice' }],
+      active: [], counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
+      slices: [{ label: 'SYNTHETIC', value: 'synthetic slice', jobId: id }], next: [], tickets: [] };
+    const inspector = workInspectorRows(w, state, width, f.now), progress = projectRows(project,
+      withState(state, { project: { folded: new Set(['task:milestone:M1']), view: { kind: 'progress' } } }), width, f.now, board, true);
+    const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
+      modelEnabled: true, state, width, height: 80, nowMs: f.now });
+    for (const rows of [inspector, progress]) for (const r of rows) assert.ok(visualLength(r.text) <= width, stripAnsi(r.text));
+    for (const line of frame.lines) assert.equal(visualLength(line), width);
+    assert.match(frame.lines.map(stripAnsi).join('\n'), new RegExp(tr('partial')));
+    const inspectText = inspector.map((r) => stripAnsi(r.text)).join('\n');
+    for (const label of ['kind', 'feature', 'ui', 'partial', 'must fix', 'should fix', 'optional']) assert.ok(inspectText.includes(tr(label)), inspectText);
+    assert.match(inspectText, /90%/);
+    const projectText = progress.map((r) => stripAnsi(r.text)).join('\n');
+    for (const label of ['partial', 'must fix']) assert.ok(projectText.includes(tr(label)), projectText);
+    assert.doesNotMatch(projectText, /Model fit|模型适配/, 'Model fit was removed (owner, 2026-11-12)');
+    // Pending category and looping marks use translated bounded rows.
+    const running = { ...w, settledAt: null, homeNeedsHuman: true, labels: { ...w.labels, looping: 0.9, category: 'owner authorisation' } };
+    const d = { id: 'q1', laneId: w.laneId, title: 'Synthetic choice', option: 'Keep fixture', departure: false, evidence: [], kind: 'answer', stale: false };
+    const live = { ...empty([running], [d]), lanes: [{ ...board.lanes[0], workers: [running], decisions: [d] }] };
+    const rows = homeRows(live, state, width, f.now, { workboard: live });
+    assert.ok(rows.map((r) => stripAnsi(r.text)).join('\n').includes(tr('owner authorisation')));
+    for (const r of rows) assert.ok(visualLength(r.text) <= width);
+    const loopInspector = workInspectorRows(running, state, width, f.now).map((r) => stripAnsi(r.text)).join('\n');
+    assert.ok(loopInspector.includes(tr('looping'))); assert.match(loopInspector, /90%/);
+  }
 });
 
 test('cached overlays/repaints do no file or model I/O; parallel panels coalesce the same revision', async (t) => {

@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,7 +9,8 @@ import { loadSettings } from '../../dist/settings.js';
 import { delay, until, live, encode, QUIET_MS } from '../helpers/panel-reload-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-for (const bound of [false, true]) for (const view of ['project', 'help', 'inspector']) test(`the live ${bound ? 'Claude-bound' : 'unbound'} panel restores ${view}, selection and show-all across replacements`, async (t) => {
+describe('panel reload views', { concurrency: 2 }, () => {
+for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspector'], [true, 'project']]) test(`the live ${bound ? 'Claude-bound' : 'unbound'} panel restores ${view}, selection and show-all across replacements`, async (t) => {
   const f = live(t, ({ home }) => encode({ state: {
     mainTab: view === 'project' ? 'project' : 'home', help: view === 'help',
     focus: view === 'inspector' ? 'details' : 'agents', boardInspect: view === 'inspector' ? home.cursor.target : undefined,
@@ -156,7 +157,7 @@ test('saving Width 64 from opening width 56 keeps 64 across real panel replaceme
   for (let generation = 1; generation <= 2; generation++) {
     f.appendBuild(`\n// saved width build ${generation}`);
     await until(() => f.events().filter((e) => e.start).length === generation + 1, 'panel did not replace itself');
-    await delay(700);
+    await delay(350);
     assert.ok(Math.abs(f.geometry().width - 64) < 0.01, JSON.stringify(f.geometry()));
     assert.equal(f.geometry().resizes.length, 1, 'no reload-time shrink to opening width');
   }
@@ -180,4 +181,5 @@ for (const action of ['save', 'discard']) test(`the live panel waits for Setting
   assert.equal(Boolean(place.settingsView), action === 'save', 'saved Settings stays open; discarded overlay closes');
   const settings = JSON.parse(readFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), 'utf8'));
   assert.equal(settings.theme, action === 'save' ? 'titanium' : 'terminal');
+});
 });

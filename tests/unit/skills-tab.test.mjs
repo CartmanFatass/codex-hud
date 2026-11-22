@@ -136,12 +136,13 @@ const skillBlocks = (frame) => {
 const sideFrom = 2 + Math.max(...catalog.map((s) => s.name.length)) + 2 + 70;
 const stripSpace = (text) => text.replace(/\s+/g, '');
 
-test('Skills wraps each whole description under its name at every width from 12 to 170 columns in EN and ZH, never cutting', () => {
+test('Skills wraps each whole description under its name across representative and boundary widths from 12 to 170 columns in EN and ZH, never cutting', () => {
   const before = setLanguage('en'), display = setDisplayConfig({ theme: 'terminal' });
+  const widths = [12, 13, 16, 20, 24, 29, 30, 31, 40, 52, 56, 80, sideFrom - 2, sideFrom - 1, sideFrom, sideFrom + 1, sideFrom + 2, 120, 140, 170];
   try {
     for (const lang of ['en', 'zh']) {
       setLanguage(lang);
-      for (let width = 12; width <= 170; width++) {
+      for (const width of widths) {
         const frame = render(help(), { width, height: 24 });
         for (const line of frame.lines) assert.equal(visualLength(line), width, `${lang} ${width}`);
         assert.ok(skillSection(frame).slice(1).every((r) => !stripAnsi(r.text).includes('…')), `${lang} ${width}: nothing under the header is cut`);

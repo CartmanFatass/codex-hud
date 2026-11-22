@@ -109,19 +109,21 @@ test('Default is byte-identical; ranking reorders cards/lanes, folds low settled
   f.configure(false);
   assert.deepEqual(f.render(f.service.apply(source)).lines, baseline, 'off hides a cached ranking and brief too');
 });
-for (const lang of ['en', 'zh']) test(`brief wraps at 80/120 in ${lang}, under the Nothing needs you line`, async (t) => {
-  const f = fixture(t); f.job(1, 'done'); f.configure(true, lang);
-  f.text = lang === 'zh' ? '构建已完成，布局工作正在等待评审，下一步是检查已经完成的布局工作，当前记录没有新的问题。'.repeat(3)
-    : 'The synthetic build finished and the layout work is waiting for review, with no unanswered owner questions in the recorded cards. ';
-  const ranked = await f.pump();
-  assert.ok(ranked.homeBrief);
-  for (const width of [80, 120]) {
-    const frame = f.render(ranked, width, lang), lines = frame.lines.map(stripAnsi);
-    for (const line of frame.lines) assert.equal(visualLength(line), width);
-    const at = lines.findIndex((s) => s.includes(lang === 'en' ? 'Nothing needs you' : '没有需要你'));
-    assert.ok(at >= 0, lines.join('\n'));
-    assert.ok(lines.slice(at + 1).some((s) => s.includes(lang === 'en' ? 'synthetic build finished' : '构建已完成')));
-    assert.ok(frame.workboard.rows.filter((r) => !r.item && stripAnsi(r.text).trim()).length > 2, 'brief wraps rather than truncates');
+test('brief wraps at 80/120 in EN and ZH, under the Nothing needs you line', async (t) => {
+  for (const lang of ['en', 'zh']) {
+    const f = fixture(t); f.job(1, 'done'); f.configure(true, lang);
+    f.text = lang === 'zh' ? '构建已完成，布局工作正在等待评审，下一步是检查已经完成的布局工作，当前记录没有新的问题。'.repeat(3)
+      : 'The synthetic build finished and the layout work is waiting for review, with no unanswered owner questions in the recorded cards. ';
+    const ranked = await f.pump();
+    assert.ok(ranked.homeBrief);
+    for (const width of [80, 120]) {
+      const frame = f.render(ranked, width, lang), lines = frame.lines.map(stripAnsi);
+      for (const line of frame.lines) assert.equal(visualLength(line), width);
+      const at = lines.findIndex((s) => s.includes(lang === 'en' ? 'Nothing needs you' : '没有需要你'));
+      assert.ok(at >= 0, lines.join('\n'));
+      assert.ok(lines.slice(at + 1).some((s) => s.includes(lang === 'en' ? 'synthetic build finished' : '构建已完成')));
+      assert.ok(frame.workboard.rows.filter((r) => !r.item && stripAnsi(r.text).trim()).length > 2, 'brief wraps rather than truncates');
+    }
   }
 });
 test('one batch per fingerprint, changed board waits two minutes; age/sentence/input order alone does not request', async (t) => {
@@ -141,20 +143,22 @@ test('one batch per fingerprint, changed board waits two minutes; age/sentence/i
   const added = f.job(3); f.scores[added] = 4;
   await f.pump(); assert.equal(f.calls.length, 3, 'membership also changes the fingerprint');
 });
-for (const mode of ['error', 'malformed', 'invalid', 'no-key', 'off']) test(`${mode}: ranking failure is independent of brief; unchanged failures do not retry`, async (t) => {
-  const f = fixture(t, mode !== 'no-key'); f.job(1); f.job(2, 'done');
-  if (mode === 'off') f.configure(false); else f[mode] = true;
-  const source = f.board(), lines = f.render(source).lines;
-  const result = await f.pump(source);
-  assert.deepEqual(result.lanes, source.lanes);
-  const textUp = !['no-key', 'off'].includes(mode);
-  assert.equal(result.homeBrief, textUp ? f.text : undefined);
-  if (!textUp) assert.deepEqual(f.render(result).lines, lines);
-  assert.doesNotMatch(plain(f.render(result)), /SYNTHETIC-FAILURE|invalid|error|brief/i);
-  assert.equal(f.briefs.length, textUp ? 1 : 0);
-  assert.equal(f.calls.length, ['no-key', 'off'].includes(mode) ? 0 : 1);
-  f.now += 120000; await f.pump(source);
-  assert.equal(f.calls.length, ['no-key', 'off'].includes(mode) ? 0 : 1);
+test('ranking failure modes (error/malformed/invalid/no-key/off) are independent of brief and unchanged failures do not retry', async (t) => {
+  for (const mode of ['error', 'malformed', 'invalid', 'no-key', 'off']) {
+    const f = fixture(t, mode !== 'no-key'); f.job(1); f.job(2, 'done');
+    if (mode === 'off') f.configure(false); else f[mode] = true;
+    const source = f.board(), lines = f.render(source).lines;
+    const result = await f.pump(source);
+    assert.deepEqual(result.lanes, source.lanes, mode);
+    const textUp = !['no-key', 'off'].includes(mode);
+    assert.equal(result.homeBrief, textUp ? f.text : undefined, mode);
+    if (!textUp) assert.deepEqual(f.render(result).lines, lines, mode);
+    assert.doesNotMatch(plain(f.render(result)), /SYNTHETIC-FAILURE|invalid|error|brief/i, mode);
+    assert.equal(f.briefs.length, textUp ? 1 : 0, mode);
+    assert.equal(f.calls.length, ['no-key', 'off'].includes(mode) ? 0 : 1, mode);
+    f.now += 120000; await f.pump(source);
+    assert.equal(f.calls.length, ['no-key', 'off'].includes(mode) ? 0 : 1, mode);
+  }
 });
 test('changed sentences refresh only the independent brief after the Summary interval; trimmed newline is valid', async (t) => {
   const f = fixture(t); f.job(1);

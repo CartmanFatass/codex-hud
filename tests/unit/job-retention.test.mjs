@@ -66,6 +66,8 @@ for (const odd of ['dispatch file', 'linked helper file', 'unreadable sessions']
     const errors = f.log().split('\n').filter((line) => line.includes(`keep ${bad.split('/').at(-1)} `));
     assert.equal(errors.length, kept ? 2 : 0, 'housekeeping and preservation each report their failure');
     if (kept) assert.match(errors[0], odd === 'dispatch file' ? /ENOTDIR/ : /EACCES/);
+    if (odd === 'unreadable sessions') assert.match(f.log(), /session preservation: .*EACCES/);
+    assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
   });
 }
 
@@ -90,7 +92,7 @@ for (const fault of ['unreadable sessions', 'dispatch file']) {
       await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at);
       assert.ok(JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at, 'the second tab is reaped');
     }
-    await new Promise((done) => setTimeout(done, 1200));
+    await new Promise((done) => setTimeout(done, 350));
     assert.equal(child.exitCode, null, 'the first job still keeps the watcher alive after the second settles');
     if (unreadable) fs.chmodSync(unreadable, 0o700);
     writeFixtureFile(join(first, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
@@ -102,25 +104,6 @@ for (const fault of ['unreadable sessions', 'dispatch file']) {
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
   });
 }
-
-test('an expired terminal job with unreadable sessions is kept but does not keep the watcher alive', {
-  timeout: 10000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
-}, async (t) => {
-  let unreadable;
-  t.after(() => { if (unreadable) fs.chmodSync(unreadable, 0o700); });
-  const f = fixture(t), dir = f.job(expired());
-  const { source, bytes } = realSession(dir);
-  unreadable = join(dir, 'sessions');
-  fs.chmodSync(unreadable, 0);
-  const { child, exited } = f.start();
-  await until(() => child.exitCode !== null);
-  await exited;
-  fs.chmodSync(unreadable, 0o700);
-  assert.equal(child.exitCode, 0);
-  assert.deepEqual(fs.readFileSync(source), bytes);
-  assert.match(f.log(), /session preservation: .*EACCES/);
-  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
-});
 
 for (const file of ['job.json', 'STATUS.json', 'SESSION.txt']) {
   test(`an unreadable ${file} counts as possibly open until it can be read`, {

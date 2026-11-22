@@ -95,15 +95,18 @@ for (const [herdr, override, tmuxHere] of [[true, false], [false, false], [true,
     } else assert.deepEqual(f.calls().filter((a) => a[0] === 'pane' || a[0] === 'tmux'), []);
   });
 
-for (const bad of ['settings', 'config', 'decisions', 'credentials'])
-  test(`panel width, opening Settings and saving survive malformed ${bad}`, { timeout: 20000 }, async (t) => {
+for (const [label, opts] of [
+  ['settings, config and credentials', { brokenSettings: true, configBytes: '{ broken JSON', looseCreds: true }],
+  ['decisions', { brokenSettings: false, configBytes: '{"decisions":{"primary":"invalid","fallback":42}}', looseCreds: false }],
+])
+  test(`panel width, opening Settings and saving survive malformed ${label}`, { timeout: 20000 }, async (t) => {
     const f = fixture(t), env = { ...f.env, COLUMNS: '160' };
     mkdirSync(env.HUD_HOME);
     const config = join(env.HUD_HOME, 'config.json');
-    const bytes = bad === 'config' ? '{ broken JSON' : bad === 'decisions' ? '{"decisions":{"primary":"invalid","fallback":42}}' : '{ "jev": {} }\n';
+    const bytes = opts.configBytes;
     writeFileSync(config, bytes);
-    if (bad === 'settings') writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), '{ broken');
-    if (bad === 'credentials') writeFileSync(join(env.HUD_HOME, 'credentials.env'), 'OPENAI_API_KEY=synthetic\n', { mode: 0o644 });
+    if (opts.brokenSettings) writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), '{ broken');
+    if (opts.looseCreds) writeFileSync(join(env.HUD_HOME, 'credentials.env'), 'OPENAI_API_KEY=synthetic\n', { mode: 0o644 });
     await openPanelPane(['synthetic-panel'], f.dir, env);
     const split = f.calls().find((a) => a[1] === 'split');
     assert.ok(split.includes('HUD_PANEL_WIDTH=56'));

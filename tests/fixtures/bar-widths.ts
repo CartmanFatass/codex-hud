@@ -79,7 +79,7 @@ const job = agentEvent(
 );
 const sub = agentEvent('started', { id: 'a', name: 'Explore', title: 'Audit bar fitting ladder' }, THEME_NOW - 10_000);
 /** Idle; one settled job with an unread report; that job and a subagent that just started. */
-export const WIDTH_SCENES: Record<string, BarFacts> = {
+const WIDTH_SCENES: Record<string, BarFacts> = {
   quiet: vitals,
   one: { ...vitals, events: [job] },
   busy: { ...vitals, events: [sub, job] },

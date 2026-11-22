@@ -1,7 +1,7 @@
 import { withState } from '../fixtures/state-helpers.mjs';
 import { homeTarget } from '../../dist/render/monitor-state.js';
 /** PANEL-UX-02: one meaning per key, a row says its state once, 40-column rows keep the part that identifies them, the fixed words follow the panel language. */
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,17 +17,18 @@ import { defaultSettings } from '../../dist/settings.js';
 import { defaultExpConfig } from '../../dist/exp-config.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { visualLength, stripAnsi, truncateAnsi } from '../../dist/render/colors.js';
-import { targetKey } from '../../dist/collectors/workboard-types.js';
 
 const decode = (raw) => {
   const decoder = new WorkbenchInputDecoder('workboard');
   return [...decoder.push(Buffer.from(raw)), ...decoder.flushEscape()];
 };
-async function fixtures(t) {
-  const root = fs.mkdtempSync(join(tmpdir(), 'keys-rows-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { busy: await splitFixture(join(root, 'busy')), idle: await splitFixture(join(root, 'idle'), { idle: true }) };
-}
+let sharedRoot, busy, idle;
+before(async () => {
+  sharedRoot = fs.mkdtempSync(join(tmpdir(), 'keys-rows-'));
+  busy = await splitFixture(join(sharedRoot, 'busy'));
+  idle = await splitFixture(join(sharedRoot, 'idle'), { idle: true });
+});
+after(() => fs.rmSync(sharedRoot, { recursive: true, force: true }));
 /** One input against a frame, then the next frame from the state it left. */
 function driver(f, { width = 40, height = 40, data = f.data, state = split(), board } = {}) {
   let frame = f.render(width, 'en', height, state, data, undefined, board ? { workboard: board } : {});
@@ -138,8 +139,7 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
   } finally { setDisplayConfig(display); }
 });
 
-test('Help scrolls over a Control draft and closes back to the same place without a write or discard', async (t) => {
-  const { busy } = await fixtures(t);
+test('Help scrolls over a Control draft and closes back to the same place without a write or discard', () => {
   for (const panelLayout of ['classic', 'split']) {
     const state = onControl({ cursor: 'project:role:imp' }, { prefs: { panelLayout } });
     const d = driver(busy, { state, data: busy.control, height: 24 });
@@ -207,6 +207,7 @@ test('top row names each tab once and shows a model-text switch only when off an
           const press = (raw) => handleMonitorInput(frame.state, decode(raw)[0], ctx);
           assert.equal(press('b').action?.type, 'brief-toggle');
           assert.equal(press(',').action?.type, 'settings');
+          assert.deepEqual(press('S').state, frame.state);
           const hint = frame.controls.find((c) => c.kind === 'brief');
           assert.equal(hint?.x, modelEnabled ? undefined : width - visualLength(off));
           const click = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: width - 1, y: 0 }, ctx);
@@ -221,8 +222,7 @@ test('top row names each tab once and shows a model-text switch only when off an
   assert.equal(narrow.controls.some((c) => c.kind === 'brief'), false);
 });
 
-test('Esc at every tab root leaves the cursor and tab unchanged; q closes the panel', async (t) => {
-  const { busy } = await fixtures(t);
+test('Esc at every tab root leaves the cursor and tab unchanged; q closes the panel', () => {
   const expData = { config: defaultExpConfig(), profiles: [] };
   for (const panelLayout of ['classic', 'split']) for (const mainTab of ['home', 'project', 'control', 'exp']) {
     const render = (state) => busy.render(40, 'en', 40, state, busy.control, { expData });
@@ -241,8 +241,7 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
   }
 });
 
-test('n flags a to-try row and does nothing on Home; > and < are Home’s next and previous card that needs the owner', async (t) => {
-  const { busy } = await fixtures(t);
+test('n flags a to-try row and does nothing on Home; > and < are Home’s next and previous card that needs the owner', () => {
   // Home (Split): `n` moves nothing; `>` goes to the next card that asks or stalled, `<` back.
   const home = driver(busy), start = home.state.home.split.listCursor;
   const flag = home.run({ type: 'key', key: 'try-flag', text: 'n' });
@@ -261,66 +260,10 @@ test('n flags a to-try row and does nothing on Home; > and < are Home’s next a
   assert.equal(hub.run({ type: 'key', key: 'try-flag', text: 'n' }).action?.action, 'flag');
 });
 
-test('the Control plane’s place keys are not the Split ratio’s: i and Delete add and remove, + - = leave the places alone', async (t) => {
-  const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.control, state: split({ activeTab: 'control' }) });
-  d.run('enter');
-  assert.equal(d.state.overlay.at, 0, 'the keys are on the places');
-  const ratio = d.state.splitRatio;
-  for (const key of ['list-grow', 'list-shrink']) {
-    const out = d.run(key);
-    assert.equal(out.action, undefined, `${key} edits no place`);
-  }
-  assert.equal(d.state.splitRatio, ratio, 'and in the preview the ratio keys leave the share alone');
-  assert.equal(d.run('place-add').state.overlay.mode.field, 'target');
-  d.run('escape');
-  assert.equal(d.run('place-remove').state.overlay.draft.run.length, 2);
-});
-
-test('g means one thing: a HUD job’s tab; the top of the list is the Home key', async (t) => {
-  const { busy } = await fixtures(t);
-  const d = driver(busy), at = d.state.home.split.listCursor, key = (state, raw) => handleMonitorInput(state, decode(raw)[0], { tree: TREE, frame: d.frame, nowMs: NOW, standalone: true });
-  // On a HUD job's row g opens its tab.
-  assert.equal(key(d.state, 'g').action?.type, 'focus-job-tab');
-  // Elsewhere it does nothing (it does not jump to the top, as it once did).
-  while (d.state.home.split.listCursor !== 'home-progress:waiting') d.run('down');
-  const here = d.state.home.split.listCursor, out = key(d.state, 'g');
-  assert.equal(out.action, undefined);
-  assert.equal(out.state.home.split.listCursor, here);
-  // The top of the list is the Home key.
-  assert.equal(key(d.state, '\x1b[H').state.home.split.listCursor, at, 'the Home key goes to the top');
-});
-
-test('the footer shows the keys the selected row accepts', async (t) => {
-  const { busy } = await fixtures(t);
-  const foot = (d) => d.lines().at(-1).trim();
-  // Home: a HUD job row offers its tab and stop; the Waiting block offers neither.
-  const home = driver(busy, { width: 80 });
-  assert.match(foot(home), /g job tab {2}X stop {2}⏎ open .*\? help$/);
-  while (home.state.home.split.listCursor !== 'home-progress:waiting') home.run('down');
-  assert.doesNotMatch(foot(home), /g job tab|X stop|o file|v inspect/);
-  assert.match(foot(home), /⏎ open {2}\/ filter {2}a all {2}\? help$/);
-  // The hub: the Progress row's to-try slices take Space, y and n; the other rows' pages do not.
-  const hub = driver(busy, { width: 80, data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' } }) });
-  assert.match(foot(hub), /Space mark {2}y accept {2}n flag/, 'the Progress row previews the to-try slices');
-  hub.run('down');
-  assert.doesNotMatch(foot(hub), /y accept|n flag|Space mark/, 'Tickets takes none of them');
-  // The Control plane: a role takes presets, the Usage and Harnesses rows do not; a place takes its own keys.
-  const control = driver(busy, { width: 120, data: busy.control, state: split({ activeTab: 'control' }) });
-  assert.match(foot(control), /c C preset/);
-  while (control.state.control.roles.nav.cursor !== 'project:fold:usage') control.run('down');
-  assert.doesNotMatch(foot(control), /c C preset|⏎ places/);
-  const places = driver(busy, { width: 120, data: busy.control, state: split({ activeTab: 'control' }) });
-  places.run('enter');
-  assert.match(foot(places), /i add.*Del remove/);
-  assert.doesNotMatch(foot(places), /\+ -/);
-});
-
 const STATE_WORDS = { en: ['asking', 'failed', 'done', 'stopped', 'stalled', 'report ready'], zh: ['提问中', '失败', '完成', '已停止', '停滞', '报告待阅'] };
 /** The state words a row says more than once (a word as a whole, not inside a title). */
 const repeated = (line, lang) => STATE_WORDS[lang].filter((word) => line.split(word).length > 2);
-test('a row says its state once: Home’s lane rows, its cards and their model marks, in both layouts and languages', async (t) => {
-  const { busy, idle } = await fixtures(t);
+test('a row says its state once: Home’s lane rows, its cards and their model marks, in both layouts and languages', () => {
   // The finished job carries the model's outcome mark `done`, the same word as its state.
   const marked = (f) => {
     const workers = f.board.workers.map((w) => (w.state === 'done' || w.settledAt !== null ? { ...w, labels: { ...w.labels, outcome: { value: w.state === 'failed' ? 'failed' : 'done', confidence: 1 } } } : w));
@@ -339,8 +282,7 @@ test('a row says its state once: Home’s lane rows, its cards and their model m
   assert.match(plain(idle.render(40, 'en', 40, split(), idle.data)).find((l) => /^✓ NATIVE-TREE/.test(l)), /^✓ NATIVE-TREE +2 jobs +done \d+m$/);
 });
 
-test('at 40 columns the role row retains the next target without a placeholder tag; detail retains full place names', async (t) => {
-  const { busy } = await fixtures(t);
+test('at 40 columns the role row retains the next target without a placeholder tag; detail retains full place names', () => {
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
     const state = split(withState({ activeTab: 'control', prefs: { panelLayout }, control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'usage', 'files']) }).control }, (panelLayout === 'classic' ? { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) } : {})));
@@ -353,8 +295,7 @@ test('at 40 columns the role row retains the next target without a placeholder t
   }
 });
 
-test('fixed words follow the panel language: the invalid role file’s reason, the Usage block with what is left, the Settings (no key) mark', async (t) => {
-  const { busy } = await fixtures(t);
+test('fixed words follow the panel language: the invalid role file’s reason, the Usage block with what is left, the Settings (no key) mark', () => {
   const control = { ...busy.control, radar: { quotas: { codex: [{ label: '5h', remaining: 71 }], claude: [{ label: '7d', remaining: 7 }] }, roleStats: {} } };
   const zh = plain(busy.render(40, 'zh', 60, split({ activeTab: 'control' }), control)).join('\n');
   assert.match(zh, /JSON 无法解析/);

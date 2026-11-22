@@ -103,11 +103,18 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
         const exact = narrow[name][i];
         assert.equal(footer, ' '.repeat(width - visualLength(exact)) + exact, at);
       }
+      if (name === 'Chain') assert.doesNotMatch(footer, /\+ -/);
       if (name.includes('Home')) {
         assert.equal(footer.includes(lang === 'en' ? 'done today' : '今日完成'), width >= 56, at);
         if (name === 'split Home job' && width === 120)
           assert.deepEqual(hints, ['g job tab', 'X stop', '⏎ open', 'o file', 'v inspect', '/ filter', 'a all', '? help'].map(word), at);
       }
+    }
+    if (panelLayout === 'split' && lang === 'en' && width === 80) {
+      const hubTickets = stripAnsi(draw(page(undefined, { project: { nav: { cursor: 'project:page:tickets' } } }), f.control).lines.at(-1));
+      assert.doesNotMatch(hubTickets, /y accept|n flag|Space mark/, 'Tickets takes none of them');
+      const controlUsage = stripAnsi(draw(onControl({ cursor: 'project:fold:usage' }, layout), f.control).lines.at(-1));
+      assert.doesNotMatch(controlUsage, /c C preset|⏎ places/, 'Usage takes no role preset or place keys');
     }
     const harnessFrame = scenes.Harnesses, footer = stripAnsi(harnessFrame.lines.at(-1));
     for (const [kind, label] of [['harness-toggle', word('Space on/off')], ['harness-add', word('i add back')], ['help', help]]) {

@@ -62,24 +62,31 @@ test('fields on one shared line and a status with a note still parse (the superv
     ['03', 'ready', 'ready-for-agent'], ['04', 'dropped', 'wontfix (superseded by 08)'],
   ]);
 });
-for (const [number, word, expectedState] of ticketVocabulary) test(`local tracker vocabulary: ${word}`, async (t) => {
-  const f = await fixture(t), ticket = tickets(f.data).find((r) => r.number === number);
-  assert.equal(ticket.state, expectedState);
-  assert.equal(ticket.job, undefined, 'file vocabulary works without a linked job');
-  assert.deepEqual(ticket.blockers, [], 'resolved and wontfix dependencies do not block');
-  for (const lang of ['en', 'zh']) {
-    // The Done lane is folded by default; its rows are open here.
-    const frame = f.render(120, lang, onPage('tickets', { project: { folded: new Set(['agents', 'lane:done']) } }), f.data, 'mocha');
-    const row = frame.workboard.rows.find((r) => r.files?.[0] === ticket.path), text = stripAnsi(row.text);
-    // A ticket that waits on a person is a `?` in For you, whatever else holds it; the rest keep their state's mark.
-    const asks = ['needs-triage', 'needs-info', 'ready-for-human'].includes(word);
-    const glyph = asks ? '?' : expectedState === 'done' ? '✓' : expectedState === 'dropped' ? '–' : expectedState === 'working' ? '◐' : '●';
-    assert.ok(text.includes(`${glyph} nt ${number} Vocabulary ${word}`), text);
-    const status = asks ? word : expectedState === 'working' ? (lang === 'en' ? 'working' : '工作中')
-      : expectedState === 'dropped' ? (lang === 'en' ? 'dropped' : '已放弃') : undefined;
-    if (status) assert.match(row.text, new RegExp(`\\x1b\\[[0-9;]+m${status}\\x1b\\[0m`));
-    if (word === 'wontfix') assert.match(row.text, /\x1b\[[0-9;]+m08 Vocabulary wontfix\x1b\[0m/);
-    assert.match(plain(frame).join('\n'), /nt native-tree 2\/12/, 'dropped work is resolved in feature ratios');
+test('local tracker vocabulary renders every state word in EN and ZH', async (t) => {
+  const f = await fixture(t);
+  const frames = {
+    en: f.render(120, 'en', onPage('tickets', { project: { folded: new Set(['agents', 'lane:done']) } }), f.data, 'mocha'),
+    zh: f.render(120, 'zh', onPage('tickets', { project: { folded: new Set(['agents', 'lane:done']) } }), f.data, 'mocha'),
+  };
+  for (const [number, word, expectedState] of ticketVocabulary) {
+    const ticket = tickets(f.data).find((r) => r.number === number);
+    assert.equal(ticket.state, expectedState, word);
+    assert.equal(ticket.job, undefined, 'file vocabulary works without a linked job');
+    assert.deepEqual(ticket.blockers, [], 'resolved and wontfix dependencies do not block');
+    for (const lang of ['en', 'zh']) {
+      // The Done lane is folded by default; its rows are open here.
+      const frame = frames[lang];
+      const row = frame.workboard.rows.find((r) => r.files?.[0] === ticket.path), text = stripAnsi(row.text);
+      // A ticket that waits on a person is a `?` in For you, whatever else holds it; the rest keep their state's mark.
+      const asks = ['needs-triage', 'needs-info', 'ready-for-human'].includes(word);
+      const glyph = asks ? '?' : expectedState === 'done' ? '✓' : expectedState === 'dropped' ? '–' : expectedState === 'working' ? '◐' : '●';
+      assert.ok(text.includes(`${glyph} nt ${number} Vocabulary ${word}`), text);
+      const status = asks ? word : expectedState === 'working' ? (lang === 'en' ? 'working' : '工作中')
+        : expectedState === 'dropped' ? (lang === 'en' ? 'dropped' : '已放弃') : undefined;
+      if (status) assert.match(row.text, new RegExp(`\\x1b\\[[0-9;]+m${status}\\x1b\\[0m`));
+      if (word === 'wontfix') assert.match(row.text, /\x1b\[[0-9;]+m08 Vocabulary wontfix\x1b\[0m/);
+      assert.match(plain(frame).join('\n'), /nt native-tree 2\/12/, 'dropped work is resolved in feature ratios');
+    }
   }
 });
 test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim and no empty section', async (t) => {

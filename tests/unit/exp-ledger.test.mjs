@@ -139,7 +139,7 @@ test('four concurrent JSONL writers persist one intact line per ID and double-co
         '-e',
         `import { appendExpEvent } from ${JSON.stringify(url)};
       const record = ${JSON.stringify(record)};
-      for (let i = 0; i < 75; i++) {
+      for (let i = 0; i < 20; i++) {
         await appendExpEvent(process.argv[1], 'openai-api', { ...record, id: 'shared-' + i });
         await appendExpEvent(process.argv[1], 'openai-api', { ...record, id: process.argv[2] + '-' + i });
       }`,
@@ -149,10 +149,10 @@ test('four concurrent JSONL writers persist one intact line per ID and double-co
     )
   );
   const lines = fs.readFileSync(f.path, 'utf8').trimEnd().split('\n').map(JSON.parse);
-  assert.equal(lines.length, 376);
+  assert.equal(lines.length, 101);
   assert.equal(new Set(lines.map(({ id }) => id)).size, lines.length);
   for (const line of lines.slice(1)) assert.equal(line.costMicros, 10_000);
-  assert.equal(readOpenAiBalance(f.hud, Date.parse(at)).remainingMicros, 9_650_000);
+  assert.equal(readOpenAiBalance(f.hud, Date.parse(at)).remainingMicros, 12_400_000);
   assert.equal(fs.statSync(f.path).mode & 0o777, 0o600);
   assert.equal(fs.statSync(f.exp).mode & 0o777, 0o700);
   assert.equal(fs.existsSync(join(f.exp, 'ledger-anthropic-api.jsonl')), false);

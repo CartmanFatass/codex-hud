@@ -46,8 +46,9 @@ function fixture(t) {
   return { home, put, job, collect, draw };
 }
 
-for (const state of ['done', 'closed', 'idle_grace', 'failed', 'stopped']) test(`${state} settled before open: not loaded, even with a later process exit or show-all`, async (t) => {
-  const f = fixture(t); f.job(1, state);
+test('terminal states settled before open are not loaded, even with a later process exit or show-all', async (t) => {
+  const f = fixture(t);
+  ['done', 'closed', 'idle_grace', 'failed', 'stopped'].forEach((state, i) => f.job(i + 1, state));
   const board = await f.collect(), first = f.draw(board);
   const all = handleMonitorInput(first.state, { type: 'key', key: 'show-all' }, { tree, frame: first }).state;
   assert.deepEqual({ workers: board.workers, decisions: board.decisions, lanes: board.lanes }, { workers: [], decisions: [], lanes: [] });

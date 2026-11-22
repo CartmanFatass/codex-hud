@@ -1,8 +1,8 @@
 /** Local to-tickets fixtures; all files, jobs and times are synthetic. */
 import { join } from 'node:path';
 import { projectFixture, NOW, plain, onPage } from './project-page.mjs';
-export const TICKET_COMMENT = 'The first criterion landed; the others wait for a synthetic owner decision that has not come yet.';
-export const OPEN_TICKET = 'ticket:native-tree:02-home-lanes.md';
+const TICKET_COMMENT = 'The first criterion landed; the others wait for a synthetic owner decision that has not come yet.';
+const OPEN_TICKET = 'ticket:native-tree:02-home-lanes.md';
 export const ticketVocabulary = [
   ['07', 'resolved', 'done', [' '], 'None'],
   ['08', 'wontfix', 'dropped', ['x'], 'None'],
