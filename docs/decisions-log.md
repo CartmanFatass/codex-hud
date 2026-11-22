@@ -52,6 +52,15 @@ The owner approved the lean spec and resolved the draft questions:
   mutating MCP tools; the watcher may reap worktrees whose commits were cherry-picked onto the base. Settled
   pre-0.2.0 STATE slices moved to docs/handoff/archive/. Behaviour changes approved with their cost and gain.
 - **D-2026-11-22-16** (§2.1.5): Before job deletion, append facts only to a monthly archive; no report or brief text, no reader or archive expiry, and no change to job retention (proposal 14 §6 defaults).
+- **D-2026-11-22-17** (§2.1.4; worker instructions; owner configs): imp load (docs/llm/imp-load-2026-11-22.md,
+  owner 2026-11-22: accept the recommendations): replace the obsolete root `AGENTS.md` with a short worker entry
+  and trim worker read lists; cap git self-checks to status/stat/check; targeted tests while iterating and one
+  full run at the end (imp keeps its own full run; sonic still gates integration); no sleep polling; pi workers
+  start without the MCP adapter when no MCP server is configured; a child sonic's report reaches imp as a push,
+  no `timeout_s: 0` polling. imp model: finish the HOME-PROGRESS/ORCH-LEAN batch on astra, compare, then if the
+  gap holds switch to sol-fast default with astra for complex slices picked by the main session (that changes
+  the §2.1.4 no-override sentence; told to the owner first). CodeGraph removed from every harness (Claude,
+  Codex, pi) and from worker instructions; code lookup is grep and read.
 
 ## 2026-11-21
 
