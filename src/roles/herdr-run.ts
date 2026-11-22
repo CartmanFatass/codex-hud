@@ -3,6 +3,9 @@
  * Account homes come from the caller's env map, not from this file.
  */
 
+import { StringDecoder } from 'node:string_decoder';
+import { clearTimeout, setTimeout } from 'node:timers';
+
 export interface HerdrOutcome {
   readonly ok: boolean;
   readonly reason: 'ok' | 'unavailable' | 'lost' | 'failed' | 'timeout' | 'aborted';
@@ -30,12 +33,13 @@ export function herdrBudget(argv: readonly string[]): number {
 export interface HerdrCallOptions {
   readonly budgetMs?: number;
   readonly signal?: AbortSignal;
+  /** Send SIGTERM first, then SIGKILL after this grace. Defaults to immediate SIGKILL. */
+  readonly killGraceMs?: number;
+  /** Unix only: isolate and signal a new group for helpers that own all their subprocesses. */
+  readonly killProcessGroup?: boolean;
 }
 
-/**
- * Spawn `bin` with `argv`. A timer kills the child and the outcome is `timeout`,
- * which the facade reports as `herdr_timeout`. An external signal stays `lost`.
- */
+/** Run an argv-only command with bounded output, wall time and optional cancellation. */
 export async function runCommand(
   bin: string,
   argv: readonly string[],
@@ -50,63 +54,84 @@ export async function runCommand(
       resolve({ ok: false, reason: 'aborted', stdout: '', stderr: '', exitCode: null });
       return;
     }
-    let settled = false;
-    let killedByUs = false;
-    let stdout = '';
-    let stderr = '';
-    let overflow = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (outcome: HerdrOutcome) => {
+    const group = options?.killProcessGroup === true;
+    const child = spawn(bin, argv, { env, detached: group, stdio: ['ignore', 'pipe', 'pipe'] });
+    const grace = Math.max(0, options?.killGraceMs ?? 0);
+    let settled = false, exited = false, forced = false;
+    let stopReason: 'timeout' | 'aborted' | 'overflow' | undefined;
+    let budgetTimer: ReturnType<typeof setTimeout>, killTimer: ReturnType<typeof setTimeout> | undefined;
+    let used = 0, stdout = '', stderr = '';
+    const out = new StringDecoder('utf8'), err = new StringDecoder('utf8');
+    const finish = (reason: HerdrOutcome['reason'], exitCode: number | null, error?: string) => {
       if (settled) return;
       settled = true;
-      if (timer) clearTimeout(timer);
+      clearTimeout(budgetTimer);
+      clearTimeout(killTimer);
       options?.signal?.removeEventListener('abort', abort);
-      resolve(outcome);
+      // Do not decode a partial character cut off by the byte limit.
+      if (used < MAX_OUTPUT) { stdout += out.end(); stderr += err.end(); }
+      resolve({ ok: reason === 'ok', reason, stdout, stderr: stderr || error || '', exitCode });
     };
-    const child = spawn(bin, argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const stop = (reason: 'timeout' | 'aborted') => {
-      if (settled) return;
-      killedByUs = true;
-      child.kill('SIGKILL');
-      // Descendants can retain pipes. Kill only our CLI child, never the workload.
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      finish({ ok: false, reason, stdout, stderr, exitCode: null });
+    const closePipes = () => { child.stdout?.destroy(); child.stderr?.destroy(); };
+    const finishStopped = () => {
+      closePipes(); // Inherited pipes must not keep a cancelled call open.
+      finish(stopReason === 'overflow' ? 'lost' : stopReason!, null);
+    };
+    const signalGroup = (signal: NodeJS.Signals | 0) => {
+      if (!child.pid) return false;
+      try { process.kill(-child.pid, signal); return true; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        return false;
+      }
+    };
+    const signalChild = (signal: NodeJS.Signals) => {
+      if (group) signalGroup(signal);
+      else if (!exited) child.kill(signal);
+    };
+    const finishIfGone = () => {
+      if (exited && (forced || !group || !signalGroup(0))) { finishStopped(); return true; }
+      return false;
+    };
+    const forceKill = () => {
+      forced = true;
+      signalChild('SIGKILL');
+      closePipes();
+      // Wait for the child exit event even after SIGKILL, not for pipe closure.
+      finishIfGone();
+    };
+    const stop = (reason: NonNullable<typeof stopReason>) => {
+      if (settled || stopReason) return;
+      stopReason = reason;
+      clearTimeout(budgetTimer);
+      if (finishIfGone()) return;
+      const wait = reason === 'overflow' ? Math.min(grace || 250, 250) : grace;
+      if (!wait) forceKill();
+      else {
+        signalChild('SIGTERM');
+        killTimer = setTimeout(forceKill, wait);
+      }
     };
     const abort = () => stop('aborted');
     options?.signal?.addEventListener('abort', abort, { once: true });
-    timer = setTimeout(() => stop('timeout'), Math.max(0, budget));
+    budgetTimer = setTimeout(() => stop('timeout'), Math.max(0, budget));
     const take = (chunk: Buffer, which: 'out' | 'err') => {
-      const text = chunk.toString('utf8');
-      const available = Math.max(0, MAX_OUTPUT - stdout.length - stderr.length);
-      if (which === 'out') stdout += text.slice(0, available);
-      else stderr += text.slice(0, available);
-      if (text.length > available) {
-        overflow = true;
-        child.kill();
-      }
+      const available = MAX_OUTPUT - used;
+      const kept = chunk.subarray(0, available);
+      used += kept.length;
+      if (which === 'out') stdout += out.write(kept);
+      else stderr += err.write(kept);
+      if (chunk.length > available) { closePipes(); stop('overflow'); }
     };
     child.stdout?.on('data', (chunk: Buffer) => take(chunk, 'out'));
     child.stderr?.on('data', (chunk: Buffer) => take(chunk, 'err'));
     child.once('error', (error: NodeJS.ErrnoException) => {
-      finish({
-        ok: false,
-        reason: killedByUs ? 'timeout' : error.code === 'ENOENT' ? 'unavailable' : 'lost',
-        stdout,
-        stderr: stderr || error.message,
-        exitCode: null,
-      });
+      if (stopReason) finishStopped();
+      else finish(error.code === 'ENOENT' ? 'unavailable' : 'lost', null, error.message);
     });
+    child.once('exit', () => { exited = true; if (stopReason) finishIfGone(); });
     child.once('close', (code, signal) => {
-      const timedOut = killedByUs;
-      const lost = !timedOut && (overflow || signal !== null);
-      finish({
-        ok: !timedOut && !lost && code === 0,
-        reason: timedOut ? 'timeout' : lost ? 'lost' : code === 0 ? 'ok' : 'failed',
-        stdout,
-        stderr,
-        exitCode: code,
-      });
+      if (!stopReason) finish(signal !== null ? 'lost' : code === 0 ? 'ok' : 'failed', code);
     });
   });
 }

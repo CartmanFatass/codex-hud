@@ -69,7 +69,18 @@ process.exitCode = 1;
     const clock = join(f.home, 'clock'), now = Date.now();
     const setClock = (ms) => writeFixtureFile(clock, String(ms));
     setClock(now);
-    const { child, exited } = f.start(scanProbe + `
+    const completed = join(f.home, 'completed-reaps');
+    // A scan can now finish before its reaps. Advance the fake clock only after the watcher has handled their results.
+    const reapProbe = kind === 'reap' ? `
+import childProcess from 'node:child_process';
+const spawn = childProcess.spawn;
+childProcess.spawn = (bin, ...args) => {
+  const child = spawn(bin, ...args);
+  if (bin === 'pi-role-reap') child.once('close', () => setImmediate(() =>
+    fs.appendFileSync(${JSON.stringify(completed)}, args[0][0] + '\\n')));
+  return child;
+};` : '';
+    const { child, exited } = f.start(scanProbe + reapProbe + `
 fs.watch = () => { throw Error('synthetic permanent watch failure'); };
 syncBuiltinESMExports();
 Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
@@ -83,6 +94,8 @@ Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
     setClock(now + 59999);
     const before = scans();
     await until(() => scans() >= before + 2);
+    if (kind === 'reap') await until(() => fs.existsSync(completed) &&
+      fs.readFileSync(completed, 'utf8').trim().split('\n').length >= 4);
     for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
     // A terminal reap is retried on the slow timer, not at every intervening scan.
     setClock(now + (kind === 'reap' ? 60999 : 60000));

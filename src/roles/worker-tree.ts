@@ -132,9 +132,11 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
 
 /** Keep the external reaper's worker/tab checks; clean only descendants with captured ancestry. */
 export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () => T | Promise<T>, ok: (result: T) => boolean,
-  { carry, expectSnapshot }: { carry?: Snapshot; expectSnapshot?: boolean } = {}) {
+  { carry, expectSnapshot, signal }: { carry?: Snapshot; expectSnapshot?: boolean; signal?: AbortSignal } = {}) {
   const before = rememberWorkerTree(dir, status, carry);
   const result = await reap();
+  // A cancelled reaper may not have verified tab ownership yet.
+  if (signal?.aborted) return { result, complete: false, issue: undefined, snapshot: before.snapshot ?? carry };
   const after = rememberWorkerTree(dir, status, before.snapshot ?? carry);
   const snapshot = after.snapshot ?? before.snapshot;
   let issue = before.issue ?? after.issue;
@@ -152,21 +154,24 @@ export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () =
             return stat?.start === start && active(stat.state);
           } catch (error) { issue ??= `worker-tree identity unresolved: ${(error as Error).message}`; return false; }
         };
-        const signal = (name: NodeJS.Signals) => {
+        const signalMembers = (name: NodeJS.Signals) => {
           for (const member of members) if (live(member)) {
             // Node's numeric kill is not atomic with /proc: exit and reuse between the two remain possible.
             try { process.kill(member.pid, name); } catch { /* Verify again below; never signal blindly. */ }
           }
         };
         if (members.some(live)) {
-          signal('SIGTERM');
-          await delay(250);
-          signal('SIGKILL');
-          for (let attempt = 0; attempt < 10 && members.some(live); attempt++) await delay(50);
+          signalMembers('SIGTERM');
+          await delay(250, undefined, { signal });
+          signalMembers('SIGKILL');
+          for (let attempt = 0; attempt < 10 && members.some(live); attempt++) await delay(50, undefined, { signal });
         }
         if (members.some(live)) issue ??= 'worker descendants still running';
       }
-    } catch (error) { issue ??= `worker-tree identity unresolved: ${(error as Error).message}`; }
+    } catch (error) {
+      if (signal?.aborted) return { result, complete: false, issue: undefined, snapshot };
+      issue ??= `worker-tree identity unresolved: ${(error as Error).message}`;
+    }
   }
   return { result, complete: ok(result) && !issue, issue, snapshot };
 }
