@@ -53,6 +53,8 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 
 #### 2.1.3 Interactive CLI harnesses and trust
 
+- Focus (22.22): Claude Code, pi and Antigravity get new features (headless workers, routing); Codex and Grok
+  Build keep what works today and gain new features only when the owner asks.
 - Support Grok Build, Antigravity, Claude Code and Codex. Check local CLI trust files before opening a tab;
   refuse untrusted directories. Launch in the job's herdr tab with only model, effort and permission-bypass
   flags, without editing CLI config or session stores at launch. Use herdr status for report, idle grace,
