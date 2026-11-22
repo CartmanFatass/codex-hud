@@ -1,7 +1,7 @@
 /** The records exchanged in a HUD job directory. Types only: readers keep their
  * existing size limits, validation and treatment of missing/legacy evidence. */
 import type { CliAgent } from '../roles/cli-kinds.js';
-import type { Role, RolePlace, piSwitches } from '../roles/roster.js';
+import type { Role, RolePlace, RouteMode, RouteTier, piSwitches } from '../roles/roster.js';
 import type { QuietDecision } from './quiet-decision.js';
 import type { SonicLimits } from './sonic-policy.js';
 
@@ -9,6 +9,7 @@ export type { ProgressEntry } from '../collectors/workboard-types.js';
 export type { ReportMeta } from '../roles/report-meta.js';
 
 export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
+export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default'; fallback?: string; mode_reason?: string };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
 export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string; resumed?: true };
 export interface ManagedWorktree {
@@ -30,6 +31,7 @@ export interface Job extends PiOptions {
   created_at: string;
   queued_at?: string;
   overflow_from?: string;
+  route?: JobRoute;
   scout_question?: string;
   headless?: boolean; // Older sonic receipts may own a herdr tab.
   package?: string;

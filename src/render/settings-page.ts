@@ -156,9 +156,11 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format: callCap,
   },
   { key: 'decisionCallsPerHour', group: 'Models', label: 'Decision cap', values: [600, 2000, 0],
-    help: 'Decision-API calls per hour (labels, Home ranking, Sonic thinking)', advanced: true, format: callCap },
+    help: 'Decision-API calls per hour (labels, Home ranking, Sonic thinking, Imp routing)', advanced: true, format: callCap },
   { key: 'sonicAutoThinking', group: 'Models', label: 'Sonic auto-thinking', values: [false, true],
     help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
+  { key: 'impRouting', group: 'Models', label: 'Imp routing', values: [false, true],
+    help: 'Send the Imp brief, ticket and context file names and sizes to the Decision API to choose its tier and mode' },
   { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
     help: "How often a running job's sentence and Home's brief may refresh", advanced: true, format: (value) => t('{n}m', { n: Number(value) }) },
   {
@@ -251,7 +253,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['homeMode', 'panelLayout', 'projectLayout', 'acceptance', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
-  Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'summaryIntervalMinutes'],
+  Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'impRouting', 'summaryIntervalMinutes'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };

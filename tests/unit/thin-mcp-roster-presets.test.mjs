@@ -432,7 +432,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     assert.equal(r.preset, 'default');
     assert.deepEqual(r.presets[0].run, r.run);
   }
-  assert.deepEqual(imp.presets.map((p) => p.name), ['default', 'hydrogen']);
+  assert.deepEqual(imp.presets.map((p) => p.name), ['default', 'hydrogen', 'astra']);
   for (const name of ['sonic', 'general']) {
     const r = roster.roles.find((r) => r.role === name);
     if (r) assert.deepEqual([r.presets, r.preset], [[], null]);

@@ -356,6 +356,12 @@ export function renderWorkCard(
   const titleLine = pair(`${name.prefix}${name.text}`, name.right, width);
   if (opts.compact && !open) return [titleLine];
   const rows = [theme.board.title(titleLine)];
+  const route = card.worker.route;
+  if (route) {
+    const label = t('Route: {tier} · {mode}', { tier: t(route.tier), mode: t(route.mode) });
+    const why = route.fallback ?? route.mode_reason ?? route.reason;
+    rows.push(fit(`${ink(mark('┃', '|'))} ${label} — ${monitorText(why).replace(/\s+/g, ' ').trim()}`, width));
+  }
   // Open questions have their complete expandable slab above the lanes on Home.
   const step = card.worker.transcriptStep;
   const excerpt = step ? cardSentence(step.text) : '';

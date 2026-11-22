@@ -120,6 +120,7 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly state: string;
   readonly queuePosition?: number;
   readonly overflowFrom?: string;
+  readonly route?: import('../mcp/job-contracts.js').JobRoute;
   readonly startedAt: number | null;
   readonly settledAt: number | null;
   readonly phase: string | null;

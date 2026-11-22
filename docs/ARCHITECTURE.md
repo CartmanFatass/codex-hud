@@ -304,6 +304,7 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 | `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240, can include the worker summary), question flag and outcome; no file bodies |
 | Sonic auto-thinking | First 4000 characters of the dispatched task (the scout question for scouted dispatch), plus sonic role scope and thinking purposes; no standing brief or referenced files |
 | Stopped Sonic retry | The new pi job receives its saved native session context and a short continuation naming the stop reason. Fresh fallback uses the brief plus the last 8 KiB of partial report or stdout. |
+| Imp routing (opt-in) | First 4000 characters of the dispatch brief and up to 4 KiB/4000 characters of the named local ticket; up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports, or preset/model IDs. |
 | Scouted dispatch | The scout question and target `context_files` go to sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
 | Settings Test API | Fixed synthetic messages only |
 
@@ -495,7 +496,7 @@ registration and `hud import` are separate user actions.
 
 **Privacy and repository**
 
-- The Model text master switch controls display requests; chat also requires a matching endpoint key. Sonic auto-thinking has its own explicit Decision API switch, independent of Model text, like the quiet-job dispatch path.
+- The Model text master switch controls display requests; chat also requires a matching endpoint key. Sonic auto-thinking and Imp routing each have an explicit Decision API switch, independent of Model text, like the quiet-job dispatch path.
 - List every new outbound model input here and in both reference languages. A land repair sends the failing cherry-pick or gate step and its last 40 output lines to the project's source worker or its same-role replacement.
 - State is private: `writePrivateFile` or equivalent temp-file/0600/rename.
 - Preserve owner configuration, keys, history and unrelated state.

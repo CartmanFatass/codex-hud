@@ -3,6 +3,12 @@
   "instructions": "implementer",
   "can_continue": true,
   "idle_grace_s": 600,
+  "routing": {
+    "light": { "preset": "hydrogen", "use": "mechanical work on an existing pattern: text or doc edits, one or two files, a single test fix, a small bug" },
+    "standard": { "use": "an ordinary end-to-end slice" },
+    "hard": { "preset": "astra", "use": "cross-module, concurrency or process lifecycle, repeated conflicts" },
+    "modes": { "headless": "likely one shot with no owner watching", "tab": "likely questions, long runs, or the owner wants to watch" }
+  },
   "run": [
     {
       "harness": "pi",
@@ -16,6 +22,9 @@
     ] },
     { "name": "hydrogen", "run": [
       { "harness": "cli", "agent": "agy", "model": "gemini-4-hydrogen-high" }
+    ] },
+    { "name": "astra", "run": [
+      { "harness": "pi", "pi_role": "implementer", "split": false, "model": "openai/gpt-6.2-astra", "thinking": "max" }
     ] }
   ]
 }

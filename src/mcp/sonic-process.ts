@@ -30,11 +30,14 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
   delete env.HERDR_PANE_ID;
   delete env.HERDR_ENV;
   const fds: number[] = [];
+  const created: string[] = [];
   try {
     const { O_WRONLY, O_APPEND, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
     for (const name of [jobFiles.sonicStdout, jobFiles.sonicStderr]) {
-      const fd = fs.openSync(join(dir, name), session?.id ? O_WRONLY | O_APPEND | O_NOFOLLOW | O_NONBLOCK : 'wx', 0o600);
+      const path = join(dir, name);
+      const fd = fs.openSync(path, session?.id ? O_WRONLY | O_APPEND | O_NOFOLLOW | O_NONBLOCK : 'wx', 0o600);
       fds.push(fd);
+      if (!session?.id) created.push(path);
       if (!fs.fstatSync(fd).isFile()) throw Error('worker log is not a regular file');
     }
     const child = spawn(process.execPath, [binScript('sonic-run'), dir, ...args], { cwd: job.cwd, env, detached: true,
@@ -58,6 +61,10 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
       if (capture.issue || !capture.snapshot) throw Error(capture.issue ?? 'cannot capture sonic runner');
       child.stdin!.end('start');
     } catch (error) { child.stdin!.destroy(); throw error; }
+  } catch (error) {
+    // A new routed attempt may start another headless place. Only remove files this failed launch created.
+    if (job.route) for (const path of created) fs.rmSync(path, { force: true });
+    throw error;
   } finally { for (const fd of fds) fs.closeSync(fd); }
 }
 

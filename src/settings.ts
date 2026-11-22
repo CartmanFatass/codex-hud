@@ -34,6 +34,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
   sonicAutoThinking: boolean;
+  impRouting: boolean;
   /** The tree panel's and the brief's language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
   /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
@@ -96,6 +97,7 @@ export function defaultSettings(): HudSettings {
     model: SHIPPED_MODELS_CATALOG.defaults.summary.model,
     decisionApi: 'openai',
     sonicAutoThinking: false,
+    impRouting: false,
     modelCallsPerHour: 60,
     decisionCallsPerHour: 0,
     summaryIntervalMinutes: 5,
@@ -141,6 +143,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   experiments: isBoolean,
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   sonicAutoThinking: isBoolean,
+  impRouting: isBoolean,
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   model: isText(200),

@@ -47,6 +47,14 @@ export function currentPreset(role: Pick<Role, 'run' | 'presets' | 'preset'>): s
 }
 export const validPresetName = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(value);
+export type RouteTier = 'light' | 'standard' | 'hard';
+export type RouteMode = 'headless' | 'tab';
+export type RoleRouting = Partial<Record<RouteTier, { preset?: string; use: string }>> & {
+  modes: Record<RouteMode, string>;
+};
+export const routeTiers = ['light', 'standard', 'hard'] as const;
+export const routeModes = ['headless', 'tab'] as const;
+
 export interface Role extends Partial<SonicLimits> {
   role: string;
   /** Defined only for shipped optional roles, independently of the winning definition. */
@@ -65,6 +73,7 @@ export interface Role extends Partial<SonicLimits> {
   model?: string;
   thinking?: string;
   thinking_choices?: Record<string, string>;
+  routing?: RoleRouting;
   tool?: 'jev-ask' | 'jev-aistudio' | 'jev-flow';
   provider?: 'chatgpt' | 'gemini';
   effort?: string;
@@ -180,6 +189,20 @@ function runReason(run: unknown, instructions: unknown, canContinue: unknown): s
   }
   return needsContinue && typeof canContinue !== 'boolean' ? 'missing can_continue' : null;
 }
+function validRouting(value: unknown): boolean {
+  const object = (item: unknown): Record<string, unknown> | undefined =>
+    item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : undefined;
+  const use = (item: unknown) => typeof item === 'string' && item.length <= 1000 && !!item.trim() && !/[\r\n\u2028\u2029]/u.test(item);
+  const block = object(value);
+  const modes = object(block?.modes);
+  return !!block && !!modes && Object.keys(modes).length === routeModes.length && routeModes.every(mode => use(modes[mode])) &&
+    Object.entries(block).every(([key, value]) => {
+      if (key === 'modes') return true;
+      const tier = object(value);
+      return (routeTiers as readonly string[]).includes(key) && !!tier && use(tier.use) &&
+        (key === 'standard' ? tier.preset === undefined : validPresetName(tier.preset));
+    });
+}
 function roleReason(value: unknown): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
   const raw = value as Record<string, unknown>;
@@ -206,6 +229,7 @@ function roleReason(value: unknown): string | null {
       !['none', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(level) ||
       typeof purpose !== 'string' || !purpose.trim() || /[\r\n\u2028\u2029]/u.test(purpose))))
     return 'bad thinking_choices';
+  if (raw.routing !== undefined && !validRouting(raw.routing)) return 'bad routing';
   if (raw.active_preset !== undefined && raw.active_preset !== null && !validPresetName(raw.active_preset))
     return 'bad active_preset';
   const hidden = raw.hidden_presets;
@@ -295,6 +319,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     run,
     ...(parsed.mcp_servers === undefined ? {} : { mcp_servers: parsed.mcp_servers as string[] }),
     ...(parsed.thinking_choices === undefined ? {} : { thinking_choices: parsed.thinking_choices as Record<string, string> }),
+    ...(parsed.routing === undefined ? {} : { routing: parsed.routing as RoleRouting }),
     presets: ((parsed.presets ?? []) as RolePreset[]).map((p) => ({
       name: p.name, run: p.run.map((item) => normalizePlace(item, rawInstructions)),
     })),
@@ -592,8 +617,8 @@ export function roleRegistry(
       let role = { ...file, presets };
       if (selected) {
         // Launch fields follow the effective chain; the winning file still owns the role metadata.
-        const { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file } = file;
-        role = { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file, presets, run: selected.run,
+        const { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file, routing } = file;
+        role = { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file, routing, presets, run: selected.run,
           can_continue: selected.run.some((p) => p.harness !== 'bro') && Boolean(raw.can_continue),
           ...primaryFields(selected.run[0]!), ...(name === 'sonic' ? sonicLimits(file) : {}) };
       }

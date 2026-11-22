@@ -192,7 +192,22 @@ Sonic runs one non-interactive pi query, with no worker tab or pane. A main sess
 
 Callers leave sonic's thinking at the role default (`high` as shipped). The optional **Sonic auto-thinking** setting (`sonicAutoThinking`, off by default) sends the task to the Decision API to choose `none`, `low`, `high` or `max` using the role file's `thinking_choices`. Use `none` for running an exact command and reporting its output, copying exact text, or listing files; narrow fact lookups in named files use `low`. Pi calls `none` `off`. If no key is available, the call cap is reached, the decision times out (about five seconds), or the provider refuses or returns an invalid answer, the role default applies. Neither `hud_create` for `sonic` nor `hud_sonic` accepts a thinking override. Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
 
-Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic). With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap uses a free `general` slot while still running the `imp` chain (including its active preset). It is counted as `general` and returns `overflowed: true` and `overflow_from: "imp"`. When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel). The watcher starts the oldest queued job when a slot frees or a cap is raised in Settings, picking the first available place at start time. `hud_close` (or panel `X`) removes a queued job.
+**Imp routing** (`impRouting`, off by default in Settings → Models) uses one Decision API judgment, independent of Model text. The winning `imp` role file must define `routing`; the block is not inherited from a lower-priority role file. For example:
+
+```json
+"routing": {
+  "light": { "preset": "hydrogen", "use": "Small edits on an existing pattern" },
+  "standard": { "use": "An ordinary end-to-end slice" },
+  "hard": { "preset": "astra", "use": "Cross-module or process lifecycle work" },
+  "modes": { "headless": "Likely one shot", "tab": "Likely questions, long runs, or the owner wants to watch" }
+}
+```
+
+Only configured tiers are offered. `light` and `hard` name role presets; `standard` has no `preset` and follows the active Control choice. Routing sends at most the first 4000 characters of the brief and the named local ticket (`feature/NN`, up to 4 KiB), the relative names (up to 512 characters each) and byte sizes of up to 32 `context_files`, and the configured use texts. It does not send context bodies, the standing brief, prior reports, or preset/model IDs. The chosen descriptions become the one-line reason.
+
+An unavailable tier falls back to the standard chain; failed or timed-out decisions and the off setting use the active preset in a tab. Explicit `mode: "headless"` wins and routing then chooses only the tier. Automatic headless runs only on a supported continuable place (pi, Claude Code, or Antigravity); otherwise HUD uses a tab. Overflow to `general` keeps the imp chain. `retry_of` keeps the tier without another decision, and a light job's land repair starts on standard. The job record, create result and per-job `hud_read` show `route` with `tier`, `mode`, `reason`, `source`, and any `fallback` or `mode_reason`; the job card shows the route and why.
+
+Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic). With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap uses a free `general` slot while retaining the `imp` chain (routed when applicable, otherwise its active preset). It is counted as `general` and returns `overflowed: true` and `overflow_from: "imp"`. When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel). The watcher starts the oldest queued job when a slot frees or a cap is raised in Settings, picking the first available place at start time. `hud_close` (or panel `X`) removes a queued job.
 
 Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs,
 each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
@@ -677,7 +692,7 @@ In **Control → Roles**, off optional roles are listed under **Optional roles**
 
 On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from the file chain, first/last). `p` opens one list including the file chain and any preset named `default`: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` starts a draft copied from the current chain; `I` starts empty. Enter a unique name and press Enter to open the draft. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
 
-Only explicit edits write the global owner role file (`$HUD_HOME/roles`, atomically, mode 0600), even when viewing a registered project. An inherited rename or deletion hides the old name in the owner layer instead of changing a shipped file. Project-pinned roles show the source and a lock; `o` opens the file but the panel offers no preset or place edits there. Shipped imp presets: `default`, `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
+Only explicit edits write the global owner role file (`$HUD_HOME/roles`, atomically, mode 0600), even when viewing a registered project. An inherited rename or deletion hides the old name in the owner layer instead of changing a shipped file. Project-pinned roles show the source and a lock; `o` opens the file but the panel offers no preset or place edits there. Shipped imp presets: `default`, `hydrogen`, `astra`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 
 Enter on a role focuses its chain in place (Split preview or Classic expansion). It stays read-only
 until you make a change. `i` adds a place at the end; Enter on a place edits it. In the sheet, move
@@ -1010,7 +1025,7 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
 | Panel | Home mode, Layout, Project layout, Detail, Width, Notifications; in **Advanced**: Stall threshold, Fold after, Hide after, Refresh, Mouse, Experiments |
-| Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking; in **Advanced**: Decision cap (with hourly counter), Summary interval |
+| Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking, Imp routing; in **Advanced**: Decision cap (with hourly counter), Summary interval |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
@@ -1043,7 +1058,7 @@ One master controls job/native names and sentences, Inspector decision titles,
 Decision labels and Recommended Home ranking/brief. Nothing writes workflow facts
 or steers a worker. Off hides overlays and sends no requests; without a saved
 preference, a Mistral/OpenAI/Gemini key defaults it on. Text requires a matching
-chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately. Sonic auto-thinking is a separate dispatch opt-in, independent of Model text.
+chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately. Sonic auto-thinking and Imp routing are separate dispatch opt-ins, independent of Model text.
 
 | Setting | Key / default |
 |---|---|

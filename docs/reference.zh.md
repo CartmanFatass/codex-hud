@@ -157,7 +157,22 @@ Sonic 以非交互方式运行一次 pi 查询，不打开工作标签页或窗�
 
 Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。用 `hud_create` 派发 sonic 或用 `hud_sonic` 启动子任务时，都不能覆盖思考级别。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。
 
-按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位，则占用 `general` 的名额，但仍使用 `imp` 的执行链（包括当前预设），并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
+**Imp 自动分流**（`impRouting`，设置 → 模型，默认关闭）独立于「模型文字」，使用一次决策 API 判断。生效的 `imp` 角色文件必须定义 `routing`，不会从低优先级角色文件继承该块。例如：
+
+```json
+"routing": {
+  "light": { "preset": "hydrogen", "use": "按现有模式进行小改动" },
+  "standard": { "use": "普通的端到端切片" },
+  "hard": { "preset": "astra", "use": "跨模块或进程生命周期工作" },
+  "modes": { "headless": "预计一次完成", "tab": "预计会提问、耗时较长或主人想观察" }
+}
+```
+
+只提供文件中声明的档位。`light` 和 `hard` 指定角色预设；`standard` 不带 `preset`，沿用「控制」中当前选择的预设。分流会发送任务简报的前 4000 字符、指定本地工单（`feature/NN`，最多 4 KiB/4000 字符）、最多 32 个 `context_files` 的相对文件名（每个最多 512 字符）和字节数，以及档位和运行方式的用途说明。不发送上下文正文、常驻简报、既有报告、预设或模型 ID。所选的用途说明组成一行理由。
+
+所选档位无可用位置时回退到 `standard`；决策失败、超时或设置关闭时，使用当前预设并打开标签页。显式指定 `mode: "headless"` 优先，此时只选择档位。自动无标签页运行仅用于支持该模式的可继续位置（pi、Claude Code 或 Antigravity），否则打开标签页。溢出到 `general` 时保留 `imp` 的运行链。`retry_of` 保留档位，不再请求决策；轻量任务的落地修复改用标准档。任务回执、创建结果和单任务 `hud_read` 返回 `route`，包括 `tier`、`mode`、`reason`、`source` 以及适用时的 `fallback` 或 `mode_reason`；任务卡也显示分流及原因。
+
+按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位，则计入 `general` 的名额，但保留 `imp` 的执行链（适用时按分流选择，否则使用当前预设），并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
 
 `hud trust <dir>` 把该目录加入 grok、agy 和 claude 的信任文件（先在 `$HUD_HOME` 下备份）。
 文件不存在则不创建。codex 跳过。
@@ -436,7 +451,7 @@ Claude 将角色指令文件追加到系统提示，Codex 使用开发者指令�
 
 在**角色行**上按 `c`/`C` 立即循环切换下一个／上一个命名预设（从文件链开始时选择首个／末个）。`p` 打开列表，文件链和名为 `default` 的预设都可选择。输入筛选，↑↓ 选择，Enter 应用，Esc 或 Ctrl+C 取消。列表显示每条链的下次位置；全部停用的预设仍可选，下次位置显示「无」。`N` 从当前链复制草稿，`I` 从空白新建草稿。输入唯一的名称并按 Enter 打开草稿。`R` 重命名当前命名预设，Enter 提交。`D` 预览删除当前命名预设以及之后使用的文件链，Enter 确认，Esc 取消。选择、复制、重命名和删除操作不会启动任务，也不会覆盖 `run`。耗尽标记仍按位置保留。
 
-只有显式编辑才会写入全局用户角色文件（`$HUD_HOME/roles`，原子写入，0600），即使当前查看已登记项目。重命名或删除继承的预设时，在用户层隐藏旧名称，不更改内置文件。项目锁定角色显示来源和锁定提示；`o` 可打开文件，但面板不提供预设或位置编辑。内置 imp：`default`、`hydrogen`；reviewer：`default`、`pi`；oracle：`fable`、`architect`（原 architect 角色的 pi 配置），不再有独立的 architect HUD 角色。
+只有显式编辑才会写入全局用户角色文件（`$HUD_HOME/roles`，原子写入，0600），即使当前查看已登记项目。重命名或删除继承的预设时，在用户层隐藏旧名称，不更改内置文件。项目锁定角色显示来源和锁定提示；`o` 可打开文件，但面板不提供预设或位置编辑。内置 imp：`default`、`hydrogen`、`astra`；reviewer：`default`、`pi`；oracle：`fable`、`architect`（原 architect 角色的 pi 配置），不再有独立的 architect HUD 角色。
 
 在角色行按 Enter 就地进入备选链（分栏下方预览、经典在行下展开）。改动前只读。`i` 在末尾添加位置；在位置行按 Enter 编辑。
 在同一表单内切换目标、模型或 Flow 类型、适用的思考档位（或浏览器强度），最后选「完成」。按 Enter 打开字段列表，
@@ -661,7 +676,7 @@ Claude OAuth、第三方网关和无法归属的请求不计入。Claude Code �
 |---|---|
 | 显示 | 主题、语言；**高级**中：底栏样式、图标 |
 | 面板 | 首页模式、布局、项目布局、粒度、宽度、通知；**高级**中：停滞阈值、折叠时间、隐藏时间、刷新、鼠标、实验功能 |
-| 模型 | 模型文字、模型、决策 API、调用上限（附小时计数与测试 API）、Sonic 自动选档；**高级**中：决策调用上限（附小时计数）、总结间隔 |
+| 模型 | 模型文字、模型、决策 API、调用上限（附小时计数与测试 API）、Sonic 自动选档、Imp 自动分流；**高级**中：决策调用上限（附小时计数）、总结间隔 |
 | 工作者 | 全部在**高级**中：imp 上限（`roleCaps.imp`，默认 3）、general 上限（`roleCaps.general`，默认 3）、imp→general 溢出（`impOverflow`，默认开） |
 | Codex | 启动时显示状态栏 |
 

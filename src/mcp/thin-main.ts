@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { cliWorkerTools, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { panelDelivery } from './panel-delivery.js';
-import { editTickets, readyTickets } from './local-tickets.js';
+import { editTickets, readyTickets, routingTicketText } from './local-tickets.js';
+import { pickImpRoute, repairImpRoute } from './imp-routing.js';
 import { startLand, landTask } from './land.js';
 import { activeLand, isFlowId, landEvents, landView, readLand } from './land-state.js';
 import { MAX_MCP_TASKS, pruneCreatedJobs, pruneLandTasks, pruneTasks, rememberCreatedJob, rememberLandTask } from './task-bounds.js';
@@ -24,7 +25,7 @@ import { sonicLimits } from './sonic-policy.js';
 import { prepareSonicRetry, sonicSession } from './sonic-session.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
-import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
+import type { BatchNotice, Job, JobRoute, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
 import { piReportSettlement, sendHistory } from './pi-read-settlement.js';
 import { settleStoppedPi } from './pi-stop-settlement.js';
 import { ensureJobWatcher } from './watch-pid.js';
@@ -202,7 +203,8 @@ function created(job: Job, initialRow?: JobRow) {
     ...(job.thinking == null ? {} : { thinking: job.thinking }),
     ...(job.thinking_source ? { thinking_source: job.thinking_source } : {}),
   };
-  const launch = { attempts: job.attempts, used_place: job.used_place ?? null, ...(job.headless && { mode: 'headless' }) };
+  const launch = { attempts: job.attempts, used_place: job.used_place ?? null, ...(job.headless && { mode: 'headless' }),
+    ...(job.route && { route: job.route }) };
   const queued = row.state === 'queued'
     ? { queued: true as const, ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}) }
     : {};
@@ -392,6 +394,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
     const resources = piSkillArgs(job, role, place);
     const launcher = executable('pi-role');
     if (!launcher) throw new Error('pi-role not found on PATH');
+    if (job.route && job.headless && !executable('pi')) throw new Error('pi not found on PATH');
     const dir = directory(job.job),
       output = join(dir, jobFiles.report);
     const sessionWorker = job.headless && job.role !== 'sonic';
@@ -445,8 +448,14 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
         job.pi_sent_at = new Date().toISOString();
         save(job);
       }
-      startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined,
-        job.role === 'sonic' ? sonicLimits(role) : undefined);
+      try {
+        startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined,
+          job.role === 'sonic' ? sonicLimits(role) : undefined);
+      } catch (error) {
+        // A rejected handshake never starts pi. Allow another place in this route to launch a fresh session.
+        if (job.route && sessionFile && !resume) fs.rmSync(sessionFile, { force: true });
+        throw error;
+      }
       return { exit_code: 0, stdout: '', stderr: '' };
     }
     fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
@@ -1207,6 +1216,7 @@ function observation(
       job: currentJob.job,
       role: currentJob.role,
       ...(currentJob.overflow_from ? { overflow_from: currentJob.overflow_from } : {}),
+      ...(currentJob.route && { route: currentJob.route }),
       state: detail ? row.state : row.state ?? row.display_state,
       ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}),
       ...(detail || (row.state !== null && row.state !== row.display_state) ? { display_state: row.display_state } : {}),
@@ -1299,6 +1309,7 @@ function sonicFactsPrefix(task: unknown): string {
 async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean }, repairOf?: string) {
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
+  const contextInputs: { name: string; bytes: number }[] = [];
   let remaining = 256 * 1024;
   const inside = (base: string, path: string) => {
     const rel = relative(base, path);
@@ -1306,7 +1317,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
   };
   const append = async (path: string, label: string, prefix?: string) => {
     const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
-    if (!file) return false;
+    if (!file) return null;
     if (inline) {
       remaining -= file.bytes;
       let length = 3;
@@ -1314,7 +1325,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
       const fence = '`'.repeat(length);
       sections.push(`${prefix ? `${prefix}\n\n` : ''}### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
     } else sections.push(prefix ? `${prefix}\n- ${label}` : `- ${label}`);
-    return true;
+    return file.bytes;
   };
   let standing: string | undefined;
   let standingLabel: string | undefined;
@@ -1325,7 +1336,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
       const path = await fs.promises.realpath(standingPath);
       inside(project.root, path);
       if (inline) {
-        if (!(await append(path, JSON.stringify(standingPath))))
+        if (await append(path, JSON.stringify(standingPath)) === null)
           return { ok: false, code: 'context_too_large', error: standingPath } as const;
       } else {
         if (!(await fs.promises.stat(path)).isFile()) throw new Error('not a regular file');
@@ -1368,11 +1379,11 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
         if (key === 'from_jobs' && name === 'report') {
           try { sonic = findJob(value)?.role === 'sonic'; } catch { /* Corrupt receipt leaves sonic false. */ }
         }
-        if (path === standing) {
-          if (!inline) await readContextFile(path, undefined); // Explicit context still requires UTF-8 text.
-        } else if (!(await append(path, label, sonic ? sonicPrefix : undefined))) {
-          return { ok: false, code: 'context_too_large', error: source } as const;
-        }
+        const bytes = path === standing
+          ? (await readContextFile(path, undefined))!.bytes // Explicit context still requires UTF-8 text.
+          : await append(path, label, sonic ? sonicPrefix : undefined);
+        if (bytes === null) return { ok: false, code: 'context_too_large', error: source } as const;
+        if (!name) contextInputs.push({ name: relative(base, path).slice(0, 512), bytes });
         if (!name || (name === 'report' && (value !== repair || values.includes(value)))) recorded.push(name ? value : path);
       }
     } catch {
@@ -1384,16 +1395,20 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
     : `## Context References\n\nRead these files for task context:\n\n${sections.join('\n')}\n\n`;
   return {
     metadata,
+    contextInputs,
     block: reference + block,
     standing: standing && standingLabel ? { path: standing, label: standingLabel } satisfies StandingBriefRef : undefined,
   };
 }
 
+const supportsHeadless = (place: RolePlace) => place.harness === 'pi' ||
+  (place.harness === 'cli' && !!cliKinds[place.agent!]?.headless);
+
 function placeOptions(args: Args, configured: RolePlace) {
   const place = { ...configured };
   const invalid = (error?: string) => ({ ok: false, code: 'invalid_arguments', error } as const);
   if (args.mode !== undefined) {
-    if (args.mode !== 'headless' || (place.harness !== 'pi' && !(place.harness === 'cli' && cliKinds[place.agent!]?.headless)))
+    if (args.mode !== 'headless' || !supportsHeadless(place))
       return invalid('headless mode requires pi, claude or agy');
     if (place.harness === 'cli' && place.args?.some(value => value === '--' ||
         /^(-[cpri]|--(?:continue|conversation|resume|fork-session|session-id|no-session-persistence|print|prompt|prompt-interactive|input-format|output-format))(?:=|$)/.test(value)))
@@ -1440,6 +1455,7 @@ function placeOptions(args: Args, configured: RolePlace) {
 // An in-place land retry uses its original worktree but still belongs to the registered main project's roster.
 const roleCwd = (job: Job) => job.worktree?.main_root ?? (job.land_turn ? job.project_root : undefined) ?? job.cwd;
 const piOptionKeys = [...piSwitches, 'pi_args'] as const;
+const placementOverrides = ['preset', 'on', 'model', 'thinking'] as const;
 const replayOptions = ['mode', 'on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
 function jobOptions(job: Job): Args {
   return {
@@ -1502,15 +1518,17 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
   if (retryOf && !source) return { ok: false, code: 'job_not_found' };
   const role = input.role === undefined && source ? source.role : required(input, 'role');
   // Check caller input, not inherited retry options or internal repair placement.
-  if (!parent && !repair && role !== 'general' && ['preset', 'on', 'model', 'thinking'].some(key => input[key] !== undefined)) {
+  if (!parent && !repair && role !== 'general' && placementOverrides.some(key => input[key] !== undefined)) {
     return { ok: false, code: 'invalid_arguments', error: `Role ${JSON.stringify(role)} runs as configured in its role file and Control; use general to choose a model for one job.` };
   }
   let args = input;
+  let retrySource: Job | undefined;
   let repairOf = repair?.job;
   let worktreeSource = repair?.job ? continuationWorktreeSource(repair.job) : undefined;
   if (source) {
     const { row } = readRow(source);
     if (row.state !== 'failed' && row.state !== 'stopped') return { ok: false, code: 'not_retryable' };
+    retrySource = source;
     const inherited = jobOptions(source);
     delete inherited.on; // Retry through the role's chain instead of pinning the previous harness.
     if (input.on !== undefined) delete inherited.preset;
@@ -1533,7 +1551,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate }));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, retrySource }));
 }
 
 const pendingScouts = new Map<string, AbortController>();
@@ -1602,14 +1620,60 @@ function harnessesSourceFor(onName: string | null): string {
     : join(bundled, 'harnesses.json');
 }
 
+type Registry = ReturnType<typeof registry>;
+type Assignment = ReturnType<Registry['assignment']>;
+
+function launchPlan(found: Registry, chain: Role, now: number, args: Args,
+  routing: ReturnType<Registry['routing']>, onEntry: RolePlace | undefined, retryInput: Args | undefined,
+  route?: JobRoute, land = false) {
+  const model = typeof args.model === 'string' ? args.model : undefined;
+  const preset = typeof args.preset === 'string' ? args.preset : undefined;
+  const choice = onEntry ? { run: [{ ...chain.run.find(p => matchPlace(p, onEntry)), ...onEntry }] }
+    : preset !== undefined ? { preset } : undefined;
+  const standard = found.assignment(chain, now, route ? undefined : model, routing, route ? undefined : choice,
+    !!retryInput && retryInput.model === undefined);
+  const tierPreset = route && chain.routing?.[route.tier]?.preset;
+  const tier = !route || route.tier === 'standard' ? standard
+    : tierPreset && chain.presets?.some(p => p.name === tierPreset)
+      ? found.assignment(chain, now, undefined, routing, { preset: tierPreset }) : undefined;
+  const explicit = args.mode !== undefined;
+  const entries = (effective: Assignment, route?: JobRoute) => effective.places.flatMap(candidate => {
+    if ((!land && !effective.available) || (candidate.state !== 'active' && candidate.state !== 'standby') ||
+      (land && candidate.place.harness === 'bro')) return [];
+    let applied = route;
+    let launchArgs = argsForPlace(args, candidate.place, retryInput);
+    if (route) {
+      // A prior capability downgrade still represents a headless choice on retries and queued starts.
+      const wantsHeadless = route.mode === 'headless' || !!route.mode_reason;
+      const autoHeadless = !explicit && wantsHeadless && chain.can_continue && supportsHeadless(candidate.place);
+      const mode = args.mode === 'headless' || autoHeadless ? 'headless' : 'tab';
+      const { mode_reason: _prior, ...intent } = route;
+      applied = { ...intent, mode, ...(!explicit && wantsHeadless && mode === 'tab' ? {
+        mode_reason: 'Selected place does not support headless for this role; using a tab',
+      } : {}) };
+      if (autoHeadless) launchArgs = { ...launchArgs, mode: 'headless' };
+    }
+    return [{ candidate, effective, route: applied, prepared: placeOptions(launchArgs, candidate.place) }];
+  });
+  const preferred = tier ? entries(tier, route) : [];
+  const fallback = route && route.tier !== 'standard' ? {
+    ...route, tier: 'standard' as const, mode: 'tab' as const, mode_reason: undefined,
+    fallback: `${route.tier} tier has no usable place; using standard`,
+  } : undefined;
+  const all = fallback ? [...preferred, ...entries(standard, fallback)] : preferred;
+  const candidates = route ? all.filter(entry => !('code' in entry.prepared)) : all;
+  return { candidates, error: all.find(entry => 'code' in entry.prepared)?.prepared,
+    effective: candidates[0]?.effective ?? standard, route: candidates[0]?.route ?? fallback ?? route, fallback };
+}
+
 export function canOverflowImpJob(job: Job): boolean {
   if (job.role !== 'imp') return false;
   const cwd = roleCwd(job);
   const found = registry(cwd);
   const roles = found.roles();
-  const definition = roles.get('imp');
-  if (!definition || !roles.has('general') || (job.headless && !definition.can_continue)) return false;
-  if (job.preset !== undefined && !definition.presets?.some((p) => p.name === job.preset)) return false;
+  const imp = roles.get('imp');
+  if (!imp || !roles.has('general') || (job.create_options?.mode === 'headless' && !imp.can_continue)) return false;
+  if (!job.route && job.preset !== undefined && !imp.presets?.some((p) => p.name === job.preset)) return false;
   let routing;
   try { routing = found.routing(Date.now()); } catch { return false; }
   const onName = typeof job.create_options?.on === 'string' ? job.create_options.on : null;
@@ -1618,19 +1682,16 @@ export function canOverflowImpJob(job: Job): boolean {
   if (onName && !onEntry) return false;
   const modelOverride = typeof job.create_options?.model === 'string' ? job.create_options.model : undefined;
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return false;
-  const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
-    : job.preset !== undefined ? { preset: job.preset } : undefined;
-  const effective = found.assignment(definition, Date.now(), modelOverride, routing, choice, !!job.retry_of && job.create_options?.model === undefined);
-  const active = effective.places.find((p) => p.state === 'active');
-  if (!active) return false;
-  const opts = jobOptions(job);
   const retryInput = job.retry_of ? { retry_of: job.retry_of, ...(job.create_options ?? {}) } : undefined;
-  return !('code' in placeOptions(argsForPlace({ ...opts, role: 'general' }, active.place, retryInput), active.place));
+  const first = launchPlan(found, imp, Date.now(), { ...jobOptions(job), role: 'general' }, routing, onEntry, retryInput, job.route).candidates[0];
+  return !!first && !('code' in first.prepared);
 }
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parentJob?: string, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate }: { scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate } = {}) {
+  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, retrySource }: {
+    scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; retrySource?: Job;
+  } = {}) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
@@ -1660,7 +1721,14 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if (!taskClient) void ensureQueueWatcher(pane, hudHome);
     return created(existing);
   }
-  if (args.mode !== undefined && !definition.can_continue)
+  // A retry of an overflow keeps the imp seat's launch configuration, unless the caller
+  // uses general's public placement overrides to request a different place.
+  const fromImp = role === 'general' && retrySource?.role === 'general' && retrySource.overflow_from === 'imp' &&
+    !placementOverrides.some(key => retryInput?.[key] !== undefined);
+  const chain = fromImp ? configured.get('imp') : definition;
+  if (!chain || chain.optionalEnabled === false)
+    return { ok: false, code: 'role_unavailable', reason: 'Role imp is not configured or is hidden in this project' };
+  if (args.mode !== undefined && !chain.can_continue)
     return { ok: false, code: 'invalid_arguments', error: 'explicit headless mode requires a continuable role' };
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
@@ -1676,8 +1744,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     return { ok: false, code: 'invalid_arguments', error: 'preset and on are mutually exclusive' };
   }
   const presetName = args.preset === undefined ? undefined : required(args, 'preset');
-  const preset = definition.presets?.find((p) => p.name === presetName);
-  if (presetName !== undefined && !preset) {
+  const preset = chain.presets?.find((p) => p.name === presetName);
+  if (presetName !== undefined && !preset && !(fromImp && retrySource?.route)) {
     return { ok: false, code: 'invalid_arguments', error: `unknown preset: ${presetName}` };
   }
   let routing;
@@ -1697,12 +1765,6 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
-  const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
-    : presetName !== undefined ? { preset: presetName } : undefined;
-  const effective = found.assignment(definition, now, modelOverride, routing, choice, !!retryInput && retryInput.model === undefined);
-  const places = effective.places.filter(p => !landCwd || p.place.harness !== 'bro');
-  const details = places.find((p) => p.state === 'active' || (landCwd && p.state === 'standby'));
-  const argsFor = (place: RolePlace) => argsForPlace(args, place, retryInput);
   if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
 
   const id = 'j' + randomBytes(8).toString('hex');
@@ -1710,6 +1772,20 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const project = found.project();
   const contextCwd = scoutContextCwd ?? cwd;
   const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
+  const imp = requestedRole === 'imp' || fromImp;
+  let route: JobRoute | undefined;
+  let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
+  if (imp && retryInput) {
+    route = landCwd ? repairImpRoute(chain, retrySource?.route) : retrySource?.route;
+  } else if (imp && chain.routing) {
+    localContext = await contextFor(args, false);
+    if ('code' in localContext) return localContext;
+    const context_files = localContext.contextInputs;
+    route = await pickImpRoute(hudHome, chain.routing, task, args.mode === 'headless', () => ({
+      ticket: routingTicketText(project.root, args.ticket), context_files,
+    }));
+  }
+  const plan = launchPlan(found, chain, now, args, routing, onEntry, retryInput, route, !!landCwd);
   let worktree: ManagedWorktree | undefined;
   let reusedWorktree: ManagedWorktree | undefined;
   if (isolation === 'worktree') {
@@ -1722,8 +1798,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
 
   const enforceCap = role !== 'sonic' && !parentJob && !scoutContextCwd && !landCwd;
-  let overflowFrom: string | undefined;
-  let initial: Exclude<ReturnType<typeof placeOptions>, { code: 'invalid_arguments' }> | undefined;
+  let overflowFrom = fromImp ? 'imp' : undefined;
   let inline = false;
   let context: Exclude<Awaited<ReturnType<typeof assembleContext>>, { ok: false }> | undefined;
   let base!: Job;
@@ -1739,22 +1814,27 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         const generalCap = capForRole(concurrency, 'general');
         const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
         if (role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
-          // Overflow borrows a concurrency slot, not the general role's launch chain or mode.
+          // Overflow borrows a concurrency slot, not the imp role's launch chain or mode.
           overflowFrom = 'imp';
           role = 'general';
         } else shouldQueue = true;
       }
     }
 
+    const first = plan.candidates[0];
+    if (!first) {
+      if (plan.error && 'code' in plan.error) return plan.error;
+      const { effective } = plan;
+      return { ok: false as const, code: 'no_available_place' as const, reason: effective.reason, places: effective.places, exhausted: effective.exhausted,
+        ...(plan.route && { route: plan.route }) };
+    }
+    if ('code' in first.prepared) return first.prepared;
     if (shouldQueue) {
-      if (!details) {
-        return { ok: false as const, code: 'no_available_place' as const, reason: effective.reason, places: effective.places, exhausted: effective.exhausted };
-      }
-      const checked = placeOptions(argsFor(details.place), details.place);
-      if ('code' in checked) return checked;
-      const queuedContext = await contextFor(args, false);
+      const queuedContext = localContext ?? await contextFor(args, false);
       if ('code' in queuedContext) return queuedContext;
       const nowIso = new Date().toISOString();
+      // The watcher re-evaluates availability at start time; retain the decision while queued.
+      const queuedRoute = plan.fallback ? route : first.route;
       const queuedJob: Job = {
         job: id,
         role,
@@ -1765,7 +1845,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         herdr_pane: pane,
         created_at: nowIso,
         queued_at: nowIso,
-        ...(args.mode === 'headless' && { headless: true }),
+        ...(queuedRoute && { route: queuedRoute }),
+        ...((first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
+        ...(overflowFrom && { overflow_from: overflowFrom }),
         task_length: task.length,
         ...queuedContext.metadata,
         ...(checks?.length ? { checks } : {}),
@@ -1808,16 +1890,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       return undefined;
     }
 
-    if (!details) {
-      return { ok: false as const, code: 'no_available_place' as const, reason: effective.reason, places: effective.places, exhausted: effective.exhausted };
-    }
-    if (!initial) {
-      const checked = placeOptions(argsFor(details.place), details.place);
-      if ('code' in checked) return checked;
-      initial = checked;
-    }
-    inline = initial.place.harness === 'bro';
-    const assembled = await contextFor(args, inline);
+    inline = first.prepared.place.harness === 'bro';
+    const assembled = (!inline && localContext) || await contextFor(args, inline);
     if ('code' in assembled) return assembled;
     context = assembled;
     base = {
@@ -1837,7 +1911,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(landCwd ? { land_turn: request_key } : {}),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
-      ...(role === 'sonic' || args.mode === 'headless' ? { headless: true } : {}),
+      ...(first.route && { route: first.route }),
+      ...(role === 'sonic' || first.route?.mode === 'headless' || args.mode === 'headless' ? { headless: true } : {}),
       ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
@@ -1867,8 +1942,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
 
   const harnessesSource = harnessesSourceFor(onName);
   const attempts = base.attempts!;
-  const selected = definition.presets?.some((p) => p.run === definition!.run);
-  const candidates = places.filter((p) => p === details || p.state === 'standby');
+  const candidates = plan.candidates;
   let scoutTask: HudTask | undefined;
   let scoutResult: Awaited<ReturnType<typeof runCreateScout>> | undefined;
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
@@ -1878,9 +1952,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     let reason = '';
     let taskEntry: HudTask | undefined;
     let sonicPick: Promise<string | undefined> | undefined;
-    for (const candidate of candidates) {
-      const launchArgs = argsFor(candidate.place);
-      const prepared = candidate === details ? initial! : placeOptions(launchArgs, candidate.place);
+    for (const { candidate, prepared, effective, route } of candidates) {
+      const launchArgs = argsForPlace(args, candidate.place, retryInput);
       if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
       if (attempts.length) {
         const exhausted = readExhausted(hudHome);
@@ -1897,7 +1970,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (role === 'sonic' && place.harness !== 'bro') {
         if (args.thinking !== undefined) thinking_source = 'explicit';
         else {
-          const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, definition!.thinking_choices));
+          const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
           if (picked !== undefined) place.thinking = picked;
           thinking_source = picked === undefined ? 'default' : 'decision';
         }
@@ -1905,7 +1978,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
-        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: definition!.resume_s ?? DEFAULT_RESUME_S }),
+        ...(route && { route, headless: route.mode === 'headless' ? true : undefined }),
+        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd: landCwd ?? cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
         },
@@ -1913,11 +1987,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...(place.harness === 'bro' ? { bro: place } : {
           model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
           ...(thinking_source ? { thinking_source } : {}),
-          model_source: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
+          model_source: route ? candidate.model.source : modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
         }),
         ...(place.harness === 'cli' ? { cli: {
-          agent: place.agent!, can_continue: (effective.harness === 'bro' ? definition!.can_continue : effective.can_continue) === true,
-          idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition!.idle_grace_s ?? 600,
+          agent: place.agent!, can_continue: (effective.harness === 'bro' ? chain.can_continue : effective.can_continue) === true,
+          idle_grace_s: (args.idle_grace_s as number | undefined) ?? chain.idle_grace_s ?? 600,
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
@@ -1960,7 +2034,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         if (taskClient && !parentJob && !scoutTask) taskEntry = beginTask(job);
         else if (!scoutTask && !job.scout_only) void ensureQueueWatcher(pane, hudHome);
       }
-      const launchRole = preset || selected ? { ...definition!, skills: place.skills } : definition!;
+      const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
       if (scoutQuestion && attempts.length === 0) {
         fs.rmSync(join(dir, jobFiles.status), { force: true });
         jobCache.invalidateFile(join(dir, jobFiles.status));
@@ -1971,9 +2045,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if (job.headless || !result.preInput || result.cleanupFailed) break;
+      if ((job.headless && !job.route) || !result.preInput || result.cleanupFailed) break;
       save(job);
     }
+    if (plan.fallback && result.preInput && !result.cleanupFailed && job.route?.tier !== 'standard')
+      job.route = plan.fallback;
     const launchRow = finishLaunch(job, dir, result, reason, !scoutQuestion);
     if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && job.herdr_pane === scoutTask.pane) {
       scoutTask.fence = taskFence(job);
@@ -1990,7 +2066,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // The target ID (and task, if negotiated) is stable across both stages.
   base.scout_state = 'scouting';
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeBrief({ ...base, place: initial!.place }, dir, task, context!.block, true);
+  writeBrief({ ...base, place: candidates[0].candidate.place }, dir, task, context!.block, true);
   save(base);
   writeCreateStatus(dir, { state: 'working', reason: 'scouting' });
   trackCreatedJob(id);
@@ -2008,7 +2084,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const creating = (async () => {
     try {
       // Keep worktree creation behind the same trust gate as ordinary worktree dispatch.
-      if (worktree && !base.worktree && candidates.some(({ place }) => !('code' in placeOptions(argsFor(place), place)) &&
+      if (worktree && !base.worktree && candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
         (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
         await prepareWorktree(base, worktree);
       }
@@ -2072,10 +2148,11 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const args: Args = { ...jobOptions(existing), cwd, role, task };
     const retryInput: Args | undefined = existing.retry_of ? { retry_of: existing.retry_of, ...(existing.create_options ?? {}) } : undefined;
     const found = registry(cwd);
-    const definition = found.roles(true).get(existing.role);
-    if (definition?.optionalEnabled === false) return failQueued(`Optional role ${existing.role} is off`);
-    if (!definition) return failQueued(`Role ${existing.role} is not configured or is hidden in this project`);
-    if (args.mode === 'headless' && !definition.can_continue) return failQueued('headless mode requires a continuable role', 'invalid_arguments');
+    const launchRoleName = existing.overflow_from ?? existing.role;
+    const chain = found.roles(true).get(launchRoleName);
+    if (chain?.optionalEnabled === false) return failQueued(`Optional role ${launchRoleName} is off`);
+    if (!chain) return failQueued(`Role ${launchRoleName} is not configured or is hidden in this project`);
+    if (args.mode === 'headless' && !chain.can_continue) return failQueued('headless mode requires a continuable role', 'invalid_arguments');
     const now = Date.now();
     let routing;
     try { routing = found.routing(now); }
@@ -2085,18 +2162,19 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const onEntry = onName ? defaults?.[onName] : undefined;
     if (onName && !onEntry) return failQueued(`unknown harness: ${onName}`, 'invalid_arguments');
     const presetName = typeof args.preset === 'string' ? args.preset : undefined;
-    const preset = definition.presets?.find((p) => p.name === presetName);
-    if (presetName !== undefined && !preset) return failQueued(`unknown preset: ${presetName}`, 'invalid_arguments');
+    if (!existing.route && presetName !== undefined && !chain.presets?.some(p => p.name === presetName))
+      return failQueued(`unknown preset: ${presetName}`, 'invalid_arguments');
     const modelOverride = typeof args.model === 'string' ? args.model : undefined;
-    const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
-      : presetName !== undefined ? { preset: presetName } : undefined;
-    const effective = found.assignment(definition, now, modelOverride, routing, choice, !!retryInput && retryInput.model === undefined);
-    const places = effective.places;
-    const details = places.find((p) => p.state === 'active');
-    if (!details) return failQueued(effective.reason ?? 'no available place');
-    const argsFor = (place: RolePlace) => argsForPlace(args, place, retryInput);
-    const initial = placeOptions(argsFor(details.place), details.place);
-    if ('code' in initial) return failQueued(initial.error ?? 'invalid_arguments', 'invalid_arguments');
+    const plan = launchPlan(found, chain, now, args, routing, onEntry, retryInput, existing.route);
+    const first = plan.candidates[0];
+    if (plan.route) {
+      existing.route = plan.route;
+      existing.headless = plan.route.mode === 'headless' ? true : undefined;
+    }
+    if (!first) return plan.error && 'code' in plan.error
+      ? failQueued(plan.error.error ?? 'invalid_arguments', 'invalid_arguments')
+      : failQueued(plan.effective.reason ?? 'no available place');
+    if ('code' in first.prepared) return failQueued(first.prepared.error ?? 'invalid_arguments', 'invalid_arguments');
 
     let worktree: ManagedWorktree | undefined = existing.worktree;
     if (!worktree && args.isolation === 'worktree') {
@@ -2111,7 +2189,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const base: Job = { ...existing, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [] };
     const project = found.project();
     const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, existing.repair_of);
-    const inline = initial.place.harness === 'bro';
+    const inline = first.prepared.place.harness === 'bro';
     const context = await contextFor(args, inline);
     if ('code' in context) return failQueued(context.error ?? context.code ?? 'invalid_arguments', context.code === 'invalid_arguments' ? 'invalid_arguments' : undefined);
 
@@ -2122,7 +2200,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       save(base);
       writeCreateStatus(dir, { state: 'working', role, reason: 'scouting' });
       const controller = new AbortController();
-      if (worktree && !base.worktree && places.some(({ place }) => !('code' in placeOptions(argsFor(place), place)) &&
+      if (worktree && !base.worktree && plan.candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
         (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
         await prepareWorktree(base, worktree);
       }
@@ -2138,15 +2216,13 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
 
     const harnessesSource = harnessesSourceFor(onName);
     const attempts = base.attempts!;
-    const selected = definition.presets?.some((p) => p.run === definition.run);
-    const candidates = places.filter((p) => p === details || p.state === 'standby');
+    const candidates = plan.candidates;
     let job = base;
     let result: DispatchResult = launchError('no launch attempted');
     let reason = '';
     let sonicPick: Promise<string | undefined> | undefined;
-    for (const candidate of candidates) {
-      const launchArgs = argsFor(candidate.place);
-      const prepared = candidate === details ? initial : placeOptions(launchArgs, candidate.place);
+    for (const { candidate, prepared, effective, route } of candidates) {
+      const launchArgs = argsForPlace(args, candidate.place, retryInput);
       if ('code' in prepared) continue;
       if (attempts.length) {
         const exhausted = readExhausted(hudHome);
@@ -2161,7 +2237,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       if (role === 'sonic' && place.harness !== 'bro') {
         if (args.thinking !== undefined) thinking_source = 'explicit';
         else {
-          const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, definition.thinking_choices));
+          const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
           if (picked !== undefined) place.thinking = picked;
           thinking_source = picked === undefined ? 'default' : 'decision';
         }
@@ -2169,7 +2245,8 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
-        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: definition.resume_s ?? DEFAULT_RESUME_S }),
+        ...(route && { route, headless: route.mode === 'headless' ? true : undefined }),
+        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
         },
@@ -2177,11 +2254,11 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
         ...(place.harness === 'bro' ? { bro: place } : {
           model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
           ...(thinking_source ? { thinking_source } : {}),
-          model_source: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
+          model_source: route ? candidate.model.source : modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
         }),
         ...(place.harness === 'cli' ? { cli: {
-          agent: place.agent!, can_continue: (effective.harness === 'bro' ? definition.can_continue : effective.can_continue) === true,
-          idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition.idle_grace_s ?? 600,
+          agent: place.agent!, can_continue: (effective.harness === 'bro' ? chain.can_continue : effective.can_continue) === true,
+          idle_grace_s: (args.idle_grace_s as number | undefined) ?? chain.idle_grace_s ?? 600,
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
@@ -2212,16 +2289,18 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
         const source = findJob(job.retry_of);
         if (source) save({ ...source, observed_at: new Date().toISOString() });
       }
-      const launchRole = preset || selected ? { ...definition, skills: place.skills } : definition;
+      const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
       else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, { callerToken: existing.created_at });
       reason = result.exit_code === 0 ? '' : launchReason(result);
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if (job.headless || !result.preInput || result.cleanupFailed) break;
+      if ((job.headless && !job.route) || !result.preInput || result.cleanupFailed) break;
       save(job);
     }
+    if (plan.fallback && result.preInput && !result.cleanupFailed && job.route?.tier !== 'standard')
+      job.route = plan.fallback;
     finishLaunch(job, dir, result, reason, false);
     return { started: result.exit_code === 0, ...(result.exit_code !== 0 ? { failed: true, reason } : {}) };
   });
@@ -2395,7 +2474,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   if (!until || Date.now() >= until || !place || (place.harness !== 'cli' && place.harness !== 'pi') ||
       !fs.statSync(current.cwd, { throwIfNoEntry: false })?.isDirectory()) return;
   const identity = resumeIdentity(current, status);
-  const role = registry(roleCwd(current)).roles().get(current.role);
+  const role = registry(roleCwd(current)).roles().get(current.overflow_from ?? current.role);
   if (!identity || !role) return;
   const priorSession = current.headless ? null : slice(join(dir, jobFiles.session), 8192);
   if ((!current.headless && (!priorSession || priorSession.truncated)) || fs.existsSync(join(dir, jobFiles.stopRequested)) ||
@@ -2623,16 +2702,17 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
   if (row.open_questions || !['idle_grace', 'done', 'closed'].includes(row.state ?? ''))
     throw Error(`Repair source needs attention: ${id}`);
   const deadline = typeof status?.idle_deadline_at === 'string' ? Date.parse(status.idle_deadline_at) : Infinity;
-  if (closedReport(source, status) || (row.state === 'idle_grace' && Date.now() < deadline)) {
+  if (source.route?.tier !== 'light' && (closedReport(source, status) || (row.state === 'idle_grace' && Date.now() < deadline))) {
     const sent = await keyLock(`job:${id}`, () => sendJob(id, task, key, false, true));
     if ('sent' in sent && sent.sent) return id;
     if (!('code' in sent) || sent.code !== 'not_continuable') { releaseLandTurn(id, key); throw Error(`Repair send failed: ${id}`); }
   }
-  const args = { ...jobOptions(source), cwd: sharedRoot(cwd), isolation: 'none', retry_of: id, task, on: undefined };
+  const args = { ...jobOptions(source), cwd: sharedRoot(cwd), isolation: 'none', retry_of: id, task, on: undefined,
+    ...(source.route?.tier === 'light' && { mode: undefined }) };
   // A closed but successfully settled job isn't a public retry target. Use the same keyed create path,
   // retaining retry provenance and the original checkout rather than starting at a clean main tip.
   const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? source.herdr_pane, key, false,
-    undefined, undefined, { retry_of: id }, { landCwd: cwd }));
+    undefined, undefined, { retry_of: id }, { landCwd: cwd, retrySource: source }));
   if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
   throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);
 }
@@ -3356,7 +3436,7 @@ function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: s
   armExpiry(task);
   pruneTasks(tasks, Date.now(), evictTask);
   persistTask(task);
-  return { resultType: 'task', ...wireTask(task) };
+  return { resultType: 'task', ...wireTask(task), ...(job.route && { route: job.route }) };
 }
 function registerBatchTask(task: HudTask | undefined, job: Job, ok: boolean): void {
   if (!task) return;

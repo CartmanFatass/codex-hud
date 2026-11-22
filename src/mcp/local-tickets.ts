@@ -42,6 +42,19 @@ const list = (dir: string) =>
       })
     : [];
 
+/** Outbound routing input: only the named local ticket, never the rest of the board. */
+export function routingTicketText(root: string, ticket: unknown): string | undefined {
+  if (typeof ticket !== 'string') return;
+  const match = /^([a-z0-9][a-z0-9_-]*)\/(\d+)$/.exec(ticket);
+  if (!match) return;
+  try {
+    const scratch = join(root, '.scratch');
+    if (!directoryExists(scratch)) return;
+    const matches = list(join(scratch, match[1])).filter(item => item.number === Number(match[2]));
+    if (matches.length === 1) return readFileBounded(matches[0].path, 4096).bytes.toString('utf8').slice(0, 4000);
+  } catch { /* Missing or unreadable ticket contributes no text. */ }
+}
+
 export function readyTickets(cwd: string, jobs: JobIndexCache) {
   const scratch = join(cwd, '.scratch');
   if (!directoryExists(scratch)) return { ok: true, tickets: [] };
