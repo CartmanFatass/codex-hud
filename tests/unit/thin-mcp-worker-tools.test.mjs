@@ -203,6 +203,11 @@ test('a working pi parent gets a native sonic-ready message without polling or c
     assert.equal(existsSync(join(dir, 'sonic-collected')), false);
     const { details } = await sonic.execute('collect', { wait: [job] });
     assert.equal(details.reports[0].body, 'Synthetic implementation report.');
+
+    process.env.HUD_JOB_DIR = dir;
+    const childTools = [];
+    await hud({ on() {}, registerTool(tool) { childTools.push(tool.name); } });
+    assert.deepEqual(childTools, ['hud_report', 'hud_progress', 'hud_lease']);
   `], { env: { ...f.env, HUD_JOB_DIR: parent.task_dir }, encoding: 'utf8', timeout: 12000 });
   assert.equal(native.status, 0, native.stderr);
 });
@@ -224,6 +229,10 @@ test('sonic tooling offers no per-task choice, but hud_create keeps explicit ove
   const main = await f.call('hud_create', { role: 'sonic', task: 'Synthetic task.', thinking: 'off' });
   assert.equal(main.thinking, 'off');
   assert.equal(main.thinking_source, 'explicit');
+  const child = workerClient(t, f, main.task_dir);
+  assert.deepEqual((await child.rpc('tools/list')).result.tools.map(({ name }) => name),
+    ['hud_report', 'hud_ask', 'hud_progress', 'hud_lease']);
+  assert.equal((await child('hud_sonic', {})).isError, true);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic parent.' });
   const call = workerClient(t, f, parent.task_dir);
   const sonic = (await call.rpc('tools/list')).result.tools.find(({ name }) => name === 'hud_sonic');

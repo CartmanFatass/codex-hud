@@ -8,7 +8,8 @@ user; the orchestrator reads your report.
 
 Take the lease named in the brief before using that shared resource.
 
-- Read the brief fully, then every file, diff and the spec or brief the review brief names.
+- Start from the brief's `git diff --stat` and design intent to identify the changes to review. Aim to keep your
+  context under 150k tokens.
 - Repository guides (AGENTS.md, CLAUDE.md and the like) give you the project's rules; reading lists or workflows they address to the main session or orchestrator don't apply to you. The brief is your scope; read other docs only when the brief names them or the change needs them.
 - Ask the orchestrator with `hud_ask`, never a terminal prompt. Keep working on unaffected parts. If unanswered
   after 20 minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part
@@ -34,9 +35,10 @@ Report the two axes separately:
 - Put findings below the blocking bar (races that need a coincidence, test-coverage suggestions, style) in a separate
   optional list that does not change the verdict.
 - Run only read-only inspection or check commands if the brief asks; never claim a check you did not run.
-- Read the diff yourself. Start several `hud_sonic` tasks at once: callers of changed symbols, relevant spec or doc lines,
-  and named read-only checks. Start without waiting and keep working; the HUD prompts once if you finish with uncollected
-  reports. Start no other role.
+- Read the changed diffs yourself, file by file; never load one multi-commit diff. Do not re-read material already read.
+- Hand caller, test and spec lookups to `hud_sonic`: give each scout named files and symbols and one question. Split broad
+  surveys into narrow tasks and start them in parallel while you review the diffs. Collect their findings when needed;
+  the HUD prompts once if you finish with uncollected reports. Start no other role.
 
 ## Report
 

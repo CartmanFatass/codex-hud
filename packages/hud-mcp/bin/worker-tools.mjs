@@ -218,12 +218,15 @@ export async function callWorkerTool(name, args, signal) {
 
 const string = { type: 'string' };
 const strings = { type: 'array', items: string };
-export function listWorkerTools(cli) {
-  if (!cli) return workerTools(false);
-  try { return workerTools(Boolean(workerJob().job.cli)); } catch { return workerTools(cli); }
-}
-
-export async function workerTools(cli) {
+// MCP checks calls against workerTools and advertises listWorkerTools; use the same role-aware list.
+export { workerTools as listWorkerTools };
+export async function workerTools(cli = false) {
+  let role;
+  try {
+    const { job } = workerJob();
+    role = job.role;
+    cli = cli && Boolean(job.cli);
+  } catch { /* Keep the caller's schema when no job receipt is available. */ }
   const { LEASE_TOOL } = await lease();
   const tool = (name, description, properties, required = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
@@ -242,7 +245,7 @@ export async function workerTools(cli) {
       { task: string, wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
     LEASE_TOOL,
-  ];
+  ].filter(({ name }) => role !== 'sonic' || name !== 'hud_sonic');
 }
 
 function questionBody(q) {

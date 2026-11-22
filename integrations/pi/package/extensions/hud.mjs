@@ -11,7 +11,7 @@ export default async function hud(pi) {
     const { callWorkerTool, listWorkerTools, watchSonicReady } = await import(url.href);
     const notices = new AbortController();
     pi.on('session_shutdown', () => notices.abort());
-    for (const { name, description, inputSchema } of await listWorkerTools(false)) {
+    for (const { name, description, inputSchema } of await listWorkerTools()) {
       if (name === 'hud_ask' && nativeAsk) continue; // pi-roles supplies the native asynchronous ask.
       pi.registerTool({
         name, label: name, description, parameters: inputSchema, promptSnippet: description,
