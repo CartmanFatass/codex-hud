@@ -11,6 +11,11 @@ They are not current. Keep this file well under 64 KiB (the Project page reads o
 - neon proposal 05 Q1: an optional `$HUD_HOME/models.json` overriding the built-in model catalog (new user file), or
   built-in catalog only? (waits on PRIMITIVES-04, primitives/04)
 
+- Owner 2026-11-22 on agy's proposals 17–24: 17 do it (lean spec + archive old docs; spec-docs/01–03, spec lands
+  only after the owner approves the draft and errata); 18 drop the self-graded outcome/verdict, other parts under
+  discussion; 19 restart recovery stays manual plus a guard so a resumed worker cannot use main-session tools
+  (resume-guard/01); 20 at most proposal 13's single-job form; 21 `after` chaining dropped; 22 waits for 14; 23 web
+  board server dropped; 24 deferred (at most worktree cleanup).
 - Proposals 10–16 in docs/neon-proposal/ (the rest of neon's report, reduced; one slice each): 10 Settings Advanced
   fold (M5), 11 Claude transcript tail-first (M5), 12 i18n cross-dictionary check (7 keys show a different word today),
   13 read-only `hud doctor <jobId>`, 14 job archive ledger before deletion, 15 worktree overlaps in hud_read
@@ -42,7 +47,7 @@ board counts these; update at every landing or decision. -->
 - try · CODE-HEALTH · TEST-SPLIT-01 · neon 09 S1: thin-mcp.test.mjs split into ten files behind tests/helpers/thin-mcp-harness.mjs, 175 cases kept; test:mjs 292 s → 71 s; teardown retries and one atomic test write fixed two flakes (e2c003de,46527cc5)
 - try · CODE-HEALTH · TEST-SPLIT-02 · neon 09 S2: shared fake CLI bin, clock preload and atomic fixture writes for the MCP tests; role-places uses the shared harness; new npm scripts test:mcp, test:panel, test:fast (~10 s) (3eb0e02f)
 - try · CODE-HEALTH · PROJECT-BOARD-LIMITS-01 · bug from neon 17: Project's latest review reads every docs/reviews entry (dated files only, README never wins); a STATE.md or spec past 64 KiB shows a truncation warning (23e6efbf; test flakes b588ac6b)
-- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Panel lane: I18N-CHECK-01 (working) → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-03 (working) → TEST-SPLIT-04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
+- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Docs lane: SPEC-DOCS-01 (working) → SPEC-DOCS-02 (draft + oracle audit) → owner approval → SPEC-DOCS-03. Panel lane: I18N-CHECK-01 (working) → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-03 (working) → RESUME-GUARD-01 → TEST-SPLIT-04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - try · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job (Settings row), fallback default; thinking_source recorded (f0baa540)
 - dropped · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9) [superseded the same day by SONIC-AUTO-THINKING: callers do not pick]
