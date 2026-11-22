@@ -39,6 +39,18 @@ The owner approved the lean spec and resolved the draft questions:
   `PreInvocation` when working and type them into the prompt when idle. Use Antigravity's `statusLine`
   command. The `agy` extension may edit its client config reversibly (Antigravity adapter proposal 25).
 - **D-2026-11-22-13** (§2.1.4): In single-job `hud_read`, `git_summary` includes files also changed in other managed worktrees of the same checkout (proposal 15 §6 defaults).
+- **D-2026-11-22-14** (§2.1.3, §2.1.7, §2.2.3, §2.2.4, §2.2.8): Home progress (design docs/design/home-progress/,
+  owner 2026-11-22): keep STATE `## Slices` plus `.scratch/` joined at read time (not one ledger); ticket
+  working/try/done derived at read time from jobs, STATE, commits and accepted tries (no `land` op); a failed job
+  leaves Home once superseded (retry, newer job on the same target, or landed), an unhandled one after 30 minutes;
+  the Recommended AI paragraph stays but never shows once its inputs changed; the display model may translate
+  waiting items, open worker questions and open ticket titles that are not in the panel language (original folded).
+- **D-2026-11-22-15** (§2.1.3, §2.1.4, §2.2.6, §5 MCP-ORCH; workflow): Orchestrator load (docs/llm/orch-load-2026-11-22.md,
+  owner 2026-11-22: all of A/B/C): the orchestrator hands chores to sonic/imp (integration in a separate worktree
+  with test gate, lookups), `hud_read` defaults to a digest, task notices wait for HUD checks and get shorter,
+  owner panel actions (answers, try marks, retry/land intents) reach MCP-task clients, batch forms for the
+  mutating MCP tools; the watcher may reap worktrees whose commits were cherry-picked onto the base. Settled
+  pre-0.2.0 STATE slices moved to docs/handoff/archive/. Behaviour changes approved with their cost and gain.
 
 ## 2026-11-21
 
