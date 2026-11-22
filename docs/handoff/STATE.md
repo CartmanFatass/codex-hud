@@ -111,6 +111,6 @@ board counts these; update at every landing or decision. -->
 ## Now (2026-11-22)
 
 - IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–06 全部落地。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
-- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land 已落地（eda6382a，需重连 hud MCP 才可用）→ 02 失败交回原 imp（最多 2 轮）、03 记工单与 STATE；04 先派 sonic 收集事实再派；05 面板与文档。等 ORCH-LEAN-02/03、IMP-LEAN-02 落地再开工（同改 thin-main）。工单队列自动推进放第二期。
+- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land 已落地并可用 → 02 失败交回原 imp（最多 2 轮）、03 记工单与 STATE；04 先派 sonic 收集事实再派；05 面板与文档。等 ORCH-LEAN-02/03、IMP-LEAN-02 落地再开工（同改 thin-main）。工单队列自动推进放第二期。
 - 并行三条线：首页进度（HOME-PROGRESS，owner 已定 5 个问题）、orch 减负（ORCH-LEAN，owner 同意 A/B/C 三批）、MCP 线剩余（JOB-ARCHIVE-01 进行中）。
 - imp 默认已换成 6.2-astra high；所有工单做完后对比单任务时间与成本。
