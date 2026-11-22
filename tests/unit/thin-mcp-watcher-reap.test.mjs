@@ -75,7 +75,8 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
     assert.equal(closed.output_written, true);
     assert.equal(closed.settled_at, grace.settled_at);
     assert.ok(Date.parse(closed.ended_at) < Date.parse(grace.idle_deadline_at));
-    assert.ok(statusQueries(f, job) <= queries + 1, `${role}: agent.get ${queries} -> ${statusQueries(f, job)}; ${fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8')}`);
+    const after = statusQueries(f, job);
+    assert.ok(after <= queries + 1, `${role}: agent.get ${queries} -> ${after}`);
     if (role !== 'imp') assert.ok(readCloseQuit(f, job));
     await until(() => readCloseReaped(job));
     assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
