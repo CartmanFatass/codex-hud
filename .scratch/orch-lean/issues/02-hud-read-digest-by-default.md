@@ -1,6 +1,6 @@
 # 02: hud_read digest by default
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** none
 
 **What to build:** Rank 4: hud_read returns a digest by default (state, one-line result, changed files, verdict/blockers when the report gives them) with mode full for the whole report; batch reads with jobs[]. Spec sentence as told to the owner.
