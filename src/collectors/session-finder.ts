@@ -921,6 +921,7 @@ export class SessionFinder {
   private lastDeepScanMs = 0;
   // The daemon's log, read for the main pane's TUI; made on first use.
   private daemon: DaemonBinding | null = null;
+  private stopped = false;
 
   constructor(
     targetCwd?: string,
@@ -1020,6 +1021,7 @@ export class SessionFinder {
    * Start watching for session changes
    */
   start(checkIntervalMs: number = 5000): void {
+    this.stopped = false;
     this.check();
     this.checkInterval = setInterval(() => this.check(), checkIntervalMs);
   }
@@ -1028,6 +1030,8 @@ export class SessionFinder {
    * Stop watching
    */
   stop(): void {
+    this.stopped = true;
+    this.daemon?.stop();
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
@@ -1047,7 +1051,11 @@ export class SessionFinder {
       // The daemon's log says which conversation the pane's TUI has open,
       // a resumed one included, before it writes to it; the snapshots are
       // the older Codex's word for it.
-      this.daemon ??= new DaemonBinding(getCodexHome(), mainPaneId, this.targetStartTime?.getTime() ?? null);
+      this.daemon ??= new DaemonBinding(getCodexHome(), mainPaneId, this.targetStartTime?.getTime() ?? null, {
+        onChange: () => {
+          if (!this.stopped) this.check();
+        },
+      });
       const daemonThread = this.daemon.threadId();
       const threadId =
         (daemonThread && rootThreadOf(daemonThread)) || findThreadIdForPane(mainPaneId, this.targetStartTime);

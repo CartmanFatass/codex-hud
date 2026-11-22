@@ -103,7 +103,7 @@ async function piFacts(cwd) {
 
 const paths = {
   Claude: async (cwd) => {
-    const value = collectParityGit(cwd, process.env);
+    const value = await collectParityGit(cwd, process.env);
     return { branch: value?.branch, dirty: value?.dirty };
   },
   Codex: async (cwd) => {

@@ -30,14 +30,14 @@ export function compactWindow(env: NodeJS.ProcessEnv, modelId: string): number |
     return null;
   }
 }
-export function collectAndRenderParity(
+export async function collectAndRenderParity(
   input: unknown,
   width: number,
   settings: ParitySettings,
   env: NodeJS.ProcessEnv,
   now = Date.now(),
   work?: WorkSignals
-): string {
+): Promise<string> {
   const value = record(input),
     file =
       typeof value.transcript_path === 'string' && value.transcript_path.length <= 4096 ? value.transcript_path : '';
@@ -84,7 +84,7 @@ export function collectAndRenderParity(
   }
   const cwd = typeof value.cwd === 'string' && value.cwd.length <= 4096 ? value.cwd : undefined;
   const counts = settings.display.showConfigCounts ? collectConfigCounts(cwd, env) : { mcpCount: 0 };
-  const git = cwd && settings.gitStatus.enabled ? collectParityGit(cwd, env, now) : null;
+  const git = cwd && settings.gitStatus.enabled ? await collectParityGit(cwd, env, now) : null;
   const compact = compactWindow(
     env,
     typeof record(value.model).id === 'string' ? (record(value.model).id as string) : ''

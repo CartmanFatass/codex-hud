@@ -97,7 +97,7 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
   },
   {
     name: 'git safety: fsmonitor, filters and transport commands cannot run from repository config',
-    run(t) {
+    async run(t) {
       const f = fixture(t, 'dirty-git'),
         marker = join(f.home, 'must-not-exist'),
         script = join(f.home, 'hostile.sh');
@@ -107,19 +107,19 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
       f.git(['config', 'filter.hostile.clean', script]);
       f.git(['config', 'filter.hostile.process', script]);
       fs.writeFileSync(join(f.cwd, '.gitattributes'), 'base filter=hostile\n');
-      const value = collectParityGit(f.cwd, f.env);
+      const value = await collectParityGit(f.cwd, f.env);
       assert.equal(value?.branch, 'main');
       assert.equal(value?.dirty, true);
       assert.equal(fs.existsSync(marker), false);
       f.git(['config', 'filter.unsafe=name.clean', script]);
       fs.rmSync(join(f.hud, 'display'), { recursive: true, force: true });
-      assert.equal(collectParityGit(f.cwd, f.env), null);
+      assert.equal(await collectParityGit(f.cwd, f.env), null);
       assert.equal(fs.existsSync(marker), false);
     },
   },
   {
     name: 'trusted global filter still normalizes the worktree, without enabling repository filters',
-    run(t) {
+    async run(t) {
       const f = fixture(t),
         script = join(f.home, 'trusted-filter.sh'),
         marker = join(f.home, 'trusted-ran');
@@ -133,7 +133,7 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
       fs.writeFileSync(join(f.cwd, 'base'), 'edit');
       fs.writeFileSync(script, `#!/bin/sh\nprintf base\nprintf yes > '${marker}'\n`, { mode: 0o700 });
       fs.writeFileSync(join(f.home, '.gitconfig'), `[filter "trusted"]\nclean = ${script}\n`);
-      const v = collectParityGit(f.cwd, f.env);
+      const v = await collectParityGit(f.cwd, f.env);
       assert.equal(v?.branch, 'main');
       assert.equal(v?.dirty, false);
       assert.equal(fs.readFileSync(marker, 'utf8'), 'yes');
