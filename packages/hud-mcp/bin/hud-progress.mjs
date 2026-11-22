@@ -5,15 +5,20 @@ import { finishReport, progress, workerJob } from './worker-tools.mjs';
 
 try {
   const { values, positionals } = parseArgs({
-    options: { dir: { type: 'string' }, done: { type: 'boolean' }, turn: { type: 'string' } },
+    options: {
+      dir: { type: 'string' }, done: { type: 'boolean' }, turn: { type: 'string' },
+      summary: { type: 'string' }, file: { type: 'string', multiple: true },
+    },
     allowPositionals: true,
   });
   const context = workerJob(values.dir);
   if (values.done) {
     if (positionals.length || context.job.bro || context.job.jev) throw new Error('--done is for local worker reports, not milestones');
-    await finishReport(context, values.turn);
+    await finishReport(context, values.turn, undefined, { summary: values.summary, files: values.file });
   } else {
-    if (values.turn !== undefined) throw new Error('--turn requires --done');
+    for (const key of ['turn', 'summary', 'file']) {
+      if (values[key] !== undefined) throw new Error(`--${key} requires --done`);
+    }
     progress(context, positionals.join(' '));
   }
 } catch (error) {

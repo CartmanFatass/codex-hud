@@ -24,6 +24,43 @@ export function cachedReportSignature(dir: string): string | null {
 export type ReportMetaFields = { summary?: string; files?: readonly string[] };
 export type ReportMeta = ReportMetaFields & { v: 1; report_sig: string; at: string };
 
+// Terminal control strings (including OSC), CSI, and other ESC sequences.
+const ansi = /(?:\x1b[\]PX^_]|[\x90\x98\x9d\x9e\x9f])[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[ -/]*[0-~]/gu;
+const controls = /[\p{Cc}\p{Bidi_Control}]/gu;
+const invalidField = (field: keyof ReportMetaFields): never => {
+  throw Object.assign(new Error(`invalid_arguments: ${field}`), { code: 'invalid_arguments' });
+};
+
+export function normalizeReportMeta({ summary, files }: { summary?: unknown; files?: unknown }): ReportMetaFields {
+  const fields: ReportMetaFields = {};
+  if (summary !== undefined) {
+    if (typeof summary !== 'string') return invalidField('summary');
+    const line = summary
+      .replace(ansi, '')
+      .replace(/[\r\n\u2028\u2029]+/gu, ' ')
+      .replace(controls, '')
+      .trim()
+      .replace(/\s+/gu, ' ')
+      .replace(/^(?:#{1,6}|[-*•]) /u, '');
+    const points = [...line];
+    if (line) fields.summary = points.length > 160 ? `${points.slice(0, 159).join('')}…` : line;
+  }
+  if (files !== undefined) {
+    if (!Array.isArray(files) || files.some((file) => typeof file !== 'string')) return invalidField('files');
+    const paths = new Set<string>();
+    for (const raw of files) {
+      if (/[\0\r\n\u2028\u2029]/u.test(raw)) continue;
+      const file = raw.replace(controls, '').trim().replace(/^(?:\.[\\/])+/u, '');
+      if (!file || file === '.' || /^(?:[\\/]|[a-z]:)/iu.test(file) || file.split(/[\\/]/u).includes('..')) continue;
+      if ([...file].length > 260) continue;
+      paths.add(file);
+      if (paths.size === 50) break;
+    }
+    if (paths.size) fields.files = [...paths];
+  }
+  return fields;
+}
+
 export function writeReportMeta(
   dir: string,
   reportSig: string,
@@ -31,17 +68,20 @@ export function writeReportMeta(
   at = new Date().toISOString()
 ): void {
   const file = join(dir, META_FILE);
-  if (!summary && !files?.length) {
+  const meta = { v: 1, report_sig: reportSig, at, ...(summary ? { summary } : {}) };
+  // Valid paths can still exceed the read cap when JSON-escaped or encoded as UTF-8.
+  const paths: string[] = [];
+  let remaining = MAX_META_BYTES - Buffer.byteLength(JSON.stringify(meta)) - ',"files":[]'.length;
+  for (const path of files ?? []) {
+    remaining -= Buffer.byteLength(JSON.stringify(path)) + (paths.length ? 1 : 0);
+    if (remaining < 0) break;
+    paths.push(path);
+  }
+  if (!summary && !paths.length) {
     fs.rmSync(file, { force: true });
     return;
   }
-  const body = JSON.stringify({
-    v: 1,
-    report_sig: reportSig,
-    at,
-    ...(summary ? { summary } : {}),
-    ...(files?.length ? { files } : {}),
-  });
+  const body = JSON.stringify({ ...meta, ...(paths.length ? { files: paths } : {}) });
   if (Buffer.byteLength(body) > MAX_META_BYTES) throw new Error('report metadata exceeds 16 KiB');
   const tmp = `${file}.${randomUUID()}.tmp`;
   try {

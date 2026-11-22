@@ -7,6 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { notify, taskDelivery } from './hud-notify.mjs';
 import { sonicState } from './sonic-jobs.mjs';
 import { LEASE_TOOL, takeLease } from '../../../dist/roles/lease.js';
+import { normalizeReportMeta, writeReportMeta } from '../../../dist/roles/report-meta.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
 const dispatch = () => import('../../../dist/mcp/thin-main.js');
@@ -38,9 +39,10 @@ function replace(file, data) {
 }
 
 // Omit text for the fallback command, which declares a report the worker wrote itself.
-export async function finishReport({ dir, job }, turn, text) {
+export async function finishReport({ dir, job }, turn, text, metadata = {}) {
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
   if (text !== undefined && (typeof text !== 'string' || !text.trim())) throw new Error('write a nonempty report');
+  const fields = normalizeReportMeta(metadata);
   const { DONE_FILE, readTurn, turnToken, reportSignature } = await judge();
   const path = join(dir, 'report.md');
   if (job.cli) {
@@ -51,14 +53,17 @@ export async function finishReport({ dir, job }, turn, text) {
     if (!sig || sig === current.report_sig) throw new Error('write a fresh report for this turn first');
     const latest = readTurn(dir);
     if (!latest || turnToken(latest) !== turn) throw new Error('the turn changed; no receipt recorded');
+    writeReportMeta(dir, sig, fields);
     replace(join(dir, DONE_FILE), JSON.stringify({ seq: current.seq, sent_at: current.sent_at, report_sig: sig, at: new Date().toISOString() }) + '\n');
   } else {
     // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
     if (turn !== undefined) throw new Error('pi does not use a turn token');
     const { rememberWorkerTree } = await import('../../../dist/roles/worker-tree.js');
     if (text !== undefined) replace(path, text);
-    if (!reportSignature(dir)) throw new Error('write the pi report first');
+    const sig = reportSignature(dir);
+    if (!sig) throw new Error('write the pi report first');
     const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
+    writeReportMeta(dir, sig, fields);
     const { snapshot, issue } = rememberWorkerTree(dir, status);
     if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
   }
@@ -166,7 +171,7 @@ export async function callWorkerTool(name, args, signal) {
     return value;
   };
   switch (name) {
-    case 'hud_report': return finishReport(context, args.turn, string('text'));
+    case 'hud_report': return finishReport(context, args.turn, string('text'), args);
     case 'hud_progress': return progress(context, string('message'));
     case 'hud_lease': return workerLease(context, args, signal);
     case 'hud_ask': return ask(context, { question: string('question'), default: string('default'), options: strings('options'),
@@ -196,8 +201,13 @@ export function workerTools(cli) {
   const tool = (name, description, properties, required = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
   return [
-    tool('hud_report', 'Finish the turn by publishing your report. Returns its path.',
-      { text: string, ...(cli ? { turn: { ...string, description: 'Use the token in the prompt you are answering, not a newer turn.' } } : {}) },
+    tool('hud_report', 'Finish the turn by publishing your report. Returns its path. Give a one-line plain summary of the result; code roles list the files changed.',
+      {
+        text: string,
+        ...(cli ? { turn: { ...string, description: 'Use the token in the prompt you are answering, not a newer turn.' } } : {}),
+        summary: { ...string, maxLength: 320, description: 'Optional one-line plain-text summary of the result (up to 160 code points, no Markdown heading).' },
+        files: { type: 'array', items: { ...string, maxLength: 260 }, maxItems: 50, description: 'Optional list of relative paths to files changed by code roles (up to 50).' },
+      },
       cli ? ['text', 'turn'] : ['text']),
     tool('hud_ask', 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
       { question: string, default: string, options: strings, context: string }, ['question', 'default']),

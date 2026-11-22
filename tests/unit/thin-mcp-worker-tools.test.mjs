@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import test from 'node:test';
 import { reportSignature, turnToken } from '../../dist/mcp/cli-judge.js';
+import { readReportMeta } from '../../dist/roles/report-meta.js';
 import {
   workerFor,
   entry,
@@ -371,8 +372,17 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   writeCliRole(f, 'done-command', 20, true, 'claude');
   const job = await f.call('hud_create', { role: 'done-command', request_key: 'done-command', task: 'Synthetic task.' });
   const dir = job.task_dir, file = join(dir, 'done.json'), report = join(dir, 'report.md');
+  const meta = join(dir, 'report-meta.json');
   const call = workerClient(t, f, dir);
-  const finish = (text, turn) => call('hud_report', { text, turn });
+  const listed = await call.rpc('tools/list');
+  const { description, inputSchema } = listed.result.tools.find(({ name }) => name === 'hud_report');
+  assert.match(description, /one-line plain summary.*code roles list the files changed/);
+  assert.deepEqual(inputSchema.required, ['text', 'turn']);
+  assert.equal(inputSchema.additionalProperties, false);
+  assert.equal(inputSchema.properties.summary.maxLength, 320);
+  assert.equal(inputSchema.properties.files.maxItems, 50);
+  assert.equal(inputSchema.properties.files.items.maxLength, 260);
+  const finish = (text, turn, fields) => call('hud_report', { text, turn, ...fields });
   const first = cliToken(dir);
   const prompts = () => f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'prompt');
   assert.match(prompts()[0].args[3], /Finish with hud_report/);
@@ -380,25 +390,67 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   assert.equal(fs.readFileSync(join(dir, 'brief.md'), 'utf8').trim(), 'Synthetic task.');
   assert.equal((await finish(' ', first)).isError, true, 'missing report');
   assert.equal((await finish('Synthetic first turn.\n')).isError, true, 'must supply the prompt token');
+  for (const [key, value] of [['summary', null], ['files', [123]]]) {
+    const rejected = await finish('Synthetic first turn.\n', first, { [key]: value });
+    assert.equal(rejected.isError, true);
+    assert.match(JSON.parse(rejected.content[0].text).error, new RegExp(`invalid_arguments: ${key}`));
+  }
   assert.equal(fs.existsSync(file), false);
   assert.equal(fs.existsSync(report), false);
-  assert.deepEqual(resultValue(await finish('Synthetic first turn.\n', first)), { path: report });
+  assert.deepEqual(resultValue(await finish('Synthetic first turn.\n', first, {
+    summary: ' # Synthetic\nresult. ', files: ['./src/synthetic.ts', '../outside.ts'],
+  })), { path: report });
   const done = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(turnToken(done), first);
   assert.equal(done.report_sig, reportSignature(dir));
+  assert.deepEqual(Object.keys(done).sort(), ['at', 'report_sig', 'sent_at', 'seq']);
   assert.ok(Number.isFinite(Date.parse(done.at)));
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  const firstMeta = readReportMeta(dir);
+  assert.equal(firstMeta.report_sig, done.report_sig);
+  assert.equal(firstMeta.summary, 'Synthetic result.');
+  assert.deepEqual(firstMeta.files, ['src/synthetic.ts']);
+  assert.equal(fs.statSync(meta).mode & 0o777, 0o600);
   await until(() => cliState(dir)?.state === 'idle_grace');
   assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).sent, true);
   const second = cliToken(dir);
   assert.notEqual(first, second);
   assert.ok(prompts().at(-1).args[3].includes(`turn: ${second}`));
   assert.notEqual(runProgress(f, dir, '--done', '--turn', second).status, 0, 'fallback rejects unchanged baseline report');
-  assert.equal((await finish('Late report for first turn.\n', first)).isError, true, 'old turn cannot declare the new one');
+  assert.equal((await finish('Late report for first turn.\n', first, { summary: 'Stale result' })).isError, true, 'old turn cannot declare the new one');
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), done, 'rejection leaves the previous receipt untouched');
   assert.equal(fs.readFileSync(report, 'utf8'), 'Synthetic first turn.\n', 'stale call does not replace the report');
+  assert.deepEqual(readReportMeta(dir), firstMeta, 'stale call does not replace metadata');
   assert.deepEqual(resultValue(await finish('Synthetic second turn.\n', second)), { path: report });
+  assert.equal(fs.existsSync(meta), false, 'old-style call clears the previous metadata');
   assert.equal(turnToken(JSON.parse(fs.readFileSync(file, 'utf8'))), second);
+});
+
+test('hud-progress --done accepts a summary and repeated file paths without changing the receipt', async (t) => {
+  const f = await fixture(t);
+  const { dir, receipt } = waitFixtureJob(f, 1);
+  const turn = { seq: 1, sent_at: receipt.created_at, report_sig: null };
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, cli: true }));
+  writeFixtureFile(join(dir, 'turn.json'), JSON.stringify(turn));
+  writeFixtureFile(join(dir, 'report.md'), 'Synthetic fallback report.\n');
+  const run = (...args) => runProgress(f, dir, ...args);
+  for (const flag of ['--summary', '--file']) {
+    const rejected = run(flag, 'synthetic', 'milestone');
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, new RegExp(`${flag} requires --done`));
+  }
+  assert.equal(fs.existsSync(join(dir, 'progress.jsonl')), false);
+  const published = run('--done', '--turn', turnToken(turn), '--summary', ' Synthetic\nresult. ',
+    '--file', './src/a,b.ts', '--file', 'src/c.ts');
+  assert.equal(published.status, 0, published.stderr);
+  assert.equal(published.stdout, '');
+  const done = JSON.parse(fs.readFileSync(join(dir, 'done.json'), 'utf8'));
+  assert.deepEqual(Object.keys(done).sort(), ['at', 'report_sig', 'sent_at', 'seq']);
+  const { summary, files, report_sig } = readReportMeta(dir);
+  assert.equal(summary, 'Synthetic result.');
+  assert.deepEqual(files, ['src/a,b.ts', 'src/c.ts']);
+  assert.equal(report_sig, done.report_sig);
+  assert.equal(fs.statSync(join(dir, 'report-meta.json')).mode & 0o777, 0o600);
 });
 
 function runAsk(env, args) {

@@ -12,6 +12,7 @@ import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { workStateInk } from '../../dist/render/work-card.js';
 import { theme } from '../../dist/render/colors.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
+import { readReportMeta } from '../../dist/roles/report-meta.js';
 import {
   workerFor,
   cardText,
@@ -276,12 +277,24 @@ test('read-close: a settled Pi with a fresh report closes and reaps a current-tu
     process.argv.push('--hud-worker-tools');
     const tools = new Map();
     await hud({ registerTool(tool) { tools.set(tool.name, tool); } });
-    console.log(JSON.stringify(await tools.get('hud_report').execute('report', { text: ${JSON.stringify(report)} })));
+    const tool = tools.get('hud_report');
+    const result = await tool.execute('report', {
+      text: ${JSON.stringify(report)}, summary: 'Synthetic native result.', files: ['./src/native.ts'],
+    });
+    console.log(JSON.stringify({ result, schema: tool.parameters }));
   `], { env: { ...f.env, HUD_JOB_DIR: job.task_dir }, encoding: 'utf8' });
   assert.equal(native.status, 0, native.stderr);
-  const result = JSON.parse(native.stdout);
+  const { result, schema } = JSON.parse(native.stdout);
+  assert.deepEqual(schema.required, ['text']);
+  assert.equal(schema.properties.summary.type, 'string');
+  assert.equal(schema.properties.files.type, 'array');
   assert.equal(result.details.path, join(job.task_dir, 'report.md'));
   assert.equal(result.terminate, true);
+  assert.equal(fs.existsSync(join(job.task_dir, 'done.json')), false);
+  const meta = readReportMeta(job.task_dir);
+  assert.equal(meta.summary, 'Synthetic native result.');
+  assert.deepEqual(meta.files, ['src/native.ts']);
+  assert.equal(fs.statSync(join(job.task_dir, 'report-meta.json')).mode & 0o777, 0o600);
   assert.equal(cliState(job.task_dir).state, 'working', 'publication alone does not declare pi settlement');
   await publishPiGrace(job, worker, false); // Synthetic pi-roles native turn end.
   assert.equal((await f.call('hud_read', { job: job.job })).report, report);
