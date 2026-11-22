@@ -21,7 +21,7 @@ if [[ -n "${CHECK_FIXTURES_DIRS:-}" ]]; then
     read -r -a dirs <<< "$CHECK_FIXTURES_DIRS"
   fi
 else
-  for dir in tests/fixtures tests/prototypes docs/probes docs/design; do
+  for dir in tests/fixtures tests/prototypes docs/probes docs/design docs/archive/design; do
     [[ -d "$dir" ]] && dirs+=("$dir")
   done
 fi

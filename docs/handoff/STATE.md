@@ -4,7 +4,8 @@ Milestone: 0.2.0 · MCP orchestration & Panel V2 (mcp-next + panel-v2)
 
 Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review rounds, night logs) moved to
 `docs/handoff/archive/STATE-2026-11-03-to-11-14.md`; the 2026-11-18 handoff to `docs/handoff/archive/STATE-2026-11-18-now.md`.
-They are not current. Keep this file well under 64 KiB (the Project page reads only that much).
+They are not current. Other historical records are indexed in [the documentation archive](../archive/).
+Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Waiting for the owner
 

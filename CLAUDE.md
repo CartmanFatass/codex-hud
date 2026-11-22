@@ -24,7 +24,7 @@ This clone of codex-hud is being turned into one HUD for Claude Code, Codex and 
 2. `docs/delegation.md`: the workflow since 2026-11-10: grill the owner, slice into vertical slices, one implementer per slice without per-slice review, one two-axis review per milestone, the owner tries it.
 3. `docs/handoff/STATE.md`: where the work stands.
 
-`docs/universal-hud-concept.md` (§15 decision log) and `docs/universal-hud-engineering-plan.md` are history; `docs/spec.md` wins on any conflict.
+`docs/archive/root/universal-hud-concept.md` (§15 decision log) and `docs/archive/root/universal-hud-engineering-plan.md` are history; `docs/spec.md` wins on any conflict.
 
 Reviews live in `docs/reviews/`. Task scratch lives in `tmp/tasks/<WP>/` (git-ignored). Fixtures and docs use synthetic data only: the repo is public.
 

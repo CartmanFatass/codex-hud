@@ -144,10 +144,10 @@ Its new behavioral tests, build and formatting remain **NOT_RUN** at source deli
 | Committed summary | Explicit source plus exact parent identity, private v1 summary and existing ledger identity; bounded direct children, always `partial`, no full-tree totals | Fresh and expired synthetic summary; regenerated before each sample |
 | Missing summary / fallback | Explicit registered source and parent may use the existing bounded read-only direct-parent index fallback; absent evidence preserves line one | Empty synthetic ledger fallback only; populated fallback, conflicts, source/thread mismatch, child expiry, budgets and limits remain existing regression-test scope |
 | Identity | `session_id` selects identity, not a displayed metric; source must be explicit; `transcript_path` is never followed | Synthetic session/source only. Repository `agent_id` thread selector is repository-specific/assumed, not documented in the current official main `statusLine` field list |
-| Settings | Existing Linux `settings preview`, `settings apply --plan`, `settings restore --backup` | **Not run by the observer.** See [settings safety and recovery](product-settings.md); there are no new `--install`/`--restore` flags |
+| Settings | Existing Linux `settings preview`, `settings apply --plan`, `settings restore --backup` | **Not run by the observer.** See [settings safety and recovery](../archive/statusline/product-settings.md); there are no new `--install`/`--restore` flags |
 
 The shared summary reader and fallback have their own
-[identity, freshness, privacy and cooperative-budget boundaries](delegation-summary.md).
+[identity, freshness, privacy and cooperative-budget boundaries](../archive/statusline/delegation-summary.md).
 A fresh display is not lifecycle/control authority. This tool does not time the
 internal reader separately or establish its 20 ms qualification.
 

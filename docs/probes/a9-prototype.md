@@ -2,7 +2,7 @@
 
 - Date: 2026-11-01. Node v24.22.1, SQLite 3.53.4, Linux x64.
 - Result after A9FIX: **23/23 tagged prototype IDs PASS on two independent runs** (the prior Oracle consult 3 baseline was 21/21). This is A9 feasibility evidence, not A9 approval or B production acceptance.
-- Scope: the `A9 prototype` rows in contracts [01](../contracts/01-identity.md), [02](../contracts/02-execution.md), and [04](../contracts/04-supervision.md): 4 identity + 10 execution + 9 supervision entries.
+- Scope: the `A9 prototype` rows in contracts [01](../archive/contracts/01-identity.md), [02](../archive/contracts/02-execution.md), and [04](../archive/contracts/04-supervision.md): 4 identity + 10 execution + 9 supervision entries.
 
 ## Method
 
@@ -26,8 +26,8 @@ PIDs/start ticks/boot/PID namespace are recorded before signaling. Cleanup reval
 
 ## Captured runs
 
-- R1 (O3APPLY): [`tmp/tasks/A4b/run-hjOCfRGW`](../../tmp/tasks/A4b/run-hjOCfRGW/); aggregate output: [`prototype-full-1.log`](../../tmp/tasks/O3APPLY/evidence/prototype-full-1.log).
-- R2 (O3APPLY): [`tmp/tasks/A4b/run-6K1BmtzI`](../../tmp/tasks/A4b/run-6K1BmtzI/); aggregate output: [`prototype-full-2.log`](../../tmp/tasks/O3APPLY/evidence/prototype-full-2.log).
+- R1 (O3APPLY): `tmp/tasks/A4b/run-hjOCfRGW/`; aggregate output: `tmp/tasks/O3APPLY/evidence/prototype-full-1.log`.
+- R2 (O3APPLY): `tmp/tasks/A4b/run-6K1BmtzI/`; aggregate output: `tmp/tasks/O3APPLY/evidence/prototype-full-2.log`.
 - Each directory contains group logs, one JSON evidence file per ID, the exact `schema.sql`, and schema fingerprints. Re-running generates a new directory; archived A8 evidence is read-only.
 
 Both runs printed exactly:
@@ -48,17 +48,17 @@ COUNT contract=23 printed=23 unique=23 equal=true
 SUMMARY total=23 pass=23 fail=0
 ```
 
-- R1: [`tmp/tasks/A4b/run-McbIwWgi`](../../tmp/tasks/A4b/run-McbIwWgi/); aggregate [`prototypes-1.log`](../../tmp/tasks/A9FIX/prototypes-1.log).
-- R2: [`tmp/tasks/A4b/run-R4UBXjal`](../../tmp/tasks/A4b/run-R4UBXjal/); aggregate [`prototypes-2.log`](../../tmp/tasks/A9FIX/prototypes-2.log).
+- R1: `tmp/tasks/A4b/run-McbIwWgi/`; aggregate `tmp/tasks/A9FIX/prototypes-1.log`.
+- R2: `tmp/tasks/A4b/run-R4UBXjal/`; aggregate `tmp/tasks/A9FIX/prototypes-2.log`.
 - New T-02-35 saves N@20 + gone@20 + alive@30 + gone@40 in actual SQLite, including reversed import order. The run remains uncertain, retains its slot, and saves a conflict evidence record. An incremental case first reaches failed/N, then imports a real synthetic target's live scope check, and later gone. The original terminal state and single completion event remain; the durable X continues to block new operations without reacquiring the released slot.
 - New T-04-42 SIGKILLs the supervisor after registration commits and before meta is written. One registration transaction saves the immutable full ProcessStamp in the existing supervisor.registered event together with armed runs/claims and the first heartbeat. Recovery reads that event, confirms the dead instance, holds the slot until N is proved, and never resubmits. Missing registration remains unknown. A labelled cross-domain counterexample deliberately preserves the same local pid/start with a different historical boot/PID domain; recovery keeps the historical values and returns unknown, rather than filling the current domain or declaring the old instance dead.
 - Registration adds one event per run; it adds no periodic write or background mechanism. Schema v1 is byte-for-byte unchanged: 16 tables and the same SQL SHA-256 shown above. The compact meta copy in this prototype does not claim to implement the full production file/fsync protocol.
 
-The independent direct core reducer reproduction changed from R-02-4/failed/releaseSlot=true/blockNewOperations=false (alive@30 audited) to R-02-1/uncertain/releaseSlot=false/blockNewOperations=true/cause=scope_conflict (alive@30 retained). Actual before/after JSON is in [`repro-before.log`](../../tmp/tasks/A9FIX/repro-before.log) and [`repro-after.log`](../../tmp/tasks/A9FIX/repro-after.log). Contract T-02-17 also covers equal-time/unsealed-launcher counter-evidence, invalid fact times, delayed imports and terminal incremental reads. T-04-43 checks the event carrier and cross-domain identity without requiring meta. These are A9 feasibility/contract checks; the existing B concurrency, scope-control and actual harness limits below still apply.
+The independent direct core reducer reproduction changed from R-02-4/failed/releaseSlot=true/blockNewOperations=false (alive@30 audited) to R-02-1/uncertain/releaseSlot=false/blockNewOperations=true/cause=scope_conflict (alive@30 retained). Actual before/after JSON is in `tmp/tasks/A9FIX/repro-before.log` and `tmp/tasks/A9FIX/repro-after.log`. Contract T-02-17 also covers equal-time/unsealed-launcher counter-evidence, invalid fact times, delayed imports and terminal incremental reads. T-04-43 checks the event carrier and cross-domain identity without requiring meta. These are A9 feasibility/contract checks; the existing B concurrency, scope-control and actual harness limits below still apply.
 
 ## Oracle consult 3 targeted before / after
 
-The same affected IDs, T-02-15 and T-04-24, were run in isolation before and after the change. Both tagged IDs passed against their respective assertions; the old PASS asserted the superseded behavior and is not evidence for E02. Raw outputs: [before](../../tmp/tasks/O3APPLY/evidence/affected-before.log), [after](../../tmp/tasks/O3APPLY/evidence/affected-after.log); scenario JSON: [before T-02-15](../../tmp/tasks/O3APPLY/evidence/affected-before/T-02-15.json), [after T-02-15](../../tmp/tasks/O3APPLY/evidence/affected-after/T-02-15.json), [after T-04-24](../../tmp/tasks/O3APPLY/evidence/affected-after/T-04-24.json).
+The same affected IDs, T-02-15 and T-04-24, were run in isolation before and after the change. Both tagged IDs passed against their respective assertions; the old PASS asserted the superseded behavior and is not evidence for E02. Raw outputs: `tmp/tasks/O3APPLY/evidence/affected-before.log` and `tmp/tasks/O3APPLY/evidence/affected-after.log`; scenario JSON: `tmp/tasks/O3APPLY/evidence/affected-before/T-02-15.json`, `tmp/tasks/O3APPLY/evidence/affected-after/T-02-15.json`, and `tmp/tasks/O3APPLY/evidence/affected-after/T-04-24.json`.
 
 | Case | Before | After |
 |---|---|---|
@@ -74,33 +74,33 @@ E01/E03/E05/E06 use narrow contract/type/fake fixtures; E04 adds factual-time bo
 
 ## Per-ID results
 
-Each row passed in R1 and R2; the links below point to R2 evidence.
+Each row passed in R1 and R2. The evidence filenames below are from the R2 run in `tmp/tasks/A4b/run-6K1BmtzI/`; the raw evidence is not checked into Git.
 
 | Blocking group | ID | Script | Result / exercised condition | Evidence |
 |---|---|---|---|---|
-| Identity | T-01-4 | identity.mjs | PASS: live harness, new MCP PID/CallerId/context, continuous owner and original outcome | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-01-4.json) |
-| Identity | T-01-5 | identity.mjs | PASS: same harness PID/start switches session; old report/resume rejected; history retained | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-01-5.json) |
-| Identity | T-01-27 | identity.mjs | PASS: cc→Codex synthetic source/header/config path, initialize/list and spoof rejection, fork only claimed, old claim rejected, two homes | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-01-27.json) |
-| Identity | T-01-33 | identity.mjs | PASS: missing/native toolUseId rejected before context/idempotency; proven root accepted | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-01-33.json) |
-| Execution | T-02-1 | execution.mjs | PASS: two MCP OS processes, positive lock contention, one intent/submission; divergent parameters rejected | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-1.json) |
-| Execution | T-02-3 | execution.mjs | PASS: MCP restart after response and SIGKILL after submission/before reply both replay original outcome | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-3.json) |
-| Execution | T-02-4 | execution.mjs | PASS: atomic rekey/read/crash, unchanged outcome/time/origin, restart/closed-alias replay, new proc generation isolated | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-4.json) |
-| Execution | T-02-5 | execution.mjs | PASS: parameter/outcome/double-alias merge conflicts roll back, audit, and submit nothing | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-5.json) |
-| Execution | T-02-6 | execution.mjs | PASS: eight intent cuts and seven terminal cuts preserve all-or-nothing state/event/slot/claim commits | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-6.json) |
-| Execution | T-02-8 | execution.mjs | PASS: 0/30000/30001 ms reserved boundaries; two supervisors/one ticket; heartbeat alone, crash and late-fence rejection | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-8.json) |
-| Execution | T-02-12 | execution.mjs | PASS: N versus log/nonzero-supervisor; command-before-writeback crash remains uncertain without resubmission | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-12.json) |
-| Recovery | T-02-14 | execution.mjs | PASS: native 0/7, actual shell 0/137 with NULL native, N/Q, actual S/T/Z and escaped writers; D classification only synthetic | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-14.json) |
-| Recovery | T-02-15 | execution.mjs | PASS: live-group signals hold slot; exit-before-cancel with delayed receipt import stays ended; unknown ordering ends/releases with cancel_timing_unknown and null cancelResult; positive before-exit/after-exit and incomplete-proof counterexamples retained | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-02-15.json) |
-| Recovery | T-04-3 | recovery.mjs | PASS: actual shell/harness stamps differ; exec/direct argv preserve instance; sourced native versus separate shell result | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-3.json) |
-| Recovery | T-04-5 | recovery.mjs | PASS: actual leader exit/S/T/Z and separate-session escapes; D classification only synthetic | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-5.json) |
-| Recovery | T-04-19 | recovery.mjs | PASS: armed/submitting/after-spawn SIGKILL; actual paused launcher blocks N and can later submit | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-19.json) |
-| Recovery | T-04-21 | recovery.mjs | PASS: reserved/armed N and zero late submissions; submitting/paused launcher never treated as N | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-21.json) |
-| Recovery | T-04-24 | recovery.mjs | PASS: receiptless Q ended/cancelled, plus accepted unknown chronology ended with persistent note; each missing predicate keeps uncertain/slot | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-24.json) |
-| Recovery | T-04-25 | recovery.mjs | PASS: separate recovery process sees live/unknown/empty; H/ticket/exit/submit denied; synthetic cross-boot refuses PGID scan | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-25.json) |
-| Recovery | T-04-30 | recovery.mjs | PASS: saved accepted A8 context/status/TTY/scope/fault evidence checked with version/foreground boundaries | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-30.json) |
-| Recovery | T-04-36 | recovery.mjs | PASS: new supervisor SIGKILL and parent-MCP exit distinguished; slot/interaction assertions plus saved TTY evidence | [JSON](../../tmp/tasks/A4b/run-6K1BmtzI/T-04-36.json) |
+| Identity | T-01-4 | identity.mjs | PASS: live harness, new MCP PID/CallerId/context, continuous owner and original outcome | `T-01-4.json` |
+| Identity | T-01-5 | identity.mjs | PASS: same harness PID/start switches session; old report/resume rejected; history retained | `T-01-5.json` |
+| Identity | T-01-27 | identity.mjs | PASS: cc→Codex synthetic source/header/config path, initialize/list and spoof rejection, fork only claimed, old claim rejected, two homes | `T-01-27.json` |
+| Identity | T-01-33 | identity.mjs | PASS: missing/native toolUseId rejected before context/idempotency; proven root accepted | `T-01-33.json` |
+| Execution | T-02-1 | execution.mjs | PASS: two MCP OS processes, positive lock contention, one intent/submission; divergent parameters rejected | `T-02-1.json` |
+| Execution | T-02-3 | execution.mjs | PASS: MCP restart after response and SIGKILL after submission/before reply both replay original outcome | `T-02-3.json` |
+| Execution | T-02-4 | execution.mjs | PASS: atomic rekey/read/crash, unchanged outcome/time/origin, restart/closed-alias replay, new proc generation isolated | `T-02-4.json` |
+| Execution | T-02-5 | execution.mjs | PASS: parameter/outcome/double-alias merge conflicts roll back, audit, and submit nothing | `T-02-5.json` |
+| Execution | T-02-6 | execution.mjs | PASS: eight intent cuts and seven terminal cuts preserve all-or-nothing state/event/slot/claim commits | `T-02-6.json` |
+| Execution | T-02-8 | execution.mjs | PASS: 0/30000/30001 ms reserved boundaries; two supervisors/one ticket; heartbeat alone, crash and late-fence rejection | `T-02-8.json` |
+| Execution | T-02-12 | execution.mjs | PASS: N versus log/nonzero-supervisor; command-before-writeback crash remains uncertain without resubmission | `T-02-12.json` |
+| Recovery | T-02-14 | execution.mjs | PASS: native 0/7, actual shell 0/137 with NULL native, N/Q, actual S/T/Z and escaped writers; D classification only synthetic | `T-02-14.json` |
+| Recovery | T-02-15 | execution.mjs | PASS: live-group signals hold slot; exit-before-cancel with delayed receipt import stays ended; unknown ordering ends/releases with cancel_timing_unknown and null cancelResult; positive before-exit/after-exit and incomplete-proof counterexamples retained | `T-02-15.json` |
+| Recovery | T-04-3 | recovery.mjs | PASS: actual shell/harness stamps differ; exec/direct argv preserve instance; sourced native versus separate shell result | `T-04-3.json` |
+| Recovery | T-04-5 | recovery.mjs | PASS: actual leader exit/S/T/Z and separate-session escapes; D classification only synthetic | `T-04-5.json` |
+| Recovery | T-04-19 | recovery.mjs | PASS: armed/submitting/after-spawn SIGKILL; actual paused launcher blocks N and can later submit | `T-04-19.json` |
+| Recovery | T-04-21 | recovery.mjs | PASS: reserved/armed N and zero late submissions; submitting/paused launcher never treated as N | `T-04-21.json` |
+| Recovery | T-04-24 | recovery.mjs | PASS: receiptless Q ended/cancelled, plus accepted unknown chronology ended with persistent note; each missing predicate keeps uncertain/slot | `T-04-24.json` |
+| Recovery | T-04-25 | recovery.mjs | PASS: separate recovery process sees live/unknown/empty; H/ticket/exit/submit denied; synthetic cross-boot refuses PGID scan | `T-04-25.json` |
+| Recovery | T-04-30 | recovery.mjs | PASS: saved accepted A8 context/status/TTY/scope/fault evidence checked with version/foreground boundaries | `T-04-30.json` |
+| Recovery | T-04-36 | recovery.mjs | PASS: new supervisor SIGKILL and parent-MCP exit distinguished; slot/interaction assertions plus saved TTY evidence | `T-04-36.json` |
 
-Signal cleanup evidence: [`signal-cleanup.log`](../../tmp/tasks/A4b/signal-cleanup.log).
+Signal cleanup evidence: `tmp/tasks/A4b/signal-cleanup.log`.
 
 ## Limits and missing evidence
 

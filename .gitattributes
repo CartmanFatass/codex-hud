@@ -21,3 +21,4 @@ tests/fixtures/workboard-frames/*.txt whitespace=-blank-at-eol
 /tsconfig.test.json export-ignore
 /.prettierignore export-ignore
 /.prettierrc.json export-ignore
+/.rgignore export-ignore

@@ -143,7 +143,7 @@ environment still go to the existing bounded summary reader. No normalized copy
 substitutes for its identity input, and summary facts never replace native
 model/context/cost. Summary wording, `partial`, ordering, expiry, lineage,
 nullable totals and budget are unchanged. Missing/unavailable summary leaves a
-nonempty native line. See [summary boundaries](delegation-summary.md).
+nonempty native line. See [summary boundaries](../archive/statusline/delegation-summary.md).
 
 The renderer does no filesystem, network, subprocess, provider, Git, transcript,
 clock or environment reads. **The entire product command is not I/O-free:** it

@@ -1,8 +1,8 @@
 # Agent guide (remote orchestration)
 
-> **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](docs/cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
+> **2026-11-05 cloud-development update:** See [the archived cloud handbook and revised C–F roadmap](docs/archive/cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
 
-> **2026-11-06 owner clarification:** [Project repair authorization](docs/cloud-development/cloud-development.md#owner-clarification-project-repair-authorization-2026-11-06) supersedes earlier repair-count limits and count-triggered approval stops, including those repeated in historical briefs and reviews. Continue authorized in-scope repairs with fresh independent re-checks; substantive scope, contract, permission and safety boundaries, model roles and merge/production gates remain unchanged.
+> **2026-11-06 owner clarification:** [Project repair authorization](docs/archive/cloud-development/cloud-development.md#owner-clarification-project-repair-authorization-2026-11-06) supersedes earlier repair-count limits and count-triggered approval stops, including those repeated in historical briefs and reviews. Continue authorized in-scope repairs with fresh independent re-checks; substantive scope, contract, permission and safety boundaries, model roles and merge/production gates remain unchanged.
 
 This repo is codex-hud, being turned into one HUD for Claude Code, Codex and pi. The product scope is concept §15,
 "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev": a fixed-role MCP facade, herdr for CLI
@@ -15,13 +15,13 @@ routing that does not apply here.
 ## Read first
 
 1. `docs/handoff/STATE.md`: current status and the owner's open questions (the old package queue, merge rules and local-only list are in the archive next to it).
-2. `docs/cloud/dots.md`: roles, the loop, and the prompts for subagents.
-3. `docs/cloud/README.md`: rules every agent keeps and the check set. The Claude-specific tool names there (Agent
+2. `docs/archive/cloud/dots.md`: historical roles, loop, and prompts for subagents.
+3. `docs/archive/cloud/README.md`: historical rules and check set. The Claude-specific tool names there (Agent
    tool, SendMessage) map to dots subagents.
 4. `docs/ARCHITECTURE.md`: the two processes (bar `src/index.ts`, panel `src/tree-page.ts`), data collection,
    rendering, recipes, and §8, the rules every change keeps. What users see is in `docs/reference.md`.
-5. The binding specs: `docs/contracts/01–07`, `docs/design/hud-information-design.md`, and
-   `docs/universal-hud-concept.md` §15 (the decision log; current scope entry "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev").
+5. Historical R0–R7 specs: `docs/archive/contracts/`, `docs/archive/design/hud-information-design.md`, and
+   `docs/archive/root/universal-hud-concept.md` §15 (including the 2026-11-07 scope-convergence entry). The current boundary is `docs/spec.md`.
 
 Directory notes live in `CLAUDE.md` files next to the code: `src/`, `src/collectors/`, `src/render/`,
 `src/render/lines/` and `bin/`. Read the one for the directory you change.

@@ -34,7 +34,7 @@ no provider credentials, NODE_OPTIONS or ambient configuration. The command runs
 `process.execPath` with the actual absolute `bin/hud-statusline`, no shell, from that
 owned directory. It does not execute a provider CLI, contact a provider, read real
 settings/transcripts, or install/change a default. Existing
-[preview/apply/restore](product-settings.md) is separate and is not invoked.
+[preview/apply/restore](../archive/statusline/product-settings.md) is separate and is not invoked.
 
 Five positive populations run serially:
 

@@ -16,8 +16,7 @@ not establish all daemon configurations or future harness stamping rules.
 
 ## Method and retained evidence
 
-Ignored raw evidence and run scripts are in
-[`tmp/tasks/B1/`](../../tmp/tasks/B1/). All projects/HUD_HOME directories were
+Raw evidence and run scripts were saved in `tmp/tasks/B1/` (not checked into Git). All projects/HUD_HOME directories were
 new temporary directories. MCP configuration was command-line-only. No user
 configuration, credential, session transcript, or cache was edited. Only probe-owned
 sessions were inspected. MCP observations retained allowlisted fields and exact
