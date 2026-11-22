@@ -30,12 +30,15 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 test('hud_ask does not block other worker MCP calls while Codex queue is slow', async (t) => {
   const f = await fixture(t);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic worker question.' });
-  f.overrideBin('herdr', `#!${process.execPath}
-const [, action] = process.argv.slice(2);
-const result = action === 'get'
-  ? { pane: { agent: 'codex', agent_session: { value: 'synthetic-thread' } } }
-  : { process_info: { foreground_processes: [{ name: 'codex', pid: process.ppid }] } };
-console.log(JSON.stringify({ result }));
+  // hud_create checks the caller's pane for a queue watcher in the background (its second `pane get`). If that
+  // check ran after the Codex stub below, it would start a watcher that takes the delivery ("delivered by hud watch").
+  await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2);
+  // A shell stub: a Node one can miss the 2 s pane-lookup budget under full-suite load and fall back to hud watch.
+  f.overrideBin('herdr', `#!/bin/sh
+case "$2" in
+  get) echo '{"result":{"pane":{"agent":"codex","agent_session":{"value":"synthetic-thread"}}}}' ;;
+  *) echo "{\\"result\\":{\\"process_info\\":{\\"foreground_processes\\":[{\\"name\\":\\"codex\\",\\"pid\\":$PPID}]}}}" ;;
+esac
 `);
   const queued = join(f.root, 'queue-start');
   f.overrideBin('codex', `#!${process.execPath}
