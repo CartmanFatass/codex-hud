@@ -69,6 +69,10 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - `hud_create` can override model and thinking for one job. Per `docs/delegation.md`, the main session
   passes `preset`, `on`, `model` or `thinking` only if the owner asks for it in that request; no carryover.
   Exception: `preset: astra` for `imp` on hard slices (several modules, review fixes, design-heavy). (22.20, 22.22)
+- Cross-provider review (owner 2026-11-22): a `reviewer` (or an `oracle` asked to review) created with the reviewed
+  jobs in `from_jobs` runs on the first available place in its run list whose provider differs from every reviewed
+  job's provider; failing that, from the provider of most of the reviewed work. An explicit `on`, `preset` or `model`
+  wins. The create result says which provider was avoided and why. (22.22)
   For pi roles, named switches cover pi-lens, MCP adapter, tokens/s, UI extensions, helper pane and personal
   skills; pass extra pi args as given. (11.02)
   Pi workers skip the MCP adapter when no MCP servers are configured unless `mcp: true` is set. (22.17)
