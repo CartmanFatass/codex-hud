@@ -8,7 +8,7 @@ import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import { initialHomeTab, initialProjectTab, initialControlTab, viewPrefs, reconcileMonitor, type MonitorModes, type MonitorState } from './monitor-state.js';
+import { initialHomeTab, initialProjectTab, initialControlTab, viewPrefs, reconcileMonitor, type MonitorState } from './monitor-state.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
@@ -41,7 +41,7 @@ export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type 
 export { monitorRowAt, monitorItemAt, handleMonitorInput } from './monitor-input.js';
 
 // `agents` is the internal main viewport id, not a separate pane or tab.
-export type MonitorPane = keyof MonitorModes;
+export type MonitorPane = 'agents' | 'changes' | 'details';
 export interface RowControl {
   kind: MonitorControl['kind'];
   item?: string;
@@ -183,13 +183,7 @@ export interface MonitorOutcome {
 }
 export function initialMonitorState(settings?: HudSettings): MonitorState {
   return { activeTab: 'home', home: initialHomeTab(), project: initialProjectTab(), control: initialControlTab(),
-    exp: { scroll: 0 }, prefs: settings ? viewPrefs(settings) : { ...DEFAULT_PANEL_VIEW }, modes: monitorModes(settings), lastChangesScroll: 0 };
-}
-export function monitorModes(settings?: HudSettings): MonitorModes {
-  return { agents: 'open', changes: settings?.changesPane ?? 'closed', details: settings?.detailsPane ?? 'closed' };
-}
-export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
-  return { changesPane: state.modes.changes, detailsPane: state.modes.details };
+    exp: { scroll: 0 }, prefs: settings ? viewPrefs(settings) : { ...DEFAULT_PANEL_VIEW }, lastChangesScroll: 0 };
 }
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();

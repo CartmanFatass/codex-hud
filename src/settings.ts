@@ -22,9 +22,6 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   details: boolean;
   refreshMs: number;
   treeWidth: number;
-  // Monitor visibility is independent of legacy boolean panel preferences.
-  changesPane: 'open' | 'closed';
-  detailsPane: 'open' | 'closed';
   worktreeRoot: string;
   modelEnabled: boolean;
   homeMode: 'default' | 'recommended';
@@ -77,8 +74,6 @@ export function defaultSettings(): HudSettings {
     details: true,
     refreshMs: 1000,
     treeWidth: DEFAULT_WIDTH,
-    changesPane: 'closed',
-    detailsPane: 'closed',
     worktreeRoot: '',
     modelEnabled: (() => {
       try {
@@ -129,8 +124,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
-  changesPane: oneOf('open', 'closed'),
-  detailsPane: oneOf('open', 'closed'),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
   homeMode: oneOf('default', 'recommended'),
@@ -154,14 +147,10 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   icons: oneOf('unicode', 'text'),
 };
 
-const PANE_KEYS = ['changesPane', 'detailsPane'] as const;
-
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
-  const values = { ...(raw as Record<string, unknown>) };
-  // A pane is open or closed; one saved folded, as earlier versions could, is closed.
-  for (const key of PANE_KEYS) if (values[key] === 'folded') values[key] = 'closed';
+  const values = raw as Record<string, unknown>;
   for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
       Object.assign(result, { [key]: values[key] });

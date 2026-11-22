@@ -549,7 +549,7 @@ test('Each Project page keeps its own cursor and scroll, leaving it and across a
   assert.deepEqual(plain(frame), before);
   // The panel restarts itself with the whole state, sets included.
   process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: frame.state, settings: null });
-  const place = readPanelPlace();
+  const place = readPanelPlace(frame.state.prefs);
   assert.equal(projectPageOf(place.state), 'progress');
   frame = draw(place.state);
   assert.deepEqual([frame.state.project.nav.cursor, frame.state.project.nav.scroll], [cursor, scroll]);

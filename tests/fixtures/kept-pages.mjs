@@ -139,7 +139,7 @@ export function pageFixture(home) {
   };
   const apiWorker = board.workers.find((w) => w.id.endsWith('1')),
     askingWorker = board.workers.find((w) => w.id.endsWith('4'));
-  const inspect = (item) => (withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: item }, modes: { agents: 'open', changes: 'closed', details: 'open' } }));
+  const inspect = (item) => (withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: item } }));
   const target = (w) => ({ kind: 'worker', laneId: w.laneId, workerId: w.id });
   const states = {
     home: initialMonitorState(),
@@ -147,7 +147,7 @@ export function pageFixture(home) {
     job: inspect(target(apiWorker)),
     asking: inspect(target(askingWorker)),
     help: { ...initialMonitorState(), help: {} },
-    changes: withState(initialMonitorState(), { subpage: { kind: 'changes', scroll: 0 }, modes: { agents: 'open', changes: 'open', details: 'closed' } }),
+    changes: withState(initialMonitorState(), { subpage: { kind: 'changes', scroll: 0 } }),
   };
   // Help lists three more keys (the job micro-actions) and still shows the skills catalog under them.
   const render = (page, width, lang = 'en', height = page === 'help' ? 50 : 40) => {

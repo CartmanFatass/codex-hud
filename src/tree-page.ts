@@ -67,8 +67,6 @@ import {
   fit,
   initialMonitorState,
   handleMonitorInput,
-  monitorModes,
-  monitorPreferences,
   nextRepaintDelay,
   msUntilAgeChanges,
   msUntilCountdownChanges,
@@ -278,8 +276,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   setLanguage(resolveLanguage(settings.language));
   if (settingsFailure) settingsError = t('Settings: {reason}', { reason: String(settingsFailure) });
   const availableDecisionKeys = () => { try { return decisionKeys(readHudCredentials()); } catch { return undefined; } };
-  let state = place?.state ?? initialMonitorState(settings);
-  if (place?.state) state = reconcileMonitor({ ...state, prefs: { ...state.prefs, experiments: settings.experiments } });
+  let state = reconcileMonitor(place?.state ?? initialMonitorState(settings));
   let expData = expShown(state) ? readExpData(jobPipeline.home) : undefined;
   let settingsPage: SettingsPageState | null = place?.settings
     ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
@@ -602,7 +599,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       readingAgentContext = false;
     }
   };
-  const collectionScope = () => `${tree.rootId}:${state.subpage?.kind ?? 'main'}:${JSON.stringify(state.modes)}`;
+  const collectionScope = () => `${tree.rootId}:${state.subpage?.kind ?? 'main'}`;
   const collect = async (force = false) => {
     if (force) {
       adaptive = forceAdaptivePoll(adaptive);
@@ -884,7 +881,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       configureModel();
 
       armCollect();
-      state = { ...applyViewPrefs(framePlace(state), settings), modes: monitorModes(settings) };
+      state = applyViewPrefs(framePlace(state), settings);
       if (!settings.experiments) expData = undefined;
       worktrees = null;
       void refreshGit();
@@ -1025,14 +1022,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         finish();
         break;
       }
-      if (JSON.stringify(state.modes) !== JSON.stringify(previous.modes)) {
-        try {
-          settings = saveSettings(monitorPreferences(state));
-        } catch (err) {
-          settingsError = t('Panel preferences could not be saved: {reason}', { reason: String(err) });
-          error = settingsError;
-        }
-      }
       if (result.action?.type === 'open-files') {
         void openEditorPane(result.action.files, process.env).catch((err) => {
           error = String(err);
@@ -1157,7 +1146,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         let decisionApi = settings.decisionApi;
         try { decisionApi = loadSettings().decisionApi; } catch { /* Keep the loaded draft. */ }
         settingsPage = {
-          draft: { ...settings, ...monitorPreferences(state), decisionApi },
+          draft: { ...settings, decisionApi },
           decisionKeys: availableDecisionKeys(),
           selected: 0,
           offset: 0,

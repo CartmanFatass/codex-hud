@@ -12,6 +12,7 @@ import { build } from '../../docs/design/control-tab/gen/frames.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { DEFAULT_PANEL_VIEW } from '../../dist/settings.js';
 import { finishChain } from '../../dist/render/chain-input.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
@@ -109,9 +110,8 @@ test('legacy Project/control continuation returns to the selected role on Contro
   const f = await fixture(t), data = richControl(f.data);
   for (const panelLayout of ['classic', 'split']) {
     const projectCursor = 'project:role:reviewer:0';
-    process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: { mainTab: 'project', projectPage: 'control', projectRoot: PROJECTS[1].root, projectCursor, panelLayout } },
-      (_k, value) => value instanceof Set ? { panelSet: [...value] } : value);
-    const place = readPanelPlace();
+    process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: { mainTab: 'project', projectPage: 'control', projectRoot: PROJECTS[1].root, projectCursor } });
+    const place = readPanelPlace({ ...DEFAULT_PANEL_VIEW, panelLayout });
     assert.equal(place.state.activeTab, 'control');
     assert.equal(projectPageOf(place.state), undefined);
     assert.equal(place.state.selectedProject, PROJECTS[1].root);

@@ -171,7 +171,7 @@ test('Inspector uses collected files, selects the open question/report/brief and
   const report = renderMonitor({
     tree: TREE,
     workboard: f.board,
-    state: withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: done.laneId, workerId: done.id } }, modes: { agents: 'open', details: 'open', changes: 'closed' } }),
+    state: withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: done.laneId, workerId: done.id } } }),
     width: 80,
     height: 40,
     nowMs: NOW,

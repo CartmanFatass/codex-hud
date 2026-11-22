@@ -443,7 +443,7 @@ test('Split ratio: = and + grow the list, - grows the preview, a press on the ru
   d.run('list-shrink'); d.run('list-shrink'); d.run('list-shrink');
   const saved = d.state.prefs.splitRatio, held = process.env.HUD_PANEL_RELOAD_PLACE;
   process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: d.state, settings: null });
-  const place = readPanelPlace();
+  const place = readPanelPlace({ ...defaultSettings(), panelLayout: 'split' });
   if (held === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE; else process.env.HUD_PANEL_RELOAD_PLACE = held;
   assert.equal(place.state.prefs.splitRatio, saved);
   const reloaded = driver(busy, { height: 24 }).at(place.state);

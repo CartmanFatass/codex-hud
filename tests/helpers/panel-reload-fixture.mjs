@@ -18,7 +18,7 @@ export async function until(predicate, message, timeout = 10000) {
   while (Date.now() < end) { if (predicate()) return; await delay(30); }
   assert.fail(message);
 }
-export function fixture(t) {
+export function fixture(t, settings = {}) {
   const root = mkdtempSync(join(tmpdir(), 'hud-panel-reload-'));
   const env = { PATH: process.env.PATH, HOME: join(root, 'home'), HUD_HOME: join(root, 'hud'),
     CODEX_HOME: join(root, 'codex'), CLAUDE_CONFIG_DIR: join(root, 'claude'), PI_CODING_AGENT_DIR: join(root, 'pi'),
@@ -27,10 +27,11 @@ export function fixture(t) {
   for (const key of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'CODEX_HUD_CWD'])
     mkdirSync(env[key], { recursive: true });
   writeFixtureFile(join(root, 'package.json'), '{"type":"module"}');
-  writeFixtureFile(join(env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ modelEnabled: false, refreshMs: 100, language: 'en', theme: 'terminal' }));
+  const settingsBody = JSON.stringify({ modelEnabled: false, refreshMs: 100, language: 'en', theme: 'terminal', ...settings });
+  writeFixtureFile(join(env.HUD_HOME, 'hud-settings.json'), settingsBody);
   const stops = [];
   t.after(async () => { for (const stop of stops) await stop(); rmSync(root, { recursive: true, force: true }); });
-  return { root, env, stops };
+  return { root, env, stops, settingsBody };
 }
 export function launch(f, script, args = [], extra = {}) {
   const child = spawn(process.execPath, [script, ...args], { env: { ...f.env, ...extra }, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -60,8 +61,8 @@ function stagePanel(from, to, localFile, nested) {
   }
 }
 
-export function live(t, initialPlace, { bound = false, width = false, columns = 100 } = {}) {
-  const f = fixture(t);
+export function live(t, initialPlace, { bound = false, width = false, columns = 100, settings } = {}) {
+  const f = fixture(t, settings);
   f.env.HUD_PANEL_RELOAD_QUIET_MS = String(QUIET_MS);
   if (bound) {
     const source = join(f.env.CLAUDE_CONFIG_DIR, 'projects', 'synthetic');
@@ -115,12 +116,14 @@ import {PanelReload,encodePanelPlace} from './dist/utils/panel-reload.js';
 import {runLivePage} from './dist/tree-page.js';
 process.stdout.columns=${columns};process.stdout.rows=35;
 const file=${JSON.stringify(log)};
-const log=v=>writeFixtureFile(file,readFileSync(file,'utf8') + JSON.stringify(v,(_k,v)=>v instanceof Set?{panelSet:[...v]}:v)+'\\n');
+const log=v=>writeFixtureFile(file,readFileSync(file,'utf8') + JSON.stringify(v)+'\\n');
 log({start:true,pid:process.pid,argv:process.argv.slice(2),test:process.env.SYNTHETIC});
 const original=PanelReload.prototype.restart;
 PanelReload.prototype.restart=function(place,finish){log({restart:JSON.parse(encodePanelPlace(place)),at:Date.now()});return original.call(this,place,finish);};
 await runLivePage();process.exit(process.exitCode??0);`);
-  const run = launch(f, runner, ['same argv'], { SYNTHETIC: 'same env', HUD_PANEL_RELOAD_PLACE: encodePanelPlace(typeof initialPlace === 'function' ? initialPlace(state) : initialPlace ?? { state, settings: null }), CODEX_HUD_INITIAL_COMMAND: 'help' });
+  const place = typeof initialPlace === 'function' ? initialPlace(state) : initialPlace ?? { state, settings: null };
+  const run = launch(f, runner, ['same argv'], { SYNTHETIC: 'same env',
+    HUD_PANEL_RELOAD_PLACE: typeof place === 'string' ? place : encodePanelPlace(place), CODEX_HUD_INITIAL_COMMAND: 'help' });
   const events = () => readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   return { ...f, ...run, entry, events, state, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
     baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart),

@@ -361,7 +361,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   if (key === 'escape' && inspector) {
     next = closeSubpage(next);
-    next.modes = { ...next.modes, details: 'closed' };
     return result();
   }
   if (!main && !inspector) return null;

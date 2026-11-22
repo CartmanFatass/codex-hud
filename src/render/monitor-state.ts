@@ -81,8 +81,6 @@ export type SubpageState = { kind: 'inspector'; target: WorkTarget; cursor?: str
   | { kind: 'changes'; scroll: number };
 export interface HelpOverlay { scroll?: number }
 export type ViewPrefs = Pick<HudSettings, 'experiments' | 'panelLayout' | 'projectLayout' | 'acceptance' | 'cardStallMinutes' | 'cardFoldMinutes' | 'cardHideMinutes'> & { splitRatio?: number };
-/** Legacy pane settings still round-trip until the reload/settings cleanup in S4. */
-export type MonitorModes = Record<'agents' | 'changes' | 'details', 'open' | 'closed'>;
 export interface MonitorState {
   activeTab: MainTab;
   selectedProject?: string;
@@ -96,7 +94,6 @@ export interface MonitorState {
   help?: HelpOverlay;
   /** Changes reopens at its last scroll position. */
   lastChangesScroll: number;
-  modes: MonitorModes;
 }
 export const activeTabState = (state: MonitorState) => state.activeTab === 'project' ? state.project : state.activeTab === 'home' ? state.home : undefined;
 export const activeFilter = (state: MonitorState) => activeTabState(state)?.filter;
@@ -199,8 +196,7 @@ export function closeSubpage(state: MonitorState): MonitorState {
   }
 }
 export function openSubpage(state: MonitorState, subpage: SubpageState): MonitorState {
-  const base = closeSubpage(state);
-  return { ...base, subpage, modes: { ...base.modes, [subpage.kind === 'inspector' ? 'details' : 'changes']: 'open' } };
+  return { ...closeSubpage(state), subpage };
 }
 export function transitionTab(state: MonitorState, tab: MainTab): MonitorState {
   const activeTab = tab === 'exp' && !state.prefs.experiments ? 'home' : tab;
@@ -209,7 +205,6 @@ export function transitionTab(state: MonitorState, tab: MainTab): MonitorState {
   const resetList = state.activeTab !== 'control' && activeTab !== 'control';
   const project = state.project;
   return { ...base, activeTab, overlay: undefined, control: { ...state.control, notice: undefined },
-    modes: { ...base.modes, agents: 'open' },
     home: state.activeTab === 'home' ? { ...state.home, filter: activeTab === 'home' ? state.home.filter : undefined, trySelection: undefined } : state.home,
     project: { ...project, ...(state.activeTab === 'project' && activeTab !== 'project' ? { filter: undefined, trySelection: undefined } : {}),
       ...(resetList ? { view: project.view.kind === 'projects-list' ? { kind: 'hub' } : project.view, fromProjectsList: false } : {}) } };
