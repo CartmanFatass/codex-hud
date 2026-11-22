@@ -1,6 +1,6 @@
 # 08: Coalesce settlement notices
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** Settlement lines that arrive within a few seconds become one notice in hud watch and the other delivery paths (src/cli/watch.ts:20-21), so a large main-session context is woken once; questions stay immediate. Small.

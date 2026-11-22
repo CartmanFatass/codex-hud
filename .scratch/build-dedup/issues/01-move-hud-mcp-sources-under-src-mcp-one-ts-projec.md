@@ -1,6 +1,6 @@
 # 01: Move hud-mcp sources under src/mcp, one TS project
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** Proposal docs/neon-proposal/03-build-dedup-and-clean-dist.md Slice 1 (:283-312): git mv packages/hud-mcp/src/*.ts to src/mcp, rewrite bin/extension/test/doc paths, drop packages/hud-mcp/tsconfig.json and its dist. Owner defaults taken: Q2 keep build:hud-mcp as an alias, Q3 hint on build before removing the old dist.

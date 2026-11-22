@@ -1,6 +1,6 @@
 # 01: Async reap in hud-watch with per-job isolation
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** docs/neon-proposal/06-async-watcher-and-supervisor.md S1: the watcher reaps jobs with async, cancellable commands (bounded concurrency, kill grace), so one slow reap no longer freezes settlement, checks and other jobs for up to 135 s; graceful SIGTERM/SIGINT. Runs after build-dedup/01 (bin import paths). Owner defaults: no new env vars, hud-check only unref'd.

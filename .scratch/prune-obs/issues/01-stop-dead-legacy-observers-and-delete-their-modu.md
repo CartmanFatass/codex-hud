@@ -1,6 +1,6 @@
 # 01: Stop dead legacy observers and delete their modules
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** Proposal docs/neon-proposal/01-prune-legacy-observers.md Slice 1 (PRUNE-OBS-01, :406-431): the panel main loop stops spawning herdr agent list and sweeping assoc/native-relations/jev-runtime/delegate.json; the 15 listed dead files go; live files trimmed. No user-visible change.

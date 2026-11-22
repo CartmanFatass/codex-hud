@@ -1,6 +1,6 @@
 # 02: Async herdr calls in the CLI supervisor
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 01
 
 **What to build:** 06 S2: hud-cli.mjs and quiet-decision use async herdr calls with an external abort signal, so a stop or closed tab aborts in-flight work at once; /quit cancelled by tab_closed records closed, not failed.

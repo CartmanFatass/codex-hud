@@ -1,6 +1,6 @@
 # 02: Control and EXP tab state; control-navigation goes
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 01
 
 **What to build:** 04 S2: ControlTabState/ExpTabState, ClassicSplitNav, delete control-navigation.ts.

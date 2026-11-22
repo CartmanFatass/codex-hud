@@ -1,6 +1,6 @@
 # 01: One event-driven file wait for hud_read and hud_wait
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** docs/neon-proposal/07-event-driven-waits-and-leases.md S1: src/utils/fs-wait.ts (fs.watch + fallback tick); hud_read({job, wait_ms}) and waitJobs use it instead of sleep polling (paths now src/mcp/thin-main.ts). Owner default Q3: waitJobs converts too. Tool results unchanged.

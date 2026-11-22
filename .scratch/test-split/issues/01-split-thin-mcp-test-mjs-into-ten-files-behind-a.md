@@ -1,6 +1,6 @@
 # 01: Split thin-mcp.test.mjs into ten files behind a shared harness
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** docs/neon-proposal/09-split-tests-for-parallel-speed.md S1: tests/helpers/thin-mcp-harness.mjs plus the ten tests/unit/thin-mcp-*.test.mjs files; delete tests/unit/thin-mcp.test.mjs. Pure move: every existing test case kept with its body unchanged (count them before and after; the sonic count was 158 top-level test( calls / 162 fixture uses), no production code change. Line refs in the proposal drift; check against the current file.

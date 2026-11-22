@@ -1,6 +1,6 @@
 # 04: Split tree-page into panel modules
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** S4 (:647): tree-page.ts splits into src/panel/*; runs after prune-obs is done (owner default). Frames, keys and PanelReload unchanged.

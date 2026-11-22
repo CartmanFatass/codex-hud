@@ -1,6 +1,6 @@
 # 02: Derived keys, repair of a closed job, one send to several jobs, retry_of
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** request_key and message_key become optional: the HUD derives them (hash of pane, role, cwd and task; job and text for a send), an explicit key still wins. hud_send to a job closed by a read creates the repair job itself with the earlier brief and report as references and returns continued_as. hud_send accepts jobs: [...] and sends only to working jobs, naming those skipped. hud_create({retry_of}) copies a failed job's brief and options onto the next available place. Proposal A3, A6, A7.

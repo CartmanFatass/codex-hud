@@ -1,6 +1,6 @@
 # 04: Leases for shared resources
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** Starts after WORKER-MCP (worker-mode tool list). hud_lease({name, release?}) in both modes: an exclusive file under $HUD_HOME/leases/ keyed by project root and name; the call waits a bounded time inside the caller's own turn and returns granted or held_by; a lease whose holder job is terminal or whose process is gone is reclaimed by the next caller. No resident process. Control shows a lease row (name, holder, waiting, age). Proposal B1.

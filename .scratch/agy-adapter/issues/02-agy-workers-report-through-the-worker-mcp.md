@@ -1,6 +1,6 @@
 # 02: agy workers report through the worker MCP
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** test-split/04
 
 **What to build:** Proposal 25 §2.2.

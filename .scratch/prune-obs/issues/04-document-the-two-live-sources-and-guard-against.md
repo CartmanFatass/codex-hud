@@ -1,6 +1,6 @@
 # 04: Document the two live sources and guard against zombies
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 02, 03
 
 **What to build:** Slice 4 (PRUNE-OBS-04, :477-489): docs/ARCHITECTURE.md §4.5, an anti-zombie test, tests/fakes/pi.mjs guard.
