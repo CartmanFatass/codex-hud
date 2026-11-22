@@ -13,7 +13,7 @@ import { panelDelivery } from './panel-delivery.js';
 import { editTickets, readyTickets } from './local-tickets.js';
 import { startLand, landTask } from './land.js';
 import { activeLand, isFlowId, landEvents, landView, readLand } from './land-state.js';
-import { pruneCreatedJobs, pruneLandTasks, pruneTasks, rememberCreatedJob, rememberLandTask } from './task-bounds.js';
+import { MAX_MCP_TASKS, pruneCreatedJobs, pruneLandTasks, pruneTasks, rememberCreatedJob, rememberLandTask } from './task-bounds.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
@@ -35,7 +35,7 @@ import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
-import { readFileBounded, readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
+import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { isProcAlive, procStat } from '../utils/proc.js';
 import { TryLog } from '../collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
@@ -57,7 +57,7 @@ import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../roles/tool-definitions.js';
 import { checkBinding, CHECKS_FILE, CHECK_TIMEOUT_MS, jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { takeLease } from '../roles/lease.js';
-import { ensureQueueWatcher, notify, paneInfo, watching } from '../roles/notify.js';
+import { ensureQueueWatcher, notify, paneInfo, taskDelivery, watching } from '../roles/notify.js';
 import { adoptProjectJobs, projectJobFilter } from '../roles/job-project.js';
 import { JOB_ID_RE, JobIndexCache, type CachedJsonResult } from '../roles/job-index-cache.js';
 import { sharedRoot } from '../roles/projects.js';
@@ -1955,8 +1955,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     } catch (error) {
       const latest = findJobMutable(id) ?? base;
       finishLaunch(latest, dir, { ...launchError(String(error)), preInput: true }, String(error), false);
-      if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && latest.herdr_pane === scoutTask.pane)
+      if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && latest.herdr_pane === scoutTask.pane) {
         scoutTask.fence = taskFence(latest);
+        persistTask(scoutTask);
+      }
     } finally {
       pendingScouts.delete(id);
     }
@@ -2499,6 +2501,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
       carryTask.reportBefore = row.report_mtime;
       carryTask.attentionBefore = needsAttention(row) ? (statusAt ?? undefined) : undefined;
       if (ok) extendTask(carryTask, latest);
+      else persistTask(carryTask);
     }
     if (!ok) {
       if (batchTasks.get(id) === carryTask) claimTask(carryTask, latest);
@@ -2596,6 +2599,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     ensureWatcher();
     if (taskClient) {
       rememberLandTask(landTasks, flow.flow, landActive);
+      saveTaskReceipt({ id: flow.flow, expiresAt: Date.parse(flow.created_at) + TASK_TTL });
       return { resultType: 'task', ...landTask(hudHome, flow) };
     }
     if (callerPane) void ensureQueueWatcher(callerPane, hudHome);
@@ -3048,9 +3052,81 @@ type TaskView = { status: TaskStatus; statusMessage: string; lastUpdatedAt: stri
 type HudTask = {
   id: string; job: string; role: string; pane: string; createdAt: string; fence?: string;
   reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number;
-  expiresAt?: number; ttlMs?: number;
+  expiresAt?: number; ttlMs?: number; recovered?: true;
 };
 let tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
+
+type TaskReceipt = { id: string; expiresAt: number };
+type JobTaskReceipt = TaskReceipt & Omit<HudTask, 'seenQuestions'> & { seenQuestions: string[] };
+const taskRoot = join(hudHome, 'mcp-tasks');
+const jobTaskId = /^j[0-9a-f]{16}:[0-9a-f]{16}$/;
+const nativeCaller = process.env.CLAUDE_CODE_SESSION_ID || null;
+// Scope receipts to the reconnecting caller, including predictable land IDs. Do not store the native session ID.
+const taskCaller = createHash('sha256').update(JSON.stringify([
+  callerPane, nativeCaller, callerPane || nativeCaller ? null : process.cwd(),
+])).digest('hex').slice(0, 32);
+const taskFile = (id: string) => join(taskRoot, `${id}.${taskCaller}.json`);
+function saveTaskReceipt(receipt: TaskReceipt | JobTaskReceipt) {
+  try { writeJsonPrivate(taskFile(receipt.id), receipt); } catch { /* Live tasks still work without disk recovery. */ }
+}
+function persistTask(task: HudTask) {
+  // Batch notices have no client task ID and stay tied to their live connection.
+  if (!tasks.has(task.id) || task.expiresAt === undefined) return;
+  saveTaskReceipt({ ...task, expiresAt: task.expiresAt, seenQuestions: [...task.seenQuestions] });
+}
+function loadTaskReceipt(id: string): TaskReceipt | JobTaskReceipt | undefined {
+  if (!jobTaskId.test(id) && !isFlowId(id)) return;
+  try {
+    const receipt = readJsonBounded(taskFile(id), 1024 * 1024) as TaskReceipt | JobTaskReceipt;
+    if (receipt.id !== id || !Number.isFinite(receipt.expiresAt) || receipt.expiresAt <= Date.now()) return;
+    if (jobTaskId.test(id) && (!('job' in receipt) || receipt.job !== id.split(':')[0] ||
+      typeof receipt.createdAt !== 'string' || !Array.isArray(receipt.seenQuestions) || !receipt.view)) return;
+    return receipt;
+  } catch { /* Missing, damaged or unreadable receipts are unknown tasks. */ }
+}
+let taskSweep: NodeJS.Timeout | undefined;
+function sweepTaskReceipts(): string[] {
+  const keep: string[] = [], cutoff = Date.now() - TASK_TTL;
+  try {
+    for (const file of readDirSafe(taskRoot)) {
+      const match = /^([^.]+)\.([0-9a-f]{32})\.json(\.\d+\.[0-9a-f-]+\.tmp)?$/.exec(file);
+      if (!match || (!jobTaskId.test(match[1]) && !isFlowId(match[1]))) continue;
+      const path = join(taskRoot, file);
+      try {
+        // Age from the last write is only for cleanup; polling always checks expiresAt.
+        if (fs.lstatSync(path).mtimeMs <= cutoff) fs.unlinkSync(path);
+        else if (!match[3] && match[2] === taskCaller) keep.push(match[1]);
+      } catch { /* The file may have disappeared during a concurrent sweep. */ }
+    }
+  } catch { /* Persistence is best-effort. */ }
+  return keep;
+}
+function recoverTask(receipt: JobTaskReceipt): HudTask {
+  const task: HudTask = { ...receipt, seenQuestions: new Set(receipt.seenQuestions), recovered: true };
+  tasks.set(task.id, task);
+  armExpiry(task);
+  pruneTasks(tasks, Date.now(), evictTask);
+  return task;
+}
+function resumeTaskReceipts() {
+  if (taskSweep) return;
+  const pending = sweepTaskReceipts().map(loadTaskReceipt).filter((entry): entry is JobTaskReceipt =>
+    !!entry && 'job' in entry && entry.view.status === 'working');
+  // Reattach active tasks even if the first call after reconnect is a follow-up instead of a poll.
+  for (const entry of pending.sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+    if (tasks.size >= MAX_MCP_TASKS) break;
+    if (tasks.has(entry.id) || activeTasks.has(entry.job)) continue;
+    try {
+      const job = findJob(entry.job);
+      if (!job || job.herdr_pane !== entry.pane || taskFence(job) !== entry.fence ||
+          (callerPane && taskDelivery(directory(entry.job), callerPane))) continue;
+      const task = recoverTask(entry);
+      activeTasks.set(task.job, task);
+      claimTask(task, job);
+    } catch { /* A broken job receipt must not prevent discovery. */ }
+  }
+  taskSweep = setInterval(sweepTaskReceipts, 60_000).unref();
+}
 type PendingBatchNotice = { job: string; fence: string; status: TaskStatus; text: string };
 let batchTasks = new Map<string, HudTask>();
 let batchPending = new Map<string, PendingBatchNotice>();
@@ -3094,6 +3170,7 @@ function extendTask(task: HudTask, job: Job) {
     tasks.set(task.id, task);
     armExpiry(task);
   }
+  persistTask(task);
   claimTask(task, job);
 }
 function supersedeTask(id: string, detail: string) {
@@ -3105,7 +3182,8 @@ function supersedeTask(id: string, detail: string) {
 function releaseTask(task: HudTask) {
   if (activeTasks.get(task.job) === task) activeTasks.delete(task.job);
   try {
-    if (json<McpTaskMarker>(markerFile(task))?.id === task.id) fs.unlinkSync(markerFile(task));
+    const marker = json<McpTaskMarker>(markerFile(task));
+    if (marker?.id === task.id && marker.pid === process.pid) fs.unlinkSync(markerFile(task));
   } catch { /* Stale delivery markers expire and cannot authorize cancellation. */ }
 }
 const questionFiles = (dir: string) => jobCache.readQa(dir).allQuestionFiles;
@@ -3160,6 +3238,7 @@ function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: s
   task.expiresAt = Date.now() + TASK_TTL;
   armExpiry(task);
   pruneTasks(tasks, Date.now(), evictTask);
+  persistTask(task);
   return { resultType: 'task', ...wireTask(task) };
 }
 function registerBatchTask(task: HudTask | undefined, job: Job, ok: boolean): void {
@@ -3265,6 +3344,7 @@ async function stopBatchDelivery(releaseMarkers: boolean) {
 function updateTask(task: HudTask, status: TaskStatus, statusMessage: string, text?: string): TaskView {
   if (task.view.status !== status || task.view.statusMessage !== statusMessage) {
     task.view = { status, statusMessage, lastUpdatedAt: new Date().toISOString(), ...(text ? { result: taskContent(text) } : {}) };
+    persistTask(task);
   }
   if (status !== 'working') releaseTask(task);
   return task.view;
@@ -3342,28 +3422,38 @@ function sampleTask(task: HudTask): TaskView {
   const message = (progress && progress.at >= task.createdAt ? progress.text : null) ?? row.reason;
   return updateTask(task, 'working', `${taskLabel(task, settled(state) ? 'working' : state)}${message ? ` — ${message}` : ''}`);
 }
+function unknownTask(taskId: string) {
+  const now = new Date().toISOString(), statusMessage = 'Unknown or expired task. Use hud_read to find the job and collect its report.';
+  return { taskId, status: 'failed', statusMessage, createdAt: now, lastUpdatedAt: now, ttlMs: TASK_TTL, pollIntervalMs: TASK_POLL_MS };
+}
 async function taskRequest(taskId: string, cancel: boolean) {
-  if (landTasks.has(taskId)) {
+  if (isFlowId(taskId)) {
+    const live = landTasks.has(taskId);
+    if (!live && (cancel || !loadTaskReceipt(taskId))) return unknownTask(taskId);
     const flow = readLand(hudHome, taskId);
-    if (flow) {
+    if (!flow || Date.parse(flow.created_at) + TASK_TTL <= Date.now()) {
       landTasks.delete(taskId);
-      landTasks.add(taskId);
-      return landTask(hudHome, flow, cancel);
+      return unknownTask(taskId);
     }
-    landTasks.delete(taskId);
+    if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
+    return landTask(hudHome, flow, cancel);
   }
-  const task = tasks.get(taskId);
-  if (!task) {
-    const now = new Date().toISOString(), statusMessage = 'Unknown or expired task. Use hud_read to find the job and collect its report.';
-    return { taskId, status: 'failed', statusMessage, createdAt: now, lastUpdatedAt: now, ttlMs: TASK_TTL, pollIntervalMs: TASK_POLL_MS };
+  let task = tasks.get(taskId);
+  if (!task && !cancel) {
+    const receipt = loadTaskReceipt(taskId);
+    if (receipt && 'job' in receipt) task = recoverTask(receipt);
   }
-  return keyLock(`job:${task.job}`, async () => {
-    if (sampleTask(task).status === 'working' && cancel) {
-      const closed = await closeJob(findJob(task.job)!, true);
-      const message = closed.exit_code === 0 ? taskLabel(task, 'stopped') : `${taskLabel(task, 'stop failed')} — ${closed.last_line}`;
-      updateTask(task, closed.exit_code === 0 ? 'cancelled' : 'failed', message, message);
+  // Disk recovery restores polling, not authority to stop a prior connection's work.
+  if (!task || (cancel && task.recovered)) return unknownTask(taskId);
+  const current = task;
+  return keyLock(`job:${current.job}`, async () => {
+    if (current.expiresAt !== undefined && current.expiresAt <= Date.now()) return unknownTask(taskId);
+    if (sampleTask(current).status === 'working' && cancel) {
+      const closed = await closeJob(findJob(current.job)!, true);
+      const message = closed.exit_code === 0 ? taskLabel(current, 'stopped') : `${taskLabel(current, 'stop failed')} — ${closed.last_line}`;
+      updateTask(current, closed.exit_code === 0 ? 'cancelled' : 'failed', message, message);
     }
-    return wireTask(task);
+    return wireTask(current);
   });
 }
 async function toolsListResult() {
@@ -3401,6 +3491,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       discovered = true;
       taskClient = !worker && !resumeRefusal && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
         Object.hasOwn(meta?.['io.modelcontextprotocol/clientCapabilities']?.extensions ?? {}, TASK_EXTENSION);
+      if (taskClient) resumeTaskReceipts();
       await syncPanelDelivery();
       result = { supportedVersions: ['2026-07-28'], ...privateCache,
         capabilities: { tools: { listChanged: true }, ...(!worker && !resumeRefusal ? { extensions: { [TASK_EXTENSION]: {} } } : {}) } };
@@ -3530,7 +3621,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
   }
   write({ jsonrpc: '2.0', id: request.id, result: discovered ? { resultType: 'complete', ...result as object } : result });
 }
-// Private live-connection handoff, never a disk recovery or a new client's authority.
+// Private live-connection handoff preserves state that disk recovery cannot, including cancellation authority.
 async function snapshot() {
   const toolsList = JSON.stringify(await toolsListResult());
   handedOff = true;
@@ -3556,11 +3647,26 @@ export function openRuntime() {
       batchPending = state.batchPending ?? new Map();
       tries.delivered = state.triesAt;
       answers.offset = state.answersAt;
-      for (const task of tasks.values()) armExpiry(task);
+      for (const task of tasks.values()) {
+        armExpiry(task);
+        // A live generation from before persistence may have issued this task.
+        if (!loadTaskReceipt(task.id)) persistTask(task);
+      }
+      if (taskClient) {
+        for (const id of landTasks) {
+          if (loadTaskReceipt(id)) continue;
+          try {
+            const flow = readLand(hudHome, id), expiresAt = flow ? Date.parse(flow.created_at) + TASK_TTL : 0;
+            if (expiresAt > Date.now()) saveTaskReceipt({ id, expiresAt });
+          } catch { /* A broken flow receipt must not prevent reload. */ }
+        }
+        resumeTaskReceipts();
+      }
       await syncPanelDelivery();
       return { toolsList: JSON.stringify(await toolsListResult()) };
     },
     async stop() {
+      clearInterval(taskSweep);
       await ownerDelivery?.stop();
       await stopBatchDelivery(!handedOff);
       for (const scout of pendingScouts.values()) scout.abort();

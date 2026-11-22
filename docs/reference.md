@@ -107,13 +107,14 @@ for them and includes the number passed. Questions do not wait: their notices gi
 MCP delivers one result per task; only the client can combine those notices into a single wake. The notice does
 not mark a report read; collect it with `hud_read({job})`. Launch details remain in `hud_read({job, detail:true})`.
 A successful fan-out send keeps the job’s existing active task instead of starting a new one.
-Cancelling a still-current task stops the worker like `hud_close`; repeating cancel or cancelling an old task does
-nothing. Dispatch failures, duplicates, fan-out sends and batch calls (`hud_create({jobs})`, `hud_send({messages})`,
+The same caller can poll existing worker and land tasks after an MCP restart until their task TTL expires.
+Cancelling a still-current task on its original connection stops the worker like `hud_close`; repeating cancel,
+cancelling an old task or cancelling from a fresh connection does nothing. Dispatch failures, duplicates, fan-out sends and batch calls (`hud_create({jobs})`, `hud_send({messages})`,
 `hud_respond({answers})`) return immediately with per-item results in input order; for each created, continued or
 resumed job in a batch, the live MCP connection delivers the same compact notice (waiting for checks on report,
 immediate on question, failure or stop) once to the caller pane (or in `changes` if delivery fails), and falls back to
 normal `hud-notify`/`changes` delivery if the connection ends first. Use `hud_read` for jobs without a
-task and to recover after an MCP restart. Task clients do not get `hud_wait`, `changes` (beyond panel and undelivered batch notices), `watcher_alive`, or the
+task or whose task has expired. Task clients do not get `hud_wait`, `changes` (beyond panel and undelivered batch notices), `watcher_alive`, or the
 `hud watch` delivery hint.
 
 For other clients, MCP tool responses carry `changes`: one line per state change of the jobs this pane dispatched since

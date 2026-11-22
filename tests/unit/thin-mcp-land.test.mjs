@@ -6,13 +6,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { withDistLock } from '../../scripts/dist-lock.mjs';
-import { fixture, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
+import { entry, fixture, rpcClient, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 
 import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { takeLease } from '../../dist/roles/lease.js';
 import { procStat, isProcAlive } from '../../dist/utils/proc.js';
+import { landTask } from '../../dist/mcp/land.js';
 
 const job = 'j0000000000000123';
 const jobDir = (f, id = job) => join(f.home, 'jobs', id);
@@ -88,6 +89,80 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..base`), '2');
   assert.equal(f.git(f.main, 'branch', '--list', f.branch), '');
   assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 2);
+});
+
+test('MCP reconnect polls a create and land, re-fences follow-ups, and preserves the terminal notices', { timeout: 15000 }, async t => {
+  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done']);
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  const create = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic reconnect job.' });
+  const worker = taskJob(f, create);
+  const land = await taskCall(rpc, 'hud_land', { job });
+  await until(() => f.flowState(land.taskId).step.startsWith('gate[1]'));
+  const dir = join(f.home, 'mcp-tasks');
+  const receipt = ({ taskId }) => join(dir, fs.readdirSync(dir).find(name => name.startsWith(`${taskId}.`)));
+  assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+  for (const task of [create, land]) assert.equal(fs.statSync(receipt(task)).mode & 0o777, 0o600);
+  const get = (client, { taskId }) => client('tasks/get', { taskId });
+  async function reconnect(env = f.env) {
+    const child = spawn(process.execPath, [entry], { cwd: f.root, env, stdio: ['pipe', 'pipe', 'inherit'] });
+    const exited = once(child, 'exit');
+    let stopping;
+    const stop = () => stopping ??= stopChild(child, exited, { closeStdin: true, graceMs: 1500, killMs: 400 });
+    f.onCleanup(stop);
+    const client = taskRpc(rpcClient(child));
+    await client('server/discover');
+    return { client, stop };
+  }
+  assert.deepEqual((await f.stopMcp()).result, [0, null]);
+  const other = await reconnect({ ...f.env, HERDR_PANE_ID: 'w4E:p9' });
+  for (const task of [create, land]) assert.match((await get(other.client, task)).statusMessage, /Unknown or expired task/);
+  await other.stop();
+
+  const { client, stop } = await reconnect();
+  const before = JSON.parse(fs.readFileSync(receipt(create), 'utf8'));
+  const followUp = await taskCall(client, 'hud_send', { job: worker.job, text: 'Synthetic reconnect follow-up.' });
+  assert.equal(followUp.resultType, 'complete', 'the existing task carries the follow-up even before its first poll');
+  const after = JSON.parse(fs.readFileSync(receipt(create), 'utf8'));
+  assert.notEqual(after.fence, before.fence);
+  assert.ok(after.expiresAt > before.expiresAt);
+  for (const task of [create, land]) {
+    const working = await get(client, task);
+    assert.equal(working.status, 'working');
+    assert.equal(working.createdAt, task.createdAt);
+    assert.equal(working.result, undefined);
+    assert.match((await client('tasks/cancel', { taskId: task.taskId })).statusMessage, /Unknown or expired task/);
+  }
+  assert.equal(fs.existsSync(join(f.home, 'flows', `${land.taskId}.json.cancel`)), false);
+
+  settle(f, worker.job, 'Synthetic settled pi report.\n');
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  await until(() => f.flowState(land.taskId).state === 'completed');
+  const createDone = await get(client, create);
+  assert.equal(createDone.status, 'completed');
+  assert.equal(createDone.result.content[0].text, `${worker.job} (imp) — closed\nReport: hud_read job=${worker.job} (mode: "full" for the whole report)\nSummary: Synthetic settled pi report.`);
+  const landDone = await get(client, land);
+  assert.deepEqual(landDone, { resultType: 'complete', ...landTask(f.home, f.flowState(land.taskId)) });
+  assert.deepEqual(await get(client, create), createDone);
+  assert.deepEqual(await get(client, land), landDone);
+  assert.deepEqual((await stop()).result, [0, null]);
+
+  // A terminal task retains its original result even after a report has changed.
+  writeFixtureFile(join(worker.task_dir, 'report.md'), 'Synthetic replacement report.');
+  const again = await reconnect();
+  assert.deepEqual(await get(again.client, create), createDone);
+  assert.deepEqual(await get(again.client, land), landDone);
+  await again.stop();
+
+  // A recently written but logically expired receipt is unknown; old receipts are swept on reconnect.
+  writeFixtureFile(receipt(create), JSON.stringify({ ...after, expiresAt: Date.now() - 1 }));
+  const old = new Date(Date.now() - land.ttlMs - 1000);
+  fs.utimesSync(receipt(land), old, old);
+  const expired = await reconnect();
+  for (const task of [create, land]) assert.match((await get(expired.client, task)).statusMessage, /Unknown or expired task/);
+  assert.equal(fs.readdirSync(dir).some(name => name.startsWith(`${land.taskId}.`)), false);
+  assert.equal(f.flowState(land.taskId).state, 'completed', 'the flow receipt is not swept with the task receipt');
 });
 
 test('hud_read names the land holding the lease and how long its gate step has run', async t => {

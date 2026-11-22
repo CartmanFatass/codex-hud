@@ -202,8 +202,9 @@ CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得�
 报告通知包含任务 ID、角色、状态、`hud_read` 调用方式和一行摘要（优先使用工作者摘要，否则摘取报告正文）。
 有 HUD 检查时，通知等检查结束后再发送，并附通过数与总数。提问不等检查，通知会给出问题编号和正文。
 MCP 每个任务返回一条结果；是否合并成一次唤醒由客户端决定。通知不标记报告已读，仍需用 `hud_read({job})` 收取报告；启动详情可用 `hud_read({job, detail:true})` 查看。
-取消当前回合的任务与 `hud_close` 一样会停止工作者；重复取消或取消旧任务不会产生影响。派发失败、重复调用、群发及批量调用（`hud_create({jobs})`、`hud_send({messages})`、`hud_respond({answers})`）直接返回逐项结果；批量调用创建、续写或恢复的任务由当前存活的 MCP 连接以同样的精简格式（报告等待检查、提问／失败／停止即时送达）向调用窗格逐条推送一次通知（推送失败则转入 `changes`），连接提前结束时回退到常规的 `hud-notify`／`changes` 通道，不会漏通知。
-没有后台任务的工作，以及 MCP 重启后无法识别的任务，仍可用 `hud_read` 查询。这类会话不提供 `hud_wait`、`changes`（面板意图和未送达的批量通知除外）、
+MCP 重启后，同一调用方仍可在任务有效期内查询已有的工作者任务和落地任务。
+在原连接上取消当前回合的任务与 `hud_close` 一样会停止工作者；重复取消、取消旧任务或从新连接取消都不会产生影响。派发失败、重复调用、群发及批量调用（`hud_create({jobs})`、`hud_send({messages})`、`hud_respond({answers})`）直接返回逐项结果；批量调用创建、续写或恢复的任务由当前存活的 MCP 连接以同样的精简格式（报告等待检查、提问／失败／停止即时送达）向调用窗格逐条推送一次通知（推送失败则转入 `changes`），连接提前结束时回退到常规的 `hud-notify`／`changes` 通道，不会漏通知。
+没有后台任务或后台任务已过期的工作，仍可用 `hud_read` 查询。这类会话不提供 `hud_wait`、`changes`（面板意图和未送达的批量通知除外）、
 `watcher_alive` 或 `hud watch` 提示。
 
 `hud_tickets` 在各客户端提供本地工单方法与操作（仅主会话可写，拒绝改写 GitHub 镜像）：默认 `guide` 返回方法模板；`ready` 返回无阻塞且无活动任务的 `ready-for-agent` 工单，格式为 `tickets: [{ticket, path, title, what}]`。将 `ticket`（`feature/NN`）及 `path`（作为 `brief_file`）传给 `hud_create`；活动任务在项目面板和首页进度中即算认领，无需提交认领记录，`hud_land` 将工单更新并入落地提交（`**Owner try:** no` 记为 `done`，`yes` 或省略记为 `ready-for-human`），不再追加 `STATE.md`。

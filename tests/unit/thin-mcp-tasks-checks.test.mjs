@@ -339,7 +339,7 @@ test('MCP tasks: pane change or repair job ends old task cleanly naming the succ
   assert.equal(reapAttempts(f, repairJob), 0);
 });
 
-test('MCP tasks: a fresh server cannot cancel old tasks; legacy and failed dispatches stay immediate', { timeout: 10000 }, async (t) => {
+test('MCP tasks: a fresh server can poll but cannot cancel old tasks; legacy and failed dispatches stay immediate', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   await f.rpc('initialize', { protocolVersion: '2025-11-25' });
   const { result: legacy } = await f.rpc('tools/list');
@@ -363,10 +363,9 @@ test('MCP tasks: a fresh server cannot cancel old tasks; legacy and failed dispa
   });
   const next = taskRpc(rpcClient(child));
   await next('server/discover');
-  const unknown = await next('tasks/get', { taskId: task.taskId });
-  assert.equal(unknown.resultType, 'complete');
-  assert.equal(unknown.status, 'failed');
-  assert.match(unknown.statusMessage, /hud_read/);
+  const recovered = await next('tasks/get', { taskId: task.taskId });
+  assert.equal(recovered.resultType, 'complete');
+  assert.equal(recovered.status, 'working');
   assert.equal((await next('tasks/cancel', { taskId: task.taskId })).status, 'failed');
   assert.equal(fs.existsSync(join(job.task_dir, 'STATUS.json.stop-requested')), false);
   const retry = await taskCall(next, 'hud_create', { role: 'imp', task: 'Synthetic legacy job.' });

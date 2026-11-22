@@ -139,6 +139,12 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     stderr += data;
   });
   const rpc = rpcClient(child);
+  let stopping;
+  const stopMcp = () => stopping ??= stopChild(child, exited, {
+    closeStdin: true,
+    graceMs: t.signal?.aborted ? 200 : 2000,
+    killMs: 400,
+  });
   t.after(async () => {
     let firstError;
     const record = (error) => { firstError ??= error; };
@@ -147,11 +153,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     }
     let stopped;
     try {
-      stopped = await stopChild(child, exited, {
-        closeStdin: true,
-        graceMs: t.signal?.aborted ? 200 : 2000,
-        killMs: 400,
-      });
+      stopped = await stopMcp();
     } catch (error) { record(error); }
     const survivors = await reapFixtureProcesses({ root, hudHome: env.HUD_HOME });
     child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
@@ -278,6 +280,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     notifications: rpc.notifications,
     call,
     onCleanup: (fn) => cleanups.push(fn),
+    stopMcp,
     // Rename replaces the fixture symlink itself, never the shared executable it points to.
     overrideBin: (name, body) => writeFixtureFile(join(bin, name), body, { mode: 0o700 }),
     socketRequests,
