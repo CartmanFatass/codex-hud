@@ -155,7 +155,7 @@ defaults; split defaults to the place. `ui_ext: false` disables UI extensions;
 `--orchestrator`/`--notify` pi-argument overrides refuse. Browser (`bro`) places
 reject pi options.
 
-When a role has `thinking_choices`, choose a level for each task using the purposes on its `hud_roster` row (`hud_create`) or in `hud_sonic`. Sonic ships with `low` for mechanical lookups, `high` for multi-file surveys or small doc patches, and `max` for tracing causes or cross-checking claims. The choices are inherited when an overriding role file omits them. Other supplied levels are refused; an allowed choice that the selected model does not support maps to the nearest supported level. Omission keeps the configured default.
+Callers leave sonic's thinking at the role default (`high` as shipped). The optional **Sonic auto-thinking** setting (`sonicAutoThinking`, off by default) sends the task to the Decision API to choose `low`, `high` or `max` using the role file's `thinking_choices`. If no key is available, the call cap is reached, the decision times out (about five seconds), or the provider refuses or returns an invalid answer, the role default applies. An owner-requested `hud_create` thinking override skips the decision; `hud_sonic` takes no thinking argument. Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
 
 Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs,
 each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
@@ -906,7 +906,7 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 |---|---|
 | Display | Theme, Bar style, Icons, Language |
 | Panel | Home mode, Layout, Width, Stall threshold, Fold after, Hide after, Notifications, Refresh, Mouse |
-| Models | Model text, Model, Decision API, Call cap, Decision cap, Summary interval, separate hourly counters, Test API |
+| Models | Model text, Model, Decision API, Call cap, Decision cap, Sonic auto-thinking, Summary interval, separate hourly counters, Test API |
 | Codex | Bar on launch |
 
 All groups are open. Up/Down selects; Left/Right or Enter changes; `s` saves, `r`
@@ -933,7 +933,7 @@ One master controls job/native names and sentences, Inspector decision titles,
 Decision labels and Recommended Home ranking/brief. Nothing writes workflow facts
 or steers a worker. Off hides overlays and sends no requests; without a saved
 preference, a Mistral/OpenAI/Gemini key defaults it on. Text requires a matching
-chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately.
+chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately. Sonic auto-thinking is a separate dispatch opt-in, independent of Model text.
 
 | Setting | Key / default |
 |---|---|
@@ -964,6 +964,7 @@ One successful final sentence freezes that settlement; a continuation can settle
 | Question category | 4096-byte head of the job's current open question |
 | Review severity | ≤24 list items (400 chars each) from newest 32 KiB review head or settled reviewer report |
 | Home ranking/brief | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag, outcome; no bodies |
+| Sonic thinking | First 4000 characters of the task as data; sonic role scope and thinking purposes. No referenced context, standing brief or reports are loaded for the decision. |
 | Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Test API | Fixed synthetic messages only |
 

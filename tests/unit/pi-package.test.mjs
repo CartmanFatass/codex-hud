@@ -873,10 +873,10 @@ test('pi delegation registers the native worker tools and leases in both modes',
     assert.deepEqual([...worker.tools.keys()], ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
     assert.deepEqual(worker.tools.get('hud_report').parameters.required, ['text']);
     const sonic = worker.tools.get('hud_sonic');
-    assert.deepEqual(sonic.parameters.properties.thinking.enum, ['low', 'high', 'max']);
-    assert.match(sonic.parameters.properties.thinking.description, /max — tracing a cause/);
+    assert.equal(sonic.parameters.properties.thinking, undefined);
+    assert.doesNotMatch(sonic.description, /thinking|level/);
     const request = { task: 'Synthetic sub-task.', thinking: 'off' };
-    await assert.rejects(sonic.execute('synthetic', sonic.prepareArguments?.(request) ?? request), /invalid_arguments:.*low, high, max/);
+    await assert.rejects(sonic.execute('synthetic', sonic.prepareArguments?.(request) ?? request), /invalid_arguments: unexpected thinking/);
     const lease = worker.tools.get('hud_lease');
     assert.deepEqual((await lease.execute('synthetic', { name: 'install', wait_s: 0 })).details, { granted: true });
     assert.deepEqual((await lease.execute('synthetic', { name: 'install', release: true })).details, { released: true });

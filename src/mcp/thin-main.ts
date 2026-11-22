@@ -12,6 +12,7 @@ import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, 
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
+import { pickSonicThinking } from './sonic-thinking.js';
 import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
@@ -77,6 +78,7 @@ interface Job extends PiOptions {
   create_options?: Args;
   model?: string | null;
   thinking?: string | null;
+  thinking_source?: 'decision' | 'default' | 'explicit';
   model_source?: string | null;
   read_at?: string;
   parent_job?: string;
@@ -191,7 +193,10 @@ function created(job: Job) {
   const task_dir = directory(job.job);
   const { report_unread: _unread, report_mtime: _mtime, question_ids: _questions, ...row } = readRow(job).row;
   const watch = callerPane && !taskClient ? { watcher_alive: watching(callerPane, hudHome) } : {};
-  const thinking = job.thinking == null ? {} : { thinking: job.thinking };
+  const thinking = {
+    ...(job.thinking == null ? {} : { thinking: job.thinking }),
+    ...(job.thinking_source ? { thinking_source: job.thinking_source } : {}),
+  };
   const launch = { attempts: job.attempts, used_place: job.used_place ?? null };
   if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
     return {
@@ -1097,10 +1102,6 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
   return { metadata, block: reference + block };
 }
 
-export function sonicThinkingChoices(cwd: string) {
-  return registry(cwd).roles().get('sonic')?.thinking_choices;
-}
-
 function placeOptions(args: Args, configured: RolePlace) {
   const place = { ...configured };
   const invalid = (error?: string) => ({ ok: false, code: 'invalid_arguments', error } as const);
@@ -1203,10 +1204,6 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     ensureWatcher();
     if (!taskClient) ensureQueueWatcher(pane, hudHome);
     return created(existing);
-  }
-  const choices = definition.thinking_choices;
-  if (choices && args.thinking !== undefined && (typeof args.thinking !== 'string' || !Object.hasOwn(choices, args.thinking))) {
-    return { ok: false, code: 'invalid_arguments', error: `thinking for ${role} must be one of: ${Object.keys(choices).join(', ')}` };
   }
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
@@ -1312,6 +1309,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     let result: DispatchResult = launchError('no launch attempted');
     let reason = '';
     let taskEntry: HudTask | undefined;
+    let sonicPick: Promise<string | undefined> | undefined;
     for (const candidate of candidates) {
       const launchArgs = argsFor(candidate.place);
       const prepared = candidate === details ? initial : placeOptions(launchArgs, candidate.place);
@@ -1326,6 +1324,15 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       } else fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
       const { place, options } = prepared;
+      let thinking_source: Job['thinking_source'];
+      if (role === 'sonic' && place.harness !== 'bro') {
+        if (args.thinking !== undefined) thinking_source = 'explicit';
+        else {
+          const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, definition.thinking_choices));
+          if (picked !== undefined) place.thinking = picked;
+          thinking_source = picked === undefined ? 'default' : 'decision';
+        }
+      }
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
@@ -1335,6 +1342,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
         ...(place.harness === 'bro' ? { bro: place } : {
           model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
+          ...(thinking_source ? { thinking_source } : {}),
           model_source: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
         }),
         ...(place.harness === 'cli' ? { cli: {
@@ -1386,7 +1394,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
       `Write your report to ${join(dir, 'report.md')}; then run the --done command from the prompt you are answering.\n` +
       `Ask the orchestrator with: ${command('hud-ask')} ${own} --question "..." --default "..."\n`;
     if (job.role !== 'sonic') brief +=
-      `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file> [--thinking <level>]\n` +
+      `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file>\n` +
       `Collect: ${command('hud-sonic')} wait ${own} --job <id>\n`;
     brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
@@ -1478,7 +1486,7 @@ function harnessSwitchFailure(error: HarnessSwitchError) {
 }
 
 function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['assignment']>) {
-  const { role, instructions, available, can_continue, runs_on, model, thinking, thinking_choices, reason, places,
+  const { role, instructions, available, can_continue, runs_on, model, thinking, reason, places,
     preset, preset_missing } = assignment;
   const place = runs_on && {
     harness: runs_on.harness,
@@ -1493,7 +1501,6 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
   };
   return {
     role, available, can_continue, runs_on: place,
-    ...(thinking_choices ? { thinking_choices } : {}),
     ...(preset ? { preset } : {}),
     ...(preset_missing ? { preset_missing } : {}),
     places: places.map(({ index, state, off_by, until, missing, provider, provider_source }) =>
@@ -1917,7 +1924,7 @@ const isTaskReply = (value: unknown): value is TaskReply =>
   !!value && typeof value === 'object' && 'resultType' in value && value.resultType === 'task';
 function launchSummary(job: Job) {
   const facts = [job.used_place && `used_place: ${job.used_place}`, job.thinking && `thinking: ${job.thinking}`,
-    job.repair_of && `continued_as: ${job.job}`];
+    job.thinking_source && `thinking_source: ${job.thinking_source}`, job.repair_of && `continued_as: ${job.job}`];
   if (job.attempts && job.attempts.length > 1) facts.push(`attempts: ${job.attempts.map(({ place, reason }) =>
     reason ? `${place} (${reason.replace(/\s+/g, ' ').slice(0, 160)})` : place).join(' → ')}`);
   return facts.filter(Boolean).join('; ');

@@ -16,14 +16,14 @@ const ticketStatus = { ...text, enum: TICKET_STATUSES };
 const ticketNumber = { type: 'integer', minimum: 1 };
 
 export const ROLE_TOOLS = [
-  tool('hud_roster', 'Get role availability, effective assignments, per-task thinking choices when configured, and the project dispatch convention when new or changed.', {
+  tool('hud_roster', 'Get role availability, effective assignments, and the project dispatch convention when new or changed.', {
     cwd: { ...text, description: 'Project directory (default: server cwd).' },
     convention_version: text,
     detail: { ...bool, description: 'Include presets, fallbacks, sources and accepted options.' },
   }),
   tool(
     'hud_create',
-    'Dispatch a role (requires role and task), or retry a failed or stopped job with retry_of, inheriting its task and options unless overridden. An identical call within 10 minutes returns the same job; pass a fresh request_key for an intentional duplicate. Omit preset, on, model and thinking unless the user requests them, except that for a role with thinking_choices, pick thinking per task from its hud_roster row. See hud_roster(detail:true) for other role options.',
+    'Dispatch a role (requires role and task), or retry a failed or stopped job with retry_of, inheriting its task and options unless overridden. An identical call within 10 minutes returns the same job; pass a fresh request_key for an intentional duplicate. Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for other role options.',
     {
       role: text,
       request_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same caller, role, cwd and task match for 10 minutes.' },
@@ -51,7 +51,7 @@ export const ROLE_TOOLS = [
       preset: { ...text, description: 'Named role preset; mutually exclusive with on.' },
       kind: { type: 'string', enum: ['image', 'video'], description: 'Flow only (default image).' },
       model: { ...text, description: 'Pi or CLI model.' },
-      thinking: { ...text, description: 'Pi or CLI effort. If the role has thinking_choices, pick one per task using the purposes in hud_roster.' },
+      thinking: { ...text, description: 'Pi or CLI effort.' },
       lens: { ...bool, description: 'Pi: pi-lens.' },
       mcp: { ...bool, description: 'Pi: MCP adapter.' },
       tps: { ...bool, description: 'Pi: tokens/s.' },

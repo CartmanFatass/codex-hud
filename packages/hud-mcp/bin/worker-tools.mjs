@@ -87,12 +87,12 @@ export function progress({ dir }, message) {
   return { ok: true };
 }
 
-export async function startSonic({ job: parent }, task, thinking) {
+export async function startSonic({ job: parent }, task) {
   if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
   if (!task.trim()) throw new Error('the sub-task is empty');
   const { dispatchJob } = await dispatch();
   const result = await dispatchJob({
-    role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd: parent.cwd, task, thinking,
+    role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd: parent.cwd, task,
   }, parent.herdr_pane, parent.job);
   if (!result.job) {
     const message = result.error ?? result.code;
@@ -102,7 +102,8 @@ export async function startSonic({ job: parent }, task, thinking) {
     throw new Error(message);
   }
   // A launch failure with a job receipt is also collectable via wait.
-  return { job: result.job, thinking: result.thinking ?? null, attempts: result.attempts, used_place: result.used_place,
+  return { job: result.job, thinking: result.thinking ?? null, thinking_source: result.thinking_source,
+    attempts: result.attempts, used_place: result.used_place,
     ...(result.ok === false ? { error: result.reason } : {}) };
 }
 
@@ -171,11 +172,12 @@ export async function callWorkerTool(name, args, signal) {
     case 'hud_ask': return ask(context, { question: string('question'), default: string('default'), options: strings('options'),
       context: args.context === undefined ? undefined : string('context') }, undefined, signal);
     case 'hud_sonic':
+      if (args.thinking !== undefined) throw new Error('invalid_arguments: unexpected thinking');
       if (args.task !== undefined) {
         if (args.wait !== undefined || args.timeout_s !== undefined) throw new Error('start or wait for sonic, not both');
-        return startSonic(context, string('task'), args.thinking);
+        return startSonic(context, string('task'));
       }
-      if (args.thinking !== undefined || (args.timeout_s !== undefined && typeof args.timeout_s !== 'number')) {
+      if (args.timeout_s !== undefined && typeof args.timeout_s !== 'number') {
         throw new Error('invalid_arguments: sonic wait');
       }
       return waitSonic(context, strings('wait'), args.timeout_s, signal);
@@ -185,21 +187,12 @@ export async function callWorkerTool(name, args, signal) {
 
 const string = { type: 'string' };
 const strings = { type: 'array', items: string };
-export async function listWorkerTools(cli) {
-  let context;
-  try { context = workerJob(); } catch { return workerTools(cli); }
-  let choices;
-  if (context.job.role !== 'sonic') {
-    try { choices = (await dispatch()).sonicThinkingChoices(context.job.cwd); }
-    catch { /* Missing role facts do not prevent listing worker tools. */ }
-  }
-  return workerTools(cli && Boolean(context.job.cli), choices);
+export function listWorkerTools(cli) {
+  if (!cli) return workerTools(false);
+  try { return workerTools(Boolean(workerJob().job.cli)); } catch { return workerTools(cli); }
 }
 
-export function workerTools(cli, choices) {
-  const thinking = choices ? { ...string, enum: Object.keys(choices),
-    description: `Choose per sub-task: ${Object.entries(choices).map(([level, purpose]) => `${level} — ${purpose}`).join('; ')}.` }
-    : { ...string, description: 'Choose a thinking level per sub-task from the sonic role.' };
+export function workerTools(cli) {
   const tool = (name, description, properties, required = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
   return [
@@ -208,8 +201,8 @@ export function workerTools(cli, choices) {
       cli ? ['text', 'turn'] : ['text']),
     tool('hud_ask', 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
       { question: string, default: string, options: strings, context: string }, ['question', 'default']),
-    tool('hud_sonic', 'Start one sonic child with task and optional thinking; returns its id and effective thinking without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. timeout_s defaults to 480; 0 checks once.',
-      { task: string, thinking, wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
+    tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. timeout_s defaults to 480; 0 checks once.',
+      { task: string, wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
     LEASE_TOOL,
   ];

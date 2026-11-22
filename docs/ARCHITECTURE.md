@@ -272,6 +272,7 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 | `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
 | `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
 | `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag and outcome; no file bodies |
+| Sonic auto-thinking | First 4000 characters of the dispatched task, plus sonic role scope and thinking purposes; no standing brief or referenced files |
 | Settings Test API | Fixed synthetic messages only |
 
 `JobSentences` replaces separate native labels/digests/causes/progress schedulers;
@@ -439,7 +440,7 @@ registration and `hud import` are separate user actions.
 
 **Privacy and repository**
 
-- Master off sends no model requests; chat also requires a matching endpoint key.
+- The Model text master switch controls display requests; chat also requires a matching endpoint key. Sonic auto-thinking has its own explicit Decision API switch, independent of Model text, like the quiet-job dispatch path.
 - List every new outbound model input here and in both reference languages.
 - State is private: `writePrivateFile` or equivalent temp-file/0600/rename.
 - Preserve owner configuration, keys, history and unrelated state.

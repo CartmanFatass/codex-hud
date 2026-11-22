@@ -7,7 +7,7 @@ import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.
 import { SETTING_ROWS, renderSettingsPage } from '../../src/render/settings-page.js';
 import { stripAnsi } from '../../src/render/colors.js';
 
-test('Models exposes master, provider, separate budgets and summary interval; retired settings never save', () => {
+test('Models exposes the master, provider, separate budgets, sonic opt-in and summary interval', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-thin-'));
   const saved = { ...process.env };
   try {
@@ -46,18 +46,21 @@ test('Models exposes master, provider, separate budgets and summary interval; re
     );
     assert.deepEqual(
       SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
-      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour', 'decisionCallsPerHour', 'summaryIntervalMinutes']
+      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour', 'decisionCallsPerHour', 'sonicAutoThinking', 'summaryIntervalMinutes']
     );
     const text = stripAnsi(
       renderSettingsPage(
         { draft, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models'), offset: 0, message: '' },
         100,
-        40
+        40,
+        { state: undefined, decisionCalls: { lastHour: 2, cap: 0, byFeature: { 'sonic-thinking': 2 } } }
       ).lines.join('\n')
     );
     assert.match(text, /Model text/);
     assert.match(text, /Call cap/);
     assert.match(text, /Decision cap/);
+    assert.match(text, /Sonic thinking 2/);
+    assert.match(text, /Sonic auto-thinking\s+off/);
     assert.match(text, /Summary interval/);
     assert.doesNotMatch(text, /consent|Backend|AGY/);
     fs.unlinkSync(path.join(home, 'credentials.env'));

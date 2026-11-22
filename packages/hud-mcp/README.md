@@ -128,11 +128,10 @@ HUD release, or use the script's absolute path. `--dir` defaults to `HUD_JOB_DIR
   Use the turn token from the CLI prompt you are answering. No final chat marker is needed.
 - `hud_ask({question, default, options?, context?})`: asks the orchestrator. Pi also accepts `mode: "async"`;
   continue only unrelated work until the native answer arrives.
-- `hud_sonic({task, thinking?})`: starts one sonic child without waiting for its report. Collect with
+- `hud_sonic({task})`: starts one sonic child without waiting for its report. Collect with
   `hud_sonic({wait: [ids], timeout_s?})`; omit the ids for all uncollected children. It returns report paths and bodies,
-  still-working ids and any failures. `timeout_s: 0` checks once. Sonic cannot start sonic. When known, the schema
-  shows the selected sonic model's supported thinking levels. Both `hud_sonic` and `hud_create` return the effective
-  thinking level; an unsupported level maps to the nearest known choice, and unknown capabilities pass through.
+  still-working ids and any failures. `timeout_s: 0` checks once. Sonic cannot start sonic. Sonic starts return the
+  effective `thinking` (mapped to the nearest supported level when known) and `thinking_source`.
 - `hud_progress({message})` publishes a milestone. It stores one line of up to 240 characters as `{at,text}` in the
 job's `progress.jsonl`, retaining the newest 50. `hud_read({ job })` and `hud_peek` return the latest 10 in
 append order as `progress` and the newest entry as `latest_progress`. Ordinary reads omit these fields when empty. Milestones do not appear in

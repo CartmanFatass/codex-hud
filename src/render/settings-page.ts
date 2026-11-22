@@ -15,7 +15,7 @@ const CALL_FEATURES: Record<string, string> = {
   'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', 'try-brief': 'Try brief', title: 'Decision title',
   'home-brief': 'Home brief', probe: 'Probe', outcome: 'outcome', kind: 'kind', looping: 'looping',
   'question-category': 'Question category', 'review-severity': 'Review severity', 'home-ranking': 'Home ranking',
-  'quiet-job': 'Quiet job',
+  'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking',
 };
 const PROBE_FAILURES: Record<string, string> = {
   auth: 'Authentication failed',
@@ -149,7 +149,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format: callCap,
   },
   { key: 'decisionCallsPerHour', group: 'Models', label: 'Decision cap', values: [600, 2000, 0],
-    help: 'Decision-API calls per hour (labels, Home ranking)', format: callCap },
+    help: 'Decision-API calls per hour (labels, Home ranking, Sonic thinking)', format: callCap },
+  { key: 'sonicAutoThinking', group: 'Models', label: 'Sonic auto-thinking', values: [false, true],
+    help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
   { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
     help: "How often a running job's sentence and Home's brief may refresh", format: (value) => t('{n}m', { n: Number(value) }) },
   {
@@ -191,7 +193,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['homeMode', 'panelLayout', 'projectLayout', 'acceptance', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
-  Models: ['modelEnabled', 'decisionCallsPerHour', 'summaryIntervalMinutes'],
+  Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'summaryIntervalMinutes'],
   Codex: ['statusline'],
 };
 export function resetSettingsGroup(draft: HudSettings, group: string): HudSettings {

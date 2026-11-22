@@ -274,8 +274,15 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
   assert.equal(loadSettings().barStyle, BAR_STYLES.at(-1));
   const stored = JSON.parse(readFileSync(process.env.HUD_SETTINGS_PATH, 'utf8'));
   for (const key of retired) assert.equal(key in stored, false, key);
+  const sonic = SETTING_ROWS.findIndex((row) => row.key === 'sonicAutoThinking');
+  assert.equal(loadSettings().sonicAutoThinking, false);
+  state = { ...state, selected: sonic };
+  state = handleSettingsInput(state, { type: 'key', key: 'right' }, renderSettingsPage(state, 80, 40)).state;
+  saveSettings(state.draft);
+  assert.equal(loadSettings().sonicAutoThinking, true);
   const reset = resetSettingsGroup({ ...state.draft, modelEnabled: true }, 'Models');
   assert.equal(reset.modelEnabled, false);
+  assert.equal(reset.sonicAutoThinking, false);
   assert.equal(reset.model, state.draft.model);
   assert.equal(reset.modelCallsPerHour, state.draft.modelCallsPerHour);
 });

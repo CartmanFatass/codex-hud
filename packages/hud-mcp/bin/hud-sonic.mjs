@@ -10,7 +10,7 @@ try {
   const string = { type: 'string' };
   const { values } = parseArgs({ args, options: {
     dir: string,
-    ...(command === 'start' ? { task: string, 'task-file': string, thinking: string } : { job: string, timeout: string }),
+    ...(command === 'start' ? { task: string, 'task-file': string } : { job: string, timeout: string }),
   } });
   if (!values.dir) throw new Error('--dir must name your job directory under HUD_HOME');
   const context = workerJob(values.dir);
@@ -19,9 +19,9 @@ try {
       throw new Error('give the sub-task as --task <text> or --task-file <file>');
     }
     const task = values.task ?? fs.readFileSync(values['task-file'], 'utf8');
-    const launched = await startSonic(context, task, values.thinking);
+    const launched = await startSonic(context, task);
     console.log(launched.job); // Keep the standalone command's machine-readable id on stdout.
-    if (launched.thinking !== null) console.error(`thinking: ${launched.thinking}`);
+    if (launched.thinking !== null) console.error(`thinking: ${launched.thinking} (${launched.thinking_source})`);
     if (launched.error) console.error(launched.error);
     else if (launched.attempts?.length > 1) {
       for (const { place, reason } of launched.attempts) console.error(`${place}: ${reason ?? 'started'}`);

@@ -11,6 +11,7 @@
     {
       "harness": "pi",
       "pi_role": "sonic",
+      "thinking": "high",
       "split": false
     }
   ]

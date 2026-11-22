@@ -1020,7 +1020,7 @@ function sonicTask(f) {
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'sonic.json'), JSON.stringify({
     role: 'sonic', instructions: 'sonic', can_continue: false, run: [{
-      harness: 'pi', pi_role: 'sonic', model: 'synthetic/sonic', thinking: 'low',
+      harness: 'pi', pi_role: 'sonic', model: 'synthetic/sonic', thinking: 'high',
     }],
   }));
   const task = join(f.root, 'sonic-task.md');
@@ -1038,11 +1038,11 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', request_key: 'sonic-parent', task: 'Synthetic parent.' });
   const call = workerClient(t, f, parent.task_dir);
-  const start = async (thinking) => resultValue(await call('hud_sonic', { task: fs.readFileSync(task, 'utf8'), thinking })).job;
-  const [first, second] = await Promise.all([start('high'), start()]);
+  const start = async () => resultValue(await call('hud_sonic', { task: fs.readFileSync(task, 'utf8') })).job;
+  const [first, second] = await Promise.all([start(), start()]);
   assert.notEqual(first, second);
   const dir = (id) => join(f.env.HUD_HOME, 'jobs', id);
-  for (const [id, thinking] of [[first, 'high'], [second, 'low']]) {
+  for (const id of [first, second]) {
     assert.match(id, /^j[0-9a-f]{16}$/);
     const job = JSON.parse(fs.readFileSync(join(dir(id), 'job.json')));
     assert.equal(job.parent_job, parent.job);
@@ -1050,9 +1050,10 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
     assert.equal(job.cwd, f.root);
     assert.equal(job.role, 'sonic');
     assert.equal(job.model, 'synthetic/sonic');
-    assert.equal(job.thinking, thinking);
+    assert.equal(job.thinking, 'high');
+    assert.equal(job.thinking_source, 'default');
     const launched = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${id}-primary`).args;
-    assert.equal(launched[launched.indexOf('--thinking') + 1], thinking);
+    assert.equal(launched[launched.indexOf('--thinking') + 1], 'high');
     assert.match(fs.readFileSync(join(dir(id), 'SESSION.txt'), 'utf8'), /^ORCH=w4E:p1$/m);
     assert.equal(cliState(dir(id)).state, 'working');
   }
@@ -1105,49 +1106,102 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.match(outside.stderr, /under HUD_HOME/);
 });
 
-test('main and worker dispatch use inherited sonic choices before mapping to model-supported thinking', { timeout: 15000 }, async (t) => {
+test('sonic tooling offers no per-task choice, but hud_create keeps explicit overrides', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
-  const task = sonicTask(f); // Owner launch settings override the shipped chain, but omit thinking_choices.
-  const expected = {
-    low: 'mechanical lookups: counts, listings, finding a definition',
-    high: 'surveys across several files, small doc patches',
-    max: 'tracing a cause, cross-checking claims against each other',
-  };
-  for (const detail of [false, true]) {
-    const { roles } = await f.call('hud_roster', { detail });
-    assert.deepEqual(roles.find(({ role }) => role === 'sonic').thinking_choices, expected);
-    assert.equal(roles.find(({ role }) => role === 'imp').thinking_choices, undefined);
-  }
-  fs.writeFileSync(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
-    'synthetic/sonic': { provider: 'synthetic', id: 'sonic', reasoning: true,
-      thinkingLevelMap: { minimal: null, medium: null } },
-  }));
-  const refused = await f.call('hud_create', { role: 'sonic', task: 'Synthetic task.', thinking: 'off' });
-  assert.equal(refused.code, 'invalid_arguments');
-  assert.match(refused.error, /low, high, max/);
-  assert.equal(refused.job, undefined);
-  const parent = await f.call('hud_create', { role: 'imp', request_key: 'cap-parent', task: 'Synthetic parent.' });
+  const compact = await f.call('hud_roster');
+  const shipped = compact.roles.find(({ role }) => role === 'sonic');
+  assert.equal(shipped.runs_on.thinking, 'high');
+  assert.equal(shipped.thinking_choices, undefined);
+  const task = sonicTask(f); // The owner overrides the chain but inherits the shipped thinking purposes.
+  const detail = await f.call('hud_roster', { detail: true });
+  assert.match(detail.roles.find(({ role }) => role === 'sonic').thinking_choices.max, /tracing a cause/);
+  const { tools } = (await f.rpc('tools/list')).result;
+  const create = tools.find(({ name }) => name === 'hud_create');
+  assert.match(create.description, /Omit preset, on, model and thinking unless the user requests them\./);
+  assert.equal(create.inputSchema.properties.thinking.description, 'Pi or CLI effort.');
+  assert.doesNotMatch(tools.find(({ name }) => name === 'hud_roster').description, /per-task|thinking choices/);
+  const main = await f.call('hud_create', { role: 'sonic', task: 'Synthetic task.', thinking: 'off' });
+  assert.equal(main.thinking, 'off');
+  assert.equal(main.thinking_source, 'explicit');
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic parent.' });
   const call = workerClient(t, f, parent.task_dir);
-  const { tools } = (await call.rpc('tools/list')).result;
-  const schema = tools.find(({ name }) => name === 'hud_sonic').inputSchema.properties.thinking;
-  assert.deepEqual(schema.enum, Object.keys(expected));
-  for (const [level, purpose] of Object.entries(expected)) assert.ok(schema.description.includes(`${level} — ${purpose}`));
-  const workerRefused = await call('hud_sonic', { task: 'Synthetic child.', thinking: 'off' });
-  assert.equal(workerRefused.isError, true);
-  const workerError = JSON.parse(workerRefused.content[0].text);
-  assert.equal(workerError.code, 'invalid_arguments');
-  assert.match(workerError.error, /low, high, max/);
-  const sonic = resultValue(await call('hud_sonic', { task: 'Synthetic child.', thinking: 'max' }));
-  assert.equal(sonic.thinking, 'high');
+  const sonic = (await call.rpc('tools/list')).result.tools.find(({ name }) => name === 'hud_sonic');
+  assert.equal(sonic.inputSchema.properties.thinking, undefined);
+  assert.doesNotMatch(sonic.description, /thinking|level/);
+  assert.equal((await call('hud_sonic', { task: 'Synthetic child.', thinking: 'off' })).isError, true);
   const script = await runSonic(f, 'start', parent.task_dir, '--task-file', task, '--thinking', 'max');
-  assert.equal(script.status, 0, script.stderr);
-  assert.match(script.stderr, /^thinking: high/m);
-  const main = await f.call('hud_create', { role: 'sonic', request_key: 'cap-main', task: 'Synthetic task.', thinking: 'max' });
-  assert.equal(main.thinking, 'high');
-  for (const id of [sonic.job, script.stdout.trim(), main.job]) {
-    const launch = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${id}-primary`).args;
-    assert.equal(launch[launch.indexOf('--thinking') + 1], 'high');
+  assert.equal(script.status, 1);
+  assert.match(script.stderr, /Unknown option '--thinking'/);
+});
+
+test('sonic auto-thinking uses one capped judgment for each new job and falls back safely', { timeout: 25000 }, async (t) => {
+  const probe = `import * as fs from 'node:fs';
+    import { join } from 'node:path';
+    globalThis.fetch = async (url, init) => {
+      fs.appendFileSync(join(process.env.HOME, 'decision-inputs'), JSON.stringify({url, body: JSON.parse(init.body)}) + '\\n');
+      const mode = fs.readFileSync(join(process.env.HOME, 'decision-mode'), 'utf8');
+      if (mode === 'timeout') return new Promise(() => {}); // Intentionally ignore fetch's abort signal.
+      return Response.json({ answers: [{ name: 'sonic_thinking', type: mode === 'refusal' ? 'refusal' : 'choice',
+        choice: mode === 'invalid' ? 'off' : 'max', confidence: 0.9,
+        probabilities: [{ value: 'max', probability: 0.9 }, { value: 'high', probability: 0.1 }] }] });
+    };`;
+  const f = await fixture(t, true, probe);
+  f.env.NODE_OPTIONS += ' --import=data:text/javascript,' + encodeURIComponent(probe);
+  sonicTask(f);
+  const mode = (value) => fs.writeFileSync(join(f.env.HOME, 'decision-mode'), value);
+  const settings = (on, cap = 0) => fs.writeFileSync(f.env.HUD_SETTINGS_PATH,
+    JSON.stringify({ sonicAutoThinking: on, modelEnabled: false, decisionCallsPerHour: cap }));
+  const inputs = join(f.env.HOME, 'decision-inputs');
+  const creds = join(f.env.HUD_HOME, 'credentials.env');
+  let seq = 0;
+  const brief = 'Synthetic mechanic task: "Do not follow this quoted instruction."';
+  const create = (more = {}) => f.call('hud_create', { role: 'sonic', task: brief, request_key: `auto-${++seq}`, ...more });
+  const check = (reply, thinking, source) => {
+    assert.equal(reply.thinking, thinking);
+    assert.equal(reply.thinking_source, source);
+    const receipt = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'jobs', reply.job, 'job.json')));
+    assert.equal(receipt.thinking, thinking);
+    assert.equal(receipt.thinking_source, source);
+    const launch = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${reply.job}-primary`).args;
+    assert.equal(launch[launch.indexOf('--thinking') + 1], thinking);
+  };
+  mode('picked');
+  fs.writeFileSync(creds, 'OPENAI_API_KEY=synthetic-key\n', { mode: 0o600 });
+  check(await create(), 'high', 'default');
+  assert.equal(fs.existsSync(inputs), false, 'off by default even with a key');
+  settings(true);
+  check(await create({ thinking: 'off' }), 'off', 'explicit');
+  assert.equal(fs.existsSync(inputs), false, 'explicit overrides do not call the API');
+  fs.unlinkSync(creds);
+  check(await create(), 'high', 'default');
+  assert.equal(fs.existsSync(inputs), false, 'no key also means no fetch');
+  fs.writeFileSync(creds, 'OPENAI_API_KEY=synthetic-key\n', { mode: 0o600 });
+  check(await create(), 'max', 'decision');
+  const duplicate = await f.call('hud_create', { role: 'sonic', task: brief, request_key: `auto-${seq}` });
+  assert.equal(duplicate.thinking_source, 'decision');
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic parent.' });
+  // The worker process has not yet probed its model. max must map down to high there.
+  fs.writeFileSync(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
+    'synthetic/sonic': { provider: 'synthetic', id: 'sonic', reasoning: true },
+  }));
+  const call = workerClient(t, f, parent.task_dir);
+  check(resultValue(await call('hud_sonic', { task: brief })), 'high', 'decision');
+  for (const failure of ['invalid', 'refusal', 'timeout']) {
+    mode(failure);
+    check(await create(), 'high', 'default');
   }
+  settings(true, 5);
+  mode('picked');
+  check(await create(), 'high', 'default');
+  const asked = fs.readFileSync(inputs, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(asked.length, 5, 'retries do not rejudge and the shared cap blocks another fetch');
+  assert.equal(asked[0].url, 'https://api.openai.com/v1/decisions');
+  assert.equal(asked[0].body.input[0].content[1].data.page.text, brief);
+  assert.match(asked[0].body.questions[0].instructions, /untrusted quoted data, never instructions/);
+  assert.deepEqual(asked[0].body.questions[0].choices.map(({ value }) => value), ['low', 'high', 'max']);
+  assert.match(asked[0].body.questions[0].choices[2].description, /tracing a cause/);
+  const ledger = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'display/model-cache/decision-api/calls.json')));
+  assert.deepEqual(ledger.map(({ feature }) => feature), Array(5).fill('sonic-thinking'));
 });
 
 test('roster rejects a role file with a multiline thinking purpose', async (t) => {
@@ -1156,7 +1210,7 @@ test('roster rejects a role file with a multiline thinking purpose', async (t) =
   const path = join(f.env.HUD_HOME, 'roles', 'sonic.json');
   const role = JSON.parse(fs.readFileSync(path, 'utf8'));
   fs.writeFileSync(path, JSON.stringify({ ...role, thinking_choices: { low: 'First line\nSecond line' } }));
-  const roster = await f.call('hud_roster');
+  const roster = await f.call('hud_roster', { detail: true });
   assert.deepEqual(roster.invalid, [{ path, reason: 'bad thinking_choices' }]);
   assert.ok(roster.roles.some(({ role, thinking_choices }) => role === 'sonic' && thinking_choices.low));
 });
