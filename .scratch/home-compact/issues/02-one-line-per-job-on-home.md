@@ -1,6 +1,6 @@
 # 02: One line per job on Home
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Blocked by:** 01
 **Owner try:** yes
 
@@ -21,5 +21,9 @@ Target:
 Sample first: update `docs/design/home-compact/sample.html` with a "v2" busy frame next to the current one, at 120/80/50 columns, ZH and EN. The build follows once the owner settles it.
 
 - [x] Sample v2 opened for the owner and settled (owner 2026-11-22: "接受设计"; sample 0bd69fdc)
-- [ ] A busy fixture of 14 jobs fits in about 16 rows at 80 columns (today it takes about 38)
-- [ ] Titles come from ticket or brief titles; panel width rules hold; references are updated
+- [x] A busy fixture of 14 jobs fits in about 16 rows at 80 columns (today it takes about 38)
+- [x] Titles come from ticket or brief titles; panel width rules hold; references are updated
+
+## Comments
+
+- Landed 709d7e08ce8c5c34001384ba1caa29027bac03cb; gate 5/5 passed.

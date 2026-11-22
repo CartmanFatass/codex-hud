@@ -873,9 +873,11 @@ export function recordFailureExhaustion(
       : `${reason.slice(0, Math.max(0, 500 - suffix.length))}${suffix}`;
   if (diskJob) {
     try {
-      writePrivateFile(jobFile, JSON.stringify({ ...diskJob, exhaustion_marked: true }, null, 2) + '\n', { mkdir: false });
+      // The registry work above is slow: another writer (the MCP's `observed_at` stamp, a read) may have updated the receipt since it was read, so write the latest one.
+      const latest = json(jobFile) as Partial<Job>;
+      if (!latest.exhaustion_marked) writePrivateFile(jobFile, JSON.stringify({ ...latest, exhaustion_marked: true }, null, 2) + '\n', { mkdir: false });
     } catch {
-      /* Ignore transient write error. */
+      /* Ignore a transient read or write error. */
     }
   }
   return { marked: true, reason: enriched };
