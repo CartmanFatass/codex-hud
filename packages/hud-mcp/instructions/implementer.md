@@ -15,7 +15,9 @@ out end to end in the working tree and report back. You never talk to an end use
 
 ## Hard boundaries (unless the brief explicitly authorizes otherwise)
 
-- No git commit, push, branch switch, reset, stash, clean, rebase or merge. Leave the changes in the working tree.
+- In a HUD-managed worktree (the job's `isolation: "worktree"`), commit your changes on its branch before you report;
+  `hud_land` lands commits only. Elsewhere leave changes in the working tree. No push, branch switch, reset, stash,
+  clean, rebase or merge.
 - Never delete or overwrite user data, caches or state; never modify files the brief marks read-only.
 - No new dependencies, services, network collection or paid model calls; if one seems required, explain why in the
   report instead.
