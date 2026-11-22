@@ -168,6 +168,7 @@ export function workCardDetail(card: WorkCard, sentence = ''): string {
     card.worker.settledAt === null || (failed(card) && card.worker.quietDecision?.action === 'fail');
   const quiet = showQuiet ? quietDecisionSummary(card.worker.quietDecision) : '';
   const detail =
+    card.worker.reportMeta?.summary ||
     sentence ||
     card.worker.ask ||
     (card.worker.work?.reason ? t(card.worker.work.reason) : card.reason ? t(card.reason) : '');
@@ -240,8 +241,11 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
     const lines = jobSentenceRows(generated, width, ink, true);
     rows.push(...(open || lines.length <= SENTENCE_ROWS ? lines : [lines[0], fit(truncateAnsi(lines[1].trimEnd(), width - 1) + '…', width)]));
   }
-  for (const part of generated && !open ? [] : [workCardDetail(card, sentence)])
-    if (part) rows.push(...stemLines(part, width, ink, open ? Infinity : SENTENCE_ROWS));
+  // A localized worker summary replaces its original, rather than adding a second result line.
+  if (!generated || (open && !card.worker.reportMeta?.summary)) {
+    const detail = workCardDetail(card, sentence);
+    if (detail) rows.push(...stemLines(detail, width, ink, open ? Infinity : SENTENCE_ROWS));
+  }
   // A collapsed card keeps a fixed height, so a sentence arriving or growing does not move the cards below it.
   if (!open && rows.length === 1) rows.push(fit(`${ink(mark('┃', '|'))} ${theme.board.muted('…')}`, width));
   while (!open && rows.length < 1 + SENTENCE_ROWS) rows.push(fit(ink(mark('┃', '|')), width));

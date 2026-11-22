@@ -180,6 +180,10 @@ is ignored; it does not widen the pane scope.
 recorded pane. It excludes jobs settled before the panel's original `openedAt`
 before reading their artifacts or planning model requests. Active/unknown jobs
 remain eligible. It reads job/STATUS, brief heading, report, newest review and QA.
+Only settled jobs expose worker metadata whose report signature still matches. The summary is their result line
+and matches the Home filter; the Inspector shows up to 12 reported paths as text only when no Git changes are shown.
+Task notices and single-job reads reuse the summary and file list (task results show at most eight paths); watch and
+`changes` lines and list reads carry only a clipped summary. Metadata writes do not wake `hud watch` on their own.
 Working-session target mtime contributes activity without an extra body read.
 The thin-job signature cache is shared disposable display state, never job authority.
 Job directory enumeration/stat/ranking still grows with retained history; the body
@@ -270,14 +274,14 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 
 | Feature / collector | Public input that can leave the machine |
 |---|---|
-| `JobSentences`, thin jobs | Brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a safe 32 KiB working-session tail |
+| `JobSentences`, thin jobs | A current worker summary (≤160 Unicode code points) needs no request in the panel's language; translation sends only that summary. Otherwise: brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a safe 32 KiB working-session tail |
 | `JobSentences`, native agents | Name/role (80 chars each), task/charge (400), report (600), action (200), final result (8000 head/tail), error (2000); a settled Codex agent may use one safe 32 KiB tail |
 | `TryBriefs` | One call per to-try slice, only while the Project tab shows it (newest 12 slices): its ledger line, up to 5 commits' messages (1200 chars each), up to 4 ticket files (3000 bytes each) under a `.scratch/<slug>/` the line names |
 | `DecisionTitles` | Only for an inspected job's answered question in Files: question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
 | `DecisionLabels`, outcome/kind | Final state + the same settled report excerpt (4096 UTF-8 bytes), or brief title/goal (1500-byte head); once per settlement/job respectively |
 | `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
 | `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
-| `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag and outcome; no file bodies |
+| `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240, can include the worker summary), question flag and outcome; no file bodies |
 | Sonic auto-thinking | First 4000 characters of the dispatched task, plus sonic role scope and thinking purposes; no standing brief or referenced files |
 | Settings Test API | Fixed synthetic messages only |
 
@@ -401,6 +405,7 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | Path under HUD home | Contents / writer |
 |---|---|
 | `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles, CLI supervisor or browser wrapper |
+| `jobs/<job>/report-meta.json` | Optional private 0600 worker summary and file list, bound to `report.md` by signature; no lifecycle, checks or outcome authority |
 | `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control tab |
 | `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control tab |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |

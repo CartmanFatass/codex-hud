@@ -93,6 +93,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   jobs: '作业',
   decisions: '决定',
   Files: '文件',
+  'Reported files': '报告文件',
   Jobs: '作业',
   unsaved: '未保存',
   Models: '模型',

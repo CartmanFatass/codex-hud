@@ -46,8 +46,8 @@ Claude Code sessions that negotiate the `2026-07-28` MCP tasks extension receive
 `hud_create`, single-job `hud_send` (including repairs), or `hud_respond` that resumes work. Dispatch errors,
 duplicate calls that start no work, and `hud_send({jobs:[…]})` still return immediately. Claude polls the task
 and notifies the session when the turn settles, asks a question, fails, or stops. A task result gives the job ID,
-role, state, and a report path with a one-line summary or the question ID and text. The report remains unread;
-collect it with `hud_read`. Cancel from `/tasks` to stop a still-current worker turn, like `hud_close`; repeating
+role, state, and a report path with a one-line summary and up to eight reported files, or the question ID and text.
+It prefers the worker's own summary and falls back to report prose. The report remains unread; collect it with `hud_read`. Cancel from `/tasks` to stop a still-current worker turn, like `hud_close`; repeating
 cancel or cancelling a finished or superseded task does nothing. After MCP restarts, unknown tasks fail with a
 `hud_read` hint; jobs are not stopped. Use `hud_read` for jobs without a task. These sessions do not get
 `hud_wait`, `changes`, `watcher_alive`, or a Monitor hint.
@@ -110,10 +110,13 @@ reaped, the watcher removes the checkout and its branch only when it has no chan
 base or already merged into the main checkout, without force; otherwise it keeps both and records
 `worktree_kept_reason` in `job.json`.
 
-Both list views return a newest-first `jobs` snapshot without reading report or question bodies or marking them seen.
+Both list views return a newest-first `jobs` snapshot without returning report or question bodies or marking them seen.
 Compact rows show `job`, `role` and `state`, plus `report_unread: true`, `blocked: true`, pending `question_ids`
 and a block, wait or failure `reason` when applicable. Closed jobs with unread reports still appear; use `recent`
-for history or fields such as `open_questions`. The per-session `changes` stream is independent of the snapshot.
+for history or fields such as `open_questions`. Both lists can include a settled job's `summary` (up to 120 characters,
+no file list). A single-job read includes `report_meta: { summary?, files? }` when valid, even with `report_unchanged`.
+Metadata is ignored while the job runs or if the report's signature no longer matches. The per-session `changes`
+stream is independent of the snapshot.
 
 ## Worker tools
 
@@ -125,6 +128,8 @@ run `node packages/hud-mcp/bin/hud-lease.mjs [--dir <own job dir>] [--release] [
 HUD release, or use the script's absolute path. `--dir` defaults to `HUD_JOB_DIR`.
 
 - `hud_report({text, turn})` on CLI, `hud_report({text})` on pi: atomically publishes `report.md` and returns its path.
+  Both accept optional `summary` (one plain line, up to 160 Unicode code points) and `files` (up to 50 relative paths).
+  These display hints are bound to the report's signature; they do not set an outcome or change job state, checks or acceptance.
   Use the turn token from the CLI prompt you are answering. No final chat marker is needed.
 - `hud_ask({question, default, options?, context?})`: asks the orchestrator. Pi also accepts `mode: "async"`;
   continue only unrelated work until the native answer arrives.
@@ -194,7 +199,8 @@ For clients without MCP tasks, MCP tool responses carry the session's `changes` 
 new blocks and new quiet-worker reasons, not working starts/resumes, question-count drops or already-reported
 closure. On start it catches up pending questions, unread settled reports and unread failures/blocks.
 Re-arm after expiry; `--verbose` prints all MCP change lines, `--all` watches every pane. A `report` token means
-unread. Claude Code without MCP tasks can run `hud watch` under Monitor. Codex receives these quiet lines automatically through
+unread. Both `hud watch` and MCP `changes` append the current worker summary, clipped to 140 characters, when supplied.
+Claude Code without MCP tasks can run `hud watch` under Monitor. Codex receives these quiet lines automatically through
 its own queue: create/successful send starts one detached `hud watch --queue` per pane, without event stdout.
 It catches up and exits when the pane is gone/no longer Codex, or after 10 minutes without unsettled jobs,
 unread attention/reports or unanswered questions. The pi HUD package sends native notices that wake an idle main

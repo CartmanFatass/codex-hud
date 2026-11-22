@@ -9,6 +9,7 @@ import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { answerJobQuestion } from '../../dist/collectors/panel-actions.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
+import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import {
   workerFor,
@@ -150,6 +151,32 @@ test('only a one-job read includes a bounded summary of committed and pending wo
     await f.call('hud_wait', { jobs: [job.job], wait_ms: 0 })]) {
     assert.doesNotMatch(JSON.stringify(result), /git_summary/);
   }
+});
+
+test('hud_read lists and MCP changes include only current settled report summaries', async (t) => {
+  const f = await fixture(t);
+  const working = waitFixtureJob(f, 1), stale = waitFixtureJob(f, 2);
+  const summary = 'Synthetic report summary: ' + '测'.repeat(115);
+  for (const row of [working, stale]) {
+    writeFixtureFile(join(row.dir, 'report.md'), 'Original synthetic report.');
+    writeReportMeta(row.dir, cachedReportSignature(row.dir), { summary, files: ['src/synthetic.ts'] });
+  }
+  const before = await f.call('hud_read');
+  assert.equal(before.jobs.length, 2);
+  assert.ok(before.jobs.every((row) => !('summary' in row)));
+  writeFixtureFile(join(stale.dir, 'report.md'), 'Revised synthetic report.');
+  for (const row of [working, stale]) row.status('closed');
+  const compact = await f.call('hud_read');
+  const recent = await f.call('hud_read', { view: 'recent' });
+  for (const list of [compact, recent]) {
+    const valid = list.jobs.find((row) => row.job === working.job);
+    assert.equal(valid.summary, [...summary].slice(0, 120).join(''));
+    assert.doesNotMatch(JSON.stringify(list.jobs), /src\/synthetic\.ts|report_sig/);
+    assert.equal(list.jobs.find((row) => row.job === stale.job).summary, undefined);
+  }
+  assert.ok(compact.changes.includes(`${working.job} imp: closed | report | ${[...summary].slice(0, 140).join('')}`));
+  assert.ok(compact.changes.includes(`${stale.job} imp: closed | report`));
+  assert.equal(recent.changes, undefined, 'metadata does not trigger another change');
 });
 
 test('hud_read compact lists actionable jobs without losing unread reports or hidden changes', async (t) => {

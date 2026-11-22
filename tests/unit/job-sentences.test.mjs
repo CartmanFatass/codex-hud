@@ -10,6 +10,9 @@ import { keywordMarks } from '../../dist/utils/keyword-marks.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { SmallModel, modelHttpRequest } from '../../dist/collectors/small-model.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
+import { homeMatcher } from '../../dist/render/filter.js';
+import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { renderWorkCard, jobSentenceLine, paintSentence } from '../../dist/render/work-card.js';
 import { laneRows } from '../../dist/render/work-lanes.js';
@@ -214,6 +217,86 @@ test('settlement replaces an in-flight running sentence without requiring anothe
   await f.update();
   assert.equal(f.calls.length, 2);
 });
+for (const [language, summary] of [['en', 'Parser repaired; checks passed.'], ['zh', '解析器已修复，检查全部通过。']]) {
+  test(`worker summary replaces running text with zero final model calls (${language})`, async (t) => {
+    const f = fixture(t, 'on', language);
+    f.reply = language === 'en' ? 'Running checks.' : '正在运行检查。';
+    assert.equal((await f.update()).workers[0].modelSentence, f.reply);
+    f.put('report.md', parserReport);
+    const files = Array.from({ length: 13 }, (_, i) => `src/file-${i}.ts`);
+    writeReportMeta(f.dir, cachedReportSignature(f.dir), { summary, files });
+    assert.equal(f.board().workers[0].reportMeta, undefined, 'a running job cannot expose an earlier report summary');
+    f.put('STATUS.json', { state: 'closed', settled_at: new Date(++f.now).toISOString() });
+    const board = await f.update();
+    const worker = board.workers[0];
+    assert.equal(f.calls.length, 1, 'the only call was for the running sentence');
+    assert.equal(worker.modelSentence, undefined);
+    assert.equal(worker.work.reason, summary);
+    assert.equal(worker.labels, undefined, 'worker metadata does not set an outcome');
+    assert.equal(homeMatcher(board, summary.toLowerCase(), f.now)(worker), true);
+    assert.doesNotMatch(fs.readFileSync(join(f.home, 'display/thin-jobs.json'), 'utf8'), /file-0\.ts|checks passed|全部通过/);
+    const original = setLanguage(language);
+    try {
+      for (const width of [40, 100]) {
+        const rows = workInspectorRows(worker, initialMonitorState(), width, f.now);
+        const text = rows.map((row) => stripAnsi(row.text)).join('\n');
+        assert.equal(text.split(summary).length, 2, 'result appears once');
+        assert.match(text, /Reported files|报告文件/);
+        assert.match(text, /src\/file-11\.ts/);
+        assert.doesNotMatch(text, /src\/file-12\.ts/);
+        assert.match(text, /\+1 more files|另有 1 个文件/);
+        assert.equal(rows.find((row) => row.text.includes('file-0.ts')).files, undefined, 'reported paths are not openable');
+        // Blank separators are padded by the frame; the Inspector fits every content row itself.
+        assert.ok(rows.every((row) => !row.text || visualLength(row.text) === width));
+      }
+    } finally { setLanguage(original); }
+    const diffStat = { files: [{ path: 'git-only.ts', absPath: '/synthetic/git-only.ts', added: 1, deleted: 0 }], totalFiles: 1 };
+    const diff = workInspectorRows({ ...worker, diffStat }, initialMonitorState(), 100, f.now).map((row) => stripAnsi(row.text)).join('\n');
+    assert.match(diff, /git-only\.ts/);
+    assert.doesNotMatch(diff, /src\/file-0\.ts/);
+    f.service.configure(false, language);
+    assert.ok(stripAnsi(f.render(f.service.apply(f.board()))).includes(summary));
+  });
+}
+
+test('cross-language summary makes one translation request; a stale signature drops the translation and uses report evidence', async (t) => {
+  const f = fixture(t, 'on', 'zh');
+  const summary = 'Parser boundaries repaired and all synthetic checks passed.';
+  f.put('report.md', parserReport);
+  writeReportMeta(f.dir, cachedReportSignature(f.dir), { summary });
+  f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
+  f.reply = '解析器边界已修复，检查全部通过。';
+  const board = f.board();
+  f.service.update(board, f.home);
+  assert.equal(f.service.apply(board).workers[0].work.reason, summary, 'show the original while translating');
+  assert.equal(f.service.apply(board).workers[0].modelSentence, undefined);
+  const translated = await f.update();
+  const worker = translated.workers[0];
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0].messages[0].content, /Translate the worker's one-line result/);
+  assert.deepEqual(JSON.parse(f.calls[0].messages[1].content.split('\n')[1]), { reportedSummary: summary });
+  assert.equal(worker.modelSentence, f.reply);
+  const inspector = workInspectorRows(worker, initialMonitorState(), 100, f.now).map((row) => stripAnsi(row.text)).join('\n');
+  assert.ok(inspector.includes(f.reply));
+  assert.ok(!inspector.includes(summary));
+  assert.equal((await f.update()).workers[0].modelSentence, f.reply);
+  assert.equal(f.calls.length, 1);
+  f.put('STATUS.json', { state: 'working' });
+  const continued = f.service.apply(f.board()).workers[0];
+  assert.equal(continued.reportMeta, undefined);
+  assert.equal(continued.modelSentence, undefined, 'a previous translation does not leak into a continued turn');
+  f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
+  f.put('report.md', 'Synthetic revised report; prior result no longer applies.');
+  const stale = f.service.apply(f.board()).workers[0];
+  assert.equal(stale.reportMeta, undefined);
+  assert.equal(stale.modelSentence, undefined);
+  f.reply = '修订报告已取代旧结果。';
+  await f.update();
+  assert.equal(f.calls.length, 2, 'stale metadata falls back to one legacy final request');
+  assert.match(f.calls[1].messages[1].content, /Synthetic revised report/);
+  assert.doesNotMatch(f.calls[1].messages[1].content, /reportedSummary/);
+});
+
 for (const language of ['en', 'zh']) {
   test(`short job titles: heading, same-call name, fallback, Home/Inspector/Project frames (${language})`, async (t) => {
     const f = fixture(t, 'on', language);

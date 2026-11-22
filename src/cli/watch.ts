@@ -128,7 +128,8 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
       // One recursive watch covers every job's STATUS.json, report.md and qa/ (Node 24 on Linux).
       const jobs = fs.watch(join(home, 'jobs'), { recursive: true, persistent }, (_event, name) => {
         const file = name?.toString() ?? '';
-        if (file.endsWith('.tmp') || file.endsWith('supervisor.pid') || file.endsWith('/progress.jsonl') || file.includes('/sessions/')) return;
+        if (file.endsWith('.tmp') || file.endsWith('supervisor.pid') || file.endsWith('/progress.jsonl') ||
+          file.endsWith('/report-meta.json') || file.includes('/sessions/')) return;
         changed();
       });
       watcher = jobs;

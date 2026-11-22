@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId } from '../roles/herdr-run.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
+import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
+import { keywordMarks } from '../utils/keyword-marks.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
@@ -156,6 +158,7 @@ export interface JobRow extends Partial<JobProgress> {
   report_mtime: number | null;
   question_ids: string[];
   checks?: CheckSummary;
+  report_meta?: ReportMetaFields;
 }
 export interface JobRowExtras {
   dir?: string;
@@ -315,18 +318,36 @@ export function readActiveLeases(home: string, project: string): LeaseRecord[] {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function settledReportMeta(dir: string, hasReport: boolean, settled: boolean): ReportMeta | undefined {
+  const meta = hasReport && settled ? readReportMeta(dir) : null;
+  // Worker summaries are plain text; do not expose accidental panel markup in notices or reads.
+  if (!meta?.summary || !/[«»]/u.test(meta.summary)) return meta ?? undefined;
+  const { summary: marked, ...rest } = meta;
+  const summary = keywordMarks(marked).plain.trim();
+  return summary ? { ...rest, summary } : rest.files ? rest : undefined;
+}
+
+export function jobRowReportMeta(row: JobRow, dir: string): ReportMetaFields | undefined {
+  const meta = settledReportMeta(dir, row.report_present, row.display_state !== 'working');
+  return meta ? {
+    ...(meta.summary ? { summary: meta.summary } : {}), ...(meta.files ? { files: meta.files } : {}),
+  } : undefined;
+}
+
 const rowState = (row: JobRow) => row.state ?? row.display_state;
 const readyChecks = (row?: JobRow) => row?.checks?.state === 'done' && !row.checks.stale ? row.checks : undefined;
 export const checksJustFinished = (row: JobRow, old?: JobRow) => !!readyChecks(row) && !sameChecks(readyChecks(row), readyChecks(old));
 export function formatJobChange(row: JobRow): string {
   const head = [row.job, row.role, row.package].filter(Boolean).join(' ');
   const reason = row.reason ? row.reason.replace(/\s+/g, ' ').trim() : null;
+  const summary = row.report_meta?.summary;
   const parts = [
     rowState(row),
     ...(reason ? [reason] : []),
     ...(!row.parent_job && row.report_unread ? ['report'] : []),
     ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
     ...(readyChecks(row) ? [`checks ${row.checks!.passed}/${row.checks!.total}`] : []),
+    ...(summary ? [[...summary].slice(0, 140).join('')] : []),
   ];
   return `${head}: ${parts.join(' | ')}`;
 }
@@ -389,7 +410,9 @@ function watchRows(home: string, pane: string | null, receipts: ReturnType<typeo
     const status = json(join(dir, 'STATUS.json'), JSON.parse, watchCache)?.v ?? null;
     try {
       const checks = jobChecks(dir, job);
-      rows.push({ ...jobRow(job, status, { dir }), ...(checks ? { checks } : {}) });
+      const row = jobRow(job, status, { dir });
+      const reportMeta = jobRowReportMeta(row, dir);
+      rows.push({ ...row, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
     } catch {
       /* Job directory disappeared or became unreadable during the scan; skip it. */
     }
@@ -399,8 +422,8 @@ function watchRows(home: string, pane: string | null, receipts: ReturnType<typeo
 }
 
 /**
- * Lightweight, read-only watch rows: receipts, `qa/` filenames and report mtime; for jobs with checks also the cached
- * report signature. A null pane matches every job, undefined matches none.
+ * Lightweight, read-only watch rows: receipts, `qa/` filenames and report mtime; checks and settled report metadata
+ * use the cached report signature. A null pane matches every job, undefined matches none.
  */
 export function readThinJobRows(home: string, scope: { pane?: string | null }): JobRow[] {
   if (scope.pane !== null && !herdrId(scope.pane)) return [];
@@ -612,7 +635,9 @@ export function readThinJobs(
     phases.push(phase);
     const sessionFile = state === 'working' ? latestSession(directory) : undefined;
     const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0);
+    const reportMeta = settledReportMeta(directory, report !== null, settledAt !== null);
     const sentence =
+      reportMeta?.summary ||
       waiting?.fields.question ||
       (state === 'failed' ? row.reason : null) ||
       (report && report.at >= phaseAt ? first(report.text) : lastResult) ||
@@ -637,6 +662,7 @@ export function readThinJobs(
         : undefined;
     const worker: OwnerWorker = {
       files,
+      ...(reportMeta ? { reportMeta } : {}),
       sessionFile,
       progress: row.progress,
       latest_progress: row.latest_progress,

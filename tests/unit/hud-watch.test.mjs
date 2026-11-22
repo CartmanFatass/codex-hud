@@ -9,6 +9,7 @@ import test from 'node:test';
 import { main } from '../../dist/cli/hud-main.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
+import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -211,6 +212,48 @@ test('hud watch --verbose retains the existing MCP change lines', async (t) => {
   assert.equal(fs.existsSync(join(hudHome, 'watch.pid')), false);
   assert.equal(fs.existsSync(join(hudHome, 'watch.log')), false);
   assert.equal(fs.existsSync(join(hudHome, 'watchers', 'w4E:p1.pid')), false);
+});
+
+test('hud watch shows the signed settlement summary and ignores metadata-only writes', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-summary-'));
+  const pane = 'w4E:p1', id = 'j00000000000000a1', staleId = 'j00000000000000b2';
+  const dir = writeJob(home, id, pane, 'summary', { state: 'working' }, true);
+  const stale = writeJob(home, staleId, pane, 'stale', { state: 'working' }, true);
+  const ac = new AbortController(), lines = [];
+  const original = fs.readdirSync;
+  let scans = 0;
+  fs.readdirSync = (path, ...args) => {
+    if (path === join(home, 'jobs')) scans++;
+    return original(path, ...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.readdirSync = original;
+    syncBuiltinESMExports();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const running = watchCommand(['--all'], {
+    env: { HUD_HOME: home }, stdout: (s) => lines.push(s.trim()), stderr: () => {},
+  }, { signal: ac.signal, rescanMs: 30000, settlementWindowMs: 30 });
+  try {
+    await until(() => scans > 0);
+    const initial = scans;
+    writeReportMeta(dir, cachedReportSignature(dir), { summary: '«Synthetic» work completed.' });
+    await wait(180);
+    assert.equal(scans, initial, 'report-meta.json writes do not rescan jobs');
+    assert.deepEqual(lines, []);
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+    await until(() => lines.length > 0);
+    assert.deepEqual(lines, [`${id} imp summary: idle_grace | report | Synthetic work completed.`]);
+    writeReportMeta(stale, cachedReportSignature(stale), { summary: 'Stale synthetic metadata.' });
+    writeFixtureFile(join(stale, 'report.md'), 'Rewritten synthetic report.');
+    writeFixtureFile(join(stale, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+    await until(() => lines.length > 1);
+    assert.deepEqual(lines.slice(1), [`${staleId} imp stale: idle_grace | report`]);
+  } finally {
+    ac.abort();
+    assert.equal(await running, 0);
+  }
 });
 
 test('hud watch skips child completion and report, but delivers questions and failure', async (t) => {

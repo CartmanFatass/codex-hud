@@ -97,7 +97,8 @@ See [Project workers](#project-workers).
 Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
 `hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
 question, failure or stop without Monitor. The notification names the job, role and state, with a report path and
-one-line summary or the question ID and text. It does not mark a report read; collect it with `hud_read({job})`.
+one-line summary (and up to eight reported files, when provided) or the question ID and text. It prefers the
+worker's own summary and falls back to report prose. It does not mark a report read; collect it with `hud_read({job})`.
 A successful fan-out send keeps the job’s existing active task instead of starting a new one.
 Cancelling a still-current task stops the worker like `hud_close`; repeating cancel or cancelling an old task does
 nothing. Dispatch failures, duplicates and fan-out sends return immediately. Use `hud_read` for jobs without a
@@ -109,7 +110,8 @@ the last response (omitted when there is none). Panel, statusline, pi footer, MC
 state through one shared `jobRow`, so they agree. `hud watch` defaults to actionable events: new questions
 (with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker
 reasons. It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps
-all MCP change lines. On start it catches up pending questions, unread settled reports and unread failures/blocks.
+all MCP change lines. Both `hud watch` and `changes` append a current worker summary, clipped to 140 characters.
+On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
 without tasks runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
 `codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
@@ -197,7 +199,8 @@ after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is sk
 `hud_read({})` (or `view: "compact"`) lists running jobs and jobs that still need attention, newest first. It shows
 `job`, `role`, `state` and, when applicable, `report_unread: true`, `blocked: true`, pending `question_ids` and a
 block, wait or failure `reason`. A closed job with an unread report still appears. Use `view: "recent"` for the
-newest 20 full rows, including handled history. Neither list marks anything read; `changes` still includes events
+newest 20 full rows, including handled history. Both list views include a settled job's current `summary` when
+available (up to 120 characters; no file list). Neither list marks anything read; `changes` still includes events
 for jobs hidden from the snapshot. `view` cannot be combined with `job`.
 
 `hud_wait({ jobs?, mode?, wait_ms? })` watches several jobs at once. Omit `jobs` to take the caller session's
@@ -223,13 +226,16 @@ ordinary reads omit empty progress, and list/wait rows omit all progress. Milest
 
 With a `job`, `hud_read` reads STATUS, open questions and an unread report (up to 64 KiB). A report is unread when
 newer than `read_at`, or when no `read_at` exists. Already-read reports return `report_unchanged: true` without a
-body; `full: true` includes it again. `detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
+body; `full: true` includes it again. A settled job's `report_meta` contains its optional `summary` and `files`,
+even on `report_unchanged`. Metadata is ignored when the report changes or the job is still running.
+`detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
 use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
 question or timeout. Every returned report body stamps `read_at` (including during work and idle grace), not
 acceptance. A settled pi or CLI worker closes when its current turn's report is read (`closed after report read`);
 reading an earlier turn's report after a continuation does not close the worker. An unread report keeps the usual
 idle deadline. Reading a failure/block separately marks that attention as seen.
-Workers finish with `hud_report`, which publishes the report without repeating it in chat. Claude and Codex
+Workers finish with `hud_report`, which publishes the report without repeating it in chat. They may supply a
+one-line `summary` (up to 160 Unicode code points) and a `files` list of up to 50 relative paths. Claude and Codex
 use their HUD MCP and pass the token from the prompt they are answering; pi has native tools and needs no token.
 Antigravity and Grok Build use the fallback commands in their briefs. Workers use `hud_sonic` to start sonic
 sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
@@ -806,7 +812,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked (`n` means nothing else on any page) |
 | `b` | Toggle model text (also in Settings → Models). The top row shows `models off` when model text is off and the label fits; click it to turn model text back on |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
-| `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
+| `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, worker summary, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Control or EXP, Esc does nothing |
 | `q` | Close panel |
@@ -891,7 +897,8 @@ buckets (`▁▂▃▄▅▆▇█`, `..--==##` with text icons) of how often th
 report or `hud-progress`), a quiet minute blank, eight sightings or more a full cell. The ring lives in the panel's memory
 from when it first saw the worker, so there is none for a worker that has not written since, and none once it settles.
 Files lists brief, QA, reviews and
-report; Up/Down selects, Enter/`o` opens. Native cards list their transcript and
+report; Up/Down selects, Enter/`o` opens. With no Git diff, **Reported files** shows up to 12 worker-listed
+paths as text, not as links or verified changes. Native cards list their transcript and
 available context %, estimated tokens/s and cumulative tokens; missing values are
 omitted, with no extra model request. No stage/log history or switch controls remain.
 
@@ -951,16 +958,17 @@ Both caps use 0 for unlimited and still count calls (`n/∞`). Counts aggregate
 panels on one HUD home. Text uses `display/model-cache/calls.json`; labels/ranking
 use `display/model-cache/decision-api/calls.json`, including fallback attempts.
 One line per counter lists this hour's features, largest first. Changed running
-text follows Summary interval. A newly settled HUD job clears its running text and
-can request its result sentence immediately. Failed final requests, native finals
-and ranking keep two-minute floors. One successful final sentence freezes that
-settlement; a continuation can settle anew.
+text follows Summary interval. A newly settled HUD job clears its running text. A current worker summary
+is shown immediately, even with Model text off. It needs no sentence request in the panel's language;
+otherwise, when enabled, the model translates the summary. A missing or stale summary falls back to a
+model result from the report. The first final request does not wait for the running interval; failed final
+requests, native finals and ranking keep two-minute floors. Outcome labels are independent Decision-API judgements.
 
 **Outbound material** (public channels only; never reasoning, ciphertext or referenced files):
 
 | Feature | Input |
 |---|---|
-| Thin-job sentence/name | Brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a 32 KiB working-session tail |
+| Thin-job sentence/name | Only the worker's one-line summary (≤160 Unicode code points) when translating it; otherwise brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a 32 KiB working-session tail |
 | To-try brief and steps | One per slice still to try, only while the Project tab shows it: its ledger line, the subjects and bodies of up to 5 commits it names (1200 chars each), up to 4 ticket files (3000 bytes each) under the `.scratch/<slug>/` it names; cached per slice by a hash of those inputs |
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
 | Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
@@ -969,7 +977,7 @@ settlement; a continuation can settle anew.
 | Looping label | Last 12 public tool/result pairs (600 chars each part) from the same safe tail; after 3 quiet minutes, at most once per 5 minutes, unchanged input never repeats |
 | Question category | 4096-byte head of the job's current open question |
 | Review severity | ≤24 list items (400 chars each) from newest 32 KiB review head or settled reviewer report |
-| Home ranking/brief | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag, outcome; no bodies |
+| Home ranking/brief | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240, can include the worker summary), question flag, outcome; no bodies |
 | Sonic thinking | First 4000 characters of the task as data; sonic role scope and thinking purposes. No referenced context, standing brief or reports are loaded for the decision. |
 | Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Test API | Fixed synthetic messages only |

@@ -121,8 +121,9 @@ export function readReportMeta(dir: string, expectedSig?: string | null): Report
     )
       return null;
     if (meta.report_sig !== (expectedSig === undefined ? cachedReportSignature(dir) : expectedSig)) return null;
-    const { at, report_sig, summary, files } = meta;
-    return { v: 1, at, report_sig, ...(summary ? { summary } : {}), ...(files?.length ? { files } : {}) };
+    const { at, report_sig } = meta;
+    const fields = normalizeReportMeta(meta);
+    return fields.summary || fields.files ? { v: 1, at, report_sig, ...fields } : null;
   } catch {
     return null;
   }

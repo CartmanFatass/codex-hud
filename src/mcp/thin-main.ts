@@ -17,7 +17,7 @@ import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settl
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
-import { failureUnobserved, jobChanges, jobOwesCaller, jobRow, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
+import { failureUnobserved, jobChanges, jobOwesCaller, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse } from '../utils/report-summary.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
@@ -821,6 +821,11 @@ async function peekJob(job: Job, { lines, detail }: Args) {
   return { ...summary, pane_lines: output ? output.split(/\r?\n/).slice(-lines) : [] };
 }
 
+function listReportSummary(row: JobRow) {
+  const summary = jobRowReportMeta(row, directory(row.job))?.summary;
+  return summary ? { summary: [...summary].slice(0, 120).join('') } : {};
+}
+
 function listJobs(recent: boolean) {
   const newest = jobs().filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const recentLimit = 20;
@@ -838,6 +843,7 @@ function listJobs(recent: boolean) {
         report_present: row.report_present,
         report_unread: row.report_unread,
         created_at: job.created_at,
+        ...listReportSummary(row),
       };
     });
   }
@@ -852,7 +858,7 @@ function listJobs(recent: boolean) {
       !row.question_ids.length &&
       !(failed && failureUnobserved(directory(job.job), job.observed_at))
     ) return [];
-    return [compactRow(row)];
+    return [{ ...compactRow(row), ...listReportSummary(row) }];
   });
 }
 
@@ -963,6 +969,7 @@ function observation(job: Job, full: boolean, detail: boolean) {
   const dir = directory(job.job);
   const { row, status } = readRow(job, !isWorker);
   const report = row.report_unread || full ? slice(join(dir, 'report.md'), 65536) : null;
+  const reportMeta = jobRowReportMeta(row, dir);
   const questions = openQuestions(dir).map((name) => ({
     id: name.slice(0, -3),
     text: slice(join(dir, 'qa', name), 2048)?.text ?? '',
@@ -984,6 +991,7 @@ function observation(job: Job, full: boolean, detail: boolean) {
     ...(job.worktree_removed_at ? { worktree_removed_at: job.worktree_removed_at } : {}),
     ...(job.worktree_kept_reason ? { worktree_kept_reason: job.worktree_kept_reason } : {}),
     report_exists: row.report_present,
+    ...(reportMeta ? { report_meta: reportMeta } : {}),
     ...(detail || row.report_unread ? { report_unread: row.report_unread } : {}),
     ...(detail || progress.latest_progress ? progress : {}),
     ...(checks ? { checks } : {}),
@@ -1833,7 +1841,11 @@ function sessionRows(markExhaustion: boolean): JobRow[] {
   return sessionJobs()
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.job.localeCompare(b.job))
     .slice(0, 200)
-    .map((job) => readRow(job, markExhaustion).row);
+    .map((job) => {
+      const { row } = readRow(job, markExhaustion);
+      const reportMeta = jobRowReportMeta(row, directory(job.job));
+      return reportMeta ? { ...row, report_meta: reportMeta } : row;
+    });
 }
 let cursor: Map<string, JobRow>;
 const tries = new TryLog(hudHome), answers = new PanelActionLog(hudHome);
@@ -1980,8 +1992,12 @@ function sampleTask(task: HudTask): TaskView {
   const report = join(dir, 'report.md');
   const currentSettlement = typeof status?.settled_at !== 'string' || status.settled_at >= task.createdAt;
   if (settled(state) && currentSettlement && row.report_mtime !== null && row.report_mtime !== task.reportBefore) {
-    const summary = (firstReportProse(slice(report, 2048)?.text ?? '') ?? 'Report ready').slice(0, 240);
-    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}`);
+    const meta = jobRowReportMeta(row, dir);
+    const summary = meta?.summary ?? (firstReportProse(slice(report, 2048)?.text ?? '') ?? 'Report ready').slice(0, 240);
+    const files = meta?.files ?? [];
+    const more = files.length - 8;
+    const fileLine = files.length ? `\nFiles: ${files.slice(0, 8).join(', ')}${more > 0 ? ` (+${more} more)` : ''}` : '';
+    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}${fileLine}`);
   }
   if (state === 'closed' || state === 'done') {
     const message = `${label} — no report for this turn`;

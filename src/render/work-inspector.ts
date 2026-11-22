@@ -118,6 +118,14 @@ export function workInspectorRows(
   );
   const changes = diffStatRows(worker.diffStat, width);
   if (changes.length) rows.push(boardRow(''), section(t('Changes'), width), ...changes);
+  const reported = worker.reportMeta?.files;
+  if (!changes.length && reported?.length) {
+    const shown = reported.slice(0, 12);
+    rows.push(boardRow(''), section(t('Reported files'), width, String(reported.length)));
+    for (const file of shown) rows.push(itemRow('', theme.board.identifier(monitorText(file)), '', width));
+    if (reported.length > shown.length)
+      rows.push(itemRow('', t('+{n} more files', { n: reported.length - shown.length }), '', width));
+  }
   const files = worker.files ?? [];
   if (files.length) rows.push(boardRow(''), section(t('Files'), width, String(files.length)));
   for (const file of files) {

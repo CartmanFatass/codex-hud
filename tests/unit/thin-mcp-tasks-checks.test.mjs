@@ -9,6 +9,7 @@ import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, reportSignature } from '../../dist/mcp/cli-judge.js';
+import { writeReportMeta } from '../../dist/roles/report-meta.js';
 import {
   workerFor,
   cardText,
@@ -63,21 +64,29 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   writeFixtureFile(join(job.task_dir, 'progress.jsonl'), JSON.stringify({ at: new Date().toISOString(), text: 'Synthetic milestone.' }) + '\n');
   assert.match((await get()).statusMessage, /Synthetic milestone\./);
   writeFixtureFile(join(job.task_dir, 'report.md'), migrationReport);
+  const summaryText = 'Migration verified; the synthetic dry-run passed.';
+  const files = Array.from({ length: 10 }, (_, i) => `src/migration-${i}.ts`);
+  writeReportMeta(job.task_dir, reportSignature(job.task_dir), { summary: '«Migration»' + summaryText.slice(9), files });
   await publishPiGrace(job, undefined, false);
   const done = await get();
   assert.equal(done.resultType, 'complete');
   assert.equal(done.status, 'completed');
-  const [label, path, summary, launch] = done.result.content[0].text.split('\n');
+  const [label, path, summary, listedFiles, launch] = done.result.content[0].text.split('\n');
   assert.equal(label, `${job.job} (imp) — idle_grace`);
   assert.equal(path, `Report: ${join(job.task_dir, 'report.md')}`);
-  assert.equal(summary, `Summary: ${migrationProse}`);
+  assert.equal(summary, `Summary: ${summaryText}`);
+  assert.equal(listedFiles, `Files: ${files.slice(0, 8).join(', ')} (+2 more)`);
   assert.match(launch, /^Launch: used_place: pi/);
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), done);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
   assert.equal(f.commands().some(({ command }) => command === 'pi-role-reap'), false);
   const report = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
   assert.ok(report.report.includes(migrationProse));
+  assert.deepEqual(report.report_meta, { summary: summaryText, files });
   assert.equal(report.changes, undefined);
+  const repeat = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
+  assert.equal(repeat.report_unchanged, true);
+  assert.deepEqual(repeat.report_meta, report.report_meta);
   writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed', exit_reason: 'closed after report read' }));
   const repair = taskJob(f, await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic repair.' }));
   assert.notEqual(repair.job, job.job);
@@ -147,12 +156,17 @@ test('MCP tasks: fan-out sends keep the create task through report settlement', 
   assert.deepEqual(resultValue(sent).sent, [job.job]);
   assert.equal((await get()).status, 'working');
 
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'Original synthetic report.');
+  writeReportMeta(job.task_dir, reportSignature(job.task_dir), { summary: 'Stale synthetic summary.', files: ['stale.ts'] });
   writeFixtureFile(join(job.task_dir, 'report.md'), parserReport);
   await publishPiGrace(job, undefined, false);
   const done = await get();
   assert.equal(done.status, 'completed');
   assert.ok(done.result.content[0].text.includes(`Report: ${join(job.task_dir, 'report.md')}`));
   assert.equal(done.result.content[0].text.split('\n')[2], `Summary: ${parserProse}`);
+  assert.doesNotMatch(done.result.content[0].text, /Stale synthetic summary|stale\.ts/);
+  const read = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
+  assert.equal(read.report_meta, undefined);
 });
 
 test('MCP tasks: cancel fences sends and reaps once even with duplicate requests', { timeout: 10000 }, async (t) => {

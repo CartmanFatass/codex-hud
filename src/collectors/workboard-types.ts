@@ -47,6 +47,8 @@ export interface JobProgress {
 export interface OwnerWorker extends Partial<JobProgress> {
   readonly checks?: Pick<import('../roles/job-checks.js').CheckSummary, 'state' | 'stale' | 'passed' | 'total'>;
   readonly diffStat?: import('./diff-stat.js').DiffStatSummary;
+  /** Display-only metadata bound to this settled thin job's current report. */
+  readonly reportMeta?: import('../roles/report-meta.js').ReportMeta;
   readonly homeRank?: number;
   readonly homeFolded?: boolean;
   readonly labels?: import('./decision-labels.js').DisplayLabels;
