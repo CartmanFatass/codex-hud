@@ -10,8 +10,9 @@ import { roleRegistry } from '../../dist/roles/roster.js';
 function pi(role, extra = {}) {
   return { role, harness: 'pi', pi_role: 'implementer', split: false, can_continue: true, ...extra };
 }
-function layout() {
+function layout(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-roles-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const hud = join(root, 'hud');
   const bundled = join(root, 'bundled');
   const project = join(root, 'project');
@@ -21,7 +22,7 @@ function layout() {
   fs.writeFileSync(join(bundled, 'hud-convention.md'), 'bundled convention');
   fs.writeFileSync(join(bundled, 'roles', 'imp.json'), JSON.stringify(pi('imp', { model: 'bundled' })));
   fs.writeFileSync(join(bundled, 'roles', 'reviewer.json'), JSON.stringify(pi('reviewer', { model: 'bundled' })));
-  return { root, hud, bundled, project, rm: () => fs.rmSync(root, { recursive: true, force: true }) };
+  return { root, hud, bundled, project };
 }
 function register(hud, project) {
   const top = fs.realpathSync(project);
@@ -37,8 +38,8 @@ function gitInit(dir) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-test('missing or unparseable projects.json registers nothing', () => {
-  const { hud, project, rm } = layout();
+test('missing or unparseable projects.json registers nothing', (t) => {
+  const { hud, project } = layout(t);
   const missing = registeredProject(hud, project);
   assert.equal(missing.registered, false);
   assert.equal(missing.root, fs.realpathSync(project));
@@ -49,11 +50,10 @@ test('missing or unparseable projects.json registers nothing', () => {
   assert.equal(registeredProject(hud, project).registered, false);
   fs.writeFileSync(join(hud, 'projects.json'), JSON.stringify({ version: 2, projects: [{ root: missing.root }] }));
   assert.equal(registeredProject(hud, project).registered, false);
-  rm();
 });
 
-test('project root is the git toplevel, including from a subdirectory', () => {
-  const { hud, project, rm } = layout();
+test('project root is the git toplevel, including from a subdirectory', (t) => {
+  const { hud, project } = layout(t);
   gitInit(project);
   const sub = join(project, 'nested');
   fs.mkdirSync(sub);
@@ -63,11 +63,10 @@ test('project root is the git toplevel, including from a subdirectory', () => {
   register(hud, project);
   assert.equal(registeredProject(hud, sub).root, top);
   assert.equal(registeredProject(hud, sub).registered, true);
-  rm();
 });
 
-test('shared root is the main checkout for a linked worktree', () => {
-  const { root, project, rm } = layout();
+test('shared root is the main checkout for a linked worktree', (t) => {
+  const { root, project } = layout(t);
   gitInit(project);
   const git = (...args) => {
     const result = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], { cwd: project, encoding: 'utf8' });
@@ -83,11 +82,10 @@ test('shared root is the main checkout for a linked worktree', () => {
   const plain = join(root, 'plain');
   fs.mkdirSync(plain);
   assert.equal(sharedRoot(plain), projectRoot(plain));
-  rm();
 });
 
-test('registered project roles override by name, hide unlisted roles and win the convention', () => {
-  const { hud, bundled, project, rm } = layout();
+test('registered project roles override by name, hide unlisted roles and win the convention', (t) => {
+  const { hud, bundled, project } = layout(t);
   gitInit(project);
   const top = register(hud, project);
   fs.mkdirSync(join(project, 'nested'));
@@ -119,11 +117,10 @@ test('registered project roles override by name, hide unlisted roles and win the
   assert.equal(registry.roles().has('missing'), false);
   assert.equal(registry.convention().path, join(top, '.hud/hud-convention.md'));
   assert.equal(registry.convention().text, 'project convention');
-  rm();
 });
 
-test('missing or unparseable project.json does not hide roles', () => {
-  const { hud, bundled, project, rm } = layout();
+test('missing or unparseable project.json does not hide roles', (t) => {
+  const { hud, bundled, project } = layout(t);
   register(hud, project);
   fs.mkdirSync(join(project, '.hud'), { recursive: true });
   assert.equal(roleRegistry(hud, project, {}, undefined, undefined, bundled).roles().has('reviewer'), true);
@@ -131,11 +128,10 @@ test('missing or unparseable project.json does not hide roles', () => {
   assert.equal(roleRegistry(hud, project, {}, undefined, undefined, bundled).roles().has('reviewer'), true);
   fs.writeFileSync(join(project, '.hud/project.json'), JSON.stringify({ version: 1, roles: 'imp' }));
   assert.equal(roleRegistry(hud, project, {}, undefined, undefined, bundled).roles().has('reviewer'), true);
-  rm();
 });
 
-test('an unregistered .hud is ignored', () => {
-  const { hud, bundled, project, rm } = layout();
+test('an unregistered .hud is ignored', (t) => {
+  const { hud, bundled, project } = layout(t);
   gitInit(project);
   fs.mkdirSync(join(project, '.hud/roles'), { recursive: true });
   fs.writeFileSync(
@@ -151,11 +147,10 @@ test('an unregistered .hud is ignored', () => {
   assert.equal(registry.roles().has('imp'), true);
   assert.equal(registry.convention().text, 'cwd convention');
   assert.equal(JSON.stringify([...registry.roles().values()]).includes('SECRET_PROJECT_ROLE'), false);
-  rm();
 });
 
-test('project chains allow CLI routing only and still validate pi skills', () => {
-  const { hud, bundled, project, rm } = layout();
+test('project chains allow CLI routing only and still validate pi skills', (t) => {
+  const { hud, bundled, project } = layout(t);
   register(hud, project);
   fs.mkdirSync(join(project, '.hud/roles'), { recursive: true });
   const writeChain = (role, place) => {
@@ -202,11 +197,10 @@ test('project chains allow CLI routing only and still validate pi skills', () =>
   assert.deepEqual(registry.roles().get('skilled').skills, ['to-tickets']);
   assert.equal(JSON.stringify(registry.invalid()).includes('SECRET_BODY'), false);
   assert.equal(JSON.stringify(registry.invalid()).includes('SECRET_HARNESS_VALUE'), false);
-  rm();
 });
 
-test('project files go through the injected readers and are skipped when unregistered', () => {
-  const { hud, bundled, project, rm } = layout();
+test('project files go through the injected readers and are skipped when unregistered', (t) => {
+  const { hud, bundled, project } = layout(t);
   const top = register(hud, project);
   fs.mkdirSync(join(project, '.hud/roles'), { recursive: true });
   const seen = [];
@@ -268,5 +262,4 @@ test('project files go through the injected readers and are skipped when unregis
     ),
     false
   );
-  rm();
 });

@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createFooterHost } from '../fakes/pi.mjs';
+import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { expProxyPath, readExpConfig, readExpGrantBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
@@ -18,13 +19,17 @@ const anthropicModel = { provider: 'anthropic', api: 'anthropic-messages', baseU
 const anthropicKeyStatus = { configured: true, source: 'environment', label: 'ANTHROPIC_API_KEY' };
 function setup(t) {
   const dir = fs.mkdtempSync(path.join(tmpdir(), 'hud-pi-package-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const home = path.join(dir, 'home'),
     cwd = path.join(dir, 'workspace'),
     release = path.join(dir, 'checkout with spaces'),
     packageDir = path.join(dir, 'pi-package'),
     displayDir = path.join(dir, 'pi-display'),
     hudHome = path.join(dir, 'hud');
+  const hosts = new Set();
+  cleanupFixture(t, { root: dir, hudHome }, async () => {
+    // Shutdown waits for each host's MCP client before the fixture reaps its detached watcher.
+    for (const h of hosts) await h.emit('session_shutdown');
+  });
   for (const p of [home, cwd, hudHome, path.join(packageDir, 'extensions'), path.join(release, 'dist/harness/pi')])
     fs.mkdirSync(p, { recursive: true, mode: 0o700 });
   // Inject only process/transport/clock ports into the REAL implementation.
@@ -79,8 +84,9 @@ function setup(t) {
     CODEX_HOME: path.join(dir, 'codex'),
     CLAUDE_CONFIG_DIR: path.join(dir, 'claude'),
     PI_CODING_AGENT_DIR: path.join(dir, 'agent'),
+    TMPDIR: dir,
   };
-  return { home, cwd, packageDir, displayDir, binding, env };
+  return { home, cwd, packageDir, displayDir, binding, env, hosts };
 }
 function host() {
   const handlers = new Map(),
@@ -232,6 +238,7 @@ function ports(f) {
   };
 }
 async function load(f, h, p, extension = 'hud.mjs') {
+  f.hosts.add(h);
   const key = Symbol.for('hud-a5-test-ports');
   globalThis[key] = p?.options;
   try {
@@ -299,7 +306,6 @@ test('combined pi packages retain delegation after canceled navigation and displ
     p = ports(f);
   await load(f, h, p);
   await load(f, h, p, 'hud-display.mjs');
-  t.after(() => h.emit('session_shutdown', c.ctx));
   await h.emit('session_start', c.ctx);
   const roster = () => h.tools.get('hud_roster').execute('synthetic', {}, undefined, undefined, c.ctx);
   const toolCount = h.tools.size;
@@ -478,7 +484,6 @@ test('delegation isolates the Anthropic API-key ledger from OAuth, gateways, unk
   };
   await load(f, h, { options: { env: f.env } });
   await h.emit('session_start', c.ctx);
-  t.after(() => h.emit('session_shutdown', c.ctx));
   await start();
   edit(anthropic, 'grant-enabled', true);
   await finish(); // Started before the account was enabled.
@@ -583,7 +588,6 @@ test('40-column pi footer switches among subscription proxy, oapi, and Anthropic
     }),
     { mode: 0o600 }
   );
-  t.after(() => h.emit('session_shutdown', c.ctx));
   await load(f, h, { options: { env: { ...f.env, HERDR_PANE_ID: undefined } } });
   await load(f, h, p, 'hud-display.mjs');
   await h.emit('session_start', c.ctx);
@@ -734,7 +738,6 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   })), PI_ROLE_TOOLS);
   assert.equal(h.commands.size, 0, 'no /hud command');
   await h.emit('session_start', c.ctx);
-  t.after(() => h.emit('session_shutdown', c.ctx));
   const guide = await h.tools.get('hud_tickets').execute('synthetic', { op: 'guide' }, undefined, undefined, c.ctx);
   assert.match(guide.content[0].text, /^# Ticket method/);
   assert.equal(p.counts().splits, 0, 'the settings-registered package a worker could load opens no panel');
@@ -789,7 +792,6 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   const pending = `[imp@demo] QUESTION q1: ${longQuestion} | options: rows / columns | default: rows | context: keep the headers. | full text: ${q1} | reply: hud_respond job=${id} request_id=q1`;
   await load(f, h, p);
   await load(f, h, p, 'hud-display.mjs');
-  t.after(() => h.emit('session_shutdown', c.ctx));
   assert.equal(fs.existsSync(marker), false, 'extension load is inert until session_start');
   const call = (name, args) => h.tools.get(name).execute('synthetic', args, undefined, undefined, c.ctx);
   await h.emit('session_start', c.ctx);
@@ -839,6 +841,8 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   assert.equal(JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at, undefined);
   assert.equal((await call('hud_read', { job: id })).details.digest.result, 'Synthetic report.');
   assert.ok(JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at);
+  // hud_read started the detached job watcher as well as the in-process session watch.
+  await until(() => fs.existsSync(path.join(home, 'watch.pid')));
   const next = context(f, h, 'session-b');
   const rebinding = h.emit('session_tree', next.ctx);
   assert.equal(fs.existsSync(marker), false, 'fence synchronously unregisters the outgoing watch');
@@ -871,7 +875,6 @@ test('pi refuses delegation in a resumed worker before starting its main-session
   }));
   h.pi.sendMessage = () => assert.fail('a resumed worker must not be woken by the main watcher');
   await load(f, h, p);
-  t.after(() => h.emit('session_shutdown', worker.ctx));
   await h.emit('session_start', worker.ctx);
   const recovery = new RegExp(`worker job ${job}.*resumed without its HUD binding.*Recovery is manual.*retry_of.*fresh tab`);
   assert.equal(h.calls.notices.length, 1);

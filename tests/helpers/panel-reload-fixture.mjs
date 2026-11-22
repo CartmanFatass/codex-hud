@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { encodePanelPlace } from '../../dist/utils/panel-reload.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { makeSourceId } from '../../dist/core/identity.js';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
+import { cleanupFixture, stopChild } from './process-cleanup.mjs';
 
 const atomicWriter = new URL('./thin-mcp-files.mjs', import.meta.url).href;
 export const QUIET_MS = 150;
@@ -20,7 +22,10 @@ export async function until(predicate, message, timeout = 10000) {
 }
 export function fixture(t, settings = {}) {
   const root = mkdtempSync(join(tmpdir(), 'hud-panel-reload-'));
-  const env = { PATH: process.env.PATH, HOME: join(root, 'home'), HUD_HOME: join(root, 'hud'),
+  const stops = [];
+  const hudHome = join(root, 'hud');
+  cleanupFixture(t, { root, hudHome }, () => Promise.all(stops.map((stop) => stop())));
+  const env = { PATH: process.env.PATH, HOME: join(root, 'home'), HUD_HOME: hudHome, TMPDIR: root,
     CODEX_HOME: join(root, 'codex'), CLAUDE_CONFIG_DIR: join(root, 'claude'), PI_CODING_AGENT_DIR: join(root, 'pi'),
     CODEX_HUD_CWD: join(root, 'project'), HERDR_SOCKET_PATH: join(root, 'absent.sock'), TZ: 'UTC',
     CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', HUD_PANEL_CALLER_PANE: 'w4E:p1' };
@@ -29,8 +34,6 @@ export function fixture(t, settings = {}) {
   writeFixtureFile(join(root, 'package.json'), '{"type":"module"}');
   const settingsBody = JSON.stringify({ modelEnabled: false, refreshMs: 100, language: 'en', theme: 'terminal', ...settings });
   writeFixtureFile(join(env.HUD_HOME, 'hud-settings.json'), settingsBody);
-  const stops = [];
-  t.after(async () => { for (const stop of stops) await stop(); rmSync(root, { recursive: true, force: true }); });
   return { root, env, stops, settingsBody };
 }
 export function launch(f, script, args = [], extra = {}) {
@@ -38,16 +41,9 @@ export function launch(f, script, args = [], extra = {}) {
   let output = '', stderr = '';
   child.stdout.on('data', (v) => { output += v; });
   child.stderr.on('data', (v) => { stderr += v; });
-  const exited = new Promise((r) => child.once('exit', (code, signal) => r({ code, signal })));
-  f.stops.push(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      const timer = setTimeout(() => child.kill('SIGKILL'), 2000);
-      await exited;
-      clearTimeout(timer);
-    }
-  });
-  return { child, exited, output: () => output, stderr: () => stderr };
+  const exit = once(child, 'exit');
+  f.stops.push(() => stopChild(child, exit, { killMs: 2000 }));
+  return { child, exited: exit.then(([code, signal]) => ({ code, signal })), output: () => output, stderr: () => stderr };
 }
 export const encode = (place) => JSON.stringify(place, (_k, v) => v instanceof Set ? { panelSet: [...v] } : v);
 

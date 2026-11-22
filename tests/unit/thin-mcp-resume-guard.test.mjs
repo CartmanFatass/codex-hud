@@ -6,6 +6,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { entry, rpcClient } from '../helpers/thin-mcp-harness.mjs';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 const job = 'j0000000000000001';
 const workerSession = '00000000-0000-4000-8000-000000000001';
@@ -14,23 +15,27 @@ const recovery = new RegExp(`worker job ${job}.*resumed without its HUD binding.
 
 function fixture(t, agent) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-resume-guard-'));
-  const env = { HOME: join(root, 'home'), HUD_HOME: join(root, 'hud'), HUD_MCP_SURFACE: 'roles', HERDR_PANE_ID: 'w9:p2' };
+  const env = { HOME: join(root, 'home'), HUD_HOME: join(root, 'hud'), TMPDIR: root, HUD_MCP_SURFACE: 'roles', HERDR_PANE_ID: 'w9:p2' };
+  const stops = [];
+  cleanupFixture(t, { root, hudHome: env.HUD_HOME }, () => Promise.all(stops.map((stop) => stop())));
   const jobs = join(env.HUD_HOME, 'jobs'), dir = join(jobs, job);
   fs.mkdirSync(env.HOME);
   fs.mkdirSync(dir, { recursive: true });
   const writeStatus = (id = workerSession) => fs.writeFileSync(join(dir, 'STATUS.json'),
     JSON.stringify({ slot: 'primary', state: 'failed', agent, harness: 'cli', agent_session_id: id }));
   writeStatus();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return {
     jobs, writeStatus,
     start(sessionEnv = {}) {
       const child = spawn(process.execPath, [entry], { cwd: root, env: { ...env, ...sessionEnv }, stdio: ['pipe', 'pipe', 'pipe'] });
       const exit = once(child, 'close');
+      let stopping;
+      const stop = () => stopping ??= stopChild(child, exit, { closeStdin: true });
+      stops.push(stop);
       let stderr = '';
       child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
       const rpc = rpcClient(child);
-      return { rpc, async close() { child.stdin.end(); assert.deepEqual(await exit, [0, null]); return stderr; } };
+      return { rpc, async close() { assert.deepEqual((await stop()).result, [0, null]); return stderr; } };
     },
   };
 }

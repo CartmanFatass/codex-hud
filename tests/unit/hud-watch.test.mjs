@@ -13,7 +13,7 @@ import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { reapFixtureProcesses, stopChild, trackFixture } from '../helpers/process-cleanup.mjs';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 const readHint = (job) => `hud_read job=${job} (mode: "full" for the whole report)`;
 
@@ -56,7 +56,7 @@ async function until(check, timeoutMs = 10000) {
 
 for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 'disposable', 'mixed ignored', 'unmerged', 'nested']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-worktree-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  cleanupFixture(t, { root: home });
   const main_root = initRepo(home);
   if (scenario === 'nested') {
     fs.mkdirSync(join(main_root, 'vendor'));
@@ -152,7 +152,8 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
 
 test('watcher preserves a shared worktree while a continuation job is active and removes it once both finish', { timeout: 30000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-shared-wt-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  let watcher, exited;
+  cleanupFixture(t, { root: home }, () => watcher && stopChild(watcher, exited, { killMs: 500 }));
   const main_root = initRepo(home);
   const sourceId = 'j0000000000000a01', contId = 'j0000000000000a02';
   const name = `imp-${sourceId.slice(-6)}`, root = join(home, 'demo-wt', name), branch = `wt/${name}`;
@@ -172,9 +173,8 @@ test('watcher preserves a shared worktree while a continuation job is active and
     cwd: root, repair_of: sourceId, worktree: { ...wt, owner: sourceId },
   }));
 
-  const watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
-  const exited = once(watcher, 'exit');
-  t.after(() => stopChild(watcher, exited, { killMs: 500 }));
+  watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
+  exited = once(watcher, 'exit');
   await until(() => fs.existsSync(join(env.HUD_HOME, 'watch.pid')) && fs.existsSync(join(env.HUD_HOME, 'jobs-revision.json')), 15000);
   // Give the initial scan a moment to settle; the active continuation must protect the shared worktree.
   await wait(250);
@@ -192,23 +192,19 @@ test('watcher preserves a shared worktree while a continuation job is active and
 test('dead supervisor watcher preserves a live worker; both gone fail or close by the explicit report baseline', { timeout: 10000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'dead-supervisor-'));
   const hudHome = join(home, 'hud');
-  const untrack = trackFixture({ root: home, hudHome });
-  const env = { ...process.env, HOME: home, HUD_HOME: hudHome, HUD_WATCH_CLI_CHECK_MS: '30' };
-  const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
-  const supervisor = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
-  const workerExited = once(worker, 'exit'), supervisorExited = once(supervisor, 'exit');
-  let watcher, watcherExited;
-  t.after(async () => {
+  let watcher, watcherExited, worker, workerExited, supervisor, supervisorExited;
+  cleanupFixture(t, { root: home, hudHome }, async () => {
     if (watcher) await stopChild(watcher, watcherExited, { killMs: 300 });
     await Promise.all([
-      stopChild(worker, workerExited, { killMs: 100 }),
-      stopChild(supervisor, supervisorExited, { killMs: 100 }),
+      worker && stopChild(worker, workerExited, { killMs: 100 }),
+      supervisor && stopChild(supervisor, supervisorExited, { killMs: 100 }),
     ]);
-    const survivors = await reapFixtureProcesses({ root: home, hudHome });
-    untrack();
-    fs.rmSync(home, { recursive: true, force: true });
-    assert.equal(survivors.length, 0);
   });
+  const env = { ...process.env, HOME: home, HUD_HOME: hudHome, HUD_WATCH_CLI_CHECK_MS: '30' };
+  worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
+  workerExited = once(worker, 'exit');
+  supervisor = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
+  supervisorExited = once(supervisor, 'exit');
   await until(() => procStat(worker.pid) !== null);
   const initial = { state: 'working', pid: worker.pid, pid_start_time: procStat(worker.pid).start, supervisor_pid: supervisor.pid };
   const failed = writeJob(env.HUD_HOME, 'j00000000000000f1', 'w4E:p1', 'no-report', initial);
@@ -584,7 +580,8 @@ test('hud watch --all watches every pane and exits cleanly on help, usage errors
 
 test('CLI and pi question pushes use only watch while live, and fall back with missing or stale watcher PIDs', { timeout: 10000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-push-'));
-  const untrack = trackFixture({ root: home, hudHome: home });
+  let child, childExited;
+  cleanupFixture(t, { root: home }, () => child && stopChild(child, childExited, { killMs: 300 }));
   const bin = join(home, 'bin'), log = join(home, 'pushes');
   fs.mkdirSync(bin);
   fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}\nimport fs from 'node:fs'; if (process.argv[2] === 'agent') fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
@@ -592,15 +589,8 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
   const id = 'j0000000000000001';
   const dir = writeJob(home, id, 'w4E:p1', 'push', { state: 'working' });
   fs.writeFileSync(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
-  const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  const childExited = once(child, 'exit');
-  t.after(async () => {
-    await stopChild(child, childExited, { killMs: 300 });
-    const survivors = await reapFixtureProcesses({ root: home, hudHome: home });
-    untrack();
-    fs.rmSync(home, { recursive: true, force: true });
-    assert.equal(survivors.length, 0);
-  });
+  child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  childExited = once(child, 'exit');
   const pidFile = join(home, 'watchers', 'w4E:p1.pid');
   await until(() => fs.existsSync(pidFile));
   assert.equal(Number(fs.readFileSync(pidFile)), child.pid);
@@ -613,7 +603,7 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
   pushBoth();
   assert.equal(fs.existsSync(log), false);
   child.kill('SIGTERM');
-  await new Promise((r) => child.once('exit', r));
+  await childExited;
   assert.equal(fs.existsSync(pidFile), false);
   for (const pid of [null, 99999999, process.pid]) {
     if (pid !== null) fs.writeFileSync(pidFile, String(pid));
@@ -631,14 +621,9 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
 
 function queueFixture(t, agent = 'codex', thread = '00000000-0000-4000-8000-000000000001', fail = false) {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-queue-'));
-  const untrack = trackFixture({ root: home, hudHome: home });
   const cleanups = [];
-  t.after(async () => {
+  cleanupFixture(t, { root: home }, async () => {
     for (const cleanup of [...cleanups].reverse()) await cleanup();
-    const survivors = await reapFixtureProcesses({ root: home, hudHome: home });
-    untrack();
-    fs.rmSync(home, { recursive: true, force: true });
-    assert.equal(survivors.length, 0);
   });
   const bin = join(home, 'bin'), log = join(home, 'deliveries'), agentFile = join(home, 'agent'), statusFile = join(home, 'agent-status');
   fs.mkdirSync(bin);
@@ -679,7 +664,7 @@ test('a live pi watcher suppresses fallback, but dead, reused and mismatched PID
   `);
   const child = spawn(process.execPath, [script], { env: f.env, stdio: 'ignore' });
   const exited = once(child, 'exit');
-  t.after(() => child.kill('SIGKILL'));
+  f.onCleanup(() => stopChild(child, exited));
   await until(() => fs.existsSync(pidFile));
   const marker = fs.readFileSync(pidFile, 'utf8'), pi = JSON.parse(marker);
   assert.equal(pi.pid, child.pid);
@@ -954,6 +939,8 @@ test('idle hud watch reads nothing between safety rescans', async (t) => {
 
 test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM', { timeout: 30000 }, async (t) => {
   const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-bin-'));
+  let child, closed;
+  cleanupFixture(t, { root: hudHome }, () => child && stopChild(child, closed));
   const baseline = writeJob(hudHome, 'j00000000000000e5', 'w4E:p1', 'baseline', { state: 'working' });
   // The marker is written before the CLI attaches its watches. Observe the first
   // baseline read instead, so the failed job is a new arrival, not catch-up.
@@ -970,17 +957,12 @@ fs.lstatSync = (file, ...args) => {
   return stat(file, ...args);
 };
 syncBuiltinESMExports();`;
-  const child = spawn(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(probe), resolve('bin/hud'), 'watch'], {
+  child = spawn(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(probe), resolve('bin/hud'), 'watch'], {
     env: { ...process.env, HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
-  const closed = once(child, 'close');
+  closed = once(child, 'close');
   const baselineRead = once(child, 'message');
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    await closed;
-    fs.rmSync(hudHome, { recursive: true, force: true });
-  });
 
   let stdout = '';
   let stderr = '';

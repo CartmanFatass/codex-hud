@@ -15,6 +15,10 @@ import {
 test('guard fails when a fixture leaves a live detached child and passes once reaped', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-guard-'));
   const hudHome = join(root, 'hud_home');
+  t.after(async () => {
+    await reapFixtureProcesses({ root, hudHome, graceMs: 100 });
+    fs.rmSync(root, { recursive: true, force: true });
+  });
   fs.mkdirSync(hudHome, { recursive: true });
   const child = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'], {
     env: { ...process.env, HOME: join(root, 'home'), HUD_HOME: hudHome },
@@ -22,10 +26,6 @@ test('guard fails when a fixture leaves a live detached child and passes once re
     stdio: 'ignore',
   });
   child.unref();
-  t.after(async () => {
-    await reapFixtureProcesses({ root, hudHome, graceMs: 100 });
-    fs.rmSync(root, { recursive: true, force: true });
-  });
 
   const found = findFixtureProcesses({ root, hudHome });
   assert.ok(found.some((proc) => proc.pid === child.pid && proc.hudHome === hudHome));
@@ -40,10 +40,17 @@ test('guard fails when a fixture leaves a live detached child and passes once re
 });
 
 test('reapFixtureProcesses leaves unrelated processes with a different HUD_HOME untouched', async (t) => {
-  const ownRoot = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-own-'));
-  const otherRoot = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-other-'));
-  const ownHud = join(ownRoot, 'hud_home');
-  const otherHud = join(otherRoot, 'hud_home');
+  const fixtureHome = (prefix) => {
+    const root = fs.mkdtempSync(join(tmpdir(), prefix));
+    const hudHome = join(root, 'hud_home');
+    t.after(async () => {
+      await reapFixtureProcesses({ root, hudHome, graceMs: 100 });
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+    return [root, hudHome];
+  };
+  const [ownRoot, ownHud] = fixtureHome('thin-mcp-own-');
+  const [otherRoot, otherHud] = fixtureHome('thin-mcp-other-');
   fs.mkdirSync(ownHud, { recursive: true });
   fs.mkdirSync(otherHud, { recursive: true });
   const own = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000);'], {
@@ -58,12 +65,6 @@ test('reapFixtureProcesses leaves unrelated processes with a different HUD_HOME 
     stdio: 'ignore',
   });
   other.unref();
-  t.after(async () => {
-    await reapFixtureProcesses({ root: ownRoot, hudHome: ownHud, graceMs: 100 });
-    await reapFixtureProcesses({ root: otherRoot, hudHome: otherHud, graceMs: 100 });
-    fs.rmSync(ownRoot, { recursive: true, force: true });
-    fs.rmSync(otherRoot, { recursive: true, force: true });
-  });
 
   assert.deepEqual(await reapFixtureProcesses({ root: ownRoot, hudHome: ownHud, graceMs: 100 }), []);
   assert.deepEqual(findFixtureProcesses({ root: ownRoot, hudHome: ownHud }), []);
@@ -73,6 +74,12 @@ test('reapFixtureProcesses leaves unrelated processes with a different HUD_HOME 
 test('thin-mcp and job-retention fixtures leave no processes after forced failures, SIGSTOP, and timeouts', { timeout: 30000 }, async (t) => {
   const workDir = fs.mkdtempSync(join(tmpdir(), 'fixture-cleanup-subrun-'));
   const homesFile = join(workDir, 'homes.txt');
+  const recordedHomes = () =>
+    fs.existsSync(homesFile) ? fs.readFileSync(homesFile, 'utf8').trim().split('\n').filter(Boolean) : [];
+  t.after(async () => {
+    await reapFixtureProcesses({ root: workDir, graceMs: 100 });
+    fs.rmSync(workDir, { recursive: true, force: true });
+  });
   const script = join(workDir, 'forced-failures.test.mjs');
   const harnessPath = resolve('tests/helpers/thin-mcp-harness.mjs');
   const retentionPath = resolve('tests/helpers/job-retention-fixture.mjs');
@@ -147,18 +154,9 @@ test('forced fail with SIGTERM-resistant job-retention watcher', async (t) => {
 });
 `);
 
-  const recordedHomes = () =>
-    fs.existsSync(homesFile) ? fs.readFileSync(homesFile, 'utf8').trim().split('\n').filter(Boolean) : [];
-  t.after(async () => {
-    for (const hudHome of recordedHomes()) {
-      await reapFixtureProcesses({ root: join(hudHome, '..'), hudHome, graceMs: 100 });
-    }
-    fs.rmSync(workDir, { recursive: true, force: true });
-  });
-
-  const env = { ...process.env };
+  const env = { ...process.env, TMPDIR: workDir, HUD_HOME: join(workDir, 'hud') };
   delete env.NODE_TEST_CONTEXT;
-  const run = spawnSync(process.execPath, ['--test', '--test-timeout=10000', '--test-force-exit', script], { env, encoding: 'utf8', timeout: 25000 });
+  const run = spawnSync(process.execPath, ['--test', '--test-timeout=10000', '--test-force-exit', script], { env, encoding: 'utf8', timeout: 25000, killSignal: 'SIGKILL' });
   assert.equal(run.status, 1, `forced failing subtests should exit non-zero:\n${run.stdout}\n${run.stderr}`);
   assert.match(run.stdout, /test timed out after 200ms/);
   const homes = recordedHomes();
@@ -166,7 +164,9 @@ test('forced fail with SIGTERM-resistant job-retention watcher', async (t) => {
 
   const survivors = [];
   for (const hudHome of homes) {
-    survivors.push(...findFixtureProcesses({ root: join(hudHome, '..'), hudHome }));
+    const root = join(hudHome, '..');
+    assert.equal(fs.existsSync(root), false, `Forced failure left fixture directory ${root}`);
+    survivors.push(...findFixtureProcesses({ root, hudHome }));
   }
   assert.deepEqual(
     survivors,
@@ -175,8 +175,18 @@ test('forced fail with SIGTERM-resistant job-retention watcher', async (t) => {
   );
 });
 
-test('SIGKILL of the node --test coordinator leaves no watcher for either temporary fixture', { timeout: 45000 }, async (t) => {
+test('SIGKILL of the node --test coordinator leaves no watcher or directory for either fixture', { timeout: 45000 }, async (t) => {
   const dir = fs.mkdtempSync(join(tmpdir(), 'fixture-cleanup-killed-'));
+  let run, exited;
+  t.after(async () => {
+    if (run?.pid) {
+      // If an assertion fails before SIGKILL, still stop the coordinator and test worker.
+      try { process.kill(-run.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+      await exited;
+    }
+    await reapFixtureProcesses({ root: dir, graceMs: 100 });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   const script = join(dir, 'killed.test.mjs'), homesFile = join(dir, 'homes'), ready = join(dir, 'ready');
   fs.writeFileSync(script, `
 import * as fs from 'node:fs';
@@ -196,27 +206,32 @@ test('start both fixture watchers', async (t) => {
 });
 `);
   const homes = () => fs.existsSync(homesFile) ? fs.readFileSync(homesFile, 'utf8').trim().split('\n') : [];
-  const env = { ...process.env };
+  const env = { ...process.env, TMPDIR: dir };
   delete env.NODE_TEST_CONTEXT;
-  const run = spawn(process.execPath, ['--test', '--test-timeout=60000', script], { stdio: 'ignore', env, detached: true });
-  const exited = once(run, 'exit');
-  t.after(async () => {
-    // If an assertion fails before SIGKILL, still stop the coordinator and test worker.
-    try { process.kill(-run.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
-    await exited;
-    for (const hudHome of homes()) {
-      const root = join(hudHome, '..');
-      await reapFixtureProcesses({ root, hudHome, graceMs: 100 });
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
+  run = spawn(process.execPath, ['--test', '--test-timeout=60000', script], { stdio: 'ignore', env, detached: true });
+  exited = once(run, 'exit');
   await until(() => fs.existsSync(ready), 30000);
   assert.equal(homes().length, 2);
   for (const hudHome of homes()) assert.ok(findFixtureProcesses({ hudHome }).some(({ cmdline }) => cmdline.includes('hud-watch.mjs')));
   run.kill('SIGKILL');
   assert.deepEqual(await exited, [null, 'SIGKILL']);
   // No test cleanup hook ran in the killed run; wait for its guardian, not the fallback above.
-  await until(() => homes().every(hudHome => findFixtureProcesses({ root: join(hudHome, '..'), hudHome }).length === 0), 20000);
+  await until(() => homes().every(hudHome => !fs.existsSync(join(hudHome, '..'))), 20000);
   for (const hudHome of homes()) assertNoFixtureProcesses({ root: join(hudHome, '..'), hudHome });
+});
+
+test('the pi-package suite leaves no hud-watch with a temporary HUD_HOME', { timeout: 35000 }, async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'pi-package-suite-'));
+  t.after(async () => {
+    await reapFixtureProcesses({ root, graceMs: 100 });
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const env = { ...process.env, TMPDIR: root, HUD_HOME: join(root, 'hud') };
+  delete env.NODE_TEST_CONTEXT;
+  const run = spawnSync(process.execPath, ['--test', '--test-force-exit', 'tests/unit/pi-package.test.mjs'], {
+    env, encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL',
+  });
+  assert.equal(run.status, 0, run.error?.message ?? `${run.stdout}\n${run.stderr}`);
+  const watchers = findFixtureProcesses({ root }).filter(({ cmdline, hudHome }) => hudHome && cmdline.includes('hud-watch.mjs'));
+  assert.deepEqual(watchers, []);
 });

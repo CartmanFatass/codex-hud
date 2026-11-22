@@ -13,6 +13,7 @@ import {
   reusableWorktree,
 } from '../../dist/mcp/managed-worktree.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 function initTrackedNodeModulesRepo(parent, { ignoreNodeModules = true } = {}) {
   const main = initRepo(parent);
@@ -121,7 +122,7 @@ for (const blocker of ['untracked-outside', 'ignored-outside', 'tracked-nm-edit'
 
 test('watcher one-time sweep removes stale closed and archived managed worktrees while preserving user files, open jobs and manual worktrees', async (t) => {
   const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'watch-wt-sweep-')));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  cleanupFixture(t, { root: home });
   const main = initTrackedNodeModulesRepo(home, { ignoreNodeModules: true });
   const hud = join(home, 'hud');
   fs.mkdirSync(join(hud, 'jobs'), { recursive: true, mode: 0o700 });
@@ -214,9 +215,10 @@ test('watcher one-time sweep removes stale closed and archived managed worktrees
 
 test('watcher one-time sweep never touches an open job worktree even if an archived row shares its suffix', async (t) => {
   const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'watch-wt-open-')));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const main = initTrackedNodeModulesRepo(home, { ignoreNodeModules: true });
   const hud = join(home, 'hud');
+  let child, exited;
+  cleanupFixture(t, { root: home, hudHome: hud }, () => child && stopChild(child, exited));
+  const main = initTrackedNodeModulesRepo(home, { ignoreNodeModules: true });
   fs.mkdirSync(join(hud, 'jobs'), { recursive: true, mode: 0o700 });
   fs.mkdirSync(join(hud, 'archive'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(join(hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: main }] }));
@@ -241,9 +243,8 @@ test('watcher one-time sweep never touches an open job worktree even if an archi
   const { spawn } = await import('node:child_process');
   const { once } = await import('node:events');
   const env = { ...process.env, HOME: home, HUD_HOME: hud, HERDR_SOCKET_PATH: join(home, 'absent.sock') };
-  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
-  const exited = once(child, 'exit');
-  t.after(() => child.kill('SIGKILL'));
+  child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
+  exited = once(child, 'exit');
   const marker = join(hud, 'worktree-reap-sweep.json');
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline && !fs.existsSync(marker)) await new Promise((r) => setTimeout(r, 25));

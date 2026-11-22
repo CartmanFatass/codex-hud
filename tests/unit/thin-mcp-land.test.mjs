@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { withDistLock } from '../../scripts/dist-lock.mjs';
 import { entry, fixture, rpcClient, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
-import { stopChild } from '../helpers/process-cleanup.mjs';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -32,7 +32,7 @@ async function repair(f, flow, index) {
 async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry } = {}) {
   const f = await fixture(t, { mcpEntry });
   const home = f.env.HUD_HOME, main = f.root, root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
-  t.after(() => fs.rmSync(`${main}-wt`, { recursive: true, force: true }));
+  cleanupFixture(t, { root: `${main}-wt` });
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: f.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(main, 'init', '-qb', 'base');
   git(main, 'config', 'user.name', 'Synthetic'); git(main, 'config', 'user.email', 'sample@example.invalid');
@@ -340,11 +340,12 @@ test('red gate continues the source in grace; its rebased fix passes on a fresh 
 async function isolatedLand(t, gate) {
   // Publish to a private installation so the real dist and other test processes are untouched.
   const install = fs.mkdtempSync(join(tmpdir(), 'hud-land-build-'));
+  let f;
+  cleanupFixture(t, { root: install }, () => f?.stopMcp());
   for (const name of ['dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
     fs.cpSync(resolve(name), join(install, name), { recursive: true });
   fs.symlinkSync(resolve('node_modules'), join(install, 'node_modules'));
-  const f = await checkout(t, gate, { mcpEntry: join(install, 'packages/hud-mcp/bin/hud-mcp.mjs') });
-  t.after(() => fs.rmSync(install, { recursive: true, force: true }));
+  f = await checkout(t, gate, { mcpEntry: join(install, 'packages/hud-mcp/bin/hud-mcp.mjs') });
   const dist = join(install, 'dist');
   const publish = (files) => withDistLock(() => {
     for (const [name, content] of Object.entries(files)) {

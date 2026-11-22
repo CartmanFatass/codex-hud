@@ -173,15 +173,15 @@ export async function reapFixtureProcesses({ root, hudHome, graceMs = 500, killT
     try { process.kill(proc.pid, signal); } catch {}
   }
 
-  const graceEnd = Date.now() + graceMs;
-  while (Date.now() < graceEnd) {
+  const graceEnd = performance.now() + graceMs;
+  while (performance.now() < graceEnd) {
     await delay(25);
     procs = findFixtureProcesses({ root, hudHome });
     if (!procs.length) return [];
   }
 
-  const killEnd = Date.now() + killTimeoutMs;
-  while (procs.length && Date.now() < killEnd) {
+  const killEnd = performance.now() + killTimeoutMs;
+  while (procs.length && performance.now() < killEnd) {
     for (const proc of procs) {
       try { process.kill(proc.pid, 'SIGKILL'); } catch {}
     }
@@ -206,6 +206,27 @@ export function assertNoFixtureProcesses({ root, hudHome } = {}) {
       .map((p) => `${p.pid} (${p.state}${p.hudHome ? `, HUD_HOME=${p.hudHome}` : ''}) ${p.cmdline}`)
       .join('; ')}`
   );
+}
+
+export function removeFixtureRoot({ root }) {
+  assert.ok(normalizedPrefixes(root).length, `Not a fixture directory under tmpdir(): ${root}`);
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
+// Register before fixture setup can throw. Always reap detached children before deleting HUD_HOME.
+export function cleanupFixture(t, spec, stop) {
+  let untrack;
+  t.after(async () => {
+    try {
+      await stop?.();
+    } finally {
+      const survivors = await reapFixtureProcesses(spec);
+      assert.deepEqual(survivors, [], `Fixture left live processes for ${spec.hudHome ?? spec.root}`);
+      removeFixtureRoot(spec);
+      untrack?.();
+    }
+  });
+  untrack = trackFixture(spec);
 }
 
 function sweepAllSync() {

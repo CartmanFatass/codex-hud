@@ -21,8 +21,9 @@ const pi = (role, model) => ({
   ...(model ? { model } : {}),
 });
 
-test('a later valid role file overrides; a later invalid file does not remove it', () => {
+test('a later valid role file overrides; a later invalid file does not remove it', (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'roster-invalid-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { bundled, hud } = layout(root);
   const early = join(bundled, 'roles', 'early.json');
   const bad = join(hud, 'roles', 'bad.json');
@@ -67,11 +68,11 @@ test('a later valid role file overrides; a later invalid file does not remove it
   );
   assert.deepEqual(both.invalidRole('writer'), { path: join(hud, 'roles', 'also.json'), reason: 'bad cli fields' });
   assert.equal(both.invalid()[1].reason, 'bad cli fields');
-  fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('JSON null is invalid and a file that vanishes between list and read is skipped', () => {
+test('JSON null is invalid and a file that vanishes between list and read is skipped', (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'roster-null-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { bundled, hud } = layout(root);
   const gone = join(hud, 'roles', 'gone.json');
   const empty = join(hud, 'roles', 'empty.json');
@@ -91,5 +92,4 @@ test('JSON null is invalid and a file that vanishes between list and read is ski
     registry.invalid().some((item) => item.path === gone),
     false
   );
-  fs.rmSync(root, { recursive: true, force: true });
 });

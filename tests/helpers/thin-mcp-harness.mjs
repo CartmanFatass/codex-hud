@@ -15,7 +15,7 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, turnToken } from '../../dist/mcp/cli-judge.js';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
-import { reapFixtureProcesses, stopChild, trackFixture } from './process-cleanup.mjs';
+import { cleanupFixture, stopChild } from './process-cleanup.mjs';
 
 const fakeBin = fileURLToPath(new URL('./thin-mcp-fake-bin.mjs', import.meta.url));
 const clock = new URL('./thin-mcp-clock.mjs', import.meta.url).href;
@@ -66,6 +66,14 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
 
 async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
+  const cleanups = [];
+  cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
+    let firstError;
+    for (const cleanup of [...cleanups].reverse()) {
+      try { await cleanup(); } catch (error) { firstError ??= error; }
+    }
+    if (firstError) throw firstError;
+  });
   const bin = join(root, 'bin');
   fs.mkdirSync(bin);
   const log = join(root, 'commands.jsonl');
@@ -130,43 +138,27 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     fs.mkdirSync(env.HUD_JOB_DIR, { recursive: true });
   } else delete env.HUD_JOB_DIR;
   const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
-  const untrack = trackFixture({ root, hudHome: env.HUD_HOME });
-  const cleanups = [];
   const child = spawn(process.execPath, [...preload, mcpEntry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
   let stderr = '';
   child.stderr.setEncoding('utf8').on('data', (data) => {
     stderr += data;
   });
-  const rpc = rpcClient(child);
   let stopping;
   const stopMcp = () => stopping ??= stopChild(child, exited, {
     closeStdin: true,
     graceMs: t.signal?.aborted ? 200 : 2000,
     killMs: 400,
   });
-  t.after(async () => {
-    let firstError;
-    const record = (error) => { firstError ??= error; };
-    for (const cleanup of [...cleanups].reverse()) {
-      try { await cleanup(); } catch (error) { record(error); }
-    }
-    let stopped;
+  cleanups.push(async () => {
     try {
-      stopped = await stopMcp();
-    } catch (error) { record(error); }
-    const survivors = await reapFixtureProcesses({ root, hudHome: env.HUD_HOME });
-    child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
-    if (!survivors.length) untrack();
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    if (survivors.length) {
-      record(new assert.AssertionError({
-        message: `Fixture left live process(es) for ${env.HUD_HOME}: ${survivors.map((p) => `${p.pid} (${p.state}) ${p.cmdline}`).join('; ')}`,
-      }));
+      const stopped = await stopMcp();
+      if (!stopped.forced && !t.signal?.aborted) assert.equal(stderr, '');
+    } finally {
+      child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
     }
-    if (firstError) throw firstError;
-    if (!stopped.forced && !t.signal?.aborted) assert.equal(stderr, '');
   });
+  const rpc = rpcClient(child);
   let cliSocket, piStatus = () => 'idle';
   const socketRequests = [];
   const subscribers = new Set();

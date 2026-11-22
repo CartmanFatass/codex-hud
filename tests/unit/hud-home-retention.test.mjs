@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 
 const MiB = 1024 * 1024;
 const DAY = 86_400;
@@ -24,7 +25,7 @@ const churn = (dir, name, count, size, now) => {
 
 test('hud-watch bounds synthetic cache churn, dead snapshots and legacy trust backups', (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-home-retention-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  cleanupFixture(t, { root });
   const hud = join(root, 'hud');
   const state = join(hud, 'display', 'state');
   const labels = join(hud, 'display', 'model-cache', 'decision-labels');

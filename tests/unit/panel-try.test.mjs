@@ -11,14 +11,16 @@ import { watchCommand } from '../../dist/cli/watch.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'panel-try-'));
   const cwd = join(root, 'SampleHUD'), hud = join(root, 'hud'), file = join(hud, 'tries.jsonl');
+  const stops = [];
+  cleanupFixture(t, { root, hudHome: hud }, () => Promise.all(stops.map((stop) => stop())));
   const state = join(cwd, 'docs/handoff/STATE.md');
   fs.mkdirSync(join(cwd, 'docs/handoff'), { recursive: true });
   fs.mkdirSync(join(hud, 'jobs'), { recursive: true });
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const env = { ...process.env, HUD_HOME: hud };
   const body = `# Synthetic STATE
 Milestone: 0.1.4
@@ -33,14 +35,14 @@ Milestone: 0.1.4
   const record = (action, ...slices) => appendTry(hud, cwd, action, { milestone: '0.1.4', slices });
   // The real ledger is append-only; an empty file or a partial tail is not a record yet.
   const records = () => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').slice(0, -1).filter(Boolean).map(JSON.parse) : [];
-  return { cwd, hud, file, state, body, env, record, records };
+  return { cwd, hud, file, state, body, env, record, records, stops };
 }
 const until = async (condition, diagnostic) => {
   for (let i = 0; i < 200; i++, await sleep(20)) if (condition()) return;
   assert.fail(diagnostic());
 };
 
-function panel(t, f, { layout = 'classic', columns = 80, prelude = '', acceptance = 'slice' } = {}) {
+function panel(f, { layout = 'classic', columns = 80, prelude = '', acceptance = 'slice' } = {}) {
   fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, acceptance, modelEnabled: false, refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
   const runner = `process.stdout.columns = ${columns}; process.stdout.rows = 24;
     ${prelude}
@@ -51,7 +53,7 @@ function panel(t, f, { layout = 'classic', columns = 80, prelude = '', acceptanc
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const exited = once(child, 'exit');
-  t.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); await exited; });
+  f.stops.push(() => stopChild(child, exited));
   const screen = [];
   let err = '';
   child.stdout.setEncoding('utf8').on('data', (chunk) => {
@@ -69,7 +71,7 @@ function panel(t, f, { layout = 'classic', columns = 80, prelude = '', acceptanc
 
 test('the live panel flags a milestone, accepts one slice and immediately removes it from Only to try', async (t) => {
   const f = fixture(t);
-  const { key, frame, painted, recorded, close } = panel(t, f);
+  const { key, frame, painted, recorded, close } = panel(f);
 
   key('\x1b[C');
   await painted(/^Progress +3 to try/m);
@@ -112,7 +114,7 @@ test('the live panel flags a milestone, accepts one slice and immediately remove
 });
 
 test('task acceptance writes each pending slice of the milestone in one record', async (t) => {
-  const f = fixture(t), { key, painted, recorded, close } = panel(t, f, { acceptance: 'task' });
+  const f = fixture(t), { key, painted, recorded, close } = panel(f, { acceptance: 'task' });
   key('\x1b[C');
   await painted(/^Progress +2 to try/m);
   key('\rtj');
@@ -137,7 +139,7 @@ test('task acceptance writes each pending slice of the milestone in one record',
 test('Space marks two rows, then y writes one try record and one watch line in Classic and both Split views', async (t) => {
   for (const view of ['classic', 'split-hub', 'split-progress']) {
     const f = fixture(t);
-    const { key, frame, painted, recorded, close } = panel(t, f, { layout: view === 'classic' ? 'classic' : 'split', columns: 40 });
+    const { key, frame, painted, recorded, close } = panel(f, { layout: view === 'classic' ? 'classic' : 'split', columns: 40 });
     key('\x1b[C');
     await painted(/^.*Progress +3 to try/m);
     let slices = ['TWO', 'ONE'];
@@ -208,7 +210,7 @@ test('at 40 columns the Projects list pauses brief scheduling, and a switched pr
       return collect.call(this, mode, ...args);
     };
     TryBriefs.prototype.update = (root, ledger) => log({ root, ids: ledger.map((r) => r.id) });`;
-  const { key, painted, close } = panel(t, f, { columns: 40, prelude });
+  const { key, painted, close } = panel(f, { columns: 40, prelude });
   const events = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   const waitFor = (condition) => until(() => condition(events()), () => JSON.stringify(events()));
   await waitFor(xs => xs.some(x => x.root === f.cwd && x.ids.includes('ONE'))); // Home alone starts the briefs.
@@ -272,7 +274,7 @@ test('MCP changes carry unreflected try lines once, only for the session cwd', a
   f.record('flag', { id: 'TWO', text: 'second slice' });
   const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], { env: f.env, cwd: f.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
-  t.after(async () => { child.stdin.end(); await exited; });
+  f.stops.push(() => stopChild(child, exited, { closeStdin: true }));
   const rpc = createInterface({ input: child.stdout });
   let id = 0;
   let stderr = '';

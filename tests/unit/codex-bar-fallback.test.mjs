@@ -93,8 +93,9 @@ if (process.env[flag] === '1') {
     syncBuiltinESMExports();
   }
 } else {
-  test('the Codex bar fallback skips a HUD CLI worker rollout', { timeout: 15000 }, () => {
+  test('the Codex bar fallback skips a HUD CLI worker rollout', { timeout: 15000 }, (t) => {
     const root = fs.mkdtempSync(join(tmpdir(), 'codex-bar-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const env = {
       ...process.env,
       [flag]: '1',
@@ -111,7 +112,6 @@ if (process.env[flag] === '1') {
     fs.mkdirSync(env.CODEX_HOME);
     fs.mkdirSync(env.SYNTHETIC_CWD);
     const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { env, encoding: 'utf8' });
-    fs.rmSync(root, { recursive: true, force: true });
     assert.equal(result.status, 0, result.stderr || result.stdout);
   });
 }

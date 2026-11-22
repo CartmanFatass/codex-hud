@@ -19,6 +19,7 @@ import { modelInput } from '../../dist/render/model-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { markExhausted, placeKey, roleRegistry } from '../../dist/roles/roster.js';
 import { createPanelActions } from '../../dist/panel/actions.js';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 const saveRun = (s, role, run) => assert.equal(editPreset(s.hud, s.cwd, s.env, { role, op: 'run', run }).ok, true);
 
@@ -34,7 +35,8 @@ function focus(s, name = 'imp', at = 0) {
 /** The synthetic Project fixture with every CLI and browser tool but `codex` and `jev-flow` on PATH, and the shipped `imp`. */
 async function setup(t, { shippedImp = true, healthyOpen = true, browserRoles = false } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'role-control-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const stops = [];
+  cleanupFixture(t, { root }, () => Promise.all(stops.map((stop) => stop())));
   const f = await projectFixture(root);
   for (const name of ['herdr', 'agy', 'claude', 'grok', 'jev-aistudio'])
     fs.writeFileSync(join(root, 'bin', name), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
@@ -78,7 +80,7 @@ async function setup(t, { shippedImp = true, healthyOpen = true, browserRoles = 
   };
   const rows = (width = 80) => frame(width).workboard.rows.filter((r) => r.item?.startsWith('project:role:'));
   const text = (width = 80) => plain(frame(width)).join('\n');
-  return { ...f, root, session, press, keys, frame, registry, assignment, rows, text };
+  return { ...f, root, session, press, keys, frame, registry, assignment, rows, text, stops };
 }
 const stored = (s, name) => JSON.parse(fs.readFileSync(join(s.hud, 'roles', `${name}.json`), 'utf8'));
 const DOWN = '\x1b[B', ENTER = '\r', ESC = '\x1b', TAB = '\t', BACKSPACE = '\x7f', END = '\x1b[F', DEL = '\x1b[3~';
@@ -447,7 +449,7 @@ test('quick model on a role saves only the model in the active preset and target
     cwd: s.cwd, env: { ...s.env, HUD_MCP_SURFACE: 'roles' }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const exited = once(roster, 'exit');
-  t.after(() => roster.kill());
+  s.stops.push(() => stopChild(roster, exited, { closeStdin: true }));
   const response = once(createInterface({ input: roster.stdout }), 'line');
   roster.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'hud_roster', arguments: { detail: true } } }) + '\n');
   const [line] = await response;
@@ -936,7 +938,8 @@ test('the live panel applies explicit owner edits, including batched name input'
   let out = '', err = '';
   child.stdout.on('data', (b) => { out += b; });
   child.stderr.on('data', (b) => { err += b; });
-  t.after(() => child.kill('SIGKILL'));
+  const exited = once(child, 'exit');
+  s.stops.push(() => stopChild(child, exited));
   const until = async (ok, what) => {
     for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 25))) if (ok()) return;
     assert.fail(`${what}: ${err}\n${stripAnsi(out).slice(-2500)}`);
@@ -972,6 +975,6 @@ test('the live panel applies explicit owner edits, including batched name input'
   assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-sol');
   assert.equal(fs.existsSync(join(s.hud, 'roles/frontend.json')), false);
   child.stdin.write('q');
-  await once(child, 'exit');
+  await exited;
   assert.equal(err, '');
 });

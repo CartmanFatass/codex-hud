@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline';
 import { v8HeapArgs } from '../../scripts/dist-lock.mjs';
 import { ensureJobWatcher } from '../../dist/mcp/watch-pid.js';
 import { fixture, launch, until } from '../helpers/panel-reload-fixture.mjs';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 const execSupported = typeof process.execve === 'function' && !['win32', 'os400'].includes(process.platform);
 
@@ -86,21 +87,16 @@ test('hud panel --here launches with 128/4 V8 heap caps and HUD_HEAP_CAPS=off re
 test('hud-mcp runs with 96/2 V8 heap caps across execve and HUD_HEAP_CAPS=off restores defaults', { skip: !execSupported, timeout: 15000 }, async (t) => {
   const probeMcp = async (extraEnv) => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'hud-mcp-caps-'));
-    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-    const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
+    let child, exited;
+    cleanupFixture(t, { root: dir }, () => child && stopChild(child, exited, { closeStdin: true }));
+    child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
       cwd: dir,
       env: { ...process.env, HUD_HOME: join(dir, 'hud'), HUD_MCP_SURFACE: 'roles', ...extraEnv },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const exited = once(child, 'exit');
+    exited = once(child, 'exit');
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d; });
-    t.after(async () => {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGTERM');
-        await exited;
-      }
-    });
     const rl = createInterface({ input: child.stdout });
     const reply = new Promise((res) => rl.once('line', (line) => res(JSON.parse(line))));
     child.stdin.write(JSON.stringify({
@@ -128,20 +124,14 @@ test('hud-mcp runs with 96/2 V8 heap caps across execve and HUD_HEAP_CAPS=off re
 });
 
 test('hud-watch runs with 96/2 V8 heap caps via ensureJobWatcher and direct execve, and HUD_HEAP_CAPS=default restores defaults', { skip: !execSupported, timeout: 15000 }, async (t) => {
-  const makeWatcherHome = () => {
+  const makeWatcherHome = (stop) => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'hud-watch-caps-'));
     const home = join(dir, 'hud');
+    cleanupFixture(t, { root: dir, hudHome: home }, stop);
     const jobDir = join(home, 'jobs', 'j0000000000000001');
     fs.mkdirSync(jobDir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(join(jobDir, 'job.json'), JSON.stringify({ job: 'j0000000000000001', role: 'imp', cwd: dir, created_at: new Date().toISOString() }));
     fs.writeFileSync(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'working', role: 'imp', harness: 'pi' }));
-    t.after(() => {
-      try {
-        const pid = Number(fs.readFileSync(join(home, 'watch.pid'), 'utf8').trim());
-        if (pid > 1) process.kill(pid, 'SIGTERM');
-      } catch {}
-      fs.rmSync(dir, { recursive: true, force: true });
-    });
     return home;
   };
 
@@ -157,7 +147,6 @@ test('hud-watch runs with 96/2 V8 heap caps via ensureJobWatcher and direct exec
     const cmdline = readCmdline(pid);
     assert.ok(cmdline.includes('--max-old-space-size=96'), JSON.stringify(cmdline));
     assert.ok(cmdline.includes('--max-semi-space-size=2'), JSON.stringify(cmdline));
-    process.kill(pid, 'SIGTERM');
   } finally {
     if (prevCaps === undefined) delete process.env.HUD_HEAP_CAPS;
     else process.env.HUD_HEAP_CAPS = prevCaps;
@@ -165,18 +154,13 @@ test('hud-watch runs with 96/2 V8 heap caps via ensureJobWatcher and direct exec
 
   // 2. Direct launch (also covers execve reload dropping execArgv) + HUD_HEAP_CAPS=default override
   for (const [override, expectCapped] of [[undefined, true], ['default', false]]) {
-    const home = makeWatcherHome();
+    let child, exited;
+    const home = makeWatcherHome(() => child && stopChild(child, exited));
     const env = { ...process.env, HUD_HOME: home };
     if (override) env.HUD_HEAP_CAPS = override;
     else delete env.HUD_HEAP_CAPS;
-    const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
-    const exited = once(child, 'exit');
-    t.after(async () => {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGTERM');
-        await exited;
-      }
-    });
+    child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
+    exited = once(child, 'exit');
     const pidFile = join(home, 'watch.pid');
     await until(() => fs.existsSync(pidFile), `watcher (${override ?? 'capped'}) did not publish watch.pid`);
     const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());

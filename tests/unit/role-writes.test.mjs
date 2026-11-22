@@ -16,6 +16,7 @@ import {
   roleRegistry,
 } from '../../dist/roles/roster.js';
 import { editPreset } from '../../dist/roles/role-control.js';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 const bundled = resolve('packages/hud-mcp');
 const mcpEntry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
@@ -23,6 +24,8 @@ const mcpEntry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
 function makeSandbox(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'role-writes-'));
   const hud = join(root, 'hud');
+  const stops = [];
+  cleanupFixture(t, { root, hudHome: hud }, () => Promise.all(stops.map((stop) => stop())));
   const cwd = join(root, 'cwd');
   const bin = join(root, 'bin');
   fs.mkdirSync(hud, { recursive: true });
@@ -31,8 +34,7 @@ function makeSandbox(t) {
   for (const cmd of ['pi-role', 'herdr', 'agy', 'claude', 'codex', 'grok', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
     fs.writeFileSync(join(bin, cmd), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   }
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { root, hud, cwd, bin, env: { PATH: bin } };
+  return { root, hud, cwd, bin, env: { PATH: bin }, stops };
 }
 
 test('placeCatalog returns shipped defaults and merges HUD_HOME catalog additions', (t) => {
@@ -195,10 +197,8 @@ test('chain saves seed from the shipped role, preserve existing fields, set 0600
     env: { ...process.env, HUD_MCP_SURFACE: 'roles', HUD_HOME: s.hud, PATH: s.bin },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  t.after(async () => {
-    child.stdin.end();
-    await once(child, 'exit');
-  });
+  const exited = once(child, 'exit');
+  s.stops.push(() => stopChild(child, exited, { closeStdin: true }));
   const reply = new Promise((done) => {
     createInterface({ input: child.stdout }).once('line', (line) => done(JSON.parse(line)));
   });

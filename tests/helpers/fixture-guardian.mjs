@@ -1,6 +1,6 @@
-// Detached test helper: it owns no HUD state and only reaps registered temporary fixtures.
+// Detached test helper: when a test worker dies, clean up only its registered temporary fixtures.
 import { isProcAlive } from '../../dist/utils/proc.js';
-import { reapFixtureProcesses } from './process-cleanup.mjs';
+import { reapFixtureProcesses, removeFixtureRoot } from './process-cleanup.mjs';
 
 const { worker, owner } = JSON.parse(process.argv[2]);
 const fixtures = new Map();
@@ -13,7 +13,9 @@ process.on('message', ({ spec, active }) => {
 process.once('disconnect', async () => {
   clearInterval(timer);
   // Kill immediately: the test isn't present to consume a graceful shutdown, and a child may be stopped.
-  for (const spec of fixtures.values()) await reapFixtureProcesses({ ...spec, graceMs: 0 });
+  for (const spec of fixtures.values()) {
+    if (!(await reapFixtureProcesses({ ...spec, graceMs: 0 })).length) removeFixtureRoot(spec);
+  }
 });
 
 const timer = setInterval(() => {

@@ -11,11 +11,13 @@ import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { watchJobChanges } from '../../dist/collectors/job-changes.js';
 import { createPiSegment } from '../../dist/harness/pi/segment.js';
 import { writePrivateFile } from '../../dist/utils/atomic-fs.js';
+import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 
 const pane = 'w4E:p1';
-function fixture(t) {
+function fixture(t, stop) {
   const home = fs.mkdtempSync(join(tmpdir(), 'hud-job-snapshot-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  if (stop) cleanupFixture(t, { root: home }, stop);
+  else t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   function job(n, state = 'working') {
     const id = 'j' + n.toString(16).padStart(16, '0');
     const dir = join(home, 'jobs', id), created_at = new Date().toISOString();
@@ -94,16 +96,19 @@ test('pi footer fills asynchronously, follows local question and answer changes,
 });
 
 test('a live lifecycle watch relays job deltas without a second recursive watch, then hands back on exit', { timeout: 10_000 }, async (t) => {
-  const { home, job } = fixture(t), { id, status } = job(1);
+  let handle, child, exited;
+  const { home, job } = fixture(t, async () => {
+    handle?.close();
+    if (child) await stopChild(child, exited);
+  }), { id, status } = job(1);
   const ready = new EventEmitter();
-  const handle = fs.watch(home, (_event, file) => {
+  handle = fs.watch(home, (_event, file) => {
     if (file === 'jobs-revision.json' && fs.existsSync(join(home, file))) ready.emit('ready');
   });
-  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+  child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
     env: { ...process.env, HUD_HOME: home }, stdio: 'ignore',
   });
-  const exited = once(child, 'exit');
-  t.after(async () => { handle.close(); child.kill(); await exited; });
+  exited = once(child, 'exit');
   await once(ready, 'ready');
   handle.close();
   assert.equal(fs.statSync(join(home, 'jobs-revision.json')).mode & 0o777, 0o600);
