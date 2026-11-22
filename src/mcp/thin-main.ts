@@ -29,6 +29,7 @@ import { needsTranslation, replyWords } from '../collectors/reply-language.js';
 import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
+import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
 import { writePrivateFile } from '../collectors/small-model.js';
 import { TryLog } from '../collectors/try-records.js';
@@ -954,6 +955,25 @@ function listJobs(recent: boolean) {
 }
 
 const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
+const JOB_WATCH_FILES = new Set(['STATUS.json', 'job.json', 'report.md', 'qa', CHECKS_FILE]);
+const WAIT_JOB_DIRECT_WATCH_LIMIT = 16;
+
+function jobWatchTargets(dir: string): WatchTarget[] {
+  const qaDir = join(dir, 'qa');
+  const list: WatchTarget[] = [
+    {
+      dir,
+      filter: (name) => name === null || JOB_WATCH_FILES.has(name),
+    },
+  ];
+  if (fs.existsSync(qaDir)) {
+    list.push({
+      dir: qaDir,
+      filter: (name) => name === null || /^q\d+(?:\.answer)?\.md$/.test(name),
+    });
+  }
+  return list;
+}
 
 async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
   if (mode !== 'any' && mode !== 'all') throw new Error('invalid_arguments: mode');
@@ -980,51 +1000,43 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
     });
   }
   const targets = new Set(initial.map((row) => row.job));
-  function result(rows: JobRow[]) {
+  function result(rows: JobRow[], timedOut = false) {
     const allSettled = mode === 'all' && rows.length === targets.size && rows.every((row) => settled(row.state));
     const triggered = rows.filter((row) => allSettled || (mode === 'any' && settled(row.state)) ||
       row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' || row.open_questions > 0
     ).map((row) => row.job);
     const ready = targets.size === 0 || triggered.length > 0;
-    return { ready, timed_out: !ready && performance.now() >= deadline, triggered, jobs: rows.map(compactRow) };
+    return { ready, timed_out: !ready && (timedOut || performance.now() >= deadline), triggered, jobs: rows.map(compactRow) };
   }
   const sample = () => [...targets].flatMap((id) => {
     const job = readJob(id);
     return job ? [readRow(job, false).row] : [];
   });
-  const current = result(ids === undefined ? sample() : initial);
-  if (current.ready || current.timed_out) return current;
+  let first = true;
+  const watchTargets = (): WatchTarget[] =>
+    targets.size <= WAIT_JOB_DIRECT_WATCH_LIMIT
+      ? [...targets].flatMap((id) => jobWatchTargets(directory(id)))
+      : [{
+          dir: jobsRoot,
+          recursive: true,
+          filter: (name) => {
+            if (name === null) return true;
+            const [id, file] = name.split('/');
+            return !id || (targets.has(id) && (!file || JOB_WATCH_FILES.has(file)));
+          },
+        }];
 
-  let watcher: fs.FSWatcher | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await new Promise<ReturnType<typeof result>>((resolve, reject) => {
-      function check() {
-        try {
-          const next = result(sample());
-          if (!next.ready && !next.timed_out) return false;
-          resolve(next);
-        } catch (error) {
-          reject(error);
-        }
-        return true;
-      }
-      function tick() {
-        if (!check()) timer = setTimeout(tick, Math.min(5000, Math.max(0, Math.ceil(deadline - performance.now()))));
-      }
-      try {
-        watcher = fs.watch(jobsRoot, { recursive: true }, (_event, name) => {
-          const [id, file] = name?.split('/') ?? [];
-          if (!id || (targets.has(id) && (!file || ['job.json', 'STATUS.json', 'report.md', 'qa'].includes(file)))) check();
-        });
-        watcher.on('error', () => { watcher?.close(); watcher = undefined; });
-      } catch { /* The safety timer still checks the target jobs. */ }
-      tick(); // Check again after attaching so a change during setup cannot be missed.
-    });
-  } finally {
-    watcher?.close();
-    clearTimeout(timer);
-  }
+  return waitUntilFs({
+    targets: watchTargets,
+    timeoutMs: Math.max(0, deadline - performance.now()),
+    isTransientError: (error) => error instanceof SyntaxError,
+    check: ({ timedOut }) => {
+      const rows = first && ids !== undefined ? initial : sample();
+      first = false;
+      const next = result(rows, timedOut);
+      return next.ready || next.timed_out ? { done: true, value: next } : { done: false };
+    },
+  });
 }
 
 function openQuestions(dir: string): string[] {
@@ -2211,19 +2223,23 @@ async function callJob(name: string, args: Args, detail: boolean) {
   const dir = directory(job.job);
   if (name === 'hud_read') {
     const full = args.mode === 'full' || (args.mode === undefined && args.full === true);
-    const end = Date.now() + Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
-    const initial = readRow(job, !isWorker).row;
-    const ready = (row: JobRow) =>
+    const waitMs = Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
+    let initial: JobRow | undefined;
+    const isReady = (row: JobRow) =>
       settled(row.state) ||
       row.state === 'waiting_orchestrator' ||
       row.blocked ||
       row.open_questions > 0 ||
-      jobChanges([initial], [row]).length > 0 ||
-      Date.now() >= end;
+      (initial !== undefined && jobChanges([initial], [row]).length > 0);
     let summary: GitSummary | undefined;
-    while (true) {
-      const { row } = readRow(job, !isWorker);
-      if (Date.now() >= end || ready(row)) {
+    return waitUntilFs({
+      targets: () => jobWatchTargets(dir),
+      timeoutMs: waitMs,
+      isTransientError: (error) => error instanceof SyntaxError,
+      check: async ({ timedOut }) => {
+        const { row } = readRow(job, !isWorker);
+        initial ??= row;
+        if (!timedOut && !isReady(row)) return { done: false };
         const receipt = json<Job>(join(dir, 'job.json')) ?? job;
         const wt = receipt.worktree;
         // Only probe once per read, even if a concurrent answer or continuation resumes the wait.
@@ -2240,9 +2256,8 @@ async function callJob(name: string, args: Args, detail: boolean) {
           reportPresent: result.report_exists,
         });
         // The full read disagrees with the quick one (answered or continued meanwhile): wait, never spin.
-        if (!ready(currentRow)) {
-          await sleep(Math.max(0, Math.min(200, end - Date.now())));
-          continue;
+        if (!timedOut && !isReady(currentRow)) {
+          return { done: false, minDelayMs: 50 };
         }
         const collected = ('report' in result || 'digest' in result) && result.report_exists;
         const observed = result.blocked || failedAttempt(currentRow);
@@ -2253,10 +2268,9 @@ async function callJob(name: string, args: Args, detail: boolean) {
           if (observed) latest.observed_at = at;
           save(latest);
         }
-        return result;
-      }
-      await sleep(Math.min(500, end - Date.now()));
-    }
+        return { done: true, value: result };
+      },
+    });
   }
   if (name === 'hud_respond') return respondJob(args, false);
   return closeJob(job);
