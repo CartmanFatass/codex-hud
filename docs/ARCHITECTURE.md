@@ -164,11 +164,17 @@ separate native tree.
 
 ### 4.5 Jobs and workboard
 
-`PanelJobPipeline` reads passive task/job observations and calls `buildWorkboard`.
-Task artifacts are bound to an explicit workspace; no cwd/name join grants a task
-authority over a facade job. Source capacity is 200; bounded artifact/QA readers
-and persistent cursors retain incomplete coverage rather than inventing absence.
-Shared readers use stat signatures; unchanged warm artifacts need no body read.
+Home's workboard has exactly two live sources: thin jobs in `$HUD_HOME/jobs/`
+for the caller pane and the selected main session's native Claude/Codex `SubagentTree`
+(§4.4). `PanelJobPipeline` reads the jobs through `readThinJobs` and passes both
+sources to `buildWorkboard`. `DiffStatCollector` adds a bounded Git diff on demand
+for an inspected thin job, and `ActivityRings` records observed writes in memory;
+neither supplies workers. Failed or incomplete reads are not evidence of absence.
+
+The panel does not poll `herdr agent list`, scan workspace `tmp/tasks/`, or read
+retired `$HUD_HOME` observation records such as `assoc/`, `native-relations/` and
+`jev-runtime/`. Existing records are left in place. `CODEX_HUD_PANEL_ALL_DELEGATIONS`
+is ignored; it does not widen the pane scope.
 
 `readThinJobs` selects the newest 200 job directories and filters to the caller's
 recorded pane. It excludes jobs settled before the panel's original `openedAt`
@@ -462,6 +468,8 @@ rewrite frames. Tests use temporary homes, fixed clocks and synthetic data;
 render checks compare terminal cells, not font pixels. Restore display/language
 state in `finally`. A real client/browser check remains separate from fixtures.
 CI runs `npm test` and fixture checks on Node 24 with and without colour.
+For a clean regression run, use `npm run clean` before testing in an isolated
+checkout, not one serving a live panel.
 
 `CODEX_HUD_PROFILE=1` appends stage timings to `display/profile.log`.
 Performance evidence names host and workload; it is not automatically WSL qualification.

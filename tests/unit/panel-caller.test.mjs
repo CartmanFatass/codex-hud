@@ -6,6 +6,47 @@ import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
+// The modules deleted by PRUNE-OBS-01 through PRUNE-OBS-03. Keep the live rollout/recovery types out of this list.
+const retiredModules = [
+  'collectors/job-display-types',
+  'collectors/job-live-observation',
+  'collectors/job-observations',
+  'collectors/job-tree',
+  'collectors/native-calls',
+  'collectors/task-observations',
+  'core/capacity',
+  'core/execution',
+  'core/interfaces/registry-provider',
+  'core/interfaces/session-binding',
+  'core/ledger-read',
+  'core/link-ledger-read',
+  'core/link/job-display',
+  'core/link/limits',
+  'core/link/types',
+  'core/link/view-model',
+  'core/types/close',
+  'core/types/execution',
+  'core/types/lifecycle',
+  'core/wake/projection',
+  'jev/runtime/types',
+  'ledger/notify-events',
+  'managed/host-ipc',
+  'managed/host',
+  'managed/jev-host',
+  'managed/relations',
+  'managed/types',
+  'render/job-details',
+  'roles/association',
+  'roles/external-association',
+  'roles/pi-dispatch-status',
+  'roles/pi-dispatch',
+];
+
+test('removed observer modules stay out of source and the panel build', () => {
+  const files = retiredModules.flatMap((name) => [`src/${name}.ts`, `dist/${name}.js`]);
+  assert.deepEqual(files.filter((file) => fs.existsSync(new URL(`../../${file}`, import.meta.url))), []);
+});
+
 for (const initiallyMissing of [true, false])
   test(`panel caller ${initiallyMissing ? 'missing' : 'present, then closed'}`, { timeout: 20000 }, async (t) => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'panel-caller-'));
@@ -47,8 +88,10 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
     }
     const result = await exited;
     assert.deepEqual(result, { code: 0, signal: null }, stderr);
-    assert.deepEqual(calls().filter((a) => ['get', 'close'].includes(a[1])).at(-1), ['pane', 'close', 'w4E:p2']);
-    assert.ok(calls().filter((a) => a[0] === 'pane').every((a) =>
+    const recorded = calls();
+    assert.deepEqual(recorded.filter(([verb, subcommand]) => verb === 'agent' && subcommand === 'list'), []);
+    assert.deepEqual(recorded.filter((a) => ['get', 'close'].includes(a[1])).at(-1), ['pane', 'close', 'w4E:p2']);
+    assert.ok(recorded.filter((a) => a[0] === 'pane').every((a) =>
       (a[1] === 'get' && a[2] === 'w4E:p1') || (a[1] === 'close' && a[2] === 'w4E:p2') ||
       (a[1] === 'layout' && a[2] === '--pane' && a[3] === 'w4E:p2')));
   });

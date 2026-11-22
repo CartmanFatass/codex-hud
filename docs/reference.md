@@ -358,9 +358,13 @@ project directory, run `hud trust <dir>` yourself.
 
 ## Home
 
-Home shows needs-you questions, package lanes with compact job cards, native
-session lanes. It observes files and never briefs or chains work; its only
-actions on a job are the owner's three micro-actions (see [Keys](#keys)).
+Home shows needs-you questions, package lanes with compact job cards, and native
+session lanes. Its only live sources for cards are HUD jobs in `$HUD_HOME/jobs/`
+recorded for the caller pane and the selected Claude or Codex session's native
+subagent tree. It does not scan `tmp/tasks/` or read retired observation records;
+`CODEX_HUD_PANEL_ALL_DELEGATIONS` no longer changes the scope. Home never briefs
+or chains work; its only actions on a job are the owner's three micro-actions
+(see [Keys](#keys)).
 Running jobs with unanswered questions need you; an unanswered question left on a
 finished job does not. A report is not proof of success, and display labels are not
 acceptance or a merge decision. Unknown evidence stays unknown.
@@ -650,8 +654,8 @@ opens the **Projects list** (`‹ Projects` replaces the tabs; Esc or a click on
 returns to the hub).
 On a page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and
 folds start fresh. The choice belongs to the panel and survives its reload, not
-Settings. Home always stays on the panel's own project, and opening Home's progress block
-returns to it. The panel keeps one collector per visited project (at most four, the
+Settings. Home's progress block always shows the panel's own project, and opening
+that block returns to it. The panel keeps one collector per visited project (at most four, the
 panel's own never dropped, the oldest other one first) and collects only the shown one.
 With one project there is no `▾ project i/n` and no list.
 

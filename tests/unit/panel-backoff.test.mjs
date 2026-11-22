@@ -125,8 +125,33 @@ function live(t, f) {
   // Delay, never replace, one actual collection to exercise force-during-await.
   f.put(
     runner,
-    `import {runLivePage,PanelJobPipeline} from ${JSON.stringify(module('tree-page'))};
-import {ProfileRecorder,useProfileRecorder} from ${JSON.stringify(module('utils/profile'))};
+    `import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
+import {resolve,join,sep} from 'node:path';
+import {fileURLToPath} from 'node:url';
+// Record probes even when the target is absent or the panel swallows a failed read.
+const retired = ['assoc', 'native-relations', 'jev-runtime'].map(name => join(process.env.HUD_HOME, name));
+for (const io of [fs, fs.promises]) {
+  for (const name of ['access', 'exists', 'lstat', 'open', 'opendir', 'readdir', 'readFile', 'realpath', 'stat', 'watch', 'watchFile']) {
+    for (const method of [name, name + 'Sync']) {
+      const original = io[method];
+      if (!original) continue;
+      io[method] = new Proxy(original, {apply(fn, receiver, args) {
+        const [file] = args;
+        if (typeof file === 'string' || file instanceof URL || Buffer.isBuffer(file)) {
+          const path = resolve(file instanceof URL ? fileURLToPath(file) : String(file));
+          if (retired.some(root => path === root || path.startsWith(root + sep))) {
+            process.send({type: 'retired-probe', method, path});
+          }
+        }
+        return Reflect.apply(fn, receiver, args);
+      }});
+    }
+  }
+}
+syncBuiltinESMExports();
+const {runLivePage,PanelJobPipeline} = await import(${JSON.stringify(module('tree-page'))});
+const {ProfileRecorder,useProfileRecorder} = await import(${JSON.stringify(module('utils/profile'))});
 let gate=false,release;const original=PanelJobPipeline.prototype.refresh;
 PanelJobPipeline.prototype.refresh=async function(...args){if(gate){gate=false;process.send({type:'waiting'});await new Promise(r=>release=r);}return original.apply(this,args);};
 process.on('message',m=>{if(m==='gate')gate=true;if(m==='release')release?.();});
@@ -176,7 +201,7 @@ test('live working and capped scopes retain the original nonquiet base-tick timi
 });
 
 test(
-  'live panel: input wakes immediately, force during await is retained, and a new question appears within 5s without listing herdr agents',
+  'live panel: input wakes immediately, force during await is retained, and questions appear without retired observers',
   { timeout: 35000 },
   async (t) => {
     await Promise.all([
@@ -224,7 +249,9 @@ test(
           baseGap >= 1800 && baseGap < 2600,
           `question/working job restores original base-grid cadence: ${baseGap}ms`
         );
+        // Reuse these real polling cycles (past the old 5s sampler cadence) instead of adding a sleep.
         assert.doesNotMatch(p.herdrCalls(), /^agent list(?:\s|$)/m, 'live collection never lists herdr agents');
+        assert.deepEqual(p.events.filter((e) => e.type === 'retired-probe'), [], 'live collection never probes retired HUD home paths');
       })(),
     ]);
   }
