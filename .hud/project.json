@@ -29,7 +29,6 @@
       "npm run build",
       "npm run build:test",
       "npm run test:mjs",
-      "npm run test:mjs",
       "npm run test:unit",
       "npm run check:fixtures"
     ],
