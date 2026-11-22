@@ -25,12 +25,12 @@ function fixture(t) {
     fs.mkdirSync(dirname(file(name)), { recursive: true });
     fs.writeFileSync(file(name), body);
   };
-  const run = (args = [], preload) =>
-    exec(process.execPath, [...(preload ? ['--import', file(preload)] : []), file('scripts/build.mjs'), ...args], { cwd: root });
+  const run = (args = [], preload, env = process.env) =>
+    exec(process.execPath, [...(preload ? ['--import', file(preload)] : []), file('scripts/build.mjs'), ...args], { cwd: root, env });
   const stages = () => fs.readdirSync(root).filter((name) => /^\.dist(?:-test)?-stage-/.test(name));
   fs.mkdirSync(file('scripts'));
   fs.copyFileSync(script, file('scripts/build.mjs'));
-  fs.copyFileSync(new URL('dist-lock.mjs', script), file('scripts/dist-lock.mjs'));
+  for (const name of ['dist-lock.mjs', 'build-native.mjs']) fs.copyFileSync(new URL(name, script), file(`scripts/${name}`));
   fs.mkdirSync(file('node_modules'));
   fs.symlinkSync(compiler, file('node_modules/typescript'), 'dir');
   put('package.json', '{"type":"module"}');
@@ -269,17 +269,61 @@ test('incremental build keeps buildinfo outside stage/dist, prunes deleted sourc
   assert.equal(fs.existsSync(f.file('.tsbuild')), false);
 });
 
+test('native build is content-keyed and only main publishes it; missing Cargo leaves TS build usable', {
+  skip: process.platform !== 'linux' || process.arch !== 'x64',
+}, async (t) => {
+  const f = fixture(t);
+  f.put('native/Cargo.toml', '# synthetic crate');
+  f.put('native/src/main.rs', 'first');
+  const artifact = f.file('dist/native/hud-statusline');
+  const env = { ...process.env, PATH: f.file('tools'), CARGO_LOG: f.file('cargo.log') };
+  await f.run([], undefined, env);
+  assert.equal(fs.existsSync(artifact), false);
+  f.put('tools/cargo', `#!/bin/bash
+printf '%s\\n' "$1" >> "$CARGO_LOG"
+[[ $1 == --version ]] && exit 0
+while [[ $1 != --target-dir ]]; do shift; done
+out=$2/x86_64-unknown-linux-gnu/release
+/bin/mkdir -p "$out"
+/bin/cp src/main.rs "$out/hud-statusline"
+/bin/chmod +x "$out/hud-statusline"
+`);
+  fs.chmodSync(f.file('tools/cargo'), 0o700);
+  await f.run([], undefined, env);
+  assert.equal(fs.readFileSync(artifact, 'utf8'), 'first');
+  assert.equal(fs.statSync(artifact).mode & 0o111, 0o111);
+  await f.run([], undefined, env);
+  f.put('native/src/main.rs', 'second');
+  await f.run(['--target', 'test'], undefined, env);
+  assert.equal(fs.readFileSync(env.CARGO_LOG, 'utf8'), '--version\nbuild\n');
+  await f.run([], undefined, env);
+  assert.equal(fs.readFileSync(artifact, 'utf8'), 'second');
+  assert.equal(fs.readFileSync(env.CARGO_LOG, 'utf8'), '--version\nbuild\n--version\nbuild\n');
+
+  // A fresh land checkout can publish the already-tested artifact without invoking Cargo.
+  const gate = fixture(t);
+  gate.put('native/Cargo.toml', '# synthetic crate');
+  gate.put('native/src/main.rs', 'second');
+  await gate.run([], undefined, { ...env, HUD_NATIVE_REUSE_DIR: f.file('dist/native') });
+  assert.equal(fs.readFileSync(gate.file('dist/native/hud-statusline'), 'utf8'), 'second');
+  assert.equal(fs.readFileSync(env.CARGO_LOG, 'utf8'), '--version\nbuild\n--version\nbuild\n');
+});
+
 test('--publish-from publishes a prebuilt tree through the staged publisher without altering the source', async (t) => {
   const f = fixture(t), other = fixture(t);
   await f.run();
   f.put('dist/stale.js', 'prune me');
   other.put('src/render/sub.ts', 'export const generation = 99;\n');
   await other.run();
+  other.put('dist/native/hud-statusline', 'synthetic tested binary');
+  fs.chmodSync(other.file('dist/native/hud-statusline'), 0o755);
   const srcDist = other.file('dist');
   const beforeSrc = fs.readFileSync(join(srcDist, 'render/sub.js'), 'utf8');
   await f.run(['--publish-from', srcDist]);
   assert.match(fs.readFileSync(f.file('dist/render/sub.js'), 'utf8'), /generation = 99/);
   assert.equal(fs.existsSync(f.file('dist/stale.js')), false);
+  assert.equal(fs.readFileSync(f.file('dist/native/hud-statusline'), 'utf8'), 'synthetic tested binary');
+  assert.equal(fs.statSync(f.file('dist/native/hud-statusline')).mode & 0o111, 0o111);
   assert.equal(fs.readFileSync(join(srcDist, 'render/sub.js'), 'utf8'), beforeSrc);
   assert.deepEqual(f.stages(), []);
   await assert.rejects(f.run(['--publish-from', f.file('missing-dir')]), /not a real directory/);

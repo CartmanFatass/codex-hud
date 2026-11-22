@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 
-const INPUTS = ['src', 'tsconfig.json', 'package.json', 'package-lock.json', 'scripts/build.mjs', 'scripts/dist-lock.mjs'];
+const INPUTS = ['src', 'tsconfig.json', 'package.json', 'package-lock.json', 'native',
+  'scripts/build.mjs', 'scripts/build-native.mjs', 'scripts/dist-lock.mjs'];
 const COMMIT_INPUTS = [...INPUTS, 'node_modules'];
 const MAIN_BUILD_CMDS = new Set(['npm run build', 'node scripts/build.mjs', 'node scripts/build.mjs --target main']);
 

@@ -749,8 +749,9 @@ async function buildableCheckout(t, { gate = ['npm run build'], after = ['npm ru
     include: ['src/**/*'],
   }));
   fs.mkdirSync(join(f.main, 'scripts'), { recursive: true });
-  fs.copyFileSync(resolve('scripts/build.mjs'), join(f.main, 'scripts/build.mjs'));
-  fs.copyFileSync(resolve('scripts/dist-lock.mjs'), join(f.main, 'scripts/dist-lock.mjs'));
+  for (const name of ['build.mjs', 'build-native.mjs', 'dist-lock.mjs']) {
+    fs.copyFileSync(resolve('scripts', name), join(f.main, 'scripts', name));
+  }
   fs.mkdirSync(join(f.main, 'node_modules'), { recursive: true });
   fs.symlinkSync(resolve('node_modules/typescript'), join(f.main, 'node_modules/typescript'), 'dir');
   put(f.main, 'src/index.ts', 'export const index = 1;\n');

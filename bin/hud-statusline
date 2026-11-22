@@ -1,5 +1,5 @@
 #!/bin/bash
-':' //; case $0 in /*) entry=$0;; *) entry=$PWD/$0;; esac; if [[ -L $entry ]]; then entry=$(readlink -f -- "$entry") || { printf 'HUD unavailable\n'; exit 0; }; fi; helper=${entry%/*}/hud-statusline-cache.sh; if [[ -r $helper ]]; then source "$helper" "$entry" "$@"; fi; exec node "$entry" "$@"
+':' //; set +x; case $0 in /*) entry=$0;; *) entry=$PWD/$0;; esac; if [[ -L $entry ]]; then entry=$(exec readlink -f -- "$entry") || { printf 'HUD unavailable\n'; exit 0; }; fi; dir=${entry%/*}; helper=$dir/hud-statusline-cache.sh; if [[ -r $helper ]]; then source "$helper" "$entry" "$@"; fi; helper=$dir/hud-statusline-native.sh; if [[ -r $helper ]]; then source "$helper" "$entry" "$@"; fi; exec node "$entry" "$@"
 const antigravityOnly = process.argv[2] === '--agy-render';
 const args = process.argv.slice(antigravityOnly ? 3 : 2);
 const admin = ['--help', 'import', 'settings'].includes(args[0]);

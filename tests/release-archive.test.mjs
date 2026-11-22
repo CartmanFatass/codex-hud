@@ -129,7 +129,8 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
     assert.equal(result.status, status);
     return result.stdout + result.stderr;
   }
-  run('npm', ['run', 'release'], { cwd: root });
+  // Packaging may build the Linux artifact; the extracted installer below still has no Cargo on PATH.
+  run('npm', ['run', 'release'], { cwd: root, override: { PATH: process.env.PATH } });
   const members = run('tar', ['-tzf', path.join(root, archive)], { cwd: root }).trim().split('\n');
   console.log(`Archive ${archive}: ${fs.statSync(path.join(root, archive)).size} bytes, ${members.length} members.`);
   for (const member of members) {
@@ -153,6 +154,13 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
   assert.equal(fs.existsSync(path.join(tree, 'dist')), false);
   assert.equal(fs.existsSync(path.join(tree, 'packages/hud-mcp/dist')), false);
   assert.ok(fs.statSync(path.join(tree, 'install')).mode & 0o111);
+  const nativeName = 'bin/hud-statusline-linux-x64';
+  const nativeFile = path.join(tree, nativeName);
+  const hasNative = members.includes(`hud-${version}/${nativeName}`);
+  const cargo = process.platform === 'linux' && process.arch === 'x64' &&
+    spawnSync('cargo', ['--version'], { stdio: 'ignore' }).status === 0;
+  if (cargo) assert.ok(hasNative, 'Linux x64 release with Cargo includes the native artifact');
+  if (hasNative) assert.ok(fs.statSync(nativeFile).mode & 0o111);
   assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'rehearsal requires supported Node');
   for (const metadata of ['package.json', 'packages/hud-mcp/package.json']) {
     assert.equal(JSON.parse(fs.readFileSync(path.join(tree, metadata))).engines.node, '>=24.0.0');
@@ -221,6 +229,22 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
   assert.equal(run('sh', ['-c', json(agyHooks).hud.PreInvocation[0].command]), '{}\n');
   assert.equal(json(claudeRegistrations).hud, mcpCommand);
   assert.equal(json(claudeSettings).statusLine.command, path.join(bin, 'hud-statusline'));
+  const statusline = path.join(bin, 'hud-statusline');
+  const fixture = '{"model":{"id":"claude-sonnet-4-6"},"context_window":{"used_percentage":42}}';
+  const scope = { running: 0, asking: 0, roles: {} };
+  fs.mkdirSync(path.join(hud, 'display'), { recursive: true });
+  fs.writeFileSync(path.join(hud, 'display/work-summary.v1.json'), JSON.stringify({
+    version: 1, producer: 'hud-watch', pid: process.pid, pid_start: null, generation: 1,
+    observed_at: 1000, watching: true, complete: true, global: scope, panes: {},
+  }), { mode: 0o600 });
+  fs.writeFileSync(path.join(hud, 'watch.pid'), `${process.pid}\n`);
+  const tsFrame = run('node', [statusline], { input: fixture });
+  if (hasNative) {
+    assert.equal(run(statusline, [], { input: fixture }), tsFrame);
+    assert.equal(run(nativeFile, [], { input: fixture }), tsFrame);
+    fs.renameSync(nativeFile, path.join(temp, 'native-saved'));
+  }
+  assert.equal(run(statusline, [], { input: fixture }), tsFrame, 'TS fallback after an offline install');
   assert.match(fs.readFileSync(codexConfig, 'utf8'), /\[mcp_servers\.hud\]/);
   assert.ok(fs.readFileSync(codexConfig, 'utf8').includes(JSON.stringify(mcpCommand)));
   const packages = ['pi-package', 'pi-display'].map(name => path.join(hud, name));

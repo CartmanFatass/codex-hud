@@ -743,7 +743,7 @@ Claude OAuth、第三方网关和无法归属的请求不计入。Claude Code �
 
 ## 底部状态行
 
-Claude 与 Antigravity 状态行、pi 页脚、Codex tmux 状态行共用事实渲染器：
+Claude 与 Antigravity 状态行、pi 页脚、Codex tmux 状态行使用相同的事实和布局：
 
 ```text
 model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s │ notices ··· MCP n  skills n
@@ -761,6 +761,9 @@ reviewer `⚖`、其它角色 `•`、sonic `⚡`（`⚒3  ✦2  ◈1  ⚡4`）�
 待批准的审批固定在最前，点名第一项，其余写 `+2`，放不下时写 `! 3 needs`；没有待处理就不固定。没有时钟、任务数、hooks 数、当前工具或空闲回退文字。
 
 - Claude 状态行：`~N t/s` 根据转录中的输出词元数和从提示或工具结果到回复的耗时估算最新回复的速率。
+  在 Linux x64/WSL 上，安装后的 `hud-statusline` 启动器可用原生程序渲染紧凑的 `line` 和 `p10k` 样式，每次都读取标准输入的新数据。
+  工作摘要或缓存缺失、过期，原生程序不可用，有实时转录通知，或使用其它样式、转发、管理命令、`--details`、`--source` 时，回退到 TypeScript。
+  Claude 额度数据仍发布到本地；标准输入不落盘。源码安装可用 Cargo 构建原生程序；用 Cargo 打包的 Linux x64 发布归档已包含它，安装机器不需要 Cargo。
 - Codex 状态行：`~N t/s` 显示从会话日志得出的现有输出速率估值。
 - Antigravity 状态行：同一个 `hud-statusline` 命令显示模型、上下文、可识别的额度（如 `5h 80% left`，按当前模型选 Gemini 或第三方模型那组）以及同样的工作者区（读取本窗格的任务，方式与 Claude 相同），不读取其转录，也不转发其输入。`--details --lang en|zh` 另显示输入／输出词元总数。Linux 启动器对同一 agy 进程和工作目录复用上一次结果，重绘时约每秒刷新一次，变化可能在下次刷新时才出现。
 

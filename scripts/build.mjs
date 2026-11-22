@@ -1,8 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireBuildLock, withDistLock } from './dist-lock.mjs';
+import { buildNative, nativeFiles } from './build-native.mjs';
+
+const nativeOutputs = new Set(nativeFiles.map(name => join('native', name)));
 
 const root = fs.realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const legacy = 'packages/hud-mcp/dist';
@@ -81,8 +84,13 @@ function syncCache(cacheOut, expected) {
   return true;
 }
 
-function publish(source, stage, dist, main) {
+function publish(source, stage, dist, main, native) {
   const staged = new Map(inventory(source));
+  if (native) {
+    staged.set('native', fs.statSync(native));
+    for (const name of nativeOutputs) staged.set(name, fs.statSync(join(native, basename(name))));
+  }
+  const output = (name) => native && nativeOutputs.has(name) ? join(native, basename(name)) : join(source, name);
   const sentinels = main ? ['index.js', 'tree-page.js'] : [];
   for (const name of sentinels) {
     if (!staged.get(name)?.isFile()) throw new Error(`Compiler did not emit ${name}; keeping the current build`);
@@ -99,16 +107,19 @@ function publish(source, stage, dist, main) {
   const replace = (name) => {
     const tmp = join(stage, name), dest = join(dist, name);
     fs.mkdirSync(dirname(tmp), { recursive: true });
-    fs.copyFileSync(join(source, name), tmp);
+    fs.copyFileSync(output(name), tmp);
     fs.mkdirSync(dirname(dest), { recursive: true });
     fs.renameSync(tmp, dest);
   };
   const changed = [];
   for (const [name, entry] of staged) {
     if (entry.isDirectory()) continue;
-    const before = join(dist, name), after = join(source, name);
-    if (live.get(name)?.isFile() && fs.statSync(before).size === fs.statSync(after).size &&
-      fs.readFileSync(before).equals(fs.readFileSync(after))) continue;
+    const before = join(dist, name), after = output(name);
+    if (live.get(name)?.isFile()) {
+      const a = fs.statSync(before), b = fs.statSync(after);
+      if (a.size === b.size && (!nativeOutputs.has(name) || (a.mode & 0o111) === (b.mode & 0o111)) &&
+        fs.readFileSync(before).equals(fs.readFileSync(after))) continue;
+    }
     changed.push(name);
     if (!sentinels.includes(name)) replace(name);
   }
@@ -129,7 +140,7 @@ function publish(source, stage, dist, main) {
     fs.utimesSync(join(dist, 'index.js'), now, now);
   }
   // Signal PanelReload only after all other outputs and prunes have landed.
-  if (changed.some((name) => !name.startsWith('mcp/'))) replace('tree-page.js');
+  if (changed.some((name) => !nativeOutputs.has(name) && !name.startsWith('mcp/'))) replace('tree-page.js');
 }
 
 function compile(main, cacheOut, buildInfo) {
@@ -200,8 +211,10 @@ async function run(args) {
         }
       }
       if (status !== 0) process.exitCode = status;
-      else if (main) await withDistLock(() => publish(cacheOut, stage, dist, main));
-      else publish(cacheOut, stage, dist, main);
+      else if (main) {
+        const native = buildNative(root, join(root, cacheRoot, 'native'));
+        await withDistLock(() => publish(cacheOut, stage, dist, main, native));
+      } else publish(cacheOut, stage, dist, main);
     } finally {
       fs.rmSync(stage, { recursive: true, force: true });
     }

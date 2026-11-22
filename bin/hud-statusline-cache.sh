@@ -82,12 +82,9 @@ if [[ $1 == --refresh ]]; then
 fi
 
 entry=$1; shift
-if ! command -v node >/dev/null; then
-  case ${1:-} in --help|import|settings) printf 'runtime_unavailable: Node >=24.0.0 required\n' >&2; exit 5 ;; esac
-  unavailable; exit 0
-fi
-# Explicit CLI and other clients keep the native Node path. No platform tool is required to render.
-if (( $# )) || [[ ! ${EPOCHREALTIME:-} ]] || ! agy_caller 2>/dev/null; then exec node "$entry" "$@"; fi
+# Explicit CLI and other clients are handled by the caller. Agy keeps its TS-only cache path.
+if (( $# )) || [[ ! ${EPOCHREALTIME:-} ]] || ! agy_caller 2>/dev/null; then return 0; fi
+command -v node >/dev/null || { unavailable; exit 0; }
 plain() { exec node "$entry" --agy-render; }
 for helper in sha256sum flock setsid timeout; do
   command -v "$helper" >/dev/null || plain

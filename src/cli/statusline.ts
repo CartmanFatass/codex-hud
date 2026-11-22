@@ -1,6 +1,7 @@
 import { getHudHome } from '../hud-home.js';
 import { collectJobLanes } from '../collectors/job-snapshot.js';
-import { renderWorkSummary, workSignals } from '../render/work-summary.js';
+import { renderWorkSummary, workSignals, workSignalsFromSummary } from '../render/work-summary.js';
+import { readFreshWorkSummary } from '../collectors/work-summary-snapshot.js';
 import { fileURLToPath } from 'node:url';
 import { truncateAnsi, visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
@@ -162,17 +163,18 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
       if (antigravityOnly || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
       const now = Date.now();
       recordClaudeQuota(value, io.env, now);
-      const snapshot = await collectJobLanes(
-        getHudHome(io.env),
-        { project: null, pane: io.env.HERDR_PANE_ID ?? null },
-        parity && !options.details ? { settledBefore: now } : undefined
-      ).catch(() => undefined);
-      const lanes = snapshot?.lanes ?? [];
-      // The compact bar's worker zone counts only running jobs.
+      const home = getHudHome(io.env), pane = io.env.HERDR_PANE_ID ?? null;
+      // The compact renderers share the watcher/MCP census; only TS can recover from a stale one.
       if (parity && !options.details) {
+        const fresh = sourceRoot === undefined ? readFreshWorkSummary(home, pane, now) : null;
+        const work = fresh && fresh.scope.running <= 4096
+          ? workSignalsFromSummary(fresh.scope)
+          : workSignals((await collectJobLanes(home, { project: null, pane }, { settledBefore: now })
+              .catch(() => undefined))?.lanes ?? [], now);
         applyBarSettings();
-        return collectAndRenderParity(value, width, parity, io.env, now, workSignals(lanes, now));
+        return collectAndRenderParity(value, width, parity, io.env, now, work);
       }
+      const lanes = (await collectJobLanes(home, { project: null, pane }).catch(() => undefined))?.lanes ?? [];
       const first = renderStatuslineSession(value, width, options);
       const work = renderWorkSummary(lanes, width, now);
       if (options.details) return [first, work].filter(Boolean).join('\n');

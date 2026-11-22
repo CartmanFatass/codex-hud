@@ -17,7 +17,7 @@ import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { repairLand } from './land-repair.js';
-import { canPublishTestedBuild } from './land-build.js';
+import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 
 class CommandError extends Error {
   constructor(message: string, readonly tail: string[]) { super(message); }
@@ -43,9 +43,9 @@ function collectTestFailures(cwd: string, stream: Readable, failures: TestFailur
   });
 }
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
-function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, failures?: TestFailure[]) {
+function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, failures?: TestFailure[], env = process.env) {
   return new Promise<void>((ok, fail) => {
-    const child = spawn(bin, argv, { cwd, env: safeGitEnv(process.env), detached: deadlineMs !== undefined, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, argv, { cwd, env: safeGitEnv(env), detached: deadlineMs !== undefined, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const append = (chunk: string) => { output = (output + chunk).slice(-65536); };
     const tail = () => output.trimEnd().split(/\r?\n/).slice(-40);
@@ -127,9 +127,12 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         } catch (e) { recordTiming(label, t0, false); throw e; }
         continue;
       }
+      const env = kind === 'gate' && isMainBuildCommand(cmd)
+        ? { ...process.env, HUD_NATIVE_REUSE_DIR: join(main, 'dist/native') }
+        : process.env;
       const invoke = (script: string, failures?: TestFailure[]) => c.wrapper
-        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, failures)
-        : command(cwd, 'sh', ['-c', script], deadlineMs, failures);
+        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, failures, env)
+        : command(cwd, 'sh', ['-c', script], deadlineMs, failures, env);
       const failures = kind === 'gate' ? [] as TestFailure[] : undefined;
       const t0 = performance.now();
       try { await invoke(cmd, failures); recordTiming(label, t0, true); }
