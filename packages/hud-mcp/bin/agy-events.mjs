@@ -1,5 +1,6 @@
 /** Antigravity's per-pane event mailbox, shared by the queue watcher and PreInvocation. */
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -20,11 +21,12 @@ export function hasAgyEvents(pane, home) {
 async function locked(file, env, hook, run) {
   const fd = fs.openSync(`${file}.lock`, O_CREAT | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0o600);
   try {
-    const lock = spawnSync('flock', hook ? ['-nx', '3'] : ['-x', '-w', '0.25', '3'], {
+    const lock = spawn('flock', hook ? ['-nx', '3'] : ['-x', '-w', '0.25', '3'], {
       env, stdio: ['ignore', 'ignore', 'ignore', fd], timeout: hook ? 50 : 500,
     });
-    if (lock.status === 1) return;
-    if (lock.status !== 0) throw lock.error ?? new Error(`Antigravity mailbox lock failed (${lock.status})`);
+    const [code, signal] = await once(lock, 'close');
+    if (code === 1) return;
+    if (code !== 0) throw new Error(`Antigravity mailbox lock failed (${code ?? signal})`);
     // Keep the same lock until the async prompt's claim has been resolved.
     return await run();
   } finally {

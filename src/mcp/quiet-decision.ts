@@ -31,6 +31,7 @@ export interface QuietDecisionInput {
   env?: NodeJS.ProcessEnv;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
+  beforeRequest?: () => void;
 }
 
 const CHOICE_DESCRIPTIONS: Choice[] = [
@@ -95,6 +96,7 @@ export async function decideQuietJob(
         undefined,
         'quiet-job'
       );
+      input.beforeRequest?.(); // Also runs for fallback, after its own reservation.
       signal.throwIfAborted();
       if (reservation.kind !== 'reserved') {
         capHit = true;

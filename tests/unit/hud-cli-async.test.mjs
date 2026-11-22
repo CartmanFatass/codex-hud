@@ -26,7 +26,7 @@ async function until(ready, label, limit = 5000) {
   return Math.round(ms);
 }
 
-async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model } = {}) {
+async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-cli-async-'));
   const home = join(root, 'hud'), jobs = join(home, 'jobs'), bin = join(root, 'bin');
   const job = 'j0000000000000001', dir = join(jobs, job), herdrPath = join(root, 'herdr.sock');
@@ -103,7 +103,8 @@ console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } }
   await Promise.all([once(http, 'listening'), once(socket, 'listening')]);
   configureFakeDecision({ env }, `http://127.0.0.1:${http.address().port}`);
   function start(script, args = []) {
-    const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin', script), ...args], { env, stdio: ['ignore', 'ignore', 'pipe'] });
+    const imports = preload ? ['--import', 'data:text/javascript,' + encodeURIComponent(preload)] : [];
+    const child = spawn(process.execPath, [...imports, resolve('packages/hud-mcp/bin', script), ...args], { env, stdio: ['ignore', 'ignore', 'pipe'] });
     const exited = once(child, 'exit');
     let stderr = '';
     child.stderr.on('data', (chunk) => { stderr += chunk; });
@@ -138,6 +139,22 @@ for (const stop of [true, false]) {
     assert.equal(procStat(f.herdrPid()), null, 'the cancelled child was reaped');
   });
 }
+
+test('stop published at cap reservation prevents a paid request with no directory watch', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, { model: 'still-working', preload: `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+fs.watch = () => { throw new Error('synthetic watch unavailable'); };
+const rename = fs.renameSync;
+fs.renameSync = (from, to) => {
+  rename(from, to);
+  if (to.endsWith('/calls.json')) fs.writeFileSync(process.argv[2] + '/STATUS.json.stop-requested', '');
+};
+syncBuiltinESMExports();` });
+  await until(() => status(f.dir)?.state === 'stopped', 'stop after reservation');
+  assert.deepEqual(await f.cli.exited, [0, null]);
+  assert.equal(f.calls(), 0);
+});
 
 test('a new report and done receipt cancel an in-flight Decision API request', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);

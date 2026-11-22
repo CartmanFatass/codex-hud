@@ -294,6 +294,7 @@ async function run() {
         : await withEffect('decide', (signal) => decideQuietJob({ hudHome, jobId: job.job, role: job.role, agent: cli.agent,
             jobState: current.state, backgroundChildAlive: mid.liveChild,
             minutesQuiet: Math.max(0, Math.round((Date.now() - next.quietSince) / 60000)),
+            beforeRequest: () => { if (fs.existsSync(stopFile)) terminalWake(); },
             paneText: read.result.body?.result?.read?.text ?? '', reportPromptSent, questionIndex: quietQuestions + 1, signal }));
       if (decision.asked) quietQuestions += 1;
       if (stopped || aborted) return;

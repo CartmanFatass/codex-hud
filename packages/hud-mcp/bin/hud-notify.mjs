@@ -138,11 +138,11 @@ export async function notify(pane, message, home, { queue = false, env = process
   return { ...deliveryResult(typed), ...(detail ? { detail } : {}) };
 }
 
-export async function ensureQueueWatcher(pane, home, { signal } = {}) {
+export async function ensureQueueWatcher(pane, home) {
   try {
     if (!pane || watching(pane, home)) return;
-    const agent = (await paneInfo(pane, process.env, { signal }))?.agent;
-    if (signal?.aborted || (agent !== 'codex' && agent !== 'agy') || watching(pane, home)) return;
+    const agent = (await paneInfo(pane))?.agent;
+    if ((agent !== 'codex' && agent !== 'agy') || watching(pane, home)) return;
     const pidFile = join(home, 'watchers', `${pane}.pid`);
     fs.mkdirSync(join(home, 'watchers'), { recursive: true, mode: 0o700 });
     const hud = fileURLToPath(new URL('../../../bin/hud', import.meta.url));

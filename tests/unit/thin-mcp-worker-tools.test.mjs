@@ -82,6 +82,26 @@ await setTimeout(2000);
   assert.equal(fs.existsSync(`/proc/${fs.readFileSync(queued, 'utf8')}`), false, 'queue child exited');
 });
 
+test('worker ping can release a contended Antigravity hud_ask mailbox before flock times out', async (t) => {
+  const f = await fixture(t);
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic mailbox question.' });
+  await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2);
+  f.overrideBin('herdr', `#!/bin/sh\necho '{"result":{"pane":{"agent":"agy","agent_status":"working"}}}'\n`);
+  f.overrideBin('flock', '#!/bin/sh\ntouch "$HOME/waiting-on-mailbox"\nexec /usr/bin/flock "$@"\n');
+  const dir = join(f.env.HUD_HOME, 'watchers');
+  fs.mkdirSync(dir, { recursive: true });
+  const fd = fs.openSync(join(dir, 'w4E:p1.agy-pending.lock'), 'w');
+  let pending;
+  try {
+    assert.equal(spawnSync('/usr/bin/flock', ['-nx', '3'], { stdio: ['ignore', 'ignore', 'ignore', fd] }).status, 0);
+    const call = workerClient(t, f, parent.task_dir, '0');
+    pending = call('hud_ask', { question: 'Which layout?', default: 'rows' });
+    await until(() => fs.existsSync(join(f.env.HOME, 'waiting-on-mailbox')));
+    assert.deepEqual((await call.rpc('ping')).result, {});
+  } finally { fs.closeSync(fd); }
+  assert.match((await pending).content[0].text, /pending for Antigravity delivery/);
+});
+
 test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);

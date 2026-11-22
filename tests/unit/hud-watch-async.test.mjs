@@ -123,6 +123,20 @@ test('watcher settles other jobs, starts checks and handles failures during a 5 
   assert.equal(child.exitCode, 0);
 });
 
+test('overlapping watcher startups publish only one ready PID', async (t) => {
+  const f = fixture(t);
+  f.job({ state: 'working' });
+  const runs = [f.start(), f.start()];
+  await until(() => runs.some(({ child }) => child.exitCode === 0));
+  const pid = Number(text(join(f.home, 'watch.pid')));
+  const live = runs.find(({ child }) => child.pid === pid);
+  assert.ok(live);
+  assert.equal(f.log().match(/start pid=/g)?.length, 1);
+  live.child.kill('SIGTERM');
+  assert.deepEqual(await Promise.all(runs.map(({ exited }) => exited)), [[0, null], [0, null]]);
+  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+});
+
 test('watcher dispatches at most four concurrent reaps and resumes the backlog', { timeout: 10000 }, async (t) => {
   const f = fixture(t), dirs = Array.from({ length: 6 }, () => f.job(closed(), {}, true));
   reapStub(f, `while (!fs.existsSync(join(process.env.HUD_HOME, 'release'))) await delay(10);`);
@@ -173,6 +187,33 @@ for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [
     assert.deepEqual(await exited, [0, null]);
   });
 }
+
+test('failed Pi read-close retries its live root after the tab disappears', async (t) => {
+  const f = fixture(t), herdr = await herdrSocket(t, f, 'idle');
+  const worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  const ended = once(worker, 'exit');
+  t.after(async () => { worker.kill(); await ended; });
+  const { created, state, reportTime } = settled();
+  const dir = f.job({ ...state, pid: worker.pid, pid_start_time: procStat(worker.pid).start },
+    { created_at: created, read_at: new Date().toISOString() });
+  fs.utimesSync(join(dir, 'report.md'), reportTime, reportTime);
+  tab(dir, 'pi');
+  reapStub(f, `if (!fs.existsSync(join(dir, 'tab-gone'))) {
+    while (!fs.existsSync(join(dir, 'tab-gone'))) await delay(10);
+    process.exit(1);
+  }`);
+  const { exited } = f.start(herdr.preload);
+  await until(() => herdr.ready() && attempts(f, dir) === 1);
+  herdr.closeTab('pi');
+  fs.writeFileSync(join(dir, 'tab-gone'), '');
+  await until(() => f.log().includes('state=idle_grace exit=1'));
+  assert.equal(status(dir).state, 'idle_grace');
+  await until(() => reaped(dir));
+  assert.deepEqual(await exited, [0, null]);
+  assert.equal(attempts(f, dir), 2);
+  assert.equal(herdr.queries(), 1, 'the missing tab cannot answer another preflight');
+  assert.equal(status(dir).exit_reason, 'closed after report read');
+});
 
 test('watcher removes two merged worktrees from the same checkout', { timeout: 10000 }, async (t) => {
   const f = fixture(t), parent = dirname(f.home), main_root = initRepo(parent);
@@ -231,6 +272,29 @@ else {
     assert.match(f.log(), /exit pid=\d+: signal=SIGTERM/);
   });
 }
+
+for (const token of [true, false]) test(`unexpected detached leader death: ${token ? 'drain verified helpers' : 'refuse unverified group'}`, async (t) => {
+  const f = fixture(t), dir = f.job(closed(), {}, true);
+  const env = { ...process.env, HUD_HOME: f.home, PATH: `${dirname(f.home)}/bin:${process.env.PATH}` };
+  bin(f, 'herdr', `process.on('SIGTERM', () => {});
+fs.writeFileSync(join(process.env.HUD_HOME, 'helper'), String(process.pid));
+await delay(30000);`);
+  reapStub(f, `fs.writeFileSync(join(dir, 'leader'), String(process.pid));
+spawnSync('herdr', [], { stdio: 'ignore', env: ${token ? 'process.env' : "{ ...process.env, HUD_REAP_GROUP_TOKEN: 'unrelated' }"} });`);
+  const run = runCommand('pi-role-reap', [dir], env, { killProcessGroup: true, killGraceMs: 100 });
+  await until(() => text(join(f.home, 'helper')));
+  const pid = Number(text(join(f.home, 'helper'))), start = procStat(pid).start;
+  const alive = () => { const s = procStat(pid); return s?.start === start && !/^[ZXx]$/.test(s.state); };
+  t.after(() => { if (alive()) process.kill(pid, 'SIGKILL'); });
+  process.kill(Number(text(join(dir, 'leader'))), 'SIGKILL');
+  const result = await run;
+  assert.equal(result.reason, 'lost');
+  if (token) await until(() => !alive());
+  else {
+    assert.match(result.groupCleanupIssue, /ownership unverified; not signalling/);
+    assert.ok(alive());
+  }
+});
 
 for (const reason of ['timeout', 'unavailable']) {
   test(`watcher records exit=${reason} without marking the job reaped`, { timeout: 10000 }, async (t) => {

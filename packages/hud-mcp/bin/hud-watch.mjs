@@ -12,17 +12,6 @@ import { fileURLToPath } from 'node:url';
 import { withDistLock } from '../../../scripts/dist-lock.mjs';
 import { request } from './herdr-request.mjs';
 
-const [
-  { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
-  { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
-  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree }, { runCommand },
-] = await withDistLock(() => Promise.all([
-  import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),
-  import('../../../dist/roles/worker-tree.js'), import('../../../dist/mcp/pi-read-settlement.js'),
-  import('../../../dist/roles/job-checks.js'), import('../../../dist/mcp/managed-worktree.js'),
-  import('../../../dist/roles/herdr-run.js'),
-]));
-
 const bundled = fileURLToPath(new URL('..', import.meta.url));
 
 const home = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
@@ -66,10 +55,6 @@ function readFresh(file) {
 }
 const json = (file) => read(file, parseJson);
 const jsonFresh = (file) => parseJson(readFresh(file));
-const oldLog = read(logFile) ?? '';
-fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), {
-  mode: 0o600,
-});
 const log = (message) => {
   try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); }
   catch (error) { console.error(`watch log: ${error.message}; ${message}`); }
@@ -81,8 +66,6 @@ function warn(kind, message) {
   warnings.set(kind, now);
   log(message);
 }
-fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
-log(`start pid=${process.pid}`);
 let watcher, timer,
   socket,
   subscribed = false,
@@ -288,6 +271,7 @@ async function reapJob(entry, { id, dir, job, status, session, tab, retry, readI
       budgetMs: REAP_BUDGET_MS, killGraceMs: REAP_KILL_GRACE_MS, killProcessGroup: true, signal,
     }), (run) => run.ok, { carry: retry?.snapshot, expectSnapshot, signal });
   const exit = signal.aborted ? 'aborted' : result.exitCode ?? result.reason;
+  if (result.groupCleanupIssue) log(`reap ${id}: ${result.groupCleanupIssue}`);
   const message = `reap ${id} state=${status.state} exit=${exit}; ${issue ? `${issue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
   if (complete || signal.aborted) log(message);
   else warn(`reap ${id}`, message);
@@ -412,13 +396,13 @@ function scan(retryWatch = false) {
       }
       if (checksOpen(id, dir, job, status)) { open = safetyCheck = true; continue; }
       safetyCheck ||= Boolean(retry?.readClose && retry.at !== Infinity); // The root may still exit after report eligibility changes.
-      // After a read-close has started and its root is gone, cleanup belongs to that worker, not the report.
-      const resumeReadReap = retry?.readClose && workerTreeRootGone(status.pid, status.pid_start_time);
+      // Once the recorded tab or root is gone, retry that owner's cleanup without an agent preflight.
+      const resumeReadReap = retry?.readClose && (closedTabs.has(tab) || workerTreeRootGone(status.pid, status.pid_start_time));
       let readInGrace = null;
       if (!resumeReadReap && status.state === 'idle_grace') {
         open = true;
         // Pi owns the unread deadline. CLI grace always goes through its supervisor.
-        if (!tab || (retry?.readClose && closedTabs.has(tab)) || !(readInGrace = readCloseTurn(dir, job, status))) continue;
+        if (!tab || !(readInGrace = readCloseTurn(dir, job, status))) continue;
       }
       if (!resumeReadReap && (status.state === 'working' || status.state?.startsWith('waiting'))) {
         open = true;
@@ -520,7 +504,27 @@ function startWatch() {
     });
   } catch (error) { warn('watch error', `watch error: ${error.message}`); }
 }
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('SIGINT', () => void shutdown('SIGINT'));
+const [
+  { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
+  { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
+  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree }, { runCommand },
+] = await withDistLock(async () => {
+  // Multiple parents can spawn before the first watcher is ready. Only one publishes under the lock.
+  const { watcherReady } = await import('../../../dist/mcp/watch-pid.js');
+  if (watcherReady(pidFile, fileURLToPath(import.meta.url))) process.exit(0);
+  const runtime = await Promise.all([
+    import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),
+    import('../../../dist/roles/worker-tree.js'), import('../../../dist/mcp/pi-read-settlement.js'),
+    import('../../../dist/roles/job-checks.js'), import('../../../dist/mcp/managed-worktree.js'),
+    import('../../../dist/roles/herdr-run.js'),
+  ]);
+  const oldLog = read(logFile) ?? '';
+  fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
+  log(`start pid=${process.pid}`);
+  return runtime;
+});
 startWatch();
 scan();

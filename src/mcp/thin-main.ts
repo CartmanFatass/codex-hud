@@ -14,6 +14,7 @@ import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
+import { watcherReady } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
@@ -275,16 +276,9 @@ async function workspaceArgs(job: Job): Promise<string[]> {
 function ensureWatcher(): void {
   fs.mkdirSync(jobsRoot, { recursive: true, mode: 0o700 });
   const script = binScript('hud-watch.mjs');
-  try {
-    const pid = Number(fs.readFileSync(join(hudHome, 'watch.pid'), 'utf8').trim());
-    process.kill(pid, 0);
-    if (fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').includes(script)) return;
-  } catch {
-    /* No live watcher; races may safely start two. */
-  }
+  if (watcherReady(join(hudHome, 'watch.pid'), script)) return;
   const child = spawn(process.execPath, [script], { detached: true, stdio: 'ignore' });
   child.on('error', (error) => console.error(`hud-watch: ${error.message}`));
-  fs.writeFileSync(join(hudHome, 'watch.pid'), `${child.pid}\n`, { mode: 0o600 });
   child.unref();
 }
 const wideChar = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\uff00-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;

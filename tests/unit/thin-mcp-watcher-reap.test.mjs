@@ -34,6 +34,30 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
+test('TERM during the watcher startup dist-lock wait leaves no advertised PID', async (t) => {
+  // Model another publisher holding the dist lock without stalling unrelated test processes.
+  const preload = `if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
+    const { Server } = await import('node:net');
+    const fs = await import('node:fs');
+    const listen = Server.prototype.listen;
+    Server.prototype.listen = function(name, ...args) {
+      if (!String(name).startsWith('\\0myhud-dist-')) return listen.call(this, name, ...args);
+      queueMicrotask(() => this.emit('error', Object.assign(new Error('busy'), {code:'EADDRINUSE'})));
+      setImmediate(() => {
+        fs.writeFileSync(process.env.HOME + '/waiting-on-dist', String(process.pid));
+        process.kill(process.pid, 'SIGTERM');
+      });
+      return this;
+    };
+  }`;
+  const url = 'data:text/javascript,' + encodeURIComponent(preload);
+  const f = await fixture(t, true, `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify(url)};`);
+  await f.call('hud_create', { role: 'imp', task: 'Synthetic startup.' });
+  const waiting = join(f.env.HOME, 'waiting-on-dist');
+  await until(() => fs.existsSync(waiting) && !procStat(Number(fs.readFileSync(waiting, 'utf8'))));
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), false);
+});
+
 test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'read-close-cli', 8);
@@ -51,7 +75,7 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
     assert.equal(closed.output_written, true);
     assert.equal(closed.settled_at, grace.settled_at);
     assert.ok(Date.parse(closed.ended_at) < Date.parse(grace.idle_deadline_at));
-    assert.ok(statusQueries(f, job) <= queries + 1);
+    assert.ok(statusQueries(f, job) <= queries + 1, `${role}: agent.get ${queries} -> ${statusQueries(f, job)}; ${fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8')}`);
     if (role !== 'imp') assert.ok(readCloseQuit(f, job));
     await until(() => readCloseReaped(job));
     assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));

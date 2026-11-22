@@ -3,6 +3,8 @@
  * Account homes come from the caller's env map, not from this file.
  */
 
+import { randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import { clearTimeout, setTimeout } from 'node:timers';
 
@@ -12,6 +14,7 @@ export interface HerdrOutcome {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number | null;
+  readonly groupCleanupIssue?: string;
 }
 
 /** Wall clock when the argv has no `--timeout`. */
@@ -39,6 +42,34 @@ export interface HerdrCallOptions {
   readonly killProcessGroup?: boolean;
 }
 
+// A numeric PGID can be reused after the leader exits. Verify a live member of the
+// detached session, not just kill(-pgid, 0), before signalling (including escalation).
+function groupOwnership(pgid: number, token: string): 'owned' | 'gone' | 'unverified' {
+  if (process.platform !== 'linux') return 'unverified';
+  try { process.kill(-pgid, 0); }
+  catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'gone' : 'unverified'; }
+  let unverified = false;
+  const matches = (pid: string) => {
+    try {
+      const dir = `/proc/${pid}`;
+      const stat = readFileSync(`${dir}/stat`, 'utf8');
+      const [state, , group, session] = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+      if (Number(group) !== pgid || Number(session) !== pgid || /^[ZXx]$/.test(state ?? '')) return false;
+      unverified = true;
+      return statSync(dir).uid === process.getuid?.() &&
+        readFileSync(`${dir}/environ`, 'utf8').split('\0').includes(`HUD_REAP_GROUP_TOKEN=${token}`);
+    } catch (error) {
+      if (!['ESRCH', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) unverified = true;
+      return false;
+    }
+  };
+  if (matches(String(pgid))) return 'owned';
+  try {
+    if (readdirSync('/proc').some((pid) => /^\d+$/.test(pid) && matches(pid))) return 'owned';
+  } catch { return 'unverified'; }
+  return unverified ? 'unverified' : 'gone';
+}
+
 /** Run an argv-only command with bounded output, wall time and optional cancellation. */
 export async function runCommand(
   bin: string,
@@ -55,10 +86,14 @@ export async function runCommand(
       return;
     }
     const group = options?.killProcessGroup === true;
-    const child = spawn(bin, argv, { env, detached: group, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Private per-spawn identity inherited by the reaper's helpers; not user configuration.
+    const token = group ? randomUUID() : undefined;
+    const child = spawn(bin, argv, { env: token ? { ...env, HUD_REAP_GROUP_TOKEN: token } : env,
+      detached: group, stdio: ['ignore', 'pipe', 'pipe'] });
+    let groupCleanupIssue: string | undefined;
     const grace = Math.max(0, options?.killGraceMs ?? 0);
     let settled = false, exited = false, forced = false;
-    let stopReason: 'timeout' | 'aborted' | 'overflow' | undefined;
+    let stopReason: 'timeout' | 'aborted' | 'overflow' | 'lost' | undefined;
     let budgetTimer: ReturnType<typeof setTimeout>, killTimer: ReturnType<typeof setTimeout> | undefined;
     let used = 0, stdout = '', stderr = '';
     const out = new StringDecoder('utf8'), err = new StringDecoder('utf8');
@@ -70,32 +105,37 @@ export async function runCommand(
       options?.signal?.removeEventListener('abort', abort);
       // Do not decode a partial character cut off by the byte limit.
       if (used < MAX_OUTPUT) { stdout += out.end(); stderr += err.end(); }
-      resolve({ ok: reason === 'ok', reason, stdout, stderr: stderr || error || '', exitCode });
+      resolve({ ok: reason === 'ok', reason, stdout, stderr: stderr || error || '', exitCode,
+        ...(groupCleanupIssue ? { groupCleanupIssue } : {}) });
     };
     const closePipes = () => { child.stdout?.destroy(); child.stderr?.destroy(); };
     const finishStopped = () => {
       closePipes(); // Inherited pipes must not keep a cancelled call open.
       finish(stopReason === 'overflow' ? 'lost' : stopReason!, null);
     };
-    const signalGroup = (signal: NodeJS.Signals | 0) => {
-      if (!child.pid) return false;
+    const ownsGroup = () => {
+      if (!child.pid || !token) return false;
+      const ownership = groupOwnership(child.pid, token);
+      if (ownership === 'unverified') groupCleanupIssue = `group ${child.pid} ownership unverified; not signalling`;
+      return ownership === 'owned';
+    };
+    const signalGroup = (signal: NodeJS.Signals) => {
+      if (!child.pid || !ownsGroup()) return false;
       try { process.kill(-child.pid, signal); return true; }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
         return false;
       }
     };
-    const signalChild = (signal: NodeJS.Signals) => {
-      if (group) signalGroup(signal);
-      else if (!exited) child.kill(signal);
-    };
+    const signalChild = (signal: NodeJS.Signals) => group ? signalGroup(signal) : !exited && child.kill(signal);
     const finishIfGone = () => {
-      if (exited && (forced || !group || !signalGroup(0))) { finishStopped(); return true; }
+      if (exited && (forced || !group || !ownsGroup())) { finishStopped(); return true; }
       return false;
     };
     const forceKill = () => {
       forced = true;
-      signalChild('SIGKILL');
+      const sent = signalChild('SIGKILL');
+      if (!sent && groupCleanupIssue && !exited) { child.unref(); finishStopped(); return; }
       closePipes();
       // Wait for the child exit event even after SIGKILL, not for pipe closure.
       finishIfGone();
@@ -129,7 +169,11 @@ export async function runCommand(
       if (stopReason) finishStopped();
       else finish(error.code === 'ENOENT' ? 'unavailable' : 'lost', null, error.message);
     });
-    child.once('exit', () => { exited = true; if (stopReason) finishIfGone(); });
+    child.once('exit', () => {
+      exited = true;
+      if (stopReason) finishIfGone();
+      else if (group && (ownsGroup() || groupCleanupIssue)) stop('lost');
+    });
     child.once('close', (code, signal) => {
       if (!stopReason) finish(signal !== null ? 'lost' : code === 0 ? 'ok' : 'failed', code);
     });
