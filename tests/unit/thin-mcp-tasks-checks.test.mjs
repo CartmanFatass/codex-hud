@@ -45,7 +45,7 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const rpc = taskRpc(f.rpc);
   assert.deepEqual(await rpc('server/discover'), {
     resultType: 'complete', supportedVersions: ['2026-07-28'], ttlMs: 0, cacheScope: 'private',
-    capabilities: { tools: {}, extensions: { [tasksExtension]: {} } },
+    capabilities: { tools: { listChanged: true }, extensions: { [tasksExtension]: {} } },
   });
   const list = await rpc('tools/list');
   assert.equal(list.resultType, 'complete');

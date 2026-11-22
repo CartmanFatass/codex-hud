@@ -107,3 +107,96 @@ test('one connection and watcher keep their work across two published generation
   await checkBuild(2);
   assert.deepEqual(await get(), notice, 'repeat polls keep the original terminal result and timestamp');
 });
+
+function reloadCopy(t) {
+  const root = fs.mkdtempSync(join(tmpdir(), 'hud-reload-tools-'));
+  for (const name of ['dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
+    fs.cpSync(resolve(name), join(root, name), { recursive: true });
+  fs.symlinkSync(resolve('node_modules'), join(root, 'node_modules'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let step = 0;
+  const stamp = () => {
+    const tmp = join(root, `dist/index.js.${++step}.tmp`);
+    fs.writeFileSync(tmp, fs.readFileSync(join(root, 'dist/index.js')));
+    fs.renameSync(tmp, join(root, 'dist/index.js'));
+  };
+  return { root, mcpEntry: join(root, 'packages/hud-mcp/bin/hud-mcp.mjs'), stamp };
+}
+
+test('reload advertises tools.listChanged and notifies once only when tools/list changes', { timeout: 15000 }, async (t) => {
+  const copy = reloadCopy(t);
+  const f = await fixture(t, { mcpEntry: copy.mcpEntry });
+  const init = await f.rpc('initialize', { protocolVersion: '2024-11-05' });
+  assert.deepEqual(init.result.capabilities.tools, { listChanged: true });
+  const initial = (await f.rpc('tools/list')).result.tools;
+  assert.equal(f.notifications.length, 0);
+
+  // Unchanged tools/list across a reload: no notification.
+  const thinMain = join(copy.root, 'dist/mcp/thin-main.js');
+  fs.appendFileSync(thinMain, '\n// synthetic unchanged-tools reload\n');
+  copy.stamp();
+  assert.deepEqual((await f.rpc('ping')).result, {});
+  assert.deepEqual((await f.rpc('tools/list')).result.tools, initial);
+  assert.equal(f.notifications.length, 0);
+
+  // Schema change in tool-definitions: notify once and serve the updated schema.
+  const defs = join(copy.root, 'dist/roles/tool-definitions.js');
+  const originalDefs = fs.readFileSync(defs, 'utf8');
+  const changed = originalDefs.replace(
+    "package: { ...text, description: 'Display label.' },",
+    "package: { ...text, description: 'Display label.' }, synthetic_flag: { ...bool, description: 'Synthetic test flag.' },"
+  );
+  assert.notEqual(changed, originalDefs);
+  fs.writeFileSync(defs, changed);
+  copy.stamp();
+  assert.deepEqual((await f.rpc('ping')).result, {});
+  assert.deepEqual(f.notifications, [{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }]);
+  const refreshed = (await f.rpc('tools/list')).result.tools;
+  assert.deepEqual(refreshed.find((tool) => tool.name === 'hud_create').inputSchema.properties.synthetic_flag, {
+    type: 'boolean',
+    description: 'Synthetic test flag.',
+  });
+  assert.equal(f.notifications.length, 1);
+
+  // Subsequent unchanged reload still sends no extra notification.
+  copy.stamp();
+  assert.deepEqual((await f.rpc('ping')).result, {});
+  assert.equal(f.notifications.length, 1);
+});
+
+test('task client reload notifies only when its filtered tools/list payload changes', { timeout: 15000 }, async (t) => {
+  const copy = reloadCopy(t);
+  const f = await fixture(t, { mcpEntry: copy.mcpEntry });
+  const rpc = taskRpc(f.rpc);
+  const discovered = await rpc('server/discover');
+  assert.deepEqual(discovered.capabilities.tools, { listChanged: true });
+  const initial = await rpc('tools/list');
+  assert.equal(initial.tools.some((tool) => tool.name === 'hud_wait'), false);
+  assert.equal(f.notifications.length, 0);
+
+  // Editing only hud_wait does not change a task client's tools/list payload.
+  const defs = join(copy.root, 'dist/roles/tool-definitions.js');
+  const originalDefs = fs.readFileSync(defs, 'utf8');
+  const waitOnly = originalDefs.replace(
+    'Wait for settlement or attention without reading reports.',
+    'Wait for synthetic settlement or attention without reading reports.'
+  );
+  assert.notEqual(waitOnly, originalDefs);
+  fs.writeFileSync(defs, waitOnly);
+  copy.stamp();
+  await rpc('ping');
+  assert.equal(f.notifications.length, 0);
+
+  // Editing a visible tool emits notifications/tools/list_changed once.
+  const visible = waitOnly.replace('Display label.', 'Synthetic updated display label.');
+  assert.notEqual(visible, waitOnly);
+  fs.writeFileSync(defs, visible);
+  copy.stamp();
+  await rpc('ping');
+  assert.deepEqual(f.notifications, [{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }]);
+  const updated = await rpc('tools/list');
+  const create = updated.tools.find((tool) => tool.name === 'hud_create');
+  assert.equal(create.inputSchema.properties.package.description, 'Synthetic updated display label.');
+  assert.deepEqual(create.execution, { taskSupport: 'optional' });
+  assert.equal(f.notifications.length, 1);
+});

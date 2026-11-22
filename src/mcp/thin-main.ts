@@ -2701,6 +2701,15 @@ async function taskRequest(taskId: string, cancel: boolean) {
     return wireTask(task);
   });
 }
+async function toolsListResult() {
+  return {
+    ...(discovered ? privateCache : {}),
+    tools: resumeRefusal ? [] : worker ? await worker.listWorkerTools(true) :
+      [...tools, statuslineTool].filter((tool) => !taskClient || tool.name !== 'hud_wait').map((tool) =>
+        taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land'].includes(tool.name)
+          ? { ...tool, execution: { taskSupport: 'optional' } } : tool),
+  };
+}
 async function receive(line: string, write: (value: unknown) => void): Promise<void> {
   const rpcError = (id: unknown, code: number, message: string) => write({ jsonrpc: '2.0', id, error: { code, message } });
   let request;
@@ -2729,7 +2738,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         Object.hasOwn(meta?.['io.modelcontextprotocol/clientCapabilities']?.extensions ?? {}, TASK_EXTENSION);
       await syncPanelDelivery();
       result = { supportedVersions: ['2026-07-28'], ...privateCache,
-        capabilities: { tools: {}, ...(!worker && !resumeRefusal ? { extensions: { [TASK_EXTENSION]: {} } } : {}) } };
+        capabilities: { tools: { listChanged: true }, ...(!worker && !resumeRefusal ? { extensions: { [TASK_EXTENSION]: {} } } : {}) } };
       break;
     }
     case 'initialize':
@@ -2741,7 +2750,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       if (clientName === 'hud-pi') callerHarness = 'pi';
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
-        capabilities: { tools: {}, resources: {} },
+        capabilities: { tools: { listChanged: true }, resources: {} },
         serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
         instructions: resumeRefusal ?? (worker ? 'Use the worker tools for your own HUD job. Finish with hud_report.' :
           'Call hud_roster when project dispatch context is missing or stale. With live watch, keep working until notified, then collect with hud_read.'),
@@ -2751,10 +2760,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       result = {};
       break;
     case 'tools/list':
-      result = { ...(discovered ? privateCache : {}), tools: resumeRefusal ? [] : worker ? await worker.listWorkerTools(true) :
-        [...tools, statuslineTool].filter((tool) => !taskClient || tool.name !== 'hud_wait').map((tool) =>
-          taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land'].includes(tool.name)
-            ? { ...tool, execution: { taskSupport: 'optional' } } : tool) };
+      result = await toolsListResult();
       break;
     case 'tasks/get':
     case 'tasks/cancel':
@@ -2860,15 +2866,16 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
   write({ jsonrpc: '2.0', id: request.id, result: discovered ? { resultType: 'complete', ...result as object } : result });
 }
 // Private live-connection handoff, never a disk recovery or a new client's authority.
-function snapshot() {
+async function snapshot() {
+  const toolsList = JSON.stringify(await toolsListResult());
   handedOff = true;
-  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
+  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
     callerHarness, sentConventionVersion, sentCreateHint, createdJobs, cursor, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
   return {
     snapshot,
-    async start(state?: ReturnType<typeof snapshot>) {
+    async start(state?: Awaited<ReturnType<typeof snapshot>>) {
       if (!state) {
         checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
         if (!worker && !resumeRefusal) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
@@ -2883,6 +2890,7 @@ export function openRuntime() {
       answers.offset = state.answersAt;
       for (const task of tasks.values()) armExpiry(task);
       await syncPanelDelivery();
+      return { toolsList: JSON.stringify(await toolsListResult()) };
     },
     async stop() {
       await ownerDelivery?.stop();

@@ -248,6 +248,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     root,
     env,
     rpc,
+    notifications: rpc.notifications,
     call,
     onCleanup: (fn) => cleanups.push(fn),
     // Rename replaces the fixture symlink itself, never the shared executable it points to.
@@ -274,19 +275,24 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
 export function rpcClient(child) {
   let next = 0;
   const pending = new Map();
+  const notifications = [];
   createInterface({ input: child.stdout }).on('line', (line) => {
     const response = JSON.parse(line);
+    if (response.id === undefined) {
+      notifications.push(response);
+      return;
+    }
     const callback = pending.get(response.id);
     if (callback) {
       pending.delete(response.id);
       callback(response);
     }
   });
-  return (method, params = {}) => new Promise((done) => {
+  return Object.assign((method, params = {}) => new Promise((done) => {
     const id = ++next;
     pending.set(id, done);
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-  });
+  }), { notifications });
 }
 
 export function workerClient(t, f, dir, askTimeout = '30') {

@@ -89,6 +89,8 @@ once per 30 s without scanning jobs. A successful main build publishes or touche
 stamp, including script-only builds. At a change the MCP drains admitted calls; the
 watcher drains checks, reaps and worktree operations. Each loads the replacement in a
 fresh worker thread under the dist lock; a bad import leaves the previous runtime in use.
+When a swapped MCP runtime changes the connection's `tools/list` payload, the owner emits
+`notifications/tools/list_changed`.
 The transport PID stays put (including the watcher's tab-close subscription). MCP task
 IDs, turn fences, baselines, terminal replies and expiry times travel only over this
 live connection's in-memory handoff. Polls still read current job facts, and the existing

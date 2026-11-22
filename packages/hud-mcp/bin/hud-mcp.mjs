@@ -31,7 +31,7 @@ try {
   let switching;
   async function reload(seen) {
     await Promise.all([...calls]); // Never move a mutation, long wait or its response across the boundary.
-    let next;
+    let next, toolsChanged = false;
     try {
       const state = await current.call('snapshot');
       if (state?.scoutedCreatePending) return; // Keep serving calls; retry the reload after the handoff.
@@ -39,15 +39,17 @@ try {
         seen = buildStamp();
         next = await openGeneration(url);
       });
-      await next.call('start', state);
+      const started = await next.call('start', state);
       await current.call('stop');
       current.retire();
       current = next;
+      toolsChanged = typeof state?.toolsList === 'string' && typeof started?.toolsList === 'string' && state.toolsList !== started.toolsList;
     } catch (error) {
       next?.retire();
       console.error(`hud-mcp: keeping previous build: ${error.message}`);
     }
     stamp = seen;
+    if (toolsChanged) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }) + '\n');
   }
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   function dispatch(line) {
