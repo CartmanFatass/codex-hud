@@ -113,6 +113,6 @@ board counts these; update at every landing or decision. -->
 
 ## Now (2026-11-22)
 
-- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–06 全部落地。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
+- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–06 全部落地。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。 2026-11-22 15:35Z owner 起试用：imp 默认 agy gemini-4-neon-high（preset neon），astra 仍用于难切片；几个切片后给结论。
 - FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land、02/03 失败交回原 imp 与记工单/STATE、04 先派 sonic 收集事实，均已落地；dogfood-fixes/09（失败的 land 可重试、验证失败先重跑失败文件、rebase 过的分支只挑自己的提交）进行中；05 面板与文档。工单队列自动推进放第二期。
 - 并行三条线：首页进度（HOME-PROGRESS，owner 已定 5 个问题）、orch 减负（ORCH-LEAN，owner 同意 A/B/C 三批）、MCP 线剩余（JOB-ARCHIVE-01 进行中）。
