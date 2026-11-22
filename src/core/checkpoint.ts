@@ -1,27 +1,13 @@
 import { ObservationStoreError } from './collect-lease.js';
 import type { SessionRef } from './types/identity.js';
-import type { ObservationCommit, ReaderCheckpoint } from './types/observation.js';
+import type { ReaderCheckpoint } from './types/observation.js';
 
-/** B16 captures both boundaries from the SAME ReaderResult, before adding its projection. */
 export interface ObservationBoundary {
   ref: SessionRef;
   readerVersion: string;
   sourceGeneration: number;
   fileId: ReaderCheckpoint['fileId'];
   offset: number;
-}
-export interface ObservationBoundaryWitness {
-  checkpointBoundary: ObservationBoundary;
-  summaryBoundary: ObservationBoundary;
-  checkpointDigest: string;
-  summaryDigest: string;
-}
-export interface ObservationCandidate {
-  commit: ObservationCommit;
-  previousCommitSeq: number;
-  boundary: ObservationBoundaryWitness;
-  /** Explicit fenced reset; retired reader versions can never become current again. */
-  rebuildFromReaderVersion?: string;
 }
 
 const fail = (reason = 'invalid_observation_structure'): never => {

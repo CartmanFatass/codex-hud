@@ -1,6 +1,6 @@
 import type { ObservationBoundary } from '../checkpoint.js';
 import type { SessionRef } from './identity.js';
-import type { NoticeEvent, ObservationCommit, ReaderCheckpoint, ReaderContinuation } from './observation.js';
+import type { ReaderCheckpoint } from './observation.js';
 import type { ReaderBudget } from '../interfaces/harness-adapter.js';
 
 /** Consult 5 G05/G10: reuse B12's captured boundary, with immutable identity fields. */
@@ -63,28 +63,6 @@ declare class PreparedCheckpointToken {
  */
 export interface PreparedCheckpoint extends PreparedCheckpointToken {
   readonly identity: CheckpointIdentity;
-}
-
-/**
- * Consult 5 G10: one committed projection snapshot; it deliberately contains no
- * recovery body. Preserve its original observationStamp when combining ledger data.
- */
-export type ObservationProjection = Readonly<Omit<ObservationCommit, 'checkpoint' | 'notices'>> & {
-  readonly checkpointIdentity: CheckpointIdentity;
-  readonly notices: readonly NoticeEvent[];
-};
-
-/** Consult 5 G10: recovery selects this exact commit and content, never a later "current" value. */
-export type ObservationRecoveryTarget = Pick<
-  ObservationProjection,
-  'ref' | 'sourceGeneration' | 'seqDomain' | 'commitSeq' | 'checkpointIdentity'
->;
-
-/** Consult 5 G10: collector-only recovery data and references for the selected committed snapshot. */
-export interface ObservationRecovery {
-  readonly target: ObservationRecoveryTarget;
-  readonly checkpoint: ReaderCheckpoint;
-  readonly recoveryReferences: readonly RecoveryIndexReference[];
 }
 
 /** Exact source-local metadata only. A null value deletes a key; values are JSON metadata. */
@@ -155,16 +133,6 @@ export type MeteredLookupResult<T> =
       readonly minimumBytes?: number;
       readonly stats: RecoveryReadStats;
     }
-  | { readonly kind: 'stale'; readonly stats: RecoveryReadStats };
-
-/**
- * B12M: a metered `readRecovery` outcome; never a partial read. `stale` is the legacy `null`: the selected target is
- * not the current commit. A continuation is the legacy continuation (`record_needs_larger_slice` with the actual
- * payload bytes the recovery needs, or `recovery_catching_up` when time or records are exhausted).
- */
-export type MeteredRecoveryResult =
-  | { readonly kind: 'recovered'; readonly recovery: ObservationRecovery; readonly stats: RecoveryReadStats }
-  | { readonly kind: 'continuation'; readonly continuation: ReaderContinuation; readonly stats: RecoveryReadStats }
   | { readonly kind: 'stale'; readonly stats: RecoveryReadStats };
 
 /** Collector-only, exact-key and bounded-page reads pinned to one immutable snapshot. */

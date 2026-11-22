@@ -22,7 +22,7 @@ import {
 export { validateRolloutRecovery, validateCodexRecoveryIndexEntry } from '../harness/codex/recovery.js';
 import { initialParserState } from '../core/observation.js';
 import type { ReaderBudget } from '../core/interfaces/harness-adapter.js';
-import type { ReaderParserState } from '../core/types/observation.js';
+import type { ReaderContinuation, ReaderParserState } from '../core/types/observation.js';
 import { taskText, looksAutomatic } from '../utils/task-text.js';
 import { extractAgentReport } from './agent-report.js';
 import { TokenRateTracker, observeTokenRateRecord, type TokenRateSnapshot } from './token-rate.js';
@@ -426,7 +426,7 @@ export interface RolloutReadStats {
   remainingBytes: number;
   elapsedMs: number;
   fileStat: { size: number; mtimeMs: number; ctimeMs: number };
-  continuation?: import('../core/interfaces/harness-adapter.js').ReaderResult['continuation'];
+  continuation?: ReaderContinuation;
   resetReason?: 'truncated' | 'file_changed';
 }
 
