@@ -177,7 +177,7 @@ test('provider attribution uses local settings or the unfiltered cache; unknown 
   assert.equal(configured.key, 'pi:', 'settings attribution preserves the quota key of a place that passes no model');
   put(settings, { defaultProvider: 'other', defaultModel: 'settings-model' });
   assert.equal((await roster('defaulted')).provider, 'other', 'settings edits invalidate the cached signature');
-  fs.mkdirSync(join(home, 'display'));
+  fs.mkdirSync(join(home, 'display'), { recursive: true });
   const cache = join(home, 'display', 'model-lists.json');
   put(cache, { version: 1, fetchedAt: Date.now(), pi: ['xai/gpt-6.1-sol'] });
   assert.equal((await roster('imp')).off_by, 'pi:xai');

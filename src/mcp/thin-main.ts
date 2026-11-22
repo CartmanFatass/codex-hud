@@ -77,7 +77,11 @@ if (isWorker) process.env.HUD_HOME = hudHome; // The watcher and other subproces
 const jobsRoot = join(hudHome, 'jobs');
 const jobCache = new JobIndexCache(hudHome);
 const workSummary = createWorkSummaryPublisher(hudHome, 'hud-mcp', jobCache);
-const publishWorkSummary = () => { try { workSummary.publish(); } catch { /* Best-effort display snapshot. */ } };
+const publishWorkSummary = (loadedJobs?: readonly Job[]) => {
+  try {
+    workSummary.publish(loadedJobs ? { jobs: loadedJobs as readonly (Job & Record<string, unknown>)[], jobsExist: true } : undefined);
+  } catch { /* Best-effort display snapshot. */ }
+};
 let resumeChecked = false;
 let resumeRefusal: string | undefined;
 function checkResume(agent: 'agy' | 'claude' | 'codex', id: unknown) {
@@ -833,7 +837,7 @@ function queuePositionsForJobs(allJobs = jobs(), statusFor = readCachedStatus): 
   );
 }
 function scanForCall() {
-  let receipts: Job[] | undefined, missingReceipt = false;
+  let receipts: Job[] | undefined, missingReceipt = false, summaryStale = false;
   let positions: Map<string, number> | undefined;
   const statuses = new Map<string, ReturnType<typeof readCachedStatus>>();
   const all = () => receipts ??= jobs(() => { missingReceipt = true; });
@@ -841,6 +845,8 @@ function scanForCall() {
   return {
     all, status,
     position: (id: string) => (positions ??= queuePositionsForJobs(all(), status)).get(id),
+    summaryJobs: (): readonly Job[] | undefined => (!summaryStale && !missingReceipt ? receipts : undefined),
+    invalidateSummary() { summaryStale = true; },
     watcherNeeded(waiting: boolean) {
       try {
         return all().some(job => {
@@ -2887,7 +2893,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
       },
     });
   }
-  if (name === 'hud_respond') return respondJob(args, false);
+  if (name === 'hud_respond') return respondJob(args, false, scan.summaryJobs());
   return closeJob(job);
 }
 
@@ -2898,7 +2904,7 @@ export async function resumePanelAnswer(home: string, job: string, request_id: s
     { ok: true, written: 'written' in result ? result.written === true : true };
 }
 
-async function respondJob(args: Args, batch: boolean) {
+async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[]) {
   const id = required(args, 'job');
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
@@ -2934,7 +2940,7 @@ async function respondJob(args: Args, batch: boolean) {
   try {
     writePrivateFile(join(dir, jobFiles.qa, `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
     jobCache.invalidateQa(job.job);
-    publishWorkSummary();
+    publishWorkSummary(loadedJobs);
     if (canCarry) {
       oldTask.seenQuestions.add(`${request}.md`);
       if (row && needsAttention(row)) oldTask.attentionBefore = polled?.statusAt ?? undefined;
@@ -3078,6 +3084,7 @@ async function adoptSessionJobs(scan: JobScan) {
   };
   if (!await adoptProjectJobs(hudHome, callerPane, cwd, receipts, process.env,
     adoptionAttention(hudHome, receipts, cwd, jobCache), jobCache, onAdopt)) return false;
+  scan.invalidateSummary();
   if (!taskClient) void ensureQueueWatcher(callerPane, hudHome);
   return true;
 }
@@ -3699,6 +3706,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         if (taskClient && name === 'hud_wait') throw new Error('unknown_tool');
         if (name !== 'hud_wait') await adoptSessionJobs(scan);
         const key = mutationKey(name, args);
+        if (key !== null && locks.has(key)) scan.invalidateSummary();
         const value = key === null ? await invoke() : await keyLock(key, invoke);
         const markExhaustion = name !== 'hud_peek';
         if (isTaskReply(value)) {

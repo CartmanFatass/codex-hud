@@ -344,3 +344,42 @@ test('hud-mcp updates work-summary.v1.json on hud_respond without overriding a f
   assert.equal(summary.scope.running, 1);
   assert.equal(summary.scope.asking, 0);
 });
+
+test('markDegraded republishes watching=false without touching jobs/ and collectWorkSummary skips reaped_at STATUS reads', (t) => {
+  const { home, addJob } = makeFixture(t);
+  addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
+  const reaped = addJob({ role: 'imp', pane: PANE_A, status: { state: 'closed' } });
+  const reapedJobPath = join(reaped.dir, 'job.json');
+  const reapedJob = JSON.parse(fs.readFileSync(reapedJobPath, 'utf8'));
+  writePrivateFile(reapedJobPath, JSON.stringify({ ...reapedJob, reaped_at: new Date().toISOString() }));
+  writePrivateFile(join(home, 'watch.pid'), `${process.pid}\n`);
+
+  const statusStats = [];
+  let jobsDirStats = 0;
+  const origLstat = fs.lstatSync;
+  fs.lstatSync = (target, ...args) => {
+    const p = String(target);
+    if (p === join(home, 'jobs')) jobsDirStats++;
+    if (p.endsWith('/STATUS.json')) statusStats.push(p);
+    return origLstat(target, ...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.lstatSync = origLstat;
+    syncBuiltinESMExports();
+  });
+
+  const pub = createWorkSummaryPublisher(home, 'hud-watch');
+  const now = Date.now();
+  assert.equal(pub.publish({ watching: true, now, ids: fs.readdirSync(join(home, 'jobs')), jobsExist: true }), true);
+  assert.equal(jobsDirStats, 0, 'prelisted ids must not lstat jobs/');
+  assert.equal(statusStats.some((p) => p.includes(reaped.id)), false, 'reaped job must not lstat STATUS.json');
+  assert.equal(readFreshWorkSummary(home, PANE_A, now)?.snapshot.watching, true);
+
+  statusStats.length = 0;
+  assert.equal(pub.markDegraded(now + 50), true);
+  assert.equal(jobsDirStats, 0, 'markDegraded must not lstat jobs/');
+  assert.equal(statusStats.length, 0, 'markDegraded must not re-read STATUS.json');
+  assert.equal(readFreshWorkSummary(home, PANE_A, now + 50)?.snapshot.watching, false);
+  assert.equal(pub.markDegraded(now + 60), false, 'duplicate markDegraded is a no-op');
+});

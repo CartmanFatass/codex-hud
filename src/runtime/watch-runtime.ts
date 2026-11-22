@@ -782,7 +782,7 @@ function scan(retryWatch = false) {
     notify('idle');
     return;
   }
-  workSummary.publish({ watching: Boolean(watcher) });
+  workSummary.publish({ watching: Boolean(watcher), ids: listedIds, jobsExist: true });
 }
 function schedule() {
   if (queued || stopped) return;
@@ -818,7 +818,7 @@ function startWatch() {
       warn('watch error', `watch error: ${error.message}`);
       watcher?.close(); watcher = undefined;
       jobChanges.stop();
-      workSummary.publish({ watching: false });
+      workSummary.markDegraded();
       clearTimeout(timer);
       timer = setTimeout(() => scan(true), degradedMs);
     });

@@ -52,26 +52,27 @@ const sortScope = (scope: WorkSummaryScope): WorkSummaryScope => ({
   roles: Object.fromEntries(Object.keys(scope.roles).sort().map((k) => [k, scope.roles[k]!])),
 });
 
-export function collectWorkSummary(home: string, cache: JobIndexCache = getJobIndexCache(home)) {
+export function collectWorkSummary(
+  home: string,
+  cache: JobIndexCache = getJobIndexCache(home),
+  options?: { ids?: readonly string[]; jobs?: readonly (Job & Record<string, unknown>)[] }
+) {
   let complete = true;
   const global = emptyWorkSummaryScope();
   const rawPanes: Record<string, WorkSummaryScope> = {};
-  for (const id of cache.listJobIds({ onError: () => { complete = false; } })) {
-    const jobRes = cache.readJob<Job & Record<string, unknown>>(id);
-    if (jobRes.status === 'missing') continue;
-    if (jobRes.status !== 'ok') { complete = false; continue; }
-    const job = jobRes.value;
+  const considerJob = (id: string, job: Job & Record<string, unknown>) => {
     if (job.job !== id || typeof job.role !== 'string' || typeof job.created_at !== 'string' || !Number.isFinite(Date.parse(job.created_at))) {
-      complete = false; continue;
+      complete = false; return;
     }
+    if (typeof job.reaped_at === 'string' && job.reaped_at.length > 0) return;
     const statusRes = cache.readStatus<JobStatus>(id);
-    if (statusRes.status !== 'ok' && statusRes.status !== 'missing') { complete = false; continue; }
+    if (statusRes.status !== 'ok' && statusRes.status !== 'missing') { complete = false; return; }
     const status = statusRes.status === 'ok' ? statusRes.value : null;
     const row = jobRow(job, status);
-    if (row.display_state !== 'working') continue;
+    if (row.display_state !== 'working') return;
     let openQuestions = 0;
     try { openQuestions = cache.readQa(join(home, 'jobs', id)).openIds.length; }
-    catch { complete = false; continue; }
+    catch { complete = false; return; }
     const cliJob = (typeof status?.harness === 'string' && status.harness.trim() === 'cli') || (job.cli !== null && typeof job.cli === 'object');
     const asking = openQuestions > 0 || (cliJob && (row.blocked || row.state === 'waiting_orchestrator'));
     const role = job.role.trim().toLowerCase() || 'job';
@@ -81,6 +82,17 @@ export function collectWorkSummary(home: string, cache: JobIndexCache = getJobIn
       const paneScope = rawPanes[pane] ?? (Object.keys(rawPanes).length < WORK_SUMMARY_MAX_PANES ? (rawPanes[pane] = emptyWorkSummaryScope()) : null);
       if (paneScope) addRole(paneScope, role, asking);
       else complete = false;
+    }
+  };
+  if (options?.jobs) {
+    for (const job of options.jobs) considerJob(typeof job.job === 'string' ? job.job : '', job);
+  } else {
+    const ids = options?.ids ?? cache.listJobIds({ onError: () => { complete = false; } });
+    for (const id of ids) {
+      const jobRes = cache.readJob<Job & Record<string, unknown>>(id);
+      if (jobRes.status === 'missing') continue;
+      if (jobRes.status !== 'ok') { complete = false; continue; }
+      considerJob(id, jobRes.value);
     }
   }
   const panes = Object.fromEntries(Object.keys(rawPanes).sort().map((p) => [p, sortScope(rawPanes[p]!)]));
@@ -137,6 +149,7 @@ export function readFreshWorkSummary(home: string, pane: string | null, now = Da
 export function createWorkSummaryPublisher(home: string, producer: WorkSummaryProducer, cache: JobIndexCache = getJobIndexCache(home)) {
   const file = workSummaryPath(home), pidStart = procStat(process.pid)?.start ?? null;
   let generation = 0, lastKey: string | null = null, lastStat: fs.Stats | null = null;
+  let lastCollected: ReturnType<typeof collectWorkSummary> | null = null;
   const samePublishedFile = () => {
     if (!lastStat) return false;
     try {
@@ -144,35 +157,55 @@ export function createWorkSummaryPublisher(home: string, producer: WorkSummaryPr
       return !!cur && cur.dev === lastStat.dev && cur.ino === lastStat.ino && cur.mtimeMs === lastStat.mtimeMs && cur.size === lastStat.size;
     } catch { return false; }
   };
+  const writeSnapshot = (
+    collected: ReturnType<typeof collectWorkSummary>,
+    watching: boolean,
+    now: number,
+    jobsExist: boolean
+  ): boolean => {
+    const countsKey = JSON.stringify([collected.complete, collected.global, collected.panes]);
+    const stateKey = `${watching ? 1 : 0}:${countsKey}`;
+    if (producer === 'hud-watch') {
+      if (lastKey === stateKey && samePublishedFile()) return false;
+    } else {
+      const current = readFreshWorkSummary(home, null, now);
+      if (current && JSON.stringify([current.snapshot.complete, current.snapshot.global, current.snapshot.panes]) === countsKey &&
+          ((current.snapshot.producer === 'hud-watch' && current.snapshot.watching) || lastKey === stateKey)) return false;
+    }
+    const nextGen = generation + 1;
+    const text = JSON.stringify({
+      version: WORK_SUMMARY_VERSION, producer, pid: process.pid, pid_start: pidStart,
+      generation: nextGen, observed_at: now, watching, complete: collected.complete,
+      global: collected.global, panes: collected.panes,
+    } satisfies WorkSummarySnapshot) + '\n';
+    if (Buffer.byteLength(text, 'utf8') > WORK_SUMMARY_MAX_BYTES || (!jobsExist && !fs.existsSync(join(home, 'jobs')))) return false;
+    try {
+      try { fs.mkdirSync(join(home, 'display'), { mode: 0o700 }); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false; }
+      lastStat = writePrivateFile(file, text, { mkdir: false });
+      generation = nextGen; lastKey = stateKey; return true;
+    } catch { return false; }
+  };
   return {
     get generation() { return generation; },
     setGeneration(value: number) { if (Number.isSafeInteger(value) && value > generation) generation = value; },
-    publish(options?: { watching?: boolean; now?: number }): boolean {
-      const collected = collectWorkSummary(home, cache);
+    publish(options?: {
+      watching?: boolean;
+      now?: number;
+      ids?: readonly string[];
+      jobs?: readonly (Job & Record<string, unknown>)[];
+      jobsExist?: boolean;
+    }): boolean {
+      const collected = collectWorkSummary(home, cache, options);
+      lastCollected = collected;
       const watching = producer === 'hud-watch' && options?.watching === true;
       const now = options?.now ?? Date.now();
-      const countsKey = JSON.stringify([collected.complete, collected.global, collected.panes]);
-      const stateKey = `${watching ? 1 : 0}:${countsKey}`;
-      if (producer === 'hud-watch') {
-        if (lastKey === stateKey && samePublishedFile()) return false;
-      } else {
-        const current = readFreshWorkSummary(home, null, now);
-        if (current && JSON.stringify([current.snapshot.complete, current.snapshot.global, current.snapshot.panes]) === countsKey &&
-            ((current.snapshot.producer === 'hud-watch' && current.snapshot.watching) || lastKey === stateKey)) return false;
-      }
-      const nextGen = generation + 1;
-      const text = JSON.stringify({
-        version: WORK_SUMMARY_VERSION, producer, pid: process.pid, pid_start: pidStart,
-        generation: nextGen, observed_at: now, watching, complete: collected.complete,
-        global: collected.global, panes: collected.panes,
-      } satisfies WorkSummarySnapshot) + '\n';
-      if (Buffer.byteLength(text, 'utf8') > WORK_SUMMARY_MAX_BYTES || !fs.existsSync(join(home, 'jobs'))) return false;
-      try {
-        try { fs.mkdirSync(join(home, 'display'), { mode: 0o700 }); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false; }
-        lastStat = writePrivateFile(file, text, { mkdir: false });
-        generation = nextGen; lastKey = stateKey; return true;
-      } catch { return false; }
+      const jobsExist = Boolean(options?.jobsExist || options?.jobs?.length || options?.ids?.length || collected.global.running > 0);
+      return writeSnapshot(collected, watching, now, jobsExist);
+    },
+    markDegraded(now = Date.now()): boolean {
+      if (producer !== 'hud-watch' || !lastCollected) return false;
+      return writeSnapshot(lastCollected, false, now, true);
     },
   };
 }

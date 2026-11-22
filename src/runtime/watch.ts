@@ -33,6 +33,7 @@ const serializeHandoff = (state: Handoff, tabs: Set<string>) => JSON.stringify({
   reapRetries: [...state.reapRetries].map(([id, r]) => [id, { ...r, at: Number.isFinite(r.at) ? r.at : null }]),
   preflightHold: [...state.preflightHold],
   worktreeRetries: [...state.worktreeRetries],
+  summaryGeneration: state.summaryGeneration ?? 0,
 });
 
 function unlinkIfPresent(file: string): void {
@@ -47,11 +48,14 @@ function readHandoff(file: string): { state: Handoff | null; closedTabs: Set<str
     if (raw?.version !== 1) return { state: null, closedTabs };
     if (Array.isArray(raw.closedTabs)) for (const id of raw.closedTabs) if (typeof id === 'string') rememberClosedTab(closedTabs, id);
     if (!Array.isArray(raw.reapRetries) || !Array.isArray(raw.preflightHold) || !Array.isArray(raw.worktreeRetries)) return { state: null, closedTabs };
+    const summaryGeneration = typeof raw.summaryGeneration === 'number' && Number.isSafeInteger(raw.summaryGeneration) && raw.summaryGeneration >= 0
+      ? raw.summaryGeneration : 0;
     return { closedTabs, state: {
       version: 1,
       reapRetries: new Map(raw.reapRetries.map(([id, r]: [string, Record<string, unknown>]) => [id, { ...r, at: r.at === null ? Infinity : Number(r.at) }])) as Handoff['reapRetries'],
       preflightHold: new Map(raw.preflightHold) as Handoff['preflightHold'],
       worktreeRetries: new Map(raw.worktreeRetries) as Handoff['worktreeRetries'],
+      summaryGeneration,
     } };
   } catch { return { state: null, closedTabs }; }
   finally { unlinkIfPresent(file); }
