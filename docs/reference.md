@@ -441,22 +441,18 @@ Running jobs with unanswered questions need you; an unanswered question left on 
 finished job does not. A report is not proof of success, and display labels are not
 acceptance or a merge decision. Unknown evidence stays unknown.
 
-Cards have a title and two fixed sentence rows; `┃ …` holds space until text is
-available. Enter expands the complete sentence and factual details in place.
+Cards are tiered by whether the owner needs to act on them: open questions render as amber slabs at the top (with model/effort marks and any active `⚡N` on the header, and no duplicate pointer card in the lane below); unhandled failures (red reason row), unread reports (`✓●`, ASCII `+*`), active land/scout flows and stalled jobs show their factual detail rows without empty `┃` placeholders. Secondary workers — routine running jobs, queued jobs and read settled jobs — pack into one dense row (state glyph, coloured role, title, provider/short-model/effort marks narrowing `◎ sol-fast◕` → `◎◕` → `◎`, active `⚡N`, age). Enter expands any card in place to its full sentence, milestone and activity sparkline.
 A brief heading in the panel language supplies the card title. For a foreign heading,
 the same sentence request can supply a localized short name beside the slice or ticket ID.
 Without model text the heading or first task line remains; narrow lane labels keep their numeric suffix. Only the newest current settled card initially expands, until its fold
 time; explicit choices win for that panel lifetime. Enter on a lane folds it.
 Question slabs show answer keys beside the expanded options; `o` still opens the question file.
 
-**Sonic children.** A `sonic` job a HUD job dispatched (its `parent_job`) is not a card: it is one row under the parent's
-card, `├─ ⚡ sonic · short title  3m ◉` (the last `└─`, ascii `|-` and `` `- ``), with its elapsed time and state glyph, in
-Classic and in Split's preview. Its latest milestone replaces the short title when available. A parent folded to its title row hides the rows and says `⚡ N sonic` (the ones still
-running) on its right. A `/` filter that matches a sonic job keeps its parent with it.
+**Sonic children.** A `sonic` job a HUD job dispatched (`parent_job`) never renders as its own row or card on Home (in Classic or Split). Instead, active (currently running) sonic children appear only as `⚡N` (ASCII `*N`) on their parent worker's row (and on the parent's ask slab header or Split lane row); finished sonic children add nothing (never a cumulative total). Sonic children do not count in lane strips, Split job counts or `done today`, and never hijack a Split lane row. A `/` filter that matches a sonic job still keeps its parent visible.
 
 **Flows.** A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows a flow row on its card
 (`gate ▸ merge ▸ push` or `scout ▸ run`, localized in Chinese) with the active step or final outcome (landed SHA, done,
-failed or cancelled) in both Classic and Split's preview, and in the Inspector. A card with a running land stays
+failed or cancelled) in both Classic and Split's preview, and in the Inspector, and its active chain on Split's lane row. A card with a running land stays
 visible and unfolded until the flow settles.
 
 **Panel lifetime.** Jobs settled before the panel opened are excluded, including
@@ -464,12 +460,12 @@ their decisions and model inputs; `a` cannot reveal them. Active/unknown jobs st
 eligible regardless of age. Build reload preserves the original opening time.
 Native agents and Project's STATE slice lookup keep their own scope.
 
-**Card lifetimes.** Settled HUD/native cards fold to one row after 5 minutes and
-hide after 15 by default (adjust both in Settings → Panel). A hide time below fold
+**Card lifetimes.** Settled HUD/native cards fold after 5 minutes and
+hide after 5 minutes by default (so fold and hide coincide; adjust both in Settings → Panel). A hide time below fold
 time counts as fold time. A failed or stopped job leaves Home immediately when a retry,
 repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
 `a` shows it muted as `superseded`. An observed failure follows the ordinary fold/hide times.
-An unhandled failure leaves Home after 30 minutes in either mode; use `hud_read({job})` to inspect it by job ID.
+An unhandled failure stays unfolded with its reason row and leaves Home after 30 minutes in either mode; use `hud_read({job})` to inspect it by job ID.
 Running/asking cards stay. `a` reveals hidden cards in place as muted one-row titles; Enter
 expands them. The job scan considers the newest 200 directories.
 
@@ -495,10 +491,7 @@ older fold, visible with `a`. A separate chat call writes a short progress brief
 at Summary interval. No key/error means default order. When the brief's inputs change,
 the old text disappears immediately, even while a replacement is pending or unavailable. Models off hides both.
 
-**Top line.** `? 5 waiting for you · 0 running` counts STATE's "Waiting for the owner" items
-with the job questions (the same items as the Project tab's count); `✓ Nothing needs you`
-shows only when both are zero. With waiting items, Enter or a click opens the Project hub on its
-Waiting block. The footer shows `✓ N done today` from 56 columns, `✓ N` below 56, and no count at zero.
+**Top line.** Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering). The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear. The right side shows the live/recent worker roster in the statusline's Variant A group format (`◎ sol-fast◕ 3 ?  ▲ neon◕ 1 ✗  ✻ sonnet● 1 ✓●  ⚡4`), narrowing by dropping model names then effort glyphs before compacting, or `0 running` when idle. With STATE waiting items, Enter or a click on the top line in Classic opens the Project hub on its Waiting block. The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
 
 **Spare rows.** Cards get space first. Remaining rows show, top to bottom: STATE's
 waiting items (a row each, up to five, then `+N more`), the newest landed work (three rows at 38–55

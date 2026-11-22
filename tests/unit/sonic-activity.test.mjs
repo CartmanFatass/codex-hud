@@ -1,5 +1,5 @@
 import { withState } from '../fixtures/state-helpers.mjs';
-/** PANEL-V2 04: the ten-minute activity ring and its row, and sonic children as one-line branches under their parent on Home. */
+/** PANEL-V2 04 + home-compact: the ten-minute activity ring and its row, and sonic children folded into `⚡N` on their parent everywhere on Home. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -28,7 +28,6 @@ async function scene(t, { parent = {}, kids = [['check retry flags', null], ['li
   const workers = [main, ...kids.map(child)];
   const lanes = f.board.lanes.map((l) => (l === lane ? { ...l, workers } : l));
   const board = { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers) };
-  // Every row, padded to the panel's width; `text` is the same rows trimmed, for matching.
   const render = (width, lang, state, height = 60, extras) => f.render(width, lang, height, state, f.data, { workboard: board, ...extras }).lines.map(stripAnsi);
   return { f, lane, main, board, render, key: (w) => targetKey({ kind: 'worker', laneId: lane.id, workerId: w.id }) };
 }
@@ -65,43 +64,46 @@ test('Activity row: an expanded running card and the Inspector show it under the
   assert.ok(!quiet.render(40, 'en', withState(expanded, { home: { expanded: new Set([quiet.key(quiet.main)]) } })).some((l) => l.includes('Activity')));
 });
 
-test('Sonic children hang under their parent as one-line branches, in Classic and in Split’s preview, at 40 and 80 columns in both languages', async (t) => {
+test('Sonic children fold into ⚡N on their parent worker (running only, never cumulative, zero sonic rows/cards) in Classic and Split', async (t) => {
+  // 1 running sonic + 1 finished sonic -> badge must be ⚡1 (never ⚡2).
   const s = await scene(t);
   const lane = targetKey({ kind: 'lane', laneId: s.lane.id });
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const [name, state] of [['classic', initialMonitorState()], ['split', split({ home: { split: { listCursor: lane } } })]]) {
-    const lines = s.render(width, lang, state), shown = text(lines), at = shown.findIndex((l) => l.includes('├─ ⚡ sonic · check retry fl'));
-    assert.ok(at > 0, `${name} ${lang} ${width}\n${lines.join('\n')}`);
-    assert.match(shown[at], /^ {2}├─ ⚡ sonic · check retry fl\S* +3(m|分) ◉$/);
-    assert.match(shown[at + 1], /^ {2}└─ ⚡ sonic · list slow te\S* +\d+(m|分) ✓$/);
-    assert.ok(!shown.some((l) => /^[◉✓] sonic/.test(l)), 'children are not cards');
+    const lines = s.render(width, lang, state), shown = text(lines);
+    const parentRow = shown.find((l) => l.includes('AUTH-REFRESH') && l.includes('⚡1'));
+    assert.ok(parentRow, `${name} ${lang} ${width}: expected ⚡1 on parent row\n${shown.join('\n')}`);
+    assert.ok(!shown.some((l) => l.includes('├─') || l.includes('└─')), 'no sonic branch rows');
+    assert.ok(!shown.some((l) => l.includes('check retry flags') || l.includes('list slow tests')), 'no sonic titles on Home');
+    assert.ok(!shown.some((l) => /^[◉✓] sonic/.test(l)), 'sonic children are not cards');
     for (const line of lines) assert.equal(visualLength(line), width, `${name} ${lang} ${width}: ${line}`);
   }
-  assert.ok(text(s.render(40, 'en', initialMonitorState(), 60, { icons: 'text' })).some((l) => /^ {2}\|- \* sonic · check retry flags/.test(l)), 'ascii');
+  assert.ok(text(s.render(40, 'en', initialMonitorState(), 60, { icons: 'text' })).some((l) => l.includes('AUTH-REFRESH') && l.includes('*1')), 'ascii *1');
 });
 
-test('A sonic branch shows its latest milestone while working and after settlement', async (t) => {
-  const s = await scene(t, { kids: [['First query', null, 'Reading inputs'], ['Second query', NOW - MIN, 'Checked inputs']] });
+test('Finished sonic children add nothing: when all sonic children settle, ⚡N disappears from the parent', async (t) => {
+  const s = await scene(t, { kids: [['First query', NOW - 2 * MIN], ['Second query', NOW - MIN]] });
   const lines = text(s.render(80, 'en', initialMonitorState()));
-  assert.ok(lines.some(line => /├─ ⚡ sonic · Reading inputs .*◉/.test(line)));
-  assert.ok(lines.some(line => /└─ ⚡ sonic · Checked inputs .*✓/.test(line)));
+  const parentRow = lines.find((l) => l.includes('AUTH-REFRESH: token rotation'));
+  assert.ok(parentRow, lines.join('\n'));
+  assert.ok(!parentRow.includes('⚡'), `finished sonic must not show ⚡N: ${parentRow}`);
 });
 
-test('A folded parent shows how many sonic children still run on its title row, and not the branches', async (t) => {
+test('Multiple running sonic children show only the active count on the parent row (even when parent is folded via cardHideMinutes)', async (t) => {
   const s = await scene(t, { parent: { settledAt: NOW - 6 * MIN, state: 'done' }, kids: [['check retry flags', null], ['list slow tests', null], ['older run', NOW - 20 * MIN]] });
-  for (const [lang, badge] of [['en', '⚡ 2 sonic'], ['zh', '⚡ 2 个 sonic']]) for (const width of [40, 80]) {
-    const lines = s.render(width, lang, initialMonitorState());
-    assert.ok(lines.some((l) => l.includes(badge)), `${lang} ${width}\n${lines.join('\n')}`);
-    assert.ok(!lines.some((l) => l.includes('├─')));
+  const state = withState(initialMonitorState(), { prefs: { cardFoldMinutes: 5, cardHideMinutes: 15 } });
+  for (const lang of ['en', 'zh']) for (const width of [40, 80]) {
+    const lines = s.render(width, lang, state);
+    assert.ok(lines.some((l) => l.includes('AUTH-REFRESH') && l.includes('⚡2')), `${lang} ${width}\n${lines.join('\n')}`);
+    assert.ok(!lines.some((l) => l.includes('├─') || l.includes('└─')));
     for (const line of lines) assert.equal(visualLength(line), width, line);
   }
 });
 
-test('The / filter keeps a matching sonic child under its parent', async (t) => {
+test('The / filter keeps a parent visible when its sonic child matches, without drawing a sonic row', async (t) => {
   const s = await scene(t);
   const lines = text(s.render(40, 'en', withState(initialMonitorState(), { home: { filter: { query: 'slow tests', editing: false } } })));
-  const parent = lines.findIndex((l) => l.includes('reviewer') && l.includes('AUTH-REFRESH') || l.startsWith('◉ reviewer'));
-  const child = lines.findIndex((l) => l.includes('└─ ⚡ sonic · list slow tests'));
-  assert.ok(parent >= 0 && child > parent, lines.join('\n'));
-  assert.ok(!lines.some((l) => l.includes('check retry flags')), 'a child that does not match is gone');
+  const parent = lines.findIndex((l) => l.includes('AUTH-REFRESH'));
+  assert.ok(parent >= 0, lines.join('\n'));
+  assert.ok(!lines.some((l) => l.includes('├─') || l.includes('└─')), 'no sonic branch row');
   assert.ok(!lines.some((l) => l.includes('NATIVE-TREE')), 'other lanes are filtered out');
 });

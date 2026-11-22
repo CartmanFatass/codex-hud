@@ -29,7 +29,7 @@ export async function homeFixture(root) {
 export function homeFrames(f) {
   const frames = Object.fromEntries([52, 80, 120].flatMap((width) => ['en', 'zh'].flatMap((lang) => {
     // The cards and the top line (two rows) STATE's waiting items add.
-    const base = f.render(width, lang, 100, undefined, null).workboard.rows.length + 2;
+    const base = f.render(width, lang, 100, undefined, null).workboard.rows.length;
     // Spare rows after the cards: everything, tickets cut, legend only, bar only, block gone.
     return [['tall', 14], ['tickets-short', 9], ['legend-short', 6], ['bar-short', 4], ['gone', 2]]
       .map(([size, spare]) => [`home-${width}-${lang}-${size}`, plain(f.render(width, lang, base + 2 + spare))]);

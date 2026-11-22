@@ -190,7 +190,7 @@ export function renderWorkboardFrame(
   const board = inspector || pick ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.prefs.cardStallMinutes) : undefined);
   if (home) {
     state = { ...state, home: { ...state.home, newestCard: newestCard(board, state, now) } };
-    if (needle) matches = board.workers.length;
+    if (needle) matches = board.workers.filter((w) => !w.parentJobId).length;
   }
   const bar = filter ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
     (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
@@ -218,7 +218,7 @@ export function renderWorkboardFrame(
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
-    const count = source.workers.filter((w) => w.homeNeedsHuman).length;
+    const count = source.workers.filter((w) => !w.parentJobId && w.homeNeedsHuman).length;
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
     const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0, exp: 0 };
@@ -263,6 +263,7 @@ export function renderWorkboardFrame(
     const today = new Date(now).toDateString();
     return source.workers.filter(
       (w) =>
+        !w.parentJobId &&
         ['done', 'completed', 'closed', 'idle_grace'].includes(w.state) &&
         w.settledAt !== null &&
         new Date(w.settledAt).toDateString() === today

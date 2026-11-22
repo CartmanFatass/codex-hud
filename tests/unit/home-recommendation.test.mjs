@@ -60,7 +60,7 @@ function fixture(t, keys = true) {
     return 'thin-job:' + id;
   };
   f.status = (id, state) => f.put(id.replace('thin-job:', ''), 'STATUS.json', { state, started_at: new Date(NOW - 60000).toISOString(),
-    ...(['done', 'failed'].includes(state) ? { settled_at: new Date(NOW).toISOString() } : {}) });
+    ...(['done', 'failed'].includes(state) ? { settled_at: new Date(f.now).toISOString() } : {}) });
   f.board = () => {
     const lanes = readThinJobs(home, { project: '/synthetic/project', pane: 'w4E:p1' });
     return { revision: '1', lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions), coverage: { incomplete: false, diagnostics: [], workspace: null } };
@@ -189,12 +189,13 @@ test('changed sentences refresh only the independent brief after the Summary int
 test('a retry immediately invalidates the failure paragraph and the next digest omits its source', async (t) => {
   const f = fixture(t), failed = f.job(1, 'failed'); f.text = 'Synthetic build failed.';
   assert.equal((await f.pump()).homeBrief, f.text);
+  f.now += 1000;
   const retry = f.job(2, 'done').slice(9);
   const receipt = JSON.parse(fs.readFileSync(join(f.home, 'jobs', retry, 'job.json')));
   f.put(retry, 'job.json', { ...receipt, retry_of: failed.slice(9) });
   const changed = f.board();
   assert.doesNotMatch(plain(f.render(f.service.apply(changed))), /Synthetic build failed/);
-  f.now += 300000; f.text = 'Synthetic retry finished.';
+  f.now += 299500; f.text = 'Synthetic retry finished.';
   assert.equal((await f.pump(changed)).homeBrief, f.text);
   assert.ok(!f.briefs.at(-1).messages[1].content.includes(failed));
 });

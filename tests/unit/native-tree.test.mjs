@@ -75,12 +75,12 @@ for (const finished of [undefined, false]) test(`Claude real-shaped running meta
   assert.equal(f.collector.bytes, 0);
 });
 
-test('native hide rules: done 15m, failed/stopped 30m; a reveals in place and native Inspector opens transcript', (t) => {
+test('native hide rules: done 5m, failed/stopped 30m; a reveals in place and native Inspector opens transcript', (t) => {
   const f = fixture(t),
     tree = f.combined();
   const n = tree.nodes[1];
   n.status = 'completed';
-  n.statusAt = new Date(NOW - 16 * 60_000);
+  n.statusAt = new Date(NOW - 6 * 60_000);
   n.children[0].children[0].status = 'error';
   n.children[0].children[0].statusAt = new Date(NOW - 31 * 60_000);
   let frame = f.render(120, 'en', initialMonitorState(), tree);
@@ -113,8 +113,8 @@ test('native hide rules: done 15m, failed/stopped 30m; a reveals in place and na
   assert.equal(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, ctx(frame)).state.subpage, undefined);
   // Exact expiry boundaries, including stopped, use the same projector as jobs.
   for (const [state, minutes, visible] of [
-    ['done', 14, true],
-    ['done', 15, false],
+    ['done', 4, true],
+    ['done', 5, false],
     ['failed', 29, true],
     ['failed', 30, false],
     ['stopped', 29, true],
@@ -250,7 +250,9 @@ for (const mode of ['off', 'no-key', 'on'])
         nowMs: now,
       });
       const checkPaint = (board) => {
-        const ansi = renderMonitor({ tree, workboard: board, state: initialMonitorState(), width: 120, height: 28, nowMs: now }).lines.join('\n');
+        const w = board.workers[0];
+        const expanded = withState(initialMonitorState(), { home: { expanded: new Set([JSON.stringify(['worker', w.laneId, w.id])]) } });
+        const ansi = renderMonitor({ tree, workboard: board, state: expanded, width: 120, height: 28, nowMs: now }).lines.join('\n');
         for (const span of [theme.board.identifier(language === 'en' ? 'parser' : '解析器'), theme.board.identifier('report.md'),
           theme.board.success(language === 'en' ? 'accept' : '批准'), theme.board.danger(language === 'en' ? 'reject' : '拒绝'),
           theme.board.opinion(language === 'en' ? 'simpler design' : '认为更简单')]) assert.ok(ansi.includes(span));

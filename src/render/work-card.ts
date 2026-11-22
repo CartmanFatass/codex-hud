@@ -8,6 +8,8 @@ import { t } from './i18n.js';
 import { displayConfig } from './hud-config.js';
 import { mark, originalRows } from './workboard-rows.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
+import { isUnreadReport, sonicBadge, workerModelBadge } from './worker-roster.js';
+import { activeFlow } from './work-visibility.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
 export const workStateWord = (card: WorkCard) => {
@@ -18,30 +20,21 @@ export const workStateWord = (card: WorkCard) => {
       ? t('queued #{n}', { n: card.worker.queuePosition })
       : t('queued');
   }
-  return t(
-    failed(card)
-      ? 'failed'
-      : card.state === 'needs-you'
-        ? 'asking'
-        : card.state === 'in-progress'
-          ? ''
-          : card.state === 'awaiting-acceptance'
-            ? 'report ready'
-            : card.state
-  );
+  if (failed(card)) return t('failed');
+  if (card.state === 'needs-you') return t('asking');
+  if (card.state === 'stalled') return t('stalled');
+  if (card.worker.flow && activeFlow(card.worker)) return t('land');
+  return '';
 };
 export const workStateGlyph = (card: WorkCard) => {
   if (card.worker.state === 'stopped') return mark('−', '-');
   if (card.state === 'queued') return mark('◷', '~');
-  return failed(card)
-    ? mark('✗', 'x')
-    : card.state === 'needs-you'
-      ? '?'
-      : card.state === 'stalled'
-        ? mark('◷', '~')
-        : card.state === 'in-progress'
-          ? mark('◉', '@')
-          : mark('✓', '+');
+  if (failed(card)) return mark('✗', 'x');
+  if (card.state === 'needs-you') return '?';
+  if (card.state === 'stalled') return mark('◷', '~');
+  if (card.state === 'in-progress') return mark('◉', '@');
+  if (isUnreadReport(card.worker)) return mark('✓●', '+*');
+  return mark('✓', '+');
 };
 export const workStateInk = (card: WorkCard) => {
   if (card.worker.superseded || card.worker.state === 'stopped' || card.state === 'queued') return theme.board.muted;
@@ -291,53 +284,96 @@ function checkChip(checks: WorkCard['worker']['checks']): string {
     : passed === total ? [mark('✓', '+'), theme.board.success] : [mark('✗', 'x'), theme.board.danger];
   return ink(`[${glyph}${passed}/${total}]`);
 }
-function workCardName(card: WorkCard, _state: MonitorState, width: number, badge = '') {
+const cardRoleInk = (role: string) =>
+  (theme.board.roleInk as Record<string, (s: string) => string>)[role] ?? ((s: string) => s);
+export interface RenderCardOptions {
+  /** Active sonic children count folded onto this parent row as `⚡N`. */
+  sonic?: number;
+  /** Secondary workers (routine running, queued, read settled) pack into one row until Enter expands. */
+  compact?: boolean;
+}
+function workCardName(card: WorkCard, _state: MonitorState, width: number, badge = '', opts: RenderCardOptions = {}) {
   const labels = card.worker.labels;
-  // The model's outcome mark joins the state word only when it says something else (`[partial] done`, not `[done] done`).
-  const word = workStateWord(card), outcome = labels?.outcome && t(labels.outcome.value) !== word ? `[${t(labels.outcome.value)}]` : '';
-  const state = [badge, labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '', outcome, word, ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
-  const chip = checkChip(card.worker.checks), ink = workStateInk(card);
-  const right = chip ? `${chip} ${ink(state)}` : ink(state);
-  const role = monitorText(card.role),
-    x = 2 + visualLength(role) + 2;
+  const word = workStateWord(card),
+    outcomeVal = labels?.outcome?.value,
+    outcome =
+      outcomeVal &&
+      t(outcomeVal) !== word &&
+      !(outcomeVal === 'done' && !failed(card) && card.worker.settledAt !== null)
+        ? `[${t(outcomeVal)}]`
+        : '';
+  const ink = workStateInk(card);
+  const wordInk = card.worker.flow && activeFlow(card.worker) && word === t('land') ? theme.board.active : ink;
+  const stateParts = [
+    badge,
+    labels?.looping !== undefined ? ink(`${mark('⚠', '!')} ${t('looping')}`) : '',
+    outcome ? ink(outcome) : '',
+    word ? wordInk(word) : '',
+  ].filter(Boolean);
+  const chip = checkChip(card.worker.checks);
+  const sonic = sonicBadge(opts.sonic ?? 0);
+  const age = theme.board.muted(ageText(card.elapsedMinutes ?? 0));
+  const glyph = workStateGlyph(card);
+  const role = monitorText(card.role);
+  const paintedRole = card.worker.superseded ? theme.board.muted(role) : cardRoleInk(card.role)(role);
+  const prefix = `${ink(glyph)} ${paintedRole}  `;
+  const titleRaw = monitorText(
+    card.title + ((card.worker.nativeDepth ?? 0) > 2 && card.worker.parentName ? ` ↳ ${card.worker.parentName}` : '')
+  );
+  const makeRight = (lvl: '' | 'full' | 'compact' | 'min') =>
+    [lvl ? workerModelBadge(card.worker, lvl) : '', sonic, chip, ...stateParts, age].filter(Boolean).join(' ');
+  const minTitle = Math.min(visualLength(titleRaw), 26);
+  let right = makeRight('');
+  for (const lvl of ['full', 'compact', 'min', ''] as const) {
+    const cand = makeRight(lvl);
+    if (visualLength(prefix) + minTitle + 2 + visualLength(cand) <= width) {
+      right = cand;
+      break;
+    }
+  }
   return {
-    text: truncateAnsi(
-      monitorText(
-        card.title +
-          ((card.worker.nativeDepth ?? 0) > 2 && card.worker.parentName ? ` ↳ ${card.worker.parentName}` : '')
-      ),
-      Math.max(0, width - x - visualLength(right) - 2)
-    ),
-    x,
+    prefix,
+    text: truncateAnsi(titleRaw, Math.max(0, width - visualLength(prefix) - visualLength(right) - 2)),
     right,
     role,
   };
 }
 /** Rows a collapsed card's sentence may use; the sentence prompt's length limit is sized for it. */
 export const SENTENCE_ROWS = 2;
-export function renderWorkCard(card: WorkCard, state: MonitorState, width: number, sentence = '', badge = ''): readonly string[] {
+export function renderWorkCard(
+  card: WorkCard,
+  state: MonitorState,
+  width: number,
+  sentence = '',
+  badge = '',
+  opts: RenderCardOptions = {}
+): readonly string[] {
   const ink = workStateInk(card),
-    name = workCardName(card, state, width, badge);
-  const rows = [
-    theme.board.title(pair(`${ink(workStateGlyph(card))} ${name.role}  ${name.text}`, name.right, width)),
-  ];
-  // Open questions have their complete expandable slab above the lanes on Home.
-  const step = card.worker.transcriptStep;
-  const excerpt = step ? cardSentence(step.text) : '';
-  const generated = step?.replaying && excerpt ? undefined : card.worker.modelSentence;
+    name = workCardName(card, state, width, badge, opts);
   const open = cardExpanded(
     state,
     targetKey({ kind: 'worker', laneId: card.worker.laneId, workerId: card.worker.id })
   );
+  const titleLine = pair(`${name.prefix}${name.text}`, name.right, width);
+  if (opts.compact && !open) return [titleLine];
+  const rows = [theme.board.title(titleLine)];
+  // Open questions have their complete expandable slab above the lanes on Home.
+  const step = card.worker.transcriptStep;
+  const excerpt = step ? cardSentence(step.text) : '';
+  const generated = step?.replaying && excerpt ? undefined : card.worker.modelSentence;
   if (card.worker.flow) rows.push(flowLine(card.worker.flow, width, ink));
   const bodyMax = open ? Infinity : card.worker.flow ? SENTENCE_ROWS - 1 : SENTENCE_ROWS;
-  // Collapsed: the sentence on at most two rows (the prompt keeps it that short). Open: everything.
+  // Collapsed prominent cards show only actual content (flow, error, unread summary), never empty placeholder pipes.
   if (generated) {
     const lines = jobSentenceRows(generated, width, ink, true);
-    rows.push(...(open || lines.length <= bodyMax ? lines : [
-      ...lines.slice(0, bodyMax - 1),
-      fit(truncateAnsi(lines[bodyMax - 1].trimEnd(), width - 1) + '…', width),
-    ]));
+    rows.push(
+      ...(open || lines.length <= bodyMax
+        ? lines
+        : [
+            ...lines.slice(0, bodyMax - 1),
+            fit(truncateAnsi(lines[bodyMax - 1].trimEnd(), width - 1) + '…', width),
+          ])
+    );
   }
   // A localized worker summary replaces its original, rather than adding a second result line.
   if (!generated && excerpt) {
@@ -346,8 +382,5 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
     const detail = workCardDetail(card, sentence);
     if (detail) rows.push(...stemLines(detail, width, ink, bodyMax));
   }
-  // A collapsed card keeps a fixed height, so a sentence arriving or growing does not move the cards below it.
-  if (!open && rows.length === 1) rows.push(fit(`${ink(mark('┃', '|'))} ${theme.board.muted('…')}`, width));
-  while (!open && rows.length < 1 + SENTENCE_ROWS) rows.push(fit(ink(mark('┃', '|')), width));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

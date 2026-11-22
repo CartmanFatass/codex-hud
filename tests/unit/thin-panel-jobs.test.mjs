@@ -96,7 +96,7 @@ function fixture(t) {
   const stalled = job(2, 'TEST-CUT', 'review card renderer', 'working', 14);
   put(join(stalled, 'report.md'), 'Comparing card widths and checking all remaining tests', 14);
   job(3, 'TEST-CUT', 'list the slowest tests', 'failed', 9, 9);
-  const ready = job(4, 'TEST-CUT', 'check the cut list', 'idle_grace', 20, 5);
+  const ready = job(4, 'TEST-CUT', 'check the cut list', 'idle_grace', 20, 4);
   put(join(ready, 'report.md'), 'Accepts the cuts; all tests pass', 2);
   job(5, 'PANEL-THIN', 'width flag', 'working', 1, null, 'w4E:p1', { harness: 'codex' });
   job(6, 'TEST-CUT', 'Folded old success', 'closed', 15, 15);
@@ -150,7 +150,7 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes and ten-min
     for (const hidden of [asked, chosen.slice(3), instead]) assert.ok(!text.includes(hidden));
     assert.ok(!text.includes('Folded old success'));
     assert.ok(!text.includes('WRONG-PANE'));
-    for (const title of ['thin job cards', 'review card renderer', 'list the slowest', 'check the cut', 'width flag']) {
+    for (const title of ['review card renderer', 'list the slowest', 'check the cut', 'width flag']) {
       const band = plain(frame).find((l) => l.includes(title));
       assert.match(band, lang === 'en' ? /\d+m\s*$/ : /\d+分\s*$/);
     }
@@ -171,7 +171,7 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes and ten-min
   assert.ok(sent[0].message.includes(question));
   assert.deepEqual(notifier.update({}, now + 2, changed), []);
 });
-test('Home frame places a sonic card under its parent in the parent lane', async (t) => {
+test('Home frame folds a running sonic child into ⚡1 on its parent row with no sonic row or card', async (t) => {
   const f = fixture(t);
   f.job(8, 'SONIC-PRIVATE-LABEL', 'Inspect synthetic fixtures', 'working', 0, null, 'w4E:p1', {
     role: 'sonic', parent_job: 'j0000000000000005', created_at: new Date(now - 2000).toISOString(),
@@ -180,15 +180,14 @@ test('Home frame places a sonic card under its parent in the parent lane', async
   const board = f.pipeline.workboard(f.tree);
   const frame = f.render(board, 45);
   const lines = plain(frame);
-  const parent = lines.findIndex((line) => line.includes('width flag'));
-  const child = lines.findIndex((line) => line.includes('Inspect synthetic'));
-  assert.ok(parent >= 0 && child > parent);
-  assert.match(lines[child], /^ {2}\S/);
+  const parent = lines.find((line) => line.includes('width flag'));
+  assert.ok(parent && parent.includes('⚡1'), lines.join('\n'));
+  assert.ok(!lines.some((line) => line.includes('Inspect synthetic')));
   assert.ok(!lines.some((line) => line.includes('SONIC-PRIVATE-LABEL')));
   assert.ok(lines.every((line) => visualLength(line) === 56));
 });
 
-test('Home shows questions and lanes with cards; Enter reveals the whole question', async (t) => {
+test('Home shows questions and lanes with cards without duplicating asking cards; Enter reveals the whole question', async (t) => {
   const f = fixture(t);
   f.put(
     join(f.askDir, 'qa/q3.md'),
@@ -209,7 +208,8 @@ test('Home shows questions and lanes with cards; Enter reveals the whole questio
     const lane = home.findIndex((l) => l.startsWith('PANEL-THIN  '));
     assert.ok(at < lane);
     assert.doesNotMatch(home.join('\n'), /Decided for you|PANEL-THIN · imp q[12]/);
-    assert.match(home[lane + 1], /thin job cards/);
+    assert.doesNotMatch(home[lane + 1], /thin job cards/, 'asking job stays in its slab above, never duplicated in the lane');
+    assert.match(home[lane + 1], /width flag/);
     assert.match(home[0], /^ Home \?1\s+Project\s+Control\s*$/);
     assert.doesNotMatch(home.join('\n'), /asked|instead of/);
   }
@@ -274,8 +274,8 @@ test('Home Enter toggles cards and lanes; navigation opens Project; a reveals ol
   assert.doesNotMatch(text(press(press(card, '\r'), '\r')), /cannot be finished/);
   const lane = at({ kind: 'lane', laneId: w.laneId }),
     folded = press(lane, '\r');
-  assert.doesNotMatch(text(folded), /thin job cards/);
-  assert.match(text(press(folded, '\r')), /thin job cards/);
+  assert.doesNotMatch(text(folded), /width flag/);
+  assert.match(text(press(folded, '\r')), /width flag/);
   const before = rendered(card).state;
   for (const [key, tab] of [['\x1b[D', 'control'], ['\x1b[C', 'project'], ['\t', 'project'], ['\x1b[Z', 'control']]) {
     assert.equal(press(before, key).activeTab, tab);
@@ -306,7 +306,7 @@ test('an answered question is still collected after the finished job hides', asy
   assert.ok(frame.workboard.snapshot.decisions.some((d) => d.question === 'Keep this choice?'));
   assert.doesNotMatch(plain(frame).join('\n'), /TEST-CUT · imp q1|Keep this choice/);
 });
-test('a lane row ends in one glyph per job, oldest first, then the role of the newest running or asking one', async (t) => {
+test('a lane row ends in one state glyph per non-child job, oldest first, without sonic or redundant role words', async (t) => {
   const f = fixture(t);
   const dispatch = (n, pkg, state, started, settled) => {
     const id = `j${String(n).padStart(16, '0')}`,
@@ -333,16 +333,16 @@ test('a lane row ends in one glyph per job, oldest first, then the role of the n
     for (const line of lines) assert.equal(visualLength(line), width, line);
     return lines.find((l) => l.startsWith(label + ' '));
   };
-  assert.match(row('STRIP'), /^STRIP  build\s+− ✓ ◉ imp$/);
-  assert.match(row('PANEL-THIN'), /\s\? ◉ imp$/, 'asking, then running: the newest of the two names the role');
-  assert.match(row('BAD'), /^BAD .*\s✗$/, 'no role when nothing runs or asks');
-  assert.match(row('MANY', 24), /^MANY  done\s+\+7 ✓ ✓ ✓ ✓ ✓$/, 'the newest keep their glyphs');
+  assert.match(row('STRIP'), /^STRIP\s+− ✓ ◉$/);
+  assert.match(row('PANEL-THIN'), /^PANEL-THIN\s+◉$/);
+  assert.match(row('BAD'), /^BAD  failed\s+✗$/);
+  assert.match(row('MANY', 24), /^MANY\s+\+\d+ (✓ )+✓$/, 'the newest keep their glyphs');
   const home = plain(f.render(board));
-  const next = home[home.findIndex((l) => l.startsWith('STRIP  build')) + 1];
+  const next = home[home.findIndex((l) => /^STRIP\s+/.test(l)) + 1];
   assert.match(next, /^\S imp  STRIP job/, 'cards follow the row');
   setDisplayConfig({ theme: 'none', icons: 'text', glyphs: 'text' });
-  assert.match(row('STRIP'), /^STRIP  build\s+- \+ @ imp$/);
-  assert.match(row('BAD'), /^BAD .*\s+x$/);
+  assert.match(row('STRIP'), /^STRIP\s+- \+ @$/);
+  assert.match(row('BAD'), /^BAD  failed\s+x$/);
 });
 test('Home → thin-job Inspector → Changes preserves summary mouse controls with the production sidecar', async (t) => {
   const f = fixture(t);

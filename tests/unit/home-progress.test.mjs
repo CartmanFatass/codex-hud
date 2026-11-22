@@ -25,8 +25,8 @@ const ctx = (frame) => ({ tree: TREE, frame, nowMs: NOW, standalone: true });
 const press = (frame, key) => handleMonitorInput(frame.state, { type: 'key', key }, ctx(frame));
 // The progress block only: Home's top line and its waiting/latest lists share the `home-progress:` prefix.
 const compact = (frame) => frame.workboard.rows.filter((r) => /^home-progress:(progress|tickets:)/.test(r.item ?? ''));
-// Rows above the spare ones: the cards, with the top line (two rows) STATE's waiting items add.
-const rowsAbove = (f, width, lang, state, extras) => f.render(width, lang, 100, state, null, extras).workboard.rows.length + 2;
+// Rows above the spare ones: the top summary row and cards.
+const rowsAbove = (f, width, lang, state, extras) => f.render(width, lang, 100, state, null, extras).workboard.rows.length;
 test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary, then the block goes before any card', async (t) => {
   const f = await fixture(t);
   assert.deepEqual(homeFrames(f), expected);
@@ -122,7 +122,7 @@ test('expanded questions/cards and notices claim space before progress; missing 
     assert.equal(compact(short).length, 0);
     assert.deepEqual(short.workboard.rows.slice(0, base), baseline.workboard.rows, 'only the waiting list may use the two spare rows');
     assert.deepEqual(plain(short).slice(1, base + 1), plain(baseline).slice(1, base + 1));
-    const minimal = f.render(width, lang, base + 5, structuredClone(state), f.data, extras);
+    const minimal = f.render(width, lang, base + 6, structuredClone(state), f.data, extras);
     assert.equal(compact(minimal).length, 3);
     assert.equal(compact(f.render(width, lang, 100, undefined, null)).length, 0);
     const missing = f.render(width, lang, 100, undefined, { ...f.data, ladder: { ids: [] } });

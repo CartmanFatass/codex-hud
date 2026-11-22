@@ -57,19 +57,19 @@ test('Split frames at 40 columns, English and Chinese: Home busy, idle and short
   }
 });
 
-test('Home: the list has a row per lane and block, a question and a failure keep a reason row, and the cursor starts on the first row that needs the owner', async (t) => {
+test('Home: the list has a top summary strip, one row per lane and block, a question and a failure keep a reason row, and the cursor starts on the first row that needs the owner', async (t) => {
   const { busy, idle } = await fixtures(t);
   const d = driver(busy), lines = d.lines();
-  // Needs first (asking, the failure), then what runs, then Waiting and Progress; the preview is the cursor lane's slab and cards.
-  // AUTH-REFRESH's phase does not fit its row beside the role and the age, so it takes a row of its own, not a cut.
-  assert.deepEqual(lines.slice(2, 12).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '  reviewing · ', '◉ this session', '? Waiting for ', '◐ Progress    ']);
+  // Summary strip, then needs (asking, the failure), then what runs (never wrapping mid onto a second row), then Waiting and Progress.
+  assert.match(lines[2], /^\? 3 waiting/);
+  assert.deepEqual(lines.slice(3, 12).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '◉ this session', '? Waiting for ', '◐ Progress    ']);
   assert.match(lines[9], /^◉ this session +subagents +1 running$/);
   assert.match(plain(busy.render(40, 'zh')).join('\n'), /^◉ 本次会话 +子代理 +1 运行中$/m);
   assert.match(rule(d), /^NATIVE-TREE ─+ imp · 2 jobs$/);
-  assert.equal(d.state.home.split.listCursor, d.frame.workboard.rows[0].item);
+  assert.equal(d.state.home.split.listCursor, d.frame.workboard.rows[1].item);
   // Idle: nothing runs, the first row that needs the owner is Waiting for you, whose preview lists the items and the latest slices.
   const calm = driver(idle), quiet = calm.lines();
-  assert.match(quiet[2], /^\? Waiting for you +2 asks · 1 to try$/);
+  assert.ok(quiet.some((l) => /^\? Waiting for you +2 asks · 1 to try$/.test(l)), quiet.join('\n'));
   assert.match(rule(calm), /^Waiting for you ─+ 2 asks · 1 to try$/);
   assert.ok(quiet.some((l) => /^To try ─+ 1$/.test(l)) && quiet.some((l) => /◇ LANDING/.test(l)));
 });
@@ -133,12 +133,12 @@ test('Home mouse: a click selects the row, a second click is Enter; a click on a
   assert.equal(splitOf(d.state).focus, 'preview', 'the second click is Enter');
   d.run('escape');
   d.run({ type: 'mouse', x: 4, y: row('? NATIVE-TREE'), button: 'left' });
-  const preview = d.pane('preview'), card = preview.y + preview.rows.findIndex((r) => stripAnsi(r.text).startsWith('✓ reviewer'));
+  const preview = d.pane('preview'), card = preview.y + preview.rows.findIndex((r) => /^✓●? reviewer/.test(stripAnsi(r.text)));
   d.run({ type: 'mouse', x: 4, y: card, button: 'left' });
   assert.equal(splitOf(d.state).focus, 'preview');
   assert.match(splitOf(d.state).previewCursor, /worker/);
   // The list gave its rows to the preview (it is compact there), so the card is higher now: a second click lands on it.
-  const moved = d.pane('preview'), again = moved.y + moved.rows.findIndex((r) => stripAnsi(r.text).startsWith('✓ reviewer'));
+  const moved = d.pane('preview'), again = moved.y + moved.rows.findIndex((r) => /^✓●? reviewer/.test(stripAnsi(r.text)));
   assert.ok(again < card);
   d.run({ type: 'mouse', x: 4, y: again, button: 'left' });
   assert.ok(d.state.home.toggled?.has(splitOf(d.state).previewCursor), 'a second click toggles it, as Enter does (the newest result starts open)');

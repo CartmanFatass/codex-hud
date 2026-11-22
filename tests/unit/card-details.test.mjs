@@ -24,7 +24,7 @@ function enter(f, frame, worker) {
   return handleMonitorInput(withState(frame.state, { home: { cursor: { kind: 'work', target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } } } }),
     { type: 'key', key: 'enter' }, { frame, tree: f.tree, nowMs: NOW }).state;
 }
-test('Home opens only the newest current result by itself; running cards stay two rows; owner choices survive', (t) => {
+test('Home opens only the newest current result by itself; routine running cards pack to one row; owner choices survive', (t) => {
   const f = fixture(t), [job, native] = f.board.workers;
   assert.match(job.id, /^thin-job:/);
   assert.equal(native.nativeDepth, 1);
@@ -40,7 +40,7 @@ test('Home opens only the newest current result by itself; running cards stay tw
   assert.ok(running.length >= 2);
   for (const w of running) {
     assert.ok(!cardExpanded(frame.state, key(w)), w.id);
-    assert.equal(rows(w).length, 3, `${w.id}: a collapsed card is its title plus two sentence rows`);
+    assert.equal(rows(w).length, 1, `${w.id}: a routine running card packs into one dense row until expanded`);
   }
   const newest = f.board.workers.find((w) => key(w) === frame.state.home.newestCard);
   assert.ok(newest && newest.settledAt !== null, 'the newest result opens');

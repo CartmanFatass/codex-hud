@@ -10,7 +10,7 @@ export type CardTimes = Pick<MonitorState['prefs'], 'cardFoldMinutes' | 'cardHid
 /** Fold and hide times in ms; a hide time before the fold time is the fold time. */
 function cardTimes(times?: CardTimes) {
   const fold = (times?.cardFoldMinutes ?? 5) * 60000;
-  return { fold, hide: Math.max(fold, (times?.cardHideMinutes ?? 15) * 60000) };
+  return { fold, hide: Math.max(fold, (times?.cardHideMinutes ?? 5) * 60000) };
 }
 const settledTime = (w: OwnerWorker) => Math.max(w.settledAt ?? 0, w.flow?.updatedAt ?? 0);
 /** A settled card past its fold time, not asking the owner: one row until Enter opens it. */

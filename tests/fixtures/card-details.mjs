@@ -32,12 +32,15 @@ export function cardFixture(home) {
   };
   return { ...f, tree, board, render };
 }
+import { targetKey } from '../../dist/collectors/workboard-types.js';
 export function colourFrame(f, width, lang) {
   const sentences = lang === 'zh'
     ? ['正在检查report.md和src/tree-page.ts。', '评审«+批准»变更。', '评审«-拒绝»变更。', '评审«!认为更简单»。', '正在检查«解析器»。']
     : ['Checking report.md and src/tree-page.ts.', 'Review «+approves» the change.', 'Review «-rejects» the change.', 'Review «!recommends simplicity».', 'Checking «parser» boundaries.'];
   f.board.workers.forEach((w, i) => { w.modelSentence = sentences[i % sentences.length]; });
-  return f.render(initialMonitorState(), width, lang);
+  const state = initialMonitorState();
+  state.home.expanded = new Set(f.board.workers.map((w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id })));
+  return f.render(state, width, lang);
 }
 export const colourFrames = (f) => Object.fromEntries([80, 120].flatMap((width) => ['en', 'zh'].map((lang) =>
   [`${lang}-${width}`, colourFrame(f, width, lang).lines.map(stripAnsi)])));

@@ -484,16 +484,31 @@ interface BoardSpec {
 /** The ink on the question's header, dark on every theme; `boardCursor` strips it again on a selected row. */
 const ASK_INK = '#19150d';
 
+const LIGHT_PROVIDERS: Record<number, Paint> = {
+  79: rgb('#087a5d'),
+  173: rgb('#a84329'),
+  111: rgb('#1648c0'),
+  69: rgb('#2c4fb5'),
+  208: rgb('#963a04'),
+  245: rgb('#555870'),
+  110: rgb('#1648c0'),
+  160: rgb('#b30d30'),
+  141: rgb('#6556ae'),
+};
+
 function makeBoard(s: BoardSpec, roleInk: RoleInk) {
   const face = (hex: string) => surface(hex, s.text);
   // A failed card (the danger) and a question's body (the ask colour): the body turned toward the ink. On a dark
   // ground that is a dark shade of the ink, which keeps its hue; on a light one a pastel mixed into the body.
   const tint = (ink: string, k: number) => face(s.light ? mix(s.body, ink, k) : shade(ink, 0.17));
+  const muted = rgb(s.muted);
+  const providerInk = (color?: number): Paint =>
+    color === undefined ? identity : s.light ? (LIGHT_PROVIDERS[color] ?? muted) : ansi256(color);
   return {
     text: s.text ? highlight(`38;2;${sgr(s.text)}`) : identity,
     attention: rgb(s.attention), danger: rgb(s.danger), success: rgb(s.success), active: rgb(s.accent),
-    muted: rgb(s.muted), frame: rgb(s.frame), stalled: rgb(s.stalled), identifier: rgb(s.identifier),
-    opinion: rgb(s.info), roleInk,
+    muted, frame: rgb(s.frame), stalled: rgb(s.stalled), identifier: rgb(s.identifier),
+    opinion: rgb(s.info), roleInk, providerInk,
     selected: face(s.selected), title: face(s.title), body: face(s.body),
     failedBody: tint(s.danger, 0.12), slab: tint(s.ask, 0.3), askTitle: surface(s.ask, ASK_INK),
   };
@@ -535,6 +550,7 @@ const BOARD_SPECS: Record<Exclude<ThemeName, 'none'>, BoardSpec> = {
 const BOARD_NONE = {
   ...Object.fromEntries(Object.keys(makeBoard(BOARD_SPECS.terminal, NONE.roleInk)).map((key) => [key, identity])),
   roleInk: NONE.roleInk,
+  providerInk: () => identity,
 } as Board;
 const BOARDS = Object.fromEntries(
   THEMES.map((name) => [name, name === 'none' ? BOARD_NONE : makeBoard(BOARD_SPECS[name], PALETTES[name].roleInk)])

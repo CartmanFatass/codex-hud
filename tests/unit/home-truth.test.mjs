@@ -24,13 +24,13 @@ const legend = (lines) => lines[lines.findIndex(l => /^  [█▒░]/.test(l)) +
 
 test('Home top line counts STATE waiting items with job questions, ✓ only when both are zero, and opens the hub\'s Waiting block', async (t) => {
   const f = await fixture(t);
-  assert.equal(plain(f.quiet(38, 'en', 46))[2], '? 2 waiting for you · 0 running');
-  assert.equal(plain(f.quiet(38, 'zh', 46))[2], '? 2 项等你处理 · 0 运行中');
-  assert.equal(plain(f.quiet(38, 'en', 46, undefined, { ...f.data, waiting: [] }))[2], '✓ Nothing needs you · 0 running');
+  assert.match(plain(f.quiet(38, 'en', 46))[1], /^\? 2 waiting for you +0 running$/);
+  assert.match(plain(f.quiet(38, 'zh', 46))[1], /^\? 2 项等你处理 +0 运行中$/);
+  assert.match(plain(f.quiet(38, 'en', 46, undefined, { ...f.data, waiting: [] }))[1], /^✓ Nothing needs you +0 running$/);
   // One job question and two STATE items are three things waiting; the question's card stays under the line.
   const busy = plain(f.render(38, 'en', 46));
-  assert.equal(busy[2], '? 3 waiting for you · 3 running');
-  assert.match(busy[4], /^\? imp · NATIVE-TREE/);
+  assert.match(busy[1], /^\? 3 waiting/);
+  assert.match(busy[3], /^\? imp · NATIVE-TREE/);
   // A done-today count of 0 is not shown.
   assert.doesNotMatch(plain(f.quiet(38, 'en', 46)).at(-1), /done today/);
   assert.doesNotMatch(plain(f.quiet(38, 'zh', 46)).at(-1), /今日完成/);
@@ -116,8 +116,8 @@ test('an idle Home at 38×46 shows waiting items and the newest landed slices ab
 });
 
 test('cards keep their rows, then the progress block, before Home\'s waiting and latest rows', async (t) => {
-  const f = await fixture(t), base = f.render(38, 'en', 100, undefined, null).workboard.rows.length + 2;
-  // The cards, with the top line above them (two rows) and nothing spare.
+  const f = await fixture(t), base = f.render(38, 'en', 100, undefined, null).workboard.rows.length;
+  // The cards, with the top line above them and nothing spare.
   const cards = f.render(38, 'en', base + 2);
   assert.equal(cards.workboard.rows.length, base);
   for (let spare = 40; spare >= 0; spare--) {
@@ -126,9 +126,9 @@ test('cards keep their rows, then the progress block, before Home\'s waiting and
     assert.deepEqual(plain(frame).slice(1, base + 1), plain(cards).slice(1, base + 1), 'no card row cut or displaced');
     const summary = lines.some((l) => /^  Synthetic milestone/.test(l)), bar = lines.some((l) => /^  [█▒░]/.test(l));
     if (summary) assert.ok(bar, `spare ${spare}: the summary never outlives the bar`);
-    if (spare === 3) assert.ok(bar && summary, 'the cards end in a blank, leaving room for both the bar and the summary');
-    // Below three spare rows the progress block cannot fit. Otherwise the lists only use what it leaves.
-    if (spare >= 3 && lines.some((l) => /^(Waiting for you|Latest) ─/.test(l))) assert.ok(lines.some((l) => /^  Tickets [━─]/.test(l)), `spare ${spare}`);
+    if (spare === 4) assert.ok(bar && summary, 'the progress block adds a blank separator above the bar and summary');
+    // Below four spare rows (blank + header + bar + summary) the progress block cannot fit. Otherwise the lists only use what it leaves.
+    if (spare >= 4 && lines.some((l) => /^(Waiting for you|Latest) ─/.test(l))) assert.ok(lines.some((l) => /^  Tickets [━─]/.test(l)), `spare ${spare}`);
   }
   const roomy = plain(f.render(38, 'en', base + 2 + 40));
   assert.ok(roomy.some((l) => /^Waiting for you ─/.test(l)) && roomy.some((l) => /^Latest ─/.test(l)), 'with room, both lists come');

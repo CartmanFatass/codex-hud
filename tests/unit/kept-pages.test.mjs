@@ -36,7 +36,7 @@ test("frames: all seven kept pages in Home's kit", (t) => {
       text = plainFrame(frame).join('\n');
     if (page === 'older') {
       assert.match(text, /3 older shown · a hide/);
-      assert.match(text, /✓ imp  Add the retry helper\s+done 1h12m/);
+      assert.match(text, /✓●? imp  Add the retry helper\s+.*1h12m/);
     }
     if (page === 'home') {
       assert.match(text, /\+3 older · a/);
@@ -94,12 +94,14 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
           assert.equal(visualLength(line), width, `${page} ${lang} ${width}: ${stripAnsi(line)}`);
       }
 });
-test('short Chinese minutes give the Home card title two more cells at 40 columns', (t) => {
+test('short Chinese minutes keep the Home ask slab and card rows clean at 38 and 40 columns', (t) => {
   const f = fixture(t);
-  const titleRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.includes('Dedupe'));
-  // At 38 columns the title has the same room it used to have with the two-cell-longer unit.
-  assert.match(titleRow(38), /Dedupe the sync qu…\s+提问中 4分$/);
-  assert.match(titleRow(40), /Dedupe the sync queue\s+提问中 4分$/);
+  const askRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.startsWith('? imp · R5-UX'));
+  assert.match(askRow(38), /提问中 4分$/);
+  assert.match(askRow(40), /提问中 4分$/);
+  const cardRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.includes('Retry on HTTP'));
+  assert.match(cardRow(38), /47分$/);
+  assert.match(cardRow(40), /47分$/);
 });
 
 test('the Inspector and expanded running cards show exactly one localized milestone in Classic and Split', (t) => {

@@ -418,4 +418,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   after: '后置',
   cleanup: '清理',
   'scout failed': '侦察失败',
+  Clear: '无待办',
+  '{n} failed': '{n} 失败',
+  '{n} unread': '{n} 未读报告',
+  '{n} job': '{n} 个任务',
+  land: '落地',
 };

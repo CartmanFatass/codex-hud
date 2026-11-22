@@ -65,7 +65,7 @@ export const DEFAULT_ROLE_CAPS: Readonly<Record<string, number>> = Object.freeze
 /** Display defaults shared by settings and the pure panel initializer. */
 export const DEFAULT_PANEL_VIEW = {
   panelLayout: 'classic', projectLayout: 'timeline', acceptance: 'task', experiments: false,
-  cardStallMinutes: 10, cardFoldMinutes: 5, cardHideMinutes: 15,
+  cardStallMinutes: 10, cardFoldMinutes: 5, cardHideMinutes: 5,
 } as const;
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
