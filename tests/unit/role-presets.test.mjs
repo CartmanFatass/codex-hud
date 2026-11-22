@@ -41,15 +41,15 @@ test('presets validate names, duplicates and every run like the role run', (t) =
 test('presets merge shipped, owner, registered project by name; omission inherits', (t) => {
   const f = fixture(t);
   f.put(f.file, f.own);
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'hydrogen']);
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'hydrogen', 'astra']);
   const override = { name: 'hydrogen', run: [{ ...pi, model: 'owner/model' }] };
   f.put(f.file, { ...f.own, presets: [override, { name: 'mine._-1', run: [pi] }] });
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'hydrogen', 'mine._-1']);
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'hydrogen', 'astra', 'mine._-1']);
   assert.deepEqual(f.role().presets[1], override);
   f.put(join(f.hud, 'projects.json'), { version: 1, projects: [{ root: fs.realpathSync(f.cwd), registered_at: '2026-11-17T00:00:00Z' }] });
   f.put(join(f.cwd, '.hud/roles/imp.json'), { ...f.own, presets: [{ name: 'hydrogen', run: [{ ...pi, model: 'project/model' }] }] });
   assert.equal(f.role().presets[1].run[0].model, 'project/model');
-  assert.equal(f.role().presets.length, 3);
+  assert.equal(f.role().presets.length, 4);
   const before = fs.readFileSync(f.file, 'utf8');
   assert.deepEqual(editPlaces(f.hud, f.cwd, { PATH: '' }, { role: 'imp', index: 0, op: 'preset' }), { ok: false, message: 'the project file is in force: o opens it' });
   assert.equal(fs.readFileSync(f.file, 'utf8'), before);
@@ -126,7 +126,7 @@ test('rename and delete inherited presets persist on the actual owner path; proj
   assert.equal(edit(f, { op: 'rename', name: 'local' }).message, 'preset name already exists');
   assert.equal(edit(f, { op: 'rename', name: 'night._-1' }).ok, true);
   assert.equal(f.role().preset, 'night._-1');
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'local', 'night._-1']);
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['default', 'astra', 'local', 'night._-1']);
   assert.deepEqual(stored(owner).presets[0], local);
   assert.deepEqual(stored(owner).hidden_presets, ['hydrogen']);
   assert.deepEqual(stored(owner).run, f.own.run);
@@ -135,7 +135,7 @@ test('rename and delete inherited presets persist on the actual owner path; proj
   assert.equal(edit(f, { op: 'select', name: 'default' }).ok, true);
   assert.equal(edit(f, { op: 'delete' }).ok, true);
   const after = f.role();
-  assert.deepEqual([after.preset, after.run, after.presets.map((p) => p.name)], [null, f.own.run, ['local', 'night._-1']]);
+  assert.deepEqual([after.preset, after.run, after.presets.map((p) => p.name)], [null, f.own.run, ['astra', 'local', 'night._-1']]);
   assert.deepEqual(stored(owner).hidden_presets, ['hydrogen', 'default']);
   assert.equal(fs.readFileSync(shipped, 'utf8'), shippedBefore);
   assert.equal(edit(f, { op: 'select', name: 'night._-1' }).ok, true);
@@ -145,14 +145,15 @@ test('rename and delete inherited presets persist on the actual owner path; proj
   f.put(join(f.hud, 'projects.json'), { version: 1, projects: [{ root: fs.realpathSync(f.cwd) }] });
   const project = join(f.cwd, '.hud/roles/imp.json'), run = [{ ...pi, model: 'synthetic/project' }];
   f.put(project, { ...f.own, run, presets: [{ name: 'hydrogen', run }] });
-  assert.deepEqual(f.role().presets.map((p) => p.name), ['local', 'hydrogen']);
+  assert.deepEqual(f.role().presets.map((p) => p.name), ['astra', 'local', 'hydrogen']);
   assert.deepEqual([f.role().preset, f.role().run], ['hydrogen', run], 'the project infers its own selector, not the owner null');
   assert.equal(edit(f, { op: 'select', name: null }).message, 'the project file is in force: o opens it');
 });
 
 test('cycling one already active preset does not rewrite the role file', (t) => {
   const f = fixture(t), chain = [{ ...pi, model: 'synthetic/one' }];
-  f.put(f.file, { ...f.own, run: chain, hidden_presets: ['default', 'hydrogen'], presets: [{ name: 'one', run: chain }] });
+  const hidden_presets = f.role().presets.map((p) => p.name);
+  f.put(f.file, { ...f.own, run: chain, hidden_presets, presets: [{ name: 'one', run: chain }] });
   const text = fs.readFileSync(f.file, 'utf8'), inode = fs.statSync(f.file).ino;
   for (const step of [1, -1]) assert.deepEqual(editPlaces(f.hud, f.cwd, { PATH: '' }, { role: 'imp', index: 0, op: 'preset', step }), { ok: true, index: 0 });
   assert.equal(fs.readFileSync(f.file, 'utf8'), text);

@@ -127,7 +127,7 @@ test('live picker paints immediately, types without discovery and can restore th
   f.put(join(f.hud, 'hud-settings.json'), { language: 'en', modelEnabled: false, theme: 'none', prefs: { panelLayout: 'classic' } });
   const exhausted = { harness: 'pi', pi_role: 'implementer', model: 'synthetic/exhausted' };
   markExhausted(f.hud, placeKey(exhausted), 'quota exceeded', Date.now());
-  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen'], run: [
+  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen', 'astra'], run: [
     exhausted, { harness: 'pi', pi_role: 'implementer', model: 'synthetic/current' },
   ] });
   f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: ['synthetic/current', 'synthetic/next'], cli: { agy: [], grok: [] } });

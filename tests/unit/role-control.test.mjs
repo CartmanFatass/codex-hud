@@ -278,7 +278,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
   assert.match(s.text(), /imp \[hydrogen\]/);
   markExhausted(s.hud, placeKey(s.assignment('imp').runs_on), 'quota exceeded', NOW);
   await s.press('c');
-  assert.equal(s.assignment('imp').preset, 'default');
+  assert.equal(s.assignment('imp').preset, 'astra');
   await s.press('C');
   assert.match(s.text(), /− imp \[hydrogen\] → none/);
   assert.equal(s.assignment('imp').exhausted.length, 1);

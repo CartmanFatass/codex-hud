@@ -152,7 +152,7 @@ test('provider evidence comes only from Control places; match quality prefers st
 
 test('resolved bare pi models open and rank their provider; ambiguous bare models do not', async (t) => {
   const f = await fixture(t);
-  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen'],
+  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen', 'astra'],
     run: ['gpt-current', 'arena/gpt-other', 'shared'].map((model) => ({ harness: 'pi', pi_role: 'implementer', model })) });
   f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW,
     pi: ['openai/gpt-current', 'openai/gpt-next', 'arena/gpt-other', 'anthropic/shared', 'mistral/shared'] });
@@ -285,7 +285,7 @@ test('wheel, arrows and page keys keep the cursor in the painted list at both wi
 
 test('the picker uses real collected preset chains, and locked and Flow places stay out of the model field', async (t) => {
   const f = await fixture(t), pi = (model) => ({ harness: 'pi', pi_role: 'implementer', model });
-  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, active_preset: 'daily', hidden_presets: ['default', 'grok', 'hydrogen'], run: [pi('xai/current')], presets: [
+  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, active_preset: 'daily', hidden_presets: ['default', 'grok', 'hydrogen', 'astra'], run: [pi('xai/current')], presets: [
     { name: 'daily', run: [pi('xai/current'), { harness: 'cli', agent: 'agy' }] },
     { name: 'backup', run: [pi('openai/backup')] },
     { name: 'shared', run: [pi('openai/backup')] },
