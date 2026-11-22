@@ -110,6 +110,22 @@ export function sonicBadge(count: number): string {
   return count > 0 ? theme.board.roleInk.sonic(`${mark('⚡', '*')}${count}`) : '';
 }
 
+/** Headless: the job has no herdr tab (the record says so, or its route chose it). */
+export const isHeadless = (w: OwnerWorker): boolean => w.headless === true || w.route?.mode === 'headless';
+
+/** The tier mark: a bar that grows with the tier, `[unicode, ascii]`. */
+const TIER_MARKS = { light: ['▂', '-'], standard: ['▄', '='], hard: ['▆', '#'] } as const;
+/**
+ * A job's route as marks (auto-route/04): `▂` light, `▄` standard or `▆` hard when the job was routed, then `∅` when it runs
+ * headless. A job with neither has none, and the marks are muted like every secondary fact; the words and the reason are the
+ * Inspector's Route row.
+ */
+export function routeBadge(w: OwnerWorker): string {
+  const tier = w.route ? TIER_MARKS[w.route.tier] : undefined;
+  const marks = (tier ? mark(tier[0], tier[1]) : '') + (isHeadless(w) ? mark('∅', 'h') : '');
+  return marks ? theme.board.muted(marks) : '';
+}
+
 export type RosterRung = 'full' | 'no-model' | 'provider' | 'compact';
 
 function isRosterEligible(w: OwnerWorker, now: number): boolean {

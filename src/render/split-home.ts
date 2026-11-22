@@ -13,7 +13,7 @@ import { homeKeys } from './job-actions.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
 import { foldText, roleMark } from './work-jobs.js';
 import { activeFlow, unattendedFailure } from './work-visibility.js';
-import { isUnreadReport, laneSonicRunning, mainLaneWorkers, sonicBadge, workerModelBadge } from './worker-roster.js';
+import { isUnreadReport, laneSonicRunning, mainLaneWorkers, routeBadge, sonicBadge, workerModelBadge } from './worker-roster.js';
 import type { WorkCard } from '../collectors/work-card.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
@@ -111,7 +111,7 @@ export function homeScene(
     const makeRight = (lvl: '' | 'full' | 'compact' | 'min') =>
       native
         ? stateOrRole
-        : [roleMark(card.role), lvl ? workerModelBadge(top, lvl) : '', sonicStr, stateOrRole].filter(Boolean).join(' ');
+        : [roleMark(card.role), lvl ? workerModelBadge(top, lvl) : '', routeBadge(top), sonicStr, stateOrRole].filter(Boolean).join(' ');
 
     const labelCol = Math.max(4, col - (visualLength(glyph) - 1));
     const suffix = !native && names[i].match(/[-/#]\d+$/)?.[0];

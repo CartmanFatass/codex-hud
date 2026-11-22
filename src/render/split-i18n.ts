@@ -17,7 +17,7 @@ export const SPLIT_ZH: Record<string, string> = {
   'failed job: request a retry': '失败的任务：请求重试', 'to-try rows: request landing': '待试用行：请求合入',
   'm request land': 'm 请求合入', 'r request retry': 'r 请求重试',
   'Land requested': '已请求合入', 'Retry requested': '已请求重试', 'Could not record request': '无法记录请求',
-  'g job tab': 'g 任务页', 'X stop': 'X 停止', 'Space mark': 'Space 勾选', 'y accept': 'y 验收', 'n flag': 'n 标记', 'i add': 'i 添加', 'Del remove': 'Del 删除',
+  'g job tab': 'g 任务页', 'g output': 'g 输出', 'X stop': 'X 停止', 'Space mark': 'Space 勾选', 'y accept': 'y 验收', 'n flag': 'n 标记', 'i add': 'i 添加', 'Del remove': 'Del 删除',
   'K J move': 'K J 移动', 'x clear': 'x 清除', 'm model': 'm 模型', 'Esc back': 'Esc 返回', '⏎ details': '⏎ 详情', 'o file': 'o 文件',
   '⏎ open file': '⏎ 打开文件', 'c C preset': 'c C 预设', 'r refresh': 'r 刷新', 't to try': 't 待试用',
   'unparseable JSON': 'JSON 无法解析', 'missing role': '缺少 role 字段', 'bad instructions': 'instructions 无效', 'bad cli fields': 'cli 字段无效',

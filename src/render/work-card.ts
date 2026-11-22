@@ -8,7 +8,7 @@ import { t } from './i18n.js';
 import { displayConfig } from './hud-config.js';
 import { mark, originalRows } from './workboard-rows.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
-import { isUnreadReport, sonicBadge, workerModelBadge } from './worker-roster.js';
+import { isUnreadReport, routeBadge, sonicBadge, workerModelBadge } from './worker-roster.js';
 import { activeFlow } from './work-visibility.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
@@ -320,7 +320,7 @@ function workCardName(card: WorkCard, _state: MonitorState, width: number, badge
     card.title + ((card.worker.nativeDepth ?? 0) > 2 && card.worker.parentName ? ` ↳ ${card.worker.parentName}` : '')
   );
   const makeRight = (lvl: '' | 'full' | 'compact' | 'min') =>
-    [lvl ? workerModelBadge(card.worker, lvl) : '', sonic, ...marks, age].filter(Boolean).join(' ');
+    [lvl ? workerModelBadge(card.worker, lvl) : '', routeBadge(card.worker), sonic, ...marks, age].filter(Boolean).join(' ');
   const minTitle = Math.min(visualLength(titleRaw), 26);
   let right = makeRight('');
   for (const lvl of ['full', 'compact', 'min', ''] as const) {

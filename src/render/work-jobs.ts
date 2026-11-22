@@ -9,7 +9,7 @@ import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { ageText, cardExpanded, cardMarks, flowLine, flowStepDetail, milestoneLine, pulseLine, renderWorkCard, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
 import { lanePhase, laneRows, laneStrip, workerPriority } from './work-lanes.js';
 import { activeFlow, currentWorker, unattendedFailure } from './work-visibility.js';
-import { isUnreadReport, laneSonicRunning, mainLaneWorkers, sonicBadge, sonicChildrenRunning, workerModelBadge } from './worker-roster.js';
+import { isUnreadReport, laneSonicRunning, mainLaneWorkers, routeBadge, sonicBadge, sonicChildrenRunning, workerModelBadge } from './worker-roster.js';
 import { ROLE_GLYPHS } from './model-glyphs.js';
 import { roleInk } from './project-view.js';
 import { fit, monitorText, pair } from './monitor-text.js';
@@ -65,7 +65,7 @@ function jobRow(w: OwnerWorker, lane: WorkLane, c: Ctx, indent = ''): MonitorRow
   const title = jobTitle(w, !!indent);
   const sonic = sonicBadge(sonicChildrenRunning(c.pool, w.id)), marks = cardMarks(card, '', activeFlow(w) ? '' : workStateWord(card));
   const right = (level: 'full' | 'compact' | 'min' | '') =>
-    [roleMark(card.role), level ? workerModelBadge(w, level) : '', sonic, ...marks, theme.board.muted(ageText(card.elapsedMinutes ?? 0))]
+    [roleMark(card.role), level ? workerModelBadge(w, level) : '', routeBadge(w), sonic, ...marks, theme.board.muted(ageText(card.elapsedMinutes ?? 0))]
       .filter(Boolean).join(' ');
   // Narrow the model mark (name, effort, all) before the title is cut below its minimum.
   const need = visualLength(prefix) + Math.min(visualLength(title), MIN_TITLE) + 1;

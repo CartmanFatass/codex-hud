@@ -121,6 +121,10 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly queuePosition?: number;
   readonly overflowFrom?: string;
   readonly route?: import('../mcp/job-contracts.js').JobRoute;
+  /** The job runs headless: no herdr tab, its output is the job's `stdout.jsonl` log. */
+  readonly headless?: true;
+  /** A headless job's newest output lines; attached by the panel only to the job open in the Inspector. */
+  readonly output?: import('./headless-output.js').HeadlessOutput;
   readonly startedAt: number | null;
   readonly settledAt: number | null;
   readonly phase: string | null;

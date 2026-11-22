@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import { ActivityRings } from '../collectors/activity-ring.js';
 import { DiffStatCollector } from '../collectors/diff-stat.js';
+import { readHeadlessOutput } from '../collectors/headless-output.js';
 import type { ThinJobScope } from '../collectors/thin-jobs.js';
 import { jobLaneSnapshot } from '../collectors/job-snapshot.js';
 import type { OwnerWorker, WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
@@ -55,10 +56,13 @@ export class PanelJobPipeline {
     const lane = id && lanes.find((l) => l.workers.some((w) => w.id === inspecting));
     if (id && lane) {
       const worker = lane.workers.find((w) => w.id === inspecting)!;
-      const diffStat = await this.jobDiffs.job(path.resolve(this.home, 'jobs', id), worker.settledAt, Date.now());
+      const directory = path.resolve(this.home, 'jobs', id);
+      const diffStat = await this.jobDiffs.job(directory, worker.settledAt, Date.now());
       if (this.closed || generation !== this.generation) return false;
-      if (diffStat) lanes = lanes.map((l) => l !== lane ? l : {
-        ...l, workers: l.workers.map((w) => w === worker ? { ...w, diffStat } : w),
+      // A headless job has no tab to look at: the job open in the Inspector also carries its newest output lines.
+      const output = worker.headless ? readHeadlessOutput(directory) : undefined;
+      if (diffStat || output) lanes = lanes.map((l) => l !== lane ? l : {
+        ...l, workers: l.workers.map((w) => w === worker ? { ...w, ...(diffStat && { diffStat }), ...(output && { output }) } : w),
       });
     }
     if (this.thinJobs !== lanes) this.boardCache = undefined;

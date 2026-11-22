@@ -1,5 +1,6 @@
 /**
- * The owner's micro-actions on a HUD job (spec §2.2): `g` focuses its herdr tab, `1`–`4` and `d` answer its open question
+ * The owner's micro-actions on a HUD job (spec §2.2): `g` focuses its herdr tab (a headless job has none: its output opens in
+ * the Inspector), `1`–`4` and `d` answer its open question
  * straight away while the question slab is expanded (or in the Inspector), `X` asks to stop it. Pure: input here becomes an
  * outcome, `tree-page.ts` does the I/O. No digit switches a tab, so an expanded slab is the only place a digit means anything.
  */
@@ -7,10 +8,11 @@ import { join } from 'node:path';
 import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import { homeAnchor, homeTarget } from './monitor-state.js';
+import { homeAnchor, homeTarget, openSubpage } from './monitor-state.js';
 import { theme } from './colors.js';
 import { fit, monitorText } from './monitor-text.js';
 import { boardRow } from './workboard-rows.js';
+import { isHeadless } from './worker-roster.js';
 import { t } from './i18n.js';
 
 const THIN = /^thin-job:(j[0-9a-f]{16})$/;
@@ -40,10 +42,10 @@ export function answerKeys(worker: OwnerWorker): string[] {
   const a = answerable(worker);
   return !a ? [] : [a.options.length ? `${a.options.length === 1 ? '1' : `1-${a.options.length}`} ${t('answer')}` : '', a.suggested ? `d ${t('default')}` : ''].filter(Boolean);
 }
-/** Home's footer for the row under the cursor, most useful first (a narrow row drops the last): a card takes `o` and `v`, a HUD job also its tab and, while it runs, stop. */
+/** Home's footer for the row under the cursor, most useful first (a narrow row drops the last): a card takes `o` and `v`, a HUD job also its tab (a headless job's output, unless the Inspector already shows it) and, while it runs, stop. */
 export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefined, enter: 'open' | 'expand', preview = false): string[] {
   const job = jobUnderCursor(state, board), card = !state.subpage && state.activeTab === 'home' && !homeAnchor(state.home) && !!homeTarget(state.home);
-  return [...(job ? [...(job.worker.state === 'failed' ? ['r request retry'] : []), ...(job.worker.state !== 'queued' ? ['g job tab'] : []), ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
+  return [...(job ? [...(job.worker.state === 'failed' ? ['r request retry'] : []), ...(job.worker.state === 'queued' ? [] : isHeadless(job.worker) ? (state.subpage ? [] : ['g output']) : ['g job tab']), ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
     `⏎ ${enter}`, ...(preview ? ['Esc back'] : []), ...(card || preview ? ['o file', 'v inspect'] : []), 'a all'];
 }
 /** The one-row prompt above the page while a stop waits for its answer. */
@@ -60,7 +62,12 @@ export function openJobAction(next: MonitorState, input: WorkbenchInput, key: st
   const job = jobUnderCursor(next, board);
   if (!job) return undefined;
   if (input.text === 'r') return job.worker.state === 'failed' ? result({ type: 'request-retry', home: job.home, jobId: job.jobId }) : undefined;
-  if (input.text === 'g') return result({ type: 'focus-job-tab', dir: job.dir });
+  if (input.text === 'g') {
+    if (!isHeadless(job.worker)) return result({ type: 'focus-job-tab', dir: job.dir });
+    // No tab to focus: the Inspector shows the job's output and follows it.
+    return next.subpage?.kind === 'inspector' ? result()
+      : { state: openSubpage(next, { kind: 'inspector', target: job.target, scroll: 0, selectedNodeId: job.worker.nodeId }), close: false };
+  }
   if (key === 'stop-job') {
     if (job.worker.settledAt !== null) return undefined;
     next.overlay = { kind: 'confirm-stop', jobId: job.jobId, role: job.worker.role ?? 'job', dir: job.dir };

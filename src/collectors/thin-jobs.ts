@@ -54,7 +54,7 @@ function sameStamps(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
   return true;
 }
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
-const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
+const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'headless', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string, idx: JobIndexCache): void {
   if (hydrated.has(idx)) return;
@@ -74,7 +74,7 @@ function restore(home: string, idx: JobIndexCache): void {
       if (typeof rel !== 'string' || !/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object' && !Array.isArray(snap.json)))) throw Error('cache');
-      if (rel.endsWith('/job.json') && snap.factsVersion !== 5) { allCurrent = false; continue; } // Older projections lack route evidence.
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 6) { allCurrent = false; continue; } // Older projections lack route or headless evidence.
       facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
       const kind = !snap.whole ? 'truncated' : snap.json === null ? 'invalid' : 'ok';
       stamps.set(join(home, 'jobs', rel), `${kind}:${stamp}`);
@@ -91,7 +91,7 @@ function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string
     if (liveStamp !== null && liveStamp === prev.fileStamp) return;
   }
   // Entry order in JobIndexCache reflects recent lookups, not a change in facts.
-  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 5 }).sort(([a], [b]) => a.localeCompare(b)));
+  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 6 }).sort(([a], [b]) => a.localeCompare(b)));
   if (text.length > 1048576) return;
   try {
     const { bytes, truncated } = readFileBounded(file, 1048576);
@@ -970,6 +970,7 @@ export function readThinJobs(
           ...(typeof route.fallback === 'string' && { fallback: route.fallback }),
           ...(typeof route.mode_reason === 'string' && { mode_reason: route.mode_reason }),
         } } : {}),
+      ...(job.headless === true ? { headless: true as const } : {}),
       ...(overflowFrom ? { overflowFrom } : {}),
       startedAt: when(s.started_at) ?? created,
       settledAt,

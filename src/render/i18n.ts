@@ -177,6 +177,7 @@ const ZH: Record<string, string> = {
   'light': '轻量',
   'standard': '标准',
   'hard': '复杂',
+  'No output yet': '暂无输出',
   'tab': '标签页',
   'Send the Imp brief, ticket and context file names and sizes to the Decision API to choose its tier and mode': '将 Imp 简报、工单和上下文文件名及大小发送给决策 API，以选择档位和运行方式',
   'Send the Sonic task text to the Decision API to choose its thinking level': '将 Sonic 任务文本发送给决策 API，由其选择思考级别',

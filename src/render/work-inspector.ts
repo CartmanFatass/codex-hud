@@ -43,6 +43,20 @@ function facts(entries: [string, string][], width: number): MonitorRow[] {
       rows.push(boardRow(fit(parts[i][j]?.text ?? '', half) + fit(parts[i + 1]?.[j]?.text ?? '', width - half)));
   return rows;
 }
+/** Output rows the Inspector shows; a longer log shows its newest lines. */
+const OUTPUT_ROWS = 12;
+/** A headless job has no tab to look at: its newest output, one row per line, under the card (auto-route/04). */
+function outputRows(worker: OwnerWorker, width: number): MonitorRow[] {
+  const { output } = worker;
+  if (!output) return [];
+  const rows = [boardRow(''), section(t('Output'), width, worker.settledAt === null ? t('live') : '')];
+  if (!output.lines.length) return [...rows, itemRow('', theme.board.muted(t('No output yet')), '', width)];
+  for (const { kind, text } of output.lines.slice(-OUTPUT_ROWS)) {
+    const [glyph, ink] = kind === 'tool' ? [mark('▸', '>'), theme.board.muted] : kind === 'error' ? [mark('✗', 'x'), theme.board.danger] : [' ', theme.board.body];
+    rows.push(itemRow(ink(glyph), ink(monitorText(text)), '', width));
+  }
+  return rows;
+}
 export function workInspectorRows(
   worker: OwnerWorker,
   state: MonitorState,
@@ -68,6 +82,7 @@ export function workInspectorRows(
   if (milestone) rows.push(boardRow(milestone));
   const pulse = pulseLine(worker, width);
   if (pulse) rows.push(boardRow(pulse));
+  rows.push(...outputRows(worker, width));
   const stamp = (at: number | null) =>
     at === null ? '' : `${localTime(at, now)} · ${t('{age} ago', { age: minuteAge(at, now) })}`;
   const end = worker.settledAt ?? (worker.state === 'working' ? now : null);
