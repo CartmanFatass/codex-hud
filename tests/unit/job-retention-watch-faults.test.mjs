@@ -182,11 +182,11 @@ syncBuiltinESMExports();`;
 const scanProbe = `
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-const readdir = fs.readdirSync;
-fs.readdirSync = (path, ...args) => {
-  if (path === process.env.HUD_HOME + '/jobs' && args.length === 0)
+const lstat = fs.lstatSync;
+fs.lstatSync = (path, ...args) => {
+  if (path === process.env.HUD_HOME + '/jobs')
     fs.appendFileSync(process.env.HUD_HOME + '/scans', Date.now() + '\\n');
-  return readdir(path, ...args);
+  return lstat(path, ...args);
 };
 syncBuiltinESMExports();`;
 

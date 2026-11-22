@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expNativePath, readExpNativeSeen } from '../collectors/exp-native.js';
 import { writePrivateFile, readFileBounded } from '../utils/atomic-fs.js';
 import { jobRow } from '../collectors/thin-jobs.js';
+import { isFileStampCurrent } from '../roles/job-index-cache.js';
 import { truncateAnsi } from '../render/colors.js';
 import { askOf, NOTICE_MS } from '../render/layout/bar-fields.js';
 import { monitorText } from '../render/monitor-text.js';
@@ -50,15 +51,6 @@ interface Fact {
   json: JsonObject;
 }
 
-function stillCurrent(fact: Fact): boolean {
-  try {
-    const st = fs.lstatSync(fact.path);
-    return st.isFile() && `${st.mtimeMs}:${st.size}:${st.ino}` === fact.stamp;
-  } catch {
-    return false;
-  }
-}
-
 /** The bars scope HUD jobs to the inherited pane, not the foreground Codex thread or cwd. */
 function workReminder(home: string, pane: string | null, now: number): string | undefined {
   if (!pane) return;
@@ -99,7 +91,8 @@ function workReminder(home: string, pane: string | null, now: number): string | 
     best = { reminder, priority, at, receipt, status };
   }
   // An unrefreshed cache must not keep a question pinned after the job changes or disappears.
-  if (best && stillCurrent(best.receipt) && stillCurrent(best.status)) return `HUD: ${best.reminder}`;
+  if (best && isFileStampCurrent(best.receipt.path, best.receipt.stamp) && isFileStampCurrent(best.status.path, best.status.stamp))
+    return `HUD: ${best.reminder}`;
 }
 
 function recordLastSeen(home: string, now: number): void {

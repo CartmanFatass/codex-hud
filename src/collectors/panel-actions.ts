@@ -4,6 +4,7 @@
  */
 import * as fs from 'node:fs';
 import { jobFiles } from '../mcp/paths.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { basename, join } from 'node:path';
 
@@ -33,9 +34,13 @@ export function answerJobQuestion(home: string, job: string, qid: string, answer
     writePrivateFile(join(qa, `${qid}.answer.md`), text, { exclusive: true, mkdir: false });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'EEXIST') return { ok: true, written: false };
+    if (code === 'EEXIST') {
+      getJobIndexCache(home).invalidateQa(job);
+      return { ok: true, written: false };
+    }
     return { ok: false, reason: code === 'ENOENT' ? 'no such question' : String(code ?? error) };
   }
+  getJobIndexCache(home).invalidateQa(job);
   try {
     appendPanelAction(home, { type: 'answer', job, qid, role, answer: text.slice(0, 400) });
   } catch { /* Logged next time, or heard from the job's own state. */ }

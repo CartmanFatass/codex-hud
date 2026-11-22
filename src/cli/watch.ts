@@ -2,13 +2,14 @@
 import * as fs from 'node:fs';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
-import { checksJustFinished, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { checksJustFinished, failureUnobserved, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
 import { getHudHome } from '../hud-home.js';
 import { landEvents } from '../mcp/land-state.js';
 import { herdrId } from '../roles/herdr-run.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
@@ -57,13 +58,10 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     let attentionUnread = true;
     if (catchup && (row.blocked || row.display_state === 'failed')) {
-      const dir = join(home, 'jobs', row.job);
-      try {
-        const observed = Date.parse(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).observed_at);
-        // Failed dispatch may have only a job receipt. Compare timestamps at receipt precision.
-        const status = fs.statSync(join(dir, 'STATUS.json'), { throwIfNoEntry: false });
-        attentionUnread = !Number.isFinite(observed) || (status !== undefined && Math.floor(status.mtimeMs) > observed);
-      } catch { /* unread */ }
+      const idx = getJobIndexCache(home), job = idx.readJob(row.job);
+      const status = job.status === 'ok' ? idx.readStatus(row.job) : null;
+      if (job.status === 'ok' && status && status.status !== 'error')
+        attentionUnread = failureUnobserved(join(home, 'jobs', row.job), job.value.observed_at, status.status === 'missing' ? null : status.at);
     }
     const pending = (!row.parent_job && settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);

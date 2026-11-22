@@ -9,7 +9,7 @@ import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
-import { writePrivateFile } from '../utils/atomic-fs.js';
+import { JobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
 import type { Job, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
 import { jobFiles, BUNDLED_ROOT, binScript } from '../mcp/paths.js';
 import { spawn } from 'node:child_process';
@@ -34,35 +34,22 @@ const REAP_BUDGET_MS = 135_000;
 const REAP_KILL_GRACE_MS = 2_000;
 const SHUTDOWN_DRAIN_MS = 3_000;
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
-const cache = new Map<string, { stamp: string; value: unknown }>();
-const seen = new Set<string>();
-function read(file: string): string | null;
-function read<T>(file: string, parse: (text: string) => T): T | null;
-function read(file: string, parse: (text: string) => unknown = (text) => text) {
-  try {
-    const st = fs.statSync(file);
-    seen.add(file);
-    const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
-    const hit = cache.get(file);
-    if (hit?.stamp === stamp) return hit.value;
-    const value = parse(fs.readFileSync(file, 'utf8'));
-    cache.set(file, { stamp, value });
-    return value;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
+const jobCache = new JobIndexCache(home);
+type SessionEntry = { fields: SessionFields; stamp: string };
+function readJsonEntry<T>(file: string): { value: T | null; at: number | null } {
+  const res = jobCache.readJson<T>(file);
+  if (res.status === 'ok') return { value: res.value, at: res.at };
+  if (res.status === 'missing' || res.status === 'invalid') return { value: null, at: null };
+  if (res.status === 'truncated') {
+    try { return { value: JSON.parse(fs.readFileSync(file, 'utf8')) as T, at: res.at }; }
+    catch (error) {
+      if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === 'ENOENT') return { value: null, at: null };
+      throw error;
+    }
   }
+  throw res.error;
 }
-function parseJson<T>(text: string | null): T | null {
-  try { return text === null ? null : JSON.parse(text) as T; }
-  catch (error) { if (error instanceof SyntaxError) return null; throw error; }
-}
-function readFresh(file: string) {
-  try { return fs.readFileSync(file, 'utf8'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-}
-const json = <T>(file: string) => read(file, parseJson<T>);
-const jsonFresh = <T>(file: string) => parseJson<T>(readFresh(file));
+const readJson = <T>(file: string) => readJsonEntry<T>(file).value;
 const log = (message: string) => {
   try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); }
   catch (error) { console.error(`watch log: ${(error as Error).message}; ${message}`); }
@@ -80,7 +67,7 @@ let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   stopped = false,
   reapBacklog = false;
 type Retry = { ownership: string; readClose: boolean; at: number; snapshot?: WorkerTreeSnapshot };
-type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: string; tab: string;
+type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: SessionEntry; tab: string;
   ownership: string; retry: Retry | null; readInGrace: string | null; resumeReadReap?: boolean; jobFile: string; statusFile: string };
 type ActiveReap = { tab: string; ownership: string; readClose: boolean; busy: string[]; phase: 'preflight' | 'reaping';
   controller: AbortController; promise?: Promise<void> };
@@ -174,8 +161,8 @@ function preserveSessions(dir: string) {
   }
 }
 function supervisorPid(dir: string, status: Partial<JobStatus> | null) {
-  const fromFile = Number(read(join(dir, jobFiles.supervisorPid))?.trim());
-  if (Number.isInteger(fromFile) && fromFile > 1) return fromFile;
+  const fromFile = jobCache.readPid(join(dir, jobFiles.supervisorPid));
+  if (fromFile !== null) return fromFile;
   const pid = status?.supervisor_pid;
   return typeof pid === 'number' && Number.isInteger(pid) && pid > 1 ? pid : null;
 }
@@ -191,7 +178,7 @@ function readCloseTurn(dir: string, job: Job | null, status: Partial<JobStatus> 
   return status?.state === 'idle_grace' && job && !job.reaped_at ? piReadSettlement(dir, job, status) : null;
 }
 function writeJsonAtomic(file: string, value: Partial<JobStatus> | Job, indent?: number) {
-  writePrivateFile(file, JSON.stringify(value, null, indent) + '\n', { mkdir: false });
+  jobCache.writeJsonAtomic(file, value as Record<string, unknown>, { indent, mkdir: false });
 }
 function startWorktree(id: string, file: string, job: Job) {
   const root = job.worktree!.main_root;
@@ -199,7 +186,7 @@ function startWorktree(id: string, file: string, job: Job) {
   worktreeLocks.add(root);
   const promise = Promise.resolve().then(async () => {
     const result = await reapWorktree(id, { job: job.job, cwd: job.cwd, worktree: job.worktree! }, home);
-    const latest = jsonFresh<Job>(file);
+    const latest = readJson<Job>(file);
     if (latest && !latest.worktree_removed_at && JSON.stringify(latest.worktree) === JSON.stringify(job.worktree))
       writeJsonAtomic(file, { ...latest, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }, 2);
     worktreeRetries.delete(id);
@@ -216,17 +203,17 @@ function startWorktree(id: string, file: string, job: Job) {
   });
   inFlightWorktrees.set(id, promise);
 }
-const reapOwner = (session: string | null, status: Partial<JobStatus> | null) => JSON.stringify([session, status?.pid, status?.pid_start_time]);
+const reapOwner = (session: SessionEntry | null, status: Partial<JobStatus> | null) =>
+  JSON.stringify([session?.fields ?? null, status?.pid, status?.pid_start_time]);
 async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, retry, readInGrace, resumeReadReap, jobFile, statusFile }: ReapInput) {
   const { controller: { signal }, ownership, readClose } = entry;
-  const sessionFile = join(dir, jobFiles.session);
   if (readInGrace) {
-    const target = session.match(/^PRIMARY=([^\r\n]+)$/m)?.[1];
+    const target = session.fields.primary;
     const agent = target ? (await request('agent.get', { target }, { signal }))?.result?.agent : undefined;
     if (signal.aborted || closedTabs.has(tab)) return true;
-    const latest = jsonFresh<JobStatus>(statusFile);
-    if (!latest || reapOwner(readFresh(sessionFile), latest) !== ownership ||
-        readCloseTurn(dir, jsonFresh(jobFile), latest) !== readInGrace) return true;
+    const latest = readJson<JobStatus>(statusFile);
+    if (!latest || reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership ||
+        readCloseTurn(dir, readJson<Job>(jobFile), latest) !== readInGrace) return true;
     if (!['idle', 'done'].includes(agent?.agent_status ?? '')) {
       preflightHold.set(id, { ownership, token: readInGrace, until: Date.now() + cliCheck });
       return false;
@@ -254,14 +241,14 @@ async function reapJob(entry: ActiveReap, { id, dir, job, status, session, tab, 
   if (!complete) return true;
 
   // Preserve worker shutdown facts and any job receipt updates made while we reaped.
-  const latest = jsonFresh<JobStatus>(statusFile);
-  if (!latest || reapOwner(readFresh(sessionFile), latest) !== ownership) return true;
+  const latest = readJson<JobStatus>(statusFile);
+  if (!latest || reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership) return true;
   if (readClose && (['idle_grace', 'closed'].includes(latest.state) || resumeReadReap &&
       (latest.state === 'working' || latest.state?.startsWith('waiting')))) {
     writeJsonAtomic(statusFile, { ...latest, state: 'closed', exit_reason: REPORT_READ_EXIT,
       ended_at: latest.ended_at ?? new Date().toISOString() });
   }
-  const receipt = jsonFresh<Job>(jobFile);
+  const receipt = readJson<Job>(jobFile);
   if (receipt) {
     if (!receipt.reaped_at) writeJsonAtomic(jobFile, { ...receipt, reaped_at: new Date().toISOString() }, 2);
     reapRetries.delete(id);
@@ -295,7 +282,6 @@ function scan(retryWatch = false) {
   reapBacklog = false;
   clearTimeout(timer);
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
-  seen.clear();
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
   const busyWorktrees = new Set<string>(), worktreeChecks = [];
   const markBusy = (job: Job | null) => {
@@ -306,8 +292,7 @@ function scan(retryWatch = false) {
   let open = false,
     safetyCheck = false,
     nearest = Infinity;
-  for (const id of fs.readdirSync(jobs)) {
-    if (!/^j[a-f0-9]{16}$/.test(id)) continue;
+  for (const id of jobCache.listJobIds({ onError: (error) => { throw error; } })) {
     const dir = join(jobs, id);
     try {
       const active = inFlightReaps.get(id);
@@ -331,11 +316,11 @@ function scan(retryWatch = false) {
         for (const link of loops) { fs.unlinkSync(link); log(`unlink loop ${link}`); }
       } catch (error) { warn(`keep ${id} scan`, `keep ${id} scan: ${(error as Error).message}`); }
       const jobFile = join(dir, jobFiles.job), statusFile = join(dir, jobFiles.status);
-      let job, status: Partial<JobStatus> | null, session;
-      try { job = json<Job & Record<string, unknown>>(jobFile); status = json<JobStatus>(statusFile); session = read(join(dir, jobFiles.session)); }
+      let job: (Job & Record<string, unknown>) | null, status: Partial<JobStatus> | null, statusAt: number | null, session: SessionEntry | null;
+      try { job = readJson<Job & Record<string, unknown>>(jobFile); ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile)); session = jobCache.readSession(id, { throwOnError: true }); }
       // Unreadable lifecycle or tab evidence may still belong to an open job.
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') open = true; throw error; }
-      const tab = session?.match(/^TAB=([^\r\n]+)$/m)?.[1];
+      const tab = session?.fields.tab;
       const ownership = reapOwner(session, status);
       const previous = reapRetries.get(id);
       const retry = !job?.reaped_at && previous?.ownership === ownership ? previous : null;
@@ -352,7 +337,7 @@ function scan(retryWatch = false) {
           const quitting = tabClosed && liveSupervisor && fs.existsSync(`${statusFile}.quit-${pid}`);
           if (!quitting && (tabClosed || (pid && !liveSupervisor))) {
             // The quit marker is removed after STATUS is published; ignore a snapshot taken before that write.
-            status = jsonFresh<JobStatus>(statusFile);
+            ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile));
             if (['closed', 'failed', 'stopped'].includes(status?.state ?? '')) { schedule(); continue; }
             const alive = workerAlive(status?.pid ?? null, status?.pid_start_time ?? null);
             const end = terminalFact({ alive, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
@@ -367,7 +352,7 @@ function scan(retryWatch = false) {
         } else if (!job?.bro && !job?.jev && fs.existsSync(`${statusFile}.stop-requested`)) {
           // Stop intent takes precedence over a tab closing while the worker is exiting.
           const terminal = settleStoppedPi(statusFile, status);
-          if (terminal) status = terminal;
+          if (terminal) { status = terminal; jobCache.invalidateFile(statusFile); statusAt = null; }
           else if (status) {
             // The marker or tab event can arrive before the PID is gone.
             open = safetyCheck = true;
@@ -377,6 +362,7 @@ function scan(retryWatch = false) {
         if (update) {
           status = { ...status, ...update };
           writeJsonAtomic(statusFile, status);
+          statusAt = null;
         }
       }
       // A persisted launch without STATUS is still open until dispatch returns.
@@ -406,9 +392,11 @@ function scan(retryWatch = false) {
         const text = String(status.exit_reason ?? status.error ?? '');
         if (isQuotaFailure(text)) {
           const res = recordFailureExhaustion(home, bundled, dir, job, text);
+          if (res.marked) jobCache.invalidateFile(jobFile);
           if (res.marked && res.reason !== text) {
             status = { ...status, exit_reason: res.reason, error: res.reason };
             writeJsonAtomic(statusFile, status);
+            statusAt = null;
           }
         }
       }
@@ -435,19 +423,20 @@ function scan(retryWatch = false) {
         }
       }
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
-      const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
+      const expires = (Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs)) + 86400000;
       if (!landing && expires < Date.now() && (!tab || job?.reaped_at)) {
         // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
         archiveJob(home, dir, id, job, status, Date.now(), log);
         fs.rmSync(dir, { recursive: true, force: true });
+        jobCache.evictJob(id);
         log(`delete ${id} state=${status.state}`);
         continue;
       }
       if (job?.reaped_at || !tab) continue;
       if (status.state === 'failed' && !resumeReadReap) {
         const ended = Date.parse(status.ended_at ?? '');
-        const deadline = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + retention;
+        const deadline = (Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs)) + retention;
         if (deadline > Date.now()) {
           nearest = Math.min(nearest, deadline);
           continue;
@@ -488,7 +477,6 @@ function scan(retryWatch = false) {
       startWorktree(id, jobFile, job);
     }
   }
-  for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
   if (safetyCheck) nearest = Math.min(nearest, Date.now() + cliCheck);
   const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0;

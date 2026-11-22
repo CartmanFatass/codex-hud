@@ -510,18 +510,15 @@ export class JobIndexCache {
     return this.readJson<T>(join(this.jobsRoot, id, 'STATUS.json'), opts);
   }
 
-  readSession(id: string): { fields: SessionFields; stamp: string } | null {
+  readSession(id: string, opts?: { throwOnError?: boolean }): { fields: SessionFields; stamp: string } | null {
     if (!JOB_ID_RE.test(id)) return null;
     const target = join(this.jobsRoot, id, 'SESSION.txt');
     let st: fs.BigIntStats | undefined;
-    try {
-      st = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
-    } catch {
-      this.files.delete(target);
-      return null;
-    }
+    try { st = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false }); }
+    catch (error) { this.files.delete(target); if (opts?.throwOnError) throw error; return null; }
     if (!st || !st.isFile()) {
       this.files.delete(target);
+      if (st && opts?.throwOnError) throw nonRegularFileError(target);
       return null;
     }
     const stamp = fileStampOf(st);
@@ -533,6 +530,7 @@ export class JobIndexCache {
     const loaded = readRegularFileBounded(target, DEFAULT_MAX_SESSION_BYTES);
     if (loaded.kind !== 'ok') {
       this.files.delete(target);
+      if (opts?.throwOnError && loaded.kind === 'error') throw loaded.error;
       return null;
     }
     const fStamp = fileStampOf(loaded.stat);

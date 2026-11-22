@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { jobChanges, jobRow, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { answerJobQuestion } from '../../dist/collectors/panel-actions.js';
+import { readCodexStatusline } from '../../dist/mcp/codex-statusline.js';
+import { clearJobIndexCaches, getJobIndexCache, legacyFileStampOf } from '../../dist/roles/job-index-cache.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { renderBar } from '../../dist/render/layout/bar-fields.js';
 import { workSignals } from '../../dist/render/work-summary.js';
@@ -98,6 +101,7 @@ test('1,000 old jobs: cold invocations reuse persisted facts, bounded bodies, ch
   const cacheFile = join(home, 'display/thin-jobs.json');
   const stamp = fs.statSync(cacheFile).mtimeMs;
   parses = 0;
+  clearJobIndexCaches();
   const second = await import('../../dist/collectors/thin-jobs.js?cold2');
   assert.deepEqual(second.readThinJobs(home, scope, parse, options), []);
   assert.ok(parses <= 3, String(parses));
@@ -110,6 +114,7 @@ test('1,000 old jobs: cold invocations reuse persisted facts, bounded bodies, ch
   const changed = second.readThinJobs(home, scope, parse, options).flatMap((l) => l.workers);
   assert.equal(changed[0].model, 'changed-status');
   fs.writeFileSync(cacheFile, '{broken');
+  clearJobIndexCaches();
   const third = await import('../../dist/collectors/thin-jobs.js?cold3');
   assert.equal(third.readThinJobs(home, scope, parse, options).flatMap((l) => l.workers)[0].model, 'changed-status');
 });
@@ -154,6 +159,7 @@ test('listed jobs disappearing before or during read are omitted and forgotten b
       fs[method] = original;
       syncBuiltinESMExports();
     }
+    clearJobIndexCaches();
     const cold = await import(`../../dist/collectors/thin-jobs.js?vanished-${bar}-${duringOpen}`);
     assert.deepEqual(cold.readThinJobs(home, scope, JSON.parse, options).flatMap((l) => l.workers).map((w) => w.id), [`thin-job:${survivor}`]);
   }
@@ -354,4 +360,86 @@ test('a settled job whose report is unread shows [✓●] on the bar until hud_r
   write('STATUS.json', JSON.stringify({ state: 'failed', ended_at: settled }));
   assert.match(bar().line, /imp Fix the panel/);
   assert.doesNotMatch(bar().line, /●/);
+});
+
+test('readThinJobs and readThinJobRows share JobIndexCache cleanly, jobRow stats report.md once, and panel answers invalidate qa', (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'thin-shared-s3-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const id = 'j0000000000000b01', dir = join(home, 'jobs', id), pane = 'w4E:p1';
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', herdr_pane: pane, created_at: '2030-01-01T00:00:00Z' }));
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator' }));
+  fs.writeFileSync(join(dir, 'qa/q1.md'), '# Question\n\nProceed?\n\nDefault if unanswered: yes\n');
+  fs.writeFileSync(join(dir, 'report.md'), 'Done.');
+
+  const obs = { complete: false };
+  assert.equal(readThinJobs(home, { project: null, pane }, JSON.parse, undefined, obs).length, 1);
+  assert.equal(obs.complete, true);
+  assert.equal(readThinJobRows(home, { pane })[0].open_questions, 1);
+
+  // Answering from the panel invalidates the shared qa cache entry immediately.
+  assert.deepEqual(answerJobQuestion(home, id, 'q1', 'yes', 'imp'), { ok: true, written: true });
+  assert.deepEqual(getJobIndexCache(home).readQa(id).openIds, []);
+  assert.equal(readThinJobRows(home, { pane })[0].open_questions, 0);
+
+  // Alternating back to readThinJobs preserves observation.complete and reuses warm JobIndexCache without reopening job.json/STATUS.json.
+  const opened = [];
+  const origOpen = fs.openSync;
+  fs.openSync = (file, ...rest) => { opened.push(String(file)); return origOpen(file, ...rest); };
+  syncBuiltinESMExports();
+  try {
+    const obs2 = { complete: false };
+    assert.equal(readThinJobs(home, { project: null, pane }, JSON.parse, undefined, obs2).length, 1);
+    assert.equal(obs2.complete, true);
+  } finally {
+    fs.openSync = origOpen;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(opened.filter((p) => /\/(job|STATUS)\.json$/.test(p)), []);
+
+  // jobRow without cache stats report.md once (no existsSync + statSync double stat).
+  let reportStats = 0;
+  const origExists = fs.existsSync, origStat = fs.statSync, origLstat = fs.lstatSync;
+  fs.existsSync = (file, ...rest) => { if (String(file).endsWith('/report.md')) reportStats++; return origExists(file, ...rest); };
+  fs.statSync = (file, ...rest) => { if (String(file).endsWith('/report.md')) reportStats++; return origStat(file, ...rest); };
+  fs.lstatSync = (file, ...rest) => { if (String(file).endsWith('/report.md')) reportStats++; return origLstat(file, ...rest); };
+  syncBuiltinESMExports();
+  try {
+    const row = jobRow({ job: id, role: 'imp' }, { state: 'done' }, { dir });
+    assert.equal(row.report_present, true);
+    assert.equal(row.report_mtime, origStat(join(dir, 'report.md')).mtimeMs);
+  } finally {
+    fs.existsSync = origExists; fs.statSync = origStat; fs.lstatSync = origLstat;
+    syncBuiltinESMExports();
+  }
+  assert.equal(reportStats, 1);
+});
+
+test('codex-statusline accepts both 5-field and legacy 3-field thin-jobs.json stamps and clears after job.json updates', (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'codex-stamps-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const id = 'j0000000000000c01', dir = join(home, 'jobs', id), pane = 'w4E:p1';
+  const now = Date.now();
+  fs.mkdirSync(dir, { recursive: true });
+  const jobFile = join(dir, 'job.json'), statusFile = join(dir, 'STATUS.json');
+  const receipt = { job: id, role: 'imp', herdr_pane: pane, created_at: new Date(now - 5000).toISOString() };
+  fs.writeFileSync(jobFile, JSON.stringify(receipt));
+  fs.writeFileSync(statusFile, JSON.stringify({ state: 'waiting_orchestrator', blocked: true, harness: 'cli' }));
+  readThinJobs(home, { project: null, pane });
+
+  const footerText = () => JSON.parse(readCodexStatusline({}, home, pane, now).contents[0].text).children.map((c) => c.children.join(''));
+  const cacheFile = join(home, 'display/thin-jobs.json');
+  const persisted = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+  assert.equal(persisted[0][1].split(':').length, 5, 'persisted cache writes 5-field BigInt stamp');
+  assert.deepEqual(footerText(), ['HUD: imp asks']);
+
+  // Rewrite thin-jobs.json with legacy 3-field mtimeMs:size:ino stamps; codex-statusline still validates both formats.
+  const legacyRows = persisted.map(([rel, _stamp, snap]) => [rel, legacyFileStampOf(fs.lstatSync(join(home, 'jobs', rel), { bigint: true })), snap]);
+  fs.writeFileSync(cacheFile, JSON.stringify(legacyRows));
+  assert.deepEqual(footerText(), ['HUD: imp asks']);
+
+  // Updating job.json (e.g. hud_read stamping read_at) invalidates the cached reminder immediately.
+  fs.writeFileSync(jobFile + '.tmp', JSON.stringify({ ...receipt, read_at: new Date(now + 1000).toISOString() }));
+  fs.renameSync(jobFile + '.tmp', jobFile);
+  assert.deepEqual(footerText(), []);
 });

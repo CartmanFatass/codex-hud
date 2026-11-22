@@ -439,3 +439,28 @@ globalThis.setTimeout = () => { throw Error('unexpected expiry timer'); };`);
   assert.equal(f.log().split('\n').filter((line) => line.includes('delete ')).length, 2);
   assert.match(f.log(), /no open jobs or failed deadlines/);
 });
+
+test('watcher reuses JobIndexCache for unchanged job files and clears STATUS cache when removed', { timeout: 10000 }, async (t) => {
+  const f = fixture(t);
+  const open = f.job({ state: 'working' });
+  const stable = f.job({ state: 'closed', ended_at: new Date().toISOString() });
+  const { child, exited } = f.start(`
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const openSync = fs.openSync;
+fs.openSync = (file, ...args) => {
+  if (String(file) === ${JSON.stringify(join(stable, 'job.json'))})
+    fs.appendFileSync(process.env.HUD_HOME + '/stable-opens', '1\\n');
+  return openSync(file, ...args);
+};
+syncBuiltinESMExports();`);
+  await until(() => fs.existsSync(join(f.home, 'stable-opens')));
+  // Removing STATUS.json while job.json has dispatch_exit_code=0 keeps watcher open without stale cached STATUS.
+  fs.unlinkSync(join(open, 'STATUS.json'));
+  await new Promise((done) => setTimeout(done, 150));
+  assert.equal(child.exitCode, null);
+  writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.readFileSync(join(f.home, 'stable-opens'), 'utf8').trim().split('\n').length, 1, 'unchanged job.json parsed once across scans');
+});

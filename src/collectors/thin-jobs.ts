@@ -1,11 +1,11 @@
 /** Read-only thin jobs. Package labels are display grouping, never execution identity. */
 import * as fs from 'node:fs';
 import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { herdrId } from '../roles/herdr-run.js';
-import type { JobIndexCache } from '../roles/job-index-cache.js';
+import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
@@ -16,12 +16,12 @@ import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkFlow, WorkFlowStep, WorkLane } from './workboard-types.js';
 
-let complete = false;
-function entries(path: string, missingOK = false): string[] {
+const MAX_ARTIFACT_ENTRIES = 512;
+function entries(path: string, missingOK = false, onError?: () => void): string[] {
   try {
     return fs.readdirSync(path);
   } catch (error) {
-    if (!missingOK || (error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
+    if (!missingOK || (error as NodeJS.ErrnoException).code !== 'ENOENT') onError?.();
     return [];
   }
 }
@@ -29,82 +29,72 @@ interface Snap {
   text: string;
   at: number;
   whole: boolean;
-  json?: Record<string, unknown> | null;
   progress?: JobProgress;
 }
-const cache = new Map<string, { stamp: string; snap: Snap }>();
-const watchCache = new Map<string, { stamp: string; snap: Snap }>();
-const seen = new Set<string>();
-let cacheHome = '', saved = '';
+type ArtifactStore = Map<string, { stamp: string; snap: Snap }>;
+const artifactStores = new WeakMap<JobIndexCache, ArtifactStore>();
+const hydrated = new WeakMap<JobIndexCache, string>();
+const artifactStoreFor = (idx: JobIndexCache) => {
+  let store = artifactStores.get(idx);
+  if (!store) artifactStores.set(idx, (store = new Map()));
+  return store;
+};
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
-function restore(home: string): void {
-  if (cacheHome === home) return;
-  cacheHome = home; cache.clear(); saved = '';
+function restore(home: string, idx: JobIndexCache): void {
+  if (hydrated.has(idx)) return;
+  hydrated.set(idx, '');
   try {
     const file = join(home, 'display/thin-jobs.json');
     if (fs.statSync(file).size > 1048576) return;
     const text = fs.readFileSync(file, 'utf8'), rows = JSON.parse(text);
     if (!Array.isArray(rows) || rows.length > 400) return;
-    for (const [rel, stamp, snap] of rows) {
-      if (!/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
+    const facts: PersistedFactRow[] = [];
+    for (const entry of rows) {
+      if (!Array.isArray(entry)) throw Error('cache');
+      const [rel, stamp, snap] = entry;
+      if (typeof rel !== 'string' || !/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
-        !(snap.json === null || (snap.json && typeof snap.json === 'object'))) throw Error('cache');
+        !(snap.json === null || (snap.json && typeof snap.json === 'object' && !Array.isArray(snap.json)))) throw Error('cache');
       if (rel.endsWith('/job.json') && snap.factsVersion !== 3) continue; // Older projections lack supersession/scout evidence.
-      cache.set(join(home, 'jobs', rel), { stamp, snap: { ...snap, text: '' } });
+      facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
     }
-    saved = text;
-  } catch { cache.clear(); }
+    idx.hydrateFacts(facts);
+    hydrated.set(idx, text);
+  } catch { /* Corrupt or missing display cache: rebuild on persist. */ }
 }
-function persist(home: string): void {
-  const root = join(home, 'jobs') + '/';
-  const rows = [...cache].filter(([p, { snap }]) => /\/(job|STATUS)\.json$/.test(p) && !snap.json?.checks).map(([p, { stamp, snap }]) =>
-    [p.slice(root.length), stamp, { ...(p.endsWith('/job.json') ? { factsVersion: 3 } : {}), at: snap.at, whole: snap.whole, json: snap.json ?
-      { ...Object.fromEntries(Object.entries(snap.json).filter(([k]) => factKeys.has(k))),
-        project_root: snap.json.project_root ?? (snap.json.worktree as { main_root?: unknown } | null)?.main_root } : null }]);
-  const text = JSON.stringify(rows);
-  if (text === saved || text.length > 1048576) return;
-  try {
-    writePrivateFile(join(home, 'display/thin-jobs.json'), text);
-    saved = text;
-  } catch { /* An unavailable display cache must not stop collection. */ }
+function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string>): void {
+  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 3 }));
+  if (text === hydrated.get(idx) || text.length > 1048576) return;
+  try { writePrivateFile(join(home, 'display/thin-jobs.json'), text); hydrated.set(idx, text); }
+  catch { /* An unavailable display cache must not stop collection. */ }
 }
-function read(path: string, max = 65536, store: typeof cache | null = cache): Snap | null {
+function readArtifact(path: string, max = 65536, store: ArtifactStore | null = null, seenSet?: Set<string>, onIncomplete?: () => void): Snap | null {
   try {
-    const st = fs.lstatSync(path);
+    const st = fs.lstatSync(path, { bigint: true, throwIfNoEntry: false });
+    if (!st) { store?.delete(path); seenSet?.delete(path); return null; }
     if (!st.isFile()) throw new Error('nonregular_job_file');
-    if (store) seen.add(path);
-    const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
-    const hit = store?.get(path);
-    if (hit?.stamp === stamp && !hit.snap.whole) complete = false;
-    if (hit?.stamp === stamp) return hit.snap;
+    seenSet?.add(path);
+    const stamp = fileStampOf(st), hit = store?.get(path);
+    if (hit?.stamp === stamp) {
+      if (!hit.snap.whole) onIncomplete?.();
+      store!.delete(path); store!.set(path, hit);
+      return hit.snap;
+    }
     const { bytes, truncated } = readFileBounded(path, max);
-    const snap = { text: bytes.toString('utf8'), at: st.mtimeMs, whole: !truncated };
-    complete &&= snap.whole;
-    store?.set(path, { stamp, snap });
+    const snap: Snap = { text: bytes.toString('utf8'), at: statsMtimeMs(st.mtimeNs), whole: !truncated };
+    if (!snap.whole) onIncomplete?.();
+    if (store) {
+      store.delete(path); store.set(path, { stamp, snap });
+      if (store.size > MAX_ARTIFACT_ENTRIES) store.delete(store.keys().next().value!);
+    }
     return snap;
   } catch (error) {
-    store?.delete(path);
-    if (store) seen.delete(path);
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
+    store?.delete(path); seenSet?.delete(path);
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') onIncomplete?.();
     return null;
   }
-}
-function json(path: string, parse: (text: string) => unknown, store: typeof cache | null = cache): { v: Record<string, unknown>; at: number } | null {
-  const file = read(path, 65536, store);
-  if (!file?.whole) complete = false;
-  if (!file?.whole) return null;
-  if (file.json === undefined) {
-    try {
-      const v = parse(file.text);
-      file.json = v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
-    } catch {
-      file.json = null;
-    }
-  }
-  if (!file.json) complete = false;
-  return file.json ? { v: file.json, at: file.at } : null;
 }
 const when = (v: unknown): number | null => {
   const at = typeof v === 'string' ? Date.parse(v) : NaN;
@@ -173,8 +163,8 @@ export interface JobRowExtras {
   progress?: JobProgress;
 }
 /** Milestones are display metadata: watch/list rows do not read this file. */
-export function readJobProgress(dir: string, cached = false): JobProgress {
-  const file = read(join(dir, 'progress.jsonl'), 65536, cached ? cache : null);
+export function readJobProgress(dir: string, cached = false, store?: ArtifactStore, seenSet?: Set<string>): JobProgress {
+  const file = readArtifact(join(dir, 'progress.jsonl'), 65536, store ?? (cached ? artifactStoreFor(getJobIndexCache(resolve(dir, '../..'))) : null), seenSet);
   if (!file?.whole) return { progress: [], latest_progress: null };
   return file.progress ??= (() => {
     const progress = file.text.split('\n').flatMap((line) => {
@@ -197,6 +187,12 @@ function openQuestionIds(dir: string): string[] {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
+}
+function statReport(dir: string) {
+  try {
+    const st = fs.lstatSync(join(dir, jobFiles.report), { bigint: true, throwIfNoEntry: false });
+    return st && st.isFile() ? { present: true, mtimeMs: statsMtimeMs(st.mtimeNs) } : { present: false, mtimeMs: null };
+  } catch { return { present: false, mtimeMs: null }; }
 }
 /**
  * Derive one job's shared status row from its receipt (`job.json`) and `STATUS.json`.
@@ -248,28 +244,16 @@ export function jobRow(
           : displayState === 'working'
             ? (word(s.reason) ?? null)
             : (word(s.reason) ?? word(s.exit_reason) ?? null);
+  const reportInfo = () => (extras?.cache ? extras.cache.readReportStat(extras.dir!) : statReport(extras!.dir!));
   let reportPresent: boolean;
   let reportMtime: number | null = extras?.reportAt ?? null;
   if (extras?.reportPresent !== undefined) {
     reportPresent = extras.reportPresent;
-    if (extras.dir && reportPresent && extras.reportAt === undefined) {
-      if (extras.cache) {
-        reportMtime = extras.cache.readReportStat(extras.dir).mtimeMs;
-      } else {
-        try { reportMtime = fs.statSync(join(extras.dir, jobFiles.report)).mtimeMs; } catch { /* disappeared */ }
-      }
-    }
+    if (extras.dir && reportPresent && extras.reportAt === undefined) reportMtime = reportInfo().mtimeMs;
   } else if (extras?.dir) {
-    if (extras.cache) {
-      const rep = extras.cache.readReportStat(extras.dir);
-      reportPresent = rep.present;
-      reportMtime = extras.reportAt !== undefined ? extras.reportAt : rep.mtimeMs;
-    } else {
-      reportPresent = fs.existsSync(join(extras.dir, jobFiles.report));
-      if (reportPresent && extras.reportAt === undefined) {
-        try { reportMtime = fs.statSync(join(extras.dir, jobFiles.report)).mtimeMs; } catch { /* disappeared */ }
-      }
-    }
+    const rep = reportInfo();
+    reportPresent = rep.present;
+    if (extras.reportAt === undefined) reportMtime = rep.mtimeMs;
   } else {
     reportPresent = s.output_written === true;
   }
@@ -303,8 +287,8 @@ export function failureUnobserved(dir: string, observedAt: unknown, statusAt?: n
 }
 
 export const failedAttempt = (row: JobRow) => row.display_state === 'failed' || row.display_state === 'stopped';
-const evidenceText = (store: typeof cache | null) => (path: string) => {
-  const snap = read(path, 65536, store);
+const evidenceText = (store: ArtifactStore | null, seenSet?: Set<string>) => (path: string) => {
+  const snap = readArtifact(path, 65536, store, seenSet);
   return snap?.whole ? snap.text : undefined; // A truncated list of checked boxes does not prove a ticket landed.
 };
 export const jobSupersession = (home: string, jobs: Receipt[], cwd: string) =>
@@ -350,16 +334,19 @@ export interface LeaseRecord {
   pid_start_time?: string;
 }
 export function readLease(file: string): LeaseRecord | null {
-  const v = json(file, JSON.parse, null)?.v;
+  const snap = readArtifact(file, 65536);
+  let v: Record<string, unknown> | null = null;
+  try { const p = snap?.whole ? JSON.parse(snap.text) : null; if (p && typeof p === 'object' && !Array.isArray(p)) v = p; }
+  catch { return null; }
   return v && typeof v.project === 'string' && typeof v.name === 'string' && typeof v.holder === 'string' &&
     (v.kind === 'main' || (v.kind === 'worker' && /^j[0-9a-f]{16}$/.test(v.holder))) && when(v.since) !== null &&
     typeof v.pid === 'number' && Number.isSafeInteger(v.pid) && v.pid > 1 ? v as unknown as LeaseRecord : null;
 }
 export function leaseJob(home: string, holder: string) {
-  const dir = join(home, 'jobs', holder);
-  const status = json(join(dir, 'STATUS.json'), JSON.parse, null)?.v;
-  const job = status ? {} : json(join(dir, 'job.json'), JSON.parse, null)?.v ?? {};
-  const state = jobRow(job, status).state;
+  const idx = getJobIndexCache(home), s = idx.readStatus<JobStatus>(holder);
+  const status = s.status === 'ok' ? s.value : undefined;
+  const j = status ? null : idx.readJob<Job>(holder);
+  const state = jobRow(j?.status === 'ok' ? j.value : {}, status).state;
   return { status, terminal: state === 'closed' || state === 'failed' || state === 'stopped' };
 }
 export function leaseActive(home: string, lease: LeaseRecord): boolean {
@@ -442,43 +429,31 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   }
   return lines;
 }
-function watchReceipts(home: string) {
-  seen.clear();
-  const root = join(home, 'jobs');
-  return entries(root)
-    .filter((id) => /^j[0-9a-f]{16}$/.test(id))
-    .flatMap((id) => {
-      try {
-        const st = fs.lstatSync(join(root, id));
-        return st.isDirectory() ? [{ id, at: st.mtimeMs }] : [];
-      } catch {
-        return [];
-      }
-    })
-    .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id))
-    .flatMap(({ id }) => {
-      const job = json(join(root, id, 'job.json'), JSON.parse, watchCache)?.v;
-      return job?.job === id && typeof job.role === 'string' ? [{ id, job }] : [];
-    });
+function watchReceipts(cache: JobIndexCache) {
+  return cache.listJobDirsByMtime().dirs.flatMap(({ id, dir }) => {
+    const res = cache.readJob<Job & Record<string, unknown>>(id);
+    return res.status === 'ok' && res.value.job === id && typeof res.value.role === 'string'
+      ? [{ id, dir, job: res.value }]
+      : [];
+  });
 }
 
-function watchRows(home: string, pane: string | null, receipts: ReturnType<typeof watchReceipts>): JobRow[] {
+function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnType<typeof watchReceipts>): JobRow[] {
   const rows: JobRow[] = [];
-  for (const { id, job } of receipts) {
+  for (const { id, dir, job } of receipts) {
     if (rows.length === 200) break;
     if (job.scout_only === true || (pane !== null && job.herdr_pane !== pane)) continue;
-    const dir = join(home, 'jobs', id);
-    const status = json(join(dir, 'STATUS.json'), JSON.parse, watchCache)?.v ?? null;
+    const statusRes = cache.readStatus<JobStatus>(id);
+    const status = statusRes.status === 'ok' ? statusRes.value : null;
     try {
       const checks = jobChecks(dir, job);
-      const row = jobRow(job, status, { dir });
+      const row = jobRow(job, status, { dir, cache });
       const reportMeta = jobRowReportMeta(row, dir);
       rows.push({ ...row, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
     } catch {
       /* Job directory disappeared or became unreadable during the scan; skip it. */
     }
   }
-  for (const path of watchCache.keys()) if (!seen.has(path)) watchCache.delete(path);
   return rows;
 }
 
@@ -488,15 +463,17 @@ function watchRows(home: string, pane: string | null, receipts: ReturnType<typeo
  */
 export function readThinJobRows(home: string, scope: { pane?: string | null }): JobRow[] {
   if (scope.pane !== null && !herdrId(scope.pane)) return [];
-  return watchRows(home, scope.pane, watchReceipts(home));
+  const cache = getJobIndexCache(home);
+  return watchRows(cache, scope.pane, watchReceipts(cache));
 }
 
 export async function readSessionJobRows(home: string, pane: string, cwd: string, env: NodeJS.ProcessEnv) {
-  const receipts = watchReceipts(home);
+  const cache = getJobIndexCache(home);
+  const receipts = watchReceipts(cache);
   // Capture the initial pane state before yielding, so writes just after watch starts are changes, not catch-up.
-  const rows = watchRows(home, pane, receipts);
+  const rows = watchRows(cache, pane, receipts);
   const jobs = receipts.map(({ job }) => job);
-  if (await adoptProjectJobs(home, pane, cwd, jobs, env, adoptionAttention(home, jobs, cwd))) {
+  if (await adoptProjectJobs(home, pane, cwd, jobs, env, adoptionAttention(home, jobs, cwd, cache), cache)) {
     return readThinJobRows(home, { pane });
   }
   return rows;
@@ -514,19 +491,11 @@ export function runningVerb(role: string, harness: string): string {
 }
 const LAND_STATES = new Set<WorkFlow['state']>(['queued', 'running', 'completed', 'failed', 'cancelled']);
 const flowIsActive = (flow: WorkFlow | null | undefined) => flow?.state === 'queued' || flow?.state === 'running';
-function readLandFlow(home: string, id: string, parse: (text: string) => unknown): WorkFlow | null {
-  const file = read(join(home, 'flows', `f${id.slice(1)}.json`));
-  if (!file?.whole) return null;
-  if (file.json === undefined) {
-    try {
-      const parsed = parse(file.text);
-      file.json = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-    } catch {
-      file.json = null;
-    }
-  }
-  const v = file.json;
-  if (!v) return null;
+function readLandFlow(idx: JobIndexCache, home: string, id: string, parse: (text: string) => unknown, onIncomplete: () => void): WorkFlow | null {
+  const res = idx.readJson(join(home, 'flows', `f${id.slice(1)}.json`), { parse });
+  if (res.status === 'truncated' || res.status === 'error') onIncomplete();
+  if (res.status !== 'ok') return null;
+  const v = res.value;
   const state = typeof v.state === 'string' && LAND_STATES.has(v.state as WorkFlow['state']) ? (v.state as WorkFlow['state']) : null;
   const step = word(v.step);
   if (v.job !== id || !state || !step) return null;
@@ -564,7 +533,7 @@ function readLandFlow(home: string, id: string, parse: (text: string) => unknown
     step,
     ...(sha ? { landedSha: sha.slice(0, 7) } : {}),
     ...(error ? { error } : {}),
-    updatedAt: when(v.updated_at) ?? file.at,
+    updatedAt: when(v.updated_at) ?? res.at,
   };
 }
 function scoutWorkFlow(
@@ -611,25 +580,33 @@ export function readThinJobs(
   options?: { settledBefore?: number; openedAt?: number },
   observation?: { complete: boolean }
 ): WorkLane[] {
-  complete = herdrId(scope.pane);
-  seen.clear();
-  restore(home);
+  let complete = herdrId(scope.pane);
+  const markIncomplete = () => { complete = false; };
+  const idx = getJobIndexCache(home), artifacts = artifactStoreFor(idx);
+  const seenFacts = new Set<string>(), seenArtifacts = new Set<string>();
+  restore(home, idx);
   const root = join(home, 'jobs');
-  const candidates = entries(root).filter((id) => /^j[0-9a-f]{16}$/.test(id)).flatMap((id) => {
-    try { const st = fs.lstatSync(join(root, id)); return st.isDirectory() ? [{ id, at: st.mtimeMs }] : []; }
-    catch { complete = false; return []; }
-  }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id));
-  if (candidates.length > 200) complete = false;
+  const readFact = (path: string): { v: Record<string, unknown>; at: number } | null => {
+    const res = idx.readJson(path, { parse, acceptFacts: true });
+    if (res.status === 'ok') { seenFacts.add(path); return { v: res.value, at: res.at }; }
+    if (res.status === 'truncated' || res.status === 'invalid') seenFacts.add(path);
+    else seenFacts.delete(path);
+    complete = false;
+    return null;
+  };
+  const readArt = (path: string) => readArtifact(path, 65536, artifacts, seenArtifacts, markIncomplete);
+  const { dirs: candidates, totalValid } = idx.listJobDirsByMtime({ limit: 200, onDirError: markIncomplete, onStatError: markIncomplete });
+  if (totalValid > 200) complete = false;
   const landFlows = new Map<string, WorkFlow | null>();
   const landFor = (id: string) => {
-    if (!landFlows.has(id)) landFlows.set(id, readLandFlow(home, id, parse));
+    if (!landFlows.has(id)) landFlows.set(id, readLandFlow(idx, home, id, parse, markIncomplete));
     return landFlows.get(id)!;
   };
   const receipts: Receipt[] = [], outsideTimeWindow: string[] = [];
-  const jobs = candidates.slice(0, 200)
+  const jobs = candidates
     .flatMap(({ id }) => {
       // Filter from STATUS facts before reading receipts or artifacts; active/unknown jobs always stay.
-      const status = options ? json(join(root, id, 'STATUS.json'), parse) : null;
+      const status = options ? readFact(join(root, id, 'STATUS.json')) : null;
       const land = options ? landFor(id) : null;
       if (
         status &&
@@ -638,10 +615,10 @@ export function readThinJobs(
         (Math.max(when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.settledBefore ?? -Infinity) ||
           Math.max(when(status.v.settled_at) ?? when(status.v.ended_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.openedAt ?? -Infinity))
       ) { outsideTimeWindow.push(id); return []; }
-      const file = json(join(root, id, 'job.json'), parse),
+      const file = readFact(join(root, id, 'job.json')),
         job = file?.v;
       // Bars may have read STATUS before the directory vanished during the receipt read.
-      if (!file) seen.delete(join(root, id, 'STATUS.json'));
+      if (!file) seenFacts.delete(join(root, id, 'STATUS.json'));
       if (job?.job === id) receipts.push(job);
       if (!file || !job || job.job !== id || typeof job.role !== 'string') complete = false;
       if (
@@ -661,7 +638,7 @@ export function readThinJobs(
   const lanes = new Map<string, WorkLane>();
   const cards = jobs.flatMap(({ id, job, created, jobAt, status: checkedStatus }) => {
     const directory = join(root, id),
-      status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
+      status = checkedStatus ?? readFact(join(directory, 'STATUS.json')),
       s = status?.v ?? {};
     const land = landFor(id);
     const initialRow = jobRow(job, status?.v ?? null);
@@ -670,7 +647,7 @@ export function readThinJobs(
     // When the work settled, not when the process later exited: closing an idle job must not reset its age or outcome label.
     const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
     if (settledAt !== null && !flowIsActive(land) && Math.max(settledAt, land?.updatedAt ?? -Infinity) < (options?.openedAt ?? -Infinity)) return [];
-    const briefFile = read(join(directory, 'brief.md')),
+    const briefFile = readArt(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '',
       task = typeof job.task_length === 'number' ? brief.slice(0, job.task_length) : brief;
     const briefTitle = stripJobPrefix(first(task.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? ''));
@@ -687,10 +664,10 @@ export function readThinJobs(
   const titles = new Map(cards.map(({ id, title }) => [id, title]));
   // An attempt on another pane or settled before open can retire a failure, but never becomes a card or model input.
   if (cards.some(({ state }) => state === 'failed' || state === 'stopped')) for (const id of outsideTimeWindow) {
-    const job = json(join(root, id, 'job.json'), parse)?.v;
+    const job = readFact(join(root, id, 'job.json'))?.v;
     if (job?.job === id) receipts.push(job);
   }
-  const superseded = supersession(home, receipts, evidenceText(cache), scope.project,
+  const superseded = supersession(home, receipts, evidenceText(artifacts, seenArtifacts), scope.project,
     (j) => taskTarget(titles.get(String(j.job)) ?? ''));
   const labels = new Map(cards.map(({ id, label }) => [id, label]));
   for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label: ownLabel, land } of cards) {
@@ -714,13 +691,17 @@ export function readThinJobs(
     addFile('brief.md', 'brief', briefFile);
     let openCount = 0;
     let pending: { fields: ReturnType<typeof questionFields>; evidence: EvidenceRef; id: string } | undefined;
-    const qa = join(directory, 'qa'),
-      names = new Set(entries(qa, true));
-    for (const name of [...names].filter((n) => /^q\d+\.md$/.test(n)).sort((a, b) => number(a) - number(b))) {
+    let qaSnap;
+    try { qaSnap = idx.readQa(directory); }
+    catch { complete = false; }
+    const openSet = new Set(qaSnap?.openIds ?? []);
+    const qa = join(directory, 'qa');
+    for (const name of qaSnap?.allQuestionFiles ?? []) {
       const answerName = name.replace('.md', '.answer.md');
-      const q = read(join(qa, name)),
-        a = names.has(answerName) ? read(join(qa, answerName)) : null;
-      if (!q || (names.has(answerName) && !a)) complete = false;
+      const hasAnswer = !openSet.has(name.slice(0, -3));
+      const q = readArt(join(qa, name)),
+        a = hasAnswer ? readArt(join(qa, answerName)) : null;
+      if (!q || (hasAnswer && !a)) complete = false;
       if (!q) continue;
       const fields = questionFields(q.text);
       files.push({
@@ -753,10 +734,10 @@ export function readThinJobs(
         }
       }
     }
-    const report = read(join(directory, 'report.md'));
+    const report = readArt(join(directory, 'report.md'));
     const row = jobRow(job, status?.v ?? null, {
       openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at,
-      progress: readJobProgress(directory, true),
+      progress: readJobProgress(directory, true, artifacts, seenArtifacts),
     });
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');
     const paneAsk =
@@ -772,7 +753,7 @@ export function readThinJobs(
           }
         : undefined)
       : undefined;
-    const reviews = entries(directory)
+    const reviews = entries(directory, false, markIncomplete)
       .filter((n) => /^review-\d+\.md$/.test(n))
       .sort((a, b) => number(a) - number(b));
     const phases: string[] = [];
@@ -782,7 +763,7 @@ export function readThinJobs(
     let phaseAt = 0,
       lastResult = '';
     for (const name of reviews) {
-      const review = read(join(directory, name));
+      const review = readArt(join(directory, name));
       if (!review) complete = false;
       if (!review) continue;
       const verdict = reviewVerdict(review.text);
@@ -930,9 +911,9 @@ export function readThinJobs(
       evidence: [],
     });
   }
-  // Retain only signatures used by this bounded scan.
-  for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path);
-  persist(home);
+  // Retain only artifact signatures used by this bounded scan.
+  for (const path of artifacts.keys()) if (!seenArtifacts.has(path)) artifacts.delete(path);
+  persist(home, idx, seenFacts);
   if (observation) observation.complete = complete;
   return [...lanes.values()];
 }
