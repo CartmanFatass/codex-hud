@@ -86,6 +86,7 @@ export function nativeWorker(node: SubagentTreeNode, laneId = `native:${node.id}
     effort: node.effort ?? null,
     resources: { context: node.contextUsage?.percent, rate: node.outputRate, spent: node.tokensSpent },
     nativeDepth: node.depth,
+    ...(node.transcriptStep ? { transcriptStep: { text: node.transcriptStep, replaying: !!node.replaying } } : {}),
     state:
       node.status === 'completed'
         ? 'done'

@@ -101,8 +101,9 @@ export class DecisionLabels {
           add(w.id + ':severity', findings, findings.map((_, i) => question('f' + i, `Classify list item ${i}. Checks, summaries and non-findings are not a finding.`, [...SEVERITIES, 'not a finding'])), r.stamp);
         }
       }
-      if (w.settledAt === null && (thin || nodes.has(w.id))) {
-        const a = jobActivity(home, w, nodes.get(w.id));
+      const node = nodes.get(w.id);
+      if (w.settledAt === null && (thin || (node && !node.replaying))) {
+        const a = jobActivity(home, w, node);
         if (a.items.length) {
           add(w.id + ':loop', a.items,
             [question('progress', 'Is the recent public activity repeating the same failure without progress, or progressing?', ['looping', 'progressing'])], hash(JSON.stringify(a.items)));

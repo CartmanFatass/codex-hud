@@ -5,6 +5,15 @@ import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import { readJobFile } from './job-sentences.js';
 import { makeSourceId } from '../core/identity.js';
 import { headTail } from './model-jobs.js';
+const CHUNK = 1024 * 1024;
+const MAX_LINE = 4 * CHUNK;
+const TAIL = 64 * 1024;
+const FORWARD_FILES = 4;
+const PREVIEW_FILES = 16;
+type TranscriptDisplay = Pick<SubagentTreeNode, 'action' | 'lastReport' | 'model' | 'lastEventAt'> & {
+  actionIsLatest?: boolean;
+  endTurn?: Date;
+};
 type Row = {
   stamp: string;
   metaStamp: string;
@@ -20,12 +29,84 @@ type Row = {
   calls: Set<string>;
   openTools: Set<string>;
   resumed: boolean;
-  endTurn: Date | undefined;
+  forward: TranscriptDisplay;
+  previewed: boolean;
+  preview?: { display: TranscriptDisplay; end: number; birthtime: number };
 };
 const safe = (v: unknown, max = 600) => (typeof v === 'string' ? v.slice(0, max) : '');
 /** A growing transcript is activity even before replay reaches its newest lines (as a Codex rollout's mtime is). */
 const newer = (at: Date | undefined, mtime: number) =>
   Number.isFinite(mtime) && (!at || mtime > at.getTime()) ? new Date(mtime) : at;
+
+/** Consume complete public records. Only forward replay carries lifecycle and nesting state. */
+function applyLines(body: Buffer, start: number, display: TranscriptDisplay, forward?: Row): number {
+  let call: unknown = '';
+  for (let end; (end = body.indexOf(10, start)) !== -1; start = end + 1) {
+    const line = body.subarray(start, end);
+    if (forward && (forward.skipping || line.length > MAX_LINE)) {
+      forward.skipping = false;
+      forward.omitted = true;
+      continue;
+    }
+    try {
+      const e = JSON.parse(line.toString('utf8')),
+        m = e.message;
+      const at = new Date(e.timestamp);
+      if (!Number.isFinite(at.getTime()) || !m || !Array.isArray(m.content)) continue;
+      if (forward) forward.node.startedAt ??= at;
+      display.lastEventAt = at;
+      if (
+        (e.channel && !['final', 'commentary'].includes(e.channel)) ||
+        (m.channel && !['final', 'commentary'].includes(m.channel)) ||
+        (m.phase && !['final_answer', 'commentary'].includes(m.phase))
+      )
+        continue;
+      display.endTurn = e.type === 'assistant' && m.stop_reason === 'end_turn' ? at : undefined;
+      for (const b of m.content)
+        if (b.type === 'tool_result') {
+          forward?.openTools.delete(b.tool_use_id);
+          if (b.tool_use_id === call) display.action = undefined;
+        }
+      if (e.type !== 'assistant') continue;
+      display.model = safe(m.model, 128) || display.model;
+      for (const b of m.content) {
+        if (b.type === 'tool_use') {
+          call = b.id;
+          if (forward && typeof b.id === 'string') {
+            forward.openTools.add(b.id);
+            if (['Agent', 'Task'].includes(b.name)) forward.calls.add(b.id);
+          }
+          display.action = { name: safe(b.name, 200), text: safe(b.name, 200), at };
+          display.actionIsLatest = true;
+        } else if (b.type === 'text' && typeof b.text === 'string') {
+          display.lastReport = { text: headTail(b.text, 8000), at, kind: 'update' };
+          display.actionIsLatest = false;
+        }
+      }
+    } catch {
+      /* Partial JSONL lines are not public evidence. */
+    }
+  }
+  return start;
+}
+
+function displayNode(row: Row, mtime = row.mtime, deferred = false): SubagentTreeNode {
+  // Keep the preview separate: old forward chunks cannot overwrite it, nor can
+  // preview text or end_turn become authoritative when replay finishes.
+  const { action, actionIsLatest, lastReport, model, lastEventAt } = row.preview?.display ?? row.forward;
+  const step = (actionIsLatest && action?.text) || lastReport?.text;
+  return {
+    ...row.node,
+    action,
+    lastReport: lastReport && { ...lastReport, kind: row.node.status === 'completed' ? 'reply' : 'update' },
+    model,
+    lastEventAt: newer(lastEventAt, mtime),
+    replaying: deferred || row.offset < row.size || !!row.pending.length || row.skipping,
+    transcriptStep: row.previewed ? step : undefined,
+    children: [],
+  };
+}
+
 export class ClaudeNativeTree {
   private rows = new Map<string, Row>();
   private listing = '';
@@ -66,6 +147,7 @@ export class ClaudeNativeTree {
     const live = new Set(this.names);
     for (const key of this.rows.keys()) if (!live.has(key)) this.rows.delete(key);
     let reads = 0,
+      previews = 0,
       replaying = false;
     for (let i = 0; i < this.names.length; i++) {
       const name = this.names[(this.cursor + i) % this.names.length];
@@ -88,13 +170,17 @@ export class ClaudeNativeTree {
           row = undefined;
         }
         if (row?.stamp !== stamp || row.offset < stat.size) {
-          if (reads >= 8) {
+          // Give new long files their tail now and schedule their forward read
+          // on a later tick, without spending the existing four-file budget.
+          const tailFirst = !row && stat.size > TAIL;
+          if (tailFirst ? previews >= PREVIEW_FILES : reads >= FORWARD_FILES) {
             replaying = true;
             this.complete = false;
-            if (row) nodes.push({ ...row.node, lastEventAt: newer(row.node.lastEventAt, stat.mtimeMs), replaying: true, children: [] });
+            if (row) nodes.push(displayNode(row, stat.mtimeMs, true));
             continue;
           }
-          reads += 2;
+          if (tailFirst) previews++;
+          else reads++;
           const metadata = metaStamp === row?.metaStamp ? undefined : readJobFile(join(directory, name), 8192);
           this.bytes += Buffer.byteLength(metadata?.text ?? '');
           if (metadata && !metadata.stamp) throw Error('unreadable');
@@ -117,7 +203,9 @@ export class ClaudeNativeTree {
             calls: new Set(previous?.calls),
             openTools: new Set(previous?.openTools),
             resumed: previous?.resumed ?? false,
-            endTurn: previous?.endTurn,
+            forward: { ...previous?.forward },
+            previewed: previous?.previewed ?? tailFirst,
+            preview: previous?.preview,
             node: {
               ...previous?.node,
               id: `claude:${session}:${id}`,
@@ -135,7 +223,7 @@ export class ClaudeNativeTree {
           // A finished flag can describe an interim reply before background work resumes.
           if (previous && stat.size > previous.size && (previous.node.status === 'completed' || row.resumed)) {
             row.resumed = true;
-            row.endTurn = undefined;
+            row.forward.endTurn = undefined;
             row.node.status = 'running';
             row.node.statusAt = undefined;
           }
@@ -151,71 +239,40 @@ export class ClaudeNativeTree {
             const opened = fs.fstatSync(fd);
             if (!opened.isFile() || opened.ino !== stat.ino || opened.dev !== stat.dev || opened.size < stat.size)
               throw Error('changed');
-            chunk = Buffer.alloc(Math.min(1048576, stat.size - row.offset));
-            const n = chunk.length ? fs.readSync(fd, chunk, 0, chunk.length, row.offset) : 0;
+            const position = tailFirst ? stat.size - TAIL : row.offset;
+            chunk = Buffer.alloc(Math.min(CHUNK, stat.size - position));
+            const n = chunk.length ? fs.readSync(fd, chunk, 0, chunk.length, position) : 0;
             this.bytes += n;
             chunk = chunk.subarray(0, n);
             if (fs.lstatSync(file).ino !== stat.ino) throw Error('changed');
-            row.offset += n;
           } finally {
             if (fd !== undefined) fs.closeSync(fd);
           }
-          const body = Buffer.concat([row.pending, chunk]);
-          let start = 0;
-          let call = '';
-          for (let end; (end = body.indexOf(10, start)) !== -1; start = end + 1) {
-            const line = body.subarray(start, end);
-            if (row.skipping || line.length > 4194304) {
-              row.skipping = false;
-              row.omitted = true;
-              continue;
+          if (tailFirst) {
+            const display: TranscriptDisplay = {},
+              firstBreak = chunk.indexOf(10);
+            // Both the line crossing the window start and an unterminated last line are not evidence.
+            if (firstBreak !== -1) applyLines(chunk, firstBreak + 1, display);
+            row.preview = {
+              display,
+              end: stat.size,
+              birthtime: metaStat.birthtimeMs > 0 ? metaStat.birthtimeMs : Infinity,
+            };
+          } else {
+            row.offset += chunk.length;
+            const body = Buffer.concat([row.pending, chunk]);
+            row.pending = Buffer.from(body.subarray(applyLines(body, 0, row.forward, row)));
+            if (row.pending.length > MAX_LINE) {
+              row.pending = Buffer.alloc(0);
+              row.skipping = row.omitted = true;
             }
-            try {
-              const e = JSON.parse(line.toString('utf8')),
-                m = e.message;
-              const at = new Date(e.timestamp);
-              if (!Number.isFinite(at.getTime()) || !m || !Array.isArray(m.content)) continue;
-              row.node.startedAt ??= at;
-              row.node.lastEventAt = at;
-              if (
-                (e.channel && !['final', 'commentary'].includes(e.channel)) ||
-                (m.channel && !['final', 'commentary'].includes(m.channel)) ||
-                (m.phase && !['final_answer', 'commentary'].includes(m.phase))
-              )
-                continue;
-              row.endTurn = e.type === 'assistant' && m.stop_reason === 'end_turn' ? at : undefined;
-              for (const b of m.content)
-                if (b.type === 'tool_result') {
-                  row.openTools.delete(b.tool_use_id);
-                  if (b.tool_use_id === call) row.node.action = undefined;
-                }
-              if (e.type !== 'assistant') continue;
-              row.node.model = safe(m.model, 128) || row.node.model;
-              for (const b of m.content) {
-                if (b.type === 'tool_use') {
-                  call = b.id;
-                  if (typeof b.id === 'string') row.openTools.add(b.id);
-                  if (typeof b.id === 'string' && ['Agent', 'Task'].includes(b.name)) row.calls.add(b.id);
-                  row.node.action = { name: safe(b.name, 200), text: safe(b.name, 200), at };
-                } else if (b.type === 'text' && typeof b.text === 'string') {
-                  row.node.lastReport = { text: headTail(b.text, 8000), at, kind: 'update' };
-                }
-              }
-            } catch {
-              /* Partial JSONL lines are not public evidence. */
+            if (row.preview && row.offset >= row.preview.end) row.preview = undefined;
+            if (row.resumed && row.offset === stat.size && !row.pending.length && row.forward.endTurn && !row.openTools.size) {
+              row.node.status = 'completed';
+              row.node.statusAt = row.forward.endTurn;
+              row.resumed = false;
             }
           }
-          row.pending = Buffer.from(body.subarray(start));
-          if (row.pending.length > 4194304) {
-            row.pending = Buffer.alloc(0);
-            row.skipping = row.omitted = true;
-          }
-          if (row.resumed && row.offset === stat.size && !row.pending.length && row.endTurn && !row.openTools.size) {
-            row.node.status = 'completed';
-            row.node.statusAt = row.endTurn;
-            row.resumed = false;
-          }
-          if (row.node.lastReport) row.node.lastReport.kind = row.node.status === 'completed' ? 'reply' : 'update';
           this.rows.set(name, row);
         }
         if (row && row.offset < stat.size) replaying = true;
@@ -227,23 +284,17 @@ export class ClaudeNativeTree {
           this.rows.set(name, row);
         }
       }
-      if (row)
-        nodes.push({
-          ...row.node,
-          lastEventAt: newer(row.node.lastEventAt, row.mtime),
-          replaying: row.offset < row.size || !!row.pending.length || row.skipping,
-          children: [],
-        });
+      if (row) nodes.push(displayNode(row));
     }
-    this.cursor = (this.cursor + 4) % Math.max(1, this.names.length);
+    this.cursor = (this.cursor + FORWARD_FILES) % Math.max(1, this.names.length);
     // The read cursor rotates; the rows must not, or Home reshuffles every refresh.
-    const started = (n: SubagentTreeNode) => n.startedAt?.getTime() ?? Infinity;
+    const rowFor = (n: SubagentTreeNode) => this.rows.get(`agent-${n.ref!.threadId}.meta.json`)!;
+    const started = (n: SubagentTreeNode) => n.startedAt?.getTime() ?? rowFor(n).preview?.birthtime ?? Infinity;
     nodes.sort((a, b) => started(a) - started(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     const owners = new Map<string, SubagentTreeNode>();
-    for (const n of nodes)
-      for (const call of this.rows.get(`agent-${n.ref!.threadId}.meta.json`)?.calls ?? []) owners.set(call, n);
+    for (const n of nodes) for (const call of rowFor(n).calls) owners.set(call, n);
     const roots = nodes.filter((n) => {
-      const meta = this.rows.get(`agent-${n.ref!.threadId}.meta.json`)!.meta;
+      const { meta } = rowFor(n);
       const parent = owners.get(safe(meta.toolUseId, 256));
       if (parent && parent !== n) {
         parent.children.push(n);

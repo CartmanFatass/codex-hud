@@ -453,7 +453,7 @@ test('finished Claude metadata survives multi-pass replay, hides by settlement a
     }
     assert.ok(passes <= 4);
   } while (tree.incomplete);
-  assert.equal(passes, 3);
+  assert.equal(passes, 4, 'one tail preview followed by three forward chunks');
   assert.equal(calls.length, 1, 'caught-up material can use the existing final-sentence path');
   assert.match(calls[0].messages[1].content, /FINAL-REPLAY-RESULT/);
   assert.equal(tree.nodes[0].replaying, false);

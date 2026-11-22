@@ -4,14 +4,17 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nativeFixture, NOW } from '../fixtures/native-tree.mjs';
+import { longClaudeTranscript, nativeFixture, NOW } from '../fixtures/native-tree.mjs';
+import { JobSentences } from '../../dist-test/src/collectors/job-sentences.js';
 import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
 
 const CHUNK = 1048576;
-const message = (content) =>
+const TAIL = 65536;
+const READ_BUDGET = 4 * (CHUNK + 8192) + 16 * (TAIL + 8192);
+const message = (content, at = NOW - 60000) =>
   JSON.stringify({
     type: 'assistant',
-    timestamp: new Date(NOW - 60000).toISOString(),
+    timestamp: new Date(at).toISOString(),
     message: { content },
   }) + '\n';
 const call = (id = 'nested-call', name = 'Agent') => message([{ type: 'tool_use', id, name }]);
@@ -26,32 +29,54 @@ function drain(f) {
   let tree;
   for (let pass = 0; pass < 10; pass++) {
     tree = f.claude();
-    assert.ok(f.collector.bytes <= 4 * (CHUNK + 8192));
+    assert.ok(f.collector.bytes <= READ_BUDGET);
     if (!tree.incomplete) return tree;
   }
   assert.fail('a few-MB transcript must finish replay within ten refreshes');
 }
 
-test('long Claude parent: withhold during replay, attach old call, retain nesting in 80/120 EN/ZH Home frames', (t) => {
-  const f = fixture(t),
-    prefix = padding(),
-    suffix = padding();
-  assert.ok(Buffer.byteLength(prefix) > CHUNK);
-  assert.ok(Buffer.byteLength(suffix) > 65536);
-  f.put(f.file, prefix + call() + suffix);
+test('5 MB Claude parent shows its latest step in the first frame, then fills in nesting without flashing back', (t) => {
+  const f = fixture(t), body = longClaudeTranscript();
+  assert.ok(Buffer.byteLength(body) > 4 * CHUNK && Buffer.byteLength(body) <= 5 * CHUNK);
+  f.put(f.file, body);
   const first = f.claude();
   assert.equal(first.incomplete, true);
   assert.equal(first.nodes.length, 1, 'unresolved nested child is not a top-level card during replay');
   assert.equal(first.nodes[0].children.length, 0);
-  const tree = drain(f);
+  assert.equal(first.nodes[0].startedAt, undefined);
+  assert.equal(first.nodes[0].replaying, true);
+  assert.equal(first.nodes[0].lastReport.text, 'SYNTH-LATEST');
+  assert.equal(first.nodes[0].model, 'claude-sonnet-4-5');
+  assert.equal(first.nodes[0].status, 'running', 'a preview end_turn is not a settlement');
+  const mockModel = { submit: t.mock.fn() };
+  const sentences = new JobSentences(mockModel, join(f.home, 'sentences.json'), () => {}, () => NOW);
+  sentences.configure(true, 'en');
+  sentences.update(f.board(first), f.home, first);
+  assert.equal(mockModel.submit.mock.callCount(), 0, 'preview text is not model material');
+
+  fs.appendFileSync(f.file, message([{ type: 'text', text: 'SYNTH-NEWER' }], NOW + 1000));
+  let tree = first, attachedDuringReplay = false;
+  for (let pass = 0; pass < 6 && tree.incomplete; pass++) {
+    tree = f.claude();
+    const parent = tree.nodes[0];
+    assert.equal(parent.lastReport.text, tree.incomplete ? 'SYNTH-LATEST' : 'SYNTH-NEWER');
+    if (parent.replaying && parent.children.length) attachedDuringReplay = true;
+  }
+  assert.ok(attachedDuringReplay, 'nesting fills in as forward replay passes the call, before it reaches the tail');
+  assert.equal(tree.incomplete, false);
+  assert.equal(tree.nodes[0].replaying, false);
   assert.equal(tree.nodes.length, 1);
   assert.equal(tree.nodes[0].children[0].ref.threadId, 'child');
   assert.equal(tree.nodes[0].children[0].depth, 2);
   for (const width of [80, 120])
     for (const lang of ['en', 'zh']) {
+      const initial = f.render(width, lang, undefined, first);
+      assert.match(initial.lines.map(stripAnsi).join('\n'), /SYNTH-LATEST/);
+      for (const line of initial.lines) assert.equal(visualLength(line), width);
       const frame = f.render(width, lang, undefined, tree),
         lines = frame.lines.map(stripAnsi);
       for (const line of frame.lines) assert.equal(visualLength(line), width);
+      assert.match(lines.join('\n'), /SYNTH-NEWER/);
       assert.match(lines.join('\n'), /Claude ·/);
       const parent = lines.findIndex((line) => /^◉ custom-builder/.test(line));
       const child = lines.findIndex((line) => /^  ✓ custom-tester/.test(line));
@@ -62,20 +87,23 @@ test('long Claude parent: withhold during replay, attach old call, retain nestin
         `${width} ${lang}: child indents two cells`
       );
     }
-  fs.appendFileSync(f.file, suffix);
+  fs.appendFileSync(f.file, padding());
   const grown = drain(f);
   assert.equal(grown.nodes[0].children.length, 1, 'old call survives subsequent tail growth');
 });
 
-test('Claude replay reads exact bounded forward byte ranges; warm and metadata-only changes read no transcript body', (t) => {
+test('Claude reads one bounded tail, then exact forward byte ranges; warm and metadata-only reads skip bodies', (t) => {
   const f = fixture(t);
   f.put(f.file, padding() + call() + padding());
-  const ino = fs.statSync(f.file).ino,
+  const { ino, size } = fs.statSync(f.file),
+    child = fs.statSync(join(f.dir, 'agent-child.jsonl')),
     reads = [],
+    childReads = [],
     original = fs.readSync;
   t.mock.method(fs, 'readSync', (fd, buffer, offset, length, position) => {
-    const n = original(fd, buffer, offset, length, position);
-    if (fs.fstatSync(fd).ino === ino) reads.push({ position, length, n });
+    const n = original(fd, buffer, offset, length, position), opened = fs.fstatSync(fd);
+    if (opened.ino === ino) reads.push({ position, length, n });
+    if (opened.ino === child.ino) childReads.push({ position, length, n });
     return n;
   });
   syncBuiltinESMExports();
@@ -84,6 +112,8 @@ test('Claude replay reads exact bounded forward byte ranges; warm and metadata-o
     syncBuiltinESMExports();
   });
   drain(f);
+  assert.deepEqual(reads.shift(), { position: size - TAIL, length: TAIL, n: TAIL });
+  assert.deepEqual(childReads, [{ position: 0, length: child.size, n: child.size }], 'small files are forward-only');
   assert.ok(reads.length >= 3);
   let end = 0;
   for (const read of reads) {
@@ -176,6 +206,61 @@ test('Claude replay shares a four-agent byte cap fairly across multiple growing 
   assert.ok(tree.nodes.every((n) => n.lastReport?.text.startsWith('Synthetic filler.')));
   f.claude();
   assert.equal(f.collector.bytes, 0);
+});
+
+test('Claude previews at most 16 new large agents per refresh and leaves the rest for later', (t) => {
+  const f = fixture(t);
+  for (const id of ['lead', 'child']) fs.unlinkSync(join(f.dir, `agent-${id}.meta.json`));
+  const body = message([{ type: 'text', text: 'Synthetic filler. '.repeat(256) }]).repeat(16) +
+    message([{ type: 'text', text: 'SYNTH-LATEST' }]);
+  const meta = JSON.stringify({ spawnDepth: 1, finished: false });
+  for (let i = 0; i < 20; i++) {
+    f.put(join(f.dir, `agent-${i}.meta.json`), meta);
+    f.put(join(f.dir, `agent-${i}.jsonl`), body);
+  }
+  const first = f.claude();
+  assert.equal(first.nodes.length, 16);
+  assert.equal(first.incomplete, true);
+  assert.ok(first.nodes.every((n) => n.replaying && n.lastReport?.text === 'SYNTH-LATEST'));
+  assert.equal(f.collector.bytes, 16 * (TAIL + Buffer.byteLength(meta)));
+  const second = f.claude();
+  assert.equal(second.nodes.length, 20);
+  assert.equal(second.nodes.filter((n) => !n.replaying).length, 4, 'the forward budget is independent');
+  assert.ok(f.collector.bytes <= READ_BUDGET);
+  assert.equal(drain(f).nodes.length, 20);
+});
+
+test('Claude tail-first ordering uses metadata birthtime until the first forward timestamp', (t) => {
+  const f = fixture(t), birthtimes = { a: 0, b: 2000, c: 1000 };
+  for (const id of ['lead', 'child']) fs.unlinkSync(join(f.dir, `agent-${id}.meta.json`));
+  for (const [i, id] of ['a', 'b', 'c'].entries()) {
+    f.put(join(f.dir, `agent-${id}.meta.json`), { spawnDepth: 1 });
+    f.put(join(f.dir, `agent-${id}.jsonl`), message([{ type: 'text', text: id }], NOW - 3000 + i).repeat(1000));
+  }
+  const original = fs.lstatSync;
+  t.mock.method(fs, 'lstatSync', (path, ...args) => {
+    const stat = original(path, ...args), id = /agent-([abc])\.meta\.json$/.exec(path)?.[1];
+    if (id) stat.birthtimeMs = birthtimes[id];
+    return stat;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  assert.deepEqual(f.claude().nodes.map((n) => n.ref.threadId), ['c', 'b', 'a']);
+  assert.deepEqual(f.claude().nodes.map((n) => n.ref.threadId), ['a', 'b', 'c']);
+});
+
+test('Claude tail window drops the crossing line and does not let a previewed tool establish nesting', (t) => {
+  const f = fixture(t);
+  f.put(f.file, message([{ type: 'text', text: 'x'.repeat(CHUNK + TAIL) }]) + call());
+  const first = f.claude();
+  assert.equal(first.nodes[0].lastReport, undefined);
+  assert.equal(first.nodes[0].action.name, 'Agent');
+  assert.equal(first.nodes[0].children.length, 0);
+  assert.match(f.render(80, 'en', undefined, first).lines.map(stripAnsi).join('\n'), /┃ Agent/);
+  assert.equal(drain(f).nodes[0].children.length, 1, 'a partial preview line is not omitted forward evidence');
 });
 
 test('Claude skips oversized records with incomplete coverage but resumes parsing later Agent calls', (t) => {

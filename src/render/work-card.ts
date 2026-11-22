@@ -231,7 +231,9 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
     theme.board.title(pair(`${ink(workStateGlyph(card))} ${name.role}  ${name.text}`, name.right, width)),
   ];
   // Open questions have their complete expandable slab above the lanes on Home.
-  const generated = card.worker.modelSentence;
+  const step = card.worker.transcriptStep;
+  const excerpt = step ? cardSentence(step.text) : '';
+  const generated = step?.replaying && excerpt ? undefined : card.worker.modelSentence;
   const open = cardExpanded(
     state,
     targetKey({ kind: 'worker', laneId: card.worker.laneId, workerId: card.worker.id })
@@ -242,7 +244,9 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
     rows.push(...(open || lines.length <= SENTENCE_ROWS ? lines : [lines[0], fit(truncateAnsi(lines[1].trimEnd(), width - 1) + '…', width)]));
   }
   // A localized worker summary replaces its original, rather than adding a second result line.
-  if (!generated || (open && !card.worker.reportMeta?.summary)) {
+  if (!generated && excerpt) {
+    rows.push(fit(`${ink(mark('┃', '|'))} ${excerpt}`, width));
+  } else if (!generated || (open && !card.worker.reportMeta?.summary)) {
     const detail = workCardDetail(card, sentence);
     if (detail) rows.push(...stemLines(detail, width, ink, open ? Infinity : SENTENCE_ROWS));
   }

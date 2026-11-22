@@ -153,9 +153,12 @@ Missing facts are absent, not fabricated zeroes.
 
 Codex descendants come from the incremental rollout tree. `ClaudeNativeTree`
 reads selected-session `subagents/agent-*.meta.json` and JSONL: at most 401 directory
-entries, 200 agents, four changed/replaying agents per refresh, 8 KiB metadata
-and up to 1 MiB transcript each. It retains public Agent/Task call ids to establish
-nesting across long transcripts. Partial records carry across passes, up to 4 MiB;
+entries, 200 agents, four forward reads per refresh, 8 KiB metadata and up to
+1 MiB transcript each. Separately, up to 16 first-seen transcripts over 64 KiB
+get their last 64 KiB and metadata read for the first card view, then join forward
+replay on later refreshes. Preview text is local display only; forward replay
+retains public Agent/Task call ids to establish nesting. Partial records carry
+across forward passes, up to 4 MiB;
 oversized records and deferred/unreadable evidence mark coverage incomplete.
 Shrink/replacement clears prior evidence and replays. Unmatched nested cards wait
 while candidate parents replay, then appear at top level if still unmatched.

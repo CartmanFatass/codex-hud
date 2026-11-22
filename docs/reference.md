@@ -413,9 +413,9 @@ not merely helper exit.
 
 **Native agents on Home.** Claude/Codex main sessions get their own lanes, labeled
 `subagents` in Split. Children indent once; deeper descendants say `↳ parent`. A hidden parent never hides a live
-child. pi helpers already appear as HUD jobs. Claude reads metadata and bounded
-forward transcript batches, retaining public Agent/Task nesting. Replay preserves
-known completion ages and blocks model requests until caught up. Growth after
+child. pi helpers already appear as HUD jobs. A long Claude subagent transcript shows
+its latest public step first; Agent/Task nesting fills in as bounded forward replay
+catches up. Replay preserves known completion ages and blocks model requests until caught up. Growth after
 completion reopens an agent; fresh finished metadata or a caught-up public
 `end_turn` with no open calls settles it again. Incomplete reads cannot prove idle.
 `o` opens the transcript; there is no native conversation-switch control.

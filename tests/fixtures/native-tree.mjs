@@ -8,6 +8,14 @@ import { setLanguage } from '../../dist-test/src/render/i18n.js';
 import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { stripAnsi } from '../../dist-test/src/render/colors.js';
 export const NOW = Date.parse('2026-11-12T12:00:00Z');
+export function longClaudeTranscript() {
+  const line = (content, timestamp = NOW - 60000, message = {}) => JSON.stringify({
+    type: 'assistant', timestamp: new Date(timestamp).toISOString(), message: { content, ...message },
+  }) + '\n';
+  const filler = line([{ type: 'text', text: 'Synthetic filler. '.repeat(256) }]);
+  return filler.repeat(300) + line([{ type: 'tool_use', id: 'nested-call', name: 'Agent' }]) +
+    filler.repeat(805) + line([{ type: 'text', text: 'SYNTH-LATEST' }], NOW, { model: 'claude-sonnet-4-5', stop_reason: 'end_turn' });
+}
 export function nativeFixture(home) {
   const source = join(home, 'claude-project'),
     session = 'synthetic-claude';

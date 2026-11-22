@@ -468,6 +468,8 @@ export interface SubagentTreeNode {
   statusAt?: Date;
   /** Bounded transcript replay has not caught up; public model material is not ready. */
   replaying?: boolean;
+  /** Local card excerpt for a tail-first Claude transcript, not model material. */
+  transcriptStep?: string;
   /** Local rollout for inspecting this agent; never displayed as its task. */
   rolloutPath?: string;
   /** This agent's own context window, read from its rollout's last report. */

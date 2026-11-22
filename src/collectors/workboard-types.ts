@@ -66,6 +66,8 @@ export interface OwnerWorker extends Partial<JobProgress> {
   /** Observed activity of a running worker: ten one-minute buckets, oldest first, each a count of collects that saw it write. */
   readonly activity?: readonly number[];
   readonly nativeDepth?: number;
+  /** Raw local excerpt for the card, separate from fact and model-sentence inputs. */
+  readonly transcriptStep?: { text: string; replaying: boolean };
   readonly parentJobId?: string;
   readonly parentName?: string;
   readonly files?: readonly {
