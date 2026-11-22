@@ -30,7 +30,8 @@ Milestone: 0.1.4
 `;
   fs.writeFileSync(state, body);
   const record = (action, ...slices) => appendTry(hud, cwd, action, { milestone: '0.1.4', slices });
-  const records = () => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse) : [];
+  // Only finished lines: the panel may be mid-append when the test polls.
+  const records = () => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').slice(0, -1).filter(Boolean).map(JSON.parse) : [];
   return { cwd, hud, file, state, body, env, record, records };
 }
 const until = async (condition, diagnostic) => {

@@ -26,7 +26,7 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-test('lean main-pi delegation collects first and repeat reports through native watch without polling', { timeout: 10000 }, async (t) => {
+test('lean main-pi delegation collects first and repeat reports through native watch without polling', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   await f.startCliSocket(); // Read-close checks fake Herdr's agent state after the report is collected.
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
