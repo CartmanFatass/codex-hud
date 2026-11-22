@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { fork } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const activeFixtures = new Set();
 let processHooksInstalled = false;
+let guardian;
 
 function canonical(dir) {
   if (!dir) return [];
@@ -33,7 +35,7 @@ function readStat(pid) {
     const end = raw.lastIndexOf(')');
     if (end < 0) return null;
     const fields = raw.slice(end + 2).split(' ');
-    return { state: fields[0], ppid: Number(fields[1]) };
+    return { state: fields[0], ppid: Number(fields[1]), start: fields[19] };
   } catch {
     return null;
   }
@@ -113,7 +115,7 @@ export function findFixtureProcesses({ root, hudHome } = {}) {
   return matches;
 }
 
-const delay = (ms) => new Promise((done) => setTimeout(done, ms).unref());
+const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 
 async function waitExited(exited, ms) {
   if (ms <= 0) return null;
@@ -123,7 +125,6 @@ async function waitExited(exited, ms) {
       exited.then((result) => ({ done: true, result })),
       new Promise((resolve) => {
         timer = setTimeout(() => resolve({ done: false, result: null }), ms);
-        timer.unref?.();
       }),
     ]);
   } finally {
@@ -229,5 +230,20 @@ export function trackFixture({ root, hudHome }) {
   const spec = { root, hudHome };
   activeFixtures.add(spec);
   installProcessHooks();
-  return () => { activeFixtures.delete(spec); };
+  // JS exit hooks cannot run on SIGKILL. One detached guardian per test worker can still reap
+  // detached HUD children when the worker or its node --test coordinator dies.
+  if (!guardian) {
+    const identity = (pid) => ({ pid, start: readStat(pid)?.start });
+    const owner = process.env.NODE_TEST_CONTEXT === 'child-v8' && process.ppid > 1 ? identity(process.ppid) : undefined;
+    guardian = fork(new URL('./fixture-guardian.mjs', import.meta.url), [JSON.stringify({ worker: identity(process.pid), owner })], {
+      detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], execArgv: [],
+    });
+    guardian.unref();
+    guardian.channel.unref();
+  }
+  guardian.send({ spec, active: true }, () => {});
+  return () => {
+    activeFixtures.delete(spec);
+    guardian.send({ spec, active: false }, () => {});
+  };
 }

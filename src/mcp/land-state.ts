@@ -6,7 +6,8 @@ import { sharedRoot } from '../roles/projects.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import type { ManagedWorktree } from './managed-worktree.js';
 
-export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string }
+export const DEFAULT_LAND_TIMEOUT_S = 900;
+export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
 export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;

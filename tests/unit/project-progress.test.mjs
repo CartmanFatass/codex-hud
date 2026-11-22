@@ -7,7 +7,9 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
+import { stopChild } from '../helpers/process-cleanup.mjs';
 import { projectFixture, plain, onPage, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectVisits } from '../../dist/collectors/project-visits.js';
@@ -17,8 +19,13 @@ import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-progress-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { root, ...(await projectFixture(root)) };
+  const cleanups = [];
+  t.after(async () => {
+    // Stop writers before removing their files. If rm throws, node:test skips later after hooks.
+    try { for (const cleanup of cleanups) await cleanup(); }
+    finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+  return { root, ...(await projectFixture(root)), onCleanup: (cleanup) => cleanups.push(cleanup) };
 }
 const decoder = new WorkbenchInputDecoder('workboard'), key = (raw) => decoder.push(Buffer.from(raw))[0];
 const send = (frame, raw) => handleMonitorInput(frame.state, key(raw), { tree: TREE, frame, nowMs: NOW, standalone: true });
@@ -263,6 +270,18 @@ test('the Project tab keeps the previous snapshot, with its own root, until a ro
   assert.deepEqual(visits.shown('/b'), { root: '/a', snapshot: { summary: 'a' } }, 'the newest shown one, not the first');
   assert.deepEqual(visits.shown('/own'), { root: '/own', snapshot: { summary: 'own' } }, 'a visited root shows its own at once');
 });
+function livePanel(f, runner, env = {}) {
+  // A live loop (and the held collection below) has no natural exit while stdin is open.
+  const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 50000, killSignal: 'SIGKILL',
+    env: { ...process.env, ...f.env, CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd, ...env } });
+  const exited = once(child, 'exit');
+  f.onCleanup(async () => {
+    try { await stopChild(child, exited, { closeStdin: true }); }
+    finally { child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy(); }
+  });
+  return child;
+}
+
 test('the live panel paints the old page, not a blank one, on the first switch to a project and then the new page', async (t) => {
   const f = await fixture(t), other = fs.realpathSync(fs.mkdtempSync(join(f.root, 'other-'))), release = join(f.root, 'release');
   f.put(join(f.hud, 'projects.json'), { version: 1, projects: [{ root: other, registered_at: '2026-11-13T00:00:00.000Z' }] });
@@ -275,25 +294,32 @@ import { ProjectCollector } from ${JSON.stringify(pathToFileURL(resolve('dist/co
 import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};
 const real = ProjectCollector.prototype.collect;
 ProjectCollector.prototype.collect = async function (shown, ...rest) {
-  if (shown === true && this.cwd === ${JSON.stringify(other)}) while (!fs.existsSync(${JSON.stringify(release)})) await new Promise((r) => setTimeout(r, 20));
+  if (shown === true && this.cwd === ${JSON.stringify(other)}) {
+    const end = performance.now() + 20000;
+    while (!fs.existsSync(${JSON.stringify(release)})) {
+      if (performance.now() >= end) throw Error('Timed out waiting for the test to release the second project');
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
   return real.call(this, shown, ...rest);
 };
 await runLivePage();
 `);
   const place = encodePanelPlace({ state: { ...sliceState(), activeTab: 'project' }, settings: null });
-  const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ...f.env, CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd, HUD_PANEL_RELOAD_PLACE: place } });
-  // The terminal as the panel's row writes leave it.
+  const child = livePanel(f, runner, { HUD_PANEL_RELOAD_PLACE: place });
+  // Keep the last row across chunks: the cursor marker or row text may be split at any byte.
   const screen = [];
-  let stderr = '', pending = '';
-  child.stdout.on('data', (b) => {
-    pending += b;
-    const parts = pending.split(/\x1b\[(\d+);1H\x1b\[0m\x1b\[K/);
-    pending = '';
-    for (let i = 1; i + 1 < parts.length; i += 2) screen[Number(parts[i]) - 1] = stripAnsi(parts[i + 1]).trimEnd();
+  let stderr = '', pending = '', row;
+  child.stdout.setEncoding('utf8').on('data', (chunk) => {
+    const parts = (pending + chunk).split(/\x1b\[(\d+);1H\x1b\[0m\x1b\[K/);
+    if (row !== undefined) screen[row] = stripAnsi(parts[0]).trimEnd();
+    for (let i = 1; i + 1 < parts.length; i += 2) {
+      row = Number(parts[i]) - 1;
+      screen[row] = stripAnsi(parts[i + 1]).trimEnd();
+    }
+    pending = parts.at(-1);
   });
   child.stderr.on('data', (b) => { stderr += b; });
-  t.after(() => child.kill('SIGKILL'));
   const until = async (ok, what) => {
     for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (ok()) return;
     assert.fail(`${what}: ${stderr}\n${screen.join('\n')}`);
@@ -320,16 +346,14 @@ import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-pa
 ProjectCollector.prototype.collect = async function (shown) { process.stderr.write('COLLECT ' + JSON.stringify({ cwd: this.cwd, shown }) + '\\n'); };
 await runLivePage();
 `);
-  const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ...f.env, CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd } });
-  let log = '', stderr = '';
+  const child = livePanel(f, runner);
+  let log = '';
   child.stdout.resume();
-  child.stderr.on('data', (b) => { stderr += b; log += b; });
-  t.after(() => child.kill('SIGKILL'));
-  const collects = () => log.split('\n').filter((l) => l.startsWith('COLLECT ')).map((l) => JSON.parse(l.slice(8)));
+  child.stderr.setEncoding('utf8').on('data', (chunk) => { log += chunk; });
+  const collects = () => log.split('\n').slice(0, -1).filter((l) => l.startsWith('COLLECT ')).map((l) => JSON.parse(l.slice(8)));
   const until = async (ok, what) => {
     for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 25))) if (ok()) return;
-    assert.fail(`${what}: ${stderr}`);
+    assert.fail(`${what}: ${log}`);
   };
   const own = fs.realpathSync(f.cwd), mark = () => collects().length;
   await until(() => mark() > 0, 'the first collection');

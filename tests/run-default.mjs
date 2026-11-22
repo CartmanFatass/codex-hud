@@ -9,6 +9,6 @@ const files = readdirSync(source)
   .filter((name) => name.endsWith('.test.ts'))
   .sort()
   .map((name) => `${output}/${name.replace(/\.ts$/, '.js')}`);
-const result = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit' });
+const result = spawnSync(process.execPath, ['--test', '--test-timeout=60000', '--test-force-exit', ...files], { stdio: 'inherit' });
 if (result.error) throw result.error;
 process.exitCode = result.status ?? 1;

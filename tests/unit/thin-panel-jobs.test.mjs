@@ -498,7 +498,7 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
   const flowFile = join(f.env.HUD_HOME, 'flows', `${flowId}.json`);
   // Settled 10 minutes ago (past the 5m fold window): an active land must keep it visible and unfolded.
   f.job(81, 'FLOW-LAND', 'land synthetic slice', 'closed', 10, 10);
-  f.put(flowFile, {
+  const firstRun = {
     flow: flowId, job: landId, pane: 'w4E:p1', task: false,
     wt: { main_root: '/synthetic/repo', root: '/synthetic/wt', branch: 'wt/flow', base_head: 'aaaaaaa' },
     config: { base: 'main', gate: ['npm test'], after: [], push: true },
@@ -506,7 +506,8 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
     state: 'running', step: 'gate[1]: npm test',
     created_at: new Date(now - 60000).toISOString(),
     updated_at: new Date(now - 10000).toISOString(),
-  }, 0);
+  };
+  f.put(flowFile, firstRun, 0);
   // Scouted job: scouting -> run -> done.
   const scoutDir = f.job(82, 'FLOW-SCOUT', 'scout synthetic slice', 'working', 0, null, 'w4E:p1', { scout_state: 'scouting' });
   f.put(join(scoutDir, 'STATUS.json'), { state: 'working', reason: 'scouting', started_at: new Date(now - 60000).toISOString() }, 0);
@@ -527,16 +528,27 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
     }
   }
 
+  const retryFile = join(f.env.HUD_HOME, 'flows', `${flowId}-2.json`);
+  f.put(flowFile, { ...firstRun, state: 'failed', error: 'timeout' }, 0);
+  const queued = { ...firstRun, flow: `${flowId}-2`, state: 'queued', step: 'waiting for f0000000000000099 (gate step 2, 3 min)' };
+  f.put(retryFile, queued, 0);
+  await f.pipeline.refresh();
+  board = f.pipeline.workboard(f.tree);
+  for (const [lang, narrow, wide] of [
+    ['en', 'wait f0000000000000099 · gate 2, 3m', queued.step],
+    ['zh', '等待 f0000000000000099 · 门禁 2，3分', '等待 f0000000000000099（门禁第 2 步，3 分钟）'],
+  ]) {
+    setLanguage(lang);
+    for (const [width, detail] of [[40, narrow], [80, wide]]) {
+      const lines = plain(f.render(board, 180, width));
+      assert.ok(lines.join('\n').includes(detail), `${lang} ${width}\n${lines.join('\n')}`);
+      assert.ok(lines.every(line => visualLength(line) === width));
+    }
+  }
+
   // Advance land to completed with SHA, and scouted job to running after scout finished.
-  f.put(flowFile, {
-    flow: flowId, job: landId, pane: 'w4E:p1', task: false,
-    wt: { main_root: '/synthetic/repo', root: '/synthetic/wt', branch: 'wt/flow', base_head: 'aaaaaaa' },
-    config: { base: 'main', gate: ['npm test'], after: [], push: true },
-    source_sha: 'bbbbbbb', landed_sha: '1234567890abcdef', pid: 999999, start: '1',
-    state: 'completed', step: 'done',
-    created_at: new Date(now - 60000).toISOString(),
-    updated_at: new Date(now - 5000).toISOString(),
-  }, 0);
+  f.put(retryFile, { ...queued, landed_sha: '1234567890abcdef', state: 'completed', step: 'done',
+    updated_at: new Date(now - 5000).toISOString() }, 0);
   f.put(join(scoutDir, 'job.json'), {
     job: 'j0000000000000082', role: 'imp', cwd: '/synthetic/repo', package: 'FLOW-SCOUT', herdr_pane: 'w4E:p1',
     created_at: new Date(now - 60000).toISOString(), scout_state: 'done',
@@ -555,15 +567,8 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
   }
 
   // Failed land reports the failing stage and error.
-  f.put(flowFile, {
-    flow: flowId, job: landId, pane: 'w4E:p1', task: false,
-    wt: { main_root: '/synthetic/repo', root: '/synthetic/wt', branch: 'wt/flow', base_head: 'aaaaaaa' },
-    config: { base: 'main', gate: ['npm test'], after: [], push: false },
-    source_sha: 'bbbbbbb', pid: 999999, start: '1',
-    state: 'failed', step: 'fast-forward', error: 'base moved',
-    created_at: new Date(now - 60000).toISOString(),
-    updated_at: new Date(now - 2000).toISOString(),
-  }, 0);
+  f.put(retryFile, { ...queued, config: { ...queued.config, push: false }, state: 'failed', step: 'fast-forward', error: 'base moved',
+    updated_at: new Date(now - 2000).toISOString() }, 0);
   await f.pipeline.refresh();
   board = f.pipeline.workboard(f.tree);
   for (const [lang, failedText] of [

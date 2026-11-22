@@ -9,6 +9,8 @@ import { stopChild } from '../helpers/process-cleanup.mjs';
 
 import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { takeLease } from '../../dist/roles/lease.js';
+import { procStat, isProcAlive } from '../../dist/utils/proc.js';
 
 const job = 'j0000000000000123';
 const jobDir = (f, id = job) => join(f.home, 'jobs', id);
@@ -24,7 +26,7 @@ async function repair(f, flow, index) {
   }, 20000);
   return f.flowState(flow).repairs[index].job;
 }
-async function checkout(t, gate) {
+async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s } = {}) {
   const f = await fixture(t);
   const home = f.env.HUD_HOME, main = f.root, root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
   t.after(() => fs.rmSync(`${main}-wt`, { recursive: true, force: true }));
@@ -33,7 +35,7 @@ async function checkout(t, gate) {
   git(main, 'config', 'user.name', 'Synthetic'); git(main, 'config', 'user.email', 'sample@example.invalid');
   fs.mkdirSync(join(main, '.hud'));
   fs.writeFileSync(join(main, '.hud/project.json'), JSON.stringify({ worktree: { disposable: ['dist/**'] },
-    land: { base: 'base', gate, after: ['test "$WRAPPED" = yes && pwd > after-ran'], push: true, wrapper: 'wrap' } }));
+    land: { base: 'base', gate, after, push: true, wrapper: 'wrap', timeout_s } }));
   fs.writeFileSync(join(main, 'wrap'), '#!/bin/sh\nunset NODE_TEST_CONTEXT\nexport WRAPPED=yes\nexec "$@"\n', { mode: 0o700 });
   fs.writeFileSync(join(home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: main }] }));
   fs.writeFileSync(join(main, '.gitignore'), 'dist/\n');
@@ -84,6 +86,43 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..base`), '2');
   assert.equal(f.git(f.main, 'branch', '--list', f.branch), '');
   assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 2);
+});
+
+test('hud_read names the land holding the lease and how long its gate step has run', async t => {
+  const f = await checkout(t, ['true']);
+  const holder = 'f0000000000000456', lease = { home: f.home, cwd: f.main, holder };
+  assert.equal((await takeLease({ name: 'main-checkout', wait_s: 0 }, lease)).granted, true);
+  fs.mkdirSync(join(f.home, 'flows'));
+  fs.writeFileSync(join(f.home, 'flows', `${holder}.json`), JSON.stringify({
+    state: 'running', step: 'gate[2]: npm test', pid: process.pid, start: procStat(process.pid).start,
+    updated_at: new Date(Date.now() - 121000).toISOString(),
+  }));
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).step.startsWith('waiting for'));
+  const queued = await f.call('hud_read', { job: flow });
+  assert.equal(queued.state, 'queued');
+  assert.equal(queued.step, `waiting for ${holder} (gate step 2, 2 min)`);
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+  await until(() => f.flowState(flow).state === 'completed', 15000);
+});
+
+for (const kind of ['gate', 'after']) test(`land bounds a hung ${kind} and kills children holding the output pipes`, async t => {
+  // In the gate case the shell itself exits successfully, but its child still holds the pipes.
+  const hung = `seq 50; sleep 60 & echo $! > "$HOME/sleeper"; ${kind === 'gate' ? 'exit 0' : 'wait'}`;
+  const f = await checkout(t, kind === 'gate' ? [hung] : ['true'], { timeout_s: 1, ...(kind === 'after' ? { after: [hung] } : {}) });
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).state === 'failed', 10000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.ok(done.step.startsWith(`${kind}[1]:`));
+  assert.equal(done.error, 'timeout');
+  assert.deepEqual(done.tail, Array.from({ length: 40 }, (_, i) => String(i + 11)));
+  assert.equal(done.repairs, undefined);
+  assert.equal(done.reruns, undefined);
+  const pid = Number(fs.readFileSync(join(f.env.HOME, 'sleeper'), 'utf8'));
+  await until(() => !isProcAlive(pid));
+  assert.equal((await f.call('hud_lease', { name: 'main-checkout', wait_s: 2 })).granted, true);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
+  assert.equal(!!done.landed_sha, kind === 'after');
 });
 
 for (const scenario of ['dirty touched path', 'moved base on overlapping path']) test(`land refuses ${scenario} without publishing`, async t => {
@@ -156,6 +195,36 @@ test('a failed after command does not retry an already landed flow', async t => 
   assert.equal(again.flow, flow); assert.equal(again.landed_sha, landed);
 });
 
+for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty landed paths' : 'pushes the advanced HEAD and cleans up'} after fast-forward`, async t => {
+  const f = await checkout(t, ['true'], { after: ['while test ! -f "$HOME/release"; do sleep .05; done'] });
+  const receipt = join(jobDir(f), 'job.json'), ticket = '.scratch/feature/issues/01-example.md';
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
+  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
+  fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** claimed\n\n## Comments\n');
+  f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed records');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).step.startsWith('after[1]'), 10000);
+  const { landed_sha, tested_sha } = f.flowState(flow);
+  assert.notEqual(landed_sha, tested_sha);
+  assert.ok(f.git(f.main, 'show', `${landed_sha}:${ticket}`).includes(`Landed ${tested_sha}; gate 1/1`));
+  const other = '.scratch/feature/issues/02-unrelated.md';
+  fs.writeFileSync(join(f.main, other), '# 02: Unrelated ticket\n');
+  f.git(f.main, 'add', other); f.git(f.main, 'commit', '-qm', 'claim unrelated ticket');
+  const advanced = f.git(f.main, 'rev-parse', 'HEAD');
+  if (dirty) fs.appendFileSync(join(f.main, 'tracked'), 'uncommitted owner edit\n');
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 10000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, dirty ? 'failed' : 'completed', JSON.stringify(done));
+  assert.equal(done.step, dirty ? 'push' : 'done');
+  assert.equal(done.landed_sha, landed_sha);
+  assert.equal(done.records_sha, undefined);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), advanced);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD^'), landed_sha);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), dirty ? f.base_head : advanced);
+  assert.equal(fs.existsSync(f.worktree), dirty);
+});
+
 test('land fast-forwards a rebased worker branch with only its own commits beyond the base tip', async t => {
   const f = await checkout(t, ['true']);
   fs.writeFileSync(join(f.main, 'upstream'), 'new base\n');
@@ -184,7 +253,7 @@ test('red gate continues the source in grace; its rebased fix passes on a fresh 
   assert.match(prompt, /Rebase onto the current base base/); assert.match(prompt, /gate\[1\][\s\S]*Log tail:\nrepair-needed/);
   f.git(f.worktree, 'rebase', 'base'); fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
   f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
-  await until(() => f.flowState(flow).state !== 'running', 15000);
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
   const done = await f.call('hud_read', { job: flow });
   assert.equal(done.state, 'completed', JSON.stringify(done)); assert.equal(done.repairs[0].outcome, 'gate passed');
   assert.equal(done.changes.length, 1); assert.match(done.changes[0], /Repair 1: .*gate passed/);
@@ -271,6 +340,35 @@ for (const name of ${JSON.stringify(names)}) test(name, () => assert.ok(seen));
   assert.equal(fs.readFileSync(join(f.env.HOME, 'green.test.mjs'), 'utf8'), 'run\n');
   for (const file of ['alpha.test.mjs', "beta's test.test.mjs"])
     assert.equal(fs.readFileSync(join(f.env.HOME, file), 'utf8'), 'run\nrun\n');
+});
+
+test('gate reruns a timed-out test file once, not its passing neighbor', async t => {
+  const f = await checkout(t, ['node --test --test-timeout=200 --test-force-exit -- *.test.mjs']);
+  fs.writeFileSync(join(f.worktree, 'hung.test.mjs'), `
+import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+test('times out on the first run', async () => {
+  const marker = join(process.env.HOME, 'timeout-ran');
+  if (existsSync(marker)) return;
+  writeFileSync(marker, 'yes');
+  setInterval(() => {}, 1000);
+  await new Promise(() => {});
+});
+`);
+  fs.writeFileSync(join(f.worktree, 'green.test.mjs'), `
+import { appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+test('passing neighbor', () => appendFileSync(join(process.env.HOME, 'green-ran'), 'run\\n'));
+`);
+  f.git(f.worktree, 'add', 'hung.test.mjs', 'green.test.mjs'); f.git(f.worktree, 'commit', '-qm', 'add timed test');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.deepEqual(done.reruns[0].tests, ['times out on the first run (hung.test.mjs)']);
+  assert.equal(fs.readFileSync(join(f.env.HOME, 'green-ran'), 'utf8'), 'run\n');
 });
 
 for (const [label, ownerTryLine, expectedStatus] of [

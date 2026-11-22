@@ -12,7 +12,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { landFile, readLand, writeLand, type LandFlow } from './land-state.js';
+import { DEFAULT_LAND_TIMEOUT_S, isFlowId, landFile, readLand, writeLand, type LandFlow } from './land-state.js';
 import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
 import { repairLand } from './land-repair.js';
@@ -20,6 +20,7 @@ import { repairLand } from './land-repair.js';
 class CommandError extends Error {
   constructor(message: string, readonly tail: string[]) { super(message); }
 }
+class CommandTimeout extends CommandError {}
 type TestFailure = { file: string; name?: string };
 function collectTestFailures(cwd: string, stream: Readable, failures: TestFailure[]) {
   let previous: TestFailure | undefined;
@@ -40,18 +41,29 @@ function collectTestFailures(cwd: string, stream: Readable, failures: TestFailur
   });
 }
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
-function command(cwd: string, bin: string, argv: string[], failures?: TestFailure[]) {
+function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, failures?: TestFailure[]) {
   return new Promise<void>((ok, fail) => {
-    const child = spawn(bin, argv, { cwd, env: safeGitEnv(process.env), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, argv, { cwd, env: safeGitEnv(process.env), detached: deadlineMs !== undefined, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const append = (chunk: string) => { output = (output + chunk).slice(-65536); };
+    const tail = () => output.trimEnd().split(/\r?\n/).slice(-40);
     for (const stream of [child.stdout, child.stderr]) {
       stream.setEncoding('utf8').on('data', append);
       if (failures) collectTestFailures(cwd, stream, failures);
     }
-    child.once('error', fail);
-    child.once('close', (code, signal) => code === 0 ? ok() : fail(new CommandError(`exit ${code ?? signal}`,
-      output.trimEnd().split(/\r?\n/).slice(-40))));
+    const timer = deadlineMs === undefined ? undefined : setTimeout(() => {
+      try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); }
+      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') append(`\n${(e as Error).message}\n`); }
+      // Don't wait for inherited stdio to close. A child can outlive the shell that opened it.
+      child.stdout.destroy(); child.stderr.destroy(); child.unref();
+      fail(new CommandTimeout('timeout', tail()));
+    }, deadlineMs);
+    child.once('error', (e) => { clearTimeout(timer); fail(e); });
+    child.once('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) ok();
+      else fail(new CommandError(`exit ${code ?? signal}`, tail()));
+    });
   });
 }
 const fields = (out: string) => out.split('\0').filter(Boolean);
@@ -87,20 +99,22 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         (await git(wt.root, ['symbolic-ref', 'HEAD'])).trim() !== `refs/heads/${wt.branch}`)
       throw Error('Source job is no longer settled at the recorded commit');
   };
+  const deadlineMs = (c.timeout_s ?? DEFAULT_LAND_TIMEOUT_S) * 1000;
   async function commands(kind: 'gate' | 'after', cwd: string) {
     for (const [i, cmd] of c[kind].entries()) {
       if (kind === 'gate') checkCancel();
       step(`${kind}[${i + 1}]: ${cmd}`);
       const invoke = (script: string, failures?: TestFailure[]) => c.wrapper
-        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], failures)
-        : command(cwd, 'sh', ['-c', script], failures);
+        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, failures)
+        : command(cwd, 'sh', ['-c', script], deadlineMs, failures);
       const failures = kind === 'gate' ? [] as TestFailure[] : undefined;
       try { await invoke(cmd, failures); }
       catch (e) {
-        if (!failures || !(e instanceof CommandError)) throw e;
+        // A command deadline can leave tests unrun; a red test (including a node:test timeout) identifies a safe rerun.
+        if (!failures || !(e instanceof CommandError) || e instanceof CommandTimeout) throw e;
         checkCancel();
         const files = [...new Set(failures.map(({ file }) => file))];
-        await invoke(files.length ? [process.execPath, '--test', '--', ...files].map(quote).join(' ') : cmd);
+        await invoke(files.length ? [process.execPath, '--test', '--test-timeout=60000', '--test-force-exit', '--', ...files].map(quote).join(' ') : cmd);
         const tests = [...new Set(failures.map(({ file, name }) => name ? `${name} (${file})` : file))];
         (f.reruns ??= []).push(tests.length ? { step: f.step, tests } : f.step);
         writeLand(home, f);
@@ -112,7 +126,18 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     while (!acquired) {
       checkCancel();
       const r = await takeLease({ name: 'main-checkout', wait_s: 1 }, lease);
-      acquired = 'granted' in r && r.granted;
+      if (!('granted' in r)) continue;
+      acquired = r.granted;
+      if (!r.granted) {
+        const { holder } = r.held_by;
+        const blocker = isFlowId(holder) ? readLand(home, holder) : null;
+        const gate = blocker && /^gate\[(\d+)\]:/.exec(blocker.step);
+        const since = blocker ? Date.parse(blocker.updated_at) : NaN;
+        const waiting = !blocker ? 'main-checkout lease' : gate && Number.isFinite(since)
+          ? `waiting for ${holder} (gate step ${gate[1]}, ${Math.max(0, Math.floor((Date.now() - since) / 60000))} min)`
+          : `waiting for ${holder}`;
+        if (f.step !== waiting) step(waiting);
+      }
     }
   };
   async function prepare() {
@@ -159,7 +184,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
         const prior = f.repairs?.at(-1);
         if (prior) prior.outcome = `failed at ${f.step}`;
-        if ((f.repairs?.length ?? 0) >= 2) throw e;
+        if (e instanceof CommandTimeout || (f.repairs?.length ?? 0) >= 2) throw e;
         checkCancel(); await checkSource();
         f.error = e.message; f.tail = e.tail;
         // Only the helper-created scratch checkout is disposable, never the source or main.
@@ -168,7 +193,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         await repairLand(home, f, checkCancel);
         f.source_sha = await head(wt.root);
         delete f.error; delete f.tail; delete f.tested_sha;
-        step('main-checkout lease');
+        f.state = 'queued'; step('main-checkout lease');
       }
     }
     const prior = f.repairs?.at(-1);
@@ -232,12 +257,25 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
     if (target !== base) f.replayed_onto = target;
     f.landed_sha = landed; writeLand(home, f);
-    await checkMain(landed);
+    const landingHead = async () => {
+      const moved = Error('Main checkout is not at the recorded base tip');
+      if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref) throw moved;
+      const current = await head(main);
+      if (current !== landed) {
+        try { await git(main, ['merge-base', '--is-ancestor', landed, current]); }
+        catch { throw moved; }
+      }
+      return current;
+    };
+    await landingHead();
     await commands('after', main);
     if (c.push) {
-      step('push'); await checkMain(landed);
+      step('push');
+      await checkClean(target === base ? paths : await touched(target, landed));
+      const pushHead = await landingHead();
+      // Push the verified HEAD by SHA so a later branch switch cannot change what is published.
       await command(main, 'git', ['-c', 'core.hooksPath=/dev/null', '-c', 'remote.origin.mirror=false', 'push',
-        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${landed}:${ref}`]);
+        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${pushHead}:${ref}`]);
     }
     step('cleanup');
     const notes: string[] = [];

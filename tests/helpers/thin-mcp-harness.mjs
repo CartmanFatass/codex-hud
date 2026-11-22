@@ -126,13 +126,17 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     for (const cleanup of [...cleanups].reverse()) {
       try { await cleanup(); } catch (error) { record(error); }
     }
-    const stopped = await stopChild(child, exited, {
-      closeStdin: true,
-      graceMs: t.signal?.aborted ? 200 : 2000,
-      killMs: 400,
-    });
+    let stopped;
+    try {
+      stopped = await stopChild(child, exited, {
+        closeStdin: true,
+        graceMs: t.signal?.aborted ? 200 : 2000,
+        killMs: 400,
+      });
+    } catch (error) { record(error); }
     const survivors = await reapFixtureProcesses({ root, hudHome: env.HUD_HOME });
-    untrack();
+    child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
+    if (!survivors.length) untrack();
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     if (survivors.length) {
       record(new assert.AssertionError({

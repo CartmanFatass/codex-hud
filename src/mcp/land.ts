@@ -14,8 +14,9 @@ function config(home: string, root: string): LandConfig {
   const c = JSON.parse(fs.readFileSync(join(root, '.hud/project.json'), 'utf8')).land;
   const commands = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim());
   if (!c || typeof c.base !== 'string' || !c.base || c.base.startsWith('-') || !commands(c.gate) || !commands(c.after) ||
-      typeof c.push !== 'boolean' || (c.wrapper !== undefined && (typeof c.wrapper !== 'string' || !c.wrapper)))
-    throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper');
+      typeof c.push !== 'boolean' || (c.wrapper !== undefined && (typeof c.wrapper !== 'string' || !c.wrapper)) ||
+      (c.timeout_s !== undefined && (!Number.isFinite(c.timeout_s) || c.timeout_s < 0.001 || c.timeout_s * 1000 > 2 ** 31 - 1)))
+    throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper and timeout_s');
   return c;
 }
 export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean) {

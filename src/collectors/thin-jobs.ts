@@ -522,9 +522,22 @@ export function runningVerb(role: string, harness: string): string {
 const LAND_STATES = new Set<WorkFlow['state']>(['queued', 'running', 'completed', 'failed', 'cancelled']);
 const flowIsActive = (flow: WorkFlow | null | undefined) => flow?.state === 'queued' || flow?.state === 'running';
 function readLandFlow(idx: JobIndexCache, home: string, id: string, parse: (text: string) => unknown, onIncomplete: () => void): WorkFlow | null {
-  const res = idx.readJson(join(home, 'flows', `f${id.slice(1)}.json`), { parse });
-  if (res.status === 'truncated' || res.status === 'error') onIncomplete();
+  const base = join(home, 'flows', `f${id.slice(1)}`);
+  const read = (suffix: string) => {
+    const row = idx.readJson(`${base}${suffix}.json`, { parse });
+    if (row.status === 'truncated' || row.status === 'error') onIncomplete();
+    return row;
+  };
+  let res = read('');
   if (res.status !== 'ok') return null;
+  // A pre-landing failure or cancellation can be retried under the next attempt ID.
+  for (let n = 2; res.value.job === id && !res.value.landed_sha &&
+      (res.value.state === 'failed' || res.value.state === 'cancelled'); n++) {
+    const next = read(`-${n}`);
+    if (next.status !== 'ok') break;
+    if (n > 16) { onIncomplete(); break; }
+    res = next;
+  }
   const v = res.value;
   const state = typeof v.state === 'string' && LAND_STATES.has(v.state as WorkFlow['state']) ? (v.state as WorkFlow['state']) : null;
   const step = word(v.step);

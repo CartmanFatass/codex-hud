@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { until } from '../helpers/thin-mcp-harness.mjs';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -79,7 +81,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fixture, fakeCliWithChild, writeCliRole, cliState, until } from ${JSON.stringify(harnessPath)};
+import { fixture, rolePlacesFixture, fakeCliWithChild, writeCliRole, cliState, until } from ${JSON.stringify(harnessPath)};
 import { fixture as retentionFixture } from ${JSON.stringify(retentionPath)};
 
 const record = (hudHome) => fs.appendFileSync(${JSON.stringify(homesFile)}, hudHome + '\\n');
@@ -114,6 +116,18 @@ test('forced timeout while hud_read wait_ms blocks hud-mcp', { timeout: 1200 }, 
   await f.call('hud_read', { job: job.job, wait_ms: 120000 });
 });
 
+test('forced timeout with a live role-places watcher', async (t) => {
+  const f = await rolePlacesFixture(t);
+  record(f.env.HUD_HOME);
+  await f.call('hud_create', { role: 'imp', request_key: 'role-timeout', task: 'Synthetic.' });
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await t.test('hung operation', { timeout: 200 }, async () => {
+    const tick = setInterval(() => {}, 1000);
+    t.after(() => clearInterval(tick));
+    await new Promise(() => {});
+  });
+});
+
 test('forced fail with fakeCliWithChild detached descendant', async (t) => {
   const f = await fixture(t);
   record(f.env.HUD_HOME);
@@ -144,10 +158,11 @@ test('forced fail with SIGTERM-resistant job-retention watcher', async (t) => {
 
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
-  const run = spawnSync(process.execPath, ['--test', script], { env, encoding: 'utf8', timeout: 25000 });
-  assert.notEqual(run.status, 0, `forced failing subtests should exit non-zero:\n${run.stdout}\n${run.stderr}`);
+  const run = spawnSync(process.execPath, ['--test', '--test-timeout=10000', '--test-force-exit', script], { env, encoding: 'utf8', timeout: 25000 });
+  assert.equal(run.status, 1, `forced failing subtests should exit non-zero:\n${run.stdout}\n${run.stderr}`);
+  assert.match(run.stdout, /test timed out after 200ms/);
   const homes = recordedHomes();
-  assert.equal(homes.length, 5, `expected all 5 subtests to run:\n${run.stdout}\n${run.stderr}`);
+  assert.equal(homes.length, 6, `expected all 6 subtests to run:\n${run.stdout}\n${run.stderr}`);
 
   const survivors = [];
   for (const hudHome of homes) {
@@ -158,4 +173,50 @@ test('forced fail with SIGTERM-resistant job-retention watcher', async (t) => {
     [],
     `Forced failing/timed-out tests left live processes: ${JSON.stringify(survivors)}`
   );
+});
+
+test('SIGKILL of the node --test coordinator leaves no watcher for either temporary fixture', { timeout: 20000 }, async (t) => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'fixture-cleanup-killed-'));
+  const script = join(dir, 'killed.test.mjs'), homesFile = join(dir, 'homes'), ready = join(dir, 'ready');
+  fs.writeFileSync(script, `
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import { fixture, rolePlacesFixture, until } from ${JSON.stringify(resolve('tests/helpers/thin-mcp-harness.mjs'))};
+
+test('start both fixture watchers', async (t) => {
+  for (const make of [fixture, rolePlacesFixture]) {
+    const f = await make(t);
+    fs.appendFileSync(${JSON.stringify(homesFile)}, f.env.HUD_HOME + '\\n');
+    await f.call('hud_create', { role: 'imp', request_key: 'killed', task: 'Synthetic.' });
+    await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  }
+  fs.writeFileSync(${JSON.stringify(ready)}, '');
+  await new Promise(() => setInterval(() => {}, 1000));
+});
+`);
+  const homes = () => fs.existsSync(homesFile) ? fs.readFileSync(homesFile, 'utf8').trim().split('\n') : [];
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const run = spawn(process.execPath, ['--test', '--test-timeout=60000', script], { stdio: 'ignore', env, detached: true });
+  const exited = once(run, 'exit');
+  t.after(async () => {
+    // If an assertion fails before SIGKILL, still stop the coordinator and test worker.
+    try { process.kill(-run.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+    await exited;
+    for (const hudHome of homes()) {
+      const root = join(hudHome, '..');
+      await reapFixtureProcesses({ root, hudHome, graceMs: 100 });
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await until(() => fs.existsSync(ready));
+  assert.equal(homes().length, 2);
+  for (const hudHome of homes()) assert.ok(findFixtureProcesses({ hudHome }).some(({ cmdline }) => cmdline.includes('hud-watch.mjs')));
+  run.kill('SIGKILL');
+  assert.deepEqual(await exited, [null, 'SIGKILL']);
+  // No test cleanup hook ran in the killed run; wait for its guardian, not the fallback above.
+  await until(() => homes().every(hudHome => findFixtureProcesses({ root: join(hudHome, '..'), hudHome }).length === 0), 5000);
+  for (const hudHome of homes()) assertNoFixtureProcesses({ root: join(hudHome, '..'), hudHome });
 });
