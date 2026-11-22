@@ -13,7 +13,7 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Next
 
-- HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01、02、03 已落地；04 PANEL-LOCALE（翻译）进行中 → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
+- HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01–04 全部落地，等 owner 试用 → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
 - ORCH-LEAN（owner 2026-11-22：A/B/C 全做）：A 已做（本仓库禁用不用的工具、全局去掉 codegraph 提示钩子、STATE 归档、习惯）；B：01 合入交给 sonic + 回收已 cherry-pick 的 worktree（已落地 8cf766b6，首次由 sonic 合入）、02 hud_read 摘要、03 通知等检查并瘦身（均已落地 406fa959）；C：04 面板操作送达任务客户端 + r/m 意图键、05 批量 MCP 调用。
 - MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. Two follow-ups to
   try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
@@ -45,6 +45,7 @@ board counts these; update at every landing or decision. -->
 - todo · MCP-ORCH · IMP-MODEL-COST · owner 2026-11-22: imp's default is now openai/gpt-6.2-astra high (preset astra, from 11:43Z; before: 6.2-sol high, then 6.2-sol-fast); once every open ticket has landed, compare average time and cost per imp task across the three (pi session usage.cost)
 - accepted · MCP-ORCH · ORCH-LOAD · read docs/llm/orch-load-2026-11-22.md: ~73% of orch turns are chores (search 32%, land/test/poll 25%, STATE/tickets 6%, full reports 6%) and 30% of context is fixed schema/skill overhead; 10 ranked cuts (~80% fewer Opus tokens if ranks 1–8 land) and 5 questions (d61876c7)
 - accepted · PANEL · DESIGN-HOME-PROGRESS · open docs/design/home-progress/sample.html: the proposed Home in zh and en (milestone bar, one ticket meter, planned features folded into one row, failed jobs leave once retried); README has the diagnosis, 4 slices and 5 questions; pick before any build (3cf299cc)
+- try · HOME-PROGRESS · HOME-PROGRESS-04 · panel text follows the display language: waiting items, open worker questions and open ticket titles not in the panel language show a cached translation with the original folded; IDs read <ID> · localized short name; answers still send the original option (22bfbdbe)
 - try · FLOWS · FLOWS-01 · hud_land({job}) gates a settled worktree job in a fresh detached worktree by the project's .hud/project.json land config, fast-forwards, runs after commands, pushes and cleans up, in one call with one notice; worktree.disposable globs let the watcher reap worktrees whose only leftovers are build output (eda6382a)
 - try · IMP-LEAN · IMP-LEAN-04/05 · sonic has no hud_sonic, batches its inspection in ~20 turns and reports ≤60 lines; reviewer reads diffs file by file and hands lookups to sonic to stay under ~150k context (d647091e)
 - try · IMP-LEAN · IMP-LEAN-02 · pi workers get short briefs inline in the first message and start without the MCP adapter when no MCP server is configured (6fc6d5a3)
