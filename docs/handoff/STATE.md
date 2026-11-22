@@ -13,8 +13,8 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 - Proposals 10–16 in docs/neon-proposal/ (the rest of neon's report, reduced; one slice each): 10 Settings Advanced
   fold (M5), 11 Claude transcript tail-first (M5), 12 i18n cross-dictionary check (7 keys show a different word today),
   13 read-only `hud doctor <jobId>`, 14 job archive ledger before deletion, 15 worktree overlaps in hud_read
-  git_summary, 16 per-place health in Control's Dispatch today. 14–16 each propose one spec sentence. Owner picks
-  which become tickets. Not written (spec or owner decision rules them out, owner may ask): spec restructure, structured
+  git_summary, 16 per-place health in Control's Dispatch today. 14–16 each propose one spec sentence. 12 ticketed (i18n-check/01, defaults). Owner picks which
+  of the others become tickets. Not written (spec or owner decision rules them out, owner may ask): spec restructure, structured
   hud_report summary, HUD-driven resume, `after` chaining, web board server, panel merge.
 
 ## Next
@@ -37,7 +37,7 @@ board counts these; update at every landing or decision. -->
 - try · CODE-HEALTH · BUILD-DEDUP-01 · hud-mcp sources under src/mcp, one tsc build, ./install builds once; old packages/hud-mcp/dist only warned about (f9de5b72, 78df68dd); release archive drops .hud/ (c13ea5f2); live: fresh hud-mcp lists 11 tools, a sonic settled through the new worker paths
 - working · CODE-HEALTH · PRUNE-OBS-02 · neon 01 Slice 2 plan A: tmp/tasks collector goes; tmp/tasks cards leave Home (imp, wt/PRUNE-OBS-02; prune-obs/02)
 - working · CODE-HEALTH · TEST-SPLIT-01 · neon 09 S1: thin-mcp.test.mjs split into ten files behind a shared harness, pure move (imp, wt/TEST-SPLIT-01; test-split/01)
-- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Panel lane: PRUNE-OBS-03..04 → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-02..04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
+- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Panel lane: PRUNE-OBS-03..04 → I18N-CHECK-01 (proposal 12, zero visual change) → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-02..04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - try · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job (Settings row), fallback default; thinking_source recorded (f0baa540)
 - dropped · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9) [superseded the same day by SONIC-AUTO-THINKING: callers do not pick]
