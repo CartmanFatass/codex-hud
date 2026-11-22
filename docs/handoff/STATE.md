@@ -7,8 +7,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
-- Restart recovery: herdr 0.9.5 resume keeps a worker's `agent_session`, name and tab but strips `HUD_JOB_DIR` and the HUD launch flags, so adopting the resumed process cannot settle it. Build an HUD-driven resume (relaunch the recognised session with its bindings in the job's tab), or leave restarts manual? (findings: ticket mcp-orch/05 comments)
-
+- Sonic's default thinking: is high enough, or can the Decision API map each sonic task to low/high/max? (study running)
 
 ## Next
 
@@ -189,22 +188,22 @@ board counts these; update at every landing or decision. -->
 - accepted · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 - done · — · REVIEW-CONTROL-EXP · review on 2e4b45d3: changes-required, 5 blocking (EXP-02 native bar never reaches EXP, EXP-03 7d dropped, EXP-04/05 duplicate ledger lines, draft rows lose [model ▾], focused chain lacks provider unknown) · docs/reviews/2026-11-20-control-exp-review.md
 - accepted · — · REVIEW-FIX-CONTROL-EXP · review fixes: native bar seen per Codex profile (EXP switch = tracking), pi footer 5h + 7d (≈ for proxy, second window dropped only when narrow), ledger one line per event ID on disk, draft rows keep [model ▾], focused chain says provider unknown; superseded immediate-edit paths deleted (imp) (5d39de2c; 86+853)
-- try · — · NO-DEFAULT-LABELS · Control drops [default]/[Custom] tags; unset model/thinking show the effective value muted ([▾] / blank when unknown); picker's clear row says role's model (…) / clear; no-selector choice is "file chain" (imp) (aeb74f31; test fix)
-- try · UX-PASS · UX-PASS-01 · pi footer quota in Claude's style: bar, % used, level colour, reset; ≈ estimate, ? stale, ↻ pending; API grant bar (imp sol) (4bdb9207)
-- try · UX-PASS · UX-PASS-02 · m on a role row (or place) → pick → saved at once; multi-place edits stay a draft (imp sol) (40fc5585; merge test fix 6401c781)
-- try · UX-PASS · UX-PASS-06 · one footer rule: row actions, Enter verb, Esc, page actions, ? help last; no movement keys; ? opens Help over Settings (imp sol) (4a0a4d2f)
-- try · UX-PASS · UX-PASS-03 · picker opens in the panel's own pane, no zoom, one click sets, two columns from 100 cols (imp sol) (6598afa1)
-- try · UX-PASS · UX-PASS-07 · Project hub, Progress and question slabs say a fact once (imp sol) (ca6d86b5; test 339fac37)
-- try · UX-PASS · UX-PASS-08 · Help grouped by tab (Everywhere, Home, Project, Control, Split, Marks), opens at the current tab (imp sol) (dec80c71; tests ab8c9a2e)
-- try · UX-PASS · UX-PASS-09 · EXP in the panel's form, choices listed (imp sol) (3c001661)
-- try · UX-PASS · UX-PASS-10 · Harnesses rows show exceptions only (imp sol) (9b19ec26)
-- try · UX-PASS · UX-PASS-04 · likely models first (current, presets, providers the roles name), ranked flat filter, `was` row for the last quick save (imp sol) (808c57ac; tests after it)
-- try · UX-PASS · UX-PASS-11 · top row: no models on / EXP exp, Esc stays on root tabs, 分, Split lane says subagents (imp sol) (123a9b9f)
-- try · — · PROJECT-CLI-PLACES · a registered project's role chain may name CLI places (agent, model, thinking; no args, no bro); hud setup plan `runs`, skill asks (imp sol) (d13a16a6)
-- try · UX-PASS · UX-PASS-05 · CLI and AI Studio places open the same picker, flat; the inline quick list is gone (imp sol) (2ebfb5f2)
-- try · OWNER-VIEW · OWNER-VIEW · Decided for you hidden (still collected); to-try rows grouped per milestone task by default, Settings → Acceptance switches to per slice (imp sol) (cf70780d; tests after it)
-- try · OWNER-VIEW · OWNER-VIEW-2 · Tickets per feature and Progress per milestone at task detail (Settings → Detail/粒度); Home commit dates cached by hash; decision titles asked only for the Inspector (imp sol) (8f71a605, 72a72e88)
-- try · UX-PASS · UX-PASS-REVIEW-FIX · review fixes: current provider via resolved bare ID; ? help opens over a Control draft; string hints removed (imp sol) (3534b622)
+- accepted · — · NO-DEFAULT-LABELS · Control drops [default]/[Custom] tags; unset model/thinking show the effective value muted ([▾] / blank when unknown); picker's clear row says role's model (…) / clear; no-selector choice is "file chain" (imp) (aeb74f31; test fix) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-01 · pi footer quota in Claude's style: bar, % used, level colour, reset; ≈ estimate, ? stale, ↻ pending; API grant bar (imp sol) (4bdb9207) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-02 · m on a role row (or place) → pick → saved at once; multi-place edits stay a draft (imp sol) (40fc5585; merge test fix 6401c781) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-06 · one footer rule: row actions, Enter verb, Esc, page actions, ? help last; no movement keys; ? opens Help over Settings (imp sol) (4a0a4d2f) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-03 · picker opens in the panel's own pane, no zoom, one click sets, two columns from 100 cols (imp sol) (6598afa1) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-07 · Project hub, Progress and question slabs say a fact once (imp sol) (ca6d86b5; test 339fac37) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-08 · Help grouped by tab (Everywhere, Home, Project, Control, Split, Marks), opens at the current tab (imp sol) (dec80c71; tests ab8c9a2e) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-09 · EXP in the panel's form, choices listed (imp sol) (3c001661) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-10 · Harnesses rows show exceptions only (imp sol) (9b19ec26) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-04 · likely models first (current, presets, providers the roles name), ranked flat filter, `was` row for the last quick save (imp sol) (808c57ac; tests after it) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-11 · top row: no models on / EXP exp, Esc stays on root tabs, 分, Split lane says subagents (imp sol) (123a9b9f) [owner accepted without a separate try, 2026-11-21]
+- accepted · — · PROJECT-CLI-PLACES · a registered project's role chain may name CLI places (agent, model, thinking; no args, no bro); hud setup plan `runs`, skill asks (imp sol) (d13a16a6) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-05 · CLI and AI Studio places open the same picker, flat; the inline quick list is gone (imp sol) (2ebfb5f2) [owner accepted without a separate try, 2026-11-21]
+- accepted · OWNER-VIEW · OWNER-VIEW · Decided for you hidden (still collected); to-try rows grouped per milestone task by default, Settings → Acceptance switches to per slice (imp sol) (cf70780d; tests after it) [owner accepted without a separate try, 2026-11-21]
+- accepted · OWNER-VIEW · OWNER-VIEW-2 · Tickets per feature and Progress per milestone at task detail (Settings → Detail/粒度); Home commit dates cached by hash; decision titles asked only for the Inspector (imp sol) (8f71a605, 72a72e88) [owner accepted without a separate try, 2026-11-21]
+- accepted · UX-PASS · UX-PASS-REVIEW-FIX · review fixes: current provider via resolved bare ID; ? help opens over a Control draft; string hints removed (imp sol) (3534b622) [owner accepted without a separate try, 2026-11-21]
 - done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
 - done · — · UX-PASS-OVERALL · overall design: 1 FOOTER, 2 SAY-ONCE, 3 HELP, 4 EXP-FORM, 5 HARNESS-ROWS, 6 TOP-ROW; 4 owner decisions · docs/design/ux-pass/overall.md
 

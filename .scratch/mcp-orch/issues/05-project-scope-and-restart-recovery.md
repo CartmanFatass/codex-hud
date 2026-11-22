@@ -1,6 +1,6 @@
 # 05: Project scope and restart recovery
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Blocked by:** none
 
 **What to build:** Jobs belong to a project, not a pane: hud_read({}) and changes are scoped to the caller's project root; a session in the same project adopts jobs whose recorded pane is gone (questions then reach the new session); after a machine restart, a worker that herdr resumed in the job's tab is recognised and kept rather than recorded as failed (seen 2026-11-21: herdr resumed a pi imp and a Claude oracle, HUD had failed both and reaped nothing). Proposal B4 plus restart recovery.
@@ -23,3 +23,4 @@
   flags; `resume_argv` did not change that. So identity can be proven, but the worker protocol cannot be restored by
   adopting the pid. Remaining option (owner decision): the HUD itself relaunches a recognised session with its bindings
   (pi `--session <path>` + the launch contract and job env; Claude `--resume <id>` + job env) in the job's tab.
+- 2026-11-21 owner decision: option B, restarts stay manual. Item 3 is not built; the spec line now says so.
