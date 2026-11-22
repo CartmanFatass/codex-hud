@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · ORCH-LEAN-2 · ORCH-LEAN2-02 · CLI workers start with role text and brief in the first message (9bd2698b)
 - try · ORCH-LEAN-2 · ORCH-LEAN2-03 · Ticket claims need no commit; hud_tickets lists ready tickets (b190db89)
 - try · SONIC-LITE · SONIC-LITE-02 · Sonic thinking can be none; lookups lean low; native tools (620260ab)
 - try · ORCH-LEAN-2 · ORCH-LEAN2-01 · A reloaded HUD refreshes the client's tool list (099df7ed)
