@@ -298,6 +298,28 @@ test('cross-language summary makes one translation request; a stale signature dr
   assert.doesNotMatch(f.calls[1].messages[1].content, /reportedSummary/);
 });
 
+test('Split Home keeps the numeric lane suffix and uses the same summary call for its localized name', async t => {
+  const f = fixture(t, 'on', 'zh'), previous = setLanguage('zh');
+  t.after(() => setLanguage(previous));
+  const id = 'HARBOR-REPAIR-02', summary = 'The pier repair passed its final checks.';
+  const receipt = JSON.parse(fs.readFileSync(join(f.dir, 'job.json'), 'utf8'));
+  delete receipt.package;
+  f.put('job.json', receipt);
+  f.put('brief.md', `# Ticket ${id}: Repair the pier`);
+  f.put('report.md', summary);
+  writeReportMeta(f.dir, cachedReportSignature(f.dir), { summary });
+  f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
+  f.reply = JSON.stringify({ name: '修复码头', sentence: '码头修复已通过检查。' });
+  const board = await f.update();
+  assert.equal(board.lanes[0].label, id);
+  assert.equal(board.workers[0].task, `${id} · 修复码头`);
+  const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
+    state: withState(initialMonitorState(), { prefs: { panelLayout: 'split' } }), width: 40, height: 30, nowMs: f.now });
+  assert.match(frame.panes.find(p => p.id === 'agents').rows.map(r => stripAnsi(r.text)).join('\n'), /HARBOR.*…-02/);
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(JSON.parse(f.calls[0].messages[1].content.split('\n')[1]), { reportedSummary: summary });
+});
+
 for (const language of ['en', 'zh']) {
   test(`short job titles: heading, same-call name, fallback, Home/Inspector/Project frames (${language})`, async (t) => {
     const f = fixture(t, 'on', language);

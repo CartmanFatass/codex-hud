@@ -11,8 +11,8 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import {
   NO_MILESTONE, PAGE_WORD, PROJECT_PAGES, acceptedText, asksYou, barText, briefStack, clampClean, clampLines,
-  currentRows, dateText, featureCodes, inFlight, inline, landedAge, landedMark, landedNewest, ledgerText, newestTasks, pageRows, taskRow, taskRows,
-  pageSummary, progressSegments, projectOrder, roleInk, sinceText, sliceInk, sliceLedgerLine, stacked, ticketRows,
+  currentRows, dateText, featureCodes, inFlight, inline, landedAge, landedMark, landedNewest, ledgerText, newestTasks, pageRows, taskHeaderRows, taskRows,
+  pageSummary, progressSegments, projectOrder, roleInk, sinceText, sliceInk, sliceLedgerLine, stacked, ticketPreview, projectOriginal,
   tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted, unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
 import { glyph, roleName } from './control-view.js';
@@ -88,11 +88,12 @@ function buildNeeds(
   }
   for (const [i, r] of data.waiting.entries()) {
     const item = `project:wait:${i}`, lines = clampClean(monitorText(r.value), width - 4, mode === 'classic' && state.project.nav.cursor === item ? Infinity : 1).lines;
-    out.push({ rows: lines.map((l, k) => ({ item, ...(r.path ? { files: [r.path] } : files), text: fit(`${k ? '    ' : `  ${theme.board.attention('?')} `}${l}`, width) })) });
+    out.push({ rows: [...lines.map((l, k) => ({ item, ...(r.path ? { files: [r.path] } : files), text: fit(`${k ? '    ' : `  ${theme.board.attention('?')} `}${l}`, width) })),
+      ...(mode === 'classic' ? projectOriginal(r.original, `wait:${i}`, state.project.folded, width) : [])] });
   }
   if (state.prefs.acceptance !== 'slice') {
     for (const task of newestTasks(data)) out.push({ rows: mode === 'classic' ? taskRows(task, data, state, width, now, tryMarks, true)
-      : [taskRow(task, data, state, width, now, tryMarks, { status: true })] });
+      : taskHeaderRows(task, data, state, width, now, tryMarks, { status: true }) });
   } else for (const { r } of landedNewest(data).filter(({ r }) => r.state === 'try')) {
     const right = landedAge(r, now);
     if (mode === 'classic') out.push({ rows: tryClassicRows(r, right, data, state, width, now, tryMarks) });
@@ -104,7 +105,9 @@ function buildNeeds(
   const features = data.tickets ?? [], codes = featureCodes(features);
   for (const f of features) for (const tk of f.tickets.filter(asksYou)) {
     const right = theme.board.attention(monitorText(t(tk.status))), prefix = `  ${theme.board.attention('?')} ${muted(codes.get(f.slug)!)} ${monitorText(tk.number)} `;
-    out.push({ rows: [{ item: `inbox:tk:${f.slug}:${basename(tk.path)}`, files: [tk.path], text: pair(prefix + cutProse(tk.title, width - visualLength(prefix) - visualLength(right) - 1), right, width) }] });
+    const key = `${f.slug}:${basename(tk.path)}`;
+    out.push({ rows: [{ item: `inbox:tk:${key}`, files: [tk.path], text: pair(prefix + cutProse(tk.title, width - visualLength(prefix) - visualLength(right) - 1), right, width) },
+      ...(mode === 'classic' ? projectOriginal(tk.originalTitle, `ticket:${key}`, state.project.folded, width) : [])] });
   }
   for (const r of data.ledger.filter((s) => s.state === 'blocked')) {
     const item = mode === 'split' ? `project:slice:${r.id}` : path ? `project:file:${path}:slice:${r.id}` : undefined;
@@ -201,7 +204,7 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     const waitMatch = /^project:wait:(\d+)$/.exec(cursor ?? '');
     if (waitMatch) {
       const i = Number(waitMatch[1]), r = data.waiting[i];
-      return { label: t('Waiting for you'), right: waitFacts(data, state), rows: r ? bare(waitingRows(r, i, width, now, Infinity)) : [] };
+      return { label: t('Waiting for you'), right: waitFacts(data, state), rows: r ? [...bare(waitingRows(r, i, width, now, Infinity)), ...projectOriginal(r.original, `wait:${i}`, folded, width)] : [] };
     }
     if (cursor?.startsWith('inbox:ask:')) {
       const target = needs.find((n) => n.rows[0]?.item === cursor)?.askTarget;
@@ -211,8 +214,8 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     if (tkKey) {
       const ticket = data.tickets.flatMap((f) => f.tickets.map((x) => ({ x, key: `${f.slug}:${basename(x.path)}` }))).find((o) => o.key === tkKey)?.x;
       if (!ticket) return { label: '', rows: [] };
-      const rows = ticketRows(data, new Set([...folded, `ticket:${tkKey}`]), width, now).filter((r) => r.item === `project:fold:ticket:${tkKey}`).slice(1);
-      return { label: monitorText(`${ticket.number} ${ticket.title}`), right: monitorText(t(ticket.status)), rows: bare(rows), hints: ['⏎ open file', '[ ] project'] };
+      const rows = ticketPreview(data, tkKey, folded, width, now);
+      return { label: monitorText(`${ticket.number} ${ticket.title}`), right: monitorText(t(ticket.status)), rows, hints: ['⏎ open file', '[ ] project'] };
     }
     const roleId = /^inbox:role:(.+)$/.exec(cursor ?? '')?.[1];
     if (roleId) {
@@ -344,7 +347,7 @@ export function inboxProgressPart(input: MonitorData, data: ProjectSnapshot, sta
     gap();
     const tasks = state.prefs.acceptance === 'slice' ? undefined : newestTasks(data);
     list.push(section(t('To try'), width, String(tasks?.length ?? tries.length)));
-    if (tasks) for (const task of tasks) list.push(taskRow(task, data, state, width, now, marks));
+    if (tasks) for (const task of tasks) list.push(...taskHeaderRows(task, data, state, width, now, marks));
     else for (const { r } of tries) {
       const item = `project:slice:${r.id}`, sentence = trySentence(r), head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`;
       const right = muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), sinceText(r.at, now)].filter(Boolean).join(' '));

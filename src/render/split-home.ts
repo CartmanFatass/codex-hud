@@ -15,7 +15,7 @@ import type { WorkCard } from '../collectors/work-card.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
 import { acceptedText, briefStack, currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedEntries, roleInk, taskRows, tryCount, trySentence, waitingRows } from './project-view.js';
-import { boardRow, homeDoneCount, mark, minuteAge, section } from './workboard-rows.js';
+import { boardRow, homeDoneCount, mark, minuteAge, originalRows, section } from './workboard-rows.js';
 import { splitSubValid, type SplitScene } from './split-frame.js';
 import { cutWords, fit, flowLines, monitorText, pair } from './monitor-text.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
@@ -73,7 +73,9 @@ export function homeScene(
     const right = native ? theme.board.muted(t('{n} running', { n: running })) : word
       ? `${ink(word)} ${theme.board.muted(age)}` : `${roleInk(card.role)(role)} ${theme.board.muted(age)}`;
     // A middle that does not fit the row whole goes on a row of its own, not cut.
-    const head = `${ink(workStateGlyph(card))} ${fit(names[i], col)}`, own = visualLength(head) + 1 + visualLength(mid) + 1 + visualLength(right) > width;
+    const suffix = !native && names[i].match(/[-/#]\d+$/)?.[0];
+    const label = suffix && visualLength(names[i]) > col ? truncateAnsi(names[i], col - suffix.length) + suffix : names[i];
+    const head = `${ink(workStateGlyph(card))} ${fit(label, col)}`, own = visualLength(head) + 1 + visualLength(mid) + 1 + visualLength(right) > width;
     const lead = own ? head : `${head} ${theme.board.muted(mid)}`;
     const rows: MonitorRow[] = [{ text: pair(lead, right, width), item }];
     if (own) rows.push({ text: fit(`  ${theme.board.muted(mid)}`, width), item });
@@ -81,7 +83,7 @@ export function homeScene(
     // A job at work shows what it is on in the row's free cells, while the cursor is elsewhere.
     const cue = card.state === 'in-progress' && top.settledAt === null ? laneCue(card, width - visualLength(lead) - visualLength(right) - 2) : '';
     // A question or a failure keeps its reason on a row of its own: it is what the owner opens the panel for.
-    const why = top.homeNeedsHuman ? top.work?.requestInfo?.question ?? top.ask ?? card.reason ?? '' : failed(card) && !top.superseded && !top.failureObserved ? workCardDetail(card) : '';
+    const why = top.homeNeedsHuman ? top.work?.requestInfo?.display?.question ?? top.work?.requestInfo?.question ?? top.ask ?? card.reason ?? '' : failed(card) && !top.superseded && !top.failureObserved ? workCardDetail(card) : '';
     if (why) rows.push({ text: stemLines(why, width, ink, 1)[0], item });
     return { item, needs: group(lane) <= 2, rows, cued: cue ? { text: pair(`${lead} ${cue}`, right, width), item } : undefined, preview: () => {
       const slabs = board.workers.filter((w) => w.homeNeedsHuman && w.laneId === lane.id).flatMap((w) => askSlabRows(w, board, state, width, now, true));
@@ -105,10 +107,11 @@ export function homeScene(
   const waiting: Entry[] = filtering || (!waits.length && !n) ? [] : [{ item: WAITING, needs: true, rows: [{ item: WAITING,
     text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted(waitFacts), width) }],
   preview: () => ({ label: t('Waiting for you'), right: waitFacts, rows: [
-      ...waits.flatMap((r, i) => waitingRows(r, i, width, now, Infinity).map((row) => ({ ...row, item: `home-progress:wait:${i}` }))),
+      ...waits.flatMap((r, i) => [...waitingRows(r, i, width, now, Infinity).map((row) => ({ ...row, item: `home-progress:wait:${i}` })),
+        ...originalRows(r.original, `original:wait:${i}`, state.home.expanded.has(`original:wait:${i}`), width)]),
       ...pendingRows(),
     ] }) }];
-  const block = data ? homeProgressRows(data, width, Infinity, false, state.prefs.acceptance) : [];
+  const block = data ? homeProgressRows(data, width, Infinity, false, state.prefs.acceptance, state.home.expanded) : [];
   // Recommended mode's brief paragraph is the Progress row's preview, where the summary is.
   const brief = board.homeBrief ? [...flowLines(monitorText(board.homeBrief), width).map((l) => boardRow(theme.board.text(l))), boardRow('')] : [];
   const progress: Entry[] = filtering || (!block.length && !brief.length) ? [] : (() => {
@@ -134,7 +137,7 @@ export function homeScene(
   const scope = `home|${cursor}`, sub = splitSubValid(split, shown.rows);
   // `o` and `v` act on the job under the cursor: the lane's, or the card the keys are on in the preview.
   const lane = lanes.find((l) => targetKey({ kind: 'lane', laneId: l.id }) === cursor), at = sub ?? cursor;
-  const anchor = at && /^(home-progress:|split:|project:fold:(task|ledger):)/.test(at) ? at : undefined;
+  const anchor = at && /^(home-progress:|split:|original:|project:fold:(task|ledger):)/.test(at) ? at : undefined;
   const target = anchor ? homeTarget(state.home) : sub ? targets.get(sub)
     : lane ? { kind: 'worker' as const, laneId: lane.id, workerId: laneTop(lane, now).id } : homeTarget(state.home);
   const selected = homeCursor(target, anchor);

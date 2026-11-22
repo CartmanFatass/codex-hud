@@ -121,16 +121,31 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   // `g`, `r` and `X` on a HUD job, on Home (either layout) and in the Inspector; before the keys that move the cursor take `g` for Home.
   const job = (main && next.activeTab === 'home') || inspector ? openJobAction(next, input, key, boardFrame.snapshot, result) : undefined;
   if (job) return job;
+  function toggleOriginal(id: string) {
+    const expanded = new Set(next.home.expanded);
+    if (!expanded.delete(id)) expanded.add(id);
+    next.home.expanded = expanded;
+  }
   if (inspector) {
-    const rows = boardFrame.rows.filter((r) => r.files?.length),
+    const rows = boardFrame.rows.filter((r, i, all) => r.files?.length ||
+      (r.item?.startsWith('original:') && r.item !== all[i - 1]?.item)),
       at = rows.findIndex((r) => r.item === inspector.cursor);
     if (input.type === 'mouse' && input.button === 'left') {
       const pane = frame?.panes.find((p) => p.id === 'details'),
         row = pane && monitorRowAt(pane, input.x, input.y);
+      if (row?.item?.startsWith('original:')) {
+        next.subpage = { ...inspector, cursor: row.item };
+        toggleOriginal(row.item);
+        return result();
+      }
       if (row?.files?.length) {
         next.subpage = { ...inspector, cursor: row.item };
         return result({ type: 'open-files', files: row.files });
       }
+    }
+    if (rows[at]?.item?.startsWith('original:') && ['enter', 'activate', 'open-session'].includes(key)) {
+      toggleOriginal(rows[at].item!);
+      return result();
     }
     if (['enter', 'activate', 'open-session'].includes(key))
       return result(rows[at] ? { type: 'open-files', files: rows[at].files! } : undefined);
@@ -488,7 +503,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       openProgress(item);
       return result();
     }
-    if (item?.startsWith('fold:')) {
+    if (item?.startsWith('fold:') || item?.startsWith('original:')) {
       setAnchor(item);
       toggle(item);
       return result();
@@ -545,7 +560,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const index =
       key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + step));
     const item = items[index];
-    if (item?.startsWith('home-progress:') || taskStop(item)) {
+    if (item?.startsWith('home-progress:') || item?.startsWith('original:') || taskStop(item)) {
       setAnchor(item);
       next.home.revealed = undefined;
       return result();

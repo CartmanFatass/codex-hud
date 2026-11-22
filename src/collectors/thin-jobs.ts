@@ -121,6 +121,7 @@ const first = (text: string) =>
     .find((l) => l.trim())
     ?.replace(/^#{1,6}\s+/, '')
     .trim() ?? '';
+export const stripJobPrefix = (s: string) => s.replace(/^(?:slice|ticket|task|package)\s+(?=\S)/i, '');
 const number = (name: string) => Number.parseInt(name.match(/\d+/)?.[0] ?? '0', 10);
 /** Share the existing session selection/stat with sentence material; never read its body here. */
 function latestSession(directory: string): OwnerWorker['sessionFile'] {
@@ -528,10 +529,11 @@ export function readThinJobs(
     const briefFile = read(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '',
       task = typeof job.task_length === 'number' ? brief.slice(0, job.task_length) : brief;
-    const briefTitle = first(task.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? '');
-    const title = briefTitle || first(task) || first(word(job.title) ?? '') || id.slice(-6);
-    const label = word(job.package) ?? (title.includes(':') ? title.split(':', 1)[0] : title);
-    return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, label }];
+    const briefTitle = stripJobPrefix(first(task.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? ''));
+    const title = briefTitle || stripJobPrefix(first(task) || first(word(job.title) ?? '')) || id.slice(-6);
+    const displayId = title.match(/^([\w]+(?:[-/#][\w]+)+|[A-Z][A-Z\d_]+(?=:)|\d+)(?=[:\s]|$)/)?.[1] ?? word(job.slice) ?? word(job.ticket) ?? undefined;
+    const label = stripJobPrefix(word(job.package) ?? displayId ?? title.split(':', 1)[0]);
+    return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label }];
   });
   const titles = new Map(cards.map(({ id, title }) => [id, title]));
   // An attempt on another pane or settled before open can retire a failure, but never becomes a card or model input.
@@ -542,7 +544,7 @@ export function readThinJobs(
   const superseded = supersession(home, receipts, evidenceText(cache), scope.project,
     (j) => taskTarget(titles.get(String(j.job)) ?? ''));
   const labels = new Map(cards.map(({ id, label }) => [id, label]));
-  for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, label: ownLabel } of cards) {
+  for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label: ownLabel } of cards) {
     const parent = word(job.parent_job);
     const parentLabel = parent && parent !== id ? labels.get(parent) : undefined;
     const label = parentLabel ?? ownLabel;
@@ -699,6 +701,7 @@ export function readThinJobs(
       role: String(job.role),
       harness: word(s.harness) ?? word(job.harness) ?? 'pi',
       task: title,
+      displayId,
       ...(briefTitle ? { briefTitle } : {}),
       ...(quietDecision ? { quietDecision } : {}),
       ...(row.report_unread ? { reportUnread: true as const } : {}),

@@ -203,7 +203,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         state: painted,
         worktrees,
         expData: expShown(painted) ? expData : undefined,
-        project: control ? shown.snapshot : models.tryBriefs.apply(shown.root, shown.snapshot),
+        project: control ? shown.snapshot : models.waitingBriefs.project(models.tryBriefs.apply(shown.root, shown.snapshot)),
         projectDisplayRoot: shown.root,
         projectWaiting: control ? visits.snapshot(chosen)?.waiting.length : undefined,
         tryMarks,
@@ -340,8 +340,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         if (control) visit.control = projectFacts;
         else visit.snapshot = projectFacts;
       }
-      const stillShown = () => !isClosed() && projectShown(state, settingsFlow.open) && !listing(state) && shownRoot() === root;
-      if (full && stillShown()) models.tryBriefs.update(root, visit.snapshot?.ledger ?? [], stillShown);
+      const stillShown = () => !isClosed() && !state.subpage && !state.help && !settingsFlow.open &&
+        (state.activeTab === 'home' ? root === HUD_CWD_REAL : projectShown(state) && !listing(state) && shownRoot() === root);
+      if (projectFacts && !control && stillShown()) {
+        models.tryBriefs.update(root, projectFacts.ledger, stillShown);
+        models.waitingBriefs.update(board, projectFacts, state.prefs.acceptance === 'slice' || projectShown(state));
+      } else if (inspector() && !settingsFlow.open) models.waitingBriefs.update(board);
       error = settingsError || roleNotice || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });

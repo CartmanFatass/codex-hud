@@ -4,7 +4,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { boardRow, minuteAge, mark, footHints } from './workboard-rows.js';
 import { laneRows, orderedLanes } from './work-lanes.js';
-import { quietDecisionSummary, requestLines, stemLines } from './work-card.js';
+import { quietDecisionSummary, requestLines, questionOriginalRows, stemLines } from './work-card.js';
 import { theme } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -14,7 +14,7 @@ import { answerable, answerKeys } from './job-actions.js';
 export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state: MonitorState, width: number, now: number, underLane = false): MonitorRow[] {
   const rows: MonitorRow[] = [];
   const card = projectWorkCard(worker, now),
-    r = worker.work?.requestInfo;
+    r = worker.work?.requestInfo?.display ?? worker.work?.requestInfo;
   const target = { kind: 'worker' as const, laneId: worker.laneId, workerId: worker.id };
   const lane = underLane ? undefined : board.lanes.find((l) => l.id === worker.laneId);
   // Collapsed, the short card; Enter expands it to the question whole, the context and every option.
@@ -49,6 +49,7 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
           ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),
         ];
   rows.push(...lines.map((line) => boardRow(theme.board.slab(line), target)));
+  rows.push(...questionOriginalRows(card, state, width));
   if (keys) rows.push(boardRow(theme.board.slab(fit(`${theme.board.attention(mark('┃', '|'))} ${keys}`, width)), target));
   rows.push(boardRow(''));
   return rows;

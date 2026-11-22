@@ -11,7 +11,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import {
   NO_MILESTONE, PAGE_WORD, PROJECT_PAGES, asksYou, barText, briefStack, clampClean, clampLines,
-  currentRows, dateText, foldRow, inFlight, inline, landedAge, landedEntries, landedInline, landedMark, ledgerText, newestTasks, taskRow, taskRows,
+  currentRows, dateText, foldRow, inFlight, inline, landedAge, landedEntries, landedInline, landedMark, ledgerText, newestTasks, taskHeaderRows, taskRows, waitingPreview, projectOriginal,
   meter, milestoneOrder, pageRows, pageSummary, progressSegments, projectOrder, roleInk,
   sinceText, sliceInk, sliceLedgerLine, stacked, ticketWorking, tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted,
   unsliced, waitingRows, type ProjectPage,
@@ -171,7 +171,7 @@ export function boardHubRows(
     if (!folded.has('waiting')) for (const [i, r] of data.waiting.entries()) {
       const item = waitingRows(r, i, width, now, keep && state.project.nav.cursor === `project:wait:${i}` ? Infinity : 1 + Math.max(0, wrap));
       wrap -= item.length - 1;
-      rows.push(...item);
+      rows.push(...item, ...projectOriginal(r.original, `wait:${i}`, folded, width));
     }
     return [...rows, boardRow('')];
   };
@@ -224,7 +224,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
   const col = Math.max(...shownPages.map((p) => visualLength(t(PAGE_WORD[p])))) + 1;
   const pages = shownPages.map((p) => gaugeRow(p, data, width, now, col, `${mark_(p)} `, input.tryMarks, state.prefs.acceptance));
   const preview = (cursor?: string): Shown => {
-    if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingRows(r, i, width, now, Infinity)) };
+    if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingPreview(r, i, width, now, state.project.folded)) };
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
     if (page && page !== 'progress') {
       const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
@@ -343,7 +343,7 @@ export function boardProgressPart(input: MonitorData, data: ProjectSnapshot, sta
     }
     if (!state.project.filter?.query) list.push(boardLegendRow(width));
   }
-  if (tasks?.length) list.push(...tasks.map((task) => taskRow(task, data, state, width, now, marks)));
+  if (tasks?.length) list.push(...tasks.flatMap((task) => taskHeaderRows(task, data, state, width, now, marks)));
   const jobs = unsliced(data);
   if (jobs.length) list.push(boardRow(''), section(t('Outside the ledger'), width, String(jobs.length)), ...jobs.map((j) => unslicedRow(j, width, now, true)));
   if (data.next.length && !state.project.filter?.query) list.push(boardRow(''), { item: 'split:next', ...files, text: pair(`${muted(mark('→', '>'))} ${t('Next')}`, muted(String(data.next.length)), width) });

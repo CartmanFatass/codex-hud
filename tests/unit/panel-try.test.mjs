@@ -205,6 +205,7 @@ test('at 40 columns the Projects list pauses brief scheduling, and a switched pr
   const { key, painted, close } = panel(t, f, { columns: 40, prelude });
   const events = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   const waitFor = (condition) => until(() => condition(events()), () => JSON.stringify(events()));
+  await waitFor(xs => xs.some(x => x.root === f.cwd && x.ids.includes('ONE'))); // Home alone starts the briefs.
   key('\x1b[C');
   await painted(/project 1\/2/);
   await waitFor((xs) => xs.some((x) => x.root === f.cwd && x.ids.includes('ONE')));

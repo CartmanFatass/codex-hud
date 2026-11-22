@@ -3,7 +3,7 @@ import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { ageText, renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-card.js';
+import { ageText, renderWorkCard, requestLines, questionOriginalRows, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-card.js';
 import {
   kvRows,
   section,
@@ -61,6 +61,7 @@ export function workInspectorRows(
             // An answerable question says how: its option keys and the default.
             ...(answerKeys(worker).length ? stemLines(answerKeys(worker).join('  '), width, theme.board.muted, 1) : []),
           ].map((text) => boardRow(theme.board.slab(text))),
+          ...questionOriginalRows(card, state, width),
         ]
       : renderWorkCard(card, expanded, width).map((text) => boardRow(text));
   const milestone = milestoneLine(worker, width);

@@ -94,7 +94,9 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly harness: string | null;
   readonly role: string | null;
   readonly task: string;
-  /** Thin job's first brief heading, preferred over a generated short name. */
+  /** Stable slice/ticket identifier to retain beside a translated short name. */
+  readonly displayId?: string;
+  /** Thin job's first brief heading, preferred when already in the display language. */
   readonly briefTitle?: string;
   readonly model: string | null;
   readonly provider?: string | null;

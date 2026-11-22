@@ -407,8 +407,9 @@ acceptance or a merge decision. Unknown evidence stays unknown.
 
 Cards have a title and two fixed sentence rows; `┃ …` holds space until text is
 available. Enter expands the complete sentence and factual details in place.
-Brief headings supply job titles; otherwise a model name or first task line fits
-the width. Only the newest current settled card initially expands, until its fold
+A brief heading in the panel language supplies the card title. For a foreign heading,
+the same sentence request can supply a localized short name beside the slice or ticket ID.
+Without model text the heading or first task line remains; narrow lane labels keep their numeric suffix. Only the newest current settled card initially expands, until its fold
 time; explicit choices win for that panel lifetime. Enter on a lane folds it.
 Question slabs show answer keys beside the expanded options; `o` still opens the question file.
 
@@ -993,7 +994,7 @@ One line per counter lists this hour's features, largest first. Changed running
 text follows Summary interval. A newly settled HUD job clears its running text. A current worker summary
 is shown immediately, even with Model text off. It needs no sentence request in the panel's language;
 otherwise, when enabled, the model translates the summary. A missing or stale summary falls back to a
-model result from the report. The first final request does not wait for the running interval; failed final
+model result from the report. To-try task headers show the newest pending member's brief sentence when available. The first final request does not wait for the running interval; failed final
 requests, native finals and ranking keep two-minute floors. Outcome labels are independent Decision-API judgements.
 
 **Outbound material** (public channels only; never reasoning, ciphertext or referenced files):
@@ -1001,7 +1002,8 @@ requests, native finals and ranking keep two-minute floors. Outcome labels are i
 | Feature | Input |
 |---|---|
 | Thin-job sentence/name | Only the worker's one-line summary (≤160 Unicode code points) when translating it; otherwise brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a 32 KiB working-session tail |
-| To-try brief and steps | One per slice still to try, only while the Project tab shows it: its ledger line, the subjects and bodies of up to 5 commits it names (1200 chars each), up to 4 ticket files (3000 bytes each) under the `.scratch/<slug>/` it names; cached per slice by a hash of those inputs |
+| To-try brief and steps | One per slice still to try, while Home or Project shows the board: its ledger line, the subjects and bodies of up to 5 commits it names (1200 chars each), up to 4 ticket files (3000 bytes each) under the `.scratch/<slug>/` it names; cached per slice by a hash of those inputs |
+| Panel translation | Waiting items from STATE (first 8, ≤2 KiB each), open worker questions (question, options, context and default, ≤4 KiB), open ticket titles (≤512 bytes each). Only wrong-language prose is sent, up to 25 strings / 4 KiB per call on the shared text budget. Translations are cached by text and language; expand Original below the translation to compare. Answer keys still select the worker's original options. |
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
 | Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
 | Outcome label | Final state + the same settled report excerpt, independently judged once per settlement |

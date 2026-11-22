@@ -161,6 +161,8 @@ const ZH: Record<string, string> = {
   'Job sentence': '任务句子',
   'Native sentence': '原生句子',
   'Try brief': '试用简报',
+  'Panel translation': '面板翻译',
+  'Original': '原文',
   'Decision title': '决定标题',
   'Home brief': '首页简报',
   Probe: '测试',

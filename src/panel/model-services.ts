@@ -5,6 +5,7 @@ import { HomeRecommendation } from '../collectors/home-recommendation.js';
 import { JobSentences } from '../collectors/job-sentences.js';
 import { ModelProbe, apiSettings } from '../collectors/model-probe.js';
 import { SmallModel, modelHttpRequest } from '../collectors/small-model.js';
+import { WaitingBriefs } from '../collectors/waiting-briefs.js';
 import { TryBriefs } from '../collectors/try-brief.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { getHudDisplayHome } from '../hud-home.js';
@@ -23,6 +24,7 @@ export function createPanelModelServices(home: string, render: () => void, isClo
   const probe = new ModelProbe({ dir }, render);
   const jobSentences = new JobSentences(model, path.join(dir, 'job-sentences.json'), render);
   const tryBriefs = new TryBriefs(model, path.join(dir, 'try-briefs.json'), render);
+  const waitingBriefs = new WaitingBriefs(model, path.join(dir, 'waiting-briefs.json'), render);
   const decisionTitles = new DecisionTitles(model, path.join(dir, 'decision-titles.json'), render);
   const decisionLabels = new DecisionLabels(dir, render);
   const homeRecommendation = new HomeRecommendation(dir, model, render);
@@ -46,7 +48,7 @@ export function createPanelModelServices(home: string, render: () => void, isClo
   };
 
   return {
-    probe, tryBriefs, apply, refreshModelLists,
+    probe, tryBriefs, waitingBriefs, apply: (board: WorkboardSnapshot) => waitingBriefs.board(apply(board)), refreshModelLists,
     get enabled() { return modelOn; },
     onChange(callback: () => void) { modelChanged = callback; },
     configure(settings: HudSettings) {
@@ -61,6 +63,7 @@ export function createPanelModelServices(home: string, render: () => void, isClo
       decisionLabels.configure(settings.modelEnabled, settings.decisionCallsPerHour);
       homeRecommendation.configure(settings.homeMode === 'recommended' && settings.modelEnabled, resolveLanguage(settings.language), settings.decisionCallsPerHour, settings.decisionApi, settings.summaryIntervalMinutes, settings);
       jobSentences.configure(modelOn, resolveLanguage(settings.language), settings.summaryIntervalMinutes);
+      waitingBriefs.configure(modelOn, resolveLanguage(settings.language));
       tryBriefs.configure(modelOn, resolveLanguage(settings.language));
       decisionTitles.configure(modelOn, resolveLanguage(settings.language));
     },
@@ -81,6 +84,7 @@ export function createPanelModelServices(home: string, render: () => void, isClo
       homeRecommendation.stop();
       jobSentences.stop();
       tryBriefs.stop();
+      waitingBriefs.stop();
     },
     syncDiscovery(shown: boolean) {
       if (shown && !lastControlShown) refreshModelLists(false);
@@ -89,6 +93,7 @@ export function createPanelModelServices(home: string, render: () => void, isClo
     dispose() {
       jobSentences.stop();
       tryBriefs.stop();
+      waitingBriefs.stop();
       decisionTitles.stop();
       decisionLabels.stop();
       homeRecommendation.stop();

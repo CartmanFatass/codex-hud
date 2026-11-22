@@ -61,6 +61,14 @@ export function replyWords(text: string): string {
     .replace(/(?:[\w.-]*\/)+[\w.-]+/g, ' ');
 }
 
+/** Panel source prose can be as short as one option or ticket title. Ignore identifiers, not short words. */
+export function needsTranslation(text: string, language: Language): boolean {
+  const words = replyWords(text).replace(/\b(?:[\w]+[-./#][\w./#-]+|[A-Z\d_]{2,}|[0-9a-f]{7,40})\b/g, ' ').trim();
+  if (language === 'zh' && /[a-z]/i.test(words) && !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(words)) return true;
+  if (language === 'en' && /\p{Script=Han}/u.test(words) && !/[a-z]/i.test(words)) return true;
+  return wrongLanguage(words, language);
+}
+
 /** Whether `text`, a model's reply, is plainly in a language other than `language`. */
 export function wrongLanguage(text: string, language: Language): boolean {
   const words = replyWords(text);

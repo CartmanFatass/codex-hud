@@ -6,7 +6,7 @@ import { theme, visualLength, truncateAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { displayConfig } from './hud-config.js';
-import { mark } from './workboard-rows.js';
+import { mark, originalRows } from './workboard-rows.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
@@ -123,8 +123,8 @@ export function paintSentence(raw: string, line?: string, start = 0): string {
   return painted;
 }
 /** An open question as its paragraphs; the context and every option only when `full`, the first four numbered `[1]`… when `numbered` (the owner can answer it here). */
-export function requestLines(card: WorkCard, full = false, numbered = false): string[] {
-  const r = card.worker.work?.requestInfo;
+export function requestLines(card: WorkCard, full = false, numbered = false, original = false): string[] {
+  const source = card.worker.work?.requestInfo, r = !original && source?.display || source;
   return r
     ? [
         r.question,
@@ -132,6 +132,12 @@ export function requestLines(card: WorkCard, full = false, numbered = false): st
         r.suggested ? `${t('default')}: ${r.suggested}` : '',
       ].filter(Boolean)
     : [];
+}
+export function questionOriginalRows(card: WorkCard, state: MonitorState, width: number) {
+  const r = card.worker.work?.requestInfo;
+  if (!r?.display) return [];
+  const item = `original:${card.worker.id}:${r.id}`;
+  return originalRows(requestLines(card, true, true, true).join('\n'), item, state.home.expanded.has(item), width);
 }
 export const workRequestDetail = (card: WorkCard, full = false): string => requestLines(card, full).join('\n');
 const QUIET_REASONS: Record<string, string> = {

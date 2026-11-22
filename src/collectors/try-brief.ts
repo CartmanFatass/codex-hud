@@ -84,7 +84,7 @@ export class TryBriefs {
   update(root: string, ledger: readonly LedgerSlice[], mayStart = () => true): void {
     if (!this.enabled) return;
     const now = this.clock();
-    for (const r of ledger.filter((x) => x.state === 'try').sort((a, b) => (b.at ?? -1) - (a.at ?? -1)).slice(0, SLICES)) {
+    for (const r of ledger.filter((x) => x.state === 'try').reverse().sort((a, b) => (b.at ?? -1) - (a.at ?? -1)).slice(0, SLICES)) {
       const key = this.key(root, r.id), seen = this.looked.get(key), line = ledgerLine(r);
       if (this.active.has(key) || this.active.size >= PENDING || (seen?.line === line && now < seen.until)) continue;
       this.looked.set(key, { line, until: now + LOOK_MS });

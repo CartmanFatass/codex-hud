@@ -13,10 +13,11 @@ import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { ticketFileEvidence } from './ticket-evidence.js';
 import { TryLog } from './try-records.js';
 import { TicketRollup, ticketIds } from './ticket-rollup.js';
-import { readActiveLeases, type LeaseRecord } from './thin-jobs.js';
+import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
 export interface ProjectItem {
   label: string;
   value: string;
+  original?: string;
   path?: string;
   at?: number;
   /** A waiting item's whole bullet as STATE writes it (continuation lines kept, one per line); `value` is the same words on one line. */
@@ -39,7 +40,7 @@ export interface ActiveJob {
 }
 export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
-  number: string; title: string; path: string; at: number; status: string;
+  number: string; title: string; originalTitle?: string; path: string; at: number; status: string;
   checked: number; total: number; items: TicketItem[]; comment?: string;
   blockers: string[]; state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { role: string; state: string; at?: number; created: number };
@@ -236,7 +237,7 @@ export class ProjectCollector {
     const brief = this.read(path, 4096)?.text ?? '';
     const lines = (typeof taskLength === 'number' ? brief.slice(0, taskLength) : brief).split(/\r?\n/);
     const line = lines.find((l) => /^#{1,6}\s/.test(l)) ?? lines.find((l) => l.trim()) ?? '';
-    const title = line.replace(/^#{1,6}\s+/, '').replace(/\s+/g, ' ').trim();
+    const title = stripJobPrefix(line.replace(/^#{1,6}\s+/, '').replace(/\s+/g, ' ').trim());
     return title ? (title.length > 120 ? title.slice(0, 119) + '…' : title) : undefined;
   }
   private json = (path: string) => this.body(path, (b, truncated) => {
@@ -601,7 +602,7 @@ export class ProjectCollector {
           entry: {
             jobId: id, role: typeof job.role === 'string' ? job.role : '', state,
             ...(typeof job.package === 'string' && job.package ? { package: job.package } : {}),
-            ...(title ? { title } : {}), ...(Number.isFinite(at) ? { at } : {}), ...(file ? { path: file } : {}),
+            ...(title ? { title: stripJobPrefix(title) } : {}), ...(Number.isFinite(at) ? { at } : {}), ...(file ? { path: file } : {}),
             asking: state === 'waiting_orchestrator',
           },
         });

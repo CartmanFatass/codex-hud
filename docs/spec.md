@@ -226,8 +226,9 @@ Reference: `docs/design/project-ux/` (A: Timeline; B and C: Board and Inbox),
   dropped and tickets done or dropped, hide it and stop counting it without editing STATE. No to-try slice
   is also a waiting item. Wrap the whole item where rows permit. Never cut what the owner tries to a name.
   (18.07, 20.05)
-- Only to-try briefs use a board model: a short brief explaining what changed in plain words, and steps for
-  trying it, from the ledger line, ticket and commits. List: ID and first sentence. Preview or expanded row:
+- The board model can translate waiting items, open worker questions and open ticket titles into the display
+  language when needed, with the original folded below (22.14). For to-try slices it writes a short brief
+  explaining what changed in plain words, and steps for trying it, from the ledger line, ticket and commits. List: ID and first sentence. Preview or expanded row:
   full brief and steps, ledger text folded below. No model or no brief: wrap full original text. (18.07, 19.02)
 - Settings → Panel → Project layout offers Timeline (default), Board and Inbox in Classic and Split. It
   only arranges Project pages; counts, keys, to-try rows, cuts, words, Home and Tickets stay unchanged.
@@ -289,7 +290,7 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
 #### 2.2.8 External models for display
 
 - Optional external Decision API text in panel and bars: summaries, recaps and sentences with owner keys
-  (`$HUD_HOME/credentials.env`). Read only job files; write only display text. Never prompt, brief or steer
+  (`$HUD_HOME/credentials.env`). Read only job files and the project's STATE and ticket files; write only display text. Never prompt, brief or steer
   workers. No consent or authority layer. (11.05, 12.02)
 - Settings API (default OpenAI) labels settled outcome, job kind, quiet repeated failures on running cards,
   question category and review finding severity. Outcome is independent report judgement, never self-graded.
@@ -297,7 +298,7 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
 - Signature-bound worker `hud_report` summary supplies the finished result line, notices and `hud_read`.
   Model fallback only if absent, stale or wrong panel language. No two-minute hold on settled results.
   (22.01)
-- Small external model: thin-card third line (one sentence on current work), one-line finished result subject
+- Small external model: thin-card short name and third line (one sentence on current work), one-line finished result subject
   to the rule above, 1–3 marked keywords for panel colour. On state change, in panel language, ≥2 minutes
   apart per job except above. Factual line with no key or switch off. Settings: master switch (on with a key),
   model and call cap; no per-feature switches. (11.05, 22.01)

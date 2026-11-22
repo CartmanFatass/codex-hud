@@ -17,6 +17,12 @@ export function boardRow(text: string, target?: WorkTarget): MonitorRow {
   const key = target ? targetKey(target) : undefined;
   return { text, ...(key ? { item: key, key } : {}) };
 }
+/** Source prose remains available below its display translation. */
+export function originalRows(source: string | undefined, item: string, open: boolean, width: number): MonitorRow[] {
+  if (!source) return [];
+  return [{ item, text: fit('  ' + theme.board.muted(`${open ? mark('▾', 'v') : mark('▸', '>')} ${t('Original')}`), width) },
+    ...(open ? source.split(/\r?\n/).flatMap(p => flowLines(monitorText(p), Math.max(1, width - 4)).map(line => ({ item, text: fit('    ' + theme.board.muted(line), width) }))) : [])];
+}
 export function section(text: string, width: number, right: string | boolean = ''): MonitorRow {
   const tail = typeof right === 'string' ? right : '';
   const left = `${text} ${theme.board.frame(mark('─', '-').repeat(Math.max(0, width - visualLength(text) - visualLength(tail) - (tail ? 2 : 1))))}`;

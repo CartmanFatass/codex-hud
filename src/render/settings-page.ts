@@ -12,7 +12,7 @@ import { stemLines } from './work-card.js';
 
 type SettingValue = string | number | boolean;
 const CALL_FEATURES: Record<string, string> = {
-  'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', 'try-brief': 'Try brief', title: 'Decision title',
+  'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', 'try-brief': 'Try brief', 'waiting-brief': 'Panel translation', title: 'Decision title',
   'home-brief': 'Home brief', probe: 'Probe', outcome: 'outcome', kind: 'kind', looping: 'looping',
   'question-category': 'Question category', 'review-severity': 'Review severity', 'home-ranking': 'Home ranking',
   'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking',

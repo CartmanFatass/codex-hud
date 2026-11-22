@@ -8,7 +8,7 @@ import { jobSentenceLine, jobSentenceRows, stemLines, workCardDetail, labelSumma
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { activeTabState, onlyTry, projectPage } from './monitor-state.js';
 import { basename } from 'node:path';
-import { boardRow, itemRow, section, mark, minuteAge, pack } from './workboard-rows.js';
+import { boardRow, itemRow, originalRows, section, mark, minuteAge, pack } from './workboard-rows.js';
 import { boardHubRows, boardListRows, boardProgressRows } from './board-project.js';
 import { inboxHubRows, inboxListRows, inboxProgressRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
@@ -40,7 +40,7 @@ export const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number, or
 export const HOME_BLOCK = 60;
 const HOME_TICKETS = 6, HOME_WAITING = 5;
 /** Group the collector's derived states for display; never infer activity from tracker files or jobs here. */
-function homeTicketRows(data: ProjectSnapshot, width: number, slices: boolean): MonitorRow[] {
+function homeTicketRows(data: ProjectSnapshot, width: number, slices: boolean, expanded?: ReadonlySet<string>): MonitorRow[] {
   const totals = data.ticketTotals;
   if (!totals?.totalTickets) return [];
   const row = (text: string, key: string): MonitorRow => ({ text: fit(text, width), item: `home-progress:tickets:${key}` });
@@ -73,6 +73,8 @@ function homeTicketRows(data: ProjectSnapshot, width: number, slices: boolean): 
     for (const r of show) {
       const lead = `  ${monitorText(r.number)} `, state = asksYou(r) ? t('For you') : ticketStateWord(r);
       started.push(row(pair(lead + cutTicketTitle(r.title, width - visualLength(lead + state) - 1), theme.board.muted(state), width), slug));
+      const key = `original:ticket:${slug}:${r.number}`;
+      started.push(...originalRows(r.originalTitle, key, expanded?.has(key) ?? false, width));
     }
     if (waiting) started.push(row('  ' + theme.board.muted(t('+{n} queued', { n: waiting })), slug));
   }
@@ -86,7 +88,7 @@ function homeTicketRows(data: ProjectSnapshot, width: number, slices: boolean): 
  * (the whole ledger when there is none, and the title says so). Shrinks from the bottom up: tickets, the summary's wrapped rows,
  * legend, summary, then the bar, then the block.
  */
-export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true, acceptance?: MonitorState['prefs']['acceptance']): MonitorRow[] {
+export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true, acceptance?: MonitorState['prefs']['acceptance'], expanded?: ReadonlySet<string>): MonitorRow[] {
   if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.ledger.length && !data.tickets.length)) return [];
   const row = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
   const cur = currentRows(data), counts = cur.counts, states = HOME_STATES.filter(s => counts[s]);
@@ -108,7 +110,7 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
     ...(bar ? [row(`  ${barText({ counts }, Math.max(0, Math.min(24, width - 3 - visualLength(fraction))), HOME_STATES)} ${theme.board.muted(fraction)}`)] : []),
     ...legendRows.map((line) => row('  ' + line))];
   if (bar && !legendRows.length) return rows;
-  return room > 0 ? [...rows, ...homeTicketRows(data, width, acceptance === 'slice').slice(0, room)] : rows;
+  return room > 0 ? [...rows, ...homeTicketRows(data, width, acceptance === 'slice', expanded).slice(0, room)] : rows;
 }
 /**
  * Home's spare rows, top to bottom: STATE's waiting items (a row each) and the newest landed slices under the cards, the progress block
@@ -116,22 +118,24 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
  */
 export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, spare: number, now: number, gap: boolean, state: MonitorState, marks?: ReadonlyMap<string, TryAction>): MonitorRow[] {
   if (!data || spare < 1) return [];
-  const progress = homeProgressRows(data, width, spare, gap, state.prefs.acceptance), out: MonitorRow[] = [], keep = progress.length + (progress.length && !gap ? 1 : 0);
+  const progress = homeProgressRows(data, width, spare, gap, state.prefs.acceptance, state.home.expanded), out: MonitorRow[] = [], keep = progress.length + (progress.length && !gap ? 1 : 0);
   const pending = state.prefs.acceptance === 'slice' ? 0 : tryCount(data, state.prefs.acceptance);
   // A list of at most `all.length` rows out of `total`; short of room it ends with `+N more` for those it does not show.
-  const list = (head: MonitorRow, id: string, all: MonitorRow[], total: number, room: number): MonitorRow[] => {
+  const list = (head: MonitorRow, id: string, all: MonitorRow[][], total: number, room: number): MonitorRow[] => {
     const slots = room - 1, item = `home-progress:${id}`;
     if (slots < 1 || !all.length) return [];
-    const shown = all.slice(0, total > Math.min(slots, all.length) && slots > 2 ? slots - 1 : slots), hidden = total - shown.length;
+    const limit = (total > all.length || all.flat().length > slots) && slots > 2 ? slots - 1 : slots;
+    const shown = all.flat().slice(0, limit), hidden = total - all.filter(group => shown.includes(group[0])).length;
     return [{ ...head, item }, ...shown, ...(hidden > 0 && slots > 2 ? [{ text: fit('  ' + theme.board.muted(t('+{n} more', { n: hidden })), width), item }] : [])];
   };
   const lists = [
-    (room: number) => list(section(t('Waiting for you'), width, [String(data.waiting.length), pending ? t('{n} to try', { n: pending }) : ''].filter(Boolean).join(' · ')), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r, i): MonitorRow => ({
-      ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: `home-progress:wait:${i}` })), data.waiting.length, room),
+    (room: number) => list(section(t('Waiting for you'), width, [String(data.waiting.length), pending ? t('{n} to try', { n: pending }) : ''].filter(Boolean).join(' · ')), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r, i) => [{
+      ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: `home-progress:wait:${i}` },
+      ...originalRows(r.original, `original:wait:${i}`, state.home.expanded.has(`original:wait:${i}`), width)]), data.waiting.length, room),
     (room: number) => {
-      const landed = landedEntries(data, state.prefs.acceptance, true).slice(0, width < 56 ? 3 : 5).map((entry): MonitorRow => 'task' in entry
-        ? taskRow(entry.task, data, state, width, now, marks, { status: true })
-        : { text: landedInline(entry.r, `  ${landedMark(entry.r)} ${monitorText(entry.r.id)}`, landedAge(entry.r, now), width), item: 'home-progress:latest' });
+      const landed = landedEntries(data, state.prefs.acceptance, true).slice(0, width < 56 ? 3 : 5).map((entry): MonitorRow[] => 'task' in entry
+        ? taskHeaderRows(entry.task, data, state, width, now, marks, { status: true })
+        : [{ text: landedInline(entry.r, `  ${landedMark(entry.r)} ${monitorText(entry.r.id)}`, landedAge(entry.r, now), width), item: 'home-progress:latest' }]);
       return list(section(t('Latest'), width, t('newest first')), 'latest', landed, landed.length, room);
     },
   ];
@@ -226,6 +230,13 @@ export function waitingRows(r: ProjectItem, i: number, width: number, now: numbe
   const room = width - 2 - (right ? visualLength(right) + 1 : 0), body = monitorText(r.value);
   return rows < 2 || visualLength(body) <= room ? [row]
     : clampClean(body, room, rows).lines.map((line, k) => ({ ...row, text: k ? fit('  ' + line, width) : pair(`${glyph} ${line}`, theme.board.muted(right), width) }));
+}
+export function projectOriginal(source: string | undefined, id: string, folded: ReadonlySet<string>, width: number) {
+  const key = `original:${id}`;
+  return originalRows(source, `project:fold:${key}`, folded.has(key), width);
+}
+export function waitingPreview(r: ProjectItem, i: number, width: number, now: number, folded: ReadonlySet<string>) {
+  return [...waitingRows(r, i, width, now, Infinity), ...projectOriginal(r.original, `wait:${i}`, folded, width)];
 }
 export const roleInk = (role: string) => (theme.board.roleInk as Record<string, (s: string) => string>)[role] ?? ((s: string) => s);
 const DAY = 864e5;
@@ -341,7 +352,7 @@ function hubRows(
     if (!folded.has('waiting')) for (const [i, r] of data.waiting.entries()) {
       const item = waitingRows(r, i, width, now, keep && state.project.nav.cursor === `project:wait:${i}` ? Infinity : 1 + Math.max(0, wrap));
       wrap -= item.length - 1;
-      rows.push(...item);
+      rows.push(...item, ...projectOriginal(r.original, `wait:${i}`, folded, width));
     }
     return [...rows, boardRow('')];
   };
@@ -478,14 +489,19 @@ export const taskLabel = (task: AcceptanceTask) => monitorText(task.key.startsWi
 export const sliceCountText = (n: number) => t(n === 1 ? '{n} slice' : '{n} slices', { n });
 const taskCountText = (n: number) => t(n === 1 ? '{n} task' : '{n} tasks', { n });
 const featureCountText = (n: number) => t(n === 1 ? '{n} feature' : '{n} features', { n });
-export function taskRow(task: AcceptanceTask, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
-  marks?: ReadonlyMap<string, TryAction>, options: { status?: boolean; indent?: number } = {}): MonitorRow {
+function withTaskSentence(row: MonitorRow, slices: LedgerSlice[], width: number): MonitorRow[] {
+  const newest = slices.filter(r => r.state === 'try').sort((a, b) => (b.at ?? -1) - (a.at ?? -1))[0];
+  const text = newest && trySentence(newest);
+  return text ? [row, { item: row.item, text: fit('    ' + theme.board.muted(truncateAnsi(monitorText(text), width - 4)), width) }] : [row];
+}
+export function taskHeaderRows(task: AcceptanceTask, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
+  marks?: ReadonlyMap<string, TryAction>, options: { status?: boolean; indent?: number } = {}): MonitorRow[] {
   const item = taskItem(task), first = task.slices[0];
   const firstMark = marks?.get(first.id), action = task.slices.every((r) => marks?.get(r.id) === firstMark) ? firstMark : undefined;
   const head = `${' '.repeat(options.indent ?? 2)}${trySelectionMark(state, item)}${landedMark(first, action)} ${taskLabel(task)}`;
   const right = [sliceCountText(task.slices.length), options.status && t('to try'), sinceText(task.oldest, now)].filter(Boolean).join(' · ');
-  return { item, text: pair(head, theme.board.muted(right), width), tryTarget: { milestone: task.milestone, slices: task.slices },
-    ...(data.statePath ? { files: [data.statePath] } : {}) };
+  return withTaskSentence({ item, text: pair(head, theme.board.muted(right), width), tryTarget: { milestone: task.milestone, slices: task.slices },
+    ...(data.statePath ? { files: [data.statePath] } : {}) }, task.slices, width);
 }
 export function taskDetailRows(task: AcceptanceTask, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>, folded = state.project.folded): MonitorRow[] {
   return task.slices.flatMap((r) => [
@@ -495,9 +511,9 @@ export function taskDetailRows(task: AcceptanceTask, state: MonitorState, width:
 }
 export function taskRows(task: AcceptanceTask, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
   marks?: ReadonlyMap<string, TryAction>, status = false, folded = state.project.folded): MonitorRow[] {
-  const row = taskRow(task, data, state, width, now, marks, { status });
+  const header = taskHeaderRows(task, data, state, width, now, marks, { status }), row = header[0];
   return folded.has(row.item!.slice('project:fold:'.length))
-    ? [row, ...taskDetailRows(task, state, width, now, marks, folded).map((detail) => ({ ...row, ...detail, item: detail.item ?? row.item }))] : [row];
+    ? [row, ...taskDetailRows(task, state, width, now, marks, folded).map((detail) => ({ ...row, ...detail, item: detail.item ?? row.item }))] : header;
 }
 const PROGRESS_ORDER = ['blocked', 'working', 'try', 'todo', 'accepted', 'dropped'] as const;
 const PROGRESS_MARK: Record<SliceState, [string, string]> = { blocked: ['◆', '!'], working: ['◐', '@'],
@@ -512,7 +528,7 @@ export function progressTasks(data: ProjectSnapshot, layout: MonitorState['prefs
 }
 export const progressTasksHeading = (tasks: number, width: number, right = '') => section(t('Tasks'), width,
   parts(String(tasks), right).join(' · '));
-export function progressTaskRow(task: AcceptanceTask, data: ProjectSnapshot, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>): MonitorRow {
+export function progressTaskHeader(task: AcceptanceTask, data: ProjectSnapshot, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>): MonitorRow[] {
   const item = taskItem(task), tries = task.slices.filter((r) => r.state === 'try'), worst = PROGRESS_ORDER[worstState(task)];
   const flagged = tries.filter((r) => marks?.get(r.id) === 'flag').length;
   const accepted = tries.filter((r) => marks?.get(r.id) === 'accept').length;
@@ -524,8 +540,8 @@ export function progressTaskRow(task: AcceptanceTask, data: ProjectSnapshot, sta
   const receipt = [flagged ? `${theme.board.attention(mark('⚑', '!'))} ${flagged}` : '', accepted ? `${theme.board.success(mark('✓', '+'))} ${accepted}` : ''].filter(Boolean).join('  ');
   const oldest = tries.reduce<number | undefined>((n, r) => r.at === undefined ? n : Math.min(n ?? r.at, r.at), undefined);
   const age = sinceText(oldest, now), right = [counts, receipt && `· ${receipt}`, age].filter(Boolean).join('  ');
-  return { item, text: pair(label, visualLength(label + right) + 1 <= width ? right : [counts, receipt && `· ${receipt}`].filter(Boolean).join('  '), width),
-    ...(tries.length ? { tryTarget: { milestone: task.milestone, slices: tries } } : {}), ...(data.statePath ? { files: [data.statePath] } : {}) };
+  return withTaskSentence({ item, text: pair(label, visualLength(label + right) + 1 <= width ? right : [counts, receipt && `· ${receipt}`].filter(Boolean).join('  '), width),
+    ...(tries.length ? { tryTarget: { milestone: task.milestone, slices: tries } } : {}), ...(data.statePath ? { files: [data.statePath] } : {}) }, tries, width);
 }
 
 /** Slice details shared by the existing Split slice preview and task drill-down in either panel layout. */
@@ -618,6 +634,7 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
     rows.push({ text: pair(`${lead}${dropped ? theme.board.muted(title) : title}`, right, width), ...at });
     // For you: the latest comment is why, under the row. Enter shows what is checked and the whole comment here; o opens the file.
     const sub = (text: string) => rows.push({ text: fit(text, width), ...at });
+    rows.push(...projectOriginal(ticket.originalTitle, tid, folded, width));
     if (!folded.has(tid)) return lane === 'you' && ticket.comment ? sub(`      ${theme.board.muted(`${mark('“', '"')}${clampLines(ticket.comment, width - 9, 1).lines[0]}${mark('”', '"')}`)}`) : undefined;
     for (const item of ticket.items) clampLines(item.text, width - 8, 2).lines.forEach((line, k) => sub(
       `      ${k ? '  ' : (item.done ? theme.board.success(mark('✓', '+')) : theme.board.muted(mark('○', 'o'))) + ' '}${line}`));
@@ -637,6 +654,12 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
   lane('Stalled', by('blocked'));
   lane('Done', by('done'), feature ? undefined : 'lane:done');
   return rows;
+}
+export function ticketPreview(data: ProjectSnapshot, key: string, folded: ReadonlySet<string>, width: number, now: number, filtering = false): MonitorRow[] {
+  const id = `ticket:${key}`;
+  return ticketRows(data, new Set([...folded, id]), width, now, undefined, filtering)
+    .filter(r => r.item === `project:fold:${id}` || r.item === `project:fold:original:${id}`).slice(1)
+    .map(r => r.item === `project:fold:${id}` ? { text: r.text } : r);
 }
 export const featureItem = (feature: TicketFeature) => `project:fold:feature:${feature.slug}`;
 export function featureRow(feature: TicketFeature, width: number, open = false): MonitorRow {
@@ -727,8 +750,8 @@ export function pageRows(
       if (tasks.length) rows.push({ ...progressTasksHeading(tasks.length, width, tries ? t('{n} to try', { n: tries }) : ''),
         ...(tries ? { item: 'project:try', ...(data.statePath ? { files: [data.statePath] } : {}) } : {}) });
       for (const task of tasks) {
-        const row = progressTaskRow(task, data, state, width, now, tryMarks);
-        rows.push(row);
+        const header = progressTaskHeader(task, data, state, width, now, tryMarks), row = header[0];
+        rows.push(...header);
         if (folded.has(row.item!.slice('project:fold:'.length))) rows.push(...progressTaskDetails(task, data, state, width, now, board, modelEnabled, tryMarks)
           .map((detail) => ({ ...row, ...detail, item: detail.item ?? row.item })));
       }
@@ -818,6 +841,7 @@ export function pageRows(
         text: fit((n ? ' '.repeat(hang) : k ? '  ' + marker : theme.board.attention('?') + ' ') + line, width),
         item: `project:wait:${index}:${rows.length - 1}`, ...(r.path ? { files: [r.path] } : {}) }));
     }
+    rows.push(...projectOriginal(r?.original, `wait:${index}`, folded, width));
   } else if (page === 'tickets') {
     if (state.prefs.acceptance === 'slice') rows.push(...ticketRows(data, folded, width, now, undefined, !!state.project.filter?.query));
     else for (const feature of data.tickets) {

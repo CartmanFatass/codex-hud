@@ -338,7 +338,7 @@ export function renderWorkboardFrame(
     if (!needle) rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim(), state, input.tryMarks));
   }
   let item = homeAnchor(state.home), selected = homeTarget(state.home);
-  if (home && item && /^(home-progress:|project:fold:task:)/.test(item) && !rows.some((r) => r.item === item)) item = undefined;
+  if (home && item && /^(home-progress:|original:|project:fold:task:)/.test(item) && !rows.some((r) => r.item === item)) item = undefined;
   if (home && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
     const order = source.lanes.flatMap((l) => [
       { kind: 'lane' as const, laneId: l.id },
@@ -351,7 +351,7 @@ export function renderWorkboardFrame(
       .sort((a, b) => a.distance - b.distance)[0]?.target;
   }
   if (home && !selected && !item) item = rows.find((r) => r.item?.startsWith('home-progress:'))?.item;
-  const files = rows.filter((r) => r.files?.length);
+  const files = rows.filter((r) => r.files?.length || r.item?.startsWith('original:'));
   const inspectCursor = inspector && (files.some((r) => r.item === inspector.cursor) ? inspector.cursor :
     files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))?.item ?? files[0]?.item);
   const nav = controlView?.nav ?? (project ? state.project.nav : undefined);

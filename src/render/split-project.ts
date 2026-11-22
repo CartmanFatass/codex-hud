@@ -10,8 +10,8 @@ import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import type { ClassicSplitNav } from './monitor-state.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, cutTicketTitle, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
-  ledgerText, ledgerFoldItem, newestTasks, pageRows, pageSummary, progressSegments, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark, taskDetailRows, taskItem, taskLabel, taskRows,
-  progressTasks, progressTaskRow, progressTaskDetails, progressTasksHeading, sliceDetailRows, featureItem, featureRow,
+  ledgerText, ledgerFoldItem, newestTasks, pageRows, pageSummary, progressSegments, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, trySentence, ticketRows, unlisted, unsliced, waitingPreview, ticketPreview, projectItem, trySelectionMark, taskDetailRows, taskItem, taskLabel, taskRows,
+  progressTasks, progressTaskHeader, progressTaskDetails, progressTasksHeading, sliceDetailRows, featureItem, featureRow,
   type ProjectPage } from './project-view.js';
 import { glyph, placeRows, placeTarget, radarFacts, roleToday } from './control-view.js';
 import { boardHubPart, boardProgressPart } from './board-project.js';
@@ -81,7 +81,7 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
     return { item: `project:page:${page}`, text: fit(`${mark_(page)} ${theme.board.title(fit(t(PAGE_WORD[page]), 14))}${facts.join(' · ') || mark('–', '-')}`, width) };
   });
   const preview = (cursor?: string): Shown => {
-    if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingRows(r, i, width, now, Infinity)) };
+    if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingPreview(r, i, width, now, state.project.folded)) };
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
     if (page && page !== 'progress') {
       const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
@@ -172,7 +172,7 @@ const looseJobRows = (data: ProjectSnapshot, width: number, now: number): Monito
 function progressTaskPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number): Part {
   const tasks = progressTasks(data, state.prefs.projectLayout), marks = input.tryMarks;
   const pending = tasks.filter((task) => task.slices.some((r) => r.state === 'try')).length;
-  const list: MonitorRow[] = tasks.length ? [progressTasksHeading(tasks.length, width, tryTotals(pending)), ...tasks.map((task) => progressTaskRow(task, data, state, width, now, marks))]
+  const list: MonitorRow[] = tasks.length ? [progressTasksHeading(tasks.length, width, tryTotals(pending)), ...tasks.flatMap((task) => progressTaskHeader(task, data, state, width, now, marks))]
     : [plain('  ' + muted(t(data.statePath ? 'none' : 'no STATE.md')), width)];
   list.push(...looseJobRows(data, width, now));
   if (data.next.length) list.push({ item: 'split:next', ...(data.statePath ? { files: [data.statePath] } : {}),
@@ -219,16 +219,16 @@ function ticketsPart(data: ProjectSnapshot, state: MonitorState, width: number, 
     return { list, preview, start: list[0]?.item, hints: ['⏎ details', 'Esc back'], focusHints: ['⏎ details', 'Esc back', 'o file'] };
   }
   const filtering = !!state.project.filter?.query;
-  const list = [...ticketRows(data, folded, width, now, undefined, filtering).filter((r) => !r.item || (!seen.has(r.item) && seen.add(r.item)))
+  const list = [...ticketRows(data, folded, width, now, undefined, filtering).filter(r => !r.item?.startsWith('project:fold:original:')).filter((r) => !r.item || (!seen.has(r.item) && seen.add(r.item)))
     .map((r) => (r.item?.startsWith(prefix) ? { ...r, item: `project:tk:${r.item.slice(prefix.length)}` } : r))];
   const preview = (cursor?: string): Shown => {
     const key = /^project:tk:(.+)$/.exec(cursor ?? '')?.[1];
     const ticket = data.tickets.flatMap((f) => f.tickets.map((x) => ({ x, key: `${f.slug}:${basename(x.path)}` }))).find((o) => o.key === key)?.x;
     if (!key || !ticket) return { label: '', rows: [] };
-    const rows = ticketRows(data, new Set([...folded, `ticket:${key}`]), width, now, undefined, filtering).filter((r) => r.item === prefix + key).slice(1);
+    const rows = ticketPreview(data, key, folded, width, now, filtering);
     const number = monitorText(ticket.number), right = monitorText(ticket.status);
     const room = width - visualLength(number) - 1 - (right ? visualLength(right) + 2 : 1);
-    return { label: `${number} ${cutTicketTitle(ticket.title, room)}`, right, rows: bare(rows) };
+    return { label: `${number} ${cutTicketTitle(ticket.title, room)}`, right, rows };
   };
   return { list, preview, start: list.find((r) => r.item)?.item, hints: PROJECT_FILE_HINTS };
 }
