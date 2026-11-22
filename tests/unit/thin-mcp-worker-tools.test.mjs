@@ -109,7 +109,7 @@ test('worker ping can release a contended Antigravity hud_ask mailbox before flo
   assert.match((await pending).content[0].text, /pending for Antigravity delivery/);
 });
 
-test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 30000 }, async (t) => {
+test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 60000 }, async (t) => {
   // Allow the real watcher to retry a runner reap inside the test's short wait budget.
   const f = await fixture(t, { watcherTickMs: 200 });
   const task = sonicTask(f);

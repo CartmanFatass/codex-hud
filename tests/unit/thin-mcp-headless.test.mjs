@@ -159,14 +159,14 @@ test('queued headless imp can overflow without borrowing the general role defini
   assert.equal(receipt.model, 'synthetic/default');
 });
 
-test('old report cannot settle a resumed turn and noncontinuable or non-pi launches refuse the mode', async t => {
+test('old report cannot settle a resumed turn and unsupported launches refuse headless mode', async t => {
   const f = await fixture(t);
   for (const options of [{ role: 'reviewer' }, { role: 'imp', pi_args: ['--no-session'] }]) {
     assert.equal((await f.call('hud_create', { ...options, mode: 'headless', task: 'Synthetic rejection.' })).code, 'invalid_arguments');
   }
   const cli = await f.call('hud_create', { role: 'general', on: 'codex', mode: 'headless', task: 'Synthetic rejection.' });
   assert.equal(cli.code, 'invalid_arguments');
-  assert.equal(cli.error, 'headless mode requires pi');
+  assert.equal(cli.error, 'headless mode requires pi, claude or agy');
   f.overrideBin('pi', fakePi);
   const job = await create(f);
   await closed(job);
@@ -177,7 +177,26 @@ test('old report cannot settle a resumed turn and noncontinuable or non-pi launc
 });
 
 test('hud_close and panel stop reap the live headless worker and its detached child', async t => {
-  const f = await fixture(t);
+  const exitProbe = `import fs from 'node:fs'; import { syncBuiltinESMExports } from 'node:module';
+if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
+  const read = fs.readFileSync, kill = process.kill;
+  let exiting;
+  fs.readFileSync = (file, ...args) => {
+    if (exiting && file === '/proc/' + exiting + '/cmdline') {
+      fs.writeFileSync(process.env.HOME + '/saw-empty-cmdline', '');
+      return '';
+    }
+    return read(file, ...args);
+  };
+  process.kill = (pid, signal) => {
+    if (signal !== 'SIGKILL' || !read('/proc/' + pid + '/cmdline', 'utf8').includes('/sonic-run.mjs')) return kill(pid, signal);
+    exiting = pid;
+    setTimeout(() => { exiting = undefined; kill(pid, signal); }, 40);
+    return true;
+  };
+  syncBuiltinESMExports();
+}`;
+  const f = await fixture(t, { probe: `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify('data:text/javascript,' + encodeURIComponent(exitProbe))}` });
   f.overrideBin('pi', `#!${process.execPath}
 import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs';
 if (!process.argv.includes('--print')) process.exit(1);
@@ -197,5 +216,6 @@ writeFileSync(process.env.HUD_JOB_DIR + '/pids', JSON.stringify([process.pid, ch
     }
     assert.equal(cliState(job.task_dir).state, 'stopped');
     assert.ok(pids.every(pid => !isProcAlive(pid)));
+    fs.unlinkSync(join(f.env.HOME, 'saw-empty-cmdline')); // The watcher observed an exit in progress.
   }
 });

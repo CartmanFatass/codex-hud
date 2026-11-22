@@ -35,12 +35,15 @@ export function workerTreeRootGone(pid: unknown, start: unknown) {
 }
 
 /** Headless roots are HUD's own per-job runner, not a herdr pane. Verify the actual launch argv. */
-export function sonicRoot(dir: string, pid: number, start: string, bootId: unknown): 'owned' | 'gone' {
+export function sonicRoot(dir: string, pid: number, start: string, bootId: unknown): 'owned' | 'exiting' | 'gone' {
   if (!validPid(pid) || !validStart(start) || !bootId) throw Error('missing sonic process identity');
   if (boot() !== bootId || !recordedRootAlive(pid, start)) return 'gone';
   const args = readProcCmdline(pid);
   if (args?.[1] === binScript('sonic-run') && args[2] === dir && recordedRootAlive(pid, start)) return 'owned';
   if (!recordedRootAlive(pid, start)) return 'gone';
+  // Linux can clear cmdline before stat reaches zombie state. Wait for definitive
+  // exit rather than signalling without argv evidence or deferring the whole reap.
+  if (args?.length === 0) return 'exiting';
   throw Error('sonic runner identity unresolved');
 }
 
@@ -54,10 +57,11 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
     const { pid, pid_start_time: start, slot, task_dir } = status as Record<string, unknown>;
     if (!validPid(pid) || !validStart(start) || (task_dir !== dir && task_dir !== fs.realpathSync(dir))) return {};
     const headless = slot === 'sonic' || slot === 'headless';
+    let captureLive = true;
     if (headless) {
       const bootId = (status as Record<string, unknown>).boot_id;
       if (bootId !== boot()) return {};
-      sonicRoot(dir, pid, start, bootId);
+      captureLive = sonicRoot(dir, pid, start, bootId) === 'owned';
     } else {
       if (slot !== 'primary') return {};
       const session = fs.readFileSync(join(dir, jobFiles.session), 'utf8');
@@ -101,7 +105,7 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
       const path = join(dir, name), value = readSnapshot(path);
       if (recover(value)) staged.set(JSON.stringify(value), path);
     }
-    if (recordedRootAlive(pid, start)) {
+    if (captureLive && recordedRootAlive(pid, start)) {
       snapshot ??= { version: 2, bootId, pid, start, members: [] };
       const children = new Map<number, Stamp[]>();
       for (const id of listProcPids()) {

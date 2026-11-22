@@ -159,7 +159,7 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     if (Date.now() >= deadline) return timeout;
-    return root === 'owned' ? null : { state: 'failed', exit_reason: 'sonic runner exited without an exit receipt' };
+    return root !== 'gone' ? null : { state: 'failed', exit_reason: 'sonic runner exited without an exit receipt' };
   }
   if (exit.at >= deadline) return timeout;
   const agent = status.harness === 'cli' ? status.agent : undefined;
@@ -184,12 +184,14 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
 }
 
 export async function killSonicRoot(dir: string, status: Partial<JobStatus>) {
-  const owned = () => sonicRoot(dir, status.pid!, status.pid_start_time!, status.boot_id) === 'owned';
-  if (owned()) {
+  const root = () => sonicRoot(dir, status.pid!, status.pid_start_time!, status.boot_id);
+  const state = root();
+  if (state === 'gone') return true;
+  if (state === 'owned') {
     try { process.kill(status.pid!, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-    for (let i = 0; i < 10 && owned(); i++) await delay(20);
   }
-  return !owned();
+  for (let i = 0; i < 10 && root() !== 'gone'; i++) await delay(20);
+  return root() === 'gone';
 }
 
 export async function stopSonic(dir: string) {
