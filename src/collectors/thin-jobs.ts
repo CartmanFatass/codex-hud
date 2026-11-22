@@ -13,6 +13,7 @@ import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
+import { computeQueuePositions, queuedTimestamp } from '../roles/concurrency.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkFlow, WorkFlowStep, WorkLane } from './workboard-types.js';
 
@@ -40,7 +41,7 @@ const artifactStoreFor = (idx: JobIndexCache) => {
   return store;
 };
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
-const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
+const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'queued_at', 'overflow_from', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string, idx: JobIndexCache): void {
   if (hydrated.has(idx)) return;
@@ -57,7 +58,7 @@ function restore(home: string, idx: JobIndexCache): void {
       if (typeof rel !== 'string' || !/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object' && !Array.isArray(snap.json)))) throw Error('cache');
-      if (rel.endsWith('/job.json') && snap.factsVersion !== 3) continue; // Older projections lack supersession/scout evidence.
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 4) continue; // Older projections lack supersession/scout/queue evidence.
       facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
     }
     idx.hydrateFacts(facts);
@@ -65,7 +66,7 @@ function restore(home: string, idx: JobIndexCache): void {
   } catch { /* Corrupt or missing display cache: rebuild on persist. */ }
 }
 function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string>): void {
-  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 3 }));
+  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 4 }));
   if (text === hydrated.get(idx) || text.length > 1048576) return;
   try { writePrivateFile(join(home, 'display/thin-jobs.json'), text); hydrated.set(idx, text); }
   catch { /* An unavailable display cache must not stop collection. */ }
@@ -142,7 +143,9 @@ export interface JobRow extends Partial<JobProgress> {
   role: string | null;
   package: string | null;
   state: string | null;
-  display_state: 'working' | 'done' | 'failed' | 'stopped';
+  display_state: 'queued' | 'working' | 'done' | 'failed' | 'stopped';
+  queue_position?: number;
+  overflow_from?: string;
   reason: string | null;
   blocked: boolean;
   open_questions: number;
@@ -161,6 +164,7 @@ export interface JobRowExtras {
   reportPresent?: boolean;
   reportAt?: number | null;
   progress?: JobProgress;
+  queuePosition?: number;
 }
 /** Milestones are display metadata: watch/list rows do not read this file. */
 export function readJobProgress(dir: string, cached = false, store?: ArtifactStore, seenSet?: Set<string>): JobProgress {
@@ -217,9 +221,11 @@ export function jobRow(
         : 'stopped'
       : rawState === 'failed'
         ? 'failed'
-        : rawState !== null && ['closed', 'idle_grace', 'done'].includes(rawState)
-          ? 'done'
-          : 'working';
+        : rawState === 'queued'
+          ? 'queued'
+          : rawState !== null && ['closed', 'idle_grace', 'done'].includes(rawState)
+            ? 'done'
+            : 'working';
   const blocked = displayState === 'working' && s.blocked === true;
   const cliInfo = j.cli !== null && typeof j.cli === 'object' ? j.cli : null;
   const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
@@ -258,14 +264,17 @@ export function jobRow(
     reportPresent = s.output_written === true;
   }
   const parent = word(j.parent_job);
+  const overflowFrom = word(j.overflow_from);
   return {
     job: word(j.job) ?? '',
     ...(parent ? { parent_job: parent } : {}),
     ...(j.land_turn ? { land_turn: true } : {}),
     role: word(j.role),
+    ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
     package: word(j.package),
     state: rawState,
     display_state: displayState,
+    ...(rawState === 'queued' && extras?.queuePosition !== undefined ? { queue_position: extras.queuePosition } : {}),
     reason,
     blocked,
     open_questions: openQuestions,
@@ -320,7 +329,7 @@ function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (j
   }
   const row = jobRow(job, status, { dir, cache: jobCache });
   if (failedAttempt(row) && superseded(job)) return false;
-  return row.display_state === 'working' || row.state === 'idle_grace' || row.report_unread || row.open_questions > 0 ||
+  return row.display_state === 'working' || row.display_state === 'queued' || row.state === 'idle_grace' || row.report_unread || row.open_questions > 0 ||
     (failedAttempt(row) && failureUnobserved(dir, job.observed_at, statusAt));
 }
 
@@ -373,7 +382,7 @@ function settledReportMeta(dir: string, hasReport: boolean, settled: boolean): R
 }
 
 export function jobRowReportMeta(row: JobRow, dir: string): ReportMetaFields | undefined {
-  const meta = settledReportMeta(dir, row.report_present, row.display_state !== 'working');
+  const meta = settledReportMeta(dir, row.report_present, row.display_state !== 'working' && row.display_state !== 'queued');
   return meta ? {
     ...(meta.summary ? { summary: meta.summary } : {}), ...(meta.files ? { files: meta.files } : {}),
   } : undefined;
@@ -387,8 +396,9 @@ export function formatJobChange(row: JobRow): string {
   const reason = row.reason ? row.reason.replace(/\s+/g, ' ').trim() : null;
   const summary = row.report_meta?.summary;
   const unread = !row.parent_job && row.report_unread;
+  const stateLabel = row.state === 'queued' && row.queue_position !== undefined ? `queued (#${row.queue_position})` : rowState(row);
   const parts = [
-    rowState(row),
+    stateLabel,
     ...(reason ? [reason] : []),
     ...(unread ? ['report'] : []),
     ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
@@ -440,11 +450,13 @@ function watchReceipts(cache: JobIndexCache) {
 
 function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnType<typeof watchReceipts>): JobRow[] {
   const rows: JobRow[] = [];
+  const statuses = new Map<string, Partial<JobStatus> | null>();
   for (const { id, dir, job } of receipts) {
     if (rows.length === 200) break;
     if (job.scout_only === true || (pane !== null && job.herdr_pane !== pane)) continue;
     const statusRes = cache.readStatus<JobStatus>(id);
     const status = statusRes.status === 'ok' ? statusRes.value : null;
+    statuses.set(id, status);
     try {
       const checks = jobChecks(dir, job);
       const row = jobRow(job, status, { dir, cache });
@@ -452,6 +464,24 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
       rows.push({ ...row, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
     } catch {
       /* Job directory disappeared or became unreadable during the scan; skip it. */
+    }
+  }
+  if (rows.some((row) => row.state === 'queued')) {
+    const entries = receipts.map(({ id, job }) => {
+      const status = statuses.has(id)
+        ? statuses.get(id)
+        : (() => {
+            const res = cache.readStatus<JobStatus>(id);
+            return res.status === 'ok' ? res.value : null;
+          })();
+      return { id, role: word(job.role), state: word(status?.state), queuedAt: queuedTimestamp(job as Partial<Job>) };
+    });
+    const positions = computeQueuePositions(entries);
+    for (const row of rows) {
+      if (row.state === 'queued') {
+        const pos = positions.get(row.job);
+        if (pos !== undefined) row.queue_position = pos;
+      }
     }
   }
   return rows;
@@ -645,7 +675,7 @@ export function readThinJobs(
     const state = initialRow.display_state;
     const at = status?.at ?? jobAt;
     // When the work settled, not when the process later exited: closing an idle job must not reset its age or outcome label.
-    const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
+    const settledAt = state === 'working' || state === 'queued' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
     if (settledAt !== null && !flowIsActive(land) && Math.max(settledAt, land?.updatedAt ?? -Infinity) < (options?.openedAt ?? -Infinity)) return [];
     const briefFile = readArt(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '',
@@ -669,6 +699,19 @@ export function readThinJobs(
   }
   const superseded = supersession(home, receipts, evidenceText(artifacts, seenArtifacts), scope.project,
     (j) => taskTarget(titles.get(String(j.job)) ?? ''));
+  const queuePositions = cards.some(({ state }) => state === 'queued')
+    ? computeQueuePositions(
+        candidates.flatMap(({ id }) => {
+          const stRes = idx.readJson(join(root, id, 'STATUS.json'), { parse, acceptFacts: true });
+          const st = stRes.status === 'ok' ? stRes.value : null;
+          if (word(st?.state) !== 'queued') return [];
+          const recRes = idx.readJson(join(root, id, 'job.json'), { parse, acceptFacts: true });
+          const rec = recRes.status === 'ok' ? recRes.value : null;
+          if (!rec || rec.job !== id || typeof rec.role !== 'string') return [];
+          return [{ id, role: rec.role, state: 'queued', queuedAt: queuedTimestamp(rec as Partial<Job>) }];
+        })
+      )
+    : new Map<string, number>();
   const labels = new Map(cards.map(({ id, label }) => [id, label]));
   for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label: ownLabel, land } of cards) {
     const parent = word(job.parent_job);
@@ -794,18 +837,22 @@ export function readThinJobs(
     const phase =
       state === 'stopped'
         ? 'stopped'
-        : waiting
-          ? 'asking'
-          : state === 'failed'
-            ? 'failed'
-            : settledAt !== null
-              ? 'done'
-              : flow?.kind === 'scout' && flow.steps[0]?.state === 'active'
-                ? 'scouting'
-                : reviews.length
-                  ? 'fixing'
-                  : verb;
+        : state === 'queued'
+          ? 'queued'
+          : waiting
+            ? 'asking'
+            : state === 'failed'
+              ? 'failed'
+              : settledAt !== null
+                ? 'done'
+                : flow?.kind === 'scout' && flow.steps[0]?.state === 'active'
+                  ? 'scouting'
+                  : reviews.length
+                    ? 'fixing'
+                    : verb;
     phases.push(phase);
+    const queuePosition = state === 'queued' ? queuePositions.get(id) : undefined;
+    const overflowFrom = word(job.overflow_from);
     const sessionFile = state === 'working' ? latestSession(directory) : undefined;
     const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0, flow?.updatedAt ?? 0);
     const reportMeta = settledReportMeta(directory, report !== null, settledAt !== null);
@@ -856,6 +903,8 @@ export function readThinJobs(
         failureObserved: (when(job.observed_at) ?? -Infinity) >= (status ? Math.floor(status.at) : 0),
       } : {}),
       state,
+      ...(queuePosition !== undefined ? { queuePosition } : {}),
+      ...(overflowFrom ? { overflowFrom } : {}),
       startedAt: when(s.started_at) ?? created,
       settledAt,
       phase,

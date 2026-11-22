@@ -77,14 +77,17 @@ export function homeRows(
   const needs = board.workers.filter((w) => w.homeNeedsHuman)
     .sort((a, b) => Number(b.labels?.category === 'owner authorisation') - Number(a.labels?.category === 'owner authorisation'));
   // STATE's waiting items count with the job questions; with none of either the line says so. Questions already show as cards.
-  const waiting = input?.project?.waiting.length ?? 0, running = board.workers.filter((w) => w.settledAt === null).length;
+  const waiting = input?.project?.waiting.length ?? 0,
+    running = board.workers.filter((w) => w.settledAt === null && w.state !== 'queued').length,
+    queued = board.workers.filter((w) => w.state === 'queued').length;
+  const counts = [t('{n} running', { n: running }), ...(queued ? [t('{n} in queue', { n: queued })] : [])].join(' · ');
   if (!filtering && (waiting || !needs.length))
     rows.push(
       {
         ...boardRow(
           waiting
-            ? theme.board.attention(fit(`? ${t('{n} waiting for you', { n: needs.length + waiting })} · ${t('{n} running', { n: running })}`, width))
-            : theme.board.success(fit(`${mark('✓', '+')} ${t('Nothing needs you')} · ${t('{n} running', { n: running })}`, width))
+            ? theme.board.attention(fit(`? ${t('{n} waiting for you', { n: needs.length + waiting })} · ${counts}`, width))
+            : theme.board.success(fit(`${mark('✓', '+')} ${t('Nothing needs you')} · ${counts}`, width))
         ),
         ...(waiting ? { item: 'home-progress:waiting' } : {}),
       },

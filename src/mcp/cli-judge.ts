@@ -31,7 +31,7 @@ export function withDonePrompt(text: string, bundled: string, dir: string, turn:
 }
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?: boolean; send?: Turn['send'] } = {}): Turn {
+export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?: boolean; send?: Turn['send']; callerToken?: string } = {}): Turn {
   const prev = readTurn(dir);
   const sent = options.reportPromptSent || prev?.report_prompt_sent;
   const turn: Turn = {
@@ -40,7 +40,7 @@ export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?:
     report_sig: reportSignature(dir),
     ...(sent ? { report_prompt_sent: true } : {}),
     ...(prev && firstInput(prev) ? { first_sent_at: firstInput(prev) } : {}),
-    ...(options.by === 'hud' && prev ? { caller_token: prev.caller_token ?? turnToken(prev) } : {}),
+    ...(options.callerToken ? { caller_token: options.callerToken } : options.by === 'hud' && prev ? { caller_token: prev.caller_token ?? turnToken(prev) } : {}),
     ...(options.send ? { send: options.send } : {}),
   };
   saveTurn(dir, turn);

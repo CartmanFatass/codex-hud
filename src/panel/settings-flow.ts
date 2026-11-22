@@ -1,6 +1,12 @@
 import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import { join } from 'node:path';
 import { ModelProbe } from '../collectors/model-probe.js';
 import { decisionKeys, readHudCredentials } from '../jev/ask/config.js';
+import { getHudHome } from '../hud-home.js';
+import { binScript, jobFiles } from '../mcp/paths.js';
+import { watcherReady } from '../mcp/watch-pid.js';
 import { t } from '../render/i18n.js';
 import { handleMonitorInput, initialMonitorState, type MonitorContext, type MonitorState } from '../render/monitor.js';
 import {
@@ -25,6 +31,29 @@ function availableDecisionKeys() {
   try { return decisionKeys(readHudCredentials()); } catch { return undefined; }
 }
 
+function wakeWatcherIfQueued() {
+  try {
+    const home = getHudHome();
+    const jobsDir = join(home, 'jobs');
+    if (!fs.existsSync(jobsDir)) return;
+    const hasQueued = fs.readdirSync(jobsDir).some((id) => {
+      if (!/^j[0-9a-f]{16}$/.test(id)) return false;
+      try {
+        const status = JSON.parse(fs.readFileSync(join(jobsDir, id, jobFiles.status), 'utf8'));
+        return status?.state === 'queued';
+      } catch {
+        return false;
+      }
+    });
+    if (!hasQueued) return;
+    const script = binScript('hud-watch.mjs');
+    if (watcherReady(join(home, 'watch.pid'), script)) return;
+    const child = spawn(process.execPath, [script], { detached: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref();
+  } catch { /* Best effort; running watcher already watches hud-settings.json. */ }
+}
+
 type SettingsEffects = {
   current(): HudSettings;
   apply(saved: HudSettings, widthChanged: boolean): void;
@@ -39,7 +68,7 @@ type SettingsFacts = Omit<NonNullable<Parameters<typeof renderSettingsPage>[3]>,
 /** Own the Settings draft, dirty-navigation prompt, overlaid Help and connection test. */
 export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, probe: ModelProbe, effects: SettingsEffects) {
   let page: SettingsPageState | null = place
-    ? { ...place, draft: { ...saved }, original: { ...saved }, decisionKeys: availableDecisionKeys(), message: '' } : null;
+    ? { ...place, draft: { ...saved, roleCaps: { ...saved.roleCaps } }, original: { ...saved, roleCaps: { ...saved.roleCaps } }, decisionKeys: availableDecisionKeys(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
   let help: MonitorState | undefined;
   let leave: (SettingsConfirmationState & { destination?: string }) | null = null;
@@ -49,12 +78,16 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     const draftPage = page;
     if (!draftPage) return false;
     try {
-      const previousWidth = effects.current().treeWidth;
+      const previous = effects.current();
+      const previousWidth = previous.treeWidth;
       const settings = saveSettings(draftPage.draft);
       const widthChanged = settings.treeWidth !== previousWidth;
+      if (settings.impOverflow !== previous.impOverflow || JSON.stringify(settings.roleCaps) !== JSON.stringify(previous.roleCaps)) {
+        wakeWatcherIfQueued();
+      }
       effects.apply(settings, widthChanged);
       draftPage.message = t('Saved');
-      draftPage.original = { ...settings };
+      draftPage.original = { ...settings, roleCaps: { ...settings.roleCaps } };
       effects.setMouseTracking(settings.mouse);
       void (widthChanged ? effects.applyWidth() : undefined)
         ?.then(() => effects.repaintAll())
@@ -79,7 +112,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     show(settings: HudSettings) {
       let decisionApi = settings.decisionApi;
       try { decisionApi = loadSettings().decisionApi; } catch { /* Keep the loaded draft. */ }
-      page = { draft: { ...settings, decisionApi }, decisionKeys: availableDecisionKeys(), selected: 0, offset: 0, message: '' };
+      page = { draft: { ...settings, roleCaps: { ...settings.roleCaps }, decisionApi }, decisionKeys: availableDecisionKeys(), selected: 0, offset: 0, message: '' };
     },
     paint(width: number, height: number, facts: () => SettingsFacts, paintHelp: (help: MonitorState, mouse: boolean) => string[]): string[] | undefined {
       if (!page) return;

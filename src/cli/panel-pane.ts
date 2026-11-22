@@ -8,6 +8,7 @@ import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
+import { QUEUE_START_MARKER } from '../roles/concurrency.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
   const result = await runHerdr(argv, env);
@@ -57,6 +58,17 @@ const readJson = (file: string): Record<string, unknown> | null => {
 /** Stop a HUD job as `hud_close` does: a CLI job already in its idle grace is asked to quit, then `pi-role-reap` reaps it. */
 export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
   const status = readJson(join(jobDir, 'STATUS.json'));
+  if (status?.state === 'queued' && !fs.existsSync(join(jobDir, jobFiles.session))) {
+    try {
+      fs.writeFileSync(join(jobDir, QUEUE_START_MARKER), 'closed\n', { flag: 'wx', mode: 0o600 });
+      fs.rmSync(jobDir, { recursive: true, force: true });
+      return { ok: true };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return { ok: true };
+      if (code !== 'EEXIST') return { ok: false, reason: 'reap failed' };
+    }
+  }
   try {
     const { result, complete, issue } = await reapWorkerTree(jobDir, status, () => {
       if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {

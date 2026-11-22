@@ -77,7 +77,7 @@ function workReminder(home: string, pane: string | null, now: number): string | 
     if (!row.state || !role || row.display_state === 'stopped') continue;
     const asks = row.display_state === 'working' && (row.blocked || row.state === 'waiting_orchestrator');
     const date =
-      row.display_state === 'working'
+      row.display_state === 'working' || row.display_state === 'queued'
         ? (status.json.started_at ?? receipt.json.created_at)
         : (status.json.settled_at ?? status.json.ended_at);
     const parsed = typeof date === 'string' ? Date.parse(date) : NaN;

@@ -43,7 +43,7 @@ export function answerKeys(worker: OwnerWorker): string[] {
 /** Home's footer for the row under the cursor, most useful first (a narrow row drops the last): a card takes `o` and `v`, a HUD job also its tab and, while it runs, stop. */
 export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefined, enter: 'open' | 'expand', preview = false): string[] {
   const job = jobUnderCursor(state, board), card = !state.subpage && state.activeTab === 'home' && !homeAnchor(state.home) && !!homeTarget(state.home);
-  return [...(job ? [...(job.worker.state === 'failed' ? ['r request retry'] : []), 'g job tab', ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
+  return [...(job ? [...(job.worker.state === 'failed' ? ['r request retry'] : []), ...(job.worker.state !== 'queued' ? ['g job tab'] : []), ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
     `⏎ ${enter}`, ...(preview ? ['Esc back'] : []), ...(card || preview ? ['o file', 'v inspect'] : []), 'a all'];
 }
 /** The one-row prompt above the page while a stop waits for its answer. */

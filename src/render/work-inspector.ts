@@ -79,7 +79,7 @@ export function workInspectorRows(
     boardRow(''),
     ...facts(
       [
-        ['role', [worker.role, worker.harness].filter(Boolean).join(' · ')],
+        ['role', [worker.role, worker.overflowFrom ? t('from {role}', { role: worker.overflowFrom }) : '', worker.harness].filter(Boolean).join(' · ')],
         ['model', [model ? `${glyph ? glyph + ' ' : ''}${model}` : '', worker.effort].filter(Boolean).join(' · ')],
         [
           worker.nativeDepth !== undefined ? 'parent' : 'package',
@@ -87,7 +87,7 @@ export function workInspectorRows(
             ? (worker.parentName ?? t('this session'))
             : worker.laneId.replace(/^thin-job:package:/, ''),
         ],
-        ['state', [t(worker.state), worker.phase ? workPhaseText(worker.phase) : ''].filter(Boolean).join(' · ')],
+        ['state', [t(worker.state), worker.queuePosition !== undefined ? `#${worker.queuePosition}` : '', worker.phase && worker.phase !== worker.state ? workPhaseText(worker.phase) : ''].filter(Boolean).join(' · ')],
         ['flow', worker.flow ? flowSummary(worker.flow) : ''],
         [
           'resources',

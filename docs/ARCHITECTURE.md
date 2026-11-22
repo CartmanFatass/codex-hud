@@ -416,7 +416,7 @@ Shutdown cancels generators, timers, input/lifetime listeners and snapshot owner
 environment defaults once saved; `NO_COLOR` always wins. Unknown retired keys are
 ignored and dropped on save, not migrated into new permissions.
 
-Settings has four open groups: Display, Panel, Models, Codex. It edits a draft;
+Settings has five open groups: Display, Panel, Models, Workers, Codex. It edits a draft;
 `s` saves, `r` resets that group, `t` probes the API. Dirty navigation asks save,
 discard or continue; failed saves retain the draft. Width applies to tmux/herdr
 panels on Save and containing-window resize, not unrelated saves or border drags.

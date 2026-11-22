@@ -12,10 +12,12 @@ import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { JobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
 import type { Job, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
 import { jobFiles, BUNDLED_ROOT, binScript } from '../mcp/paths.js';
+import { capForRole, isWorkingForCap, loadConcurrencySettings, queueOrderCompare, queuedTimestamp } from '../roles/concurrency.js';
+import { settingsPath } from '../settings.js';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { request } from '../runtime/herdr-socket.js';
 
@@ -61,7 +63,7 @@ function warn(kind: string, message: string) {
   warnings.set(kind, now);
   log(message);
 }
-let watcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
+let watcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
 let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
   stopped = false,
@@ -77,10 +79,11 @@ let worktreeRetries = new Map<string, number>();
 type Handoff = { version: 1; reapRetries: typeof reapRetries; preflightHold: typeof preflightHold; worktreeRetries: typeof worktreeRetries };
 const inFlightReaps = new Map<string, ActiveReap>();
 const inFlightWorktrees = new Map<string, Promise<void>>();
+const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
 const worktreeLocks = new Set<string>(), checking = new Set<string>();
 let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
-  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || checking.size) return;
+  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size) return;
   stopScheduling();
   pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries });
   pauseReady = undefined;
@@ -113,6 +116,8 @@ function stopScheduling() {
   stopped = true;
   watcher?.close();
   watcher = undefined;
+  settingsWatcher?.close();
+  settingsWatcher = undefined;
   clearTimeout(timer);
 }
 async function shutdown() {
@@ -125,8 +130,11 @@ async function shutdown() {
   const worktrees = Promise.race([
     Promise.allSettled(inFlightWorktrees.values()), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false }),
   ]);
+  const starts = Promise.race([
+    Promise.allSettled([...inFlightStarts.values()].map((entry) => entry.promise)), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false }),
+  ]);
   // Check helpers own their own lifetime. Reap helpers must exit before we release watch.pid.
-  await Promise.all([Promise.allSettled(reaps.map((entry) => entry.promise)), worktrees]);
+  await Promise.all([Promise.allSettled(reaps.map((entry) => entry.promise)), worktrees, starts]);
 }
 function sessionFolders(dir: string) {
   const dispatch = join(dir, '.dispatch');
@@ -277,6 +285,24 @@ function startReap(job: ReapInput) {
   });
   inFlightReaps.set(id, entry);
 }
+let thinMainPromise: Promise<typeof import('../mcp/thin-main.js')> | undefined;
+const loadThinMain = () => (thinMainPromise ??= import('../mcp/thin-main.js'));
+function startQueued(id: string, targetRole: string, overflowed: boolean) {
+  if (inFlightStarts.has(id)) return;
+  const promise = loadThinMain().then(({ startQueuedJob }) => startQueuedJob(id, targetRole, overflowed)).then((res) => {
+    if (res.started) log(`queue start ${id} role=${targetRole}${overflowed ? ' (overflow from imp)' : ''}`);
+    else if (res.failed) warn(`queue ${id}`, `queue start failed ${id}: ${res.reason ?? 'unknown'}`);
+  }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !stopped) {
+      warn(`queue ${id}`, `queue start error ${id}: ${(error as Error).message}`);
+    }
+  }).finally(() => {
+    inFlightStarts.delete(id);
+    drained();
+    schedule();
+  });
+  inFlightStarts.set(id, { role: targetRole, promise });
+}
 function scan(retryWatch = false) {
   if (stopped || pauseReady) return;
   reapBacklog = false;
@@ -284,6 +310,9 @@ function scan(retryWatch = false) {
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
   const busyWorktrees = new Set<string>(), worktreeChecks = [];
+  const workingByRole = new Map<string, number>();
+  const queuedJobs: { id: string; job: Job; queuedAt: number }[] = [];
+  const countWorking = (role: string) => workingByRole.set(role, (workingByRole.get(role) ?? 0) + 1);
   const markBusy = (job: Job | null) => {
     if (job?.worktree?.root) busyWorktrees.add(job.worktree.root);
     if (job?.cwd) busyWorktrees.add(job.cwd);
@@ -295,6 +324,12 @@ function scan(retryWatch = false) {
   for (const id of jobCache.listJobIds({ onError: (error) => { throw error; } })) {
     const dir = join(jobs, id);
     try {
+      const starting = inFlightStarts.get(id);
+      if (starting) {
+        countWorking(starting.role);
+        open = true;
+        continue;
+      }
       const active = inFlightReaps.get(id);
       if (active) {
         for (const root of active.busy) busyWorktrees.add(root);
@@ -320,6 +355,11 @@ function scan(retryWatch = false) {
       try { job = readJson<Job & Record<string, unknown>>(jobFile); ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile)); session = jobCache.readSession(id, { throwOnError: true }); }
       // Unreadable lifecycle or tab evidence may still belong to an open job.
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') open = true; throw error; }
+      if (status?.state === 'queued' && job && !job.reaped_at) {
+        open = true;
+        queuedJobs.push({ id, job, queuedAt: queuedTimestamp(job) });
+        continue;
+      }
       const tab = session?.fields.tab;
       const ownership = reapOwner(session, status);
       const previous = reapRetries.get(id);
@@ -356,6 +396,7 @@ function scan(retryWatch = false) {
           else if (status) {
             // The marker or tab event can arrive before the PID is gone.
             open = safetyCheck = true;
+            if (isWorkingForCap(job, status)) countWorking(job!.role);
             continue;
           }
         } else if (tabClosed) update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };
@@ -365,6 +406,7 @@ function scan(retryWatch = false) {
           statusAt = null;
         }
       }
+      if (isWorkingForCap(job, status)) countWorking(job!.role);
       // A persisted launch without STATUS is still open until dispatch returns.
       if (!status) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) { open = true; markBusy(job); }
@@ -477,9 +519,44 @@ function scan(retryWatch = false) {
       startWorktree(id, jobFile, job);
     }
   }
+  if (queuedJobs.length) {
+    ensureSettingsWatch();
+    queuedJobs.sort(queueOrderCompare);
+    const concurrency = loadConcurrencySettings();
+    const dispatched = new Set<string>();
+    for (const { id, job } of queuedJobs) {
+      const cap = capForRole(concurrency, job.role);
+      if (cap === 0 || (workingByRole.get(job.role) ?? 0) < cap) {
+        countWorking(job.role);
+        dispatched.add(id);
+        startQueued(id, job.role, false);
+      }
+    }
+    if (concurrency.impOverflow) {
+      const generalCap = capForRole(concurrency, 'general');
+      const overflowCandidates = queuedJobs.filter(({ id, job }) => !dispatched.has(id) && job.role === 'imp');
+      if (overflowCandidates.length && (generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap)) {
+        const freeSlots = generalCap === 0 ? overflowCandidates.length : generalCap - (workingByRole.get('general') ?? 0);
+        // Check preset/place compatibility lazily via thin-main before claiming overflow.
+        void loadThinMain().then(({ canOverflowImpJob }) => {
+          if (stopped || pauseReady) return;
+          let started = 0;
+          for (const { id, job } of overflowCandidates) {
+            if (started >= freeSlots) break;
+            if (inFlightStarts.has(id) || !canOverflowImpJob(job)) continue;
+            started++;
+            startQueued(id, 'general', true);
+          }
+        }).catch(() => {});
+      }
+    }
+  } else if (settingsWatcher) {
+    settingsWatcher.close();
+    settingsWatcher = undefined;
+  }
   if (open) subscribe();
   if (safetyCheck) nearest = Math.min(nearest, Date.now() + cliCheck);
-  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0;
+  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.ceil(nearest - Date.now())));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {
@@ -491,6 +568,22 @@ function schedule() {
   if (queued || stopped) return;
   queued = true;
   setImmediate(() => { queued = false; scan(); });
+}
+function ensureSettingsWatch() {
+  if (settingsWatcher || stopped) return;
+  try {
+    const file = settingsPath();
+    const dir = dirname(file), name = basename(file);
+    if (fs.existsSync(dir)) {
+      settingsWatcher = fs.watch(dir, (_event, changed) => {
+        const fileName = changed?.toString();
+        if (!fileName || fileName === name) schedule();
+      }).on('error', () => {
+        settingsWatcher?.close();
+        settingsWatcher = undefined;
+      });
+    }
+  } catch { /* Settings directory unavailable; job events still drive scans. */ }
 }
 // Watch before catch-up, so a STATUS rename during the initial scan is not missed.
 function startWatch() {

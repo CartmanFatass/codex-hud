@@ -24,7 +24,9 @@ export function workerPriority(w: OwnerWorker, now: number): number {
           ? 3
           : card.state === 'in-progress' || activeFlow(w)
             ? 4
-            : 5;
+            : card.state === 'queued'
+              ? 4.5
+              : 5;
 }
 export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] {
   return [...board.lanes].sort(
@@ -44,6 +46,7 @@ export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room
   const glyph = {
     done: theme.board.success(mark('✓', '+')),
     run: theme.board.active(mark('◉', '@')),
+    queue: theme.board.muted(mark('◷', '~')),
     ask: theme.board.attention('?'),
     fail: theme.board.danger(mark('✗', 'x')),
     stop: theme.board.muted(mark('−', '-')),
@@ -55,11 +58,13 @@ export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room
         ? 'fail'
         : c.state === 'needs-you'
           ? 'ask'
-          : c.state === 'in-progress' || c.state === 'stalled'
-            ? 'run'
-            : 'done'
+          : c.state === 'queued'
+            ? 'queue'
+            : c.state === 'in-progress' || c.state === 'stalled'
+              ? 'run'
+              : 'done'
   );
-  const live = kinds.map((k) => k === 'run' || k === 'ask').lastIndexOf(true);
+  const live = kinds.map((k) => k === 'run' || k === 'ask' || k === 'queue').lastIndexOf(true);
   const role = live < 0 ? '' : ' ' + theme.board.muted(monitorText(cards[live].role));
   let keep = cards.length;
   const width = (n: number) => 2 * n - 1 + (n < cards.length ? String(cards.length - n).length + 2 : 0);

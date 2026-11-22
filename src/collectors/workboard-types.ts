@@ -116,6 +116,8 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly provider?: string | null;
   readonly effort: string | null;
   readonly state: string;
+  readonly queuePosition?: number;
+  readonly overflowFrom?: string;
   readonly startedAt: number | null;
   readonly settledAt: number | null;
   readonly phase: string | null;

@@ -102,7 +102,7 @@ export class DecisionLabels {
         }
       }
       const node = nodes.get(w.id);
-      if (w.settledAt === null && (thin || (node && !node.replaying))) {
+      if (w.settledAt === null && w.state !== 'queued' && (thin || (node && !node.replaying))) {
         const a = jobActivity(home, w, node);
         if (a.items.length) {
           add(w.id + ':loop', a.items,

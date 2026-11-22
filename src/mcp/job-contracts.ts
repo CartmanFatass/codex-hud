@@ -27,6 +27,10 @@ export interface Job extends PiOptions {
   project_root?: string;
   herdr_pane: string;
   created_at: string;
+  queued_at?: string;
+  overflow_from?: string;
+  scout_question?: string;
+  headless?: boolean;
   package?: string;
   title?: string;
   ticket?: string;
@@ -78,7 +82,7 @@ export interface Job extends PiOptions {
 
 /** STATUS.json ranges from minimal dispatch/scout updates to full harness receipts. */
 export type JobStatus = {
-  state: 'working' | 'waiting_helper' | 'waiting_orchestrator' | 'blocked' | 'idle_grace' | 'closed' | 'done' | 'failed' | 'stopped';
+  state: 'queued' | 'working' | 'waiting_helper' | 'waiting_orchestrator' | 'blocked' | 'idle_grace' | 'closed' | 'done' | 'failed' | 'stopped';
   version?: 1;
   task_dir?: string;
   slot?: string;

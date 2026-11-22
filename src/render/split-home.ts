@@ -65,7 +65,7 @@ export function homeScene(
   const col = Math.max(8, Math.min(14, Math.floor(width / 3), Math.max(0, ...names.map(visualLength))));
   const laneEntry = (lane: WorkLane, i: number): Entry => {
     const top = laneTop(lane, now), card = projectWorkCard(top, now, state.prefs.cardStallMinutes), item = targetKey({ kind: 'lane', laneId: lane.id });
-    const native = lane.identity.kind === 'native', running = lane.workers.filter((w) => w.settledAt === null).length, phase = lanePhase(lane, now);
+    const native = lane.identity.kind === 'native', running = lane.workers.filter((w) => w.settledAt === null && w.state !== 'queued').length, phase = lanePhase(lane, now);
     const ink = workStateInk(card), word = workStateWord(card);
     const age = top.homeNeedsHuman ? minuteAge(top.humanEndedAt, now) : top.settledAt !== null ? minuteAge(top.settledAt, now) : ageText(card.elapsedMinutes ?? 0);
     // The state word is said once, on the right. The middle says what else is known: a running lane's phase; for a lane that asks,
@@ -130,8 +130,8 @@ export function homeScene(
     return [{ item: PROGRESS, needs: false, rows: [{ item: PROGRESS, text: pair(lead, theme.board.muted(facts.join(' · ')), width) }],
     preview: () => ({ label: t('Progress'), right: milestone && `${t('Milestone')} ${milestone}`, rows: [...brief, ...block.slice(1), ...pendingRows()] }) }];
   })();
-  const entries = [...lanes.flatMap((l, i) => (group(l) <= 4 ? [laneEntry(l, i)] : [])), ...waiting,
-    ...lanes.flatMap((l, i) => (group(l) <= 4 ? [] : [laneEntry(l, i)])), ...progress];
+  const entries = [...lanes.flatMap((l, i) => (group(l) < 5 ? [laneEntry(l, i)] : [])), ...waiting,
+    ...lanes.flatMap((l, i) => (group(l) < 5 ? [] : [laneEntry(l, i)])), ...progress];
   const items = entries.map((e) => e.item);
   const split = state.home.split, atList = split.listCursor;
   const cursor = atList && items.includes(atList) ? atList : (entries.find((e) => e.needs) ?? entries[0])?.item;

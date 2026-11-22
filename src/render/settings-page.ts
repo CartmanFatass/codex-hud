@@ -31,10 +31,11 @@ const PROBE_FAILURES: Record<string, string> = {
   'runtime-unavailable': 'Budget store unavailable',
 };
 export type SettingKey = keyof HudSettings;
-export type SettingGroup = 'Display' | 'Panel' | 'Models' | 'Codex';
+export type SettingGroup = 'Display' | 'Panel' | 'Models' | 'Workers' | 'Codex';
 export type SettingsAction = 'back' | 'save' | 'reset' | 'test-api';
 export interface SettingRow {
   key: SettingKey;
+  role?: string;
   group: SettingGroup;
   label: string;
   values: readonly SettingValue[];
@@ -46,6 +47,7 @@ export interface SettingRow {
 }
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
 const callCap = (value: SettingValue) => Number(value) === 0 ? t('unlimited') : `${value}/h`;
+const roleCap = (value: SettingValue) => Number(value) === 0 ? t('unlimited') : String(value);
 const NOTIFY_WORDS: Record<string, string> = { off: 'off', tmux: 'tmux', desktop: 'tmux + desktop' };
 export const SETTING_ROWS: readonly SettingRow[] = [
   {
@@ -156,6 +158,35 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
     help: "How often a running job's sentence and Home's brief may refresh", format: (value) => t('{n}m', { n: Number(value) }) },
   {
+    key: 'roleCaps',
+    role: 'imp',
+    group: 'Workers',
+    label: 'imp cap',
+    values: [1, 2, 3, 4, 5, 6, 8, 10, 0],
+    help: 'Max concurrently working imp jobs; extra creates overflow or queue',
+    format: roleCap,
+    get: (settings) => settings.roleCaps.imp ?? 0,
+    set: (value, settings) => ({ roleCaps: { ...settings.roleCaps, imp: Number(value) } }),
+  },
+  {
+    key: 'roleCaps',
+    role: 'general',
+    group: 'Workers',
+    label: 'general cap',
+    values: [1, 2, 3, 4, 5, 6, 8, 10, 0],
+    help: 'Max concurrently working general jobs; extra creates queue',
+    format: roleCap,
+    get: (settings) => settings.roleCaps.general ?? 0,
+    set: (value, settings) => ({ roleCaps: { ...settings.roleCaps, general: Number(value) } }),
+  },
+  {
+    key: 'impOverflow',
+    group: 'Workers',
+    label: 'imp→general overflow',
+    values: [true, false],
+    help: 'Start an imp job as general when imp is full and general has room',
+  },
+  {
     key: 'statusline',
     group: 'Codex',
     label: 'Bar on launch',
@@ -183,11 +214,13 @@ export function settingGroup(stateOrRow: Pick<SettingsPageState, 'selected'> | S
     ? stateOrRow.group
     : SETTING_ROWS[Math.min(SETTING_ROWS.length - 1, Math.max(0, stateOrRow.selected))].group;
 }
+const sameSettingValue = (a: unknown, b: unknown): boolean =>
+  a === b || (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b));
 export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original'>): boolean {
   return (
     !!state.original &&
     (Object.keys(defaultSettings()) as Array<keyof HudSettings>).some(
-      (key) => state.draft[key] !== state.original![key]
+      (key) => !sameSettingValue(state.draft[key], state.original![key])
     )
   );
 }
@@ -195,6 +228,7 @@ const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['homeMode', 'panelLayout', 'projectLayout', 'acceptance', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'summaryIntervalMinutes'],
+  Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };
 export function resetSettingsGroup(draft: HudSettings, group: string): HudSettings {
@@ -235,7 +269,7 @@ export function renderSettingsPage(
   width = Math.max(0, Math.floor(width));
   height = Math.max(0, Math.floor(height));
   const selected = Math.min(SETTING_ROWS.length - 1, Math.max(0, state.selected)),
-    original = state.original ?? { ...state.draft };
+    original = state.original ?? { ...state.draft, roleCaps: { ...state.draft.roleCaps } };
   const dirty = settingsDirty({ ...state, original }),
     content: { text: string; index?: number; back?: number; probe?: boolean }[] = [];
   for (const [i, row] of SETTING_ROWS.entries()) {

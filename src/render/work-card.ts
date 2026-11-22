@@ -13,6 +13,11 @@ export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed',
 export const workStateWord = (card: WorkCard) => {
   if (card.worker.superseded) return t('superseded');
   if (card.worker.state === 'stopped') return t('stopped');
+  if (card.state === 'queued') {
+    return card.worker.queuePosition !== undefined
+      ? t('queued #{n}', { n: card.worker.queuePosition })
+      : t('queued');
+  }
   return t(
     failed(card)
       ? 'failed'
@@ -27,6 +32,7 @@ export const workStateWord = (card: WorkCard) => {
 };
 export const workStateGlyph = (card: WorkCard) => {
   if (card.worker.state === 'stopped') return mark('−', '-');
+  if (card.state === 'queued') return mark('◷', '~');
   return failed(card)
     ? mark('✗', 'x')
     : card.state === 'needs-you'
@@ -38,7 +44,7 @@ export const workStateGlyph = (card: WorkCard) => {
           : mark('✓', '+');
 };
 export const workStateInk = (card: WorkCard) => {
-  if (card.worker.superseded || card.worker.state === 'stopped') return theme.board.muted;
+  if (card.worker.superseded || card.worker.state === 'stopped' || card.state === 'queued') return theme.board.muted;
   return failed(card)
     ? theme.board.danger
     : card.state === 'needs-you'
@@ -183,7 +189,7 @@ export function workCardDetail(card: WorkCard, sentence = ''): string {
 }
 export function workPhaseText(phase: string): string {
   return monitorText(phase).replace(
-    /reviewing|researching|working|generating|asking web|scouting|landing|build|review|accept|done|fixing|asking|failed|stopped|major|minor/g,
+    /reviewing|researching|working|generating|asking web|scouting|landing|queued|build|review|accept|done|fixing|asking|failed|stopped|major|minor/g,
     (word) => t(word)
   );
 }

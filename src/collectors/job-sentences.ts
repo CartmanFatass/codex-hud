@@ -105,7 +105,7 @@ function material(home: string, w: OwnerWorker, answers: unknown) {
   const reviewed = review ? read(join(dir, review)) : { text: '', stamp: '' };
   const report = w.settledAt === null ? read(join(dir, 'report.md')) : readJobReport(join(dir, 'report.md'));
   const question = w.work?.requestInfo?.evidence?.relativePath ?? '';
-  const activity = w.settledAt === null ? jobActivity(home, w) : { text: '', stamp: '', items: [] };
+  const activity = w.settledAt === null && w.state !== 'queued' ? jobActivity(home, w) : { text: '', stamp: '', items: [] };
   const messages = activity.text
     .split('\n')
     .flatMap((line) => {

@@ -182,6 +182,8 @@ reject pi options.
 
 Callers leave sonic's thinking at the role default (`high` as shipped). The optional **Sonic auto-thinking** setting (`sonicAutoThinking`, off by default) sends the task to the Decision API to choose `none`, `low`, `high` or `max` using the role file's `thinking_choices`. Use `none` for running an exact command and reporting its output, copying exact text, or listing files; narrow fact lookups in named files use `low`. Pi calls `none` `off`. If no key is available, the call cap is reached, the decision times out (about five seconds), or the provider refuses or returns an invalid answer, the role default applies. An owner-requested `hud_create` thinking override skips the decision; `hud_sonic` takes no thinking argument. Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
 
+Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic). With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap starts as `general` when `general` has a free slot and a compatible available place, returning `overflowed: true` and `overflow_from: "imp"`. When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel). The watcher starts the oldest queued job when a slot frees or a cap is raised in Settings, picking the first available place at start time. `hud_close` (or panel `X`) removes a queued job.
+
 Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs,
 each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
 or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch. Pi and CLI
@@ -995,6 +997,7 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 | Display | Theme, Bar style, Icons, Language |
 | Panel | Home mode, Layout, Width, Stall threshold, Fold after, Hide after, Notifications, Refresh, Mouse |
 | Models | Model text, Model, Decision API, Call cap, Decision cap, Sonic auto-thinking, Summary interval, separate hourly counters, Test API |
+| Workers | imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
 All groups are open. Up/Down selects; Left/Right or Enter changes; `s` saves, `r`

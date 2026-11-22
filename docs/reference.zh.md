@@ -151,6 +151,8 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
 Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。主人通过 `hud_create` 指定 `thinking` 时跳过选择。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。
 
+按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位且有兼容可用位置，则改以 `general` 启动并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
+
 `hud trust <dir>` 把该目录加入 grok、agy 和 claude 的信任文件（先在 `$HUD_HOME` 下备份）。
 文件不存在则不创建。codex 跳过。
 
@@ -651,9 +653,10 @@ Claude OAuth、第三方网关和无法归属的请求不计入。Claude Code �
 | 显示 | 主题、状态行样式、图标、语言 |
 | 面板 | 首页模式、布局、宽度、停滞阈值、折叠时间、隐藏时间、提醒、刷新、鼠标 |
 | 模型 | 模型文字、模型、决策 API、调用上限、决策上限、Sonic 自动选档、总结间隔、独立小时计数、测试 API |
+| 工作者 | imp 上限（`roleCaps.imp`，默认 3）、general 上限（`roleCaps.general`，默认 3）、imp→general 溢出（`impOverflow`，默认开） |
 | Codex | 启动状态行 |
 
-四组常开。上下选择，左右／Enter 修改，`s` 保存、`r` 只重置本组、`t` 启动／取消测试。
+五组常开。上下选择，左右／Enter 修改，`s` 保存、`r` 只重置本组、`t` 启动／取消测试。
 有修改离开时询问保存并离开／放弃修改／继续编辑（默认）；保存失败保留草稿。主题和图标在草稿中预览。
 没有全部重置、手风琴或背景图。
 

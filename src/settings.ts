@@ -54,7 +54,13 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   notifyDesktop: boolean;
   /** Unicode marks or their ASCII/text equivalents. Old icon sets load as unicode. */
   icons: IconMode;
+  /** Per-role soft caps on concurrently working jobs; 0 or omitted means uncapped. */
+  roleCaps: Record<string, number>;
+  /** Start an imp create as general when imp is at its cap and general has a free slot. */
+  impOverflow: boolean;
 }
+
+export const DEFAULT_ROLE_CAPS: Readonly<Record<string, number>> = Object.freeze({ imp: 3, general: 3 });
 
 /** Display defaults shared by settings and the pure panel initializer. */
 export const DEFAULT_PANEL_VIEW = {
@@ -96,6 +102,8 @@ export function defaultSettings(): HudSettings {
     notify: false,
     notifyDesktop: false,
     icons: 'unicode',
+    roleCaps: { ...DEFAULT_ROLE_CAPS },
+    impOverflow: true,
   };
 }
 
@@ -145,15 +153,28 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   decisionCallsPerHour: (value) => isIntegerBetween(value, 0, 2000),
   summaryIntervalMinutes: (value) => isIntegerBetween(value, 1, 120),
   icons: oneOf('unicode', 'text'),
+  roleCaps: (value) =>
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.entries(value as Record<string, unknown>).length <= 32 &&
+    Object.entries(value as Record<string, unknown>).every(
+      ([role, cap]) => /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(role) && isIntegerBetween(cap, 0, 100)
+    ),
+  impOverflow: isBoolean,
 };
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
-  const result = { ...base };
+  const result: HudSettings = { ...base, roleCaps: { ...base.roleCaps } };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
   const values = raw as Record<string, unknown>;
   for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
-      Object.assign(result, { [key]: values[key] });
+      if (key === 'roleCaps') {
+        result.roleCaps = { ...base.roleCaps, ...(values.roleCaps as Record<string, number>) };
+      } else {
+        Object.assign(result, { [key]: values[key] });
+      }
     }
   }
   return result;

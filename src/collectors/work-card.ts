@@ -1,7 +1,7 @@
 /** Pure work presentation. These facts never change execution, wait or acceptance. */
 import type { OwnerWorker, EvidenceRef } from './workboard-types.js';
 import type { SubagentTreeNode } from '../types.js';
-export type WorkState = 'needs-you' | 'in-progress' | 'awaiting-acceptance' | 'stalled' | 'done';
+export type WorkState = 'needs-you' | 'in-progress' | 'queued' | 'awaiting-acceptance' | 'stalled' | 'done';
 export interface WorkFacts {
   readonly episode: string;
   readonly activityAt: number | null;
@@ -45,13 +45,15 @@ export function projectWorkCard(worker: OwnerWorker, now: number, stallMinutes =
   const state: WorkState =
     worker.homeNeedsHuman || (w?.failed && !worker.failureObserved && !worker.superseded)
       ? 'needs-you'
-      : result
-        ? w?.facadeClosed
-          ? 'done'
-          : 'awaiting-acceptance'
-        : worker.stale || (inactive !== null && inactive >= stallMinutes)
-          ? 'stalled'
-          : 'in-progress';
+      : worker.state === 'queued'
+        ? 'queued'
+        : result
+          ? w?.facadeClosed
+            ? 'done'
+            : 'awaiting-acceptance'
+          : worker.stale || (inactive !== null && inactive >= stallMinutes)
+            ? 'stalled'
+            : 'in-progress';
   return {
     state,
     role: worker.role || 'agent',
