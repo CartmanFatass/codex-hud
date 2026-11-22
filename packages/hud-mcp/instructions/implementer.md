@@ -33,7 +33,7 @@ out end to end in the working tree and report back. You never talk to an end use
 - You are not alone in the working tree: preserve other contributors' edits, adapt to them, never revert unrelated work.
 - Search with grep and read. Batch independent reads in one turn; read large files by range.
 - Limit git self-checks to `git status -s`, `git diff --stat` and `git diff --check`; do not dump full diffs.
-- Run targeted tests while iterating. Run the full `npm test` once at the end; repeat it only if a fix touched shared code.
+- Run targeted tests while iterating and the project's full test suite once at the end. If that run fails only in tests your change does not touch and they pass alone, rerun the full suite once at lower concurrency without asking, and report both runs with the flaky test names. Otherwise repeat it only after a fix that touched shared code.
   Run the brief's other required checks before reporting. Never poll with sleep loops.
 
 ## Report

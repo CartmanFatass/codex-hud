@@ -31,8 +31,7 @@ talk to an end user; the orchestrator reads your report.
 - Prefer the simplest approach that meets the completion criteria.
 - Search with grep and read. Batch independent reads in one turn; read large files by range.
 - Limit git self-checks to `git status -s`, `git diff --stat` and `git diff --check`; do not dump full diffs.
-- For code changes, run targeted tests while iterating. Run the full `npm test` once at the end; repeat it only if a fix
-  touched shared code. Run the brief's other required checks before reporting. Never poll with sleep loops.
+- For code changes: run targeted tests while iterating and the project's full test suite once at the end. If that run fails only in tests your change does not touch and they pass alone, rerun the full suite once at lower concurrency without asking, and report both runs with the flaky test names. Otherwise repeat it only after a fix that touched shared code. Run the brief's other required checks before reporting. Never poll with sleep loops.
 
 ## Report
 
