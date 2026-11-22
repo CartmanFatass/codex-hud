@@ -12,8 +12,8 @@ They are not current. Keep this file well under 64 KiB (the Project page reads o
   built-in catalog only? (waits on PRIMITIVES-04, primitives/04)
 
 - Owner 2026-11-22 on agy's proposals 17–24: 17 do it (lean spec + archive old docs; spec-docs/01–03, spec lands
-  only after the owner approves the draft and errata); 18 drop the self-graded outcome/verdict, other parts under
-  discussion; 19 restart recovery stays manual plus a guard so a resumed worker cannot use main-session tools
+  only after the owner approves the draft and errata); 18 drop the self-graded outcome/verdict, do the rest: HUD-side
+  summary fixes and an optional worker summary + file list (report-summary/01–03; spec updated; behaviour change approved); 19 restart recovery stays manual plus a guard so a resumed worker cannot use main-session tools
   (resume-guard/01); 20 at most proposal 13's single-job form; 21 `after` chaining dropped; 22 waits for 14; 23 web
   board server dropped; 24 deferred (at most worktree cleanup).
 - Proposals 10–16 in docs/neon-proposal/ (the rest of neon's report, reduced; one slice each): 10 Settings Advanced
@@ -47,6 +47,7 @@ board counts these; update at every landing or decision. -->
 - try · CODE-HEALTH · TEST-SPLIT-01 · neon 09 S1: thin-mcp.test.mjs split into ten files behind tests/helpers/thin-mcp-harness.mjs, 175 cases kept; test:mjs 292 s → 71 s; teardown retries and one atomic test write fixed two flakes (e2c003de,46527cc5)
 - try · CODE-HEALTH · TEST-SPLIT-02 · neon 09 S2: shared fake CLI bin, clock preload and atomic fixture writes for the MCP tests; role-places uses the shared harness; new npm scripts test:mcp, test:panel, test:fast (~10 s) (3eb0e02f)
 - try · CODE-HEALTH · PROJECT-BOARD-LIMITS-01 · bug from neon 17: Project's latest review reads every docs/reviews entry (dated files only, README never wins); a STATE.md or spec past 64 KiB shows a truncation warning (23e6efbf; test flakes b588ac6b)
+- working · REPORT-SUMMARY · REPORT-SUMMARY-01 · neon 18 layer A: wake summary takes the first prose line, sentence/outcome models see the report's result sections, final line at once, signature-bound meta helper (imp; report-summary/01; then 02 worker summary + files, 03 panel/notices use it)
 - todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Docs lane: SPEC-DOCS-01 (working) → SPEC-DOCS-02 (draft + oracle audit) → owner approval → SPEC-DOCS-03. Panel lane: I18N-CHECK-01 (working) → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-03 (working) → RESUME-GUARD-01 → TEST-SPLIT-04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - try · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job (Settings row), fallback default; thinking_source recorded (f0baa540)
