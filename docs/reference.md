@@ -1022,7 +1022,7 @@ master off/no key sends nothing, leaving Settings cancels.
 
 ## The bottom bars
 
-Claude statusline, pi footer and Codex tmux bar share one facts renderer:
+Claude and Antigravity statuslines, the pi footer and the Codex tmux bar share one facts renderer:
 
 ```text
 model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s │ notices ··· MCP n  skills n
@@ -1044,6 +1044,7 @@ Open approvals and job questions are pinned, the first one named (`! imp 首页�
 when even that does not fit; nothing open, nothing pinned. No clock, task count, hooks count, tool-at-work or idle fallback.
 
 - Claude statusline: `~N t/s` estimates the latest response from transcript output tokens and elapsed time since its prompt or tool result.
+- Antigravity statusline: the same `hud-statusline` command shows its model, context and recognized quota readings (`5h 80% left`), without reading its transcript or forwarding its payload. `--details --lang en|zh` also shows reported input and output totals. The Linux launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws; a change may appear on the next refresh rather than immediately.
 - Codex bar: `~N t/s` shows the existing output-rate estimate from the rollout.
 
 Settings Bar style: `line`, `p10k`, `gauge` (Gauge Plates), `tide`, `micro`, `stacked`,

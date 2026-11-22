@@ -32,7 +32,12 @@ function displayText(value: unknown): string | null {
 }
 
 /** Missing facts omit their segment. Known zero is retained, and siblings are independent. */
-export function renderStatuslineDetails(input: unknown, width: number, language: StatuslineLanguage): string {
+export function renderStatuslineDetails(
+  input: unknown,
+  width: number,
+  language: StatuslineLanguage,
+  quota: readonly string[] = []
+): string {
   if (!Number.isSafeInteger(width) || width < 1 || width > 500) throw new Error('invalid_statusline_width');
   const labels = STATUSLINE_LABELS[language];
   const value = object(input);
@@ -72,6 +77,7 @@ export function renderStatuslineDetails(input: unknown, width: number, language:
     duration(labels.duration, cost.total_duration_ms),
     duration(labels.apiDuration, cost.total_api_duration_ms),
     changes.length ? `${labels.lines} ${changes.join(' ')}` : null,
+    ...quota,
   ].filter((part): part is string => part !== null);
   let core = [`${labels.model} ${name}`, contextText, costText].filter((part): part is string => part !== null);
   const line = () => [...core, ...optional].join(' · ');

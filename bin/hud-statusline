@@ -1,12 +1,20 @@
-#!/usr/bin/env node
+#!/bin/bash
+':' //; case $0 in /*) entry=$0;; *) entry=$PWD/$0;; esac; if [[ -L $entry ]]; then entry=$(readlink -f -- "$entry") || { printf 'HUD unavailable\n'; exit 0; }; fi; helper=${entry%/*}/hud-statusline-cache.sh; if [[ -r $helper ]]; then source "$helper" "$entry" "$@"; fi; exec node "$entry" "$@"
+const antigravityOnly = process.argv[2] === '--agy-render';
+const args = process.argv.slice(antigravityOnly ? 3 : 2);
+const admin = ['--help', 'import', 'settings'].includes(args[0]);
 if (Number(process.versions.node.split('.')[0]) < 24) {
-  process.stderr.write('runtime_unavailable: Node >=24.0.0 required\n');
-  process.exit(5);
+  if (admin) process.stderr.write('runtime_unavailable: Node >=24.0.0 required\n');
+  else process.stdout.write('HUD unavailable\n');
+  process.exitCode = admin ? 5 : 0;
+} else {
+  start();
 }
 import { withDistLock } from '../scripts/dist-lock.mjs';
-withDistLock(() => import('../dist/cli/statusline.js'))
-  .then(async ({ statuslineCommand }) => {
-    process.exitCode = await statuslineCommand(process.argv.slice(2), {
+async function start() {
+  try {
+    const { statuslineCommand } = await withDistLock(() => import('../dist/cli/statusline.js'));
+    process.exitCode = await statuslineCommand(args, {
       env: process.env,
       stdout: (text) =>
         new Promise((resolve, reject) => {
@@ -14,9 +22,15 @@ withDistLock(() => import('../dist/cli/statusline.js'))
           process.stdout.write(text, (error) => (error ? reject(error) : resolve()));
         }),
       stderr: (text) => process.stderr.write(text),
-    });
-  })
-  .catch(() => {
-    process.stderr.write('statusline_unavailable: run npm run build\n');
-    process.exitCode = 1;
-  });
+    }, antigravityOnly);
+  } catch {
+    if (admin) {
+      process.stderr.write('statusline_unavailable: run npm run build\n');
+      process.exitCode = 1;
+    } else {
+      process.stdout.on('error', () => {});
+      process.stdout.write('HUD unavailable\n');
+      process.exitCode = 0;
+    }
+  }
+}

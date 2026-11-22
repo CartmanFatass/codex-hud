@@ -86,7 +86,8 @@ export async function statuslinePreview(
     stdout: (text: string) => void | Promise<void>;
     stderr: (text: string) => void;
     render?: (value: unknown, width: number) => string | Promise<string>;
-    onInput?: (bytes: Buffer) => void;
+    onInput?: (bytes: Buffer, value: Record<string, unknown>) => void;
+    degraded?: (width: number) => string;
   }
 ): Promise<number> {
   let output: string;
@@ -101,23 +102,27 @@ export async function statuslinePreview(
     }
     try {
       const bytes = await readStatuslineInputBytes(input);
-      io.onInput?.(bytes);
       const value = parseInput(bytes);
+      io.onInput?.(bytes, value);
       output = (await (io.render ?? renderStatuslineSession)(value, width)) + '\n';
     } catch (error) {
-      const reason = error instanceof Error ? error.message : '';
-      io.stderr(
-        ['invalid_statusline_input', 'statusline_input_too_large', 'statusline_input_timeout'].includes(reason)
-          ? `${reason}\n`
-          : 'statusline_input_unavailable\n'
-      );
-      return 3;
+      if (io.degraded) output = io.degraded(width) + '\n';
+      else {
+        const reason = error instanceof Error ? error.message : '';
+        io.stderr(
+          ['invalid_statusline_input', 'statusline_input_too_large', 'statusline_input_timeout'].includes(reason)
+            ? `${reason}\n`
+            : 'statusline_input_unavailable\n'
+        );
+        return 3;
+      }
     }
   }
   try {
     await io.stdout(output);
     return 0;
   } catch {
+    if (io.degraded) return 0; // The output is already unavailable; do not disable the host's statusline.
     io.stderr('statusline_output_failure\n');
     return 1;
   }

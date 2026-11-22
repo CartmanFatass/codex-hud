@@ -2,7 +2,7 @@ import { getHudHome } from '../hud-home.js';
 import { readThinJobs } from '../collectors/thin-jobs.js';
 import { renderWorkSummary, workSignals } from '../render/work-summary.js';
 import { fileURLToPath } from 'node:url';
-import { visualLength } from '../render/colors.js';
+import { truncateAnsi, visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
 import { applyBarSettings } from '../bar-settings.js';
 import { NOTICE_MS } from '../render/layout/bar-fields.js';
@@ -14,6 +14,16 @@ import { forwardInput } from '../statusline-parity/forward.js';
 import { recordClaudeQuota } from '../statusline-parity/quota-cache.js';
 import { importStatusline } from '../statusline-parity/import.js';
 import { statuslineSettings } from '../statusline-settings.js';
+import { renderAntigravity } from '../statusline-parity/antigravity.js';
+import { record } from '../statusline-parity/storage.js';
+
+function isClaude(value: Record<string, unknown>): boolean {
+  return (
+    (value.product === undefined || value.product === 'claude' || value.product === 'claude-code') &&
+    (['model', 'context_window', 'cost', 'rate_limits', 'workspace'].some((key) => Object.keys(record(value[key])).length) ||
+      typeof value.transcript_path === 'string' || typeof value.cwd === 'string')
+  );
+}
 
 export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
        hud statusline --details [--lang en|zh] [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
@@ -23,8 +33,8 @@ export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--sourc
        hud statusline settings restore --backup ABSOLUTE_FILE
        hud-statusline [same arguments]
 
-Render stdin Claude facts, with Work counts from this pane's job folders.
-Reported quota windows may be cached locally for the panel.
+Render stdin Claude or Antigravity facts. Claude also shows this pane's Work summary.
+Claude quota windows may be cached locally for the panel.
 No network access or installation by default.
 The shared bar uses HUD config.json statusline preferences, or defaults when absent.
 Import previews that section without writes; --apply writes HUD configuration only.
@@ -36,7 +46,7 @@ Compact output remains the default; presentation options do not change settings.
 See docs/reference.md (Claude statusline and shared facts) for fields, settings and recovery.
 `;
 
-export async function statuslineCommand(args: readonly string[], io: HudIO): Promise<number> {
+export async function statuslineCommand(args: readonly string[], io: HudIO, antigravityOnly = false): Promise<number> {
   if (args.length === 1 && args[0] === '--help') {
     await io.stdout(STATUSLINE_HELP);
     return 0;
@@ -127,12 +137,25 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
   return statuslinePreview(widthArgs, process.stdin, {
     columns,
     ttyColumns: tty,
-    onInput: parity ? (bytes) => forwardInput(parity.forward, bytes, io.env) : undefined,
+    onInput: (bytes, value) => {
+      if (Object.hasOwn(value, 'email')) delete value.email;
+      else if (!antigravityOnly && isClaude(value)) forwardInput(parity?.forward, bytes, io.env);
+    },
+    degraded: (width) => truncateAnsi('HUD unavailable', width),
     stdout: async (text) => {
       await io.stdout(text);
     },
     stderr: io.stderr,
     render: async (value, width) => {
+      const input = record(value);
+      if (input.product === 'antigravity') {
+        const terminal = input.terminal_width;
+        if (!widthArgs.length && typeof terminal === 'number' && Number.isSafeInteger(terminal) && terminal > 0)
+          width = Math.max(1, Math.min(500, terminal - (parity?.widthMargin ?? 0)));
+        if (!options.details) applyBarSettings();
+        return renderAntigravity(input, width, options);
+      }
+      if (antigravityOnly || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
       const now = Date.now();
       recordClaudeQuota(value, io.env, now);
       const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null }, undefined,

@@ -87,6 +87,8 @@ export interface BarQuotaWindow {
   reset?: string;
   shown?: string;
   quiet?: boolean;
+  /** A text-only watermark, without cells even on wide bars. */
+  meter?: false;
 }
 
 export interface BarFacts {
@@ -270,7 +272,7 @@ function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
     w.quiet ? 'quiet' : w.percent === undefined ? 'value' : quotaRole(w.percent);
   const reading = (w: BarQuotaWindow, bars = false, reset = false): Form => [
     ...(w.label ? ([[w.label, 'dim'], [' ']] as Form) : []),
-    ...(bars && w.percent !== undefined ? cells(w.percent, roleOf(w)) : []),
+    ...(bars && w.meter !== false && w.percent !== undefined ? cells(w.percent, roleOf(w)) : []),
     [w.shown ?? (w.percent === undefined ? '' : `${w.percent}%`), roleOf(w)],
     ...(reset && w.reset ? ([[` (${w.reset})`, 'value']] as Form) : []),
   ];
@@ -283,7 +285,7 @@ function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
       ? [[...reading(lead, true, true), ...tail], [...reading(lead, false, true), ...tail], reading(lead)]
       : [],
     ink: role === 'quiet' ? P10K.loaded : role === 'usageHigh' ? P10K.warn : role === 'bad' ? P10K.bad : P10K.quota,
-    meter: lead?.percent === undefined ? undefined : { percent: lead.percent, role },
+    meter: lead?.percent === undefined || lead.meter === false ? undefined : { percent: lead.percent, role },
     at: 0,
   };
 }
