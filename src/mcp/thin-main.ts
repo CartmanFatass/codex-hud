@@ -43,12 +43,20 @@ import { jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS } from '../roles/job-checks.js
 import { takeLease } from '../roles/lease.js';
 import { adoptProjectJobs, projectJobFilter } from '../roles/job-project.js';
 import { sharedRoot } from '../roles/projects.js';
+import { resumedWorkerRefusal } from '../roles/resume-guard.js';
 
 const jobDir = process.env.HUD_JOB_DIR;
 const isWorker = jobDir !== undefined;
 const hudHome = isWorker ? dirname(dirname(fs.realpathSync(jobDir))) : resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 if (isWorker) process.env.HUD_HOME = hudHome; // The watcher and other subprocesses inherit the worker's HUD home.
 const jobsRoot = join(hudHome, 'jobs');
+let resumeChecked = false;
+let resumeRefusal: string | undefined;
+function checkResume(agent: 'claude' | 'codex', id: unknown) {
+  if (isWorker || resumeChecked || typeof id !== 'string' || !id) return;
+  resumeChecked = true;
+  resumeRefusal = resumedWorkerRefusal(hudHome, { agent, id });
+}
 const bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url));
 const binScript = (name: string) => join(bundled, 'bin', name);
 const { ensureQueueWatcher, paneInfo, watching } = await import(pathToFileURL(binScript('hud-notify.mjs')).href);
@@ -2048,10 +2056,10 @@ async function receive(line: string): Promise<void> {
     case 'server/discover': {
       const meta = request.params?._meta;
       discovered = true;
-      taskClient = !worker && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
+      taskClient = !worker && !resumeRefusal && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
         Object.hasOwn(meta?.['io.modelcontextprotocol/clientCapabilities']?.extensions ?? {}, TASK_EXTENSION);
       result = { supportedVersions: ['2026-07-28'], ...privateCache,
-        capabilities: { tools: {}, ...(!worker ? { extensions: { [TASK_EXTENSION]: {} } } : {}) } };
+        capabilities: { tools: {}, ...(!worker && !resumeRefusal ? { extensions: { [TASK_EXTENSION]: {} } } : {}) } };
       break;
     }
     case 'initialize':
@@ -2061,22 +2069,22 @@ async function receive(line: string): Promise<void> {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
-        instructions: worker ? 'Use the worker tools for your own HUD job. Finish with hud_report.' :
-          'Call hud_roster when project dispatch context is missing or stale. With live watch, keep working until notified, then collect with hud_read.',
+        instructions: resumeRefusal ?? (worker ? 'Use the worker tools for your own HUD job. Finish with hud_report.' :
+          'Call hud_roster when project dispatch context is missing or stale. With live watch, keep working until notified, then collect with hud_read.'),
       };
       break;
     case 'ping':
       result = {};
       break;
     case 'tools/list':
-      result = { ...(discovered ? privateCache : {}), tools: worker ? await worker.listWorkerTools(true) :
+      result = { ...(discovered ? privateCache : {}), tools: resumeRefusal ? [] : worker ? await worker.listWorkerTools(true) :
         [...tools, statuslineTool].filter((tool) => !taskClient || tool.name !== 'hud_wait').map((tool) =>
           taskClient && ['hud_create', 'hud_send', 'hud_respond'].includes(tool.name)
             ? { ...tool, execution: { taskSupport: 'optional' } } : tool) };
       break;
     case 'tasks/get':
     case 'tasks/cancel':
-      if (!taskClient) { rpcError(request.id, -32601, 'Method not found'); return; }
+      if (!taskClient || resumeRefusal) { rpcError(request.id, -32601, 'Method not found'); return; }
       if (typeof request.params?.taskId !== 'string') { rpcError(request.id, -32602, 'Invalid task id'); return; }
       try {
         result = await taskRequest(request.params.taskId, request.method === 'tasks/cancel');
@@ -2086,7 +2094,7 @@ async function receive(line: string): Promise<void> {
       }
       break;
     case 'resources/list':
-      result = { resources: worker ? [] : [statuslineResource] };
+      result = { resources: worker || resumeRefusal ? [] : [statuslineResource] };
       break;
     case 'resources/templates/list':
       result = { resourceTemplates: [] };
@@ -2096,13 +2104,20 @@ async function receive(line: string): Promise<void> {
         rpcError(request.id, -32602, 'Invalid resource URI');
         return;
       }
-      if (worker || request.params.uri !== statuslineResource.uri) {
+      if (worker || resumeRefusal || request.params.uri !== statuslineResource.uri) {
         rpcError(request.id, -32002, 'Resource not found');
         return;
       }
       result = readCodexStatusline(request.params._meta, hudHome, callerPane);
       break;
     case 'tools/call': {
+      // Codex exposes the thread only in call metadata, not in initialize or tools/list.
+      const meta = request.params?._meta, turn = meta?.['x-codex-turn-metadata'];
+      checkResume('codex', meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id);
+      if (resumeRefusal) {
+        result = { ...taskContent(resumeRefusal), isError: true };
+        break;
+      }
       const name = request.params?.name;
       const args = request.params?.arguments ?? {};
       if (typeof name !== 'string' || !args || typeof args !== 'object' || Array.isArray(args)) {
@@ -2169,7 +2184,8 @@ async function receive(line: string): Promise<void> {
   write({ jsonrpc: '2.0', id: request.id, result: discovered ? { resultType: 'complete', ...result as object } : result });
 }
 export function serveMcp() {
-  if (!worker) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
+  checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
+  if (!worker && !resumeRefusal) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
   createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
     void receive(line);
   });

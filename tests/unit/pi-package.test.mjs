@@ -858,6 +858,28 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   assert.equal(messages.length, 4);
 });
 
+test('pi refuses delegation in a resumed worker before starting its main-session watcher', async (t) => {
+  const f = setup(t), h = host(), p = ports(f);
+  const job = 'j0000000000000001', worker = context(f, h, 'synthetic-worker-session');
+  const dir = path.join(f.binding.hudHome, 'jobs', job);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'STATUS.json'), JSON.stringify({
+    slot: 'primary', state: 'failed', session_id: worker.ctx.sessionManager.getSessionId(),
+    session_file: worker.ctx.sessionManager.getSessionFile(),
+  }));
+  h.pi.sendMessage = () => assert.fail('a resumed worker must not be woken by the main watcher');
+  await load(f, h, p);
+  t.after(() => h.emit('session_shutdown', worker.ctx));
+  await h.emit('session_start', worker.ctx);
+  const recovery = new RegExp(`worker job ${job}.*resumed without its HUD binding.*Recovery is manual.*retry_of.*fresh tab`);
+  assert.equal(h.calls.notices.length, 1);
+  assert.match(h.calls.notices[0], recovery);
+  for (const tool of h.tools.values())
+    await assert.rejects(tool.execute('synthetic', {}, undefined, undefined, worker.ctx), recovery);
+  assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false);
+  assert.deepEqual(p.calls(), []);
+});
+
 test('pi delegation registers the native worker tools and leases in both modes', async (t) => {
   const f = setup(t), main = host(), worker = host(), c = context(f, worker);
   await load(f, main, ports(f));

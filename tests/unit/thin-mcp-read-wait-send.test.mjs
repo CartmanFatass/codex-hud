@@ -41,7 +41,8 @@ import { createInterface } from 'node:readline';
 import { installPiPackage } from ${JSON.stringify(resolve('dist/harness/pi/package-entry.js'))};
 const tools = new Map(), hooks = new Map();
 const send = (value) => console.log(JSON.stringify(value));
-const ctx = { cwd: process.cwd(), sessionManager: { getSessionDir: () => 'synthetic', getSessionId: () => 'main' } };
+const ctx = { cwd: process.cwd(), sessionManager: { getSessionDir: () => 'synthetic', getSessionId: () => 'main',
+  getSessionFile: () => undefined } };
 installPiPackage({
   on: (name, fn) => { hooks.set(name, fn); },
   registerTool: (tool) => { tools.set(tool.name, tool); },

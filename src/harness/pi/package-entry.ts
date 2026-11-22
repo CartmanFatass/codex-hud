@@ -7,6 +7,7 @@ import { displayTarget } from '../../integrations/panel/receipt.js';
 import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
 import { startSessionWatch } from '../../cli/watch.js';
 import { herdrId } from '../../roles/herdr-run.js';
+import { resumedWorkerRefusal } from '../../roles/resume-guard.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import { piExpUsage } from './exp-usage.js';
@@ -66,6 +67,8 @@ export function installPiPackage(
     footerOn: boolean;
   };
   let active: State | null = null;
+  let resumeCheck: { id: string; source: string; refusal?: string } | undefined;
+  let resumeRefusal: string | undefined;
   // Binding epochs are disposable; the user's same-session footer choice is not.
   let footerChoice: { id: string; source: string; on: boolean } | undefined;
   let epoch = 0;
@@ -104,6 +107,7 @@ export function installPiPackage(
     ++epoch;
     const old = active;
     active = null;
+    resumeRefusal = undefined;
     old?.stopWatch?.();
     if (mode === 'display') {
       segment.stop();
@@ -122,6 +126,19 @@ export function installPiPackage(
     if (ticket !== epoch) return;
     const source = ctx.sessionManager.getSessionDir(),
       id = ctx.sessionManager.getSessionId();
+    if (mode === 'delegate' && env.HUD_JOB_DIR === undefined) {
+      const checked = resumeCheck?.id === id && resumeCheck.source === source;
+      if (!checked) {
+        resumeCheck = { id, source, refusal: resumedWorkerRefusal(binding.hudHome, {
+          agent: 'pi', id, file: ctx.sessionManager.getSessionFile(),
+        }) };
+      }
+      resumeRefusal = resumeCheck?.refusal;
+      if (resumeRefusal) {
+        if (!checked) ctx.ui.notify(resumeRefusal, 'warning');
+        return; // No delegate client or main-session watcher for this session.
+      }
+    }
     if (!footerChoice || footerChoice.id !== id || footerChoice.source !== source)
       footerChoice = { id, source, on: true };
     const s: State = {
@@ -288,6 +305,7 @@ export function installPiPackage(
       description: tool.description,
       parameters: tool.inputSchema,
       async execute(_callId, args, signal, _onUpdate, ctx) {
+        if (resumeRefusal) throw Error(resumeRefusal);
         const s = active;
         if (!s || !current(s) || ctx.sessionManager !== s.ctx.sessionManager) throw Error('pi_session_inactive');
         signal?.throwIfAborted();

@@ -79,6 +79,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`;
     env.HUD_TEST_CLOCK_SCALE = String(clockScale);
   }
+  // The caller's own client session must not reach the resume guard.
+  delete env.CLAUDE_CODE_SESSION_ID;
   for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'MISTRAL_API_KEY']) {
     delete env[key];
   }
