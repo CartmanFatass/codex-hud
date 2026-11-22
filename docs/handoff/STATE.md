@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · MCP-SPLIT · MCP-SPLIT-02 · Worker and runtime bins become TypeScript (5d595bdb)
 - try · JOB-INDEX · JOB-INDEX-02 · MCP server reads jobs through the shared cache (1fe4da44)
 - try · JOB-INDEX · JOB-INDEX-04 · Remaining panel job readers use the shared cache (5745f591)
 - try · PLACE-HEALTH · PLACE-HEALTH-01 · Control's Dispatch today splits by place (c68b2026)

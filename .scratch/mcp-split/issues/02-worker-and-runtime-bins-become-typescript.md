@@ -11,3 +11,5 @@
 ## Comments
 
 The current package has 17 bins. The 13 moved entries include the reloadable watch runtime; `hud-mcp`, `surface`, `generation` and `agy-events` remain source-only for pre-build startup or hook delivery.
+
+- Landed 5d595bdbf38190924f20011d27fe8cae0109573d; gate 6/6 passed.
