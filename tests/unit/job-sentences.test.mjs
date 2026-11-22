@@ -17,6 +17,7 @@ import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../di
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi, theme, visualLength } from '../../dist/render/colors.js';
+import { parserReport, checkFailed, probeNotDone } from '../helpers/report-summary-fixtures.mjs';
 const settle = async () => {
   for (let i = 0; i < 12; i++) await new Promise(setImmediate);
 };
@@ -167,16 +168,51 @@ test('thin job: real file collection, keyword card, coalescing, cached reopen, a
   await f.update();
   assert.equal(f.calls.length, 3);
 });
-test('Summary interval changes running refreshes live, unchanged material is free, final floor stays two minutes', async (t) => {
+test('running refreshes keep their interval; the first settled tick clears running text and submits one final', async (t) => {
   const f = fixture(t); f.activity('Initial work'); await f.update();
   f.now += 120000; f.activity('Changed work'); await f.update(); assert.equal(f.calls.length, 1);
   f.service.configure(true, 'en', 2); await f.update(); assert.equal(f.calls.length, 2);
   f.service.configure(true, 'en', 10); f.now += 300000; await f.update(); assert.equal(f.calls.length, 2);
   f.activity('More work'); await f.update(); assert.equal(f.calls.length, 2);
   f.service.configure(true, 'en', 5); await f.update(); assert.equal(f.calls.length, 3);
-  f.now += 120000; f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
-  await f.update(); assert.equal(f.calls.length, 4, 'settled result uses the fixed two-minute floor');
+  f.now++; f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
+  f.put('report.md', parserReport);
+  f.reply = 'Parser updated; checks failed and the native probe was skipped.';
+  const settled = f.board();
+  f.service.update(settled, f.home);
+  assert.equal(f.service.apply(settled).workers[0].modelSentence, undefined, 'running text is hidden even before the final reply');
+  await settle();
+  assert.equal(f.calls.length, 4, 'the first settled tick queues the final, even one millisecond after running text');
+  const { report } = JSON.parse(f.calls[3].messages[1].content.split('\n')[1]);
+  assert.ok(report.startsWith('# Report\n## Files changed'));
+  assert.ok(report.includes(checkFailed));
+  assert.ok(report.includes(probeNotDone));
+  assert.match(report, /Open questions/);
+  assert.doesNotMatch(report, /Synthetic implementation detail/);
+  assert.ok(Buffer.byteLength(report) <= 4096);
+  assert.equal(f.service.apply(settled).workers[0].modelSentence, f.reply);
   f.now += 600000; f.put('report.md', 'Later report edit'); await f.update(); assert.equal(f.calls.length, 4);
+});
+test('settlement replaces an in-flight running sentence without requiring another panel tick', async (t) => {
+  const f = fixture(t);
+  let release;
+  f.hold = new Promise((resolve) => { release = resolve; });
+  await f.update();
+  assert.equal(f.calls.length, 1);
+  f.now++;
+  f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
+  f.put('report.md', 'Synthetic work finished.');
+  const board = f.board();
+  f.service.update(board, f.home);
+  assert.equal(f.service.apply(board).workers[0].modelSentence, undefined);
+  f.hold = null;
+  f.reply = 'Synthetic work finished.';
+  release();
+  await settle();
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.service.apply(board).workers[0].modelSentence, f.reply);
+  await f.update();
+  assert.equal(f.calls.length, 2);
 });
 for (const language of ['en', 'zh']) {
   test(`short job titles: heading, same-call name, fallback, Home/Inspector/Project frames (${language})`, async (t) => {
@@ -336,7 +372,7 @@ for (const mode of ['on', 'off'])
     assert.equal(projectWorkCard(board.workers[0], f.now).inactivityMinutes, 22);
     assert.equal(f.calls.length, 0);
   });
-test('a second settlement gets a fresh final sentence after the shared floor', async (t) => {
+test('a second settlement gets a fresh final sentence without waiting on the previous one', async (t) => {
   const f = fixture(t);
   f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
   await f.update();
@@ -346,9 +382,6 @@ test('a second settlement gets a fresh final sentence after the shared floor', a
   f.now += 10_000;
   f.put('STATUS.json', { state: 'failed', settled_at: new Date(f.now).toISOString() });
   f.put('report.md', 'Correction failed');
-  await f.update();
-  assert.equal(f.calls.length, 1);
-  f.now += 100_001;
   await f.update();
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[1].messages[1].content, /Correction failed/);
@@ -707,7 +740,7 @@ test('a cut-off JSON reply is no sentence, and a cached one is dropped on load',
   ]));
   const sentences = new JobSentences({ submit() { throw new Error('no call'); } }, file);
   sentences.configure(true, 'zh');
-  const lane = { workers: [{ id: 'thin-job:j0000000000000001', task: 't1' }, { id: 'thin-job:j0000000000000002', task: 't2' }] };
+  const lane = { workers: [{ id: 'thin-job:j0000000000000001', task: 't1', settledAt: 1 }, { id: 'thin-job:j0000000000000002', task: 't2', settledAt: 1 }] };
   const board = sentences.apply({ lanes: [lane], workers: lane.workers });
   assert.equal(board.workers[0].modelSentence, undefined);
   assert.equal(board.workers[1].modelSentence, '正常的一句话。');

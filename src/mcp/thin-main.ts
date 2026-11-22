@@ -19,6 +19,7 @@ import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
 import { failureUnobserved, jobChanges, jobOwesCaller, jobRow, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
+import { firstReportProse } from '../utils/report-summary.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
 import { TryLog } from '../collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
@@ -1979,8 +1980,7 @@ function sampleTask(task: HudTask): TaskView {
   const report = join(dir, 'report.md');
   const currentSettlement = typeof status?.settled_at !== 'string' || status.settled_at >= task.createdAt;
   if (settled(state) && currentSettlement && row.report_mtime !== null && row.report_mtime !== task.reportBefore) {
-    const lines = (slice(report, 2048)?.text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const summary = (lines.find((line) => !line.startsWith('#')) ?? lines[0]?.replace(/^#+\s*/, '') ?? 'Report ready').slice(0, 240);
+    const summary = (firstReportProse(slice(report, 2048)?.text ?? '') ?? 'Report ready').slice(0, 240);
     return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}`);
   }
   if (state === 'closed' || state === 'done') {

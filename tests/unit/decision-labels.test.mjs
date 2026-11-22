@@ -16,6 +16,7 @@ import { setLanguage, t as tr } from '../../dist-test/src/render/i18n.js';
 import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
 import { saveSettings } from '../../dist-test/src/settings.js';
+import { parserReport, checkFailed, probeNotDone, migrationReport, approvalNeeded } from '../helpers/report-summary-fixtures.mjs';
 
 const pause = () => new Promise((r) => setTimeout(r, 5));
 const empty = (workers = [], decisions = []) => ({ revision: '1', coverage: { incomplete: false, diagnostics: [], workspace: null },
@@ -72,16 +73,22 @@ function fixture(t, keys = { GEMINI_API_KEY: 'synthetic-gemini', OPENAI_API_KEY:
   return f;
 }
 
-test('01: one bounded outcome per settlement, cache reopen, no lifecycle mutations', async (t) => {
+for (const [report, evidence, outcome, excluded] of [
+  [parserReport, [checkFailed, probeNotDone], 'partial', /Synthetic implementation detail/],
+  [migrationReport, [approvalNeeded], 'blocked', /UNRELATED-MIDDLE|command in this fence/],
+]) test(`01: one bounded ${outcome} judgement per settlement, cache reopen, no lifecycle mutations`, async (t) => {
   const f = fixture(t), id = f.job();
-  f.put(id, 'report.md', 'Required live validation was not run.\n' + 'head\n'.repeat(20) + 'NOT-OUTBOUND');
+  f.reply = (name, input) => name === 'outcome' ? (evidence.every((text) => input.includes(text)) ? outcome : 'done') : undefined;
+  f.put(id, 'report.md', report);
   const status = fs.readFileSync(join(f.home, 'jobs', id, 'STATUS.json'), 'utf8');
-  let board = await f.pump();
+  const board = await f.pump();
   assert.equal(f.calls.length, 1);
-  assert.deepEqual(board.workers[0].labels.outcome, { value: 'partial', confidence: 0.9 });
-  assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND/);
+  assert.deepEqual(board.workers[0].labels.outcome, { value: outcome, confidence: 0.9 });
+  const outbound = JSON.parse(f.calls[0].body.input[0].content[1].data.page.text).report;
+  assert.ok(Buffer.byteLength(outbound) <= 4096);
+  assert.doesNotMatch(outbound, excluded);
   assert.equal(fs.readFileSync(join(f.home, 'jobs', id, 'STATUS.json'), 'utf8'), status);
-  f.open(); board = await f.pump();
+  f.open(); await f.pump();
   assert.equal(f.calls.length, 1, 'reopening consumes no call');
   f.now += 1000; f.put(id, 'report.md', 'Edited report, same settlement');
   await f.pump(); assert.equal(f.calls.length, 1);

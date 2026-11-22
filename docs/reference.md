@@ -951,18 +951,20 @@ Both caps use 0 for unlimited and still count calls (`n/∞`). Counts aggregate
 panels on one HUD home. Text uses `display/model-cache/calls.json`; labels/ranking
 use `display/model-cache/decision-api/calls.json`, including fallback attempts.
 One line per counter lists this hour's features, largest first. Changed running
-text follows Summary interval; final sentences and ranking keep two-minute floors.
-One successful final sentence freezes that settlement; a continuation can settle anew.
+text follows Summary interval. A newly settled HUD job clears its running text and
+can request its result sentence immediately. Failed final requests, native finals
+and ranking keep two-minute floors. One successful final sentence freezes that
+settlement; a continuation can settle anew.
 
 **Outbound material** (public channels only; never reasoning, ciphertext or referenced files):
 
 | Feature | Input |
 |---|---|
-| Thin-job sentence/name | Brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, four settled report lines, four public text/tool blocks from a 32 KiB working-session tail |
+| Thin-job sentence/name | Brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a 32 KiB working-session tail |
 | To-try brief and steps | One per slice still to try, only while the Project tab shows it: its ledger line, the subjects and bodies of up to 5 commits it names (1200 chars each), up to 4 ticket files (3000 bytes each) under the `.scratch/<slug>/` it names; cached per slice by a hash of those inputs |
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
 | Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
-| Outcome label | Final state + first 12 report lines (4096-byte head), once per settlement |
+| Outcome label | Final state + the same settled report excerpt, independently judged once per settlement |
 | Kind label | First two brief paragraphs (1500-byte head), once per running/job settled within one day |
 | Looping label | Last 12 public tool/result pairs (600 chars each part) from the same safe tail; after 3 quiet minutes, at most once per 5 minutes, unchanged input never repeats |
 | Question category | 4096-byte head of the job's current open question |
@@ -971,6 +973,10 @@ One successful final sentence freezes that settlement; a continuation can settle
 | Sonic thinking | First 4000 characters of the task as data; sonic role scope and thinking purposes. No referenced context, standing brief or reports are loaded for the decision. |
 | Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Test API | Fixed synthetic messages only |
+
+Settled report excerpts include a short head and sections on unfinished work,
+blockers, failures, tests/checks or open questions; if none are found, they include
+the tail instead.
 
 Outcome/kind/looping/category/severity labels are display-only enums; language
 changes translate locally. Failure shows no provider HTTP text. Private revision

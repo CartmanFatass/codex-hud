@@ -7,7 +7,7 @@ import { validateChoice } from '../jev/model.js';
 import type { JudgmentChoice } from '../jev/judge.js';
 import type { Answer } from '../jev/decide.js';
 import { ModelRuntimeStore, callsByFeature } from './model-runtime-store.js';
-import { readJobFile, jobActivity } from './job-sentences.js';
+import { readJobFile, readJobReport, jobActivity } from './job-sentences.js';
 import { writePrivateFile } from './small-model.js';
 import { eachThread } from './subagent-tree.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
@@ -81,8 +81,8 @@ export class DecisionLabels {
     for (const w of [...board.workers].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))) {
       const thin = /^thin-job:j[0-9a-f]{16}$/.test(w.id), dir = join(home, 'jobs', w.id.slice(9));
       if (thin) {
-        const report = w.settledAt !== null ? readJobFile(join(dir, 'report.md')) : undefined;
-        if (report?.text) add(w.id + ':outcome', { status: w.state, report: report.text.split(/\r?\n/).slice(0, 12).join('\n') },
+        const report = w.settledAt !== null ? readJobReport(join(dir, 'report.md')) : undefined;
+        if (report?.text) add(w.id + ':outcome', { status: w.state, report: report.text },
           [question('outcome', 'Classify the actual outcome, not just process exit. Missing required validation or incomplete work is partial.', OUTCOMES)], String(w.settledAt));
         if (w.settledAt === null || w.settledAt >= this.clock() - 86400000) {
           const brief = readJobFile(join(dir, 'brief.md'), 1500).text.split(/\r?\n\s*\r?\n/).slice(0, 2).join('\n');

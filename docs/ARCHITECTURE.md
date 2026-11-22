@@ -270,11 +270,11 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 
 | Feature / collector | Public input that can leave the machine |
 |---|---|
-| `JobSentences`, thin jobs | Brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, four settled report lines, four public text/tool blocks from a safe 32 KiB working-session tail |
+| `JobSentences`, thin jobs | Brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a safe 32 KiB working-session tail |
 | `JobSentences`, native agents | Name/role (80 chars each), task/charge (400), report (600), action (200), final result (8000 head/tail), error (2000); a settled Codex agent may use one safe 32 KiB tail |
 | `TryBriefs` | One call per to-try slice, only while the Project tab shows it (newest 12 slices): its ledger line, up to 5 commits' messages (1200 chars each), up to 4 ticket files (3000 bytes each) under a `.scratch/<slug>/` the line names |
 | `DecisionTitles` | Only for an inspected job's answered question in Files: question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
-| `DecisionLabels`, outcome/kind | Final state + first 12 report lines (4096-byte head), or brief title/goal (1500-byte head); once per settlement/job respectively |
+| `DecisionLabels`, outcome/kind | Final state + the same settled report excerpt (4096 UTF-8 bytes), or brief title/goal (1500-byte head); once per settlement/job respectively |
 | `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
 | `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
 | `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag and outcome; no file bodies |
@@ -283,8 +283,14 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 
 `JobSentences` replaces separate native labels/digests/causes/progress schedulers;
 there is no agent-log writer. Names and keyword-marked sentences share a request.
-Running changed inputs follow Summary interval (default five minutes); finals keep
-a two-minute floor and freeze after one success per settlement. At most three
+Both settled-report consumers take a short report head plus sections on incomplete
+work, blockers, failures, tests/checks or open questions, or the tail if there are no
+such sections. The excerpt uses a safe scan of at most the first 32 KiB and, if needed,
+the last 16 KiB. Outcome is the Decision API's independent display judgement.
+Running changed inputs follow Summary interval (default five minutes). A thin job
+clears its running sentence on settlement and is immediately eligible for a final
+request; failed final attempts retry no sooner than two minutes. Native finals keep
+the two-minute floor. Finals freeze after one success per settlement. At most three
 pending sentence handles share the service. `DecisionTitles` uses the same queue;
 its revision/language-keyed cache survives reopen.
 `TryBriefs` (`collectors/try-brief.ts`) is the same shape for the slices still to try: one call writes a brief and acceptance

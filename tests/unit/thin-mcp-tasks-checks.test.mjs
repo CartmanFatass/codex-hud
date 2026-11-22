@@ -34,6 +34,7 @@ import {
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { parserReport, parserProse, migrationReport, migrationProse } from '../helpers/report-summary-fixtures.mjs';
 
 test('MCP tasks: discover, progress and report settlement without reading or closing', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
@@ -61,20 +62,21 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const get = () => rpc('tasks/get', { taskId: task.taskId });
   writeFixtureFile(join(job.task_dir, 'progress.jsonl'), JSON.stringify({ at: new Date().toISOString(), text: 'Synthetic milestone.' }) + '\n');
   assert.match((await get()).statusMessage, /Synthetic milestone\./);
-  await publishPiGrace(job);
+  writeFixtureFile(join(job.task_dir, 'report.md'), migrationReport);
+  await publishPiGrace(job, undefined, false);
   const done = await get();
   assert.equal(done.resultType, 'complete');
   assert.equal(done.status, 'completed');
   const [label, path, summary, launch] = done.result.content[0].text.split('\n');
   assert.equal(label, `${job.job} (imp) — idle_grace`);
   assert.equal(path, `Report: ${join(job.task_dir, 'report.md')}`);
-  assert.equal(summary, 'Summary: Synthetic settled pi report.');
+  assert.equal(summary, `Summary: ${migrationProse}`);
   assert.match(launch, /^Launch: used_place: pi/);
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), done);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
   assert.equal(f.commands().some(({ command }) => command === 'pi-role-reap'), false);
   const report = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
-  assert.match(report.report, /Synthetic settled pi report/);
+  assert.ok(report.report.includes(migrationProse));
   assert.equal(report.changes, undefined);
   writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed', exit_reason: 'closed after report read' }));
   const repair = taskJob(f, await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic repair.' }));
@@ -145,11 +147,12 @@ test('MCP tasks: fan-out sends keep the create task through report settlement', 
   assert.deepEqual(resultValue(sent).sent, [job.job]);
   assert.equal((await get()).status, 'working');
 
-  await publishPiGrace(job);
+  writeFixtureFile(join(job.task_dir, 'report.md'), parserReport);
+  await publishPiGrace(job, undefined, false);
   const done = await get();
   assert.equal(done.status, 'completed');
   assert.ok(done.result.content[0].text.includes(`Report: ${join(job.task_dir, 'report.md')}`));
-  assert.match(done.result.content[0].text, /Summary: Synthetic settled pi report\./);
+  assert.equal(done.result.content[0].text.split('\n')[2], `Summary: ${parserProse}`);
 });
 
 test('MCP tasks: cancel fences sends and reaps once even with duplicate requests', { timeout: 10000 }, async (t) => {
