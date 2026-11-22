@@ -7,7 +7,11 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
-- Sonic's default thinking: is high enough, or can the Decision API map each sonic task to low/high/max? (study running)
+- Sonic's default thinking: change the owner role file from max to high? Option: when a caller omits thinking, the
+  Decision API lowers to low at >= 0.85 confidence, else high, never max (38 briefs x 2 rounds: stable 38/38, ~0.4 s,
+  ~390 tokens; the 11-21 audit at high: 17/19 qualified, 0 quality failures).
+- prune-obs decision 1 (docs/neon-proposal/01 :534-545): legacy tmp/tasks tasks started by old scripts leave Home (A)
+  or keep a <=130-line adapter (B)? (waits on PRUNE-OBS-01, prune-obs/02)
 
 ## Next
 
@@ -15,7 +19,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
   try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
   woken at its report) and SONIC-THINKING (`hud_roster` shows sonic's low/high/max with purposes; `hud_create` refuses
   other levels). Then the milestone's done check: a real project day compared with the 2026-11-21 study counts.
-- Other try groups waiting in the ledger: UX-PASS (12), OWNER-VIEW (2), PROJECT-CLI-P…, NO-DEFAULT-LA….
+- CODE-HEALTH (owner 2026-11-21: run the docs/neon-proposal plans through imp): wave 1 PRUNE-OBS-01 + BUILD-DEDUP-01.
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
 ## Slices
@@ -24,6 +28,9 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
+- working · CODE-HEALTH · PRUNE-OBS-01 · neon proposal 01 Slice 1: stop dead legacy observers, delete ~3,300 lines (imp, wt/PRUNE-OBS-01; prune-obs/01)
+- working · CODE-HEALTH · BUILD-DEDUP-01 · neon proposal 03 Slice 1: hud-mcp sources under src/mcp, one tsc project (imp, wt/BUILD-DEDUP-01; build-dedup/01)
+- todo · CODE-HEALTH · PRUNE-OBS-02..04, BUILD-DEDUP-02..03, MCP-SPLIT-01..04 · rest of the three neon proposals; mcp-split after build-dedup, MCP-SPLIT-04 after prune-obs; one milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - try · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9)
 - accepted · MCP-ORCH · RESTART-RECOVERY · CLI effort facts for haiku, claude-*-5-x ids and gemini-3.8-flash-high; legacy tmp/tasks admitted newest first; restart recovery itself not built (herdr resume strips HUD bindings; owner decision under Waiting) (bca6e312) [tried by the main session for the owner 2026-11-21: tests only; restart recovery itself stays an owner decision]
