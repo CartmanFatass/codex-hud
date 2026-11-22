@@ -67,7 +67,8 @@ machine, inside herdr. (10.02, 22.12)
 - `context_files` and `from_jobs` write a reference index into local worker briefs and splice bounded file
   contents into browser briefs, without round-tripping through main-session context. (18.03)
 - `isolation: "worktree"` creates a clean Git worktree with linked `node_modules`; `hud_read` gives
-  `git_summary`. After closure the watcher reaps only clean worktrees that are merged or unmodified;
+  `git_summary`, including files also changed in other managed worktrees of the same checkout. After closure
+  the watcher reaps only clean worktrees that are merged or unmodified;
   preserve dirty worktrees or those with unmerged work. (18.03)
 - HUD, not the model, manages launch parameters. Check each dispatch's model, thinking and place against
   model facts before opening a tab. Show only supported levels; map to nearest supported and report the

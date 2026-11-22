@@ -1731,11 +1731,18 @@ async function call(name: string, args: Args): Promise<unknown> {
       row.open_questions > 0 ||
       jobChanges([initial], [row]).length > 0 ||
       Date.now() >= end;
+    let summary: Awaited<ReturnType<typeof gitSummary>> | undefined;
     while (true) {
       const { row } = readRow(job, !isWorker);
       if (Date.now() >= end || ready(row)) {
         const receipt = json<Job>(join(dir, 'job.json')) ?? job;
-        const git = receipt.worktree ? { git_summary: await gitSummary(receipt.worktree) } : {};
+        const wt = receipt.worktree;
+        // Only probe once per read, even if a concurrent answer or continuation resumes the wait.
+        const git = wt ? { git_summary: summary ??= await gitSummary(wt, () => jobs()
+          .flatMap((other) => other.job !== receipt.job && other.worktree?.main_root === wt.main_root &&
+            other.worktree.root !== wt.root && !other.worktree_removed_at
+            ? [{ job: other.job, worktree: other.worktree, created_at: other.created_at }] : [])
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))) } : {};
         const result = observation(json<Job>(join(dir, 'job.json')) ?? receipt, args.full === true, detail);
         // A question may have been answered or a settled job continued since the lightweight poll.
         const currentRow = jobRow(job, json<Record<string, unknown>>(join(dir, 'STATUS.json')), {

@@ -114,6 +114,8 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 
 `isolation: "worktree"` 让任务在仓库旁自己的 Git 链接检出中运行（`<repo>-wt/<slug>-<id6>`，分支 `wt/<slug>-<id6>` 取自 HEAD，
 链接 `node_modules`，并复制该 CLI 对主检出的信任）。浏览器角色和非 Git 目录会被拒绝。对该任务的 `hud_read` 会附带 `worktree`（含检出路径）及 `git_summary`。
+其中 `overlaps` 列出同一检出下也改动了这些文件的其他托管任务及重叠文件，排除其他工作树中已提交且文件版本与主检出 HEAD 一致的改动。
+空列表表示未发现重叠，`null` 表示当前任务的 Git 摘要读取失败，`overlaps_incomplete` 表示结果不完整。
 任务关闭后，只有检出中毫无改动、或其提交已合入主检出时，watcher 才会移除检出和分支，且从不强制；否则保留并在 `job.json` 记录
 `worktree_kept_reason`。Project 把这些检出视为任务自己的，不算未登记的 worktree。
 

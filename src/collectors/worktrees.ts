@@ -34,13 +34,13 @@ export interface WorktreesSnapshot {
   error?: string;
   truncated?: boolean;
 }
-export type WorktreeGit = (cwd: string, args: string[]) => Promise<string>;
+export type WorktreeGit = (cwd: string, args: string[], timeoutMs?: number) => Promise<string>;
 export const WORKTREE_LIMIT = 128;
 export const PROBES_PER_REFRESH = 4;
 export const WORKTREE_STALE_MS = 30_000;
 
 /** All invocations have bounded output/time, no shell, no lazy object fetch. */
-export const worktreeGit: WorktreeGit = (cwd, args) =>
+export const worktreeGit: WorktreeGit = (cwd, args, timeoutMs = 5000) =>
   new Promise((yes, no) => {
     execFile(
       'git',
@@ -56,7 +56,7 @@ export const worktreeGit: WorktreeGit = (cwd, args) =>
         cwd,
         encoding: 'utf8',
         shell: false,
-        timeout: 5000,
+        timeout: timeoutMs,
         maxBuffer: 1024 * 1024,
         windowsHide: true,
         env: {

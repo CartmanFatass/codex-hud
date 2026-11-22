@@ -177,10 +177,12 @@ browser service. Attaching an upstream report does not mark it read or close its
 
 `isolation: "worktree"` runs the job in its own linked Git checkout beside the repository (`<repo>-wt/<slug>-<id6>`,
 branch `wt/<slug>-<id6>` from HEAD, `node_modules` linked, the CLI's trust of the main checkout copied). It is
-refused for browser roles and outside Git. `hud_read` of that job adds the `worktree` receipt (including the checkout path) and `git_summary`. After the job closes, the
-watcher removes the checkout and branch only when nothing in it changed or its commits are already merged into the
-main checkout, never with force; otherwise it keeps them and records `worktree_kept_reason`. Project lists these
-checkouts as the jobs' own, not as unlisted worktrees.
+refused for browser roles and outside Git. `hud_read` of that job adds the `worktree` receipt (including the checkout path) and `git_summary`.
+Its `overlaps` lists other managed jobs and paths they also changed, excluding committed paths whose versions already match
+the main checkout's HEAD. An empty list means no overlaps found, `null` means the job's own Git summary failed, and
+`overlaps_incomplete` flags partial coverage. After the job closes, the watcher removes the checkout and branch only
+when nothing in it changed or its commits are already merged into the main checkout, never with force; otherwise
+it keeps them and records `worktree_kept_reason`. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
 
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s`
 (default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`

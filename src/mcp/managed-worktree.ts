@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
+import { parseWorktreeList, worktreeGit as git, type WorktreeGit } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
 
 export interface ManagedWorktree {
@@ -41,7 +41,7 @@ export async function populateWorktree(wt: ManagedWorktree) {
   if (fs.existsSync(source) && !fs.lstatSync(link, { throwIfNoEntry: false })) fs.symlinkSync(source, link);
 }
 
-const status = (root: string, filters: string[], ignored: boolean) => git(root, [...filters,
+const status = (root: string, filters: string[], ignored: boolean, run: WorktreeGit = git) => run(root, [...filters,
   'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all', '--ignore-submodules=dirty',
   ...(ignored ? ['--ignored=matching'] : []),
 ]);
@@ -52,21 +52,83 @@ function dependencyLink(wt: ManagedWorktree) {
     fs.readlinkSync(link) === join(wt.main_root, 'node_modules');
 }
 
-export async function gitSummary(wt: ManagedWorktree) {
+const diffNames = ['diff', '--name-only', '-z', '--no-renames', '--no-ext-diff', '--no-textconv'];
+function worktreeHead(wt: ManagedWorktree, head: string | undefined): string {
+  if (!head || !oid(head) || !oid(wt.base_head) || fs.realpathSync(wt.root) !== wt.root) throw new Error('Invalid worktree');
+  return head;
+}
+async function changedPaths(wt: ManagedWorktree, head: string, run: WorktreeGit) {
+  const [diff, pending] = await Promise.all([
+    run(wt.root, [...diffNames, wt.base_head, head, '--']),
+    neutralizeFilters(run, wt.root).then((filters) => status(wt.root, filters, false, run)),
+  ]);
+  const paths = fields(pending).filter((row) => row !== '?? node_modules' || !dependencyLink(wt));
+  return { committed: fields(diff), dirty: paths.map((row) => row.slice(3)) };
+}
+
+export interface OverlapCandidate { job: string; worktree: ManagedWorktree }
+type Overlap = { job: string; files: string[]; more?: number };
+const MAX_SIBLINGS = 8, MAX_COMPARE_PATHS = 200, MAX_REPORT_PATHS = 20;
+// At most four calls per sibling: diff + filter lookup in parallel, then status, then integration diff.
+const overlapGit: WorktreeGit = (cwd, args) => git(cwd, args, 1000);
+
+async function worktreeOverlaps(
+  wt: ManagedWorktree, trees: Awaited<ReturnType<typeof list>>, mine: Set<string>,
+  candidates: () => OverlapCandidate[],
+): Promise<{ overlaps: Overlap[]; overlaps_incomplete?: true }> {
+  const [main, ...linked] = trees;
+  const registered = new Map(linked.filter((tree) => tree.path !== wt.root && tree.prunable === undefined)
+    .map((tree) => [tree.path, tree]));
+  if (!mine.size || !registered.size) return { overlaps: [] };
+  let siblings;
+  try {
+    siblings = candidates().flatMap(({ job, worktree }) => {
+      const tree = registered.get(worktree.root);
+      if (!tree || worktree.main_root !== wt.main_root || tree.branch !== worktree.branch) return [];
+      registered.delete(worktree.root); // One probe per registered checkout.
+      return [{ job, worktree, head: tree.head }];
+    });
+  } catch { return { overlaps: [], overlaps_incomplete: true }; }
+  let incomplete = siblings.length > MAX_SIBLINGS;
+  const overlaps = await Promise.all(siblings.slice(0, MAX_SIBLINGS).map(async ({ job, worktree, head: listedHead }) => {
+    try {
+      const head = worktreeHead(worktree, listedHead);
+      const { committed, dirty } = await changedPaths(worktree, head, overlapGit);
+      const files = new Set(dirty.filter((path) => mine.has(path)));
+      const compare = committed.filter((path) => mine.has(path) && !files.has(path)).sort();
+      if (compare.length > MAX_COMPARE_PATHS) incomplete = true;
+      if (compare.length) {
+        try {
+          if (!main?.head || !oid(main.head)) throw new Error('Missing main checkout HEAD');
+          // Compare committed content only. A cherry-pick can change the commit ID, but not the file's contents.
+          const checked = compare.slice(0, MAX_COMPARE_PATHS);
+          const diff = await overlapGit(wt.main_root, ['--literal-pathspecs', ...diffNames, main.head, head, '--', ...checked]);
+          const different = new Set(fields(diff));
+          // A literal pathspec can also match descendants when the path became a directory.
+          for (const path of checked) if (different.has(path)) files.add(path);
+        } catch { incomplete = true; } // Dirty paths remain known even if the committed ones cannot be checked.
+      }
+      const more = files.size - MAX_REPORT_PATHS;
+      if (files.size) return { job, files: [...files].sort().slice(0, MAX_REPORT_PATHS), ...(more > 0 ? { more } : {}) };
+    } catch { incomplete = true; }
+    return null;
+  }));
+  return { overlaps: overlaps.filter((row) => row !== null), ...(incomplete ? { overlaps_incomplete: true } : {}) };
+}
+
+export async function gitSummary(wt: ManagedWorktree, candidates: () => OverlapCandidate[] = () => []) {
   const base = { branch: wt.branch, base_head: wt.base_head };
   try {
-    const tree = (await list(wt.main_root)).find((t) => t.path === wt.root && t.branch === wt.branch);
-    if (!oid(tree?.head) || !oid(wt.base_head) || fs.realpathSync(wt.root) !== wt.root) throw Error();
-    const head = tree!.head!;
-    const filters = await neutralizeFilters(git, wt.root);
-    const [commits, diff, pending] = await Promise.all([
+    const trees = await list(wt.main_root);
+    const head = worktreeHead(wt, trees.find((t) => t.path === wt.root && t.branch === wt.branch)?.head);
+    const [{ committed, dirty }, commits] = await Promise.all([
+      changedPaths(wt, head, git),
       git(wt.root, ['rev-list', '--count', `${wt.base_head}..${head}`, '--']),
-      git(wt.root, ['diff', '--name-only', '-z', '--no-renames', '--no-ext-diff', '--no-textconv', wt.base_head, head, '--']),
-      status(wt.root, filters, false),
     ]);
-    const paths = fields(pending).filter((row) => row !== '?? node_modules' || !dependencyLink(wt));
-    return { ...base, head, ahead_commits: Number(commits), changed_files: new Set([...fields(diff), ...paths.map((row) => row.slice(3))]).size, dirty: paths.length > 0 };
-  } catch { return { ...base, head: null, ahead_commits: null, changed_files: null, dirty: null }; }
+    const mine = new Set([...committed, ...dirty]);
+    return { ...base, head, ahead_commits: Number(commits), changed_files: mine.size, dirty: dirty.length > 0,
+      ...await worktreeOverlaps(wt, trees, mine, candidates) };
+  } catch { return { ...base, head: null, ahead_commits: null, changed_files: null, dirty: null, overlaps: null }; }
 }
 
 function nestedGitReason(root: string): string | undefined {

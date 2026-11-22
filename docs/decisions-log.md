@@ -38,6 +38,7 @@ The owner approved the lean spec and resolved the draft questions:
   sessions. Workers get the worker MCP with a shell done-command fallback. Deliver events through
   `PreInvocation` when working and type them into the prompt when idle. Use Antigravity's `statusLine`
   command. The `agy` extension may edit its client config reversibly (Antigravity adapter proposal 25).
+- **D-2026-11-22-13** (§2.1.4): In single-job `hud_read`, `git_summary` includes files also changed in other managed worktrees of the same checkout (proposal 15 §6 defaults).
 
 ## 2026-11-21
 

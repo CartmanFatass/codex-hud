@@ -147,11 +147,95 @@ test('only a one-job read includes a bounded summary of committed and pending wo
   const head = git(root, 'rev-parse', 'HEAD');
   const read = await f.call('hud_read', { job: job.job });
   assert.equal(read.worktree.root, root);
-  assert.deepEqual(read.git_summary, { branch, base_head, head, ahead_commits: 1, changed_files: 2, dirty: true });
+  assert.deepEqual(read.git_summary, { branch, base_head, head, ahead_commits: 1, changed_files: 2, dirty: true, overlaps: [] });
   for (const result of [await f.call('hud_read'), await f.call('hud_read', { view: 'recent' }),
     await f.call('hud_wait', { jobs: [job.job], wait_ms: 0 })]) {
     assert.doesNotMatch(JSON.stringify(result), /git_summary/);
   }
+});
+
+test('one-job reads show managed sibling overlaps until the sibling file versions are integrated', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  const literal = 'a[1].txt';
+  const write = (root, file, text) => fs.writeFileSync(join(root, file), text + '\n');
+  write(cwd, literal, 'base');
+  write(cwd, 'swap.txt', 'base');
+  git(cwd, 'add', '--all');
+  git(cwd, 'commit', '-qm', 'literal file');
+  const create = (request_key) => f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', request_key, task: `Synthetic ${request_key}.` });
+  const a = await create('overlap-a'), b = await create('overlap-b');
+  assert.equal(a.git_summary, undefined);
+  assert.equal(b.git_summary, undefined);
+  const read = async ({ job }) => (await f.call('hud_read', { job })).git_summary;
+  const checkout = ({ task_dir }) => JSON.parse(fs.readFileSync(join(task_dir, 'job.json'))).worktree;
+  const { root: ar } = checkout(a), { root: br, branch, base_head } = checkout(b);
+  const manual = join(f.root, 'manual');
+  git(cwd, 'worktree', 'add', '-qb', 'manual', manual);
+  write(manual, 'tracked.txt', 'unmanaged change');
+  write(cwd, 'tracked.txt', 'main checkout pending change');
+  write(ar, 'tracked.txt', 'change from A');
+  write(ar, literal, 'literal change from A');
+  write(ar, 'swap.txt', 'file change from A');
+  git(ar, 'commit', '-qam', 'A');
+  write(br, 'b.txt', 'disjoint change from B');
+  assert.deepEqual((await read(a)).overlaps, []);
+  assert.deepEqual((await read(b)).overlaps, []);
+
+  write(br, 'tracked.txt', 'change from B');
+  write(br, literal, 'literal change from B');
+  fs.unlinkSync(join(br, 'swap.txt'));
+  git(br, 'commit', '-qam', 'B');
+  const shared = [literal, 'swap.txt', 'tracked.txt'];
+  assert.deepEqual((await read(a)).overlaps, [{ job: b.job, files: shared }]);
+  assert.deepEqual((await read(b)).overlaps, [{ job: a.job, files: shared }]);
+
+  const receiptPath = join(b.task_dir, 'job.json');
+  const receipt = { ...JSON.parse(fs.readFileSync(receiptPath)), worktree_kept_reason: 'unmerged commits' };
+  writeFixtureFile(receiptPath, JSON.stringify(receipt));
+  writeFixtureFile(join(b.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  assert.deepEqual((await read(a)).overlaps, [{ job: b.job, files: shared }]);
+  git(cwd, 'restore', '--', 'tracked.txt');
+  git(cwd, 'commit', '--allow-empty', '-qm', 'main checkout advances');
+  const siblingHead = git(br, 'rev-parse', 'HEAD');
+  git(cwd, 'cherry-pick', siblingHead);
+  assert.notEqual(git(cwd, 'rev-parse', 'HEAD'), siblingHead);
+  assert.deepEqual((await read(a)).overlaps, []);
+  fs.mkdirSync(join(cwd, 'swap.txt'));
+  write(cwd, 'swap.txt/nested.txt', 'not an overlapping path');
+  git(cwd, 'add', '--all');
+  git(cwd, 'commit', '-qm', 'directory replaces removed file');
+  assert.deepEqual((await read(a)).overlaps, []);
+
+  write(br, 'tracked.txt', 'pending B change after integration');
+  assert.deepEqual((await read(a)).overlaps, [{ job: b.job, files: ['tracked.txt'] }]);
+  writeFixtureFile(receiptPath, JSON.stringify({ ...receipt, worktree: { ...receipt.worktree, base_head: '0'.repeat(40) } }));
+  const partial = await read(a);
+  assert.deepEqual(partial.overlaps, []);
+  assert.equal(partial.overlaps_incomplete, true);
+  assert.equal(partial.changed_files, 3);
+  writeFixtureFile(receiptPath, JSON.stringify(receipt));
+  git(cwd, 'worktree', 'remove', '--force', br);
+  const removed = await read(a);
+  assert.deepEqual(removed.overlaps, []);
+  assert.equal(removed.overlaps_incomplete, undefined);
+  assert.deepEqual(await read(b), { branch, base_head, head: null, ahead_commits: null, changed_files: null, dirty: null, overlaps: null });
+});
+
+test('one-job reads cap the number of sibling worktrees and reported files', async (t) => {
+  const f = await fixture(t, false), cwd = initRepo(f.root);
+  const base_head = git(cwd, 'rev-parse', 'HEAD');
+  const files = Array.from({ length: 21 }, (_, n) => `synthetic-${String(n).padStart(2, '0')}.txt`);
+  const jobs = Array.from({ length: 10 }, (_, n) => {
+    const job = waitFixtureJob(f, n + 1);
+    const name = `synthetic-${job.job.slice(-6)}`, branch = `wt/${name}`, root = join(cwd + '-wt', name);
+    git(cwd, 'worktree', 'add', '-qb', branch, root);
+    for (const file of files) fs.writeFileSync(join(root, file), 'pending synthetic change\n');
+    writeFixtureFile(join(job.dir, 'job.json'), JSON.stringify({ ...job.receipt, cwd: root, worktree: { main_root: cwd, root, branch, base_head } }));
+    return job.job;
+  });
+  const { git_summary } = await f.call('hud_read', { job: jobs[0] });
+  assert.equal(git_summary.overlaps_incomplete, true);
+  assert.deepEqual(git_summary.overlaps, jobs.slice(2).reverse().map((job) => ({ job, files: files.slice(0, 20), more: 1 })));
 });
 
 test('hud_read lists and MCP changes include only current settled report summaries', async (t) => {
