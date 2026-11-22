@@ -78,6 +78,17 @@ The owner approved the lean spec and resolved the draft questions:
   ~$0.9 at similar turns and wall time), imp's default preset returns to `fast` (gpt-6.2-sol-fast) and the main
   session passes `preset: astra` for hard slices (several modules, review fixes, design-heavy); the only standing
   exception to the no-override rule.
+- **D-2026-11-22-21** (§2.1.2, §2.1.4, §2.2.4, §5; owner configs): After docs/llm/post-change-load-2026-11-22.md
+  the owner accepted most recommendations: workers run targeted tests and the land gate runs test:mjs once; no ticket
+  claim commits (live jobs count as claims) and `hud_tickets` lists ready tickets; a reload refreshes clients' tool
+  lists; CLI workers get role text and brief in the first message; STATE.md keeps milestones while slice progress
+  comes from tickets (one commit per land); repo-level Claude tool pruning. Sonic becomes a headless one-shot query
+  role outside the herdr worker rules (no hud_ask, no continuation), its thinking choices gain `none`. Roles: imp
+  stays pi gpt-6.2-sol-fast high with `astra` for hard slices (the neon trial ends), oracle moves to agy
+  gemini-4-carbon-high and the main session may call it without per-job approval for milestone, architecture, design
+  and optimization questions, frontend-imp stays claude-sonnet-5-5 xhigh, general runs on agy gemini-4-neon-high (pi general kept as a
+  preset), reviewer on agy gemini-4-neon-xhigh (pi gpt-6.2-sol max kept as preset `sol`), and `pro`/`flow` become
+  optional roles.
 
 ## 2026-11-21
 
