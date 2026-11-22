@@ -6,6 +6,7 @@ import { cachedReportSignature } from './report-meta.js';
 export const MAX_CHECKS = 5;
 export const MAX_CHECK_COMMAND = 4096;
 export const CHECKS_FILE = 'checks.json';
+export const CHECK_TIMEOUT_MS = 600_000; // Per command; checks run in order.
 export type CheckBinding = { turn: string; report_sig: string };
 type Receipt = CheckBinding & {
   state: 'running' | 'done';

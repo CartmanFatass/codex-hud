@@ -378,14 +378,14 @@ test('hud watch holds unconfigured settlements for exactly 3000ms', async (t) =>
   assert.equal(await running, 0);
 });
 
-test('hud watch batches three settled jobs into one notice', async (t) => {
+test('hud watch batches jobs settling within the default three seconds into one notice', async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-batch-'));
   const ac = new AbortController(), writes = [], pane = 'w4E:p1';
   t.after(() => { ac.abort(); fs.rmSync(home, { recursive: true, force: true }); });
   const ids = ['j0000000000000001', 'j0000000000000002', 'j0000000000000003'];
   const dirs = ids.map((id) => writeJob(home, id, pane, 'batch', { state: 'working' }));
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
-    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100, settlementWindowMs: 500 });
+    stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100 });
   for (const dir of dirs) {
     writeFixtureFile(join(dir, 'STATUS.json'), '{"state":"done"}');
     await wait(150);

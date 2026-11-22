@@ -408,7 +408,7 @@ reversibly configures Antigravity's MCP, permission, statusline and `PreInvocati
   (21.11, 21.12, 22.06)
   - MCP tasks for declaring clients (today Claude Code): first verify wake, cancel and `/tasks`. One task
     per worker turn (`hud_create`, `hud_send`, `hud_respond`) until report or question. Result: state,
-    report path and one-line summary, not a read. Cancel closes the job. (20.09, 21.12, 22.06)
+    report path, one-line summary and check outcome, sent after HUD-run checks finish; not a read. Cancel closes the job. (20.09, 21.12, 22.06, 22.15)
   - Excludes plan execution and `after` chaining (main session decides every next step), resident server
     (on-demand watcher with short-lived helpers suffices) and project notes (only if repeated answers remain
     after the standing brief). Done: The owner runs a real project day; compare its counts with the

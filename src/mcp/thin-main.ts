@@ -41,7 +41,7 @@ import {
 } from '../roles/roster.js';
 import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../roles/tool-definitions.js';
-import { jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS } from '../roles/job-checks.js';
+import { checkBinding, CHECKS_FILE, CHECK_TIMEOUT_MS, jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { takeLease } from '../roles/lease.js';
 import { adoptProjectJobs, projectJobFilter } from '../roles/job-project.js';
 import { sharedRoot } from '../roles/projects.js';
@@ -1923,13 +1923,14 @@ function mutationKey(name: string, args: Args): string | null {
 }
 const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
 const TASK_TTL = 3 * 60 * 60_000;
+const TASK_POLL_MS = 5000;
 const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
 const taskContent = (text: string) => ({ content: [{ type: 'text', text }] });
 type TaskStatus = 'working' | 'completed' | 'failed' | 'cancelled';
 type TaskView = { status: TaskStatus; statusMessage: string; lastUpdatedAt: string; result?: ReturnType<typeof taskContent> };
 type HudTask = {
   id: string; job: string; role: string; pane: string; createdAt: string; fence?: string;
-  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; launch?: string; attentionBefore?: number;
+  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number;
 };
 const tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
 const markerFile = (task: HudTask) => join(directory(task.job), 'mcp-task.json');
@@ -1972,7 +1973,7 @@ function taskFence(job: Job) {
   return job.created_at;
 }
 function wireTask(task: HudTask) {
-  return { taskId: task.id, createdAt: task.createdAt, ttlMs: TASK_TTL, pollIntervalMs: 5000, ...task.view };
+  return { taskId: task.id, createdAt: task.createdAt, ttlMs: TASK_TTL, pollIntervalMs: TASK_POLL_MS, ...task.view };
 }
 type TaskReply = ReturnType<typeof wireTask> & { resultType: 'task' };
 const isTaskReply = (value: unknown): value is TaskReply =>
@@ -1988,7 +1989,6 @@ function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: s
   if (!task) return;
   if (!ok) { releaseTask(task); return; }
   task.fence = taskFence(job);
-  task.launch = launch;
   if (launch) task.view.statusMessage += ` — ${launch}`;
   tasks.set(task.id, task);
   activeTasks.set(task.job, task);
@@ -1997,10 +1997,27 @@ function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: s
 }
 function updateTask(task: HudTask, status: TaskStatus, statusMessage: string, text?: string): TaskView {
   if (task.view.status !== status || task.view.statusMessage !== statusMessage) {
-    task.view = { status, statusMessage, lastUpdatedAt: new Date().toISOString(), ...(text ? { result: taskContent(task.launch ? `${text}\nLaunch: ${task.launch}` : text) } : {}) };
+    task.view = { status, statusMessage, lastUpdatedAt: new Date().toISOString(), ...(text ? { result: taskContent(text) } : {}) };
   }
   if (status !== 'working') releaseTask(task);
   return task.view;
+}
+// null means the current report is still awaiting its checks; a stale receipt never supplies an outcome.
+function taskCheckOutcome(dir: string, job: Job, status: ReturnType<typeof readRow>['status']) {
+  if (!job.checks?.length) return '';
+  const binding = checkBinding(dir, { ...job }, status);
+  if (!binding) return '\nChecks: unavailable';
+  const receipt = readCheckReceipt(dir);
+  const current = receipt && sameChecks(receipt, binding);
+  if (current && receipt.state === 'done') {
+    const passed = receipt.results.filter((result) => result.exit_code === 0).length;
+    return `\nChecks: ${passed}/${job.checks.length} passed`;
+  }
+  // Bound a missing helper from declaration, or an interrupted run from its running receipt.
+  // Allow one poll for the helper to publish the last command's timeout result.
+  const started = current && fs.statSync(join(dir, CHECKS_FILE), { throwIfNoEntry: false })?.mtimeMs;
+  const deadline = (started || Date.parse(status!.settled_at!)) + job.checks.length * CHECK_TIMEOUT_MS + TASK_POLL_MS;
+  return Date.now() < deadline ? null : '\nChecks: result unavailable (timed out)';
 }
 function sampleTask(task: HudTask): TaskView {
   if (task.view.status !== 'working') return task.view;
@@ -2034,12 +2051,11 @@ function sampleTask(task: HudTask): TaskView {
   const report = join(dir, 'report.md');
   const currentSettlement = typeof status?.settled_at !== 'string' || status.settled_at >= task.createdAt;
   if (settled(state) && currentSettlement && row.report_mtime !== null && row.report_mtime !== task.reportBefore) {
+    const outcome = taskCheckOutcome(dir, job, status);
+    if (outcome === null) return updateTask(task, 'working', `${label} — awaiting checks`);
     const meta = jobRowReportMeta(row, dir);
     const summary = meta?.summary ?? (firstReportProse(slice(report, 2048)?.text ?? '') ?? 'Report ready').slice(0, 240);
-    const files = meta?.files ?? [];
-    const more = files.length - 8;
-    const fileLine = files.length ? `\nFiles: ${files.slice(0, 8).join(', ')}${more > 0 ? ` (+${more} more)` : ''}` : '';
-    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}${fileLine}`);
+    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}${outcome}`);
   }
   if (state === 'closed' || state === 'done') {
     const message = `${label} — no report for this turn`;
@@ -2053,7 +2069,7 @@ async function taskRequest(taskId: string, cancel: boolean) {
   const task = tasks.get(taskId);
   if (!task) {
     const now = new Date().toISOString(), statusMessage = 'Unknown or expired task. Use hud_read to find the job and collect its report.';
-    return { taskId, status: 'failed', statusMessage, createdAt: now, lastUpdatedAt: now, ttlMs: TASK_TTL, pollIntervalMs: 5000 };
+    return { taskId, status: 'failed', statusMessage, createdAt: now, lastUpdatedAt: now, ttlMs: TASK_TTL, pollIntervalMs: TASK_POLL_MS };
   }
   return keyLock(`job:${task.job}`, async () => {
     if (sampleTask(task).status === 'working' && cancel) {

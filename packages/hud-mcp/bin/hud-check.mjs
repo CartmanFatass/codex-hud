@@ -7,13 +7,13 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { withDistLock } from '../../../scripts/dist-lock.mjs';
 
-const [{ checkBinding, CHECKS_FILE, readCheckReceipt, sameChecks }, { procStat }] = await withDistLock(() => Promise.all([
+const [{ checkBinding, CHECKS_FILE, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks }, { procStat }] = await withDistLock(() => Promise.all([
   import('../../../dist/roles/job-checks.js'), import('../../../dist/roles/worker-tree.js'),
 ]));
 
 const dir = fs.realpathSync(process.argv[2]), file = join(dir, CHECKS_FILE);
 const expected = JSON.parse(process.argv[3]);
-const CHECK_TIMEOUT_MS = 600_000, TAIL_BYTES = 2048;
+const TAIL_BYTES = 2048;
 const { HUD_JOB_DIR: _workerJob, ...env } = process.env;
 function run(command, cwd) {
   const start = performance.now();

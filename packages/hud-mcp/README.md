@@ -46,7 +46,7 @@ Claude Code sessions that negotiate the `2026-07-28` MCP tasks extension receive
 `hud_create`, single-job `hud_send` (including repairs), or `hud_respond` that resumes work. Dispatch errors,
 duplicate calls that start no work, and `hud_send({jobs:[…]})` still return immediately. Claude polls the task
 and notifies the session when the turn settles, asks a question, fails, or stops. A task result gives the job ID,
-role, state, and a report path with a one-line summary and up to eight reported files, or the question ID and text.
+role, state, and a report path with a one-line summary, or the question ID and text. A report result waits for any HUD-run checks and includes the number passed; questions never wait for checks.
 It prefers the worker's own summary and falls back to report prose. The report remains unread; collect it with `hud_read`. Cancel from `/tasks` to stop a still-current worker turn, like `hud_close`; repeating
 cancel or cancelling a finished or superseded task does nothing. After MCP restarts, unknown tasks fail with a
 `hud_read` hint; jobs are not stopped. Use `hud_read` for jobs without a task. These sessions do not get

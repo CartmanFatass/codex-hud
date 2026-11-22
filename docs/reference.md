@@ -101,9 +101,11 @@ See [Project workers](#project-workers).
 
 Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
 `hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
-question, failure or stop without Monitor. The notification names the job, role and state, with a report path and
-one-line summary (and up to eight reported files, when provided) or the question ID and text. It prefers the
-worker's own summary and falls back to report prose. It does not mark a report read; collect it with `hud_read({job})`.
+question, failure or stop without Monitor. A report notice gives the job ID, role, state, report path and one-line
+summary (the worker's summary or, failing that, report prose). If the job has HUD-run checks, the notice waits
+for them and includes the number passed. Questions do not wait: their notices give the question ID and text.
+MCP delivers one result per task; only the client can combine those notices into a single wake. The notice does
+not mark a report read; collect it with `hud_read({job})`. Launch details remain in `hud_read({job, detail:true})`.
 A successful fan-out send keeps the job’s existing active task instead of starting a new one.
 Cancelling a still-current task stops the worker like `hud_close`; repeating cancel or cancelling an old task does
 nothing. Dispatch failures, duplicates and fan-out sends return immediately. Use `hud_read` for jobs without a
@@ -116,6 +118,7 @@ state through one shared `jobRow`, so they agree. `hud watch` defaults to action
 (with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker
 reasons. It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps
 all MCP change lines. Both `hud watch` and `changes` append a current worker summary, clipped to 140 characters.
+The watch groups settlements arriving within three seconds into one notice; questions are delivered immediately.
 On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
 without tasks runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through

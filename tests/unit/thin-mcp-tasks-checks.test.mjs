@@ -71,12 +71,9 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const done = await get();
   assert.equal(done.resultType, 'complete');
   assert.equal(done.status, 'completed');
-  const [label, path, summary, listedFiles, launch] = done.result.content[0].text.split('\n');
-  assert.equal(label, `${job.job} (imp) — idle_grace`);
-  assert.equal(path, `Report: ${join(job.task_dir, 'report.md')}`);
-  assert.equal(summary, `Summary: ${summaryText}`);
-  assert.equal(listedFiles, `Files: ${files.slice(0, 8).join(', ')} (+2 more)`);
-  assert.match(launch, /^Launch: used_place: pi/);
+  const text = done.result.content[0].text;
+  assert.deepEqual(text.split('\n'), [`${job.job} (imp) — idle_grace`, `Report: ${join(job.task_dir, 'report.md')}`, `Summary: ${summaryText}`]);
+  assert.ok(text.length < 600);
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), done);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
   assert.equal(f.commands().some(({ command }) => command === 'pi-role-reap'), false);
@@ -93,7 +90,7 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   assert.equal(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'))).repair_of, job.job);
 });
 
-test('MCP tasks: launch fall-through and effective effort are in the initial and final text', async (t) => {
+test('MCP tasks: launch fall-through and effective effort stay in the dispatch and read, not the final notice', async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
@@ -109,14 +106,18 @@ test('MCP tasks: launch fall-through and effective effort are in the initial and
   await publishPiGrace(job);
   const done = await rpc('tasks/get', { taskId: task.taskId });
   assert.equal(done.status, 'completed');
-  assert.match(done.result.content[0].text, launch);
+  assert.doesNotMatch(done.result.content[0].text, /Launch:|used_place:|attempts:/);
+  const read = resultValue(await taskCall(rpc, 'hud_read', { job: job.job, detail: true }));
+  assert.equal(read.used_place, 'pi (synthetic/second)');
+  assert.equal(read.thinking, 'off');
+  assert.equal(read.attempts.length, 2);
 });
 
 test('MCP tasks: a question completes the task; an answer starts another task', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
-  const task = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic question job.' });
+  const task = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic question job.', checks: ['true'] });
   const job = taskJob(f, task);
   const worker = workerClient(t, f, job.task_dir, '0');
   assert.match((await worker('hud_ask', { question: 'Which synthetic option?', default: 'A', options: ['A', 'B'] })).content[0].text,
@@ -132,7 +133,10 @@ test('MCP tasks: a question completes the task; an answer starts another task', 
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), question);
   assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'working');
   await publishPiGrace(job);
-  assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'completed');
+  await until(() => checkReceipt(job)?.state === 'done');
+  const result = await rpc('tasks/get', { taskId: next.taskId });
+  assert.equal(result.status, 'completed');
+  assert.match(result.result.content[0].text, /Checks: 1\/1 passed$/);
 });
 
 test('MCP tasks: fan-out sends keep the create task through report settlement', { timeout: 10000 }, async (t) => {
@@ -232,10 +236,14 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'hud-check-cli', 15, false);
-  const job = await f.call('hud_create', { role: 'hud-check-cli', task: 'Synthetic check job.', checks: [
+  await f.startCliSocket();
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  const task = await taskCall(rpc, 'hud_create', { role: 'hud-check-cli', task: 'Synthetic check job.', checks: [
     'echo "$BASHPID" > check-shell; for ((i=0; i<300; i++)); do [[ -f release-check ]] && break; sleep .05; done; test -f release-check',
     'test -f check-shell || exit 9; printf "%4096s failure tail" x >&2; exit 7',
   ] });
+  const job = taskJob(f, task), get = () => rpc('tasks/get', { taskId: task.taskId });
   const dir = job.task_dir, pidFile = join(f.env.HUD_HOME, 'watch.pid');
   fs.writeFileSync(join(dir, 'reap-worker'), '');
   const lines = [], ac = new AbortController();
@@ -254,10 +262,19 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
     assert.ok(procStat(watchPid) && procStat(helper) && procStat(worker.pid));
     assert.equal(reapAttempts(f, job), 0);
     assert.equal(readCloseQuit(f, job), false);
+    const held = await get();
+    assert.equal(held.status, 'working');
+    assert.equal(held.result, undefined);
     assert.equal((await f.call('hud_read', { job: job.job })).checks.state, 'running');
     assert.match(cardText(workerFor(f, job.job)), /\[↻0\/2\]/);
     writeFixtureFile(join(f.root, 'release-check'), '');
     await until(() => checkReceipt(job)?.state === 'done' && !fs.existsSync(pidFile));
+    const done = await get();
+    assert.equal(done.status, 'completed');
+    const text = done.result.content[0].text;
+    assert.match(text, /Checks: 1\/2 passed$/);
+    assert.ok(text.length < 600);
+    assert.deepEqual(await get(), done, 'later polls return the same terminal result');
     const receipt = checkReceipt(job);
     assert.equal(receipt.turn, cliToken(dir));
     assert.equal(receipt.report_sig, reportSignature(dir));

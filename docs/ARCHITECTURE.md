@@ -189,7 +189,7 @@ before reading their artifacts or planning model requests. Active/unknown jobs
 remain eligible. It reads job/STATUS, brief heading, report, newest review and QA.
 Only settled jobs expose worker metadata whose report signature still matches. The summary is their result line
 and matches the Home filter; the Inspector shows up to 12 reported paths as text only when no Git changes are shown.
-Task notices and single-job reads reuse the summary and file list (task results show at most eight paths); watch and
+Single-job reads reuse the summary and file list. Task notices use the summary and wait for HUD-run checks, reporting only the outcome; watch and
 `changes` lines and list reads carry only a clipped summary. Metadata writes do not wake `hud watch` on their own.
 Working-session target mtime contributes activity without an extra body read.
 The thin-job signature cache is shared disposable display state, never job authority.
