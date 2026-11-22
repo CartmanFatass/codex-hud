@@ -214,14 +214,14 @@ Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace
 {"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh","timeout_s":900}}
 ```
 
-HUD queues behind the `main-checkout` lease and runs the gate in a fresh detached checkout. If the job is already based on the current tip, HUD tests the job's exact commit; otherwise it cherry-picks only commits not reachable from the base. Commands are shell strings; the optional wrapper is an executable relative to the main checkout, passed `sh -c <command>` in the target checkout. Each `gate` and `after` command, including an immediate rerun, has its own `timeout_s` deadline (default 900 seconds). At the deadline HUD kills the command's process group, records `timeout` with the last 40 output lines, and releases the lease without dispatching a repair. A red gate command, including one reporting a Node.js per-test timeout, gets one immediate rerun there. If the output has Node.js `test at <file>:…` failure locations, HUD reruns only those files with `node --test` through the same wrapper; otherwise it reruns the whole command. If the rerun passes, HUD continues and names the flaky tests in the notice when available. On a persistent red gate or a cherry-pick conflict, HUD sends the failing step and its last 40 output lines to the source worker with instructions to rebase onto the current base, fix and commit. It continues the worker in idle grace if possible; otherwise it creates a local job of the same role with `retry_of`, in the source checkout. The checkout lease is released during repair. A fresh settlement starts a fresh integration and gate; a worker question goes to the main session and ends the flow. There are at most two worker repairs.
+HUD queues behind the `main-checkout` lease and runs the gate in a fresh detached checkout. If the job is already based on the current tip, HUD tests the job's exact commit; otherwise it cherry-picks only commits not reachable from the base. Commands are shell strings; the optional wrapper is an executable relative to the main checkout, passed `sh -c <command>` in the target checkout. Each `gate` and `after` command, including an immediate rerun, has its own `timeout_s` deadline (default 900 seconds). At the deadline HUD kills the command's process group, records `timeout` with the last 40 output lines, and releases the lease without dispatching a repair. A red gate command, including one reporting a Node.js per-test timeout, gets one immediate rerun there. If the output has Node.js `test at <file>:…` failure locations, HUD reruns only those files with `node --test` through the same wrapper; otherwise it reruns the whole command. If the rerun passes, HUD continues and names the flaky tests in the notice when available. On a persistent red gate or a cherry-pick conflict, HUD sends the failing step and its last 40 output lines to the source worker with instructions to rebase onto the current base, fix and commit. It uses the same native-resume window as `hud_send`; if it cannot continue the source worker, it creates a local job of the same role with `retry_of`, in the source checkout. The checkout lease is released during repair. A fresh settlement starts a fresh integration and gate; a worker question goes to the main session and ends the flow. There are at most two worker repairs.
 
 On green, HUD folds the update to the job's local `ticket` (`feature/NN`), if present, into the last tested commit in the integration checkout. The ticket is marked `done` if it says `**Owner try:** no`, or `ready-for-human` if it says `yes` or omits the field. Its acceptance boxes are ticked, and a comment records the tested SHA and passed/total gate commands. This does not update `STATE.md` or use the owner's index. HUD fast-forwards the checked-out base only when touched paths are clean and either the base tip is unchanged or every new base commit touches only unrelated paths; in the latter case it cherry-picks the tested commits onto the new base tip in a fresh detached checkout and reapplies the ticket update (refusing on any overlap or conflict), notes the replay in the notice, and fast-forwards without rerunning the gate. It then runs `after` there and optionally pushes the checked-out base HEAD to that branch on `origin`. HEAD may have advanced since fast-forward, but it must still descend from the landed tip, which includes the ticket update, and the landed paths must be clean. HUD then removes the integration checkout and, when clean and still at the exact source commit this flow landed, the job worktree and branch (even if the cherry-picked patch differed from the source). A cleanup error after landing still completes the flow with `cleanup_note` rather than failing it. A failure after fast-forward includes the landed SHA.
 
 The call returns a flow ID immediately (one task for MCP-task clients). Calling `hud_land` again returns the existing flow if it is active or has already fast-forwarded the base. If it failed or was cancelled before fast-forward, the call starts a new flow, keeps the old receipt under its original ID and removes the old integration worktree once it holds the lease. `hud_read({job: "<flow ID>"})` gives any attempt's state and current step. While another land holds the lease, the queued flow names the holder in `hud_read` and on its panel card; when the holder is in the gate, it also shows the step number and elapsed minutes. One terminal notice per attempt reports the SHA or the failing step and last 40 output lines, with one line per repair attempt. The helper survives a watcher restart; an interrupted helper is reported, not replayed. Receipts live under `$HUD_HOME/flows/`.
 
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s`
-(default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
+(CLI quiet-job grace, default 600), optional `resume_s` (default 1620 seconds; `0` disables native resume), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
 or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
 files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
 `imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one),
@@ -235,9 +235,9 @@ A `cli` place requires `instructions/<instructions>.md`
 auto-retries. Register custom roles as `$HUD_HOME/roles/<name>.json`, for example
 a design role with `"agent": "claude"` and a Claude model alias. List models with
 `grok models`, `agy models`, `claude --help` or `codex -m`. The HUD passes only
-the model flag, the effort flag, that CLI's permission-bypass flag and `args`.
-It never passes a home, session or config flag, never sets those environments,
-and never trusts a directory while dispatching: a trust dialog is declined and the
+the model flag, the effort flag, that CLI's permission-bypass flag, `args`, and the HUD worker binding.
+A native resume adds the recorded session identifier; launches keep the configured CLI home.
+HUD never trusts a directory while dispatching: a trust dialog is declined and the
 launch fails, naming `hud trust <cwd>`. Sessions stay in each CLI's own store.
 herdr starts the CLI through the interactive shell, so that shell's functions apply.
 
@@ -285,21 +285,24 @@ results in input order; all use the same mode, and an unknown ID returns an erro
 `detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
 use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
 question or timeout. Collecting either the digest or the report body stamps `read_at` (including during work and idle grace), not
-acceptance. A settled pi or CLI worker closes when its current turn's report is read (`closed after report read`);
-reading an earlier turn's report after a continuation does not close the worker. An unread report keeps the usual
-idle deadline. Reading a failure/block separately marks that attention as seen.
+acceptance. With a current-turn declaration, the worker process and pane close at turn end, even if the report is unread.
+A CLI that has not ended within 120 seconds of declaring is handed back to main, not cut off. An open question
+or open or uncollected sonic child holds closure. Jobs launched before this change keep their original idle grace.
+Reading a failure/block separately marks that attention as seen.
 Workers finish with `hud_report`, which publishes the report without repeating it in chat. They may supply a
 one-line `summary` (up to 160 Unicode code points) and a `files` list of up to 50 relative paths. Claude and Codex
 use their HUD MCP and pass the token from the prompt they are answering; pi has native tools and needs no token.
 Antigravity and Grok Build use the fallback commands in their briefs. Workers use `hud_sonic` to start sonic
 sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
-`hud_send` queues a message for a working pi or CLI job, or continues an eligible role during idle grace while
-its report is still unread. A single send to a job closed by reading its report starts a repair with references to its
-brief and report, returning the new job ID as `continued_as`. When continuing a managed-worktree job—or retrying a
-failed continuation with `retry_of` without overriding `cwd` or `isolation`—HUD reuses the source worktree if it still
-exists and is clean; otherwise it creates a fresh worktree. Use `jobs` instead of `job` to send one text only to working
+`hud_send` queues a message for a working pi or CLI job. After a worker closes on its report, HUD checks the
+clock and native session. Within `resume_s`, it can open the same pi, Claude, Codex or Antigravity session in a
+new pane in the same checkout, as a new turn of the same job (`continuation: "resumed"`). After the window or if
+native resume is unavailable, it starts a repair with references to the original brief and report
+(`continuation: "repair"`, new job ID in `continued_as`). Repairing a managed-worktree job—or retrying a failed
+repair with `retry_of` without overriding `cwd` or `isolation`—reuses the source worktree if it still exists and
+is clean; otherwise it creates a fresh worktree. Use `jobs` instead of `job` to send one text only to working
 jobs; the response lists `sent` job IDs and `skipped` entries with reasons. Use `messages: [{job, text, message_key?}]`
-to send distinct messages (including idle-grace continuations and closed-job repairs) in one call, returning `messages`
+to send distinct messages (including native resumes and closed-job repairs) in one call, returning `messages`
 in input order with per-item errors. An explicit `message_key` deduplicates sends;
 if omitted, the same job and text are treated as a retry only within 10 minutes. Workers ask with `hud_ask`; the question arrives through
 an active MCP task or the `QUESTION` notice, and `hud_respond` answers it. A synchronous question waits up to 20 minutes;
@@ -340,16 +343,14 @@ Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to
 primary/helper files. A CLI job's supervisor only observes; only facts end a job: the
 worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or
-`closed` when a new report is on disk). Each dispatch and `hud_send` starts a turn (`turn.json`). With `advisory`
-trust, on a turn that never issued a receipt, a new report settles the turn when herdr is not `working` and the report
-has been stable for 10 s, provided there is no live in-turn child. Such children also defer quiet decisions and
-automatic close. `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
-A continuation invalidates the old receipt; rewriting a declared report requires a fresh receipt for that turn.
-If the turn stays quiet for the role's grace period without a fresh matching receipt, it goes to
-`waiting_orchestrator` without settling or calling the Decision API. The main session can use `hud_send`
-to continue or `hud_close` to stop. Changes in terminal output do not affect the receipt. With a matching
-receipt (or pi's native settled turn with a changed report), leftover children do not block closure. For a
-continuable worker, idle grace ends when the report is read or the deadline passes; a deadline close says `settled`.
+`closed` when a new report is on disk). Each CLI dispatch and `hud_send` starts a turn (`turn.json`).
+`hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
+An undeclared report follows the quiet rule, and live in-turn children defer that rule. A continuation invalidates
+an old receipt; rewriting a declared report requires a fresh receipt for that turn. If a rewritten report stays
+quiet for the role's grace, it goes to `waiting_orchestrator` without settling or calling the Decision API.
+Terminal output does not affect the receipt. With a matching receipt and a confirmed turn end (or pi's native
+settled turn with a changed report), leftover processes do not block closure. Open questions and uncollected
+sonic results do block it.
 The watcher reaps the worker and descendants with captured ancestry, records that unverified processes were left
 alone, and retries unresolved cleanup on the slow tick.
 Herdr's status alone never fails a live worker. A turn quiet past the idle grace without a report gets one Decision API choice

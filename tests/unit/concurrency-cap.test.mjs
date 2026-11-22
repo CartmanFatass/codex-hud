@@ -187,7 +187,9 @@ test('a headless sonic starts even when a legacy sonic fills the role cap', asyn
   const job = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query at cap.' });
   assert.notEqual(job.state, 'queued');
   await until(() => cliState(job.task_dir)?.state === 'closed');
-  assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).headless, true);
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+  assert.equal(receipt.headless, true);
+  assert.equal(receipt.resume_s, undefined, 'headless sonic has no native resume window');
   assert.equal(fs.existsSync(join(job.task_dir, 'SESSION.txt')), false);
 });
 
@@ -203,6 +205,7 @@ test('queued imp starts automatically when a working imp settles, picking the fi
       role: 'imp',
       instructions: 'implementer',
       can_continue: true,
+      resume_s: 900,
       run: [
         { harness: 'pi', pi_role: 'implementer', model: 'synthetic/first', thinking: 'low' },
         { harness: 'pi', pi_role: 'implementer', model: 'synthetic/second', thinking: 'low' },
@@ -247,6 +250,7 @@ test('queued imp starts automatically when a working imp settles, picking the fi
 
   const startedReceipt = JSON.parse(fs.readFileSync(join(q1.task_dir, 'job.json'), 'utf8'));
   assert.equal(startedReceipt.model, 'synthetic/second', 'started on first available place at start time');
+  assert.equal(startedReceipt.resume_s, 900, 'queued workers inherit the selected role’s resume window');
   assert.equal((await f.call('hud_read', { job: q2.job })).state, 'queued');
   assert.equal((await f.call('hud_read', { job: q2.job })).queue_position, 1);
 });

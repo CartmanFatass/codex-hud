@@ -16,7 +16,7 @@ import { readReportMeta } from '../../dist/roles/report-meta.js';
 import {
   workerFor,
   cardText,
-  fixture,
+  legacyFixture as fixture,
   workerClient,
   resultValue,
   until,

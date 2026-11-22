@@ -9,7 +9,7 @@ export type { ReportMeta } from '../roles/report-meta.js';
 
 export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
-export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string };
+export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string; resumed?: true };
 export interface ManagedWorktree {
   main_root: string;
   root: string;
@@ -55,6 +55,7 @@ export interface Job extends PiOptions {
   scout_state?: 'scouting' | 'done' | 'failed';
   scout_error?: string;
   pi_sent_at?: string;
+  resume_s?: number;
   observed_at?: string;
   reaped_at?: string;
   worktree?: ManagedWorktree;

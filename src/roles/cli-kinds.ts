@@ -14,6 +14,7 @@ export interface CliKind {
   /** Null keeps `herdr agent start`'s own timeout. */
   startTimeoutMs: number | null;
   startupQuirk: 'none' | 'done-before-prompt' | 'phantom-working';
+  resume?: (id: string, args: string[]) => string[];
 }
 
 export const cliKinds: Record<CliAgent, CliKind> = {
@@ -32,6 +33,7 @@ export const cliKinds: Record<CliAgent, CliKind> = {
     trust: { text: 'Do you trust the contents of this project?', decline: ['down', 'enter'] },
     startTimeoutMs: null,
     startupQuirk: 'done-before-prompt',
+    resume: (id, args) => [...args, '--conversation', id],
   },
   claude: {
     model: (model) => ['--model', model],
@@ -40,6 +42,7 @@ export const cliKinds: Record<CliAgent, CliKind> = {
     trust: { text: 'Is this a project you created or one you trust?', decline: ['enter'] },
     startTimeoutMs: null,
     startupQuirk: 'none',
+    resume: (id, args) => [...args, '--resume', id],
   },
   codex: {
     model: (model) => ['-m', model],
@@ -48,5 +51,6 @@ export const cliKinds: Record<CliAgent, CliKind> = {
     trust: null,
     startTimeoutMs: 90000,
     startupQuirk: 'phantom-working',
+    resume: (id, args) => ['resume', id, ...args],
   },
 };

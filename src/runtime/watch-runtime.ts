@@ -1,8 +1,10 @@
-/** On-demand file-event reaper. Pi owns grace; pi-role-reap owns tab safety. */
+/** On-demand file-event reaper. Native pi owns settlement; pi-role-reap owns tab safety. */
 import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
-import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../mcp/cli-judge.js';
+import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT } from '../mcp/cli-judge.js';
+import { resumeDeadline } from '../mcp/worker-resume.js';
+import { sonicChildren } from '../worker/sonic-jobs.js';
 import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
-import { piReadSettlement } from '../mcp/pi-read-settlement.js';
+import { piReportSettlement } from '../mcp/pi-read-settlement.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { reapWorktree, mainHead } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
@@ -186,7 +188,11 @@ function supervisorAlive(pid: number) {
   }
 }
 function readCloseTurn(dir: string, job: Job | null, status: Partial<JobStatus> | null) {
-  return status?.state === 'idle_grace' && job && !job.reaped_at ? piReadSettlement(dir, job, status) : null;
+  if (status?.state !== 'idle_grace' || !job || job.reaped_at) return null;
+  const turn = piReportSettlement(dir, job, status);
+  if (!turn || job.resume_s === undefined) return turn;
+  const sonic = sonicChildren(dir);
+  return jobCache.readQa(dir).openIds.length || sonic.open || sonic.uncollected.length ? null : turn;
 }
 function writeJsonAtomic(file: string, value: Partial<JobStatus> | Job, indent?: number) {
   jobCache.writeJsonAtomic(file, value as Record<string, unknown>, { indent, mkdir: false });
@@ -257,12 +263,13 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   if (readInGrace) {
     const target = session?.fields.primary;
     const agent = target ? (await request('agent.get', { target }, { signal }))?.result?.agent : undefined;
-    if (signal.aborted || closedTabs.has(tab)) return true;
+    if (signal.aborted || (job?.resume_s === undefined && closedTabs.has(tab))) return true;
     const latest = readJson<JobStatus>(statusFile);
     if (!latest || reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership ||
         readCloseTurn(dir, readJson<Job>(jobFile), latest) !== readInGrace) return true;
-    if (!['idle', 'done'].includes(agent?.agent_status ?? '')) {
-      preflightHold.set(id, { ownership, token: readInGrace, until: Date.now() + cliCheck });
+    const observed = agent?.agent_status;
+    if (job?.resume_s === undefined ? !['idle', 'done'].includes(observed ?? '') : observed === 'working' || observed === 'blocked') {
+      preflightHold.set(id, { ownership, token: readInGrace, until: Date.now() + (job?.resume_s === undefined ? cliCheck : 500) });
       return false;
     }
     status = latest;
@@ -293,8 +300,10 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   if (!latest || reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership) return true;
   if (readClose && (['idle_grace', 'closed'].includes(latest.state) || resumeReadReap &&
       (latest.state === 'working' || latest.state?.startsWith('waiting')))) {
-    writeJsonAtomic(statusFile, { ...latest, state: 'closed', exit_reason: REPORT_READ_EXIT,
-      ended_at: latest.ended_at ?? new Date().toISOString() });
+    writeJsonAtomic(statusFile, { ...latest, state: 'closed',
+      exit_reason: job?.resume_s === undefined ? REPORT_READ_EXIT : REPORT_SETTLED_EXIT,
+      ended_at: latest.ended_at ?? new Date().toISOString(),
+      ...(job?.resume_s === undefined ? {} : { idle_deadline_at: null }) });
   }
   const receipt = readJson<Job>(jobFile);
   if (receipt) {
@@ -451,7 +460,8 @@ function scan(retryWatch = false) {
             if (isWorkingForCap(job, status)) countWorking(job!.role);
             continue;
           }
-        } else if (tabClosed) update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };
+        } else if (tabClosed && !(job?.resume_s !== undefined && readCloseTurn(dir, job, status)))
+          update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };
         if (update) {
           status = { ...status, ...update };
           writeJsonAtomic(statusFile, status);
@@ -464,7 +474,11 @@ function scan(retryWatch = false) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) { open = true; markBusy(job); }
         continue;
       }
-      if (checksOpen(id, dir, job, status)) { open = safetyCheck = true; markBusy(job); continue; }
+      const checkingReport = checksOpen(id, dir, job, status);
+      if (checkingReport) {
+        open = safetyCheck = true; markBusy(job);
+        if (job?.resume_s === undefined || !status.output_written) continue;
+      }
       // If report eligibility changes, still look for the root to exit, without polling during backoff.
       if (retry?.readClose && retry.at !== Infinity)
         nearest = Math.min(nearest, retry.at > Date.now() ? retry.at : Date.now() + cliCheck);
@@ -474,7 +488,7 @@ function scan(retryWatch = false) {
       if (!resumeReadReap && status.state === 'idle_grace') {
         open = true;
         markBusy(job);
-        // Pi owns the unread deadline. CLI grace always goes through its supervisor.
+        // New Pi jobs close on native settlement. Pre-upgrade jobs still honor their grace.
         if (!tab || !(readInGrace = readCloseTurn(dir, job, status))) continue;
       }
       if (!resumeReadReap && (status.state === 'working' || status.state?.startsWith('waiting'))) {
@@ -501,10 +515,13 @@ function scan(retryWatch = false) {
       const land = job?.worktree && landAttempt(home, id).prior;
       const landing = land && activeLand(land);
       if (landing) { open = safetyCheck = true; markBusy(job); }
+      const resumeUntil = job && resumeDeadline(job, status);
+      const resumable = !!resumeUntil && resumeUntil > Date.now();
+      if (resumable && job?.worktree) nearest = Math.min(nearest, resumeUntil);
       const worktreeSafe = Boolean(job?.reaped_at || (!session && (job?.dispatch_exit_code ?? 0) > 0));
-      if (!worktreeSafe) markBusy(job);
-      // With a tab, wait for successful reap; without a session, only a finished failed launch is safe.
-      if (worktreeSafe && !landing && job?.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
+      if (!worktreeSafe || resumable) markBusy(job);
+      // With a tab, wait for successful reap; keep the checkout available for native resume.
+      if (worktreeSafe && !resumable && !checkingReport && !landing && job?.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
         const root = job.worktree.main_root;
         let pending = !job.worktree_kept_reason;
         // Only a clean, unpicked result has a checked HEAD. Don't spawn Git for an unchanged base.
@@ -520,7 +537,7 @@ function scan(retryWatch = false) {
       }
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
       const expires = (Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs)) + 86400000;
-      if (!landing && expires < Date.now() && (!tab || job?.reaped_at)) {
+      if (!landing && !checkingReport && !resumable && expires < Date.now() && (!tab || job?.reaped_at)) {
         // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
         archiveJob(home, dir, id, job, status, Date.now(), log);
@@ -613,7 +630,7 @@ function scan(retryWatch = false) {
   if (safetyCheck) nearest = Math.min(nearest, Date.now() + cliCheck);
   const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + degradedMs);
-  if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.ceil(nearest - Date.now())));
+  if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {
     stopScheduling();
     notify('idle');
@@ -645,7 +662,7 @@ function startWatch() {
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
       const path = filename?.toString();
-      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-exit\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json)$/.test(path)) schedule();
+      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-exit\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;
       warn('watch error', `watch error: ${error.message}`);

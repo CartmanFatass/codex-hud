@@ -22,6 +22,7 @@ import {
   statusQueries,
   readCloseQuit,
   reapAttempts,
+  declareDone,
   writeCliRole,
   cliState,
   fakeDecisionServer,
@@ -80,6 +81,8 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.match(superseded.statusMessage, /no longer current/);
   assert.equal(reapAttempts(f, parent), 0);
   writeFixtureFile(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
+  declareDone(f, parent);
+  f.push(parent.job, 'done');
   await until(() => cliState(parent.task_dir)?.state === 'closed');
   assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'completed');
   assert.equal(prompts().length, 1, 'the same report is not prompted for again');
@@ -182,6 +185,9 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
   await f.startCliSocket();
   const handle = await taskCall(rpc, 'hud_create', { role: 'qd-prompt', request_key: 'qd-prompt-1', task: 'Synthetic report prompt.' });
   const job = taskJob(f, handle);
+  await until(() => fs.existsSync(join(job.task_dir, 'report.md')));
+  declareDone(f, job);
+  f.push(job.job, 'done');
   await until(() => cliState(job.task_dir)?.state === 'closed', 10000);
   const done = await rpc('tasks/get', { taskId: handle.taskId });
   assert.equal(done.status, 'completed');

@@ -17,7 +17,7 @@ import {
   fixture,
   workerClient,
   until,
-  publishPiGrace,
+  publishLegacyPiGrace as publishPiGrace,
   waitFixtureJob,
   ownerOf,
   paneList,

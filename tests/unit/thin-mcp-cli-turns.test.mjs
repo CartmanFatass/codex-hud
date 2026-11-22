@@ -5,7 +5,7 @@ import test, { describe } from 'node:test';
 import {
   workerFor,
   cardText,
-  fixture,
+  legacyFixture as fixture,
   until,
   statusQueries,
   assertCliStatus,

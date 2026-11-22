@@ -87,14 +87,23 @@ if (command === 'pi-dispatch') {
     console.error(fs.readFileSync(failure, 'utf8') || 'synthetic start failed');
     process.exit(1);
   }
+  const nativeResume = args.includes('--resume') || args.includes('--conversation') || args[args.indexOf('--') + 1] === 'resume';
+  if (nativeResume) fs.rmSync(join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, ''), 'agent-gone'), { force: true });
   const at = args.indexOf('--task-dir');
   if (!routingOnly && at >= 0) {
     const dir = args[at + 1];
     const holdPi = kind === 'pi' && fs.existsSync(join(process.env.HOME, 'hold-pi-start'));
     const stat = holdPi && fs.readFileSync('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ');
     const identity = holdPi ? { version: 1, task_dir: dir, slot: 'primary', pid: process.pid, pid_start_time: stat[19] } : {};
-    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...identity, state: 'working', exit_reason: null }));
-    if (!fs.existsSync(join(process.env.HOME, 'defer-pi-report')))
+    const resumeArg = args.lastIndexOf('--session');
+    let session = {};
+    if (resumeArg >= 0 && fs.existsSync(args[resumeArg + 1])) {
+      const file = args[resumeArg + 1];
+      session = { session_file: file, session_id: JSON.parse(fs.readFileSync(file, 'utf8').split('\n', 1)[0]).id };
+      fs.rmSync(join(dir, 'agent-gone'), { force: true });
+    }
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...identity, ...session, state: 'working', exit_reason: null }));
+    if (!session.session_file && !fs.existsSync(join(process.env.HOME, 'defer-pi-report')))
       writeFixtureFile(join(dir, 'report.md'), 'Synthetic implementation report.');
     // This stand-in for pi publishes working, then exits without a shutdown write.
     if (holdPi) waitToReply();
@@ -181,7 +190,7 @@ if (command === 'pi-dispatch') {
   }
   let session = routingOnly
     ? { kind: 'id', value: 'synthetic-cli-session' }
-    : { kind: 'id', value: 'synthetic-grok-session', source: 'synthetic', agent: 'grok' };
+    : { kind: 'id', value: fs.existsSync(join(process.env.HOME, 'wrong-native-session')) ? 'unexpected-session' : 'synthetic-grok-session', source: 'synthetic', agent: 'grok' };
   const late = join(process.env.HOME, 'late-session');
   if (fs.existsSync(late)) {
     const n = Number(fs.readFileSync(late, 'utf8') || '0') + 1;

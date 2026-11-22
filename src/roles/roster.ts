@@ -70,6 +70,7 @@ export interface Role {
   kind?: 'image' | 'video';
   agent?: CliAgent;
   idle_grace_s?: number;
+  resume_s?: number;
   args?: string[];
   source_file: string;
 }
@@ -186,6 +187,8 @@ function roleReason(value: unknown): string | null {
     return 'bad instructions';
   if (raw.idle_grace_s !== undefined && (!Number.isInteger(raw.idle_grace_s) || (raw.idle_grace_s as number) < 0))
     return 'bad cli fields';
+  if (raw.resume_s !== undefined && (!Number.isSafeInteger(raw.resume_s) || (raw.resume_s as number) < 0))
+    return 'bad resume_s';
   if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
   const servers = raw.mcp_servers;
   if (servers !== undefined && (!Array.isArray(servers) || servers.some((name) =>
@@ -290,6 +293,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     })),
     can_continue,
     ...(idle_grace_s !== undefined ? { idle_grace_s } : {}),
+    ...(typeof parsed.resume_s === 'number' ? { resume_s: parsed.resume_s } : {}),
     source_file: path,
   };
 }
@@ -580,8 +584,8 @@ export function roleRegistry(
       let role = { ...file, presets };
       if (selected) {
         // Launch fields follow the effective chain; the winning file still owns the role metadata.
-        const { role: name, instructions, mcp_servers, idle_grace_s, source_file } = file;
-        role = { role: name, instructions, mcp_servers, idle_grace_s, source_file, presets, run: selected.run,
+        const { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file } = file;
+        role = { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file, presets, run: selected.run,
           can_continue: selected.run.some((p) => p.harness !== 'bro') && Boolean(raw.can_continue),
           ...primaryFields(selected.run[0]!) };
       }

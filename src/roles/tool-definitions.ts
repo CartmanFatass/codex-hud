@@ -115,7 +115,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_send',
-    'Send text to one job, fan out one text to working jobs (jobs), or send distinct messages (messages: [{job, text, message_key?}]). A single or messages send to a job closed by reading its report starts a repair (continued_as). Use one of job, jobs or messages.',
+    'Send text to one job, fan out to working jobs (jobs), or send distinct messages (messages: [{job, text, message_key?}]). After closure, HUD resumes the native session or starts a repair (continued_as) and names the path in continuation. Use one of job, jobs or messages.',
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1 },

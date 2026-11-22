@@ -6,6 +6,7 @@ import { taskDelivery } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import {
   fixture,
   publishPiGrace,
+  publishLegacyPiGrace,
   resultValue,
   taskCall,
   taskRpc,
@@ -313,8 +314,8 @@ test('MCP tasks: batch creates and responds deliver per-job compact notices with
     .filter((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID)
     .map((c) => c.args[3]);
 
-  // 1. Plain job settles -> compact notice pushed once and recorded.
-  await publishPiGrace(plain);
+  // 1. A pre-upgrade job stays in grace so it can ask the follow-up below.
+  await publishLegacyPiGrace(plain);
   await until(() => fs.existsSync(join(plain.task_dir, 'batch-notice.json')));
   const plainNotice = panePrompts().find((m) => m.includes(plain.job));
   assert.match(plainNotice, new RegExp(`^${plain.job} \\(imp\\) — idle_grace\\nReport: hud_read job=${plain.job}`));
@@ -357,5 +358,5 @@ test('MCP tasks: batch creates and responds deliver per-job compact notices with
   assert.equal(taskDelivery(disc.task_dir, f.env.HERDR_PANE_ID), false, 'disconnect releases mcp-task.json for hud-notify fallback');
   await publishPiGrace(disc);
   const nonTaskRoster = await f.call('hud_roster');
-  assert.ok(nonTaskRoster.changes?.some((line) => line.includes(disc.job) && line.includes('idle_grace')));
+  assert.ok(nonTaskRoster.changes?.some((line) => line.includes(disc.job) && /idle_grace|closed/.test(line)));
 });

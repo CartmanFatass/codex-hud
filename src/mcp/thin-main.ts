@@ -1,5 +1,5 @@
 /** Local HUD role tools and Codex statusline, newline-delimited JSON-RPC over stdio. */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -21,7 +21,7 @@ import { SONIC_TIMEOUT_MS, startSonicProcess, stopSonic } from './sonic-process.
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
 import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
-import { piReadSettlement, sendHistory } from './pi-read-settlement.js';
+import { piReportSettlement, sendHistory } from './pi-read-settlement.js';
 import { settleStoppedPi } from './pi-stop-settlement.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
@@ -62,6 +62,7 @@ import { JOB_ID_RE, JobIndexCache, type CachedJsonResult } from '../roles/job-in
 import { sharedRoot } from '../roles/projects.js';
 import { resumedWorkerRefusal } from '../roles/resume-guard.js';
 import { capForRole, computeQueuePositions, isWorkingForCap, loadConcurrencySettings, QUEUE_START_MARKER, queuedTimestamp } from '../roles/concurrency.js';
+import { closedReport, DEFAULT_RESUME_S, resumeDeadline, resumeIdentity, type NativeResume } from './worker-resume.js';
 
 const jobDir = process.env.HUD_JOB_DIR;
 const isWorker = jobDir !== undefined;
@@ -369,7 +370,7 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   job.worker_prompt = worker_prompt;
   return args;
 }
-async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string): Promise<DispatchResult> {
+async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, resume?: NativeResume): Promise<DispatchResult> {
   let openedTab: string | undefined;
   let mayHaveInput = false;
   const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
@@ -379,7 +380,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     if (!launcher) throw new Error('pi-role not found on PATH');
     const dir = directory(job.job),
       output = join(dir, jobFiles.report);
-    const prompt = briefPrompt(join(dir, jobFiles.brief));
+    const prompt = resume?.message ?? briefPrompt(join(dir, jobFiles.brief));
     const piRole = place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
     const argv = ['--args-json', piRole];
@@ -407,6 +408,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     for (const key of ['model', 'thinking'] as const) if (place[key] !== undefined) argv.push(`--${key}`, place[key]);
     argv.push(...resources, ...(job.pi_args ?? []));
     if (job.headless) argv.push('--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic', '--no-session', '--print', '--mode', 'json', '--', prompt);
+    else if (resume?.file) argv.push('--session', resume.file);
     const built = await run(launcher, argv, job.cwd, job.headless ? { ...process.env, HERDR_ENV: undefined } : undefined);
     if (built.exit_code !== 0) return reject(built);
     const piArgs: string[] = JSON.parse(built.stdout);
@@ -489,6 +491,11 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
       openedTab = undefined;
     }
     if (started.exit_code !== 0) return reject(await startupFailure(started, left));
+    if (resume) {
+      const native = readCachedStatus(job.job).status;
+      if (native?.session_id !== resume.id || native.session_file !== resume.file)
+        return reject(launchError('pi did not open the recorded session'));
+    }
     job.pi_sent_at = new Date().toISOString();
     save(job);
     mayHaveInput = true;
@@ -658,7 +665,8 @@ async function rejectLaunch(result: DispatchResult, tab?: string): Promise<Dispa
   const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
   return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok) };
 }
-async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef, callerToken?: string): Promise<DispatchResult> {
+async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume } = {}): Promise<DispatchResult> {
+  const { callerToken, resume } = options;
   let openedTab: string | undefined;
   let mayHaveInput = false;
   const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
@@ -670,13 +678,14 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       return reject({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
     }
     const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers, standingBrief);
-    const agentArgs = [
+    const nativeArgs = [
       ...(place.model ? kind.model(place.model) : []),
       ...(place.thinking ? kind.effort(place.thinking) : []),
       ...kind.bypass,
       ...(place.args ?? []),
       ...startup.args,
     ];
+    const agentArgs = resume ? kind.resume!(resume.id, nativeArgs) : nativeArgs;
     // An arbitrary CLI option has no equivalent prompt fallback. Let the next
     // configured place run instead of dropping or changing the option.
     if (!agentArgs.every(isHerdrAgentArg)) return reject(launchError('CLI startup arguments contain control characters'));
@@ -688,6 +697,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       'tab',
       'create',
       ...(place.agent === 'codex' ? ['--env', `CODEX_HOME=${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}`] : []),
+      ...(place.agent === 'claude' && process.env.CLAUDE_CONFIG_DIR ? ['--env', `CLAUDE_CONFIG_DIR=${resolve(process.env.CLAUDE_CONFIG_DIR)}`] : []),
       ...(await workspaceArgs(job)),
       '--cwd',
       job.cwd,
@@ -753,8 +763,15 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       const settled = await settlePhantomWorking(name);
       if (settled) return reject(settled);
     }
-    const turn = writeTurn(dir, callerToken ? { callerToken } : undefined);
-    const prompt = withDonePrompt(startup.prompt, bundled, dir, turn, place.agent!);
+    if (resume) {
+      const got = await run('herdr', ['agent', 'get', name]);
+      const agent = got.exit_code === 0 ? JSON.parse(got.stdout).result?.agent : null;
+      if (agent?.agent_session?.kind !== 'id' || agent.agent_session.value !== resume.id)
+        return reject(launchError(`${place.agent} did not open the recorded session`));
+      writeCreateStatus(dir, { state: 'working', agent_session_id: resume.id });
+    }
+    const turn = writeTurn(dir, { restarted: !!resume, callerToken });
+    const prompt = withDonePrompt(resume?.message ?? startup.prompt, bundled, dir, turn, place.agent!);
     mayHaveInput = true;
     const submitted = await run('herdr', [
       'agent',
@@ -1033,6 +1050,7 @@ function jobDiagnostics(job: Job) {
     thinking: job.thinking,
     model_source: job.model_source,
     ...(job.cli ? { idle_grace_s: job.cli.idle_grace_s } : {}),
+    ...(job.resume_s !== undefined ? { resume_s: job.resume_s } : {}),
     ...(job.cli?.mcp_scope_warning ? { mcp_scope_warning: job.cli.mcp_scope_warning } : {}),
     ...Object.fromEntries([...piSwitches, 'pi_args' as const].map((key) => [key, job[key]])),
     ...(job.role_skills !== undefined
@@ -1815,6 +1833,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
+        ...(place.harness === 'bro' || base.headless ? {} : { resume_s: definition!.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd: landCwd ?? cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
         },
@@ -2070,6 +2089,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
+        ...(place.harness === 'bro' || base.headless ? {} : { resume_s: definition.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
         },
@@ -2114,7 +2134,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       }
       const launchRole = preset || selected ? { ...definition, skills: place.skills } : definition;
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
-      else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, existing.created_at);
+      else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, { callerToken: existing.created_at });
       reason = result.exit_code === 0 ? '' : launchReason(result);
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
@@ -2154,10 +2174,11 @@ async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
   await populateWorktree(worktree);
 }
 
-async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree, standingBrief?: StandingBriefRef, callerToken?: string): Promise<DispatchResult> {
+async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree, standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume } = {}): Promise<DispatchResult> {
+  const { resume } = options;
   let instructionsPath = '';
   try {
-    if (job.thinking != null) {
+    if (!resume && job.thinking != null) {
       // Pi takes `off`, even when the model maps it to the provider value `none`.
       if (place.harness === 'pi' && job.thinking === 'none') job.thinking = place.thinking = 'off';
       const supported = await launchThinking(hudHome, place, job.model ?? null);
@@ -2183,10 +2204,10 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
     save(job);
   } catch (error) {
     // Worktree setup is shared; another place cannot repair it.
-    return launchError(String(error));
+    return resume ? rejectLaunch(launchError(String(error))) : launchError(String(error));
   }
-  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task, definition.mcp_servers ?? [], standingBrief, callerToken);
-  if (place.harness === 'pi') return dispatchPi(job, definition, place, task);
+  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task, definition.mcp_servers ?? [], standingBrief, options);
+  if (place.harness === 'pi') return dispatchPi(job, definition, place, task, resume);
   try { return await dispatchBro(job, task); }
   catch (error) { return launchError(String(error)); }
 }
@@ -2266,9 +2287,80 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
 function ticketGuide(args: Args): boolean {
   return args.op === undefined || args.op === 'guide';
 }
+async function resumeJob(current: Job, status: JobStatus, row: JobRow, message: string,
+  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean) {
+  const dir = directory(current.job);
+  const fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  try {
+    // A land helper and the main MCP can both see the same closure. Only one may reopen it.
+    const lock = spawnSync('flock', ['-xn', '-E', '75', '3'], { stdio: ['ignore', 'ignore', 'ignore', fd], timeout: 1000 });
+    if (lock.status === 75) return { ok: false, code: 'worker_reopening' };
+    if (lock.status !== 0) return;
+    const latest = findJob(current.job);
+    const fresh = readCachedStatus(current.job).status;
+    if (!latest || latest.reaped_at !== current.reaped_at || !fresh || fresh.ended_at !== status.ended_at || fresh.state !== 'closed')
+      return { ok: false, code: 'worker_reopening' };
+    return await reopenJob(latest, fresh, row, message, matchKey, explicitKey, land, batch);
+  } finally { fs.closeSync(fd); }
+}
+
+async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: string,
+  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean) {
+  const { job: id, place } = current, dir = directory(id);
+  const until = resumeDeadline(current, status);
+  if (!until || Date.now() >= until || !place || (place.harness !== 'cli' && place.harness !== 'pi') ||
+      !fs.statSync(current.cwd, { throwIfNoEntry: false })?.isDirectory()) return;
+  const identity = resumeIdentity(current, status);
+  const role = registry(roleCwd(current)).roles().get(current.role);
+  if (!identity || !role) return;
+  const oldTask = activeTasks.get(id);
+  if (oldTask) sampleTask(oldTask);
+  const priorSession = slice(join(dir, jobFiles.session), 8192);
+  if (!priorSession || priorSession.truncated || fs.existsSync(join(dir, jobFiles.stopRequested)) ||
+      fs.existsSync(join(dir, jobFiles.closeRequested))) return;
+  const priorTurn = current.cli ? readTurn(dir) : null;
+  if (current.cli && !priorTurn) return;
+  const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
+  const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}),
+    recorded_at: new Date().toISOString(), exit_code: null as number | null, stderr_tail: '', resumed: true as const };
+  const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
+    send_outcomes: [...(current.send_outcomes ?? []), outcome] };
+  const taskEntry = taskClient && !land ? beginTask(next, row.report_mtime) : undefined;
+  // The reaper has finished the old tab. Publish a nonterminal status before replacing its ownership.
+  writeCreateStatus(dir, { state: 'working' });
+  save(next, true);
+  const result = await launchPlace(next, role, place, dir, message, undefined, undefined, { resume: { ...identity, message } });
+  if (result.preInput && !result.cleanupFailed) {
+    writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
+    if (priorTurn) saveTurn(dir, priorTurn);
+    writeCreateStatus(dir, status);
+    const touched = findJob(id);
+    save({ ...current, read_at: touched?.read_at ?? current.read_at, observed_at: touched?.observed_at ?? current.observed_at }, true);
+    if (taskEntry) releaseTask(taskEntry);
+    return;
+  }
+  const latest = findJobMutable(id) ?? next;
+  const recorded = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
+  recorded.exit_code = result.exit_code;
+  recorded.stderr_tail = result.stderr;
+  if (result.preInput) { // The failed launch still owns a tab; let the watcher retry cleanup.
+    writeCreateStatus(dir, { ...result.status, state: 'failed', exit_reason: launchReason(result), ended_at: new Date().toISOString() });
+  }
+  save(latest);
+  const ok = result.exit_code === 0;
+  if (ok && !taskClient && !land) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+  const continuation = 'resumed' as const;
+  if (batch) registerBatchTask(taskEntry, latest, ok);
+  else {
+    const task = finishTask(taskEntry, latest, ok, continuation);
+    if (task) return { ...task, job: id, continuation };
+  }
+  return { ok, sent: ok, job: id, continuation, ...(ok ? {} : { code: 'send_failed', stderr_tail: result.stderr }) };
+}
+
 async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean, land = false, batch = false) {
   const matchKey = explicitKey ?? derivedKey('send', id, message);
-  const current = findJobMutable(id);
+  let current = findJobMutable(id);
   if (!current) return { ok: false, code: 'job_not_found' };
   if (current.role === 'sonic') return { ok: false, code: 'not_continuable' };
   const dir = directory(current.job);
@@ -2280,17 +2372,46 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     const outcome = 'legacy' in duplicate ? undefined : duplicate;
     if (outcome?.exit_code === 0 && !taskClient) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
     return outcome?.exit_code === 0
-      ? { ok: true, sent: false }
+      ? { ok: true, sent: false, ...(outcome.resumed ? { job: id, continuation: 'resumed' as const } : {}) }
       : { ok: false, sent: false, code: 'send_failed',
           ...(outcome && { key: outcome.key, exit_code: outcome.exit_code, stderr_tail: outcome.stderr_tail }) };
   }
-  const { row, status, statusAt } = readRow(current);
+  let { row, status, statusAt } = readRow(current);
+  const closingPi = current.resume_s !== undefined && row.state === 'idle_grace' && !row.open_questions && piReportSettlement(dir, current, status);
+  if (!workingOnly && !row.open_questions && (closingPi || (closedReport(current, status) && !current.reaped_at && primary(id)))) {
+    ensureWatcher();
+    // Never replace a SESSION receipt while the watcher still owns that tab and process tree.
+    const ready = await waitUntilFs({ targets: [{ dir }], timeoutMs: 30_000, check: ({ timedOut }) => {
+      const latest = findJobMutable(id);
+      if (!latest || latest.reaped_at || timedOut) return { done: true, value: latest?.reaped_at ? latest : null };
+      return { done: false };
+    } });
+    if (!ready) return { ok: false, code: 'worker_closing' };
+    current = ready;
+    ({ row, status, statusAt } = readRow(current));
+  }
   const state = row.state ?? '';
-  if (!workingOnly && !land && ((state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) ||
-      ((state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) && piReadSettlement(dir, current, status)))) {
-    const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: derivedKey('repair', id, matchKey) },
+  const repairKey = derivedKey('repair', id, matchKey);
+  if (!workingOnly && !row.open_questions && closedReport(current, status)) {
+    if (!land) {
+      const prior = jobs().find((job) => job.request_key === repairKey &&
+        (explicitKey !== undefined || withinRetryWindow(job.created_at, now)));
+      if (prior) return { ...created(prior), continued_as: prior.job, continuation: 'repair' as const };
+    }
+    if (status && current.reaped_at) {
+      const resumed = await resumeJob(current, status, row, message, matchKey, explicitKey, land, batch);
+      if (resumed) return resumed;
+    }
+    if (land) return { ok: false, code: 'not_continuable' };
+  }
+  if (!workingOnly && !land && !row.open_questions && (closedReport(current, status) ||
+      (state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) ||
+      (current.resume_s === undefined && (state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) &&
+        piReportSettlement(dir, current, status)))) {
+    const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: repairKey },
       process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined }, batch);
-    return 'job' in repair && repair.job ? { ...repair, continued_as: repair.job } : repair;
+    const continued_as = 'job' in repair ? repair.job : isTaskReply(repair) ? tasks.get(repair.taskId)?.job : undefined;
+    return { ...repair, continuation: 'repair' as const, ...(continued_as ? { continued_as } : {}) };
   }
   const agent = primary(current.job);
   // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
@@ -2381,7 +2502,7 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
   if (row.open_questions || !['idle_grace', 'done', 'closed'].includes(row.state ?? ''))
     throw Error(`Repair source needs attention: ${id}`);
   const deadline = typeof status?.idle_deadline_at === 'string' ? Date.parse(status.idle_deadline_at) : Infinity;
-  if (row.state === 'idle_grace' && Date.now() < deadline) {
+  if (closedReport(source, status) || (row.state === 'idle_grace' && Date.now() < deadline)) {
     const sent = await keyLock(`job:${id}`, () => sendJob(id, task, key, false, true));
     if ('sent' in sent && sent.sent) return id;
     if (!('code' in sent) || sent.code !== 'not_continuable') { releaseLandTurn(id, key); throw Error(`Repair send failed: ${id}`); }

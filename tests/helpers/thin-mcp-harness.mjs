@@ -40,6 +40,25 @@ export function fixture(t, inHerdr = true, probe = '', watcherTickMs, worker = f
   return startFixture(t, typeof inHerdr === 'object' ? inHerdr : { inHerdr, probe, watcherTickMs, worker });
 }
 
+// These fixtures exercise the lifecycle of receipts published before close-at-report arrived.
+const legacyReceiptProbe = `
+{
+  const stringify = JSON.stringify;
+  JSON.stringify = (value, ...args) => {
+    if (value && typeof value === 'object' && /^j[0-9a-f]{16}$/.test(value.job) &&
+        'dispatch_exit_code' in value && 'resume_s' in value) {
+      const { resume_s, ...oldReceipt } = value;
+      return stringify(oldReceipt, ...args);
+    }
+    return stringify(value, ...args);
+  };
+}
+`;
+export function legacyFixture(t, inHerdr = true, probe = '', watcherTickMs, worker = false) {
+  const opts = typeof inHerdr === 'object' ? inHerdr : { inHerdr, probe, watcherTickMs, worker };
+  return startFixture(t, { ...opts, probe: [opts.probe, legacyReceiptProbe].filter(Boolean).join('\n') });
+}
+
 // Routing tests keep their closed PATH and real supervisor clock, without the socket simulation.
 export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
@@ -152,7 +171,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   const has = (name) => fs.existsSync(join(env.HOME, name));
   const push = (client, state) => {
     client.state = state;
-    client.socket.write(JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'w4E:p2', workspace_id: 'w4E', agent_status: state } }) + '\n');
+    client.socket.write(JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: client.pane, workspace_id: 'w4E', agent_status: state } }) + '\n');
   };
   async function startCliSocket() {
     if (cliSocket || fs.existsSync(env.HERDR_SOCKET_PATH)) return;
@@ -164,7 +183,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         socketRequests.push(req);
         const reply = (result) => socket.write(JSON.stringify({ id: req.id, result }) + '\n');
         if (req.method === 'events.subscribe') {
-          client.supervisor = req.params.subscriptions.some((sub) => sub.type === 'pane.agent_status_changed');
+          client.pane = req.params.subscriptions.find((sub) => sub.type === 'pane.agent_status_changed')?.pane_id;
+          client.supervisor = !!client.pane;
           subscribers.add(client); reply({ type: 'subscribed' });
         }
         else if (req.method === 'agent.get') {
@@ -444,18 +464,26 @@ export function declareDone(f, job, cli = true) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-export async function publishPiGrace(job, worker, writeReport = true) {
+export async function publishPiGrace(job, worker, writeReport = true, session = {}) {
   const dir = job.task_dir;
   const report = join(dir, 'report.md');
   if (writeReport) writeFixtureFile(report, 'Synthetic settled pi report.\n');
   const now = Date.now();
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({
-    version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', output_written: true,
+    version: 1, task_dir: dir, slot: 'primary', ...session, state: 'idle_grace', output_written: true,
     ...(worker ? { pid: worker.pid, pid_start_time: procStat(worker.pid).start } : {}),
     settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 8000).toISOString(),
   }));
   const mtime = fs.statSync(report).mtimeMs;
   await until(() => Date.now() > mtime); // hud_read records integer milliseconds.
+}
+
+export async function publishLegacyPiGrace(job, worker, writeReport) {
+  const file = join(job.task_dir, 'job.json');
+  const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+  delete receipt.resume_s;
+  writeFixtureFile(file, JSON.stringify(receipt));
+  return publishPiGrace(job, worker, writeReport);
 }
 
 export const fallbackPlaces = [

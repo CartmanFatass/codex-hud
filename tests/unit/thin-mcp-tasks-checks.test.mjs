@@ -33,6 +33,7 @@ import {
   cliToken,
   declareDone,
   publishPiGrace,
+  publishLegacyPiGrace,
   fallbackRole,
   writeCliRole,
   cliState,
@@ -284,7 +285,7 @@ test('MCP tasks: a fresh server cannot cancel old tasks; legacy and failed dispa
 const checkFile = (job) => join(job.task_dir, 'checks.json');
 const checkReceipt = (job) => fs.existsSync(checkFile(job)) ? JSON.parse(fs.readFileSync(checkFile(job), 'utf8')) : null;
 
-test('HUD checks: CLI declaration starts ordered checks, delays reap and announces results', { timeout: 30000 }, async (t) => {
+test('HUD checks: CLI declaration starts ordered checks and announces results after the worker closes', { timeout: 30000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -306,14 +307,17 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic report without a declaration yet.\n');
     await new Promise((done) => setTimeout(done, 120));
     assert.equal(checkReceipt(job), null);
+    await until(() => cliState(dir)?.pid === worker.pid);
     declareDone(f, job);
+    f.push(job.job, 'done');
     await until(() => checkReceipt(job)?.state === 'running' && fs.existsSync(join(f.root, 'check-shell')));
     const { pid: helper } = checkReceipt(job);
     const shell = Number(fs.readFileSync(join(f.root, 'check-shell'), 'utf8'));
     const watchPid = Number(fs.readFileSync(pidFile, 'utf8'));
     await until(() => lines.some((line) => line.includes('closed') && line.includes('report')), 6500);
-    assert.ok(procStat(watchPid) && procStat(helper) && procStat(worker.pid));
-    assert.equal(reapAttempts(f, job), 0);
+    assert.ok(procStat(watchPid) && procStat(helper));
+    await until(() => readCloseReaped(job) && (!procStat(worker.pid) || procStat(worker.pid)?.state === 'Z'));
+    assert.equal(reapAttempts(f, job), 1);
     assert.equal(readCloseQuit(f, job), false);
     const held = await get();
     assert.equal(held.status, 'working');
@@ -361,7 +365,7 @@ test('HUD checks: Pi continuation and report rewrite make results stale; a runni
   const checks = ['echo ran >> check-count; if [[ -f hold-check ]]; then for ((i=0; i<100; i++)); do [[ -f release-check ]] && break; sleep .05; done; test -f release-check; fi'];
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic checks and repair.', checks });
   assert.equal(checkReceipt(job), null);
-  await publishPiGrace(job);
+  await publishLegacyPiGrace(job);
   await until(() => checkReceipt(job)?.state === 'done', 10000); // The check is a shell run; under full-suite load 4 s is tight.
   const previous = checkReceipt(job);
   assert.equal(previous.report_sig, reportSignature(job.task_dir));

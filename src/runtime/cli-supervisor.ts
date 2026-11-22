@@ -1,7 +1,7 @@
 /** One CLI job: pushed facts -> pure judge -> effects. No subprocesses or STATUS writes at rest. */
 import { recordFailureExhaustion } from '../roles/roster.js';
 import { decideQuietJob } from '../mcp/quiet-decision.js';
-import { cliWorkerTools, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
+import { cliWorkerTools, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
 import { procStat } from '../utils/proc.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { reportWasRead } from '../collectors/thin-jobs.js';
@@ -53,7 +53,8 @@ export function main() {
     settled_at: null, idle_deadline_at: null,
     ended_at: null, exit_reason: null, error: null, supervisor_pid: process.pid,
   };
-  let prev: Judgment | null = null, status: string | null = null, agentMissing = false, workingAt: number | null = null, tabClosed = false;
+  let prev: Judgment | null = null, status: string | null = null, statusAt: number | null = null;
+  let agentMissing = false, workingAt: number | null = null, tabClosed = false;
   let turn = readTurn(dir) ?? writeTurn(dir), done: DoneReceipt | null = null, signature: string | null = null, stamp: string | null | undefined;
   let stop = false, close = false, openQuestions = false, diskDirty = true, sendInFlight = false;
   let socket: ReturnType<typeof createConnection>, lines: ReturnType<typeof createInterface>;
@@ -133,7 +134,8 @@ export function main() {
     tickTimer = setTimeout(tick, 30000);
   }
   function observeStatus(next: string | null) {
-    if (next === 'working' && (status !== 'working' || (workingAt ?? -Infinity) < Date.parse(turn.sent_at))) workingAt = Date.now();
+    statusAt = Date.now();
+    if (next === 'working' && (status !== 'working' || (workingAt ?? -Infinity) < Date.parse(turn.sent_at))) workingAt = statusAt;
     status = next;
   }
   async function seed(signal: AbortSignal) {
@@ -204,7 +206,8 @@ export function main() {
     const nextStamp = st ? `${st.mtimeMs}:${st.ctimeMs}:${st.ino}:${st.size}` : null;
     if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
     return { turn, reportSig: signature, reportRead: reportWasRead(readAt, st?.isFile() ? st.mtimeMs : null),
-      alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), status,
+      closeAtReport: job.resume_s !== undefined,
+      alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), status, statusAt,
       liveChild: checkChild ? sampleChild() : null,
       sonic: sonicChildren(dir),
       stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
@@ -318,6 +321,15 @@ export function main() {
         if (prompted) { wake(); return; }
         if (decision.action === 'fail') decision.failReason = recordFailureExhaustion(hudHome, bundled, dir, job, decision.failReason!).reason;
         next = judge(prev, { ...observed, decision }, Date.now());
+      }
+      // For report closure the watcher owns the tab; capture ancestry before publishing the terminal state.
+      if (next.exitReason === REPORT_SETTLED_EXIT) {
+        diskDirty = true;
+        const fresh = collect(false);
+        if (sendInFlight || fresh.turn.seq !== observed.turn.seq || fresh.turn.sent_at !== observed.turn.sent_at ||
+            fresh.reportSig !== observed.reportSig || fresh.done?.at !== observed.done?.at || fresh.openQuestions ||
+            fresh.sonic.open || fresh.sonic.uncollected.length || fresh.stop || fresh.close || fresh.tabClosed) { wake(); return; }
+        rememberWorkerTree(dir, current);
       }
       // Settlement is independent of /quit delivery; the global watcher owns cleanup and retries.
       let deferredQuit = false;

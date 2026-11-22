@@ -136,16 +136,16 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 {"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh","timeout_s":900}}
 ```
 
-HUD 排队取得 `main-checkout` 租约，在新的分离工作树中运行 `gate` 命令。如果任务分支已经基于当前基分支顶端，直接测试任务的原始提交；否则只摘取从基分支不可达的提交。可选 `wrapper` 是相对主检出的可执行文件，在目标工作树中接收 `sh -c <命令>`。每条 `gate` 和 `after` 命令（包括立即重跑）都有独立的 `timeout_s` 时限，默认 900 秒。达到时限后，HUD 终止该命令的进程组，记录 `timeout` 和最后 40 行输出，释放租约，不派发修复。某条 gate 命令失败（包括 Node.js 报告单项测试超时）时，HUD 立即在同一工作树重跑一次。如果输出包含 Node.js 的 `test at <文件>:…` 失败位置，HUD 通过同一个 wrapper 用 `node --test` 只重跑这些文件；否则重跑整条命令。重跑通过则继续，并在通知中列出能识别的偶发失败测试名称。若仍失败，或摘取提交时发生冲突，HUD 把失败步骤和最后 40 行输出发给源任务，要求它变基到当前基分支、修复并提交。可以在宽限期内继续的任务会收到续发消息；否则在源工作树创建同角色的本地任务，并记录 `retry_of`。修复期间释放主检出租约；收到新的结算结果后，重新创建集成工作树并从头运行 gate。最多修复两次；工人一旦提问，问题照常送达主会话，本流程停止。
+HUD 排队取得 `main-checkout` 租约，在新的分离工作树中运行 `gate` 命令。如果任务分支已经基于当前基分支顶端，直接测试任务的原始提交；否则只摘取从基分支不可达的提交。可选 `wrapper` 是相对主检出的可执行文件，在目标工作树中接收 `sh -c <命令>`。每条 `gate` 和 `after` 命令（包括立即重跑）都有独立的 `timeout_s` 时限，默认 900 秒。达到时限后，HUD 终止该命令的进程组，记录 `timeout` 和最后 40 行输出，释放租约，不派发修复。某条 gate 命令失败（包括 Node.js 报告单项测试超时）时，HUD 立即在同一工作树重跑一次。如果输出包含 Node.js 的 `test at <文件>:…` 失败位置，HUD 通过同一个 wrapper 用 `node --test` 只重跑这些文件；否则重跑整条命令。重跑通过则继续，并在通知中列出能识别的偶发失败测试名称。若仍失败，或摘取提交时发生冲突，HUD 把失败步骤和最后 40 行输出发给源任务，要求它变基到当前基分支、修复并提交。修复与 `hud_send` 使用相同的原生会话恢复窗口；若无法继续源任务，则在源工作树创建同角色的本地任务，并记录 `retry_of`。修复期间释放主检出租约；收到新的结算结果后，重新创建集成工作树并从头运行 gate。最多修复两次；工人一旦提问，问题照常送达主会话，本流程停止。
 
 通过后，若任务的 `ticket`（`feature/NN`）对应本地工单，HUD 在集成工作树中将工单更新并入最后一个已测试的提交。若工单写明 `**Owner try:** no`，则标为 `done`；若为 `yes` 或省略此字段，则标为 `ready-for-human`。HUD 勾选验收项，并在评论里记录已测试的 SHA 和通过命令数/总数。此操作不更新 `STATE.md`，也不使用主检出的暂存区。仅当涉及路径干净且主检出仍位于原基分支顶端，或基分支新增提交均未触及本次集成的路径时才快进；后一种情况下，HUD 会在新的分离工作树中把已测试的提交摘取到新的基分支顶端，并重新应用工单更新（若存在路径重叠或任何冲突则拒绝），在通知中说明此次重放，并不重跑 gate 直接快进。然后在主检出运行 `after`，按配置把当前基分支 HEAD 推送到 `origin`。快进后基分支可以继续前进，但 HEAD 必须仍包含已落地的提交（包括并入的工单更新），且落地所涉及的路径必须干净。最后移除集成工作树；若任务工作树干净且仍位于本次流程实际集成的源提交（即使摘取后的补丁与源提交不同），也一并移除任务工作树和任务分支。集成完成后若清理失败，流程仍以完成结束并附带 `cleanup_note`，不会标为失败。快进之后失败仍会报告已落地的 SHA。
 
 调用立即返回流程 ID（MCP-task 客户端获得一个覆盖全程的任务）。再次调用 `hud_land` 时，若流程仍在进行或基分支已快进，则返回原流程；若在快进前失败或取消，则启动新流程，保留原 ID 下的记录，并在取得租约后清理旧的集成工作树。`hud_read({job: "<流程 ID>"})` 可查询任一次尝试的状态和当前步骤。若另一个落地流程持有租约，`hud_read` 与面板卡片会显示该流程；若它正在运行门禁，还会显示步骤编号和已耗用的分钟数。每次尝试结束时只发一条通知，给出 SHA 或失败步骤和最后 40 行输出，并逐行列出每次修复。流程记录在 `$HUD_HOME/flows/`，watcher 重启不会重复集成，执行进程意外退出时报告中断。
 
-角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、以及可选角色 `pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。可选角色默认停用：`hud_roster` 不列出，`hud_create` 拒绝派发并提示如何启用。`$HUD_HOME/roles` 中定义同名角色的有效文件会启用该角色，除非显式开关另有设置。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
+角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（CLI 静默任务宽限，默认 600 秒）、可选 `resume_s`（默认 1620 秒，`0` 禁用原生恢复）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、以及可选角色 `pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。可选角色默认停用：`hud_roster` 不列出，`hud_create` 拒绝派发并提示如何启用。`$HUD_HOME/roles` 中定义同名角色的有效文件会启用该角色，除非显式开关另有设置。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
-`agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志
-和 `args`。不传 home、会话或配置标志，也不设这些环境变量，分发时也不替 CLI 信任目录：
+`agy models`、`claude --help` 或 `codex -m`。HUD 传入模型标志、强度标志、该 CLI 的权限绕过标志、
+`args` 和 HUD 工作者绑定。恢复时传入原生会话标识，仍使用已配置的 CLI 主目录。分发时不替 CLI 信任目录：
 出现信任对话框则拒绝，失败原因写明 `hud trust <cwd>`。会话留在各 CLI 自己的存储里。
 herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
@@ -181,13 +181,13 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 已读报告不再打开正文，而是返回 `report_unchanged: true`。`mode: "full"`（或 `full: true`）返回报告正文（最多 64 KiB）和 `report_path`，即使已读也会返回，同时保留原有的元数据、进度、检查和工作树诊断。
 用 `jobs: [id, …]` 代替 `job` 可按输入顺序收取 `jobs` 结果数组，所有任务使用同一模式；找不到编号只影响对应条目。
 `detail: true` 可在读取时附带启动诊断；只想检查时用 `hud_peek`。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
-返回报告摘要或正文时都会记录 `read_at`（包括工作中和空闲宽限期），不代表验收。已结算的 pi 或 CLI 工作者在当前回合的报告被读取后关闭
-（`closed after report read`）；续写后读取上一回合的报告不会关闭工作者，未读报告仍保留原有的空闲期限。读取失败或受阻状态会单独标记为已查看。
+返回报告摘要或正文时都会记录 `read_at`，不代表验收。当前回合有效声明报告且回合结束后，即使报告未读也关闭工作进程和窗格。
+CLI 声明后 120 秒仍未结束时，交由主会话处理，不强制中断。未回答的问题、未结束或未收取结果的 Sonic 子任务会阻止关闭。
+此变更前已启动的任务仍使用原有宽限期。读取失败或受阻状态会单独标记为已查看。
 工作者调用 `hud_report` 时可附带单行 `summary`（最多 160 个 Unicode 码点）和 `files`（最多 50 个相对路径），不在对话中重复报告正文。
-`hud_send` 给工作中的 pi 或 CLI 任务排队消息；角色允许继续且报告未读时，也可在空闲宽限期内续写。
-若任务因报告已读而关闭，单发会开启修正任务，引用原简报和报告，并在 `continued_as` 返回新任务 ID。
-续写托管工作树任务，或用 `retry_of` 重试失败的续写任务（且未覆盖 `cwd` 或 `isolation`）时，若源工作树仍存在且工作区干净，HUD 会复用该工作树；否则新建工作树。
-用 `jobs` 代替 `job` 时，只把同一段文字发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不启动修正任务。用 `messages: [{job, text, message_key?}]` 可在一次调用中给多个任务发送各自的消息（包括空闲宽限续写和读后关闭修复），按输入顺序返回 `messages` 且错误逐项隔离。
+`hud_send` 给工作中的 pi 或 CLI 任务排队消息。任务报告后关闭时，HUD 按时间与原生会话可用性自动选择：在 `resume_s` 内可在同一检出中新开窗格，恢复同一 pi、Claude、Codex 或 Antigravity 会话，开启同一任务的新回合（`continuation: "resumed"`）。超时或无法恢复时，启动引用原简报和报告的修正任务（`continuation: "repair"`、`continued_as` 为新任务 ID）。
+修正托管工作树任务，或用 `retry_of` 重试失败的修正任务（且未覆盖 `cwd` 或 `isolation`）时，若源工作树仍存在且工作区干净，HUD 会复用该工作树；否则新建工作树。
+用 `jobs` 代替 `job` 时，只把同一段文字发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不恢复已关闭任务。用 `messages: [{job, text, message_key?}]` 可在一次调用中给多个任务发送各自的消息（包括原生恢复和关闭后修复），按输入顺序返回 `messages` 且错误逐项隔离。
 显式 `message_key` 始终用于去重；省略时，只有 10 分钟内发给同一任务的相同消息才视为重试。
 CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
 CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得知。
@@ -220,12 +220,11 @@ pi 工作者不会启动此监听。调用者有窗格时，`hud_roster` 和 `hu
 任务是 `$HUD_HOME/jobs/<job>/` 中的普通文件。pi 历史保存在
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`，任务的 `sessions/` 链接到主代理／助手文件。
 CLI 任务的监督进程只观察；只有事实能结束任务：记录的进程号消失（或被替换）、标签页关闭、输入前派发被拒（`failed`；
-磁盘上有新报告则 `closed`）。每次派发和 `hud_send` 开始一个回合（`turn.json`）。对于从未提交完成回执的回合，在 `advisory` 模式下，
-herdr 不在 `working`、新报告稳定 10 秒且本回合启动的后代进程均已退出时，回合才结算。仍存活的本回合后代进程也会推迟安静任务决策和自动关闭。
-匹配的 `hud-progress --done` 回执可以直接结算；改写报告后必须提交新的匹配回执。如果回合安静达到角色的宽限期仍没有新回执，
-任务转为 `waiting_orchestrator`，不结算也不调用决策 API；主会话可用 `hud_send` 继续或用 `hud_close` 停止。
-pi 的读后自动关闭也按最近一次派发或发送判断。
-可继续的 CLI 工作者在报告被读取或期限届满时结束空闲宽限；两种情况都通过 `/quit` 和 watcher 回收，因到期关闭时原因为 `settled`。herdr 状态本身不会让仍在运行的任务判为失败。
+磁盘上有新报告则 `closed`）。CLI 每次派发和 `hud_send` 都开始一个回合（`turn.json`）。`hud_report` 或备用的
+`hud-progress --done` 将报告签名绑定到当前回合。未声明的报告按静默规则处理，本回合仍存活的子进程会推迟该规则。
+续写会使旧回执失效；改写已声明的报告必须提交新回执，否则安静达到角色宽限期后转为 `waiting_orchestrator`，不结算也不调用决策 API。
+终端输出不会影响回执。回执匹配且 CLI 回合已结束（或 pi 已原生结算并写出新报告）后，残留进程不阻止关闭；
+未回答的问题和未收取的 Sonic 结果仍会阻止关闭。herdr 状态本身不会让仍在运行的任务判为失败。
 回合安静超过空闲宽限且无报告时，做一次决策 API 选择，只在固定动作中选（继续等、一次固定的写报告提示、屏幕上有配额行才 `failed`、
 交给主会话）；置信度低于 0.8 或出错则交给主会话。不确定的一律 `waiting_orchestrator` 并写明原因。监督进程由 herdr 推送、
 文件变化和自身截止时间唤醒，另有每 30 秒一次重读状态；STATUS 只在行变化时写。`hud_create`、`hud_read`、`hud_send`、`hud_respond` 或 `hud_land` 会按需启动 watcher，后者经 `pi-role-reap` 回收已结束任务，

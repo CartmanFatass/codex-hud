@@ -260,6 +260,34 @@ test('red gate continues the source in grace; its rebased fix passes on a fresh 
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
 });
 
+test('a red gate resumes the closed source session in its managed checkout', async t => {
+  const f = await checkout(t, ['grep fixed tracked || { echo repair-needed; exit 1; }']);
+  const dir = jobDir(f), file = join(f.env.PI_CODING_AGENT_DIR, 'synthetic.jsonl');
+  const id = 'synthetic-land-session', now = new Date().toISOString();
+  writeFixtureFile(file, JSON.stringify({ type: 'session', id, cwd: f.worktree }) + '\n');
+  const jobFile = join(dir, 'job.json');
+  const source = JSON.parse(fs.readFileSync(jobFile));
+  writeFixtureFile(jobFile, JSON.stringify({ ...source, reaped_at: now, resume_s: 1620,
+    place: { harness: 'pi', pi_role: 'implementer' } }));
+  writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=w4E:t1\nLEFT=w4E:p1\nPRIMARY=source-agent\n');
+  writeFixtureFile(join(dir, 'report.md'), 'Synthetic original report.');
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true,
+    exit_reason: 'closed after declared report', settled_at: now, ended_at: now, session_id: id, session_file: file }));
+  const { flow } = await f.call('hud_land', { job });
+  assert.equal(await repair(f, flow, 0), job);
+  const cmds = f.commands();
+  assert.ok(cmds.find(({ args }) => args[0] === 'agent' && args[1] === 'start').args.includes(file));
+  assert.ok(cmds.find(({ args }) => args[0] === 'tab' && args[1] === 'create').args.includes(f.worktree));
+  const receipt = JSON.parse(fs.readFileSync(jobFile));
+  assert.deepEqual(receipt.worktree, source.worktree);
+  assert.equal(receipt.send_outcomes.at(-1).resumed, true);
+  assert.equal(JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'))).session_id, id);
+  fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
+  await until(() => f.flowState(flow).state === 'completed', 15000);
+  assert.equal(f.flowState(flow).repairs[0].outcome, 'gate passed');
+});
+
 test('a persistently red gate creates same-role repairs and hands back once after two', async t => {
   const f = await checkout(t, ['echo run >> "$HOME/count"; seq 50; exit 7']);
   // The role and the original context come from the registered main checkout, not the worker's copy.

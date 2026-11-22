@@ -15,6 +15,7 @@ import {
   workerFor,
   entry,
   fixture,
+  readCloseReaped,
   workerClient,
   resultValue,
   until,
@@ -659,7 +660,8 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   assert.equal(firstMeta.summary, 'Synthetic result.');
   assert.deepEqual(firstMeta.files, ['src/synthetic.ts']);
   assert.equal(fs.statSync(meta).mode & 0o777, 0o600);
-  await until(() => cliState(dir)?.state === 'idle_grace');
+  // The worker is still in its original chat turn; an explicit continuation invalidates its token.
+  await until(() => cliState(dir)?.state === 'working');
   assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).sent, true);
   const second = cliToken(dir);
   assert.notEqual(first, second);
@@ -678,6 +680,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
   test(`an agy CLI worker settles the current turn through ${mode}`, { timeout: 15000 }, async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+    writeFixtureFile(join(f.env.HOME, 'tab-seq'), '1');
     writeCliRole(f, 'agy-worker', 20, true, 'agy');
     const job = await f.call('hud_create', { role: 'agy-worker', request_key: 'agy-report', task: 'Synthetic agy task.' });
     assert.equal(job.agent, `${job.job}-primary`, JSON.stringify(job));
@@ -729,13 +732,16 @@ for (const mode of ['hud_report', 'shell fallback']) {
     const done = receipt();
     assert.equal(turnToken(done), first);
     assert.equal(done.report_sig, reportSignature(dir));
-    await until(() => cliState(dir)?.state === 'idle_grace');
+    f.push(job.job, 'idle');
+    await until(() => cliState(dir)?.state === 'closed' && readCloseReaped(job));
 
-    assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).sent, true);
+    assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).continuation, 'resumed');
+    const resumed = f.commands().filter(({ args }) => args[1] === 'start').at(-1).args;
+    assert.equal(resumed[resumed.indexOf('--conversation') + 1], session);
     const second = cliToken(dir);
     assert.notEqual(first, second);
     assertPrompt(second);
-    await until(() => cliState(dir)?.state === 'working');
+    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.pid);
     if (mode === 'shell fallback') writeFixtureFile(report, 'Synthetic second agy report.\n');
     assert.match(await declare(first, 'Stale agy report.\n'), /use the turn token from the prompt you are answering/);
     assert.deepEqual(receipt(), done);
@@ -745,7 +751,8 @@ for (const mode of ['hud_report', 'shell fallback']) {
     assert.equal(receipt().report_sig, reportSignature(dir));
     assert.equal(readReportMeta(dir).summary, 'Synthetic agy result.');
     assert.deepEqual(readReportMeta(dir).files, ['src/synthetic.ts']);
-    await until(() => cliState(dir)?.state === 'idle_grace' && cliState(dir)?.output_written === true);
+    f.push(job.job, 'idle');
+    await until(() => cliState(dir)?.state === 'closed' && cliState(dir)?.output_written === true);
     assert.equal(cliState(dir).agent_session_id, session);
   });
 }

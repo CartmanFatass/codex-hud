@@ -1,6 +1,6 @@
 # 01: A worker closes at its report and can be resumed for 27 minutes
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Blocked by:** none
 **Owner try:** no
 

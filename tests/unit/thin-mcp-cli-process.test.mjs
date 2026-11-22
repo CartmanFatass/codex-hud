@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { procStat } from '../../dist/mcp/cli-judge.js';
 import {
-  fixture,
+  legacyFixture as fixture,
   until,
   fakeCliWithChild,
   statusQueries,

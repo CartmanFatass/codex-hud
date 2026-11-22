@@ -31,15 +31,17 @@ export function withDonePrompt(text: string, bundled: string, dir: string, turn:
 }
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?: boolean; send?: Turn['send']; callerToken?: string } = {}): Turn {
+export function writeTurn(dir: string, options: { by?: 'hud'; restarted?: boolean; reportPromptSent?: boolean; send?: Turn['send']; callerToken?: string } = {}): Turn {
   const prev = readTurn(dir);
-  const sent = options.reportPromptSent || prev?.report_prompt_sent;
+  const sent = options.reportPromptSent || (!options.restarted && prev?.report_prompt_sent);
+  const sent_at = new Date().toISOString();
+  const initial = options.restarted ? sent_at : prev && firstInput(prev);
   const turn: Turn = {
     seq: (prev?.seq ?? 0) + 1,
-    sent_at: new Date().toISOString(),
+    sent_at,
     report_sig: reportSignature(dir),
     ...(sent ? { report_prompt_sent: true } : {}),
-    ...(prev && firstInput(prev) ? { first_sent_at: firstInput(prev) } : {}),
+    ...(initial ? { first_sent_at: initial } : {}),
     ...(options.callerToken ? { caller_token: options.callerToken } : options.by === 'hud' && prev ? { caller_token: prev.caller_token ?? turnToken(prev) } : {}),
     ...(options.send ? { send: options.send } : {}),
   };
@@ -155,13 +157,16 @@ export interface Judgment {
   declared?: boolean;
 }
 export const REPORT_READ_EXIT = 'closed after report read';
+export const REPORT_SETTLED_EXIT = 'closed after declared report';
 
 export interface Facts {
   turn: Turn;
   reportSig: string | null;
   reportRead: boolean;
+  closeAtReport?: boolean; // Jobs launched before close-at-report keep their original grace.
   alive: boolean | null;
   status: string | null;
+  statusAt?: number | null;
   liveChild: boolean | 'unknown' | null; // null: not sampled yet
   sonic?: { open: boolean; uncollected: string[] };
   stop: boolean;
@@ -238,6 +243,16 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     next.quietHandled = false;
     next.decisionWait = false;
   }
+  if (facts.closeAtReport && declared) {
+    const declaredAt = Date.parse(done.at), due = declaredAt + 120_000;
+    const sentAt = Date.parse(facts.turn.sent_at);
+    const ended = (facts.status === 'done' || facts.status === 'idle') &&
+      (facts.statusAt ?? now) >= sentAt && ((facts.workingAt ?? -Infinity) >= sentAt || (facts.statusAt ?? now) >= declaredAt);
+    if (ended && collectSonic) return { ...next, state: 'working', action: 'collect-sonic' };
+    if (ended && now <= due) return end('closed', REPORT_SETTLED_EXIT);
+    if (now < due) return { ...next, state: 'working', wakeAt: due };
+    return { ...next, state: 'waiting_orchestrator', reason: 'declared report but turn has not ended' };
+  }
   if (next.state === 'idle_grace' && !collectSonic) {
     if (!readReport && now < next.deadline!)
       return { ...next, state: 'idle_grace', wakeAt: next.deadline };
@@ -249,11 +264,12 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   }
   const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at)
     && (facts.status === 'done' || facts.status === 'idle');
-  const quiet = declared || (facts.status !== 'working' && (facts.status !== null || report));
+  const legacyReport = report && !facts.closeAtReport;
+  const quiet = declared || (facts.status !== 'working' && (facts.status !== null || legacyReport));
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
-  if ((!report || awaitingReceipt) && facts.liveChild) next.quietSince = null;
+  if ((!legacyReport || awaitingReceipt) && facts.liveChild) next.quietSince = null;
   if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
-  if (report || collectSonic || awaitingReceipt) {
+  if (legacyReport || collectSonic || awaitingReceipt) {
     // A trusted turn end shortens stability, not the fresh-receipt grace or the outage window.
     if (!declared) {
       const stableMs = trustedEnd ? 2000 : 10_000;

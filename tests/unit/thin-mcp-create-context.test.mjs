@@ -12,9 +12,10 @@ import {
   withoutCallerLookups,
   fixture,
   enableOptionalRoles,
+  legacyFixture,
   until,
   reapAttempts,
-  publishPiGrace,
+  publishLegacyPiGrace,
   fallbackPlaces,
   fallbackRole,
   waitFixtureJob,
@@ -25,6 +26,8 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('launch thinking facts map CLI efforts before opening the worker; unknown models pass through', async (t) => {
   const f = await fixture(t);
+  // The probes leave their workers running; this test is about launch arguments, not admission.
+  writeFixtureFile(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { imp: 0 } }));
   fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
   for (const [on, model, thinking, expected] of [
     ['claude', 'opus', 'ultra', 'max'], ['agy', 'gemini-4-hydrogen-high', 'minimal', 'low'],
@@ -785,7 +788,7 @@ test('hud_create rejects invalid context paths, symlinks and binary content with
 test('hud_create references an upstream report without marking it read or closing its worker', async (t) => {
   const f = await fixture(t);
   const upstream = await f.call('hud_create', { role: 'imp', request_key: 'context-upstream', task: 'Synthetic upstream task.' });
-  await publishPiGrace(upstream);
+  await publishLegacyPiGrace(upstream);
   const receiptPath = join(upstream.task_dir, 'job.json');
   const original = fs.readFileSync(receiptPath, 'utf8');
   const downstream = await f.call('hud_create', {
@@ -1019,8 +1022,8 @@ test('thin create requires herdr without dispatching', { timeout: 10000 }, async
   assert.deepEqual(f.commands(), []);
 });
 
-test('hud_send to a just-closed CLI worktree job continues in the same worktree without agent_pane_busy', { timeout: 20000 }, async (t) => {
-  const f = await fixture(t), cwd = initRepo(f.root);
+test('hud_send to a read-closed CLI worktree job repairs in the same worktree without agent_pane_busy', { timeout: 20000 }, async (t) => {
+  const f = await legacyFixture(t), cwd = initRepo(f.root);
   fs.chmodSync(f.env.HUD_HOME, 0o700);
   fs.writeFileSync(join(cwd, '.gitignore'), 'build/\n');
   git(cwd, 'add', '.gitignore');
@@ -1088,7 +1091,7 @@ test('hud_send to a just-closed CLI worktree job continues in the same worktree 
 });
 
 test('retry_of a failed continuation keeps the source worktree and falls back when dirty or removed', { timeout: 20000 }, async (t) => {
-  const f = await fixture(t), cwd = initRepo(f.root);
+  const f = await legacyFixture(t), cwd = initRepo(f.root);
   fs.chmodSync(f.env.HUD_HOME, 0o700);
   const trust = join(f.env.HOME, '.grok', 'trusted_folders.toml');
   fs.appendFileSync(trust, `\n[folders.${JSON.stringify(cwd)}]\ntrusted = true\n`);

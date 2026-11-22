@@ -10,7 +10,7 @@ import {
   cardText,
   withoutHint,
   withoutCallerLookups,
-  fixture,
+  legacyFixture as fixture,
   until,
   assertCliStatus,
   cliState,

@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { fixture, publishPiGrace, rpcClient, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
+import { fixture, legacyFixture, publishPiGrace, rpcClient, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { reapFixtureProcesses, stopChild, trackFixture } from '../helpers/process-cleanup.mjs';
 
 test('a rebuild drains overlapping calls and a broken candidate leaves the old server connected', { timeout: 10000 }, async (t) => {
@@ -66,7 +66,8 @@ test('one connection and watcher keep their work across two published generation
   const fastTick = `if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
     const interval = globalThis.setInterval; globalThis.setInterval = (fn, ms) => interval(fn, ms === 30000 ? 100 : ms);
   }`;
-  const f = await fixture(t, { mcpEntry: join(bin, 'hud-mcp.mjs'),
+  // Keep the watcher alive after task settlement so the same PID can reload again.
+  const f = await legacyFixture(t, { mcpEntry: join(bin, 'hud-mcp.mjs'),
     probe: `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify('data:text/javascript,' + encodeURIComponent(fastTick))};` });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const rpc = taskRpc(f.rpc);
