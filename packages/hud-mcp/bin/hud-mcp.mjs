@@ -24,7 +24,7 @@ try {
   const url = new URL(entry, import.meta.url);
   let stamp, current;
   await withDistLock(async () => {
-    current = await openGeneration(url, undefined, true);
+    current = await openGeneration(url);
     stamp = buildStamp();
   });
   await current.call('start');
@@ -42,11 +42,11 @@ try {
       });
       const started = await next.call('start', state);
       await current.call('stop');
-      current.retire();
+      await current.retire();
       current = next;
       toolsChanged = typeof state?.toolsList === 'string' && typeof started?.toolsList === 'string' && state.toolsList !== started.toolsList;
     } catch (error) {
-      next?.retire();
+      await next?.retire();
       console.error(`hud-mcp: keeping previous build: ${error.message}`);
     }
     stamp = seen;
@@ -77,7 +77,7 @@ try {
     await switching;
     await Promise.all(calls);
     await current.call('stop');
-    current.retire();
+    await current.retire();
   });
 } catch (error) {
   process.stderr.write(`hud-mcp startup failed: ${error instanceof Error ? error.message : 'unknown_error'}\n`);
