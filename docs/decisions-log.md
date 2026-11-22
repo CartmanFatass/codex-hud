@@ -68,6 +68,12 @@ The owner approved the lean spec and resolved the draft questions:
   thinking high with a max preset and gets a sonic fact dossier first; CLI workers load only the HUD MCP plus
   role-named servers and get instructions as system prompt with short briefs inline. frontend-imp stays
   cli:claude claude-sonnet-5-5 xhigh (earlier neon dispatches were one-off mistakes).
+- **D-2026-11-22-19** (§5 MCP-ORCH): Owner 2026-11-22 asked that the orchestrator stop hand-chaining dispatches. Instead of a
+  general code mode, fixed HUD flows chain their listed steps and hand back once: land (gate in a fresh worktree,
+  fast-forward, build, push, clean up, ticket and STATE line; failures go back to the source imp, at most two
+  repairs) and scouted dispatch (a sonic fact dossier first, passed by from_jobs); a ticket queue that dispatches
+  the next unblocked ticket comes after those two. Supersedes the §5 exclusion of `after` chaining for these
+  flows only; general plan execution stays out.
 
 ## 2026-11-21
 
