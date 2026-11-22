@@ -170,32 +170,44 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
 }
 
 test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working', { timeout: 30000 }, async (t) => {
-  const clockScale = 40;
+  const clockScale = 20;
   const f = await fixture(t, { clockScale });
+  // Keep the 10 s real-time grace headroom during flaps instead of grok's 10 s virtual turn-trust deadline.
+  writeFixtureFile(join(f.env.HUD_HOME, 'harnesses.json'), JSON.stringify({ grok: { state_trust: 'advisory' } }));
   writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'rest-events', 10);
   const job = await f.call('hud_create', { role: 'rest-events', request_key: 'rest-events', task: 'Synthetic rest.' });
-  await until(() => cliState(job.task_dir)?.agent_session_id);
+  // Wait for both supervisor startup queries and the watcher's one-time subscription before snapshotting baselines.
+  await until(() =>
+    cliState(job.task_dir)?.agent_session_id &&
+    cliState(job.task_dir)?.pid_start_time &&
+    f.socketRequests.some((r) => r.id === 'hud-cli-events') &&
+    f.socketRequests.some((r) => r.id === 'hud-watch')
+  );
   const writes = fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8');
   // The MCP can still be doing its asynchronous caller-pane delivery lookup.
   const supervisorCommands = () => withoutCallerLookups(f.commands());
   const commands = supervisorCommands(), requests = f.socketRequests.length;
-  for (let i = 0; i < 6; i++) {
-    f.push(job.job, i % 2 ? 'working' : 'done');
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes, 'no-report status flaps do not write STATUS');
-  assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'flaps never sample descendants');
   // Observe two actual 30 s safety ticks rather than assuming the test timer
   // and the supervisor's accelerated clock get the same scheduling time.
+  // Running the rest ticks first also aligns the flap loop right after a tick,
+  // away from the next 30 s safety tick's quiet-status descendant scan.
   const beforeRest = statusQueries(f, job);
   await until(() => statusQueries(f, job) >= beforeRest + 2);
+  await new Promise((r) => setTimeout(r, 100));
   assert.deepEqual(supervisorCommands(), commands);
   const extra = f.socketRequests.slice(requests);
   assert.ok(extra.every((r) => r.method === 'agent.get'), JSON.stringify(extra));
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'working ticks never sample descendants');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes);
   assert.equal(cliState(job.task_dir).state, 'working');
+  for (let i = 0; i < 6; i++) {
+    f.push(job.job, i % 2 ? 'working' : 'done');
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes, 'no-report status flaps do not write STATUS');
+  assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'flaps never sample descendants');
+  assert.deepEqual(supervisorCommands(), commands);
   writeFixtureFile(join(f.env.HOME, 'herdr-errors'), '');
   const beforeDrop = statusQueries(f, job);
   f.drop();

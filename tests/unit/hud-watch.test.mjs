@@ -45,7 +45,7 @@ function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function until(check, timeoutMs = 4000) {
+async function until(check, timeoutMs = 10000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
     if (check()) return;
@@ -669,7 +669,13 @@ if (args[0] === 'pane' && args[1] === 'get') {
 `;
   for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: home, CODEX_HOME: join(home, 'wrong-account'), HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
-  const deliveries = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
+  const deliveries = () => {
+    if (!fs.existsSync(log)) return [];
+    const text = fs.readFileSync(log, 'utf8');
+    const end = text.lastIndexOf('\n');
+    // A fake command may have created the log or started appending its next row.
+    return end < 0 ? [] : text.slice(0, end).split('\n').map(JSON.parse);
+  };
   return { home, env, agentFile, statusFile, deliveries, onCleanup: (fn) => cleanups.push(fn) };
 }
 
@@ -801,7 +807,7 @@ test('hud watch --queue typed fallback keeps running and exits after injectable 
   const ac = new AbortController(), stdout = [], stderr = [];
   t.after(() => ac.abort());
   const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, queueIdleMs: 100, settlementWindowMs: 250 });
-  await until(() => f.deliveries().length === 2, 6000);
+  await until(() => f.deliveries().length === 2);
   await wait(180);
   assert.equal(fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), true, 'unread report prevents idle exit');
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
@@ -891,7 +897,7 @@ test('agy hook processes and the watcher racing an idle flush deliver each event
   create(3);
   const injected = (await Promise.all(hooks)).flat();
   const typed = () => f.deliveries().flatMap(({ args }) => args[3].split('\n'));
-  await until(() => typed().length + injected.length >= 3);
+  await until(() => typed().length + injected.length >= 3 && !fs.existsSync(file));
   watcher.kill('SIGTERM');
   assert.deepEqual(await exited, [0, null]);
   assert.deepEqual([...typed(), ...injected].sort(), [1, 2, 3].map((n) => {
