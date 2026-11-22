@@ -9,18 +9,10 @@ export default async function hud(pi) {
       ? new URL('../../../../packages/hud-mcp/bin/worker-tools.mjs', import.meta.url)
       : pathToFileURL(loadBinding(new URL('../binding.json', import.meta.url)).release + '/packages/hud-mcp/bin/worker-tools.mjs');
     const { callWorkerTool, listWorkerTools } = await import(url.href);
-    const { nearestThinking } = await import(new URL('../dist/packages/hud-mcp/src/launch-thinking.js', url).href);
     for (const { name, description, inputSchema } of await listWorkerTools(false)) {
       if (name === 'hud_ask' && nativeAsk) continue; // pi-roles supplies the native asynchronous ask.
       pi.registerTool({
         name, label: name, description, parameters: inputSchema, promptSnippet: description,
-        ...(name === 'hud_sonic' && inputSchema.properties.thinking.enum ? {
-          prepareArguments(args) {
-            return typeof args?.thinking === 'string'
-              ? { ...args, thinking: nearestThinking(args.thinking, inputSchema.properties.thinking.enum) ?? args.thinking }
-              : args;
-          },
-        } : {}),
         async execute(_id, args, signal) {
           const value = await callWorkerTool(name, args, signal);
           return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],

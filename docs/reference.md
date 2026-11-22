@@ -155,6 +155,8 @@ defaults; split defaults to the place. `ui_ext: false` disables UI extensions;
 `--orchestrator`/`--notify` pi-argument overrides refuse. Browser (`bro`) places
 reject pi options.
 
+When a role has `thinking_choices`, choose a level for each task using the purposes on its `hud_roster` row (`hud_create`) or in `hud_sonic`. Sonic ships with `low` for mechanical lookups, `high` for multi-file surveys or small doc patches, and `max` for tracing causes or cross-checking claims. The choices are inherited when an overriding role file omits them. Other supplied levels are refused; an allowed choice that the selected model does not support maps to the nearest supported level. Omission keeps the configured default.
+
 Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs,
 each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
 or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch. Pi and CLI

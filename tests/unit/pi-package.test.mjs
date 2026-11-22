@@ -867,11 +867,16 @@ test('pi delegation registers the native worker tools and leases in both modes',
   process.env.HUD_JOB_DIR = path.join(f.binding.hudHome, 'jobs/j0000000000000001');
   try {
     worker.pi.sendMessage = () => assert.fail('a worker must not be woken by the main watcher');
+    fs.mkdirSync(process.env.HUD_JOB_DIR, { recursive: true });
+    fs.writeFileSync(path.join(process.env.HUD_JOB_DIR, 'job.json'), JSON.stringify({ job: path.basename(process.env.HUD_JOB_DIR), cwd: f.cwd }));
     await load(f, worker);
     assert.deepEqual([...worker.tools.keys()], ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
     assert.deepEqual(worker.tools.get('hud_report').parameters.required, ['text']);
-    fs.mkdirSync(process.env.HUD_JOB_DIR, { recursive: true });
-    fs.writeFileSync(path.join(process.env.HUD_JOB_DIR, 'job.json'), JSON.stringify({ job: path.basename(process.env.HUD_JOB_DIR), cwd: f.cwd }));
+    const sonic = worker.tools.get('hud_sonic');
+    assert.deepEqual(sonic.parameters.properties.thinking.enum, ['low', 'high', 'max']);
+    assert.match(sonic.parameters.properties.thinking.description, /max — tracing a cause/);
+    const request = { task: 'Synthetic sub-task.', thinking: 'off' };
+    await assert.rejects(sonic.execute('synthetic', sonic.prepareArguments?.(request) ?? request), /invalid_arguments:.*low, high, max/);
     const lease = worker.tools.get('hud_lease');
     assert.deepEqual((await lease.execute('synthetic', { name: 'install', wait_s: 0 })).details, { granted: true });
     assert.deepEqual((await lease.execute('synthetic', { name: 'install', release: true })).details, { released: true });

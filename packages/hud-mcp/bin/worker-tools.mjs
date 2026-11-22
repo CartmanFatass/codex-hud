@@ -9,7 +9,6 @@ import { sonicState } from './sonic-jobs.mjs';
 import { LEASE_TOOL, takeLease } from '../dist/src/roles/lease.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
-const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const dispatch = () => import('../dist/packages/hud-mcp/src/thin-main.js');
 const judge = () => import('../dist/packages/hud-mcp/src/cli-judge.js');
 function readJob(dir) {
@@ -90,13 +89,18 @@ export function progress({ dir }, message) {
 
 export async function startSonic({ job: parent }, task, thinking) {
   if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
-  if (thinking !== undefined && !thinkingLevels.includes(thinking)) throw new Error('invalid sonic thinking level');
   if (!task.trim()) throw new Error('the sub-task is empty');
   const { dispatchJob } = await dispatch();
   const result = await dispatchJob({
     role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd: parent.cwd, task, thinking,
   }, parent.herdr_pane, parent.job);
-  if (!result.job) throw new Error(result.error ?? result.code);
+  if (!result.job) {
+    const message = result.error ?? result.code;
+    if (result.code === 'invalid_arguments') {
+      throw Object.assign(new Error(`invalid_arguments: ${message}`), { code: result.code });
+    }
+    throw new Error(message);
+  }
   // A launch failure with a job receipt is also collectable via wait.
   return { job: result.job, thinking: result.thinking ?? null, attempts: result.attempts, used_place: result.used_place,
     ...(result.ok === false ? { error: result.reason } : {}) };
@@ -184,15 +188,18 @@ const strings = { type: 'array', items: string };
 export async function listWorkerTools(cli) {
   let context;
   try { context = workerJob(); } catch { return workerTools(cli); }
-  let supported;
+  let choices;
   if (context.job.role !== 'sonic') {
-    try { supported = await (await dispatch()).sonicThinking(context.job.cwd); }
-    catch { /* Missing model facts do not prevent listing worker tools. */ }
+    try { choices = (await dispatch()).sonicThinkingChoices(context.job.cwd); }
+    catch { /* Missing role facts do not prevent listing worker tools. */ }
   }
-  return workerTools(cli && Boolean(context.job.cli), supported);
+  return workerTools(cli && Boolean(context.job.cli), choices);
 }
 
-export function workerTools(cli, supported) {
+export function workerTools(cli, choices) {
+  const thinking = choices ? { ...string, enum: Object.keys(choices),
+    description: `Choose per sub-task: ${Object.entries(choices).map(([level, purpose]) => `${level} — ${purpose}`).join('; ')}.` }
+    : { ...string, description: 'Choose a thinking level per sub-task from the sonic role.' };
   const tool = (name, description, properties, required = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
   return [
@@ -202,8 +209,7 @@ export function workerTools(cli, supported) {
     tool('hud_ask', 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
       { question: string, default: string, options: strings, context: string }, ['question', 'default']),
     tool('hud_sonic', 'Start one sonic child with task and optional thinking; returns its id and effective thinking without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. timeout_s defaults to 480; 0 checks once.',
-      { task: string, thinking: { ...string, ...(supported?.length ? { enum: supported } : { description: thinkingLevels.join(', ') }) },
-        wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
+      { task: string, thinking, wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
     LEASE_TOOL,
   ];

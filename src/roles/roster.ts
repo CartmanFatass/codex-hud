@@ -56,6 +56,7 @@ export interface Role {
   skills?: string[];
   model?: string;
   thinking?: string;
+  thinking_choices?: Record<string, string>;
   tool?: 'jev-ask' | 'jev-aistudio' | 'jev-flow';
   provider?: 'chatgpt' | 'gemini';
   effort?: string;
@@ -190,6 +191,12 @@ function roleReason(value: unknown): string | null {
   if (raw.idle_grace_s !== undefined && (!Number.isInteger(raw.idle_grace_s) || (raw.idle_grace_s as number) < 0))
     return 'bad cli fields';
   if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
+  const choices = raw.thinking_choices;
+  if (choices !== undefined && (!choices || typeof choices !== 'object' || Array.isArray(choices) ||
+    Object.keys(choices).length === 0 || Object.entries(choices).some(([level, purpose]) =>
+      !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(level) ||
+      typeof purpose !== 'string' || !purpose.trim() || /[\r\n\u2028\u2029]/u.test(purpose))))
+    return 'bad thinking_choices';
   if (raw.active_preset !== undefined && raw.active_preset !== null && !validPresetName(raw.active_preset))
     return 'bad active_preset';
   const hidden = raw.hidden_presets;
@@ -277,6 +284,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     ...(instructions !== undefined ? { instructions } : {}),
     ...primaryFields(primary),
     run,
+    ...(parsed.thinking_choices === undefined ? {} : { thinking_choices: parsed.thinking_choices as Record<string, string> }),
     presets: ((parsed.presets ?? []) as RolePreset[]).map((p) => ({
       name: p.name, run: p.run.map((item) => normalizePlace(item, rawInstructions)),
     })),
@@ -575,6 +583,8 @@ export function roleRegistry(
           can_continue: selected.run.some((p) => p.harness !== 'bro') && Boolean(raw.can_continue),
           ...primaryFields(selected.run[0]!) };
       }
+      const choices = stack.reduce<Role['thinking_choices']>((inherited, layer) => layer.file.thinking_choices ?? inherited, undefined);
+      if (choices) role.thinking_choices = choices;
       role.preset = raw.active_preset === undefined ? currentPreset(role) : selected?.name ?? null;
       if (raw.active_preset && !selected) role.preset_missing = raw.active_preset;
       sources.set(role, { layers: stack, presets: merged });

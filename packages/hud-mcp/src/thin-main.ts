@@ -1096,12 +1096,8 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
   return { metadata, block: reference + block };
 }
 
-export async function sonicThinking(cwd: string) {
-  const found = registry(cwd);
-  const role = found.roles().get('sonic');
-  if (!role) return;
-  const active = found.assignment(role).places.find((place) => place.state === 'active');
-  if (active) return launchThinking(hudHome, active.place, active.model.value);
+export function sonicThinkingChoices(cwd: string) {
+  return registry(cwd).roles().get('sonic')?.thinking_choices;
 }
 
 function placeOptions(args: Args, configured: RolePlace) {
@@ -1206,6 +1202,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     ensureWatcher();
     if (!taskClient) ensureQueueWatcher(pane, hudHome);
     return created(existing);
+  }
+  const choices = definition.thinking_choices;
+  if (choices && args.thinking !== undefined && (typeof args.thinking !== 'string' || !Object.hasOwn(choices, args.thinking))) {
+    return { ok: false, code: 'invalid_arguments', error: `thinking for ${role} must be one of: ${Object.keys(choices).join(', ')}` };
   }
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
@@ -1385,7 +1385,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
       `Write your report to ${join(dir, 'report.md')}; then run the --done command from the prompt you are answering.\n` +
       `Ask the orchestrator with: ${command('hud-ask')} ${own} --question "..." --default "..."\n`;
     if (job.role !== 'sonic') brief +=
-      `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file> [--thinking off|low|medium|high]\n` +
+      `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file> [--thinking <level>]\n` +
       `Collect: ${command('hud-sonic')} wait ${own} --job <id>\n`;
     brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
@@ -1477,7 +1477,8 @@ function harnessSwitchFailure(error: HarnessSwitchError) {
 }
 
 function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['assignment']>) {
-  const { role, instructions, available, can_continue, runs_on, model, thinking, reason, places, preset, preset_missing } = assignment;
+  const { role, instructions, available, can_continue, runs_on, model, thinking, thinking_choices, reason, places,
+    preset, preset_missing } = assignment;
   const place = runs_on && {
     harness: runs_on.harness,
     pi_role: runs_on.pi_role,
@@ -1491,6 +1492,7 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
   };
   return {
     role, available, can_continue, runs_on: place,
+    ...(thinking_choices ? { thinking_choices } : {}),
     ...(preset ? { preset } : {}),
     ...(preset_missing ? { preset_missing } : {}),
     places: places.map(({ index, state, off_by, until, missing, provider, provider_source }) =>
@@ -2091,7 +2093,9 @@ async function receive(line: string): Promise<void> {
             const value = await worker.callWorkerTool(name, args);
             result = { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] };
           } catch (error) {
-            result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'tool_error', error: String(error) }) }], isError: true };
+            const code = error instanceof Error && 'code' in error && error.code === 'invalid_arguments'
+              ? error.code : 'tool_error';
+            result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code, error: String(error) }) }], isError: true };
           }
         }
         break;

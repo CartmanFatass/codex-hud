@@ -2,6 +2,11 @@
   "role": "sonic",
   "instructions": "sonic",
   "can_continue": false,
+  "thinking_choices": {
+    "low": "mechanical lookups: counts, listings, finding a definition",
+    "high": "surveys across several files, small doc patches",
+    "max": "tracing a cause, cross-checking claims against each other"
+  },
   "run": [
     {
       "harness": "pi",

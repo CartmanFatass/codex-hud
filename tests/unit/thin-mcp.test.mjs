@@ -1105,28 +1105,60 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.match(outside.stderr, /under HUD_HOME/);
 });
 
-test('launch thinking facts narrow sonic schema and map sonic, script and hud_create to the supported level', { timeout: 15000 }, async (t) => {
+test('main and worker dispatch use inherited sonic choices before mapping to model-supported thinking', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
-  const task = sonicTask(f);
+  const task = sonicTask(f); // Owner launch settings override the shipped chain, but omit thinking_choices.
+  const expected = {
+    low: 'mechanical lookups: counts, listings, finding a definition',
+    high: 'surveys across several files, small doc patches',
+    max: 'tracing a cause, cross-checking claims against each other',
+  };
+  for (const detail of [false, true]) {
+    const { roles } = await f.call('hud_roster', { detail });
+    assert.deepEqual(roles.find(({ role }) => role === 'sonic').thinking_choices, expected);
+    assert.equal(roles.find(({ role }) => role === 'imp').thinking_choices, undefined);
+  }
   fs.writeFileSync(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
     'synthetic/sonic': { provider: 'synthetic', id: 'sonic', reasoning: true,
-      thinkingLevelMap: { minimal: null, low: null, medium: null } },
+      thinkingLevelMap: { minimal: null, medium: null } },
   }));
+  const refused = await f.call('hud_create', { role: 'sonic', task: 'Synthetic task.', thinking: 'off' });
+  assert.equal(refused.code, 'invalid_arguments');
+  assert.match(refused.error, /low, high, max/);
+  assert.equal(refused.job, undefined);
   const parent = await f.call('hud_create', { role: 'imp', request_key: 'cap-parent', task: 'Synthetic parent.' });
   const call = workerClient(t, f, parent.task_dir);
   const { tools } = (await call.rpc('tools/list')).result;
-  assert.deepEqual(tools.find(({ name }) => name === 'hud_sonic').inputSchema.properties.thinking.enum, ['off', 'high']);
-  const sonic = resultValue(await call('hud_sonic', { task: 'Synthetic child.', thinking: 'medium' }));
+  const schema = tools.find(({ name }) => name === 'hud_sonic').inputSchema.properties.thinking;
+  assert.deepEqual(schema.enum, Object.keys(expected));
+  for (const [level, purpose] of Object.entries(expected)) assert.ok(schema.description.includes(`${level} — ${purpose}`));
+  const workerRefused = await call('hud_sonic', { task: 'Synthetic child.', thinking: 'off' });
+  assert.equal(workerRefused.isError, true);
+  const workerError = JSON.parse(workerRefused.content[0].text);
+  assert.equal(workerError.code, 'invalid_arguments');
+  assert.match(workerError.error, /low, high, max/);
+  const sonic = resultValue(await call('hud_sonic', { task: 'Synthetic child.', thinking: 'max' }));
   assert.equal(sonic.thinking, 'high');
-  const script = await runSonic(f, 'start', parent.task_dir, '--task-file', task, '--thinking', 'medium');
+  const script = await runSonic(f, 'start', parent.task_dir, '--task-file', task, '--thinking', 'max');
   assert.equal(script.status, 0, script.stderr);
   assert.match(script.stderr, /^thinking: high/m);
-  const main = await f.call('hud_create', { role: 'sonic', request_key: 'cap-main', task: 'Synthetic task.', thinking: 'medium' });
+  const main = await f.call('hud_create', { role: 'sonic', request_key: 'cap-main', task: 'Synthetic task.', thinking: 'max' });
   assert.equal(main.thinking, 'high');
   for (const id of [sonic.job, script.stdout.trim(), main.job]) {
     const launch = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${id}-primary`).args;
     assert.equal(launch[launch.indexOf('--thinking') + 1], 'high');
   }
+});
+
+test('roster rejects a role file with a multiline thinking purpose', async (t) => {
+  const f = await fixture(t);
+  sonicTask(f);
+  const path = join(f.env.HUD_HOME, 'roles', 'sonic.json');
+  const role = JSON.parse(fs.readFileSync(path, 'utf8'));
+  fs.writeFileSync(path, JSON.stringify({ ...role, thinking_choices: { low: 'First line\nSecond line' } }));
+  const roster = await f.call('hud_roster');
+  assert.deepEqual(roster.invalid, [{ path, reason: 'bad thinking_choices' }]);
+  assert.ok(roster.roles.some(({ role, thinking_choices }) => role === 'sonic' && thinking_choices.low));
 });
 
 test('launch thinking facts map CLI efforts before opening the worker; unknown models pass through', async (t) => {
