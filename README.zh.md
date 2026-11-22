@@ -141,12 +141,11 @@ hud statusline --help
 
 ## 开发
 
-开发命令需要 git 仓库；发布包不含测试。
+开发命令需要 git 仓库；发布包不含测试。`npm run build` 将 HUD 和 MCP 一起编译到 `dist/`。
 
 ```sh
 npm ci
 npm run build
-npm run build:hud-mcp
 npm run dev
 npm test
 npm run check:fixtures

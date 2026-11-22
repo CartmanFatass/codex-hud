@@ -22,7 +22,7 @@ import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { stripAnsi, theme, visualLength } from '../../dist/render/colors.js';
 import { PiRoleClient, PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
-import { procStat, reportSignature, turnToken } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { procStat, reportSignature, turnToken } from '../../dist/mcp/cli-judge.js';
 import { harnessDefaults, markExhausted, placeKey } from '../../dist/roles/roster.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';

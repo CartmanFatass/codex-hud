@@ -7,7 +7,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reapWorkerTree, rememberWorkerTree } from '../../dist/roles/worker-tree.js';
-import { judge, procStat, workerAlive, workerHasChild } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { judge, procStat, workerAlive, workerHasChild } from '../../dist/mcp/cli-judge.js';
 
 test('worker identity: missing start is unknown for a live PID, but absence is still an exit fact', async () => {
   assert.equal(workerAlive(process.pid, procStat(process.pid).start), true);

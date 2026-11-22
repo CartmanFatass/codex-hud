@@ -7,12 +7,12 @@ import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
-import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
-import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../dist/src/roles/worker-tree.js';
-import { piReadSettlement } from '../dist/packages/hud-mcp/src/pi-read-settlement.js';
-import { checkBinding, readCheckReceipt, sameChecks } from '../dist/src/roles/job-checks.js';
-import { reapWorktree } from '../dist/packages/hud-mcp/src/managed-worktree.js';
+import { isQuotaFailure, recordFailureExhaustion } from '../../../dist/roles/roster.js';
+import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../../../dist/mcp/cli-judge.js';
+import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../../../dist/roles/worker-tree.js';
+import { piReadSettlement } from '../../../dist/mcp/pi-read-settlement.js';
+import { checkBinding, readCheckReceipt, sameChecks } from '../../../dist/roles/job-checks.js';
+import { reapWorktree } from '../../../dist/mcp/managed-worktree.js';
 import { request } from './herdr-request.mjs';
 
 const bundled = fileURLToPath(new URL('..', import.meta.url));

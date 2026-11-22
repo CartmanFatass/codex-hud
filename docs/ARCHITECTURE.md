@@ -32,7 +32,7 @@ places (§4.6) and the owner's three micro-actions on a HUD job (§6): focus its
 answer an open question, stop it. Models write only display text. There is no ledger database, resident execution host or owned
 browser runtime.
 
-CLI dispatch is `dispatchCli` in `packages/hud-mcp/src/thin-main.ts`. Kind flags,
+CLI dispatch is `dispatchCli` in `src/mcp/thin-main.ts`. Kind flags,
 trust-dialog text and decline keys, and startup quirks are the table in
 `src/roles/cli-kinds.ts`. Before opening a tab, dispatch requires an explicit
 local trust grant for Grok, Antigravity and Claude; missing, unreadable, malformed
@@ -60,7 +60,7 @@ No panel opens at launch.
 |---|---|
 | `bin/` | Public launchers and Codex tmux helpers |
 | `install`, `install.d/` | Core installer and selected client/prerequisite extensions |
-| `packages/hud-mcp/src/thin-main.ts` | Main and worker stdio MCP surfaces; job dispatch |
+| `src/mcp/thin-main.ts` | Main and worker stdio MCP surfaces; job dispatch |
 | `packages/hud-mcp/bin/worker-tools.mjs` | Worker tools shared by MCP, pi and fallback commands; CLI report receipts bind the prompt's token to the fresh disk report |
 | `packages/hud-mcp/bin/hud-watch.mjs`, `hud-cli.mjs`, `hud-jev.mjs` | On-demand reaper, CLI supervisor, browser-CLI wrapper |
 | `src/roles/roster.ts` | Role definitions, assignments and convention, shared by MCP/Project |
@@ -77,7 +77,7 @@ No panel opens at launch.
 
 `./install --with claude,pi,codex,browser,herdr` validates selected extension names,
 checks Node, then runs prerequisite hooks before any build or filesystem change.
-Core is always included. The default builds the HUD and MCP; `--skip-build` uses
+Core is always included. The default builds the HUD and MCP together into `dist/`; `--skip-build` uses
 existing outputs. Commands link into this checkout/extraction, and client bindings
 also retain its path: keep that directory. The installer backs up edited client
 files, uses official registration commands where available, and never edits shell
@@ -450,14 +450,13 @@ registration and `hud import` are separate user actions.
 ```sh
 npm run build
 npm run build:test
-npm run build:hud-mcp
 npm test
 npm run check:fixtures
 npm run snapshots:update
 ```
 
-`npm test` builds all three trees, runs the default unit runner and the `.mjs`
-suites. Snapshot updates are explicit: inspect their diff; normal tests do not
+`npm test` builds the shared `dist/` and the test-only `dist-test/`, then runs the
+default unit runner and the `.mjs` suites. Snapshot updates are explicit: inspect their diff; normal tests do not
 rewrite frames. Tests use temporary homes, fixed clocks and synthetic data;
 render checks compare terminal cells, not font pixels. Restore display/language
 state in `finally`. A real client/browser check remains separate from fixtures.

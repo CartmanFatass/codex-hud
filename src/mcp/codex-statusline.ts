@@ -2,15 +2,15 @@
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { expNativePath, readExpNativeSeen } from '../../../src/collectors/exp-native.js';
-import { writePrivateFile } from '../../../src/collectors/small-model.js';
-import { jobRow } from '../../../src/collectors/thin-jobs.js';
-import { truncateAnsi } from '../../../src/render/colors.js';
-import { askOf, NOTICE_MS } from '../../../src/render/layout/bar-fields.js';
-import { monitorText } from '../../../src/render/monitor-text.js';
-import { shortModel } from '../../../src/render/providers.js';
-import { formatWindowLabel } from '../../../src/render/quota.js';
-import { settingsPath } from '../../../src/settings.js';
+import { expNativePath, readExpNativeSeen } from '../collectors/exp-native.js';
+import { writePrivateFile } from '../collectors/small-model.js';
+import { jobRow } from '../collectors/thin-jobs.js';
+import { truncateAnsi } from '../render/colors.js';
+import { askOf, NOTICE_MS } from '../render/layout/bar-fields.js';
+import { monitorText } from '../render/monitor-text.js';
+import { shortModel } from '../render/providers.js';
+import { formatWindowLabel } from '../render/quota.js';
+import { settingsPath } from '../settings.js';
 
 const URI = 'ui://myhud/codex-statusline';
 const MIME = 'application/json';

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { scanScratch, slugify, ticketsCommand, writeFileAtomic } from '../../../src/cli/tickets.js';
-import { TICKET_STATUSES } from '../../../src/roles/tool-definitions.js';
+import { scanScratch, slugify, ticketsCommand, writeFileAtomic } from '../cli/tickets.js';
+import { TICKET_STATUSES } from '../roles/tool-definitions.js';
 
 const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;

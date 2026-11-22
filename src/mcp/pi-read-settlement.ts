@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { reportWasRead } from '../../../src/collectors/thin-jobs.js';
-import { reportSignature } from '../../../src/roles/cli-turn.js';
+import { reportWasRead } from '../collectors/thin-jobs.js';
+import { reportSignature } from '../roles/cli-turn.js';
 
 export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string };
 type SendHistory = { send_outcomes?: SendOutcome[]; message_keys?: string[] };

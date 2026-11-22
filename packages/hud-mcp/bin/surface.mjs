@@ -4,6 +4,6 @@
  */
 
 export function selectMcpEntry(surface) {
-  if (surface === undefined || surface === 'roles') return '../dist/packages/hud-mcp/src/thin-main.js';
+  if (surface === undefined || surface === 'roles') return '../../../dist/mcp/thin-main.js';
   throw new Error(`unknown_surface: ${JSON.stringify(surface)}`);
 }

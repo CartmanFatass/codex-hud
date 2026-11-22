@@ -172,11 +172,11 @@ supported; macOS is not a qualified current product profile.
 ## Development
 
 Development commands need the git repository; the release archive does not ship tests.
+`npm run build` builds both the HUD and MCP into `dist/`.
 
 ```sh
 npm ci
 npm run build
-npm run build:hud-mcp
 npm run dev
 npm test
 npm run check:fixtures

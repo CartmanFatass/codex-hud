@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { isModelToken, readModelListCache } from '../../../src/roles/model-discovery.js';
-import type { RolePlace } from '../../../src/roles/roster.js';
+import { isModelToken, readModelListCache } from '../roles/model-discovery.js';
+import type { RolePlace } from '../roles/roster.js';
 
 const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 type Model = { provider: string; id: string; reasoning: boolean; thinkingLevelMap?: Record<string, string | null> };

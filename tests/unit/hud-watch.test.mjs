@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { main } from '../../dist/cli/hud-main.js';
 import { watchCommand } from '../../dist/cli/watch.js';
-import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { procStat } from '../../dist/mcp/cli-judge.js';
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 

@@ -6,11 +6,11 @@ import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
-import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
-import { cliWorkerTools, firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
-import { rememberWorkerTree } from '../dist/src/roles/worker-tree.js';
-import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
+import { recordFailureExhaustion } from '../../../dist/roles/roster.js';
+import { decideQuietJob } from '../../../dist/mcp/quiet-decision.js';
+import { cliWorkerTools, firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn } from '../../../dist/mcp/cli-judge.js';
+import { rememberWorkerTree } from '../../../dist/roles/worker-tree.js';
+import { reportWasRead } from '../../../dist/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
 import { sonicChildren, sonicCollectPrompt } from './sonic-jobs.mjs';
 

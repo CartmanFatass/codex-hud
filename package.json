@@ -12,11 +12,11 @@
   "scripts": {
     "release": "bash scripts/release.sh",
     "test:release": "node --test tests/release-archive.test.mjs",
-    "build": "node ./node_modules/typescript/bin/tsc",
+    "build": "if [ -d packages/hud-mcp/dist ]; then printf '%s\\n' 'packages/hud-mcp/dist is obsolete; remove it after running workers have stopped.' >&2; fi; node ./node_modules/typescript/bin/tsc",
     "dev": "node ./node_modules/typescript/bin/tsc --watch",
     "start": "node dist/index.js",
     "test:render": "npm run build && node dist/index.js",
-    "build:test": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json && npm run build:hud-mcp",
+    "build:test": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
     "test": "npm run build && npm run build:test && npm run test:unit && npm run test:mjs",
     "test:unit": "node tests/run-default.mjs",
     "test:mjs": "TZ=UTC node --test tests/unit/*.mjs",
@@ -25,7 +25,7 @@
     "check:fixtures": "bash tests/check-fixtures.sh",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write src tests",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check src tests",
-    "build:hud-mcp": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json"
+    "build:hud-mcp": "npm run build"
   },
   "keywords": [
     "codex",

@@ -71,8 +71,8 @@ else
   else
     printf 'Dependencies already present\n'
   fi
-  printf 'Building HUD and hud-mcp\n'
-  npm run build && npm run build:hud-mcp || exit $?
+  printf 'Building HUD\n'
+  npm run build || exit $?
 fi
 printf 'Ensuring HUD home: %s\n' "$HUD_HOME"
 if [[ ! -d "$HUD_HOME" ]]; then

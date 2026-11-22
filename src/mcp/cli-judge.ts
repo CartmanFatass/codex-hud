@@ -1,10 +1,10 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { QuietDecision } from './quiet-decision.js';
-import { procStat } from '../../../src/roles/worker-tree.js';
-import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../../../src/roles/cli-turn.js';
+import { procStat } from '../roles/worker-tree.js';
+import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 export { procStat };
-export { DONE_FILE, readDone, readTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../../../src/roles/cli-turn.js';
+export { DONE_FILE, readDone, readTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 
 export const firstInput = (turn: Turn) => turn.first_sent_at ?? (turn.seq === 1 ? turn.sent_at : undefined);
 export const cliWorkerTools = (agent: string) => agent === 'claude' || agent === 'codex';

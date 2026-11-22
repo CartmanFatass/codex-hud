@@ -10,6 +10,6 @@
     "hud-mcp": "bin/hud-mcp.mjs"
   },
   "scripts": {
-    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json"
+    "build": "node ../../node_modules/typescript/bin/tsc -p ../../tsconfig.json"
   }
 }

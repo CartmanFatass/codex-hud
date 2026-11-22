@@ -136,7 +136,7 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
     for (const excludedPath of excluded) assert.ok(name !== excludedPath && !name.startsWith(excludedPath + '/'), member);
     assert.ok(!member.endsWith('/CLAUDE.md'), member);
   }
-  for (const required of ['install', 'install.d/pi.sh', 'bin/hud', 'packages/hud-mcp/src/thin-main.ts',
+  for (const required of ['install', 'install.d/pi.sh', 'bin/hud', 'src/mcp/thin-main.ts',
     'packages/hud-mcp/bin/hud-watch.mjs', 'packages/hud-mcp/bin/hud-jev.mjs', 'packages/hud-mcp/hud-convention.md',
     'packages/hud-mcp/roles/imp.json', 'integrations/skills/hud/SKILL.md', 'integrations/skills/hud-delegate/SKILL.md', 'integrations/skills/hud-setup/SKILL.md',
     'integrations/tickets/method.md', 'integrations/skills-optional/grill-with-docs/SKILL.md',
@@ -184,7 +184,8 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
   console.log('Offline build: npm_config_offline=true; empty npm cache; PATH contains only temporary bin/tools.');
   assert.match(run('./install'), /Dependencies already present/);
   assert.ok(fs.statSync(path.join(tree, 'dist/cli/hud.js')).isFile());
-  assert.ok(fs.statSync(path.join(tree, 'packages/hud-mcp/dist/packages/hud-mcp/src/thin-main.js')).isFile());
+  assert.ok(fs.statSync(path.join(tree, 'dist/mcp/thin-main.js')).isFile());
+  assert.equal(fs.existsSync(path.join(tree, 'packages/hud-mcp/dist')), false);
   assert.match(run('hud', ['--help']), /Usage: hud/);
   for (const name of ['claude', 'pi', 'codex']) fs.writeFileSync(path.join(tools, name), client, { mode: 0o755 });
   fs.writeFileSync(path.join(tools, 'herdr'), `#!/usr/bin/env node
@@ -231,7 +232,8 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
   assert.equal(replies.length, 3);
   assert.equal(replies.find(reply => reply.id === 1).result.serverInfo.name, 'hud-mcp-thin');
   assert.deepEqual(replies.find(reply => reply.id === 2).result.tools.map(tool => tool.name),
-    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close', 'hud_lease', 'hud_tickets', 'hud_statusline']);
+    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close',
+      'hud_lease', 'hud_tickets', 'hud_statusline']);
   const roster = JSON.parse(replies.find(reply => reply.id === 3).result.content[0].text);
   assert.deepEqual(roster.roles.map(role => role.role).sort(),
     fs.readdirSync(path.join(tree, 'packages/hud-mcp/roles')).map(name => name.replace('.json', '')).sort());

@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { ModelRuntimeStore } from '../../../src/collectors/model-runtime-store.js';
-import { JevCredentialsMissing, selectDecisionProvider } from '../../../src/jev/decide.js';
-import { renormalizeOpenAIChoice, validateChoice, type Choice } from '../../../src/jev/model.js';
-import { isQuotaFailure } from '../../../src/roles/roster.js';
-import { loadSettings } from '../../../src/settings.js';
+import { ModelRuntimeStore } from '../collectors/model-runtime-store.js';
+import { JevCredentialsMissing, selectDecisionProvider } from '../jev/decide.js';
+import { renormalizeOpenAIChoice, validateChoice, type Choice } from '../jev/model.js';
+import { isQuotaFailure } from '../roles/roster.js';
+import { loadSettings } from '../settings.js';
 
 export const QUIET_CHOICES = ['still-working', 'finished-no-report', 'failed', 'needs-human'] as const;
 export type QuietChoice = (typeof QUIET_CHOICES)[number];

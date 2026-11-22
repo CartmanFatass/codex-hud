@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { parseWorktreeList, worktreeGit as git } from '../../../src/collectors/worktrees.js';
-import { neutralizeFilters } from '../../../src/utils/git-safety.js';
+import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
+import { neutralizeFilters } from '../utils/git-safety.js';
 
 export interface ManagedWorktree {
   main_root: string;

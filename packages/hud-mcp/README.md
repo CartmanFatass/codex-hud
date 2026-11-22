@@ -3,7 +3,7 @@
 The local stdio MCP for Claude Code, Codex and pi. It records plain-file jobs and
 launches roles through herdr; it does not choose a workflow or chain roles.
 The main session decides what to do next. The implementation is
-[`src/thin-main.ts`](src/thin-main.ts).
+[`src/mcp/thin-main.ts`](../../src/mcp/thin-main.ts).
 
 ## Prerequisites and setup
 
@@ -26,13 +26,13 @@ From the repository root:
 ```
 
 Select `browser,herdr` too for their prerequisite checks; those extensions install
-no external tools. The installer builds both output trees and registers the MCP,
+no external tools. The installer builds the HUD and MCP together into `dist/` and registers the MCP,
 the delegation skill and the hud-setup skill in the chosen clients. Keep the checkout/extraction directory:
 installed commands and client bindings point into it. See
 [installer extensions](../../install.d/README.md).
 
-For development, build with `npm run build:hud-mcp`; run the stdio entry with
-`node packages/hud-mcp/bin/hud-mcp.mjs`. `HUD_HOME` defaults to `~/.hud`.
+From the repository root, build with `npm run build` (the MCP emits to `dist/mcp/`),
+then run the stdio entry with `node packages/hud-mcp/bin/hud-mcp.mjs`. `HUD_HOME` defaults to `~/.hud`.
 Stdout is newline-delimited JSON-RPC; diagnostics go to stderr.
 
 ## Tools
@@ -223,7 +223,7 @@ before automatic reap. Failed file watching falls back to polling
 and retries the watch. `watch.pid` and `watch.log` live under HUD home.
 
 A CLI job has one supervisor (`hud-cli.mjs`); it only observes, and its one pure
-`judge` (`src/cli-judge.ts`) decides every state. Only facts end a job: the worker's
+`judge` (`src/mcp/cli-judge.ts`) decides every state. Only facts end a job: the worker's
 recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 (`failed`, or `closed` when a new report is on disk). Dispatch and every non-duplicate
 `hud_send` write `turn.json` before the prompt (internal continuations also start a new turn).

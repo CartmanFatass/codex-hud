@@ -6,22 +6,22 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
-import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
-import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
+import { reapWorkerTree } from '../roles/worker-tree.js';
+import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
-import { failureUnobserved, jobChanges, jobOwesCaller, jobRow, readJobProgress, type JobRow } from '../../../src/collectors/thin-jobs.js';
-import { questionFields } from '../../../src/collectors/work-artifacts.js';
-import { PanelActionLog } from '../../../src/collectors/panel-actions.js';
-import { TryLog } from '../../../src/collectors/try-records.js';
-import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
-import { herdrId, runCommand, runHerdr } from '../../../src/roles/herdr-run.js';
+import { failureUnobserved, jobChanges, jobOwesCaller, jobRow, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
+import { questionFields } from '../collectors/work-artifacts.js';
+import { PanelActionLog } from '../collectors/panel-actions.js';
+import { TryLog } from '../collectors/try-records.js';
+import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
+import { herdrId, runCommand, runHerdr } from '../roles/herdr-run.js';
 import {
   roleRegistry,
   harnessDefaults,
@@ -34,22 +34,23 @@ import {
   piSwitches,
   type Role,
   type RolePlace,
-} from '../../../src/roles/roster.js';
-import { HarnessSwitchError } from '../../../src/roles/harness-switches.js';
-import { ROLE_TOOLS as tools } from '../../../src/roles/tool-definitions.js';
-import { jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS } from '../../../src/roles/job-checks.js';
-import { takeLease } from '../../../src/roles/lease.js';
-import { adoptProjectJobs, projectJobFilter } from '../../../src/roles/job-project.js';
-import { sharedRoot } from '../../../src/roles/projects.js';
+} from '../roles/roster.js';
+import { HarnessSwitchError } from '../roles/harness-switches.js';
+import { ROLE_TOOLS as tools } from '../roles/tool-definitions.js';
+import { jobChecks, MAX_CHECK_COMMAND, MAX_CHECKS } from '../roles/job-checks.js';
+import { takeLease } from '../roles/lease.js';
+import { adoptProjectJobs, projectJobFilter } from '../roles/job-project.js';
+import { sharedRoot } from '../roles/projects.js';
 
 const jobDir = process.env.HUD_JOB_DIR;
 const isWorker = jobDir !== undefined;
 const hudHome = isWorker ? dirname(dirname(fs.realpathSync(jobDir))) : resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 if (isWorker) process.env.HUD_HOME = hudHome; // The watcher and other subprocesses inherit the worker's HUD home.
 const jobsRoot = join(hudHome, 'jobs');
-const { ensureQueueWatcher, paneInfo, watching } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
-const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
-const worker = isWorker ? await import(new URL('../../../../bin/worker-tools.mjs', import.meta.url).href) : undefined;
+const bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url));
+const binScript = (name: string) => join(bundled, 'bin', name);
+const { ensureQueueWatcher, paneInfo, watching } = await import(pathToFileURL(binScript('hud-notify.mjs')).href);
+const worker = isWorker ? await import(pathToFileURL(binScript('worker-tools.mjs')).href) : undefined;
 function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
 }
@@ -254,7 +255,7 @@ async function workspaceArgs(job: Job): Promise<string[]> {
 }
 function ensureWatcher(): void {
   fs.mkdirSync(jobsRoot, { recursive: true, mode: 0o700 });
-  const script = fileURLToPath(new URL('../../../../bin/hud-watch.mjs', import.meta.url));
+  const script = binScript('hud-watch.mjs');
   try {
     const pid = Number(fs.readFileSync(join(hudHome, 'watch.pid'), 'utf8').trim());
     process.kill(pid, 0);
@@ -387,7 +388,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
       join(dir, 'qa'),
     ];
     if (job.herdr_pane) {
-      const notify = fileURLToPath(new URL('../../../../bin/hud-notify.mjs', import.meta.url));
+      const notify = binScript('hud-notify.mjs');
       argv.push('--notify', [process.execPath, notify, hudHome, job.herdr_pane, job.job].map(quote).join(' '));
     }
     const instructionsName = role.instructions ?? role.role;
@@ -535,7 +536,7 @@ async function dispatchBro(job: Job, task: string): Promise<DispatchResult> {
     `TASK=${job.job}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
     { mode: 0o600 }
   );
-  const script = fileURLToPath(new URL('../../../../bin/hud-jev.mjs', import.meta.url));
+  const script = binScript('hud-jev.mjs');
   return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir, String(task.length)].map(quote).join(' ')]);
 }
 function paneText(stdout: string): string {
@@ -606,7 +607,7 @@ function supervisorAlive(pid: number): boolean {
   }
 }
 function spawnCliSupervisor(dir: string): number | null {
-  const script = fileURLToPath(new URL('../../../../bin/hud-cli.mjs', import.meta.url));
+  const script = binScript('hud-cli.mjs');
   const child = spawn(process.execPath, [script, dir], { detached: true, stdio: 'ignore' });
   child.on('error', (error) => console.error(`hud-cli: ${error.message}`));
   if (child.pid) fs.writeFileSync(join(dir, 'supervisor.pid'), `${child.pid}\n`, { mode: 0o600 });

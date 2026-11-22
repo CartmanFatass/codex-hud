@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
+import { recordFailureExhaustion } from '../../../dist/roles/roster.js';
 
 const [dir, taskLength] = process.argv.slice(2);
 const bundled = fileURLToPath(new URL('..', import.meta.url));

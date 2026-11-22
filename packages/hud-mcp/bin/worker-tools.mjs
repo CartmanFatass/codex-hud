@@ -6,11 +6,11 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { notify, taskDelivery } from './hud-notify.mjs';
 import { sonicState } from './sonic-jobs.mjs';
-import { LEASE_TOOL, takeLease } from '../dist/src/roles/lease.js';
+import { LEASE_TOOL, takeLease } from '../../../dist/roles/lease.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
-const dispatch = () => import('../dist/packages/hud-mcp/src/thin-main.js');
-const judge = () => import('../dist/packages/hud-mcp/src/cli-judge.js');
+const dispatch = () => import('../../../dist/mcp/thin-main.js');
+const judge = () => import('../../../dist/mcp/cli-judge.js');
 function readJob(dir) {
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
   if (job.job !== basename(dir)) throw new Error('not a HUD job directory');
@@ -55,7 +55,7 @@ export async function finishReport({ dir, job }, turn, text) {
   } else {
     // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
     if (turn !== undefined) throw new Error('pi does not use a turn token');
-    const { rememberWorkerTree } = await import('../dist/src/roles/worker-tree.js');
+    const { rememberWorkerTree } = await import('../../../dist/roles/worker-tree.js');
     if (text !== undefined) replace(path, text);
     if (!reportSignature(dir)) throw new Error('write the pi report first');
     const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
