@@ -167,8 +167,9 @@ test('a default checkpoint counts worker milestones but not its own progress or 
 
 for (const reason of ['looping', 'stalled']) {
   test(`sonic stops as ${reason} and preserves its last progress in the digest`, async (t) => {
-    const f = await fixture(t);
-    setLimits(f, reason === 'looping' ? { check_s: 2, stall_s: 5, max_s: 10 } : { check_s: 8, stall_s: 2, max_s: 10 });
+    // Settlement must also complete if the watch misses the runner's stop-receipt rename.
+    const f = await fixture(t, { watcherTickMs: 250 });
+    setLimits(f, reason === 'looping' ? { check_s: 4, stall_s: 8, max_s: 20 } : { check_s: 12, stall_s: 4, max_s: 20 });
     f.overrideBin('pi', `#!${process.execPath}
 const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
 await callWorkerTool('hud_progress', { message: 'Synthetic partial milestone.' });
