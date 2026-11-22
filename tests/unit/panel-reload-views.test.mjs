@@ -98,9 +98,17 @@ test('live input: a build waits for the Harnesses Add back draft to close', asyn
   assert.equal(f.restarts().length, 0, 'reload must wait for Add back');
   f.child.stdin.write('i');
   await until(() => stripAnsi(f.output()).includes('/ xai▌'), 'the draft was not still editable');
+  const beforeEsc = f.output().length;
   f.child.stdin.write('\x1b');
   await until(() => f.events().filter((e) => e.start).length === 2, 'reload did not resume after Esc');
   assert.equal(f.restarts()[0].restart.stateV2.control.subTab, 'harnesses');
+  // Startup is logged before collection. Wait for the replacement's actionable frame,
+  // not the old frame that can repaint when Esc closes the draft.
+  await until(() => {
+    const output = f.output();
+    const replacement = output.indexOf('\x1b[?1049h', beforeEsc);
+    return replacement !== -1 && output.slice(replacement).includes('i add back');
+  }, 'the replacement did not render the Harnesses Add back control');
   const returned = f.output().length;
   f.child.stdin.write('ixa\r');
   await until(() => stripAnsi(f.output().slice(returned)).includes('Restored pi:xai'), 'Add back did not restore the switch');
