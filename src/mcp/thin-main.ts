@@ -31,7 +31,7 @@ import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
-import { writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readDirSafe as entries, readFileBounded, readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { isProcAlive, procStat } from '../utils/proc.js';
 import { TryLog } from '../collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
@@ -155,35 +155,19 @@ function withinRetryWindow(recordedAt: string | undefined, now: number): boolean
 }
 function json<T>(file: string): T | null {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return readJsonFile(file) as T;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
-}
-function entries(directory: string): string[] {
-  try {
-    return fs.readdirSync(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
 }
 function slice(file: string, limit: number): { text: string; truncated: boolean; bytes: number } | null {
-  let fd: number;
   try {
-    fd = fs.openSync(file, 'r');
+    const { bytes, stat, truncated } = readFileBounded(file, limit, { followSymlinks: true });
+    return { text: bytes.toString('utf8'), truncated, bytes: truncated ? stat.size : bytes.length };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
-  }
-  try {
-    const buffer = Buffer.alloc(limit + 1);
-    const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    return { text: buffer.subarray(0, Math.min(size, limit)).toString('utf8'), truncated: size > limit,
-      bytes: size > limit ? fs.fstatSync(fd).size : size };
-  } finally {
-    fs.closeSync(fd);
   }
 }
 function directory(job: string): string {

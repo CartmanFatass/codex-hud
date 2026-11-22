@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { notify, taskDelivery } from './hud-notify.mjs';
 import { sonicState } from './sonic-jobs.mjs';
 import { withDistLock } from '../../../scripts/dist-lock.mjs';
 
@@ -27,41 +26,32 @@ export function workerJob(path = process.env.HUD_JOB_DIR) {
   return { dir, root, job: readJob(dir) };
 }
 
-function replace(file, data) {
-  const temp = `${file}.${randomUUID()}.tmp`;
-  const fd = fs.openSync(temp, 'wx', 0o600);
-  try {
-    try { fs.writeFileSync(fd, data); } finally { fs.closeSync(fd); }
-    fs.renameSync(temp, file);
-  } finally { fs.rmSync(temp, { force: true }); }
-}
-
 // Omit text for the fallback command, which declares a report the worker wrote itself.
 export async function finishReport({ dir, job }, turn, text, metadata = {}) {
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
   if (text !== undefined && (typeof text !== 'string' || !text.trim())) throw new Error('write a nonempty report');
-  const [{ normalizeReportMeta, writeReportMeta }, { DONE_FILE, readTurn, turnToken, reportSignature }, workerTree] =
+  const [{ normalizeReportMeta, writeReportMeta }, { DONE_FILE, readTurn, turnToken, reportSignature }, workerTree, { writePrivateFile, writeJsonPrivate }] =
     await withDistLock(() => Promise.all([
       import('../../../dist/roles/report-meta.js'), import('../../../dist/mcp/cli-judge.js'),
-      job.cli ? undefined : import('../../../dist/roles/worker-tree.js'),
+      job.cli ? undefined : import('../../../dist/roles/worker-tree.js'), import('../../../dist/utils/atomic-fs.js'),
     ]));
   const fields = normalizeReportMeta(metadata);
   const path = join(dir, 'report.md');
   if (job.cli) {
     const current = readTurn(dir);
     if (!current || turn !== turnToken(current)) throw new Error('use the turn token from the prompt you are answering');
-    if (text !== undefined) replace(path, text);
+    if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
     const sig = reportSignature(dir);
     if (!sig || sig === current.report_sig) throw new Error('write a fresh report for this turn first');
     const latest = readTurn(dir);
     if (!latest || turnToken(latest) !== turn) throw new Error('the turn changed; no receipt recorded');
     writeReportMeta(dir, sig, fields);
-    replace(join(dir, DONE_FILE), JSON.stringify({ seq: current.seq, sent_at: current.sent_at, report_sig: sig, at: new Date().toISOString() }) + '\n');
+    writeJsonPrivate(join(dir, DONE_FILE), { seq: current.seq, sent_at: current.sent_at, report_sig: sig, at: new Date().toISOString() }, { mkdir: false });
   } else {
     // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
     if (turn !== undefined) throw new Error('pi does not use a turn token');
     const { rememberWorkerTree } = workerTree;
-    if (text !== undefined) replace(path, text);
+    if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
     const sig = reportSignature(dir);
     if (!sig) throw new Error('write the pi report first');
     const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
@@ -72,7 +62,8 @@ export async function finishReport({ dir, job }, turn, text, metadata = {}) {
   return { path };
 }
 
-export function progress({ dir }, message) {
+export async function progress({ dir }, message) {
+  const { writePrivateFile } = await withDistLock(() => import('../../../dist/utils/atomic-fs.js'));
   const text = [...message.replace(/[\r\n\u2028\u2029]+/gu, ' ').replace(/\p{Cc}/gu, '').trim()]
     .slice(0, 240).join('').trimEnd();
   if (!text) throw new Error('usage: hud-progress [--dir <job-dir>] <message>');
@@ -89,7 +80,7 @@ export function progress({ dir }, message) {
     const previous = buffer.subarray(0, size).toString('utf8');
     const rows = previous.trimEnd().split('\n').filter(Boolean);
     if (rows.length < 50 && (!previous || previous.endsWith('\n'))) fs.appendFileSync(fd, record);
-    else replace(file, [...rows.slice(-49), record.trimEnd()].join('\n') + '\n');
+    else writePrivateFile(file, [...rows.slice(-49), record.trimEnd()].join('\n') + '\n', { mkdir: false });
   } finally { fs.closeSync(fd); }
   return { ok: true };
 }
@@ -299,7 +290,7 @@ function questionLine(q, job) {
   const options = q.options?.length ? ` | options: ${q.options.join(' / ')}` : '';
   return `[${q.tag}] QUESTION q${q.n}: ${oneLine}${options} | default: ${q.default.trim()} | full text: ${q.qfile} | reply: hud_respond job=${job.job} request_id=q${q.n}`;
 }
-function publishQuestion(qa, input) {
+function publishQuestion(qa, input, writePrivateFile) {
   let highest = 0;
   for (const file of fs.readdirSync(qa)) {
     const match = /^q(\d+)(?:\.answer)?\.md$/.exec(file);
@@ -308,7 +299,7 @@ function publishQuestion(qa, input) {
   for (let n = highest + 1;; n++) {
     const q = { ...input, n, qfile: join(qa, `q${n}.md`), afile: join(qa, `q${n}.answer.md`) };
     const answerExistedAtCreation = fs.existsSync(q.afile);
-    try { fs.writeFileSync(q.qfile, questionBody(q), { encoding: 'utf8', flag: 'wx' }); }
+    try { writePrivateFile(q.qfile, questionBody(q), { exclusive: true, mkdir: false }); }
     catch (error) { if (error.code === 'EEXIST') continue; throw error; }
     return { ...q, answerExistedAtCreation, questionMtimeMs: fs.statSync(q.qfile).mtimeMs };
   }
@@ -328,11 +319,14 @@ function orchestrator(dir) {
 }
 
 export async function ask({ dir, job }, input, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal) {
+  const [{ notify, taskDelivery }, { writePrivateFile }] = await withDistLock(() => Promise.all([
+    import('./hud-notify.mjs'), import('../../../dist/utils/atomic-fs.js'),
+  ]));
   signal?.throwIfAborted();
   const tag = `${typeof job.role === 'string' ? job.role : 'cli'}@${basename(job.cwd || dir)}`;
   const qa = join(dir, 'qa');
   fs.mkdirSync(qa, { recursive: true, mode: 0o700 });
-  const published = publishQuestion(qa, { ...input, tag });
+  const published = publishQuestion(qa, { ...input, tag }, writePrivateFile);
   let pushed = 'not pushed (no --notify / --orchestrator)';
   // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
   const receipt = readJob(dir);

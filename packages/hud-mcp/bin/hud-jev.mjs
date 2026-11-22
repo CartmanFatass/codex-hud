@@ -6,7 +6,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDistLock } from '../../../scripts/dist-lock.mjs';
 
-const { recordFailureExhaustion } = await withDistLock(() => import('../../../dist/roles/roster.js'));
+const [{ recordFailureExhaustion }, { writePrivateFile }] = await withDistLock(() => Promise.all([
+  import('../../../dist/roles/roster.js'), import('../../../dist/utils/atomic-fs.js'),
+]));
 
 const [dir, taskLength] = process.argv.slice(2);
 const bundled = fileURLToPath(new URL('..', import.meta.url));
@@ -45,8 +47,7 @@ function status(state, reason = null) {
     error: state === 'failed' ? reason : null,
   };
   const statusFile = join(dir, 'STATUS.json');
-  fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
-  fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+  writePrivateFile(statusFile, JSON.stringify(value, null, 2) + '\n', { mkdir: false });
 }
 let active,
   stopped = false;
@@ -106,10 +107,10 @@ try {
     }
     await cli(role.tool, args);
     const files = fs.readdirSync(media).filter((file) => fs.statSync(join(media, file)).isFile());
-    fs.writeFileSync(
+    writePrivateFile(
       output,
       '# Flow downloads\n\n' + files.map((file) => `- [${file}](media/${encodeURIComponent(file)})`).join('\n') + '\n',
-      { mode: 0o600 }
+      { mkdir: false }
     );
   }
   if (!fs.existsSync(output)) throw new Error('report missing');

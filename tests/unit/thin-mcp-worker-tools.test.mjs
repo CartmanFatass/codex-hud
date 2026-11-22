@@ -746,6 +746,7 @@ test(
     const call = workerClient(t, f, dir);
     const pending = call('hud_ask', { question: 'Which layout?', options: ['rows', 'columns'], default: 'rows', context: 'card width' });
     await until(() => fs.existsSync(join(dir, 'qa', 'q1.md')));
+    assert.equal(fs.statSync(join(dir, 'qa', 'q1.md')).mode & 0o777, 0o600);
     const body = fs.readFileSync(join(dir, 'qa', 'q1.md'), 'utf8');
     assert.match(body, /^# Question q1 from grok-imp@MyHUD\n/);
     assert.match(body, /Which layout\?/);
@@ -767,6 +768,7 @@ test(
     assert.equal(asking.homeNeedsHuman, true);
     assert.equal(asking.ask, 'Which layout?');
     await f.call('hud_respond', { job: id, request_id: 'q1', answer: 'columns' });
+    assert.equal(fs.statSync(join(dir, 'qa', 'q1.answer.md')).mode & 0o777, 0o600);
     const result = await pending;
     assert.equal(result.isError, undefined);
     assert.match(result.content[0].text, /ANSWER from the orchestrator \(q1, after \d+s\):\n\ncolumns/);

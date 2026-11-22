@@ -312,8 +312,6 @@ export function callsToday(calls: readonly (number | ModelCall)[], now: number):
   return count;
 }
 
-export { writePrivateFile } from '../utils/atomic-fs.js';
-
 function outputTokens(value?: number): number | undefined {
   return value !== undefined && Number.isFinite(value) ? Math.max(1, Math.min(8192, Math.floor(value))) : undefined;
 }

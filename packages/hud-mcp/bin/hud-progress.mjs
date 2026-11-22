@@ -19,7 +19,7 @@ try {
     for (const key of ['turn', 'summary', 'file']) {
       if (values[key] !== undefined) throw new Error(`--${key} requires --done`);
     }
-    progress(context, positionals.join(' '));
+    await progress(context, positionals.join(' '));
   }
 } catch (error) {
   console.error(`hud-progress: ${error.message}`);

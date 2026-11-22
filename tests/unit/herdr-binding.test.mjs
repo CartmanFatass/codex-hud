@@ -1,8 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { herdrId, tabIds, listedTabs, tabInfo, listedPanes, listedAgents } from '../../dist/roles/herdr-run.js';
 import { validPane, validStamp } from '../../dist/integrations/panel/receipt.js';
-import { readHerdrConfig } from '../../bin/codex-hud-herdr.mjs';
+import { bridgeHealthPath, readHerdrConfig, writeBridgeHealth } from '../../bin/codex-hud-herdr.mjs';
+
+test('overlapping bridge health publications leave one complete private record and no temporary files', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'bridge-health-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const file = bridgeHealthPath(home, 'demo');
+  const records = [{ state: 'idle' }, { state: 'working' }];
+  await Promise.all(records.map((record) => writeBridgeHealth(file, record)));
+  assert.ok(records.some((record) => fs.readFileSync(file, 'utf8') === JSON.stringify(record) + '\n'));
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(fs.readdirSync(dirname(file)), [`${process.pid}.json`]);
+});
 
 for (const id of ['w4E:p1', 'workspace / unicode 窗:tab?', ' '.repeat(300)])
   test(`herdr identities are opaque, not filename or format constrained: ${JSON.stringify(id.slice(0, 40))}`, t => {

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 /** One CLI job: pushed facts -> pure judge -> effects. No subprocesses or STATUS writes at rest. */
-import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
@@ -13,11 +12,11 @@ import { sonicChildren, sonicCollectPrompt } from './sonic-jobs.mjs';
 const [
   { recordFailureExhaustion }, { decideQuietJob },
   { cliWorkerTools, firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn },
-  { rememberWorkerTree }, { reportWasRead }, { runHerdr },
+  { rememberWorkerTree }, { reportWasRead }, { runHerdr }, { writeJsonPrivate, writePrivateFile },
 ] = await withDistLock(() => Promise.all([
   import('../../../dist/roles/roster.js'), import('../../../dist/mcp/quiet-decision.js'),
   import('../../../dist/mcp/cli-judge.js'), import('../../../dist/roles/worker-tree.js'), import('../../../dist/collectors/thin-jobs.js'),
-  import('../../../dist/roles/herdr-run.js'),
+  import('../../../dist/roles/herdr-run.js'), import('../../../dist/utils/atomic-fs.js'),
 ]));
 
 const dir = fs.realpathSync(process.argv[2]);
@@ -33,7 +32,7 @@ const tools = cliWorkerTools(cli.agent);
 const output = join(dir, 'report.md'), graceMs = (cli.idle_grace_s ?? 600) * 1000;
 const statusFile = join(dir, 'STATUS.json'), stopFile = `${statusFile}.stop-requested`, closeFile = `${statusFile}.close-requested`;
 const quitFile = `${statusFile}.quit-${process.pid}`;
-fs.writeFileSync(join(dir, 'supervisor.pid'), `${process.pid}\n`, { mode: 0o600 });
+writePrivateFile(join(dir, 'supervisor.pid'), `${process.pid}\n`, { mkdir: false });
 function effect(kind, args) {
   // Leave headroom for terminal status writes even if the helper ignores SIGTERM.
   return withEffect(kind, async (signal) => {
@@ -230,16 +229,7 @@ function write(result) {
   try {
     if (['closed', 'failed', 'stopped'].includes(JSON.parse(fs.readFileSync(statusFile, 'utf8')).state)) { shutdown(); return; }
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const temp = `${statusFile}.${process.pid}.${randomUUID()}.tmp`;
-  const fd = fs.openSync(temp, 'wx', 0o600);
-  try {
-    try { fs.writeFileSync(fd, JSON.stringify({ ...row, updated_at: iso(Date.now()) }) + '\n'); }
-    finally { fs.closeSync(fd); }
-    fs.renameSync(temp, statusFile);
-  } catch (error) {
-    fs.rmSync(temp, { force: true });
-    throw error;
-  }
+  writeJsonPrivate(statusFile, { ...row, updated_at: iso(Date.now()) }, { mkdir: false });
   current = row; rowStamp = changed;
 }
 async function run() {

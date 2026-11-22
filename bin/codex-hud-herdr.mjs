@@ -3,9 +3,11 @@
 import { execFile } from 'node:child_process';
 import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
-import { chmod, mkdir, rename, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { withDistLock } from '../scripts/dist-lock.mjs';
 
+const { writeJsonPrivate } = await withDistLock(() => import('../dist/utils/atomic-fs.js'));
 const TMUX_FORMAT = '#{session_name}\n#{pane_current_command}\n#{pane_dead}\n#{pane_title}';
 const CODEX_BINARY =
   /^codex(?:-(?:x86_64|aarch64)-(?:unknown-linux-(?:musl|gnu)|apple-darwin|pc-windows-msvc))?(?:\.exe)?$/;
@@ -156,17 +158,10 @@ export function bridgeHealthPath(hudHome, session, pid = process.pid) {
 
 export async function writeBridgeHealth(file, health) {
   const directory = dirname(file);
-  const temporary = `${file}.${process.pid}.tmp`;
-  try {
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    await chmod(dirname(directory), 0o700);
-    await chmod(directory, 0o700);
-    await writeFile(temporary, `${JSON.stringify(health)}\n`, { mode: 0o600 });
-    await chmod(temporary, 0o600);
-    await rename(temporary, file);
-  } finally {
-    await unlink(temporary).catch(() => {});
-  }
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await chmod(dirname(directory), 0o700);
+  await chmod(directory, 0o700);
+  writeJsonPrivate(file, health, { mkdir: false });
 }
 
 // Manual poll() is useful for deterministic tests. start() adds the CLI timers.

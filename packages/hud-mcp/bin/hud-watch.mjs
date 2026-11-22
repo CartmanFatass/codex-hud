@@ -86,7 +86,9 @@ async function reload(seen) {
   stamp = seen;
 }
 await withDistLock(async () => {
-  const { watcherReady } = await import('../../../dist/mcp/watch-pid.js');
+  const [{ watcherReady }, { writePrivateFile }] = await Promise.all([
+    import('../../../dist/mcp/watch-pid.js'), import('../../../dist/utils/atomic-fs.js'),
+  ]);
   if (watcherReady(pidFile, fileURLToPath(import.meta.url))) process.exit(0);
   current = await openGeneration(runtime, event, true);
   stamp = buildStamp();
@@ -94,7 +96,7 @@ await withDistLock(async () => {
   fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
   process.on('SIGTERM', () => void finish('signal=SIGTERM'));
   process.on('SIGINT', () => void finish('signal=SIGINT'));
-  fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
+  writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
   log(`start pid=${process.pid}`);
 });
 timer = setInterval(() => {

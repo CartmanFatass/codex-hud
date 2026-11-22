@@ -227,7 +227,11 @@ for (const failure of ['missing cwd', 'relative cwd', 'existing target', 'dangli
     const probe = failure === 'rename EXDEV' ? `
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-fs.renameSync = () => { throw Object.assign(Error('synthetic EXDEV'), { code: 'EXDEV' }); };
+const rename = fs.renameSync;
+fs.renameSync = (from, to) => {
+  if (from === ${JSON.stringify(source)}) throw Object.assign(Error('synthetic EXDEV'), { code: 'EXDEV' });
+  return rename(from, to);
+};
 syncBuiltinESMExports();` : '';
     const { child, exited } = f.start(probe);
     await exited;

@@ -1,6 +1,5 @@
 /** On-demand file-event reaper. Pi owns grace; pi-role-reap owns tab safety. */
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -171,16 +170,7 @@ function readCloseTurn(dir, job, status) {
   return status?.state === 'idle_grace' && job && !job.reaped_at ? piReadSettlement(dir, job, status) : null;
 }
 function writeJsonAtomic(file, value, indent) {
-  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  const fd = fs.openSync(temp, 'wx', 0o600);
-  try {
-    try { fs.writeFileSync(fd, JSON.stringify(value, null, indent) + '\n'); }
-    finally { fs.closeSync(fd); }
-    fs.renameSync(temp, file);
-  } catch (error) {
-    fs.rmSync(temp, { force: true });
-    throw error;
-  }
+  writePrivateFile(file, JSON.stringify(value, null, indent) + '\n', { mkdir: false });
 }
 function startWorktree(id, file, job) {
   const root = job.worktree.main_root;
@@ -512,13 +502,13 @@ const [
   { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
   { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
   { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree, mainHead }, { runCommand }, { archiveJob }, { landAttempt, activeLand },
-  { settleStoppedPi },
+  { settleStoppedPi }, { writePrivateFile },
 ] = await Promise.all([
     import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),
     import('../../../dist/roles/worker-tree.js'), import('../../../dist/mcp/pi-read-settlement.js'),
     import('../../../dist/roles/job-checks.js'), import('../../../dist/mcp/managed-worktree.js'),
     import('../../../dist/roles/herdr-run.js'), import('../../../dist/roles/job-archive.js'), import('../../../dist/mcp/land-state.js'),
-    import('../../../dist/mcp/pi-stop-settlement.js'),
+    import('../../../dist/mcp/pi-stop-settlement.js'), import('../../../dist/utils/atomic-fs.js'),
   ]);
 
 export function openRuntime(emit) {

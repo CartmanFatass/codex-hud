@@ -18,6 +18,7 @@ import {
   readProcChildren,
   readProcCmdline,
   readProcComm,
+  readProcEnviron,
   readProcEnvValue,
   readProcStat,
   readProcUid,
@@ -77,6 +78,9 @@ test('reads stat, cmdline, environ, comm, uid, boot info and alive state for the
   });
   const exited = once(child, 'exit');
   try {
+    const env = readProcEnviron(child.pid);
+    assert.equal(env.HUD_PROC_TEST_MARKER, marker);
+    assert.equal(Object.hasOwn(env, ''), false);
     assert.equal(readProcEnvValue(child.pid, 'HUD_PROC_TEST_MARKER'), marker);
     assert.equal(readProcEnvValue(child.pid, 'HUD_PROC_TEST_ABSENT'), null);
     const children = readProcChildren(process.pid);
@@ -96,6 +100,7 @@ test('treats a dead or invalid pid as absent and distinguishes unreadable /proc 
   assert.equal(isProcAlive(gone), false);
   assert.equal(isProcAlive(gone, '1'), false);
   assert.equal(readProcCmdline(gone), null);
+  assert.equal(readProcEnviron(gone), null);
   assert.equal(readProcEnvValue(gone, 'PATH'), null);
   assert.equal(readProcComm(gone), null);
   assert.equal(readProcUid(gone), null);

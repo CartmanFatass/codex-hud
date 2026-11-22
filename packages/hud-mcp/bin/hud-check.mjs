@@ -7,8 +7,8 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { withDistLock } from '../../../scripts/dist-lock.mjs';
 
-const [{ checkBinding, CHECKS_FILE, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks }, { procStat }] = await withDistLock(() => Promise.all([
-  import('../../../dist/roles/job-checks.js'), import('../../../dist/roles/worker-tree.js'),
+const [{ checkBinding, CHECKS_FILE, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks }, { procStat }, { writeJsonPrivate }] = await withDistLock(() => Promise.all([
+  import('../../../dist/roles/job-checks.js'), import('../../../dist/utils/proc.js'), import('../../../dist/utils/atomic-fs.js'),
 ]));
 
 const dir = fs.realpathSync(process.argv[2]), file = join(dir, CHECKS_FILE);
@@ -41,9 +41,7 @@ function run(command, cwd) {
   });
 }
 function save(receipt) {
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(receipt) + '\n', { mode: 0o600 });
-  fs.renameSync(temp, file);
+  writeJsonPrivate(file, receipt, { mkdir: false });
 }
 // ensureWatcher permits racing starts. Only one helper for this directory may run commands.
 const lock = createServer((socket) => socket.destroy());

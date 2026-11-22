@@ -96,17 +96,29 @@ export function readProcCmdline(pid: number): string[] | null {
   }
 }
 
+function procEnvEntries(pid: number): string[] | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try { return fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0'); }
+  catch { return null; }
+}
+
+/** Read one environment snapshot. An empty environment differs from an unreadable one. */
+export function readProcEnviron(pid: number): Record<string, string> | null {
+  const entries = procEnvEntries(pid);
+  if (!entries) return null;
+  const env: Record<string, string> = Object.create(null);
+  for (const entry of entries) {
+    const at = entry.indexOf('=');
+    if (at > 0) env[entry.slice(0, at)] ??= entry.slice(at + 1);
+  }
+  return env;
+}
+
 /** Look up one key in `/proc/<pid>/environ`; null if the process is gone, unreadable, or lacks the key. */
 export function readProcEnvValue(pid: number, key: string): string | null {
-  if (!Number.isInteger(pid) || pid <= 0 || !key) return null;
-  let raw: string;
-  try { raw = fs.readFileSync(`/proc/${pid}/environ`, 'utf8'); }
-  catch { return null; }
+  if (!key) return null;
   const prefix = `${key}=`;
-  for (const entry of raw.split('\0')) {
-    if (entry.startsWith(prefix)) return entry.slice(prefix.length);
-  }
-  return null;
+  return procEnvEntries(pid)?.find((entry) => entry.startsWith(prefix))?.slice(prefix.length) ?? null;
 }
 
 /** Read `/proc/<pid>/comm` trimmed; null if missing or unreadable. */

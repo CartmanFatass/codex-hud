@@ -81,6 +81,8 @@ export async function pushAgyEvents(pane, home, messages, env, type) {
   let accepted = 0;
   try {
     if (!file) throw new Error('Missing Antigravity mailbox pane or home');
+    // The standalone PreInvocation hook only consumes claims; it doesn't need a build.
+    const { writePrivateFile } = await import('../../../dist/utils/atomic-fs.js');
     fs.mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     return await locked(file, env, false, async () => {
       if (messages.length) {
@@ -93,14 +95,7 @@ export async function pushAgyEvents(pane, home, messages, env, type) {
           count++;
         }
         if (count) {
-          const tmp = `${file}.${randomUUID()}.tmp`;
-          try {
-            fs.writeFileSync(tmp, text, { flag: 'wx', mode: 0o600 });
-            fs.renameSync(tmp, file);
-          } catch (error) {
-            try { fs.unlinkSync(tmp); } catch { /* Not created. */ }
-            throw error;
-          }
+          writePrivateFile(file, text, { mkdir: false });
           accepted = count;
         }
       }

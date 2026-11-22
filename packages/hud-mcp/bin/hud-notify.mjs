@@ -9,20 +9,20 @@ import { pushAgyEvents } from './agy-events.mjs';
 
 export { hasAgyEvents } from './agy-events.mjs';
 
-function startTime(pid) {
-  const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-  return stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[19];
-}
+const standalone = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const loadPrimitives = () => Promise.all([import('../../../dist/utils/atomic-fs.js'), import('../../../dist/utils/proc.js')]);
+// The MCP generation already holds the dist lock during import. Take it here only for the CLI entry.
+const [{ writePrivateFile }, { isProcAlive, isValidPid, procStat, readProcCmdline, readProcEnviron }] =
+  await (standalone ? withDistLock(loadPrimitives) : loadPrimitives());
 
 export function registerPiWatcher(pane, home) {
   if (!pane || basename(pane) !== pane) return;
-  const dir = join(home, 'watchers'), file = join(dir, `${pane}.pid`), tmp = `${file}.${process.pid}.tmp`;
+  const file = join(home, 'watchers', `${pane}.pid`);
   try {
-    const marker = JSON.stringify({ pid: process.pid, start: startTime(process.pid), pane, home: resolve(home) }) + '\n';
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(tmp, marker, { mode: 0o600, flag: 'wx' });
-    try { fs.renameSync(tmp, file); }
-    catch (error) { fs.unlinkSync(tmp); throw error; }
+    const start = procStat(process.pid)?.start;
+    if (!start) return;
+    const marker = JSON.stringify({ pid: process.pid, start, pane, home: resolve(home) }) + '\n';
+    writePrivateFile(file, marker);
     return () => {
       try { if (fs.readFileSync(file, 'utf8') === marker) fs.unlinkSync(file); } catch { /* gone */ }
     };
@@ -35,22 +35,18 @@ export function watching(pane, home = process.env.HUD_HOME || join(homedir(), '.
     const text = fs.readFileSync(join(home, 'watchers', `${pane}.pid`), 'utf8').trim();
     const native = text.startsWith('{') ? JSON.parse(text) : null;
     const pid = native ? native.pid : Number(text);
-    if (!Number.isInteger(pid) || pid <= 1) return false;
-    process.kill(pid, 0);
-    const argv = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0');
-    const env = Object.fromEntries(fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').map((s) => {
-      const at = s.indexOf('='); return [s.slice(0, at), s.slice(at + 1)];
-    }));
-    if (env.HERDR_PANE_ID !== pane) return false;
+    if (!isValidPid(pid)) return false;
+    const argv = readProcCmdline(pid), env = readProcEnviron(pid);
+    if (!argv?.length || env?.HERDR_PANE_ID !== pane) return false;
     if (native) {
       const piEntry = /(?:^|\/)pi$|\/(?:@earendil-works|@mariozechner)\/pi-coding-agent\/dist\/cli\.js$/;
       const isPi = basename(argv[0]) === 'pi' || (/^(node|nodejs)$/.test(basename(argv[0])) && piEntry.test(argv[1] ?? ''));
       // Pi's installed binding supplies the home when it wasn't exported at process launch.
       return isPi && !env.HUD_JOB_DIR && native.pane === pane && native.home === resolve(home) &&
         (!env.HUD_HOME || resolve(env.HUD_HOME) === resolve(home)) &&
-        typeof native.start === 'string' && native.start === startTime(pid);
+        typeof native.start === 'string' && isProcAlive(pid, native.start);
     }
-    return argv.includes('watch') && argv.some((arg) => /(?:^|\/)hud$/.test(arg)) && !argv.includes('--all') &&
+    return isProcAlive(pid) && argv.includes('watch') && argv.some((arg) => /(?:^|\/)hud$/.test(arg)) && !argv.includes('--all') &&
       resolve(env.HUD_HOME || join(env.HOME || homedir(), '.hud')) === resolve(home);
   } catch { return false; } // Stale or reused PID: never suppress a question.
 }
@@ -58,8 +54,8 @@ export function watching(pane, home = process.env.HUD_HOME || join(homedir(), '.
 export function taskDelivery(dir, pane) {
   try {
     const task = JSON.parse(fs.readFileSync(join(dir, 'mcp-task.json'), 'utf8'));
-    return task.pane === pane && task.expires > Date.now() && Number.isInteger(task.pid) && task.pid > 1 &&
-      typeof task.start === 'string' && startTime(task.pid) === task.start;
+    return task.pane === pane && task.expires > Date.now() && isValidPid(task.pid) &&
+      typeof task.start === 'string' && isProcAlive(task.pid, task.start);
   } catch { return false; }
 }
 let runner;
@@ -120,9 +116,9 @@ export async function notify(pane, message, home, { queue = false, env = process
       if (!got.ok) throw new Error(got.stderr || `process-info failed (${got.reason})`);
       const proc = JSON.parse(got.stdout).result.process_info.foreground_processes.find((p) => p.name === 'codex');
       if (!proc) throw new Error('Codex process not found');
-      const entries = fs.readFileSync(`/proc/${proc.pid}/environ`, 'utf8').split('\0');
-      const value = (key) => entries.find((s) => s.startsWith(`${key}=`))?.slice(key.length + 1);
-      const CODEX_HOME = value('CODEX_HOME') || join(value('HOME') || homedir(), '.codex');
+      const account = readProcEnviron(proc.pid);
+      if (!account) throw new Error('Codex process environment unreadable');
+      const CODEX_HOME = account.CODEX_HOME || join(account.HOME || homedir(), '.codex');
       // Leave headroom for the queue watcher to exit in 500 ms even if Codex ignores TERM.
       const outcome = await runCommand('codex', ['queue', '--thread', info.agent_session.value, '--message', message],
         { ...env, CODEX_HOME }, { budgetMs: 20_000, killGraceMs: 250, signal });
@@ -151,12 +147,12 @@ export async function ensureQueueWatcher(pane, home) {
       try { if (fs.readFileSync(pidFile, 'utf8').trim() === String(child.pid)) fs.unlinkSync(pidFile); } catch { /* gone */ }
     };
     child.on('error', cleanup);
-    if (child.pid) fs.writeFileSync(pidFile, `${child.pid}\n`, { mode: 0o600 });
+    if (child.pid) writePrivateFile(pidFile, `${child.pid}\n`, { mkdir: false });
     child.unref();
   } catch { /* Dispatch still succeeds; questions retain the typed fallback. */ }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (standalone) {
   const [home, launchPane, job, message = ''] = process.argv.slice(2);
   process.env.HUD_HOME = home;
   let pane = launchPane;
