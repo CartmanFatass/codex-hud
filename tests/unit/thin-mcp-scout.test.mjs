@@ -62,6 +62,10 @@ test('scouted create returns one MCP task, shares the managed cwd and appends th
   assert.ok(targetBrief.includes(`${enPrefix}\n- ${scouted.job} report: ${JSON.stringify(join(scout, 'report.md'))}`));
   assert.ok(!targetBrief.includes(`${enPrefix}\n- ${upstream.job} report:`));
   assert.equal((await get()).status, 'working', 'the scout does not complete the task');
+  const followUp = await taskCall(rpc, 'hud_send', { job: target.job, text: 'Synthetic scouted follow-up.' });
+  assert.equal(followUp.resultType, 'complete');
+  assert.equal(resultValue(followUp).sent, true);
+  assert.equal((await get()).status, 'working', 'follow-up send carries on the scout task');
   fs.writeFileSync(join(target.task_dir, 'report.md'), 'Synthetic target result.');
   publishSonic(target.task_dir, { state: 'done' });
   const done = await get();

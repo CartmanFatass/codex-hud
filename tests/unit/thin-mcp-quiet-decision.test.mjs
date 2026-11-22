@@ -12,6 +12,7 @@ import {
   workerFor,
   cardText,
   fixture,
+  resultValue,
   until,
   taskRpc,
   taskCall,
@@ -75,16 +76,15 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.ok(!prompts()[0].args[3].includes(collectedId));
   assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'working');
   const next = await taskCall(rpc, 'hud_send', { job: parent.job, text: 'Synthetic caller turn after collection.' });
-  assert.equal(taskJob(f, next).job, parent.job);
-  const superseded = await rpc('tasks/cancel', { taskId: handle.taskId });
-  assert.equal(superseded.status, 'failed');
-  assert.match(superseded.statusMessage, /no longer current/);
+  assert.equal(next.resultType, 'complete');
+  assert.equal(resultValue(next).sent, true);
+  assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'working');
   assert.equal(reapAttempts(f, parent), 0);
   writeFixtureFile(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
   declareDone(f, parent);
   f.push(parent.job, 'done');
   await until(() => cliState(parent.task_dir)?.state === 'closed');
-  assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'completed');
+  assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'completed');
   assert.equal(prompts().length, 1, 'the same report is not prompted for again');
   assert.equal(server.requests.length, 0);
 });

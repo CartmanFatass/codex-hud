@@ -220,7 +220,7 @@ test('MCP tasks: fan-out sends keep the create task through report settlement', 
   assert.equal(read.report_meta, undefined);
 });
 
-test('MCP tasks: cancel fences sends and reaps once even with duplicate requests', { timeout: 10000 }, async (t) => {
+test('MCP tasks: cancel fences stale tasks and reaps live tasks once even with duplicate requests', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
@@ -230,17 +230,113 @@ test('MCP tasks: cancel fences sends and reaps once even with duplicate requests
   assert.equal(fanOut.resultType, 'complete');
   assert.deepEqual(resultValue(fanOut).sent, [job.job]);
   const send = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic new turn.' });
-  assert.equal(taskJob(f, send).job, job.job);
-  assert.equal((await rpc('tasks/cancel', { taskId: task.taskId })).status, 'failed');
+  assert.equal(send.resultType, 'complete');
+  assert.equal(resultValue(send).sent, true);
+  assert.equal((await rpc('tasks/get', { taskId: task.taskId })).status, 'working');
   const reaps = () => f.commands().filter(({ command }) => command === 'pi-role-reap');
   assert.equal(reaps().length, 0);
-  const params = { taskId: send.taskId };
+  const params = { taskId: task.taskId };
   const [first, duplicate] = await Promise.all([rpc('tasks/cancel', params), rpc('tasks/cancel', params)]);
   assert.equal(first.status, 'cancelled');
   assert.deepEqual(first, duplicate);
   assert.deepEqual(first, await rpc('tasks/get', params));
   assert.deepEqual(reaps().map(({ args }) => args), [[job.task_dir]]);
   assert.ok(fs.existsSync(join(job.task_dir, 'STATUS.json.stop-requested')));
+});
+
+test('MCP tasks: follow-up sends and live hud_respond carry on one task and extend TTL', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const task = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic chained follow-ups.' });
+  const job = taskJob(f, task);
+  const get = () => rpc('tasks/get', { taskId: task.taskId });
+  const marker = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'mcp-task.json'), 'utf8'));
+  const initialExpires = marker().expires;
+  await new Promise((r) => setTimeout(r, 20));
+
+  const first = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic follow-up one.' });
+  assert.equal(first.resultType, 'complete');
+  assert.equal(resultValue(first).sent, true);
+  assert.equal(resultValue(first).queued, true);
+  assert.ok(marker().expires > initialExpires, 'follow-up extends task marker TTL');
+  const afterFirst = await get();
+  assert.equal(afterFirst.status, 'working');
+  assert.ok(afterFirst.ttlMs >= task.ttlMs);
+
+  const failPrompt = join(f.env.HOME, 'fail-prompt');
+  fs.writeFileSync(failPrompt, '');
+  const failed = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic refused follow-up.' });
+  assert.equal(failed.resultType, 'complete');
+  assert.equal(resultValue(failed).code, 'send_failed');
+  assert.equal((await get()).status, 'working', 'refused send does not fail the live task');
+  fs.unlinkSync(failPrompt);
+
+  const second = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic follow-up two.' });
+  assert.equal(second.resultType, 'complete');
+  assert.equal(resultValue(second).sent, true);
+  const batchMsg = await taskCall(rpc, 'hud_send', { messages: [{ job: job.job, text: 'Synthetic batch follow-up.' }] });
+  assert.equal(batchMsg.resultType, 'complete');
+  assert.equal(resultValue(batchMsg).messages[0].sent, true);
+  assert.equal((await get()).status, 'working');
+
+  // An unanswered question answered while the task is still live continues the same task.
+  writeFixtureFile(join(job.task_dir, 'qa', 'q1.md'), 'Synthetic live question?');
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', reason: 'question open' }));
+  const resp = await taskCall(rpc, 'hud_respond', { job: job.job, request_id: 'q1', answer: 'Keep going.' });
+  assert.equal(resp.resultType, 'complete');
+  assert.deepEqual(resultValue(resp), { ok: true, written: true });
+  assert.equal((await get()).status, 'working');
+
+  writeFixtureFile(join(job.task_dir, 'report.md'), parserReport);
+  writeReportMeta(job.task_dir, reportSignature(job.task_dir), { summary: 'Latest turn synthetic summary.', files: ['src/parser.ts'] });
+  await publishPiGrace(job, undefined, false);
+  const done = await get();
+  assert.equal(done.status, 'completed');
+  assert.match(done.result.content[0].text, /Summary: Latest turn synthetic summary\./);
+});
+
+test('MCP tasks: pane change or repair job ends old task cleanly naming the successor without reaping', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+
+  // 1. Pane changed before a send: old task ends as cancelled naming the new pane; cancel does not reap.
+  const movedTask = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic moved pane job.' });
+  const movedJob = taskJob(f, movedTask);
+  const receiptPath = join(movedJob.task_dir, 'job.json');
+  const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+  receipt.herdr_pane = 'w4E:p9';
+  writeFixtureFile(receiptPath, JSON.stringify(receipt, null, 2));
+  const afterMove = await taskCall(rpc, 'hud_send', { job: movedJob.job, text: 'Synthetic send after pane move.' });
+  assert.equal(afterMove.resultType, 'task');
+  assert.notEqual(afterMove.taskId, movedTask.taskId);
+  const movedOld = await rpc('tasks/cancel', { taskId: movedTask.taskId });
+  assert.equal(movedOld.status, 'cancelled');
+  assert.match(movedOld.statusMessage, /moved to pane w4E:p9/);
+  assert.doesNotMatch(movedOld.statusMessage, /failed/i);
+  assert.equal(reapAttempts(f, movedJob), 0);
+
+  // 2. Repair job created while old task is still live: old task ends as cancelled naming the repair successor.
+  const origTask = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic repair source job.' });
+  const origJob = taskJob(f, origTask);
+  writeFixtureFile(join(origJob.task_dir, 'report.md'), 'Synthetic first report.');
+  writeFixtureFile(join(origJob.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed', exit_reason: 'closed after report read' }));
+  const repairTask = await taskCall(rpc, 'hud_send', { job: origJob.job, text: 'Synthetic repair follow-up.' });
+  assert.equal(repairTask.resultType, 'task');
+  const repairJob = taskJob(f, repairTask);
+  assert.notEqual(repairJob.job, origJob.job);
+  assert.equal(repairTask.continued_as, repairJob.job);
+  const reapsBefore = reapAttempts(f, origJob);
+  const origOld = await rpc('tasks/cancel', { taskId: origTask.taskId });
+  assert.equal(origOld.status, 'cancelled');
+  assert.match(origOld.statusMessage, new RegExp(`continued as repair job ${repairJob.job}`));
+  assert.doesNotMatch(origOld.statusMessage, /failed/i);
+  assert.equal(reapAttempts(f, origJob), reapsBefore);
+  assert.equal(fs.existsSync(join(origJob.task_dir, 'STATUS.json.stop-requested')), false);
+  assert.equal(reapAttempts(f, repairJob), 0);
 });
 
 test('MCP tasks: a fresh server cannot cancel old tasks; legacy and failed dispatches stay immediate', { timeout: 10000 }, async (t) => {

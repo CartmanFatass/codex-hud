@@ -360,3 +360,52 @@ test('MCP tasks: batch creates and responds deliver per-job compact notices with
   const nonTaskRoster = await f.call('hud_roster');
   assert.ok(nonTaskRoster.changes?.some((line) => line.includes(disc.job) && /idle_grace|closed/.test(line)));
 });
+
+test('MCP tasks: batch follow-up sends and answers carry on live batch tasks with one terminal notice', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+
+  const created = resultValue(await taskCall(rpc, 'hud_create', {
+    jobs: [
+      { role: 'imp', task: 'Batch chain worker.', request_key: 'bc-1' },
+      { role: 'imp', task: 'Batch asking worker.', request_key: 'bc-2' },
+    ],
+  }));
+  const [chain, asking] = created.jobs;
+  const panePrompts = () => f.commands()
+    .filter((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID)
+    .map((c) => c.args[3]);
+
+  // Single send, batch messages, and fan-out all carry on the live batch task without opening a polled task.
+  const single = await taskCall(rpc, 'hud_send', { job: chain.job, text: 'Synthetic single addendum.' });
+  assert.equal(single.resultType, 'complete');
+  assert.equal(resultValue(single).sent, true);
+  const batchSend = await taskCall(rpc, 'hud_send', { messages: [{ job: chain.job, text: 'Synthetic batch addendum.' }] });
+  assert.equal(batchSend.resultType, 'complete');
+  assert.equal(resultValue(batchSend).messages[0].sent, true);
+  const fanOut = await taskCall(rpc, 'hud_send', { jobs: [chain.job], text: 'Synthetic fan-out addendum.' });
+  assert.equal(fanOut.resultType, 'complete');
+  assert.deepEqual(resultValue(fanOut).sent, [chain.job]);
+
+  // Live batch answer continues the asking worker's batch task without pushing a stale question notice.
+  writeFixtureFile(join(asking.task_dir, 'qa', 'q1.md'), 'Synthetic batch live question?');
+  writeFixtureFile(join(asking.task_dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', reason: 'asking' }));
+  const ans = await taskCall(rpc, 'hud_respond', { answers: [{ job: asking.job, request_id: 'q1', answer: 'Continue.' }] });
+  assert.equal(ans.resultType, 'complete');
+  assert.deepEqual(resultValue(ans).answers, [{ job: asking.job, request_id: 'q1', ok: true, written: true }]);
+
+  writeFixtureFile(join(chain.task_dir, 'report.md'), 'Latest batch chain report.\n');
+  await publishPiGrace(chain, undefined, false);
+  writeFixtureFile(join(asking.task_dir, 'report.md'), 'Batch answered report.\n');
+  await publishPiGrace(asking, undefined, false);
+
+  await until(() => fs.existsSync(join(chain.task_dir, 'batch-notice.json')) && fs.existsSync(join(asking.task_dir, 'batch-notice.json')), 8000);
+  const chainNotices = panePrompts().filter((m) => m.includes(chain.job));
+  const askingNotices = panePrompts().filter((m) => m.includes(asking.job));
+  assert.equal(chainNotices.length, 1);
+  assert.match(chainNotices[0], /Latest batch chain report\./);
+  assert.equal(askingNotices.length, 1);
+  assert.match(askingNotices[0], /Batch answered report\./);
+});

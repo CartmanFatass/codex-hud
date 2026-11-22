@@ -1903,7 +1903,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       save(job);
     }
     const launchRow = finishLaunch(job, dir, result, reason, !scoutQuestion);
-    if (scoutTask) scoutTask.fence = taskFence(job);
+    if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && job.herdr_pane === scoutTask.pane) {
+      scoutTask.fence = taskFence(job);
+      extendTask(scoutTask, job);
+    }
     if (batch) {
       registerBatchTask(taskEntry, job, result.exit_code === 0);
       return created(job, launchRow);
@@ -1951,7 +1954,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     } catch (error) {
       const latest = findJobMutable(id) ?? base;
       finishLaunch(latest, dir, { ...launchError(String(error)), preInput: true }, String(error), false);
-      if (scoutTask) scoutTask.fence = taskFence(latest);
+      if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && latest.herdr_pane === scoutTask.pane)
+        scoutTask.fence = taskFence(latest);
     } finally {
       pendingScouts.delete(id);
     }
@@ -2314,19 +2318,21 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const identity = resumeIdentity(current, status);
   const role = registry(roleCwd(current)).roles().get(current.role);
   if (!identity || !role) return;
-  const oldTask = activeTasks.get(id);
-  if (oldTask) sampleTask(oldTask);
   const priorSession = slice(join(dir, jobFiles.session), 8192);
   if (!priorSession || priorSession.truncated || fs.existsSync(join(dir, jobFiles.stopRequested)) ||
       fs.existsSync(join(dir, jobFiles.closeRequested))) return;
   const priorTurn = current.cli ? readTurn(dir) : null;
   if (current.cli && !priorTurn) return;
+  const oldTask = activeTasks.get(id);
+  if (oldTask) sampleTask(oldTask);
+  const carryTask = oldTask && !land && activeTasks.get(id) === oldTask && oldTask.view.status === 'working'
+    ? oldTask : undefined;
   const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
   const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}),
     recorded_at: new Date().toISOString(), exit_code: null as number | null, stderr_tail: '', resumed: true as const };
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
     send_outcomes: [...(current.send_outcomes ?? []), outcome] };
-  const taskEntry = taskClient && !land ? beginTask(next, row.report_mtime) : undefined;
+  const taskEntry = taskClient && !land && !carryTask ? beginTask(next, row.report_mtime) : undefined;
   // The reaper has finished the old tab. Publish a nonterminal status before replacing its ownership.
   writeCreateStatus(dir, { state: 'working' });
   save(next, true);
@@ -2349,6 +2355,14 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   }
   save(latest);
   const ok = result.exit_code === 0;
+  if (carryTask && activeTasks.get(id) === carryTask) {
+    if (ok) {
+      carryTask.fence = taskFence(latest);
+      carryTask.reportBefore = row.report_mtime;
+      carryTask.attentionBefore = undefined;
+      extendTask(carryTask, latest);
+    } else if (batchTasks.get(id) !== carryTask) sampleTask(carryTask);
+  }
   if (ok && !taskClient && !land) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
   const continuation = 'resumed' as const;
   if (batch) registerBatchTask(taskEntry, latest, ok);
@@ -2397,7 +2411,10 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     if (!land) {
       const prior = jobs().find((job) => job.request_key === repairKey &&
         (explicitKey !== undefined || withinRetryWindow(job.created_at, now)));
-      if (prior) return { ...created(prior), continued_as: prior.job, continuation: 'repair' as const };
+      if (prior) {
+        supersedeTask(id, `continued as repair job ${prior.job}`);
+        return { ...created(prior), continued_as: prior.job, continuation: 'repair' as const };
+      }
     }
     if (status && current.reaped_at) {
       const resumed = await resumeJob(current, status, row, message, matchKey, explicitKey, land, batch);
@@ -2412,6 +2429,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: repairKey },
       process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined }, batch);
     const continued_as = 'job' in repair ? repair.job : isTaskReply(repair) ? tasks.get(repair.taskId)?.job : undefined;
+    if (continued_as) supersedeTask(id, `continued as repair job ${continued_as}`);
     return { ...repair, continuation: 'repair' as const, ...(continued_as ? { continued_as } : {}) };
   }
   const agent = primary(current.job);
@@ -2428,6 +2446,8 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     return { ok: false, code: 'not_continuable' };
   const oldTask = activeTasks.get(id);
   if (oldTask) sampleTask(oldTask);
+  const carryTask = oldTask && !land && activeTasks.get(id) === oldTask && oldTask.view.status === 'working'
+    ? oldTask : undefined;
   // Record the attempt first. A fresh derived send needs its own key for CLI turn tracking.
   const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
   const recorded_at = new Date().toISOString();
@@ -2440,7 +2460,8 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
   const prior = current.cli ? readTurn(dir) : null;
   const turn = current.cli ? writeTurn(dir, { send: { key, pid: process.pid, start: procStat(process.pid)?.start ?? null } }) : null;
-  const taskEntry = taskClient && !workingOnly ? beginTask(current, row.report_mtime, undefined, row, statusAt) : undefined;
+  const taskEntry = taskClient && !workingOnly && !land && !carryTask
+    ? beginTask(current, row.report_mtime, undefined, row, statusAt) : undefined;
   const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
   if (turn && refusedBeforeInput(result)) {
     const active = readTurn(dir);
@@ -2468,23 +2489,28 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
       spawnCliSupervisor(dir);
     }
   }
-  if (oldTask && !taskEntry) {
-    if (workingOnly && activeTasks.get(id) === oldTask) {
-      // A queued fan-out has no successor task. Follow only this send's fence;
-      // a failed send can advance it only for a CLI prompt that may have reached the worker.
-      const fence = taskFence(latest);
-      if (fence === (turn ? turnToken(turn) : key)) oldTask.fence = fence;
-    }
-    sampleTask(oldTask);
-  }
   const ok = result.exit_code === 0;
+  if (carryTask && activeTasks.get(id) === carryTask) {
+    // Follow only this send's fence; a failed send can advance it only for a CLI prompt that may have reached the worker.
+    const fence = taskFence(latest);
+    if (fence === (turn ? turnToken(turn) : key)) {
+      carryTask.fence = fence;
+      carryTask.reportBefore = row.report_mtime;
+      carryTask.attentionBefore = needsAttention(row) ? (statusAt ?? undefined) : undefined;
+      if (ok) extendTask(carryTask, latest);
+    }
+    if (!ok) {
+      if (batchTasks.get(id) === carryTask) claimTask(carryTask, latest);
+      else if (sampleTask(carryTask).status === 'working') claimTask(carryTask, latest);
+    }
+  }
   if (batch) {
     registerBatchTask(taskEntry, latest, ok);
   } else {
     const response = finishTask(taskEntry, latest, ok);
     if (response) return response;
   }
-  if (!ok && oldTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
+  if (!ok && oldTask && !carryTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
   return {
     ...(ok ? {} : { code: 'send_failed' }),
     ok, sent: ok,
@@ -2788,13 +2814,24 @@ function respondJob(args: Args, batch: boolean) {
   ensureWatcher();
   fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
   const oldTask = activeTasks.get(id);
-  if (oldTask) sampleTask(oldTask);
   const polled = taskClient ? readRow(job, false) : undefined;
   const row = polled?.row;
-  const task = row?.question_ids.includes(request) ? beginTask(job, oldTask?.reportBefore, request, row, polled?.statusAt) : undefined;
+  const state = row?.state ?? row?.display_state;
+  const canCarry = !!oldTask && oldTask.view.status === 'working' &&
+    job.herdr_pane === oldTask.pane && taskFence(job) === oldTask.fence &&
+    state !== 'failed' && state !== 'stopped' && !fs.existsSync(join(dir, jobFiles.stopRequested));
+  if (oldTask && !canCarry) sampleTask(oldTask);
+  const task = !canCarry && row?.question_ids.includes(request)
+    ? beginTask(job, oldTask?.reportBefore, request, row, polled?.statusAt) : undefined;
   try {
     writePrivateFile(join(dir, jobFiles.qa, `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
     jobCache.invalidateQa(job.job);
+    if (canCarry) {
+      oldTask.seenQuestions.add(`${request}.md`);
+      if (row && needsAttention(row)) oldTask.attentionBefore = polled?.statusAt ?? undefined;
+      extendTask(oldTask, job);
+      return { ok: true, written: true };
+    }
     if (batch) {
       registerBatchTask(task, job, true);
       return { ok: true, written: true };
@@ -3009,7 +3046,8 @@ type TaskStatus = BatchNotice['status'];
 type TaskView = { status: TaskStatus; statusMessage: string; lastUpdatedAt: string; result?: ReturnType<typeof taskContent> };
 type HudTask = {
   id: string; job: string; role: string; pane: string; createdAt: string; fence?: string;
-  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number; expiresAt?: number;
+  reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number;
+  expiresAt?: number; ttlMs?: number;
 };
 let tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
 type PendingBatchNotice = { job: string; fence: string; status: TaskStatus; text: string };
@@ -3027,7 +3065,10 @@ function disarmExpiry(id: string) {
 function armExpiry(task: HudTask) {
   disarmExpiry(task.id);
   const timer = setTimeout(() => {
-    expiry.delete(task.id); tasks.delete(task.id); releaseTask(task);
+    if (expiry.get(task.id) !== timer) return;
+    expiry.delete(task.id);
+    tasks.delete(task.id);
+    releaseTask(task);
   }, Math.max(0, task.expiresAt! - Date.now())).unref();
   expiry.set(task.id, timer);
 }
@@ -3040,8 +3081,25 @@ function claimTask(task: HudTask, job: Job) {
   if (!callerPane || job.herdr_pane !== callerPane) return;
   try {
     writePrivateFile(markerFile(task), JSON.stringify({ id: task.id, pane: callerPane, pid: process.pid,
-      start: procStat(process.pid)?.start, expires: Date.parse(task.createdAt) + TASK_TTL } satisfies McpTaskMarker), { mkdir: false });
+      start: procStat(process.pid)?.start, expires: task.expiresAt ?? (Date.parse(task.createdAt) + TASK_TTL) } satisfies McpTaskMarker), { mkdir: false });
   } catch { /* If not recorded, question delivery keeps its ordinary fallback. */ }
+}
+function extendTask(task: HudTask, job: Job) {
+  const now = Date.now();
+  task.expiresAt = now + TASK_TTL;
+  task.ttlMs = Math.max(TASK_TTL, task.expiresAt - Date.parse(task.createdAt));
+  if (tasks.has(task.id)) {
+    tasks.delete(task.id);
+    tasks.set(task.id, task);
+    armExpiry(task);
+  }
+  claimTask(task, job);
+}
+function supersedeTask(id: string, detail: string) {
+  const oldTask = activeTasks.get(id);
+  if (!oldTask || oldTask.view.status !== 'working') return;
+  const message = `${taskLabel(oldTask, detail)}. Use hud_read for the job's current state.`;
+  updateTask(oldTask, 'cancelled', message, message);
 }
 function releaseTask(task: HudTask) {
   if (activeTasks.get(task.job) === task) activeTasks.delete(task.job);
@@ -3077,7 +3135,7 @@ function taskFence(job: Job) {
   return job.created_at;
 }
 function wireTask(task: HudTask) {
-  return { taskId: task.id, createdAt: task.createdAt, ttlMs: TASK_TTL, pollIntervalMs: TASK_POLL_MS, ...task.view };
+  return { taskId: task.id, createdAt: task.createdAt, ttlMs: task.ttlMs ?? TASK_TTL, pollIntervalMs: TASK_POLL_MS, ...task.view };
 }
 type TaskReply = ReturnType<typeof wireTask> & { resultType: 'task' };
 const isTaskReply = (value: unknown): value is TaskReply =>
@@ -3133,6 +3191,7 @@ function recordBatchNotice(item: PendingBatchNotice, taskId: string, via: 'push'
 function sampleBatchTasks() {
   const now = Date.now();
   for (const [id, task] of [...batchTasks.entries()]) {
+    if (locks.has(`job:${id}`)) continue;
     if (task.expiresAt && now >= task.expiresAt) {
       batchTasks.delete(id);
       releaseTask(task);
@@ -3230,8 +3289,13 @@ function sampleTask(task: HudTask): TaskView {
   if (task.view.status !== 'working') return task.view;
   const job = findJob(task.job);
   if (!job || job.herdr_pane !== task.pane || taskFence(job) !== task.fence) {
-    const message = `${taskLabel(task, 'no longer current')}. Use hud_read for the job's current state.`;
-    return updateTask(task, 'failed', message, message);
+    const reason = !job
+      ? 'job no longer present'
+      : job.herdr_pane !== task.pane
+        ? `moved to pane ${job.herdr_pane}`
+        : 'superseded by a newer turn';
+    const message = `${taskLabel(task, reason)}. Use hud_read for the job's current state.`;
+    return updateTask(task, 'cancelled', message, message);
   }
   if (job.role !== task.role) task.role = job.role;
   const dir = directory(job.job), { row, status, statusAt } = readRow(job, false);
