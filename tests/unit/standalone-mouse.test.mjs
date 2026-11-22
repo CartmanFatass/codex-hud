@@ -1,3 +1,6 @@
+import { sliceState } from '../fixtures/state-helpers.mjs';
+import { homeAnchor, homeTarget } from '../../dist/render/monitor-state.js';
+import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -5,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { renderMonitor, initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { renderSettingsPage, handleSettingsInput, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { defaultSettings } from '../../dist/settings.js';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -50,59 +53,59 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   const send = (frame, input) => handleMonitorInput(frame.state, input, { tree, frame, nowMs: NOW });
 
   // 1. Tab click switches main tabs
-  let frame = draw(initialMonitorState());
+  let frame = draw(sliceState());
   for (const [kind, tab] of [['board-project', 'project'], ['board-home', 'home']]) {
     const control = frame.controls.find((c) => c.kind === kind);
     assert.ok(control, `missing control ${kind}`);
     frame = draw(send(frame, { type: 'mouse', button: 'left', x: control.x, y: control.y }).state);
-    assert.equal(frame.state.mainTab, tab);
+    assert.equal(frame.state.activeTab, tab);
   }
 
   // 2. Crumb click on row 0 closes Help back to Home
   frame = draw(send(frame, { type: 'key', key: 'help' }).state);
-  assert.equal(frame.state.help, true);
+  assert.equal(!!frame.state.help, true);
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 2, y: 0 }).state);
-  assert.equal(frame.state.help, false);
+  assert.equal(!!frame.state.help, false);
 
   // 3. Hub link opens in one click; crumb click returns; elsewhere first click selects and second click acts as Enter
   const projectTab = frame.controls.find((c) => c.kind === 'board-project');
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: projectTab.x, y: projectTab.y }).state);
-  assert.equal(frame.state.mainTab, 'project');
+  assert.equal(frame.state.activeTab, 'project');
   const pane = () => frame.panes[0];
   const progressPageRow = pane().rows
     .map((r, i) => ({ item: r.item, y: pane().y + i - pane().offset }))
     .find((d) => d.item === 'project:page:progress');
   assert.ok(progressPageRow, 'need Progress hub link');
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: progressPageRow.y }).state);
-  assert.equal(frame.state.projectPage, 'progress', 'hub link opens subpage in one click');
+  assert.equal(projectPageOf(frame.state), 'progress', 'hub link opens subpage in one click');
   // Crumb click on row 0 returns to the Project hub
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);
-  assert.equal(frame.state.projectPage, undefined);
+  assert.equal(projectPageOf(frame.state), undefined);
   // First click on an unselected non-hub row (project:fold:...) selects it without folding; second click toggles fold (Enter)
   const foldRow = pane().rows
     .map((r, i) => ({ item: r.item, y: pane().y + i - pane().offset }))
-    .find((d) => d.item?.startsWith('project:fold:') && d.item !== frame.state.projectCursor);
+    .find((d) => d.item?.startsWith('project:fold:') && d.item !== frame.state.project.nav.cursor);
   assert.ok(foldRow, 'need an unselected fold row');
   const foldId = foldRow.item.slice('project:fold:'.length);
-  const foldedBefore = frame.state.projectFolded?.has(foldId) ?? false;
+  const foldedBefore = frame.state.project.folded?.has(foldId) ?? false;
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: foldRow.y }).state);
-  assert.equal(frame.state.projectCursor, foldRow.item);
-  assert.equal(frame.state.projectFolded?.has(foldId) ?? false, foldedBefore, 'first click selects without toggling fold');
+  assert.equal(frame.state.project.nav.cursor, foldRow.item);
+  assert.equal(frame.state.project.folded?.has(foldId) ?? false, foldedBefore, 'first click selects without toggling fold');
   const sameIndex = pane().rows.findIndex((r) => r.item === foldRow.item);
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: pane().y + sameIndex - pane().offset }).state);
-  assert.equal(frame.state.projectFolded?.has(foldId) ?? false, !foldedBefore, 'second click performs Enter action');
+  assert.equal(frame.state.project.folded?.has(foldId) ?? false, !foldedBefore, 'second click performs Enter action');
 
   // 4. Wheel scroll on Home scrolls viewport without moving selection
   const homeTab = frame.controls.find((c) => c.kind === 'board-home');
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: homeTab.x, y: homeTab.y }).state);
   const shortFrame = draw(frame.state, 6);
-  const beforeTarget = shortFrame.state.homeTarget;
-  const beforeAnchor = shortFrame.state.boardAnchor;
-  const beforeScroll = shortFrame.state.homeScroll ?? 0;
+  const beforeTarget = homeTarget(shortFrame.state.home);
+  const beforeAnchor = homeAnchor(shortFrame.state.home);
+  const beforeScroll = shortFrame.state.home.scroll ?? 0;
   const scrolled = send(shortFrame, { type: 'mouse', button: 'wheel-down', x: 4, y: 3 });
-  assert.deepEqual(scrolled.state.homeTarget, beforeTarget);
-  assert.equal(scrolled.state.boardAnchor, beforeAnchor);
-  assert.ok((scrolled.state.homeScroll ?? 0) > beforeScroll);
+  assert.deepEqual(homeTarget(scrolled.state.home), beforeTarget);
+  assert.equal(homeAnchor(scrolled.state.home), beforeAnchor);
+  assert.ok((scrolled.state.home.scroll ?? 0) > beforeScroll);
 });
 
 test('Settings mouse: first click selects row without changing value, second click cycles value, wheel scrolls without moving selection, crumb goes back', () => {

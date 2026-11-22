@@ -1,3 +1,6 @@
+import { withState, sliceState } from '../fixtures/state-helpers.mjs';
+import { homeAnchor } from '../../dist/render/monitor-state.js';
+import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,7 +13,7 @@ import { homeFixture, homeFrames } from '../fixtures/home-progress.mjs';
 import { NOW, TREE, plain } from '../fixtures/project-page.mjs';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
-import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/home-progress-frames.json', import.meta.url), 'utf8'));
 async function fixture(t) {
@@ -64,7 +67,7 @@ test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary
     const state = press(notice, 'end').state;
     const resized = f.render(width, lang, base + 4, state);
     assert.equal(compact(resized).length, 0);
-    assert.equal(resized.state.boardAnchor, undefined, 'removed block cannot retain an invisible cursor');
+    assert.equal(homeAnchor(resized.state.home), undefined, 'removed block cannot retain an invisible cursor');
   }
 });
 test('Home progress layout: separator row, milestone on the rule, bar as wide as the aligned legend, zero states hidden, short list', async (t) => {
@@ -102,7 +105,7 @@ test('Home progress layout: separator row, milestone on the rule, bar as wide as
 test('expanded questions/cards and notices claim space before progress; missing facts never get placeholders', async (t) => {
   const f = await fixture(t), expanded = new Set(f.board.workers.map((w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id })));
   for (const width of [80, 120]) for (const lang of ['en', 'zh']) {
-    const state = { ...initialMonitorState(), boardExpanded: expanded, boardToggled: expanded };
+    const state = withState(sliceState(), { home: { expanded, toggled: expanded } });
     const extras = { error: 'Synthetic read fault', publicationNotice: 'Synthetic coverage notice' };
     const base = rowsAbove(f, width, lang, structuredClone(state), extras), baseline = f.render(width, lang, base + 2, structuredClone(state), f.data, extras);
     assert.equal(baseline.workboard.rows.length, base);
@@ -123,31 +126,31 @@ test('real Home input: Up/Down/End select the block, Enter/click opens the Progr
   for (const width of [80, 120]) {
     let frame = f.render(width, 'en', 80);
     frame = f.render(width, 'en', 80, press(frame, 'end').state);
-    assert.equal(frame.state.boardAnchor, 'home-progress:tickets:native-tree');
+    assert.equal(homeAnchor(frame.state.home), 'home-progress:tickets:native-tree');
     frame = f.render(width, 'en', 80, press(frame, 'up').state);
-    assert.equal(frame.state.boardAnchor, 'home-progress:progress');
+    assert.equal(homeAnchor(frame.state.home), 'home-progress:progress');
     assert.equal(press(frame, 'open-session').action, undefined, 'o on progress never opens a stale card file');
-    frame.state.projectFolded = new Set(['lane:done', 'agents']);
+    frame.state.project.folded = new Set(['lane:done', 'agents']);
     let result = press(frame, 'enter');
-    assert.equal(result.state.mainTab, 'project');
-    assert.equal(result.state.projectPage, 'progress');
+    assert.equal(result.state.activeTab, 'project');
+    assert.equal(projectPageOf(result.state), 'progress');
     let project = f.render(width, 'en', 80, result.state);
     assert.ok(plain(project).some((line) => line.startsWith('‹ Project › Progress')));
     frame = f.render(width, 'en', 80, press(frame, 'down').state);
     result = press(frame, 'enter');
-    assert.equal(result.state.projectPage, 'tickets');
-    assert.equal(result.state.projectCursor, undefined, 'no cursor is forced: the page rests on its first row');
-    assert.deepEqual([...result.state.projectFolded].sort(), ['agents', 'lane:done'], 'the folds stay as they were');
+    assert.equal(projectPageOf(result.state), 'tickets');
+    assert.equal(result.state.project.nav.cursor, undefined, 'no cursor is forced: the page rests on its first row');
+    assert.deepEqual([...result.state.project.folded].sort(), ['agents', 'lane:done'], 'the folds stay as they were');
     project = f.render(width, 'en', 80, result.state);
     assert.ok(plain(project).some((line) => line.startsWith('‹ Project › Tickets')));
     // Esc is the hub, Esc again is where Esc always went.
-    assert.equal(press(project, 'escape').state.projectPage, undefined);
+    assert.equal(projectPageOf(press(project, 'escape').state), undefined);
     for (const id of ['home-progress:progress', 'home-progress:tickets:native-tree']) {
       frame = f.render(width, 'en', 80);
       const index = frame.workboard.rows.findIndex((r) => r.item === id);
       result = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 8, y: index + 1 }, ctx(frame));
-      assert.equal(result.state.mainTab, 'project');
-      assert.equal(result.state.projectPage, id.endsWith('progress') ? 'progress' : 'tickets');
+      assert.equal(result.state.activeTab, 'project');
+      assert.equal(projectPageOf(result.state), id.endsWith('progress') ? 'progress' : 'tickets');
       assert.equal(result.action, undefined, 'navigation, not an editor or execution action');
     }
   }

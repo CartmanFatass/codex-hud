@@ -1,3 +1,6 @@
+import { splitOf, viewFor, withState, sliceState } from '../fixtures/state-helpers.mjs';
+import { homeAnchor, homeTarget, onlyTry } from '../../dist/render/monitor-state.js';
+import { projectPageOf } from '../../dist/render/project-view.js';
 /** The Split layout (spec §2.2 "Panel layouts"): a list above, the cursor row's preview below; frames at 40 columns and how the keys and the mouse move through it. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,14 +9,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, splitFrames, split } from '../fixtures/split-layout.mjs';
 import { NOW, TREE, plain, onPage, onControl } from '../fixtures/project-page.mjs';
-import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { defaultSettings, loadSettings } from '../../dist/settings.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/split-frames.json', import.meta.url), 'utf8'));
 async function fixtures(t) {
@@ -21,8 +24,8 @@ async function fixtures(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { busy: await splitFixture(join(root, 'busy')), idle: await splitFixture(join(root, 'idle'), { idle: true }) };
 }
-const page = (p, extra) => split({ mainTab: 'project', projectPage: p, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
-const control = (cursor) => onControl({ cursor }, { panelLayout: 'split' });
+const page = (p, extra) => split(withState({ activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(p) } }, extra));
+const control = (cursor) => onControl({ cursor }, { prefs: { panelLayout: 'split' } });
 /** One input against a frame, then the next frame from the state it left. */
 function driver(f, { width = 40, height = 40, data = f.data } = {}) {
   let frame = f.render(width, 'en', height, undefined, data);
@@ -60,7 +63,7 @@ test('Home: the list has a row per lane and block, a question and a failure keep
   assert.match(lines[9], /^◉ this session +subagents +1 running$/);
   assert.match(plain(busy.render(40, 'zh')).join('\n'), /^◉ 本次会话 +子代理 +1 运行中$/m);
   assert.match(rule(d), /^NATIVE-TREE ─+ imp · 2 jobs$/);
-  assert.equal(d.state.splitCursor, d.frame.workboard.rows[0].item);
+  assert.equal(d.state.home.split.listCursor, d.frame.workboard.rows[0].item);
   // Idle: nothing runs, the first row that needs the owner is Waiting for you, whose preview lists the items and the latest slices.
   const calm = driver(idle), quiet = calm.lines();
   assert.match(quiet[2], /^\? Waiting for you +2 · 1 to try$/);
@@ -88,78 +91,78 @@ test('Home keys: ↑↓ move the list, PgUp/PgDn and the wheel over the preview 
   const { busy } = await fixtures(t);
   const d = driver(busy, { height: 24 });
   d.run('down');
-  assert.match(d.state.splitCursor, /EXPORT-CSV/);
+  assert.match(d.state.home.split.listCursor, /EXPORT-CSV/);
   d.run('up');
   // The question's preview is longer than the room a 24-row panel leaves under a list this tall: PgDn moves its window, PgUp back.
   const small = driver(busy, { height: 19 }), top = small.lines().join('\n');
   small.run('page-down');
-  assert.ok(small.state.splitScroll > 0);
+  assert.ok(splitOf(small.state).previewScroll > 0);
   assert.notEqual(small.lines().join('\n'), top);
   assert.equal(small.lines()[2], top.split('\n')[2], 'the list did not move');
   small.run('page-up');
   assert.equal(small.lines().join('\n'), top);
   const wheel = small.pane('preview'), y = wheel.y;
   small.run({ type: 'mouse', x: 3, y, button: 'wheel-down' });
-  assert.ok(small.state.splitScroll > 0, 'the wheel over the preview scrolls it');
+  assert.ok(splitOf(small.state).previewScroll > 0, 'the wheel over the preview scrolls it');
   small.run({ type: 'mouse', x: 3, y: 3, button: 'wheel-down' });
-  assert.match(small.state.splitCursor, /EXPORT-CSV/, 'the wheel over the list moves the cursor');
+  assert.match(small.state.home.split.listCursor, /EXPORT-CSV/, 'the wheel over the list moves the cursor');
   // Enter moves into the preview; there Enter expands the card under the cursor and Esc returns.
   d.run('enter');
-  assert.equal(d.state.splitFocus, 'preview');
-  const sub = d.state.splitSub;
+  assert.equal(splitOf(d.state).focus, 'preview');
+  const sub = splitOf(d.state).previewCursor;
   assert.ok(sub);
   d.run('enter');
-  assert.ok(d.state.boardExpanded.has(sub), 'Enter in the preview expands the slab');
+  assert.ok(d.state.home.expanded.has(sub), 'Enter in the preview expands the slab');
   assert.match(d.lines().join('\n'), /Use the synthetic layout|Which synthetic option/);
   d.run('escape');
-  assert.equal(d.state.splitFocus, undefined);
+  assert.equal(splitOf(d.state).focus, 'list');
   d.run('escape');
-  assert.equal(d.state.mainTab, 'home', 'Esc on the list does what it did');
+  assert.equal(d.state.activeTab, 'home', 'Esc on the list does what it did');
 });
 
 test('Home mouse: a click selects the row, a second click is Enter; a click on a preview card selects it, again expands it', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy), row = (text) => d.pane('agents').y + d.pane('agents').rows.findIndex((r) => stripAnsi(r.text).startsWith(text));
   d.run({ type: 'mouse', x: 4, y: row('◉ M4-PROJECT'), button: 'left' });
-  assert.match(d.state.splitCursor, /M4-PROJECT/);
-  assert.equal(d.state.splitFocus, undefined);
+  assert.match(d.state.home.split.listCursor, /M4-PROJECT/);
+  assert.equal(splitOf(d.state).focus, 'list');
   d.run({ type: 'mouse', x: 4, y: row('◉ M4-PROJECT'), button: 'left' });
-  assert.equal(d.state.splitFocus, 'preview', 'the second click is Enter');
+  assert.equal(splitOf(d.state).focus, 'preview', 'the second click is Enter');
   d.run('escape');
   d.run({ type: 'mouse', x: 4, y: row('? NATIVE-TREE'), button: 'left' });
   const preview = d.pane('preview'), card = preview.y + preview.rows.findIndex((r) => stripAnsi(r.text).startsWith('✓ reviewer'));
   d.run({ type: 'mouse', x: 4, y: card, button: 'left' });
-  assert.equal(d.state.splitFocus, 'preview');
-  assert.match(d.state.splitSub, /worker/);
+  assert.equal(splitOf(d.state).focus, 'preview');
+  assert.match(splitOf(d.state).previewCursor, /worker/);
   // The list gave its rows to the preview (it is compact there), so the card is higher now: a second click lands on it.
   const moved = d.pane('preview'), again = moved.y + moved.rows.findIndex((r) => stripAnsi(r.text).startsWith('✓ reviewer'));
   assert.ok(again < card);
   d.run({ type: 'mouse', x: 4, y: again, button: 'left' });
-  assert.ok(d.state.boardToggled?.has(d.state.splitSub), 'a second click toggles it, as Enter does (the newest result starts open)');
+  assert.ok(d.state.home.toggled?.has(splitOf(d.state).previewCursor), 'a second click toggles it, as Enter does (the newest result starts open)');
 });
 
 test('Home: Waiting for you opens its items, Enter on one reads it whole, Progress opens its page; o and v act on the lane under the cursor', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy);
   for (let i = 0; i < 5; i++) d.run('down');
-  assert.equal(d.state.splitCursor, 'home-progress:waiting');
-  assert.equal(d.state.boardAnchor, 'home-progress:waiting');
+  assert.equal(d.state.home.split.listCursor, 'home-progress:waiting');
+  assert.equal(homeAnchor(d.state.home), 'home-progress:waiting');
   d.run('enter');
-  assert.equal(d.state.splitFocus, 'preview');
-  assert.equal(d.state.splitSub, 'home-progress:wait:0');
+  assert.equal(splitOf(d.state).focus, 'preview');
+  assert.equal(splitOf(d.state).previewCursor, 'home-progress:wait:0');
   d.run('enter');
-  assert.equal(d.state.mainTab, 'project');
-  assert.equal(d.state.projectPage, 'waiting');
+  assert.equal(d.state.activeTab, 'project');
+  assert.equal(projectPageOf(d.state), 'waiting');
   const home = driver(busy);
   home.run('end');
-  assert.equal(home.state.splitCursor, 'home-progress:progress');
+  assert.equal(home.state.home.split.listCursor, 'home-progress:progress');
   home.run('enter');
-  assert.equal(home.state.projectPage, 'progress');
+  assert.equal(projectPageOf(home.state), 'progress');
   // The lane's most important job is the one `o` opens and `v` inspects.
   const lane = driver(busy);
-  assert.equal(lane.state.homeTarget.kind, 'worker');
+  assert.equal(homeTarget(lane.state.home).kind, 'worker');
   assert.match(lane.run('open-session').action?.type ?? '', /^open-files$/);
-  assert.equal(lane.run('inspect').state.focus, 'details');
+  assert.equal(lane.run('inspect').state.subpage?.kind, 'inspector');
 });
 
 test('Project hub: a list of Waiting and the pages with the cursor page previewed; Enter opens a page; y and n act on the next slice to try', async (t) => {
@@ -170,18 +173,18 @@ test('Project hub: a list of Waiting and the pages with the cursor page previewe
   assert.match(lines[5], /^◐ Progress +5 to try · 1 blocked$/);
   assert.equal(lines.filter((line) => line.includes('0.1.3')).length, 1, 'only the name row says the current milestone');
   assert.match(rule(d), /^Progress ─+$/);
-  assert.equal(d.state.projectCursor, 'project:page:progress', 'it starts on the first page, as Classic does');
+  assert.equal(d.state.project.nav.cursor, 'project:page:progress', 'it starts on the first page, as Classic does');
   assert.ok(lines.includes('To try') && lines.includes('Now') && lines.includes('Latest accepted'));
   assert.ok(lines.some((l) => /^  ◇ DATA-ONE +1d$/.test(l)) && lines.some((l) => /^  ✓ REVIEW-ONE +8d$/.test(l)));
   d.run('down');
-  assert.equal(d.state.projectCursor, 'project:page:tickets');
+  assert.equal(d.state.project.nav.cursor, 'project:page:tickets');
   assert.match(rule(d), /^Tickets ─+$/);
   d.run('up');
   const out = d.run('try-accept');
   assert.deepEqual([out.action.type, out.action.action, out.action.target.slices[0].id], ['record-try', 'accept', 'DATA-ONE']);
   assert.equal(d.run('try-flag').action.action, 'flag');
   d.run('enter');
-  assert.equal(d.state.projectPage, 'progress');
+  assert.equal(projectPageOf(d.state), 'progress');
   // A slice already marked leaves the queue: the next one is the one y acts on.
   const marked = driver(busy, { data: busy.control });
   marked.frame.workboard; // render once with the mark in force
@@ -192,15 +195,15 @@ test('Project hub: a list of Waiting and the pages with the cursor page previewe
 
 test('Project hub: Waiting for you takes the keys into its items; Enter reads one, Esc lands back on the Waiting row', async (t) => {
   const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.control }).at(page(undefined, { projectCursor: 'project:fold:waiting' }));
+  const d = driver(busy, { data: busy.control }).at(page(undefined, { project: { nav: { cursor: 'project:fold:waiting' } } }));
   assert.match(rule(d), /^Waiting for you ─+ 2 · 5 to try$/);
   d.run('enter');
-  assert.equal(d.state.splitFocus, 'preview');
-  assert.equal(d.state.projectCursor, d.state.splitSub);
+  assert.equal(splitOf(d.state).focus, 'preview');
+  assert.equal(d.state.project.nav.cursor, splitOf(d.state).previewCursor);
   d.run('enter');
-  assert.equal(d.state.projectPage, 'waiting');
+  assert.equal(projectPageOf(d.state), 'waiting');
   d.run('escape');
-  assert.equal(d.state.projectPage, undefined);
+  assert.equal(projectPageOf(d.state), undefined);
   assert.match(rule(d), /^Waiting for you ─+/, 'back on the Waiting row');
 });
 
@@ -208,8 +211,8 @@ test('Project list rows use the same Enter path for two clicks and the keyboard'
   const { busy } = await fixtures(t);
   for (const [p, item, sub] of [[undefined, 'project:fold:waiting', 'project:wait:0'], ['control', 'project:role:imp', 'project:role:imp:0']]) {
     const d = driver(busy, { data: busy.control, height: 24 });
-    const at = (projectCursor) => p ? control(projectCursor) : page(p, { projectCursor });
-    const cursor = () => p ? d.state.control.roles.nav.cursor : d.state.projectCursor;
+    const at = (projectCursor) => p ? control(projectCursor) : page(p, { project: { nav: { cursor: projectCursor } } });
+    const cursor = () => p ? d.state.control.roles.nav.cursor : d.state.project.nav.cursor;
     d.at(at(p ? 'project:fold:healthy' : undefined));
     const click = (id) => {
       const pane = d.pane('agents');
@@ -217,13 +220,13 @@ test('Project list rows use the same Enter path for two clicks and the keyboard'
     };
     click(item);
     assert.equal(cursor(), item);
-    assert.equal(p ? d.state.control.roles.nav.split.focus : d.state.splitFocus ?? 'list', 'list');
+    assert.equal(p ? d.state.control.roles.nav.split.focus : splitOf(d.state).focus ?? 'list', 'list');
     click(item);
     if (p) {
       assert.equal(d.state.overlay.at, 0);
       assert.equal(cursor(), item);
     } else {
-      assert.equal(d.state.splitFocus, 'preview');
+      assert.equal(splitOf(d.state).focus, 'preview');
       assert.equal(cursor(), sub);
     }
     const mouse = d.lines();
@@ -240,7 +243,7 @@ test('Split Progress lets the owner select an older to-try slice and read its br
   const d = driver(busy, { data, height: 24 }).at(page(undefined));
   d.run('enter');
   for (let n = 0; n < 5; n++) d.run('down');
-  assert.equal(d.state.projectCursor, 'project:slice:WATCH-LINK');
+  assert.equal(d.state.project.nav.cursor, 'project:slice:WATCH-LINK');
   assert.match(rule(d), /^WATCH-LINK ─+ to try · M4$/);
   // The brief and steps; the original ledger text waits behind its fold, which Enter on the row goes into the preview to open.
   assert.match(d.lines().join('\n'), /Job rows remain visible\.\n +How to try\n +1\. Open the synthetic project\.\n +▸ Ledger line/);
@@ -253,10 +256,10 @@ test('Split hub reveals an off-screen first pending slice before y/n can record 
   for (const [height, key, action] of [[24, 'try-accept', 'accept'], [12, 'try-flag', 'flag']]) {
     const d = driver(busy, { data: busy.control, height }).at(page(undefined));
     if (height === 24) d.run('page-down');
-    assert.equal(d.state.projectCursor, 'project:page:progress');
+    assert.equal(d.state.project.nav.cursor, 'project:page:progress');
     assert.doesNotMatch(d.lines().join('\n'), /◇ DATA-ONE/);
     assert.equal(d.run(key).action, undefined, 'the first press only reveals the target');
-    assert.equal(d.state.splitFocus, 'preview');
+    assert.equal(splitOf(d.state).focus, 'preview');
     assert.match(d.lines().join('\n'), /◇ DATA-ONE/);
     const out = d.run(key).action;
     assert.deepEqual([out.type, out.action, out.target.slices[0].id], ['record-try', action, 'DATA-ONE']);
@@ -269,7 +272,7 @@ test('Split Progress lists word-cut ledger text but keeps a stored brief and the
   const briefed = { ...busy.rich, ledger: busy.rich.ledger.map((r) => r.id === 'DATA-ONE'
     ? { ...r, brief: { brief: 'Read the new rows. More details follow.', steps: ['Open the synthetic project.'] } } : r) };
   for (const lang of ['en', 'zh']) for (const projectLayout of ['timeline', 'board', 'inbox']) {
-    const render = (data, modelEnabled) => busy.render(40, lang, 40, page('progress', { projectCursor, projectLayout }), data, { modelEnabled });
+    const render = (data, modelEnabled) => busy.render(40, lang, 40, page('progress', { project: { nav: { cursor: projectCursor } }, prefs: { projectLayout } }), data, { modelEnabled });
     const listRows = (frame) => frame.panes.find((p) => p.id === 'agents').rows.filter((r) => r.item === projectCursor).map((r) => stripAnsi(r.text).trim());
     const preview = (frame) => frame.panes.find((p) => p.id === 'preview').rows.map((r) => stripAnsi(r.text).trim()).join(' ');
     const off = render(busy.rich, false), on = render(briefed, true);
@@ -287,7 +290,7 @@ test('Split Progress lists word-cut ledger text but keeps a stored brief and the
 
 test('Split Progress ignores Classic’s t shortcut, leaving the marked batch and cursor in place', async (t) => {
   const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.rich, height: 24 }).at(page('progress', { projectCursor: 'project:slice:DATA-ONE' }));
+  const d = driver(busy, { data: busy.rich, height: 24 }).at(page('progress', { project: { nav: { cursor: 'project:slice:DATA-ONE' } } }));
   d.run('space');
   d.run('down');
   d.run('space');
@@ -295,10 +298,10 @@ test('Split Progress ignores Classic’s t shortcut, leaving the marked batch an
   assert.match(before.join('\n'), /▣ ◇ DATA-ONE/);
   assert.match(before.join('\n'), /▣ ◇ NATIVE-ROWS/);
   d.run({ type: 'key', key: 'settings-test', text: 't' });
-  assert.equal(d.state.projectTry, undefined);
+  assert.equal(onlyTry(d.state.project.view), undefined);
   assert.deepEqual(d.lines(), before);
   assert.deepEqual(d.run('try-accept').action.target.slices.map((r) => r.id), ['DATA-ONE', 'NATIVE-ROWS']);
-  assert.equal(d.run('escape').state.projectPage, undefined);
+  assert.equal(projectPageOf(d.run('escape').state), undefined);
 });
 
 test('Progress page: one ledger list, the cursor slice explained underneath; y and n work on any to-try row; Enter opens STATE.md; History is one folded row', async (t) => {
@@ -309,14 +312,14 @@ test('Progress page: one ledger list, the cursor slice explained underneath; y a
   assert.match(rule(d), /^PAGE-ONE ─+ working · 0\.1\.3$/);
   assert.equal(d.run('try-accept').action, undefined, 'a working slice is not a to-try row');
   d.run('down'); d.run('down');
-  assert.match(d.state.projectCursor, /DATA-ONE/);
+  assert.match(d.state.project.nav.cursor, /DATA-ONE/);
   assert.match(rule(d), /^DATA-ONE ─+ to try · 0\.1\.3$/);
   assert.equal(d.run('try-accept').action.target.slices[0].id, 'DATA-ONE');
   assert.equal(d.run('open-session').action.type, 'open-files');
   d.run('end');
-  assert.equal(d.state.projectCursor, 'split:history');
+  assert.equal(d.state.project.nav.cursor, 'split:history');
   assert.match(rule(d), /^History ─+$/);
-  assert.equal(d.run('escape').state.projectPage, undefined, 'Esc goes back to the hub');
+  assert.equal(projectPageOf(d.run('escape').state), undefined, 'Esc goes back to the hub');
 });
 
 test('Control plane: roles on top, the cursor role’s places below; Enter takes the place keys into them; c and C apply a preset from the list', async (t) => {
@@ -366,7 +369,7 @@ test('a saved retired layout renders Classic, Split keeps its Home frame, and th
   };
   const classic = select('inbox'), shown = select('split');
   assert.equal(classic.panelLayout, 'classic');
-  const home = (settings) => plain(busy.render(40, 'en', 40, { ...initialMonitorState(), panelLayout: settings.panelLayout }));
+  const home = (settings) => plain(busy.render(40, 'en', 40, withState(sliceState(), { prefs: { panelLayout: settings.panelLayout } })));
   assert.deepEqual(home(classic), home(defaultSettings()));
   assert.deepEqual(home(shown), expected['home-busy-40-en']);
   const selected = SETTING_ROWS.findIndex((r) => r.key === 'panelLayout');
@@ -383,13 +386,13 @@ test('a saved retired layout renders Classic, Split keeps its Home frame, and th
 test('Classic is untouched: no layout set draws no preview pane, its Help has no Split rows, and the setting defaults to classic', async (t) => {
   const { busy } = await fixtures(t);
   assert.equal(defaultSettings().panelLayout, 'classic');
-  const classic = busy.render(40, 'en', 40, initialMonitorState());
+  const classic = busy.render(40, 'en', 40, sliceState());
   assert.equal(classic.panes.some((p) => p.id === 'preview'), false);
-  const help = (layout) => plain(busy.render(80, 'en', 100, { ...initialMonitorState(), help: true, panelLayout: layout })).join('\n');
+  const help = (layout) => plain(busy.render(80, 'en', 100, withState(sliceState(), { prefs: { panelLayout: layout }, help: {} }))).join('\n');
   assert.doesNotMatch(help(undefined), /^Split ─|scroll the preview|= \+ -/m);
   assert.match(help('split'), /PgUp Dn.*scroll the preview/);
   // The pages Split leaves to Classic keep their frames: one waiting item's text, in either layout.
-  const waiting = (layout) => plain(busy.render(40, 'en', 40, { ...initialMonitorState(), mainTab: 'project', projectPage: 'waiting', projectWait: 0, panelLayout: layout }));
+  const waiting = (layout) => plain(busy.render(40, 'en', 40, withState(sliceState(), { activeTab: 'project', prefs: { panelLayout: layout }, project: { view: { kind: 'waiting', index: 0 } } })));
   assert.deepEqual(waiting('split'), waiting(undefined));
 });
 
@@ -418,7 +421,7 @@ test('Home: a working lane the cursor is not on shows its model keywords in the 
   assert.equal(row(busy.render(80, 'en', 40)).includes('parser'), false, 'without a model sentence there is nothing to show');
   // The row under the cursor is previewed below, so it keeps the plain row.
   const lane = board.lanes.find((l) => l.label === 'M4-PROJECT');
-  assert.doesNotMatch(row(at(80, 'en', split({ splitCursor: targetKey({ kind: 'lane', laneId: lane.id }) }))), /parser/);
+  assert.doesNotMatch(row(at(80, 'en', split({ home: { split: { listCursor: targetKey({ kind: 'lane', laneId: lane.id }) } } }))), /parser/);
   for (const lang of ['en', 'zh']) for (const width of [20, 26, 40, 52, 80, 120]) for (const line of at(width, lang).lines) assert.equal(visualLength(line), width, `${lang} ${width}`);
 });
 
@@ -427,7 +430,7 @@ test('Split ratio: = and + grow the list, - grows the preview, a press on the ru
   const d = driver(busy, { height: 24 });
   const rows = () => [d.pane('agents').height, d.pane('preview').height];
   const [list, preview] = rows();
-  assert.equal(d.state.splitRatio, undefined, 'unset, the list is as tall as it needs');
+  assert.equal(d.state.prefs.splitRatio, undefined, 'unset, the list is as tall as it needs');
   d.run('list-shrink');
   assert.deepEqual(rows(), [list - 1, preview + 1], '- grows the preview by a row');
   d.run('list-shrink');
@@ -438,26 +441,26 @@ test('Split ratio: = and + grow the list, - grows the preview, a press on the ru
   assert.deepEqual(rows(), [list, preview], '+ does too');
   // The share is kept across the panel's reload, which hands its state over as JSON.
   d.run('list-shrink'); d.run('list-shrink'); d.run('list-shrink');
-  const saved = d.state.splitRatio, held = process.env.HUD_PANEL_RELOAD_PLACE;
-  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: d.state, settings: null });
+  const saved = d.state.prefs.splitRatio, held = process.env.HUD_PANEL_RELOAD_PLACE;
+  process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: d.state, settings: null });
   const place = readPanelPlace();
   if (held === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE; else process.env.HUD_PANEL_RELOAD_PLACE = held;
-  assert.equal(place.state.splitRatio, saved);
+  assert.equal(place.state.prefs.splitRatio, saved);
   const reloaded = driver(busy, { height: 24 }).at(place.state);
   assert.deepEqual([reloaded.pane('agents').height, reloaded.pane('preview').height], [list - 3, preview + 3]);
   // The rule is not a handle: a press on it moves nothing, and no state of a drag exists.
-  const rule = () => d.pane('preview').y - 1, ratio = d.state.splitRatio;
+  const rule = () => d.pane('preview').y - 1, ratio = d.state.prefs.splitRatio;
   d.run({ type: 'mouse', x: 5, y: rule(), button: 'left' });
-  assert.equal(d.state.splitRatio, ratio);
+  assert.equal(d.state.prefs.splitRatio, ratio);
   assert.equal('splitDrag' in d.state, false);
   // A press on a list row is a click as ever.
   d.run({ type: 'mouse', x: 5, y: d.pane('agents').y + 2, button: 'left' });
-  assert.equal(d.state.splitRatio, ratio);
+  assert.equal(d.state.prefs.splitRatio, ratio);
   // Classic has no rule: the same inputs change nothing there.
-  const classic = busy.render(40, 'en', 24, initialMonitorState());
+  const classic = busy.render(40, 'en', 24, sliceState());
   for (const input of ['list-grow', 'list-shrink']) {
     const out = handleMonitorInput(classic.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame: classic, nowMs: NOW, standalone: true });
-    assert.equal(out.state.splitRatio, undefined);
+    assert.equal(out.state.prefs.splitRatio, undefined);
   }
 });
 
@@ -465,15 +468,15 @@ test('One meaning per key on the Control plane: = + - size the Split, i and Dele
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control }).at(control());
   assert.equal(d.run('place-add').action, undefined, 'from the role list no place is under i');
-  assert.equal(d.state.splitRatio, undefined, 'and i is not a ratio key');
+  assert.equal(d.state.prefs.splitRatio, undefined, 'and i is not a ratio key');
   d.run('list-grow');
-  assert.ok(d.state.splitRatio);
-  const before = d.state.splitRatio;
+  assert.ok(d.state.prefs.splitRatio);
+  const before = d.state.prefs.splitRatio;
   d.run('enter');
   assert.equal(d.run('place-add').state.overlay.mode.field, 'target', 'on a place i opens the add sheet');
   d.run('escape');
   assert.equal(d.run('place-remove').state.overlay.draft.run.length, 2, 'Delete removes a place from the draft');
-  assert.equal(d.state.splitRatio, before);
+  assert.equal(d.state.prefs.splitRatio, before);
 });
 
 test('Preview focus compacts the list to three rows around the cursor, and Esc restores the chosen share', async (t) => {
@@ -483,17 +486,17 @@ test('Preview focus compacts the list to three rows around the cursor, and Esc r
   const [list, preview] = [d.pane('agents').height, d.pane('preview').height];
   assert.ok(list > 3);
   for (let i = 0; i < 2; i++) d.run('down');
-  const cursor = d.state.splitCursor;
+  const cursor = d.state.home.split.listCursor;
   d.run('enter');
-  assert.equal(d.state.splitFocus, 'preview');
+  assert.equal(splitOf(d.state).focus, 'preview');
   assert.equal(d.pane('agents').height, 3);
   assert.equal(d.pane('preview').height, list + preview - 3, 'the preview has every row the list gave up');
   assert.ok(d.pane('agents').rows.slice(d.pane('agents').offset, d.pane('agents').offset + 3).some((r) => r.item === cursor), 'the cursor row stays in view');
-  assert.equal(d.state.splitCursor, cursor);
+  assert.equal(d.state.home.split.listCursor, cursor);
   // The ratio keys do nothing in the preview, so the share Esc restores is the chosen one.
-  const ratio = d.state.splitRatio;
+  const ratio = d.state.prefs.splitRatio;
   d.run('list-shrink');
-  assert.equal(d.state.splitRatio, ratio);
+  assert.equal(d.state.prefs.splitRatio, ratio);
   d.run('escape');
   assert.deepEqual([d.pane('agents').height, d.pane('preview').height], [list, preview]);
 });

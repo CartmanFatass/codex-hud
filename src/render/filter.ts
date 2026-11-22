@@ -2,7 +2,7 @@
  * The `/` filter (spec §2.2): a one-row bar under the header on Home (either layout) and on Project's Progress and Tickets pages.
  * A pure, case-insensitive substring over the fields each view names. The views draw only the rows that match, so the cursor,
  * Enter and Split's preview move over those. Typing owns every printable key; Enter keeps the filter, Esc stops typing and then
- * clears it; leaving the view (tab, page, project, Help, Inspector) clears it. The state is `MonitorState.filterQuery`/`filterOpen`.
+ * clears it; leaving the view (tab, page, project, Help, Inspector) clears it. Home and Project each own their filter.
  */
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
@@ -11,7 +11,7 @@ import { ledgerTasks } from '../collectors/acceptance-tasks.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import { projectPageOf } from './project-view.js';
+import { activeFilter, activeTabState, projectPage, type ViewFilter } from './monitor-state.js';
 import { failed } from './work-card.js';
 import { boardRow, mark, type FooterHints } from './workboard-rows.js';
 import { monitorText, pair } from './monitor-text.js';
@@ -21,13 +21,17 @@ import { t } from './i18n.js';
 const FILTER_MAX = 48;
 /** Where a filter can be: Home, or the shown project's Progress or Tickets page. Another scope clears it. */
 export function filterScope(state: MonitorState): string | undefined {
-  if (state.help || state.focus !== 'agents') return undefined;
-  if (!state.mainTab || state.mainTab === 'home') return 'home';
-  if (state.mainTab !== 'project') return undefined;
-  const page = projectPageOf(state);
-  return page === 'progress' || page === 'tickets' ? `${page}|${state.projectRoot ?? ''}` : undefined;
+  if (state.help || state.subpage) return undefined;
+  if (state.activeTab === 'home') return 'home';
+  if (state.activeTab !== 'project') return undefined;
+  const page = projectPage(state.project.view);
+  return page === 'progress' || page === 'tickets' ? `${page}|${state.selectedProject ?? ''}` : undefined;
 }
-export const filterNeedle = (state: MonitorState) => (state.filterQuery ?? '').toLowerCase();
+export function clearFilter(state: MonitorState): MonitorState {
+  if (state.activeTab === 'home' && state.home.filter) return { ...state, home: { ...state.home, filter: undefined } };
+  if (state.activeTab === 'project' && state.project.filter) return { ...state, project: { ...state.project, filter: undefined } };
+  return state;
+}
 const has = (needle: string, ...fields: (string | null | undefined)[]) => fields.some((f) => !!f && f.toLowerCase().includes(needle));
 
 /** Home: package, title, role, harness, status, worker summary or model-sentence keywords. */
@@ -45,7 +49,7 @@ export function homeMatcher(board: WorkboardSnapshot, needle: string, now: numbe
 }
 
 /** Progress: ledger slices by id, milestone, text and state, worktree slices and loose jobs by their label, role and state. Tickets: by feature, number, title, status and blocker. */
-export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets', needle: string, acceptance?: MonitorState['acceptance'], onlyTry = false): { data: ProjectSnapshot; count: number } {
+export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets', needle: string, acceptance?: MonitorState['prefs']['acceptance'], onlyTry = false): { data: ProjectSnapshot; count: number } {
   if (page === 'tickets') {
     const match = (f: ProjectSnapshot['tickets'][number], r: ProjectSnapshot['tickets'][number]['tickets'][number]) => has(needle, f.slug, r.number, r.title, r.status, ...r.blockers);
     if (acceptance !== 'slice') {
@@ -72,14 +76,15 @@ export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets
 
 /** The bar: `/ query▌` and how many rows match (not before something is typed). */
 export function filterRow(state: MonitorState, count: number | undefined, width: number): MonitorRow {
-  const left = `${theme.board.active('/')} ${monitorText(state.filterQuery ?? '')}${state.filterOpen ? theme.board.active(mark('▌', '_')) : ''}`;
-  const right = count === undefined ? '' : [t(count === 1 ? '{n} match' : '{n} matches', { n: count }), !state.filterOpen && t('esc clear')].filter(Boolean).join(' · ');
+  const filter = activeFilter(state)!;
+  const left = `${theme.board.active('/')} ${monitorText(filter.query)}${filter.editing ? theme.board.active(mark('▌', '_')) : ''}`;
+  const right = count === undefined ? '' : [t(count === 1 ? '{n} match' : '{n} matches', { n: count }), !filter.editing && t('esc clear')].filter(Boolean).join(' · ');
   return boardRow(pair(left, theme.board.muted(right), width));
 }
 /** `/ filter` is a page action; while typing only the filter's own keys are relevant. */
 export function filterHints(state: MonitorState, hints: FooterHints): FooterHints {
   if ('modal' in hints || !filterScope(state)) return hints;
-  if (state.filterOpen) return { modal: ['type to filter', '⏎ keep', 'Esc stop'] };
+  if (activeFilter(state)?.editing) return { modal: ['type to filter', '⏎ keep', 'Esc stop'] };
   const at = hints.indexOf('a all');
   return at < 0 ? [...hints, '/ filter'] : [...hints.slice(0, at), '/ filter', ...hints.slice(at)];
 }
@@ -90,22 +95,21 @@ export function filterHints(state: MonitorState, hints: FooterHints): FooterHint
  * wait while typing; the arrows move over the matches. Null for every other input.
  */
 export function filterInput(state: MonitorState, input: WorkbenchInput): MonitorOutcome | null {
-  if (input.type !== 'key') return null;
-  const to = (patch: Partial<MonitorState>): MonitorOutcome => {
-    const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll }, ...patch };
-    if (!next.filterQuery) next.filterQuery = next.filterOpen ? '' : undefined;
-    return { state: next, close: false };
-  };
-  const query = [...(state.filterQuery ?? '')];
-  if (state.filterOpen) {
-    if (input.text !== undefined) return to({ filterQuery: [...query, ...input.text].slice(0, FILTER_MAX).join('') });
-    if (input.key === 'backspace') return to({ filterQuery: query.slice(0, -1).join('') });
-    if (input.key === 'enter' || input.key === 'escape') return to({ filterOpen: undefined });
-    return ['left', 'right', 'tab', 'shift-tab'].includes(input.key) ? to({}) : null;
+  const tab = activeTabState(state);
+  if (input.type !== 'key' || !tab || !filterScope(state) || state.overlay?.kind === 'confirm-stop') return null;
+  const to = (filter?: ViewFilter): MonitorOutcome => ({
+    state: { ...state, [state.activeTab]: { ...tab, filter } }, close: false,
+  });
+  const filter = tab.filter, query = [...(filter?.query ?? '')];
+  if (filter?.editing) {
+    if (input.text !== undefined) return to({ editing: true, query: [...query, ...input.text].slice(0, FILTER_MAX).join('') });
+    if (input.key === 'backspace') return to({ editing: true, query: query.slice(0, -1).join('') });
+    if (input.key === 'enter' || input.key === 'escape') return to(filter.query ? { ...filter, editing: false } : undefined);
+    return ['left', 'right', 'tab', 'shift-tab'].includes(input.key) ? { state, close: false } : null;
   }
-  if (!filterScope(state) || state.overlay?.kind === 'confirm-stop') return null;
-  if (input.text === '/') return to({ filterOpen: true });
+  if (input.text === '/') return to({ query: filter?.query ?? '', editing: true });
   // Split's preview gives Esc back to the list first; then it clears the filter before the page is left.
-  if (input.key === 'escape' && state.filterQuery && !(state.panelLayout === 'split' && state.splitFocus === 'preview')) return to({ filterQuery: undefined });
+  const split = 'split' in tab ? tab.split : tab.nav.split;
+  if (input.key === 'escape' && filter?.query && !(state.prefs.panelLayout === 'split' && split.focus === 'preview')) return to();
   return null;
 }

@@ -29,22 +29,22 @@ test('main tabs cycle Home → Project → Control; 5 does not switch and old Sk
     let frame = render(initialMonitorState());
     for (const tab of order) {
       frame = render(key(frame, direction).state);
-      assert.equal(frame.state.mainTab, tab);
+      assert.equal(frame.state.activeTab, tab);
     }
   }
   const frame = render(initialMonitorState(), { width: 40 });
   assert.deepEqual(frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind), ['board-home', 'board-project', 'board-control']);
   const decoder = new WorkbenchInputDecoder('workboard');
   const five = send(frame, decoder.push(Buffer.from('5'))[0]);
-  assert.equal(five.state.mainTab, 'home');
-  assert.equal(five.state.help, false);
+  assert.equal(five.state.activeTab, 'home');
+  assert.equal(!!five.state.help, false);
   const previous = process.env.HUD_PANEL_RELOAD_PLACE;
   t.after(() => {
     if (previous === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE;
     else process.env.HUD_PANEL_RELOAD_PLACE = previous;
   });
-  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: { ...frame.state, mainTab: 'skills' } });
-  assert.equal(readPanelPlace().state.mainTab, 'home');
+  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: { mainTab: 'skills' } });
+  assert.equal(readPanelPlace().state.activeTab, 'home');
   const before = setLanguage('en');
   try {
     const narrow = render(initialMonitorState(), { width: 36, modelEnabled: false }), brief = narrow.controls.find((c) => c.kind === 'brief');
@@ -75,11 +75,11 @@ test('Help shows the shipped Skills catalog in EN/ZH and scrolls without row act
         assert.ok(short.lines.map(stripAnsi).join('\n').includes(catalog.at(-1)[lang].split(/\s+/).at(-1)), 'the end of the last description');
         const click = send(short, { type: 'mouse', button: 'left', x: 5, y: 3 });
         assert.equal(click.action, undefined);
-        assert.equal(click.state.helpScroll, short.state.helpScroll, 'clicking a skill row does not scroll or select it');
+        assert.equal(click.state.help?.scroll, short.state.help?.scroll, 'clicking a skill row does not scroll or select it');
         short = render(key(short, 'home').state, { width, height: 6 });
         assert.equal(short.panes[0].offset, 0);
-        assert.ok(send(short, { type: 'mouse', button: 'wheel-down', x: 0, y: 3 }).state.helpScroll > 0);
-        assert.ok(key(short, 'page-down').state.helpScroll > 0);
+        assert.ok(send(short, { type: 'mouse', button: 'wheel-down', x: 0, y: 3 }).state.help?.scroll > 0);
+        assert.ok(key(short, 'page-down').state.help?.scroll > 0);
       }
       for (const k of ['enter', 'open-session', 'inspect']) assert.equal(key(frame, k).action, undefined);
       assert.ok(skillSection(frame).every((r) => !r.item && !r.files));
@@ -167,7 +167,7 @@ test('Help at 40 columns: full Skills descriptions wrap in 36 cells under their 
       let frame = render(help(), { width: 40, height: 24 });
       while (!frame.lines.some((line) => skillHeader.test(stripAnsi(line)))) {
         const page = key(frame, 'page-down').state;
-        assert.ok(page.helpScroll > frame.state.helpScroll, 'can page down to the Skills section');
+        assert.ok(page.help?.scroll > frame.state.help?.scroll, 'can page down to the Skills section');
         frame = render(page, { width: 40, height: 24 });
       }
       const blocks = skillBlocks(frame);

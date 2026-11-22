@@ -57,7 +57,7 @@ export function ageText(minutes: number, padMinutes = false): string {
 /** Paths, filenames, code and flags share the deterministic identifier ink. */
 const identifierPattern = /`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;，。；]+|\b[\w.-]+\/[\w/.-]+|\b[\w.-]+\.[a-zA-Z][\w-]*\b|--[\w-]+/g;
 export const cardExpanded = (state: MonitorState, key: string) =>
-  state.boardExpanded?.has(key) || (state.boardNewest === key && !state.boardToggled?.has(key));
+  state.home.expanded?.has(key) || (state.home.newestCard === key && !state.home.toggled?.has(key));
 export function identifiers(text: string): string {
   return monitorText(text)
     .replace(identifierPattern, (s) => theme.board.identifier(s))

@@ -1,3 +1,5 @@
+import { tabState } from '../fixtures/state-helpers.mjs';
+import { projectPageOf } from '../../dist/render/project-view.js';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -32,24 +34,24 @@ test('Control is the third whole tab at 40 columns, with arrows, Tab, click and 
   const f = await fixture(t), data = richControl(f.data);
   for (const lang of ['en', 'zh']) for (const experiments of [false, true]) for (const panelLayout of ['classic', 'split']) {
     const draw = (state) => f.render(40, lang, state, 36, data, true, 'unicode', 'none', { projects: PROJECTS });
-    let frame = draw(onPage(undefined, { experiments, panelLayout, projectCursor: 'project:page:docs', projectRoot: PROJECTS[1].root }));
+    let frame = draw(onPage(undefined, { selectedProject: PROJECTS[1].root, project: { nav: { cursor: 'project:page:docs' } }, prefs: { panelLayout, experiments } }));
     const keys = ['home', 'project', 'control', ...(experiments ? ['exp'] : [])];
     assert.deepEqual(frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind), keys.map((key) => `board-${key}`));
     frame = draw(send(frame, 'tab').state);
-    assert.equal(frame.state.mainTab, 'control');
-    assert.equal(frame.state.projectRoot, PROJECTS[1].root);
+    assert.equal(frame.state.activeTab, 'control');
+    assert.equal(frame.state.selectedProject, PROJECTS[1].root);
     assert.match(plain(frame)[0], lang === 'zh' ? /首页.*项目.*控制/ : /Home.*Project.*Control/);
     if (experiments) assert.match(plain(frame)[0], /EXP/);
     const decoder = new WorkbenchInputDecoder('workboard');
-    for (const input of decoder.push(Buffer.from('1234567890'))) assert.equal(send(frame, input).state.mainTab, 'control');
-    assert.equal(send(frame, 'filter').state.filterOpen, undefined, 'the Home filter is not a Control view');
+    for (const input of decoder.push(Buffer.from('1234567890'))) assert.equal(send(frame, input).state.activeTab, 'control');
+    assert.equal(tabState(send(frame, 'filter').state)?.filter?.editing, undefined, 'the Home filter is not a Control view');
     assert.deepEqual(send(frame, 'export-board').action, { type: 'export-board' });
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
-    assert.equal(send(frame, 'right').state.mainTab, experiments ? 'exp' : 'home');
-    assert.equal(send(frame, 'shift-tab').state.mainTab, 'project');
+    assert.equal(send(frame, 'right').state.activeTab, experiments ? 'exp' : 'home');
+    assert.equal(send(frame, 'shift-tab').state.activeTab, 'project');
     const ctrl = draw(send(frame, 'end').state);
     const project = draw(send(ctrl, 'left').state);
-    assert.equal(project.state.projectCursor, 'project:page:docs');
+    assert.equal(project.state.project.nav.cursor, 'project:page:docs');
     const again = draw(send(project, tabClick(project, 'control')).state);
     assert.deepEqual(again.state.control.roles, ctrl.state.control.roles);
     const saved = draw({ ...again.state, control: { ...again.state.control, notice: { kind: 'preset', role: 'imp', name: 'daily' } } });
@@ -71,7 +73,7 @@ test('Control shows active lease name, holder and age for the selected project',
   const now = Date.now() + 10_000;
   const snapshot = await f.collector.collect('control', f.board, now);
   for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
-    const frame = f.render(40, lang, onControl({}, { panelLayout }), 38, snapshot, true, 'unicode', 'none', { nowMs: now });
+    const frame = f.render(40, lang, onControl({}, { prefs: { panelLayout } }), 38, snapshot, true, 'unicode', 'none', { nowMs: now });
     const rendered = plain(frame).join('\n');
     assert.match(rendered, lang === 'zh' ? /资源租约/ : /Leases/);
     assert.match(rendered, /shared install +w4E:p1 · 1\ds/);
@@ -89,17 +91,17 @@ test('Project hubs have no Control row; Inbox alert links to its role on the sam
   const root = PROJECTS[1].root;
   for (const panelLayout of ['classic', 'split']) for (const projectLayout of ['timeline', 'board', 'inbox']) {
     const draw = (state, projectDisplayRoot = root) => f.render(40, 'en', state, 36, data, true, 'unicode', 'none', { projects: PROJECTS, projectDisplayRoot });
-    const state = onPage(undefined, { panelLayout, projectLayout, projectRoot: root, projectCursor: 'inbox:role:pro' });
+    const state = onPage(undefined, { selectedProject: root, project: { nav: { cursor: 'inbox:role:pro' } }, prefs: { panelLayout, projectLayout } });
     const frame = draw(state);
     assert.ok(!frame.workboard.rows.some((r) => r.item === 'project:page:control'));
     if (projectLayout !== 'inbox') continue;
     assert.deepEqual(send(frame, 'open-session').action, { type: 'open-files', files: ['/synthetic/default/roles/pro.json'] });
     const next = send(frame, 'enter');
     assert.equal(next.action, undefined);
-    assert.equal(next.state.mainTab, 'control');
-    assert.equal(next.state.projectRoot, root);
+    assert.equal(next.state.activeTab, 'control');
+    assert.equal(next.state.selectedProject, root);
     assert.equal(draw(next.state).state.control.roles.nav.cursor, 'project:role:pro');
-    assert.equal(send(draw(state, PROJECTS[0].root), 'enter').state.mainTab, 'project', 'no stale-root alert opens on the new root');
+    assert.equal(send(draw(state, PROJECTS[0].root), 'enter').state.activeTab, 'project', 'no stale-root alert opens on the new root');
   }
 });
 
@@ -107,12 +109,12 @@ test('legacy Project/control continuation returns to the selected role on Contro
   const f = await fixture(t), data = richControl(f.data);
   for (const panelLayout of ['classic', 'split']) {
     const projectCursor = 'project:role:reviewer:0';
-    process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: onPage('control', { panelLayout, projectRoot: PROJECTS[1].root, projectCursor }) },
+    process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: { mainTab: 'project', projectPage: 'control', projectRoot: PROJECTS[1].root, projectCursor, panelLayout } },
       (_k, value) => value instanceof Set ? { panelSet: [...value] } : value);
     const place = readPanelPlace();
-    assert.equal(place.state.mainTab, 'control');
-    assert.equal(place.state.projectPage, undefined);
-    assert.equal(place.state.projectRoot, PROJECTS[1].root);
+    assert.equal(place.state.activeTab, 'control');
+    assert.equal(projectPageOf(place.state), undefined);
+    assert.equal(place.state.selectedProject, PROJECTS[1].root);
     assert.equal(f.render(40, 'en', place.state, 36, data).state.control.roles.nav.cursor, 'project:role:reviewer');
   }
 });
@@ -139,15 +141,15 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     const data = await f.collector.collect('control', f.board, NOW);
     const roles = { cursor: 'project:role:imp' };
     const draw = (state) => {
-      const frame = f.render(40, lang, state, 38, data, true, 'unicode', 'none', { projectName: 'harbor-api', experiments: true });
+      const frame = f.render(40, lang, state, 38, data, true, 'unicode', 'none', { projectName: 'harbor-api', prefs: { experiments: true } });
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
       return frame;
     };
     const decoder = new WorkbenchInputDecoder('workboard');
     const h = decoder.push(Buffer.from('h'))[0];
     const classic = panelLayout === 'classic', zh = lang === 'zh';
-    let frame = draw(send(draw(onControl(roles, { panelLayout, experiments: true })), h).state);
-    assert.equal(frame.state.mainTab, 'control');
+    let frame = draw(send(draw(onControl(roles, { prefs: { panelLayout, experiments: true } })), h).state);
+    assert.equal(frame.state.activeTab, 'control');
     assert.equal(frame.state.control.subTab, 'harnesses');
     assert.match(caption(frame), zh ? /本机 · 所有项目/ : /This machine · all projects/);
     assert.match(caption(frame), /^  ◉ pi$/m);
@@ -259,8 +261,7 @@ test('quick model role, picker and saved notice fit in both layouts and language
 test('project role at 40 columns shows source and lock, with open but no preset controls', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
   for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
-    const state = onControl({ cursor: 'project:role:frontend' }, { panelLayout,
-      overlay: chainOverlay(data.roles.find((r) => r.role === 'frontend')) });
+    const state = onControl({ cursor: 'project:role:frontend' }, { prefs: { panelLayout }, overlay: chainOverlay(data.roles.find((r) => r.role === 'frontend')) });
     const frame = f.render(40, lang, state, 34, data);
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
     const content = plain(frame).join('\n');
@@ -291,7 +292,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
       return frame;
     };
     const decoder = new WorkbenchInputDecoder('workboard');
-    let frame = draw(onControl({ cursor }, { panelLayout: layout }));
+    let frame = draw(onControl({ cursor }, { prefs: { panelLayout: layout } }));
     const text = () => plain(frame).join('\n');
     const read = () => JSON.parse(fs.readFileSync(file, 'utf8'));
     const apply = (out) => {

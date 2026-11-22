@@ -50,9 +50,9 @@ export function workInspectorRows(
   now: number,
   _heading = true
 ): MonitorRow[] {
-  const card = projectWorkCard(worker, now, state.cardStallMinutes),
+  const card = projectWorkCard(worker, now, state.prefs.cardStallMinutes),
     target: WorkTarget = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  const expanded = { ...state, boardExpanded: new Set([targetKey(target)]) };
+  const expanded = { ...state, home: { ...state.home, expanded: new Set([targetKey(target)]) } };
   const rows =
     card.state === 'needs-you'
       ? [

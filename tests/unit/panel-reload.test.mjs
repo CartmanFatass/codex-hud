@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rmSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PanelReload, readPanelPlace } from '../../dist-test/src/utils/panel-reload.js';
+import { encodePanelPlace, PanelReload, readPanelPlace } from '../../dist-test/src/utils/panel-reload.js';
 import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
 import { delay, until, fixture, launch, encode, live, QUIET_MS } from '../helpers/panel-reload-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -14,11 +14,12 @@ test('reload place retains opening time; legacy handoffs use their consumption t
   const previous = process.env.HUD_PANEL_RELOAD_PLACE;
   try {
     const openedAt = Date.now() - 60000;
-    process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: initialMonitorState(), settings: null, openedAt });
+    process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: initialMonitorState(), settings: null, openedAt });
     assert.equal(readPanelPlace().openedAt, openedAt);
-    const initial = initialMonitorState(), { control: _control, exp: _exp, ...flat } = initial;
+    const initial = initialMonitorState();
+    const flat = { mainTab: 'home', focus: 'agents', modes: initial.modes, scroll: { changes: 0, details: 0 }, tree: { selectedId: null }, help: false };
     process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: { ...flat, preview: 'agent', zoom: true,
-      scroll: { ...initial.scroll, agents: 4 }, tree: { ...initial.tree, collapsed: new Set(['retired']), showAll: true },
+      scroll: { ...flat.scroll, agents: 4 }, tree: { ...flat.tree, collapsed: new Set(['retired']), showAll: true },
       projectCursor: 'project:page:docs', controlHarnesses: true,
       controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['usage']), projectScroll: 3 },
       controlHarnessNav: { projectCursor: 'control:harness:pi', projectFolded: new Set(), splitFor: 'harnesses|control:harness:pi', splitScroll: 4 },
@@ -28,9 +29,14 @@ test('reload place retains opening time; legacy handoffs use their consumption t
     }, settings: null });
     const before = Date.now(), legacy = readPanelPlace(), after = Date.now();
     assert.ok(legacy.openedAt >= before && legacy.openedAt <= after);
-    const { control, ...rest } = legacy.state;
-    assert.deepEqual(rest, { ...flat, projectCursor: 'project:page:docs', tree: { ...initial.tree, showAll: true },
-      exp: { detail: 'openai-api', cursor: 'calibration', scroll: 2 } });
+    const { control, home, project, exp, subpage, overlay } = legacy.state;
+    assert.equal(legacy.state.activeTab, 'home');
+    assert.equal(project.nav.cursor, 'project:page:docs');
+    assert.equal(home.showAll, true);
+    assert.deepEqual({ detail: exp.detail, cursor: exp.cursor, scroll: exp.scroll }, { detail: 'openai-api', cursor: 'calibration', scroll: 2 });
+    assert.equal(subpage, undefined);
+    assert.equal(overlay, undefined);
+    for (const retired of ['preview', 'zoom', 'tree', 'controlHarnessAdd', 'expPage']) assert.ok(!(retired in legacy.state));
     assert.equal(control.subTab, 'harnesses');
     assert.equal(control.roles.nav.cursor, 'project:role:imp');
     assert.equal(control.roles.nav.scroll, 3);
@@ -99,20 +105,23 @@ test('dirty Settings block reload, including edits made while the load check is 
 
 for (const fallback of [false, true]) test(`${fallback ? 'single-supervisor fallback' : 'execve'} preserves argv/env and revives the saved place over three restarts`, { skip: !fallback && typeof process.execve !== 'function' }, async (t) => {
   const f = fixture(t), runner = join(f.root, 'restart.mjs');
-  const state = { ...initialMonitorState(), mainTab: 'project', homeTarget: { kind: 'worker', laneId: 'lane', workerId: 'worker' },
-    boardExpanded: new Set(['worker:lane:worker']), boardToggled: new Set(['worker:lane:worker']), boardFolded: new Set(['other']),
-    projectFolded: new Set(['project']), help: true, tree: { ...initialMonitorState().tree, showAll: true } };
+  const state = initialMonitorState();
+  state.activeTab = 'project';
+  state.home = { ...state.home, cursor: { kind: 'work', target: { kind: 'worker', laneId: 'lane', workerId: 'worker' } },
+    expanded: new Set(['worker:lane:worker']), toggled: new Set(['worker:lane:worker']), foldedLanes: new Set(['other']), showAll: true };
+  state.project.folded = new Set(['project']);
+  state.help = {};
   const roles = state.control.roles;
   roles.folded = new Set(['usage']);
   roles.nav = { cursor: 'project:role:imp:0', scroll: 3, revealed: 'control|project:role:imp|project:role:imp:0',
     split: { focus: 'preview', listCursor: 'project:role:imp', previewCursor: 'project:role:imp:0', listScroll: 2, previewScroll: 5, previewFor: 'control|project:role:imp' } };
   state.exp = { detail: 'openai-api', cursor: 'calibration', scroll: 2 };
-  writeFixtureFile(runner, `import {PanelReload,readPanelPlace} from ${JSON.stringify(moduleUrl)};
+  writeFixtureFile(runner, `import {PanelReload,readPanelPlace,encodePanelPlace} from ${JSON.stringify(moduleUrl)};
 ${fallback ? 'process.execve=undefined;' : ''}
-const reload=new PanelReload();const transportedOverlay=JSON.parse(process.env.HUD_PANEL_RELOAD_PLACE??'null')?.state?.overlay;const place=readPanelPlace();
-console.log(JSON.stringify({pid:process.pid,ppid:process.ppid,argv:process.argv.slice(2),test:process.env.SYNTHETIC,consumed:!process.env.HUD_PANEL_RELOAD_PLACE,place,transportedOverlay},(_k,v)=>v instanceof Set?{panelSet:[...v]}:v));
-const phase=place?.state.helpScroll??0;
-if(phase<3) await reload.restart({state:{...(place?.state??JSON.parse(process.env.SYNTHETIC_PLACE,(_k,v)=>v?.panelSet?new Set(v.panelSet):v)),helpScroll:phase+1},settings:{selected:2,offset:1}},()=>{});
+const reload=new PanelReload(), wire=JSON.parse(process.env.HUD_PANEL_RELOAD_PLACE??'null'), place=readPanelPlace();
+console.log(JSON.stringify({pid:process.pid,ppid:process.ppid,argv:process.argv.slice(2),test:process.env.SYNTHETIC,consumed:!process.env.HUD_PANEL_RELOAD_PLACE,place:place&&JSON.parse(encodePanelPlace(place)),wire}));
+const phase=place?.state.help?.scroll??0;
+if(phase<3) await reload.restart({state:{...(place?.state??JSON.parse(process.env.SYNTHETIC_PLACE,(_k,v)=>v?.panelSet?new Set(v.panelSet):v)),help:{scroll:phase+1}},settings:{selected:2,offset:1}},()=>{});
 else process.exitCode=17;
 `);
   const run = launch(f, runner, ['arg with spaces', '--root', 'synthetic/root'], { SYNTHETIC: 'preserved', SYNTHETIC_PLACE: encode({ ...state, overlay: { kind: 'control-chain',
@@ -126,9 +135,11 @@ else process.exitCode=17;
     assert.deepEqual(row.argv, ['arg with spaces', '--root', 'synthetic/root']);
     assert.equal(row.test, 'preserved');
     assert.equal(row.consumed, true);
-    assert.equal(row.transportedOverlay, undefined, 'the reload environment never contains the overlay');
+    assert.equal(row.wire?.state.overlay, undefined, 'the reload environment never contains the overlay');
     if (i) {
-      assert.deepEqual(row.place.state, JSON.parse(encode({ ...state, helpScroll: i })));
+      assert.deepEqual(row.wire.state, JSON.parse(encodePanelPlace({ state: { ...state, help: { scroll: i } }, settings: null })).state);
+      assert.equal(row.wire.state.home, undefined, 'the handoff still carries the previous flat shape');
+      assert.deepEqual(row.place.state, row.wire.state);
       assert.deepEqual(row.place.settings, { selected: 2, offset: 1 });
     }
   }
@@ -137,9 +148,10 @@ else process.exitCode=17;
 test('the older-Node supervisor forwards signals and returns the child status', async (t) => {
   const f = fixture(t), runner = join(f.root, 'signal.mjs');
   writeFixtureFile(runner, `import {PanelReload,readPanelPlace} from ${JSON.stringify(moduleUrl)};
+import {initialMonitorState} from ${JSON.stringify(pathToFileURL(resolve('dist-test/src/render/monitor.js')).href)};
 process.execve=undefined;const reload=new PanelReload();
 if(readPanelPlace()){process.on('SIGTERM',()=>process.exit(23));console.log('ready');setInterval(()=>{},1000);}
-else await reload.restart({state:{},settings:null},()=>{});`);
+else await reload.restart({state:initialMonitorState(),settings:null},()=>{});`);
   const run = launch(f, runner);
   await until(() => run.output().includes('ready'), 'replacement did not start');
   run.child.kill('SIGTERM');
@@ -161,8 +173,8 @@ test('the live panel coalesces build bursts, retains jobs settled during its lif
   assert.equal(f.restarts()[0].restart.openedAt, openedAt);
   const saved = f.restarts()[0].restart.state;
   assert.equal(saved.mainTab, 'home');
-  assert.deepEqual(saved.homeTarget, f.state.homeTarget);
-  assert.deepEqual(saved.boardExpanded.panelSet, [...f.state.boardExpanded]);
+  assert.deepEqual(saved.homeTarget, f.state.home.cursor.target);
+  assert.deepEqual(saved.boardExpanded.panelSet, [...f.state.home.expanded]);
   assert.equal(saved.tree.showAll, true);
   f.appendBuild('\ninvalid syntax !');
   await until(() => f.output().includes('new build failed to load'), 'bad build notice not rendered');

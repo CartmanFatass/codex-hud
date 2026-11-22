@@ -1,3 +1,4 @@
+import { encodePanelPlace } from '../../dist/utils/panel-reload.js';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -123,7 +124,7 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
 
 test('live picker paints immediately, types without discovery and can restore the previous quick save', { timeout: 10000 }, async (t) => {
   const f = await fixture(t), log = join(f.cwd, 'herdr-log');
-  f.put(join(f.hud, 'hud-settings.json'), { language: 'en', modelEnabled: false, theme: 'none', panelLayout: 'classic' });
+  f.put(join(f.hud, 'hud-settings.json'), { language: 'en', modelEnabled: false, theme: 'none', prefs: { panelLayout: 'classic' } });
   const exhausted = { harness: 'pi', pi_role: 'implementer', model: 'synthetic/exhausted' };
   markExhausted(f.hud, placeKey(exhausted), 'quota exceeded', Date.now());
   f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen'], run: [
@@ -140,7 +141,7 @@ test('live picker paints immediately, types without discovery and can restore th
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nprocess.exitCode = 97;\n`);
   chmodSync(herdr, 0o700);
   const state = onControl({ cursor: 'project:role:imp' });
-  const place = JSON.stringify({ state, settings: null }, (_k, v) => v instanceof Set ? { panelSet: [...v] } : v);
+  const place = encodePanelPlace({ state, settings: null });
   const entry = pathToFileURL(resolve('dist/tree-page.js')).href;
   const child = spawn(process.execPath, ['--input-type=module', '-e',
     `process.stdout.columns = 120; process.stdout.rows = 36; await (await import(${JSON.stringify(entry)})).runLivePage();`], {

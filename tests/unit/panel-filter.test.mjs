@@ -1,3 +1,6 @@
+import { splitOf, tabState, viewFor, withState, sliceState } from '../fixtures/state-helpers.mjs';
+import { homeTarget } from '../../dist/render/monitor-state.js';
+import { projectPageOf } from '../../dist/render/project-view.js';
 /** The `/` filter (spec §2.2): live across Home (Classic and Split), Project's Progress slices and Tickets; typing, Enter, Esc, and the keys it swallows. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,15 +9,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
 import { NOW, TREE, plain } from '../fixtures/project-page.mjs';
-import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 
 const decoder = new WorkbenchInputDecoder('workboard');
 const key = (name) => ({ type: 'key', key: name });
-const classic = (extra) => ({ ...initialMonitorState(), ...extra });
-const page = (p, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage: p, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
+const classic = (extra) => withState(sliceState(), extra);
+const page = (p, extra) => (withState(sliceState(), { activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(p) } }, extra));
 async function busy(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'panel-filter-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -60,7 +63,7 @@ test('typing after / filters Home live, in Classic and Split: the bar under the 
     }
   }
   // Settled cards fold and then leave Home with time; a match brings one back, and with the filter gone it is hidden again.
-  const old = classic({ cardFoldMinutes: 1, cardHideMinutes: 1 }), d = drive(f, old);
+  const old = classic({ prefs: { cardFoldMinutes: 1, cardHideMinutes: 1 } }), d = drive(f, old);
   assert.doesNotMatch(d.lines().join('\n'), /retry/, 'hidden: the reviewer card that finished two minutes ago');
   d.press('/'); d.type('reviewer');
   assert.match(d.lines().join('\n'), /✓ reviewer {2}NATIVE-TREE: retry/);
@@ -73,8 +76,8 @@ test('Enter keeps the filter: ↑↓ then move over the matches only, other keys
   const classicHome = drive(f, classic());
   classicHome.press('/'); classicHome.type('reviewer');
   classicHome.enter();
-  assert.equal(classicHome.state.filterOpen, undefined);
-  assert.equal(classicHome.state.filterQuery, 'reviewer');
+  assert.equal(tabState(classicHome.state)?.filter?.editing, false);
+  assert.equal(tabState(classicHome.state)?.filter?.query, 'reviewer');
   assert.match(classicHome.bar(), /^\/ reviewer +2 matches · esc clear$/);
   // From the top of the list to its end and back: the lanes the cursor stands on are the two that match.
   const walk = (d, up, down, at) => {
@@ -83,11 +86,11 @@ test('Enter keeps the filter: ↑↓ then move over the matches only, other keys
     return [...seen].sort();
   };
   const matching = ['AUTH-REFRESH', 'NATIVE-TREE'];
-  assert.deepEqual(walk(classicHome, '\x1b[H', key('down'), (s) => s.homeTarget?.laneId), matching, 'Classic: the cursor never lands on EXPORT-CSV or M4-PROJECT');
-  assert.equal(classicHome.press('a').state.tree.showAll, true, 'a is Home\'s own key again');
+  assert.deepEqual(walk(classicHome, '\x1b[H', key('down'), (s) => homeTarget(s.home)?.laneId), matching, 'Classic: the cursor never lands on EXPORT-CSV or M4-PROJECT');
+  assert.equal(classicHome.press('a').state.home.showAll, true, 'a is Home\'s own key again');
   const lanes = drive(f, split());
   lanes.press('/'); lanes.type('reviewer'); lanes.enter();
-  assert.deepEqual(walk(lanes, key('up'), key('down'), (s) => JSON.parse(s.splitCursor)[1]), matching, 'Split: the list is those two lanes');
+  assert.deepEqual(walk(lanes, key('up'), key('down'), (s) => JSON.parse(s.home.split.listCursor)[1]), matching, 'Split: the list is those two lanes');
   lanes.press('/'); lanes.type('s');
   assert.match(lanes.bar(), /^\/ reviewers▌ +0 matches$/, '/ opens the kept query for editing');
 });
@@ -98,25 +101,25 @@ test('Esc stops typing, then clears the filter, and only then leaves the page', 
   d.press('/'); d.type('try');
   assert.match(d.bar(), /^\/ try▌ +5 matches$/);
   d.esc();
-  assert.deepEqual([d.state.filterOpen, d.state.filterQuery, d.state.projectPage], [undefined, 'try', 'progress'], 'the first Esc stops typing and keeps the filter');
+  assert.deepEqual([tabState(d.state)?.filter?.editing, tabState(d.state)?.filter?.query, projectPageOf(d.state)], [false, 'try', 'progress'], 'the first Esc stops typing and keeps the filter');
   assert.match(d.bar(), /^\/ try +5 matches · esc clear$/);
   d.esc();
-  assert.deepEqual([d.state.filterOpen, d.state.filterQuery, d.state.projectPage], [undefined, undefined, 'progress'], 'the second clears it, on the same page');
+  assert.deepEqual([tabState(d.state)?.filter?.editing, tabState(d.state)?.filter?.query, projectPageOf(d.state)], [undefined, undefined, 'progress'], 'the second clears it, on the same page');
   assert.doesNotMatch(d.bar(), /^\//);
   d.esc();
-  assert.equal(d.state.projectPage, undefined, 'the third leaves the page');
+  assert.equal(projectPageOf(d.state), undefined, 'the third leaves the page');
   // An empty bar has nothing to keep: Esc closes it at once.
   const e = drive(f, classic());
   e.press('/'); e.esc();
-  assert.deepEqual([e.state.filterOpen, e.state.filterQuery], [undefined, undefined]);
+  assert.deepEqual([tabState(e.state)?.filter?.editing, tabState(e.state)?.filter?.query], [undefined, undefined]);
   // Split's preview gives Esc back to the list first.
   const s = drive(f, split());
   s.press('/'); s.type('reviewer'); s.enter(); s.enter();
-  assert.equal(s.state.splitFocus, 'preview', 'Enter went into the preview');
+  assert.equal(splitOf(s.state).focus, 'preview', 'Enter went into the preview');
   s.esc();
-  assert.deepEqual([s.state.splitFocus, s.state.filterQuery], [undefined, 'reviewer']);
+  assert.deepEqual([splitOf(s.state).focus, tabState(s.state)?.filter?.query], ['list', 'reviewer']);
   s.esc();
-  assert.equal(s.state.filterQuery, undefined);
+  assert.equal(tabState(s.state)?.filter?.query, undefined);
 });
 
 test('while typing every printable key is the query\'s, and a tab or page switch afterwards clears the filter', async (t) => {
@@ -124,19 +127,19 @@ test('while typing every printable key is the query\'s, and a tab or page switch
   const d = drive(f, classic()), typed = 'gXwr12=-q y?,aov+';
   d.press('/');
   d.type(typed);
-  assert.equal(d.state.filterQuery, typed);
-  assert.deepEqual([d.state.mainTab, d.state.overlay, d.state.help, d.state.tree.showAll], ['home', undefined, false, undefined]);
+  assert.equal(tabState(d.state)?.filter?.query, typed);
+  assert.deepEqual([d.state.activeTab, d.state.overlay, !!d.state.help, d.state.home.showAll], ['home', undefined, false, false]);
   for (const bytes of ['\x1b[C', '\x1b[D', '\t', '\x1b[Z']) d.press(bytes);
-  assert.deepEqual([d.state.mainTab, d.state.filterQuery], ['home', typed], 'Left, Right and Tab wait for Enter');
+  assert.deepEqual([d.state.activeTab, tabState(d.state)?.filter?.query], ['home', typed], 'Left, Right and Tab wait for Enter');
   assert.equal(d.press('\x03').close, true, 'Ctrl-C still closes the panel');
   const k = drive(f, classic());
   k.press('/'); k.type('re'); k.enter();
   k.press('\x1b[C');
-  assert.deepEqual([k.state.mainTab, k.state.filterQuery, k.state.filterOpen], ['project', undefined, undefined]);
+  assert.deepEqual([k.state.activeTab, tabState(k.state)?.filter?.query, tabState(k.state)?.filter?.editing], ['project', undefined, undefined]);
   const p = drive(f, page('progress'), { data: f.rich });
   p.press('/'); p.type('try'); p.enter();
   p.press('\x1b[D');
-  assert.deepEqual([p.state.mainTab, p.state.filterQuery], ['home', undefined]);
+  assert.deepEqual([p.state.activeTab, tabState(p.state)?.filter?.query], ['home', undefined]);
 });
 
 test('Progress filters slices by id, milestone, text, role and state, Tickets by feature, number, title, status and blocker, in both layouts', async (t) => {
@@ -146,7 +149,7 @@ test('Progress filters slices by id, milestone, text, role and state, Tickets by
     d.press('/'); d.type(query);
     return { n: Number(/(\d+) match/.exec(d.bar())?.[1] ?? NaN), text: d.lines().join('\n') };
   };
-  for (const layout of [{}, { panelLayout: 'split' }]) {
+  for (const layout of [{}, { prefs: { panelLayout: 'split' } }]) {
     const progress = (q) => count(page('progress', layout), f.rich, q), tickets = (q) => count(page('tickets', layout), f.data, q);
     assert.equal(progress('PAGE-TWO').n, 1, 'id');
     assert.equal(progress('M4').n, 4, 'milestone');
@@ -177,17 +180,17 @@ test('a role match on a joined job keeps its selectable Split Progress slice and
     slices: [...base.slices, { label: id, value: 'add the feature', ledgerState: 'working', jobId: job.jobId, role: job.role }],
     active: [...base.active, job],
   };
-  const d = drive(f, page('progress', { panelLayout: 'split' }), { data: project, width: 60 });
+  const d = drive(f, page('progress', { prefs: { panelLayout: 'split' } }), { data: project, width: 60 });
   d.press('/'); d.type('frontend-imp'); d.enter();
   assert.match(d.bar(), /^\/ frontend-imp +1 match · esc clear$/);
-  assert.equal(d.state.projectCursor, `project:slice:${id}`);
+  assert.equal(d.state.project.nav.cursor, `project:slice:${id}`);
   assert.match(d.lines().join('\n'), /add the feature/);
 });
 
 test('every row is exactly the panel\'s width with the bar up, in English and Chinese, and the filter is kept across the reload', async (t) => {
   const f = await busy(t);
-  const views = [['Home', classic(), f.data], ['Home split', split(), f.data], ['Progress', page('progress'), f.rich], ['Progress split', page('progress', { panelLayout: 'split' }), f.rich],
-    ['Tickets', page('tickets'), f.data], ['Tickets split', page('tickets', { panelLayout: 'split' }), f.data]];
+  const views = [['Home', classic(), f.data], ['Home split', split(), f.data], ['Progress', page('progress'), f.rich], ['Progress split', page('progress', { prefs: { panelLayout: 'split' } }), f.rich],
+    ['Tickets', page('tickets'), f.data], ['Tickets split', page('tickets', { prefs: { panelLayout: 'split' } }), f.data]];
   for (const lang of ['en', 'zh']) for (const width of [30, 40, 52, 80]) for (const [name, state, data] of views) for (const query of ['', 'e', 'zzzz']) {
     const d = drive(f, state, { width, height: 24, lang, data });
     d.press('/'); d.type(query);
@@ -199,9 +202,9 @@ test('every row is exactly the panel\'s width with the bar up, in English and Ch
   const d = drive(f, classic());
   d.press('/'); d.type('sonic'); d.enter();
   const held = process.env.HUD_PANEL_RELOAD_PLACE;
-  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: d.state, settings: null });
+  process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: d.state, settings: null });
   const place = readPanelPlace();
   if (held === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE; else process.env.HUD_PANEL_RELOAD_PLACE = held;
-  assert.equal(place.state.filterQuery, 'sonic');
+  assert.equal(tabState(place.state)?.filter?.query, 'sonic');
   assert.match(drive(f, place.state).bar(), /^\/ sonic +1 match · esc clear$/);
 });

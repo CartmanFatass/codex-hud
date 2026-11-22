@@ -10,8 +10,8 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 for (const bound of [false, true]) for (const view of ['project', 'help', 'inspector']) test(`the live ${bound ? 'Claude-bound' : 'unbound'} panel restores ${view}, selection and show-all across replacements`, async (t) => {
   const f = live(t, (state) => ({ state: { ...state,
-    mainTab: view === 'project' ? 'project' : 'home', help: view === 'help',
-    focus: view === 'inspector' ? 'details' : 'agents', boardInspect: view === 'inspector' ? state.homeTarget : undefined,
+    activeTab: view === 'project' ? 'project' : 'home', help: view === 'help' ? {} : undefined,
+    subpage: view === 'inspector' ? { kind: 'inspector', target: state.home.cursor.target, scroll: 0 } : undefined,
   }, settings: null }), { bound });
   await until(() => f.output().includes('models off') || f.output().includes('Home ›') || f.output().includes('Help'), 'first collected view did not render');
   for (let generation = 1; generation <= 2; generation++) {
@@ -22,16 +22,16 @@ for (const bound of [false, true]) for (const view of ['project', 'help', 'inspe
     assert.equal(state.mainTab, view === 'project' ? 'project' : 'home');
     assert.equal(state.help, view === 'help');
     assert.equal(state.focus, view === 'inspector' ? 'details' : 'agents');
-    if (view === 'inspector') assert.deepEqual(state.boardInspect, f.state.homeTarget);
-    assert.deepEqual(state.homeTarget, f.state.homeTarget);
+    if (view === 'inspector') assert.deepEqual(state.boardInspect, f.state.home.cursor.target);
+    assert.deepEqual(state.homeTarget, f.state.home.cursor.target);
     assert.equal(state.tree.showAll, true);
-    assert.deepEqual(state.boardToggled.panelSet, [...f.state.boardToggled]);
+    assert.deepEqual(state.boardToggled.panelSet, [...f.state.home.toggled]);
     assert.equal(state.cardHideMinutes, 15, 'missing handoff fields get configured defaults');
   }
 });
 
 test('the 40-column Classic to-try view reloads with its cursor but without pending batch marks', async (t) => {
-  const f = live(t, (state) => ({ state: { ...state, mainTab: 'project', projectPage: 'progress', projectTry: { scroll: 0 } }, settings: null }), { columns: 40 });
+  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'progress', onlyTry: { scroll: 0 } } } }, settings: null }), { columns: 40 });
   writeFixtureFile(join(f.env.CODEX_HUD_CWD, 'STATE.md'), 'Milestone: M4\n\n## Slices\n- try · M4 · RELOAD-ONE · Synthetic reload slice\n');
   await until(() => f.output().includes('1 slice'), 'the to-try view did not render');
   f.child.stdin.write('gjj ');
@@ -43,6 +43,7 @@ test('the 40-column Classic to-try view reloads with its cursor but without pend
   const saved = f.restarts()[0].restart.state;
   assert.equal(saved.projectCursor, 'project:fold:task:milestone:M4');
   assert.ok(saved.projectTry);
+  assert.equal(saved.trySelection, undefined, 'pending marks are not transported');
   assert.doesNotMatch(f.output().slice(at), /▣/);
   f.child.stdin.write(' ');
   await until(() => f.output().slice(at).includes('▣'), 'could not mark the slice again after reload');
@@ -81,7 +82,7 @@ test('live input: g on a job reaches focus-job-tab after automatic reload', asyn
 });
 
 test('live input: a build waits for the Harnesses Add back draft to close', async (t) => {
-  const f = live(t, (state) => ({ state: { ...state, mainTab: 'control', control: { ...state.control, subTab: 'harnesses' } }, settings: null }));
+  const f = live(t, (state) => ({ state: { ...state, activeTab: 'control', control: { ...state.control, subTab: 'harnesses' } }, settings: null }));
   writeFixtureFile(join(f.env.HUD_HOME, 'harnesses.json'), JSON.stringify({ disabled: ['pi:xai'] }));
   await until(() => f.output().includes('i add back'), 'Harnesses did not render');
   f.child.stdin.write('ixa');
@@ -134,7 +135,7 @@ test('saving Width 64 from opening width 56 keeps 64 across real panel replaceme
 });
 
 for (const action of ['save', 'discard']) test(`the live panel waits for Settings ${action} before restarting`, async (t) => {
-  const f = live(t, { state: { ...initialMonitorState(), mainTab: 'project' }, settings: { selected: 0, offset: 0 } });
+  const f = live(t, { state: { ...initialMonitorState(), activeTab: 'project' }, settings: { selected: 0, offset: 0 } });
   await until(() => f.output().includes('Settings'), 'Settings overlay did not resume');
   f.child.stdin.write('\x1b[C');
   await until(() => f.output().includes('unsaved'), 'Settings edit was not dirty');

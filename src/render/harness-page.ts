@@ -1,7 +1,7 @@
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { HarnessSwitchFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
-import { HARNESS_OFF, harnessFold, type ControlViewState } from './monitor-state.js';
+import { HARNESS_OFF, harnessFold, type ControlViewState, type OverlayState } from './monitor-state.js';
 import { projectSplitScene, type Shown } from './split-project.js';
 import { boardRow, footerLayout, kvRows, mark, section, type FooterHints } from './workboard-rows.js';
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
@@ -79,16 +79,14 @@ function harnessDetail(h: HarnessSwitchFact, width: number): MonitorRow[] {
   }
   return [...detail, boardRow(''), ...flowLines(t('Role files untouched · restore any time'), width).map((s) => boardRow(muted(s)))];
 }
-export function harnessAddRows(data: ProjectSnapshot, state: MonitorState, width: number): MonitorRow[] {
-  const add = state.overlay;
-  if (add?.kind !== 'control-harness-add') return [];
+export function harnessAddRows(data: ProjectSnapshot, add: Extract<OverlayState, { kind: 'control-harness-add' }>, width: number) {
   const needle = add.text.toLowerCase();
   const matches = offSwitches(data).filter((h) => h.id.toLowerCase().includes(needle));
   const items = matches.map((h) => switchRow(h, width, true));
-  if (!items.some((r) => r.item === add.pick)) state.overlay = { ...add, pick: items[0]?.item };
+  const pick = items.some((r) => r.item === add.pick) ? add.pick : items[0]?.item;
   const count = String(matches.length), text = squeeze(monitorText(add.text), Math.max(0, width - 5 - count.length));
-  return [boardRow(pair(`/ ${text}${theme.board.active(mark('▌', '_'))}`, muted(count), width)),
-    ...(data.harnessSwitchError ? harnessErrorRow(data, width) : items.length ? items : [boardRow(t('No matching switches'))])];
+  return { pick, rows: [boardRow(pair(`/ ${text}${theme.board.active(mark('▌', '_'))}`, muted(count), width)),
+    ...(data.harnessSwitchError ? harnessErrorRow(data, width) : items.length ? items : [boardRow(t('No matching switches'))])] };
 }
 
 export const addBackHints = { modal: ['type to filter', '⏎ restore', 'Esc back'] };
@@ -112,16 +110,12 @@ export function harnessScene(data: ProjectSnapshot, state: MonitorState, width: 
     }
     return { label: '', rows: [], hints };
   };
-  const add = state.overlay?.kind === 'control-harness-add';
+  const add = state.overlay?.kind === 'control-harness-add' ? state.overlay : undefined;
   const scene = projectSplitScene(view.nav, { list, preview, hints: harnessHints(data, view), start: list.find((r) => r.item)?.item },
     add ? 'harnesses|add' : 'harnesses');
-  if (add) {
-    scene.rule = { label: t('Add back'), right: scope() };
-    scene.preview = harnessAddRows(data, state, previewWidth);
-    scene.sub = state.overlay?.kind === 'control-harness-add' ? state.overlay.pick : undefined;
-    scene.compact = true;
-  }
-  return add ? { ...scene, hints: addBackHints } : scene;
+  if (!add) return scene;
+  const { rows, pick } = harnessAddRows(data, add, previewWidth);
+  return { ...scene, rule: { label: t('Add back'), right: scope() }, preview: rows, sub: pick, compact: true, hints: addBackHints };
 }
 
 /** Whole fitted footer hints are actions too. The shared footer right-aligns the same text. */

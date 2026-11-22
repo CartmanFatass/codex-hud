@@ -1,3 +1,6 @@
+import { withState, sliceState } from '../fixtures/state-helpers.mjs';
+import { homeCursor, homeTarget, onlyTry } from '../../dist/render/monitor-state.js';
+import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,10 +11,10 @@ import { pathToFileURL } from 'node:url';
 import { projectFixture, plain, onPage, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectVisits } from '../../dist/collectors/project-visits.js';
-import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-progress-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -68,7 +71,7 @@ test('Progress: the current milestone, Now, Next and History from a synthetic le
 test('Progress folds through real input: milestone rows open their slices, a landed slice shows its commit and day, Next shows the rest, a long bullet expands', async (t) => {
   const f = await fixture(t), height = 90;
   let frame = f.render(40, 'en', 'progress', height, f.rich);
-  const at = (item) => { frame.state.projectCursor = item; return frame; };
+  const at = (item) => { frame.state.project.nav.cursor = item; return frame; };
   assert.doesNotMatch(text(frame), /NATIVE-ROWS|REVIEW-ONE|BAR-LINES|SKILL-MOVE/);
   for (const [id, shown] of [['hist:m:M4', /REVIEW-ONE/], ['hist:m:M3b', /NATIVE-ROWS[\s\S]*ONE-PAGE/], ['hist:m:M3', /BAR-LINES[\s\S]*PANEL-KEYS|PANEL-KEYS[\s\S]*BAR-LINES/], ['hist:m:', /SKILL-MOVE/]]) {
     frame = f.render(40, 'en', send(at(`project:fold:${id}`), '\r').state, height, f.rich);
@@ -105,7 +108,7 @@ test('Progress folds through real input: milestone rows open their slices, a lan
   for (const raw of ['\r', 'o']) assert.deepEqual(send(at(short.item), raw).action, { type: 'open-files', files: [f.data.statePath] });
   // A milestone row has no file: o folds it like Enter.
   assert.equal(send(at('project:fold:hist:m:M3b'), 'o').action, undefined);
-  assert.ok(send(at('project:fold:hist:m:M3b'), 'o').state.projectFolded.has('hist:m:M3b'));
+  assert.ok(send(at('project:fold:hist:m:M3b'), 'o').state.project.folded.has('hist:m:M3b'));
 });
 test('a project with no STATE.md says so on Progress and its other pages work; its live jobs still show', async (t) => {
   const f = await fixture(t), bare = join(f.root, 'bare');
@@ -141,13 +144,13 @@ test('a job of another pane is titled from its brief on Progress, in EN and ZH, 
   const rows = frame.workboard.rows.filter((r) => r.item === `project:job:${id}`);
   assert.ok(rows.length >= 1);
   assert.ok(rows.every((r) => r.files?.[0] === join(f.job, 'brief.md')));
-  frame = f.render(40, 'en', { ...frame.state, projectCursor: `project:job:${id}` }, 56, data);
+  frame = f.render(40, 'en', withState(frame.state, { project: { nav: { cursor: `project:job:${id}` } } }), 56, data);
   for (const raw of ['\r', 'o']) assert.deepEqual(send(frame, raw).action, { type: 'open-files', files: [join(f.job, 'brief.md')] });
   // Once it reports, the row opens the report, and the cursor stays on the same row.
   f.put(join(f.job, 'report.md'), '# Report');
   const reported = await f.collector.collect(true, { ...f.board, workers: [] }, NOW + 2);
   frame = f.render(40, 'en', frame.state, 56, reported);
-  assert.equal(frame.state.projectCursor, `project:job:${id}`);
+  assert.equal(frame.state.project.nav.cursor, `project:job:${id}`);
   assert.deepEqual(send(frame, '\r').action, { type: 'open-files', files: [join(f.job, 'report.md')] });
 });
 test('a Progress page of jobs alone pages by keyboard: Down, PgDn and End move the cursor and the view', async (t) => {
@@ -160,18 +163,18 @@ test('a Progress page of jobs alone pages by keyboard: Down, PgDn and End move t
   let frame = page('progress');
   const first = plain(frame);
   assert.doesNotMatch(first.join('\n'), /Task 12/, 'the last job is below the fold');
-  assert.equal(frame.state.projectCursor, active[0] && `project:job:${active[0].jobId}`, 'the first job holds the cursor');
+  assert.equal(frame.state.project.nav.cursor, active[0] && `project:job:${active[0].jobId}`, 'the first job holds the cursor');
   frame = page(send(frame, '\x1b[6~').state);
-  assert.ok(frame.state.projectScroll > 0 || frame.state.projectCursor !== `project:job:${active[0].jobId}`, 'PgDn moves');
+  assert.ok(frame.state.project.nav.scroll > 0 || frame.state.project.nav.cursor !== `project:job:${active[0].jobId}`, 'PgDn moves');
   frame = page(send(frame, '\x1b[B').state);
   frame = page(send(frame, 'G').state);
-  assert.equal(frame.state.projectCursor, `project:job:${active[11].jobId}`, 'End lands on the last job');
-  assert.ok(frame.state.projectScroll > 0, 'and the view followed it');
+  assert.equal(frame.state.project.nav.cursor, `project:job:${active[11].jobId}`, 'End lands on the last job');
+  assert.ok(frame.state.project.nav.scroll > 0, 'and the view followed it');
   assert.match(plain(frame).join('\n'), /Task 12/);
   // A job with neither report nor brief is still a stop, and Enter on it does nothing.
   assert.equal(send(frame, '\r').action, undefined);
   frame = page(send(frame, '\x1b[H').state);
-  assert.equal(frame.state.projectCursor, `project:job:${active[0].jobId}`);
+  assert.equal(frame.state.project.nav.cursor, `project:job:${active[0].jobId}`);
   assert.match(plain(frame).join('\n'), /Task 1\b/, 'the view came back to the first job');
   assert.deepEqual(send(frame, '\r').action, { type: 'open-files', files: [join(f.job, 'brief.md')] });
 });
@@ -187,43 +190,42 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   assert.equal(f.render(40, 'en').workboard.rows.find((r) => /^demo-project/.test(stripAnsi(r.text))).item, undefined);
   // Keys: next, next, wraps to the panel's own (stored as none), previous goes round the other way.
   const roots = [];
-  for (const raw of [']', ']', ']', '[']) { frame = hub(send(frame, raw).state); roots.push(frame.state.projectRoot); }
+  for (const raw of [']', ']', ']', '[']) { frame = hub(send(frame, raw).state); roots.push(frame.state.selectedProject); }
   assert.deepEqual(roots, [PROJECTS[1].root, PROJECTS[2].root, undefined, PROJECTS[2].root]);
   // A click on the name row (and Enter on it) opens the Projects list; Esc closes it again (project-list.test.mjs has the rest).
   const name = frame.workboard.rows.findIndex((r) => r.item === 'project:switch');
   frame = hub(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 3, y: name + 1 }, { tree: TREE, frame, nowMs: NOW, standalone: true }).state);
-  assert.equal(frame.state.projectList, true);
+  assert.equal((frame.state.project.view.kind === 'projects-list'), true);
   assert.match(plain(frame)[0], /^‹ Projects/);
   frame = hub(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, { tree: TREE, frame, nowMs: NOW, standalone: true }).state);
-  assert.equal(frame.state.projectList, undefined);
-  frame.state.projectCursor = 'project:switch';
-  assert.equal(hub(send(frame, '\r').state).state.projectList, true);
-  assert.equal(hub(send(frame, ']').state).state.projectRoot, undefined, 'the cursor on the name row does not stop [ ] from stepping');
+  assert.equal((frame.state.project.view.kind === 'projects-list'), false);
+  frame.state.project.nav.cursor = 'project:switch';
+  assert.equal((hub(send(frame, '\r').state).state.project.view.kind === 'projects-list'), true);
+  assert.equal(hub(send(frame, ']').state).state.selectedProject, undefined, 'the cursor on the name row does not stop [ ] from stepping');
   // A page: its crumb names the project, the page stays open, and the page's cursor, scroll and folds start fresh.
   const page = (state) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
   assert.match(plain(f.render(40, 'en', 'progress'))[0], /^‹ Project › Progress/, 'one project: the crumb says Project');
-  frame = page(onPage('progress', { projectCursor: 'project:file:x:slice:1', projectScroll: 4, projectFolded: new Set(['agents', 'hist:m:M3b']),
-    projectSaved: { docs: { cursor: 'project:file:y:0', scroll: 2 } } }));
+  frame = page(onPage('progress', { project: { nav: { cursor: 'project:file:x:slice:1', scroll: 4 }, savedPages: { docs: { cursor: 'project:file:y:0', scroll: 2 } }, folded: new Set(['agents', 'hist:m:M3b']) } }));
   frame = page(send(frame, ']').state);
-  assert.equal(frame.state.projectPage, 'progress');
-  assert.equal(frame.state.projectRoot, PROJECTS[1].root);
-  assert.deepEqual([frame.state.projectScroll, frame.state.projectFolded, frame.state.projectSaved], [0, undefined, {}]);
+  assert.equal(projectPageOf(frame.state), 'progress');
+  assert.equal(frame.state.selectedProject, PROJECTS[1].root);
+  assert.deepEqual([frame.state.project.nav.scroll, frame.state.project.folded, frame.state.project.savedPages], [0, new Set(), {}]);
   assert.match(plain(frame)[0], /^‹ second-project › Progress/);
   // Home is not the tab: nothing happens there, and the choice is kept for when Project is open again.
-  const home = f.render(80, 'en', { ...initialMonitorState(), projectRoot: PROJECTS[1].root }, 56, f.data, true, 'unicode', 'none', { projects: PROJECTS });
-  assert.equal(send(home, ']').state.projectRoot, PROJECTS[1].root);
-  assert.deepEqual(plain(home), plain(f.render(80, 'en', initialMonitorState(), 56, f.data, true, 'unicode', 'none', { projects: PROJECTS })), 'Home does not depend on the choice');
+  const home = f.render(80, 'en', { ...sliceState(), selectedProject: PROJECTS[1].root }, 56, f.data, true, 'unicode', 'none', { projects: PROJECTS });
+  assert.equal(send(home, ']').state.selectedProject, PROJECTS[1].root);
+  assert.deepEqual(plain(home), plain(f.render(80, 'en', sliceState(), 56, f.data, true, 'unicode', 'none', { projects: PROJECTS })), 'Home does not depend on the choice');
   // Home's progress block is the panel's own project's: opening it from Home leaves the choice for the panel's own.
   const block = home.workboard.rows.find((r) => r.item === 'home-progress:progress');
   assert.ok(block, 'Home has its progress block');
-  home.state.boardAnchor = block.item;
+  home.state.home.cursor = homeCursor(homeTarget(home.state.home), block.item);
   const opened = send(home, '\r').state;
-  assert.deepEqual([opened.mainTab, opened.projectPage, opened.projectRoot], ['project', 'progress', undefined]);
+  assert.deepEqual([opened.activeTab, projectPageOf(opened), opened.selectedProject], ['project', 'progress', undefined]);
   // The choice survives the panel's own restart: the whole state goes through the reload place.
   const state = hub(send(hub(onPage()), ']').state).state;
-  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
+  process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state, settings: null });
   const place = readPanelPlace();
-  assert.equal(place.state.projectRoot, PROJECTS[1].root);
+  assert.equal(place.state.selectedProject, PROJECTS[1].root);
   frame = f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
   assert.match(text(frame), /^second-project ─+ M3b ▾ project 2\/3$/m);
   // A root that left projects.json is the panel's own again, not an empty page.
@@ -278,7 +280,7 @@ ProjectCollector.prototype.collect = async function (shown, ...rest) {
 };
 await runLivePage();
 `);
-  const place = JSON.stringify({ state: { ...initialMonitorState(), mainTab: 'project' } }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
+  const place = encodePanelPlace({ state: { ...sliceState(), activeTab: 'project' }, settings: null });
   const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...f.env, CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd, HUD_PANEL_RELOAD_PLACE: place } });
   // The terminal as the panel's row writes leave it.
@@ -359,13 +361,13 @@ test('Progress to try: Enter on the count shows only the ledger\'s `try` slices 
   for (const lang of ['en', 'zh']) {
     const word = (en, zh) => (lang === 'en' ? en : zh), render = (state, height = 40) => f.render(38, lang, state, height, data);
     // The full feed on a short panel, the cursor on a History row below the fold: its footer offers the filter.
-    const full = render(onPage('progress', { projectCursor: 'project:fold:hist:m:M3b' }), 14);
-    assert.ok(full.state.projectScroll > 0, 'the full feed is scrolled');
+    const full = render(onPage('progress', { project: { nav: { cursor: 'project:fold:hist:m:M3b' } } }), 14);
+    assert.ok(full.state.project.nav.scroll > 0, 'the full feed is scrolled');
     assert.match(plain(full).at(-1), new RegExp(word('t to try', 't 待试用')));
     // The to-try count is a stop; Enter on it turns the filter on, remembering where the full feed was.
-    const on = press(render({ ...full.state, projectCursor: 'project:try' }, 14), ENTER);
+    const on = press(render(withState(full.state, { project: { nav: { cursor: 'project:try' } } }), 14), ENTER);
     assert.equal(on.action, undefined, 'the filter is a view, not the editor');
-    assert.equal(on.state.projectTry.cursor, 'project:try');
+    assert.equal(onlyTry(on.state.project.view).cursor, 'project:try');
     const filtered = render(on.state), lines = plain(filtered);
     for (const line of filtered.lines) assert.equal(visualLength(line), 38, stripAnsi(line));
     // The header says the page is filtered. The newest milestone is open, the older one folded; the ledger's state decides, never the prose.
@@ -384,52 +386,52 @@ test('Progress to try: Enter on the count shows only the ledger\'s `try` slices 
     assert.match(lines.at(-1), new RegExp(word('Space mark  y accept  n flag  \\? help', 'Space 勾选  y 验收  n 标记  \\? 帮助')));
     assert.doesNotMatch(lines.join('\n'), /NATIVE-ROWS|PAGE-ONE|LATER-ONE|ONE-PAGE|still to try|Now|Next|History|现在|下一步|历史|[█▒░]/);
     // Enter on the older milestone's row opens it into its slice; again folds it.
-    const at = (state) => ({ ...state, projectCursor: 'project:fold:try:m:M3b' });
+    const at = (state) => (withState(state, { project: { nav: { cursor: 'project:fold:try:m:M3b' } } }));
     const opened = render(press(render(at(on.state)), ENTER).state);
     assert.match(plain(opened).join('\n'), /^ {2}▾ M3b .*\n {4}◇ NATIVE-ROWS +19(d|天)$/m);
     assert.doesNotMatch(plain(render(press(render(at(opened.state)), ENTER).state)).join('\n'), /NATIVE-ROWS/);
     // Esc clears the filter, not the page: the full feed is back, scrolled and with the cursor as it was.
     const back = render(press(opened, ESC).state, 14);
-    assert.equal(back.state.projectPage, 'progress');
-    assert.equal(back.state.projectTry, undefined);
-    assert.equal(back.state.projectCursor, 'project:try');
+    assert.equal(projectPageOf(back.state), 'progress');
+    assert.equal(onlyTry(back.state.project.view), undefined);
+    assert.equal(back.state.project.nav.cursor, 'project:try');
     assert.match(plain(back).join('\n'), /1 (working|工作中) {2}1 (to try|待试用) {2}1 (todo|待办)/);
   }
 });
 test('Progress to try: `t`, a click on the count or the header toggle it; the cursor and scroll come back exactly; leaving the page clears it; nothing to try says so', async (t) => {
   const f = await fixture(t), data = twoMilestones(f), render = (state, height = 14) => f.render(38, 'en', state, height, data);
-  const full = render(onPage('progress', { projectCursor: 'project:fold:hist:m:M3b' })), key = (k) => ({ type: 'key', key: 'settings-test', text: k });
+  const full = render(onPage('progress', { project: { nav: { cursor: 'project:fold:hist:m:M3b' } } })), key = (k) => ({ type: 'key', key: 'settings-test', text: k });
   // `t` filters from wherever the cursor is, and again, or Esc, brings back the same rows at the same scroll with the cursor on the same row.
   for (const off of [key('t'), ESC]) {
     const on = render(press(full, key('t')).state);
-    assert.equal(on.state.projectTry.cursor, 'project:fold:hist:m:M3b');
+    assert.equal(onlyTry(on.state.project.view).cursor, 'project:fold:hist:m:M3b');
     assert.match(plain(on).join('\n'), /Only to try/);
     const back = render(press(on, off).state);
-    assert.equal(back.state.projectTry, undefined);
-    assert.equal(back.state.projectCursor, 'project:fold:hist:m:M3b');
-    assert.equal(back.state.projectScroll, full.state.projectScroll);
+    assert.equal(onlyTry(back.state.project.view), undefined);
+    assert.equal(back.state.project.nav.cursor, 'project:fold:hist:m:M3b');
+    assert.equal(back.state.project.nav.scroll, full.state.project.nav.scroll);
     assert.deepEqual(plain(back), plain(full));
   }
   // One click on the count asks for it, one on the header of the filtered page ends it; `o` still opens STATE.md from either.
-  const count = render({ ...full.state, projectScroll: 0 }, 40), y = plain(count).findIndex((l) => /^ {2}1 working {2}1 to try/.test(l));
+  const count = render(withState(full.state, { project: { nav: { scroll: 0 } } }), 40), y = plain(count).findIndex((l) => /^ {2}1 working {2}1 to try/.test(l));
   assert.ok(y > 0);
   const on = press(count, { type: 'mouse', button: 'left', x: 5, y });
-  assert.ok(on.state.projectTry);
+  assert.ok(onlyTry(on.state.project.view));
   assert.equal(on.action, undefined);
   assert.equal(press(count, OPEN).action, undefined, 'the cursor is not on the count');
-  assert.deepEqual(press(render({ ...count.state, projectCursor: 'project:try' }, 40), OPEN).action, { type: 'open-files', files: [data.statePath] });
+  assert.deepEqual(press(render(withState(count.state, { project: { nav: { cursor: 'project:try' } } }), 40), OPEN).action, { type: 'open-files', files: [data.statePath] });
   const filtered = render(on.state, 40), header = plain(filtered).findIndex((l) => /^Only to try/.test(l));
   assert.ok(header > 0);
   assert.deepEqual(press(filtered, OPEN).action, { type: 'open-files', files: [data.statePath] });
-  assert.equal(press(filtered, { type: 'mouse', button: 'left', x: 5, y: header }).state.projectTry, undefined);
+  assert.equal(onlyTry(press(filtered, { type: 'mouse', button: 'left', x: 5, y: header }).state.project.view), undefined);
   // A click on the crumb leaves the page as before, and the filter with it; the page opens again as the full feed.
   const left = press(filtered, { type: 'mouse', button: 'left', x: 5, y: 0 });
-  assert.equal(left.state.projectPage, undefined);
-  assert.equal(left.state.projectTry, undefined);
-  assert.equal(render({ ...left.state, projectPage: 'progress' }, 40).state.projectTry, undefined);
+  assert.equal(projectPageOf(left.state), undefined);
+  assert.equal(onlyTry(left.state.project.view), undefined);
+  assert.equal(onlyTry(render(withState(left.state, { project: { view: { kind: 'progress' } } }), 40).state.project.view), undefined);
   // `t` does nothing off the Progress page.
-  assert.equal(press(render(onPage(undefined, { projectCursor: 'project:page:progress' }), 24), key('t')).state.projectTry, undefined);
-  assert.equal(press(render(onPage('tree'), 24), key('t')).state.projectTry, undefined);
+  assert.equal(onlyTry(press(render(onPage(undefined, { project: { nav: { cursor: 'project:page:progress' } } }), 24), key('t')).state.project.view), undefined);
+  assert.equal(onlyTry(press(render(onPage('tree'), 24), key('t')).state.project.view), undefined);
   // The ledger's `try` state is all there is to match: with none, the filtered page says so.
   const none = { ...data, ledger: data.ledger.filter((r) => r.state !== 'try') }, empty = f.render(38, 'zh', on.state, 20, none);
   assert.match(plain(empty).join('\n'), /^仅待试用 ─+ 0\n {2}没有待试用的$/m);

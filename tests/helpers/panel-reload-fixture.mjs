@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
+import { encodePanelPlace } from '../../dist-test/src/utils/panel-reload.js';
 import { readThinJobs } from '../../dist-test/src/collectors/thin-jobs.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
 import { makeSourceId } from '../../dist-test/src/core/identity.js';
@@ -100,21 +101,22 @@ console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
   }
   const lane = readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' })[0];
   const target = { kind: 'worker', laneId: lane.id, workerId: lane.workers[0].id };
-  const state = { ...initialMonitorState(), homeTarget: target, boardExpanded: new Set([targetKey(target)]),
-    boardToggled: new Set([targetKey(target)]), boardFolded: new Set(['synthetic-fold']), tree: { ...initialMonitorState().tree, showAll: true } };
+  const initial = initialMonitorState();
+  const state = { ...initial, home: { ...initial.home, cursor: { kind: 'work', target }, expanded: new Set([targetKey(target)]),
+    toggled: new Set([targetKey(target)]), foldedLanes: new Set(['synthetic-fold']), showAll: true } };
   writeFixtureFile(log, '');
   writeFixtureFile(runner, `import {readFileSync} from 'node:fs';
 import {writeFixtureFile} from ${JSON.stringify(atomicWriter)};
-import {PanelReload} from './dist/utils/panel-reload.js';
+import {PanelReload,encodePanelPlace} from './dist/utils/panel-reload.js';
 import {runLivePage} from './dist/tree-page.js';
 process.stdout.columns=${columns};process.stdout.rows=35;
 const file=${JSON.stringify(log)};
 const log=v=>writeFixtureFile(file,readFileSync(file,'utf8') + JSON.stringify(v,(_k,v)=>v instanceof Set?{panelSet:[...v]}:v)+'\\n');
 log({start:true,pid:process.pid,argv:process.argv.slice(2),test:process.env.SYNTHETIC});
 const original=PanelReload.prototype.restart;
-PanelReload.prototype.restart=function(place,finish){log({restart:place,at:Date.now()});return original.call(this,place,finish);};
+PanelReload.prototype.restart=function(place,finish){log({restart:JSON.parse(encodePanelPlace(place)),at:Date.now()});return original.call(this,place,finish);};
 await runLivePage();process.exit(process.exitCode??0);`);
-  const run = launch(f, runner, ['same argv'], { SYNTHETIC: 'same env', HUD_PANEL_RELOAD_PLACE: encode(typeof initialPlace === 'function' ? initialPlace(state) : initialPlace ?? { state, settings: null }), CODEX_HUD_INITIAL_COMMAND: 'help' });
+  const run = launch(f, runner, ['same argv'], { SYNTHETIC: 'same env', HUD_PANEL_RELOAD_PLACE: encodePanelPlace(typeof initialPlace === 'function' ? initialPlace(state) : initialPlace ?? { state, settings: null }), CODEX_HUD_INITIAL_COMMAND: 'help' });
   const events = () => readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   return { ...f, ...run, entry, events, state, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
     baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart),

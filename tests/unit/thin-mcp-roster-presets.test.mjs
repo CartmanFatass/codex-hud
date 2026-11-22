@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -287,7 +288,7 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
     [fs.realpathSync(own), firstAt + 60_000], [fs.realpathSync(other), undefined],
   ]);
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
-  const frame = renderMonitor({ tree, state: { ...initialMonitorState(), experiments: true, mainTab: 'exp' },
+  const frame = renderMonitor({ tree, state: withState(initialMonitorState(), { activeTab: 'exp', prefs: { experiments: true } }),
     expData, width: 40, height: 24, nowMs: firstAt + 120_000 });
   const date = new Date(firstAt + 60_000).toISOString().slice(5, 16).replace('T', ' ');
   const lines = frame.lines.map((line) => stripAnsi(line).trimEnd()).join('\n');

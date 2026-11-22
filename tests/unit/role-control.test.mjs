@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -205,7 +206,7 @@ test('focused editable and project-pinned chains report unknown providers withou
     assert.equal(s.assignment('imp').model, model);
     assert.equal(s.assignment('imp').available, true);
     for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
-      s.session.state = onControl(undefined, { panelLayout });
+      s.session.state = onControl(undefined, { prefs: { panelLayout } });
       focus(s);
       const frame = s.frame(40, lang, 22), rows = plain(frame).join('\n');
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
@@ -298,7 +299,7 @@ test('Control uses inherited model and thinking when known and a clickable arrow
     s.put(join(s.root, 'roles/implementer.md'), known ? '---\nmodel: xai/gpt-6.2-sol\nthinking: high\n---\nSynthetic role\n' : 'Synthetic role\n');
     s.collector.refreshRoles(s.session.snap, NOW);
     for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
-      s.session.state = onControl(undefined, { panelLayout });
+      s.session.state = onControl(undefined, { prefs: { panelLayout } });
       focus(s);
       const draw = () => s.frame(40, lang, 32);
       const hit = (frame) => frame.controls.find((c) => c.kind === 'control-model' && c.item);
@@ -392,7 +393,7 @@ test('quick model on a role saves only the model in the active preset and target
   for (const [panelLayout, model] of [['split', 'xai/grok-4.7-fast'], ['classic', 'xai/grok-4.7-mini']]) {
     s.put(file, original);
     discover(s);
-    s.session.state = onControl({ cursor: item }, { panelLayout });
+    s.session.state = onControl({ cursor: item }, { prefs: { panelLayout } });
     await s.keys('m', model);
     assert.equal(s.session.state.overlay.kind, 'control-quick-model');
     assert.equal(s.session.state.overlay.index, 0);
@@ -407,7 +408,7 @@ test('quick model on a role saves only the model in the active preset and target
   const beforeFallback = stored(s, 'imp');
   markExhausted(s.hud, placeKey(beforeFallback.presets[0].run[0]), 'quota exceeded', NOW);
   s.collector.refreshRoles(s.session.snap, NOW);
-  s.session.state = onControl({ cursor: item }, { panelLayout: 'split' });
+  s.session.state = onControl({ cursor: item }, { prefs: { panelLayout: 'split' } });
   assert.match(s.text(), /imp \[daily\] → openai\/gpt-6.1-sol/);
   await s.keys('m', 'openai/gpt-6-astra');
   assert.equal(s.session.state.overlay.index, 1);
@@ -502,7 +503,7 @@ test('m on oracle → claude opens the flat picker and Enter saves the active pr
     run: [claude], presets: [{ name: 'daily', run: [claude] }], note: 'keep' };
   s.put(file, before);
   s.collector.refreshRoles(s.session.snap, NOW);
-  s.session.state = onControl({ cursor: item }, { panelLayout: 'split' });
+  s.session.state = onControl({ cursor: item }, { prefs: { panelLayout: 'split' } });
   assert.match(s.text(), /oracle \[daily\] → claude fable/);
   await s.press('m');
   assert.equal(s.session.state.overlay.kind, 'control-quick-model');
@@ -571,7 +572,7 @@ test('CLI quick picker merges catalog and discovery; Edit place keeps inline Mod
       assert.equal(s.assignment('imp').harness, 'pi');
     }
     for (const text of inputs) for (const panelLayout of ['classic', 'split']) {
-      s.session.state = onControl(undefined, { panelLayout });
+      s.session.state = onControl(undefined, { prefs: { panelLayout } });
       focus(s);
       await s.press('m');
       if (text) {
@@ -588,14 +589,14 @@ test('CLI quick picker merges catalog and discovery; Edit place keeps inline Mod
       }
     }
   }
-  s.session.state = { ...s.session.state, panelLayout: 'classic' };
+  s.session.state = withState(s.session.state, { prefs: { panelLayout: 'classic' } });
   const zh = plain(s.frame(40, 'zh', 14));
   assert.match(zh[1], /^imp 第 1 位 ─+ pi$/);
   assert.match(zh[0], /首页.*项目.*控制/);
   assert.match(zh.at(-1), /^ *⏎ 设为 +esc 清除 +\^R 刷新$/);
   assert.match(plain(s.frame(40, 'en', 14)).at(-1), /^ *⏎ set +esc clear +\^R refresh$/);
   assert.doesNotMatch(plain(s.frame(120, 'en', 14)).at(-1), /tab all|← back/);
-  s.session.state = { ...initialMonitorState(), help: true };
+  s.session.state = { ...initialMonitorState(), help: {} };
   const help = plain(s.frame(80, 'en', 100)).join('\n').replace(/\n {8}/g, ' ');
   assert.doesNotMatch(help, /^p P |^e E /m);
   assert.match(help, /^p +role: choose a preset by name/m);
@@ -645,7 +646,7 @@ test('pi picker paints live quota, off and unknown facts without offering off or
   assert.doesNotMatch(page, /Selected|resets in/);
   const exact = () => {
     for (const lang of ['en', 'zh']) for (const panelLayout of ['classic', 'split']) {
-      const frame = s.render(40, lang, { ...s.session.state, panelLayout }, 16, s.session.snap, true, 'unicode', 'mocha');
+      const frame = s.render(40, lang, withState(s.session.state, { prefs: { panelLayout } }), 16, s.session.snap, true, 'unicode', 'mocha');
       assert.equal(frame.lines.length, 16);
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
       assert.match(stripAnsi(frame.lines.at(-2)), lang === 'en' ? / ctx / : / 上下文 /);
@@ -824,7 +825,7 @@ test('Control plane keys: decoded names, scoped to Control, Settings letters unc
   }
   s.session.state = initialMonitorState();
   assert.equal((await s.press('p')).action, undefined);
-  assert.equal(s.session.state.mainTab, 'home');
+  assert.equal(s.session.state.activeTab, 'home');
 });
 
 test('40-col EN/ZH frames 5a–5e follow the Control sample; Classic and Split use the same sheet', async (t) => {
@@ -845,7 +846,7 @@ test('40-col EN/ZH frames 5a–5e follow the Control sample; Classic and Split u
   const normalize = (row) => row.trim().replace(/^[›>] +/, '').replace(/─+/g, '─').replace(/’/g, "'").replace(/ +/g, ' ').replace(/ Off$/, ' off');
   const body = (rows) => rows.slice(rows.findIndex((row) => /^imp ─/.test(row)), -1).filter((row) => row.trim()).map(normalize);
   for (const panelLayout of ['split', 'classic']) {
-    s.session.state = onControl(nav, { panelLayout, experiments: true });
+    s.session.state = onControl(nav, { prefs: { panelLayout, experiments: true } });
     for (const [id, keys] of shots) {
       await s.keys(...[keys].flat());
       for (const lang of ['en', 'zh']) {
@@ -878,14 +879,14 @@ test('tab, project switch and quit ask before leaving a dirty chain; Esc resumes
     };
     const initial = s.session.state, asking = send(initial, key);
     assert.equal(asking.close, false);
-    assert.equal(asking.state.mainTab, 'control');
-    assert.equal(asking.state.projectRoot, undefined);
+    assert.equal(asking.state.activeTab, 'control');
+    assert.equal(asking.state.selectedProject, undefined);
     assert.equal(send(asking.state, 'escape').state.overlay.draft.name, 'dirty');
     const discarded = send(asking.state, 'enter');
     assert.equal(discarded.state.overlay, undefined);
-    assert.equal(discarded.state.mainTab, expected);
+    assert.equal(discarded.state.activeTab, expected);
     assert.equal(discarded.close, key === 'close');
-    assert.equal(discarded.state.projectRoot, key === 'project-next' ? PROJECTS[1].root : undefined);
+    assert.equal(discarded.state.selectedProject, key === 'project-next' ? PROJECTS[1].root : undefined);
   }
   assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false);
 });
@@ -898,7 +899,7 @@ test('the live panel applies explicit owner edits, including batched name input'
   s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'sonic'] });
   s.put(join(s.hud, 'hud-settings.json'), { modelEnabled: false, refreshMs: 100, language: 'en' });
   s.put(join(s.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: MODEL_LISTS.pi });
-  const place = JSON.stringify({ state: { ...initialMonitorState(), mainTab: 'project', projectPage: 'control', projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files']) } },
+  const place = JSON.stringify({ state: { mainTab: 'project', projectPage: 'control', projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files']) } },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
   const runner = join(s.root, 'live.mjs');
   fs.writeFileSync(runner, `import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};\nprocess.stdout.columns = 80;\nawait runLivePage();\nprocess.exit(0);\n`);

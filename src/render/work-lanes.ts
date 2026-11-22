@@ -38,7 +38,7 @@ export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] 
 export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room: number): string {
   const cards = [...lane.workers]
     .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
-    .map((w) => projectWorkCard(w, now, state.cardStallMinutes));
+    .map((w) => projectWorkCard(w, now, state.prefs.cardStallMinutes));
   const glyph = {
     done: theme.board.success(mark('✓', '+')),
     run: theme.board.active(mark('◉', '@')),
@@ -98,11 +98,11 @@ export function laneRows(
   const strip = laneStrip(lane, state, now, Math.max(Math.floor(width / 3), width - visualLength(label) - 1));
   const header = pair(label, strip, width);
   const rows = [
-    boardRow(lane.workers.every((w) => !currentWorker(w, now, state)) ? theme.board.muted(stripAnsi(header)) : header, target),
+    boardRow(lane.workers.every((w) => !currentWorker(w, now, state.prefs)) ? theme.board.muted(stripAnsi(header)) : header, target),
   ];
-  if (state.boardFolded?.has(lane.id)) return rows;
+  if (state.home.foldedLanes?.has(lane.id)) return rows;
   const workers =
-    state.tree.showAll || lane.identity.kind === 'native'
+    state.home.showAll || lane.identity.kind === 'native'
       ? lane.workers
       : [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
   // Sonic children hang under their parent as one-line branches; one whose parent card is not in this list (Split's preview
@@ -111,20 +111,20 @@ export function laneRows(
   for (const w of workers) if (w.parentJobId) children.set(w.parentJobId, [...(children.get(w.parentJobId) ?? []), w]);
   const branches = (kids: OwnerWorker[]) => kids.forEach((kid, i) => {
     const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: kid.id });
-    const branch = sonicBranch(projectWorkCard(kid, now, state.cardStallMinutes), i === kids.length - 1, width - 2);
-    rows.push({ text: '  ' + (currentWorker(kid, now, state) ? branch : theme.board.muted(stripAnsi(branch))), item: key, key });
+    const branch = sonicBranch(projectWorkCard(kid, now, state.prefs.cardStallMinutes), i === kids.length - 1, width - 2);
+    rows.push({ text: '  ' + (currentWorker(kid, now, state.prefs) ? branch : theme.board.muted(stripAnsi(branch))), item: key, key });
   });
   for (const worker of top) {
-    const card = projectWorkCard(worker, now, state.cardStallMinutes);
+    const card = projectWorkCard(worker, now, state.prefs.cardStallMinutes);
     const sentence = card.reason ? t(card.reason) : '';
     const indent = worker.nativeDepth === 2 ? '  ' : '';
     const room = Math.max(1, width - indent.length);
     const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
     // Past its fold time a settled card is its title row (muted once hidden, in show-all) until Enter opens it; its sonic
     // children fold into the title's `⚡ N sonic` while they run.
-    const hidden = !currentWorker(worker, now, state);
+    const hidden = !currentWorker(worker, now, state.prefs);
     const expanded = cardExpanded(state, key);
-    const folded = !expanded && (hidden || foldedWorker(worker, now, state));
+    const folded = !expanded && (hidden || foldedWorker(worker, now, state.prefs));
     const kids = children.get(worker.id) ?? [];
     const running = kids.filter((k) => k.settledAt === null).length;
     const badge = folded && running ? `${mark('⚡', '*')} ${t('{n} sonic', { n: running })}` : '';

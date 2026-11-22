@@ -7,7 +7,8 @@
 import { targetKey, type OwnerWorker, type WorkboardSnapshot, type WorkLane, type WorkTarget } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { askSlabRows, markNewest } from './home-view.js';
+import { askSlabRows } from './home-view.js';
+import { homeCursor, homeTarget, type HomeCursor } from './monitor-state.js';
 import { homeKeys } from './job-actions.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
 import type { WorkCard } from '../collectors/work-card.js';
@@ -15,7 +16,7 @@ import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
 import { briefStack, currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedEntries, pageSummary, roleInk, taskRows, tryCount, trySentence, waitingRows } from './project-view.js';
 import { boardRow, homeDoneCount, mark, minuteAge, section } from './workboard-rows.js';
-import { splitScope, splitSubValid, type SplitScene } from './split-frame.js';
+import { splitSubValid, type SplitScene } from './split-frame.js';
 import { cutWords, fit, flowLines, monitorText, pair } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
@@ -53,16 +54,15 @@ export const laneTop = (lane: WorkLane, now: number): OwnerWorker =>
 
 export function homeScene(
   input: MonitorData, board: WorkboardSnapshot, state: MonitorState, targets: ReadonlyMap<string, WorkTarget>, width: number, now: number, done: number,
-): SplitScene {
-  markNewest(board, state, now);
+): SplitScene & { homeCursor?: HomeCursor } {
   // With a `/` filter the list is the lanes that match: the waiting and progress blocks are the whole project's.
-  const filtering = !!state.filterQuery;
+  const filtering = !!state.home.filter?.query;
   const data = input.project, group = (lane: WorkLane) => Math.min(...lane.workers.map((w) => workerPriority(w, now)));
-  const lanes = (state.tree.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now)).filter((l) => l.workers.length);
+  const lanes = (state.home.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now)).filter((l) => l.workers.length);
   const names = lanes.map((l) => monitorText(l.identity.kind === 'native' ? l.label.replace('this session', t('this session')) : l.label));
   const col = Math.max(8, Math.min(14, Math.floor(width / 3), Math.max(0, ...names.map(visualLength))));
   const laneEntry = (lane: WorkLane, i: number): Entry => {
-    const top = laneTop(lane, now), card = projectWorkCard(top, now, state.cardStallMinutes), item = targetKey({ kind: 'lane', laneId: lane.id });
+    const top = laneTop(lane, now), card = projectWorkCard(top, now, state.prefs.cardStallMinutes), item = targetKey({ kind: 'lane', laneId: lane.id });
     const native = lane.identity.kind === 'native', running = lane.workers.filter((w) => w.settledAt === null).length, phase = lanePhase(lane, now);
     const ink = workStateInk(card), word = workStateWord(card);
     const age = top.homeNeedsHuman ? minuteAge(top.humanEndedAt, now) : top.settledAt !== null ? minuteAge(top.settledAt, now) : ageText(card.elapsedMinutes ?? 0);
@@ -85,17 +85,17 @@ export function homeScene(
     return { item, needs: group(lane) <= 2, rows, cued: cue ? { text: pair(`${lead} ${cue}`, right, width), item } : undefined, preview: () => {
       const slabs = board.workers.filter((w) => w.homeNeedsHuman && w.laneId === lane.id).flatMap((w) => askSlabRows(w, board, state, width, now, true));
       // The asking job's pointer card is the slab above it; every other card is today's, and no fold hides one here.
-      const cards = laneRows(input, { ...lane, workers: lane.workers.filter((w) => !w.homeNeedsHuman) }, { ...state, boardFolded: undefined }, width, now).slice(1, -1);
+      const cards = laneRows(input, { ...lane, workers: lane.workers.filter((w) => !w.homeNeedsHuman) }, { ...state, home: { ...state.home, foldedLanes: new Set() } }, width, now).slice(1, -1);
       return { label: names[i], right: [mid, mid === jobs ? '' : jobs].filter(Boolean).join(' · '), rows: [...slabs, ...cards] };
     } };
   };
-  const waits = data?.waiting ?? [], n = data ? tryCount(data, state.acceptance) : 0;
+  const waits = data?.waiting ?? [], n = data ? tryCount(data, state.prefs.acceptance) : 0;
   const waitFacts = [waits.length, n && t('{n} to try', { n })].filter(Boolean).join(' · ');
-  const waiting: Entry[] = filtering || (!waits.length && !(state.acceptance !== 'slice' && n)) ? [] : [{ item: WAITING, needs: true, rows: [{ item: WAITING,
+  const waiting: Entry[] = filtering || (!waits.length && !(state.prefs.acceptance !== 'slice' && n)) ? [] : [{ item: WAITING, needs: true, rows: [{ item: WAITING,
     text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted(waitFacts), width) }],
   preview: () => {
-    const latest = landedEntries(data!, state.acceptance, true).slice(0, width < 56 ? 3 : 5).flatMap((entry): MonitorRow[] => {
-      if ('task' in entry) return taskRows(entry.task, data!, state, width, now, input.tryMarks, true);
+    const latest = landedEntries(data!, state.prefs.acceptance, true).slice(0, width < 56 ? 3 : 5).flatMap((entry): MonitorRow[] => {
+      if ('task' in entry) return taskRows(entry.task, data!, state, width, now, input.tryMarks, true, state.home.expandedTasks);
       const { r } = entry, head = `  ${landedMark(r)} ${monitorText(r.id)}`, age = landedAge(r, now);
       return (trySentence(r) ? briefStack(head, trySentence(r), age, width) : [landedInline(r, head, age, width)])
         .map((text) => ({ text, item: 'home-progress:latest' }));
@@ -105,13 +105,13 @@ export function homeScene(
       ...(latest.length ? [boardRow(''), section(t('Latest'), width), ...latest] : []),
     ] };
   } }];
-  const block = data ? homeProgressRows(data, width, 99, false, state.acceptance) : [];
+  const block = data ? homeProgressRows(data, width, 99, false, state.prefs.acceptance) : [];
   // Recommended mode's brief paragraph is the Progress row's preview, where the summary is.
   const brief = board.homeBrief ? [...flowLines(monitorText(board.homeBrief), width).map((l) => boardRow(theme.board.text(l))), boardRow('')] : [];
   const progress: Entry[] = filtering || (!block.length && !brief.length) ? [] : (() => {
     const cur = data ? currentRows(data) : undefined, milestone = data?.ladder.current && cur && !(cur.whole && cur.rows.length) ? monitorText(data.ladder.current) : '';
     // One form, the one the hub's Progress row has: the page's facts in words, the last ones dropped first when the row is short.
-    const lead = `${theme.board.active(mark('◐', '@'))} ${t('Progress')}`, facts = data ? pageSummary('progress', data, now, state.acceptance === 'slice', state.acceptance) : [];
+    const lead = `${theme.board.active(mark('◐', '@'))} ${t('Progress')}`, facts = data ? pageSummary('progress', data, now, state.prefs.acceptance === 'slice', state.prefs.acceptance) : [];
     while (facts.length > 1 && visualLength(lead) + 2 + visualLength(facts.join(' · ')) > width) facts.pop();
     return [{ item: PROGRESS, needs: false, rows: [{ item: PROGRESS, text: pair(lead, theme.board.muted(facts.join(' · ')), width) }],
     preview: () => ({ label: t('Progress'), right: milestone && `${t('Milestone')} ${milestone}`, rows: [...brief, ...block.slice(1)] }) }];
@@ -119,22 +119,24 @@ export function homeScene(
   const entries = [...lanes.flatMap((l, i) => (group(l) <= 4 ? [laneEntry(l, i)] : [])), ...waiting,
     ...lanes.flatMap((l, i) => (group(l) <= 4 ? [] : [laneEntry(l, i)])), ...progress];
   const items = entries.map((e) => e.item);
-  const cursor = state.splitCursor && items.includes(state.splitCursor) ? state.splitCursor : (entries.find((e) => e.needs) ?? entries[0])?.item;
-  state.splitCursor = cursor;
+  const split = state.home.split, atList = split.listCursor;
+  const cursor = atList && items.includes(atList) ? atList : (entries.find((e) => e.needs) ?? entries[0])?.item;
   const entry = entries.find((e) => e.item === cursor), shown = entry?.preview() ?? { label: '', rows: [] };
-  const scope = `home|${cursor}`;
-  splitScope(state, scope);
-  const sub = splitSubValid(state, shown.rows);
-  if (state.splitFocus && !sub) state.splitFocus = undefined;
+  const scope = `home|${cursor}`, sub = splitSubValid(split, shown.rows);
   // `o` and `v` act on the job under the cursor: the lane's, or the card the keys are on in the preview.
   const lane = lanes.find((l) => targetKey({ kind: 'lane', laneId: l.id }) === cursor), at = sub ?? cursor;
-  state.boardAnchor = at && /^(home-progress:|split:|project:fold:(task|ledger):)/.test(at) ? at : undefined;
-  if (!state.boardAnchor) state.homeTarget = sub ? targets.get(sub) : lane ? { kind: 'worker', laneId: lane.id, workerId: laneTop(lane, now).id } : state.homeTarget;
+  const anchor = at && /^(home-progress:|split:|project:fold:(task|ledger):)/.test(at) ? at : undefined;
+  const target = anchor ? homeTarget(state.home) : sub ? targets.get(sub)
+    : lane ? { kind: 'worker' as const, laneId: lane.id, workerId: laneTop(lane, now).id } : homeTarget(state.home);
+  const selected = homeCursor(target, anchor);
   return {
+    homeCursor: selected,
+    nav: { scroll: state.home.scroll, revealed: state.home.revealed, split: { ...split, focus: sub ? 'preview' : 'list', listCursor: cursor,
+      previewFor: scope, previewScroll: split.previewFor === scope ? split.previewScroll : 0 } },
     list: entries.length ? entries.flatMap((e) => (e.cued && e.item !== cursor ? [e.cued, ...e.rows.slice(1)] : e.rows)) : [boardRow(theme.board.muted(fit('  ' + t(filtering ? 'No matches' : 'Nothing in progress'), width)))],
     cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, scope,
     left: homeDoneCount(done, width),
     hints: shown.rows.some((r) => r.item === sub && r.tryTarget) ? ['Space mark', 'y accept', 'n flag', '⏎ details', 'Esc back', 'o file']
-      : homeKeys(state, board, sub ? 'expand' : 'open', !!sub),
+      : homeKeys({ ...state, home: { ...state.home, cursor: selected } }, board, sub ? 'expand' : 'open', !!sub),
   };
 }

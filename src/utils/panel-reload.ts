@@ -1,14 +1,47 @@
 import { execFile, spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { MonitorState } from '../render/monitor.js';
-import { CONTROL_FOLDS, controlRoleItem, controlRoleOf, initialControlTab, type ControlTabState, type ControlViewState, type ExpTabState } from '../render/monitor-state.js';
+import { initialMonitorState } from '../render/monitor.js';
+import { CONTROL_FOLDS, activeFilter, controlRoleItem, controlRoleOf, emptySplitNav, homeAnchor, homeCursor, homeTarget, onlyTry, projectPage,
+  type ClassicSplitNav, type ControlTabState, type ControlViewState, type ExpTabState, type MonitorState, type ProjectTabState, type ProjectView, type ViewPrefs } from '../render/monitor-state.js';
+import type { MainTab } from '../render/main-tabs.js';
+import type { WorkTarget } from '../collectors/workboard-types.js';
+import type { HudSettings } from '../settings.js';
 
 const PLACE = 'HUD_PANEL_RELOAD_PLACE', SUPERVISED = 'HUD_PANEL_RELOAD_SUPERVISED', RESTART = 75;
 type Place = { state: MonitorState; settings: { selected: number; offset: number } | null; widthOverride?: number | null; openedAt?: number };
-type LegacyNav = Pick<MonitorState, 'projectCursor' | 'projectScroll' | 'projectFolded' | 'boardRevealed' |
-  'splitFocus' | 'splitList' | 'splitSub' | 'splitScroll' | 'splitListScroll' | 'splitFor'>;
-type LegacyState = Omit<MonitorState, 'control' | 'exp'> & Partial<Pick<MonitorState, 'control' | 'exp'>> & {
+// S3 changes only the in-memory state. This remains the flat S2 wire format.
+type LegacyNav = { projectCursor?: string; projectScroll?: number; projectFolded?: ReadonlySet<string>; boardRevealed?: string;
+  splitFocus?: 'preview'; splitList?: string; splitSub?: string; splitScroll?: number; splitListScroll?: number; splitFor?: string };
+type LegacyState = Partial<ViewPrefs> & LegacyNav & {
+  mainTab?: MainTab | 'skills';
+  projectPage?: ReturnType<typeof projectPage> | 'control';
+  projectRoot?: string;
+  projectList?: boolean;
+  projectBack?: boolean;
+  projectWait?: number;
+  projectTry?: ReturnType<typeof onlyTry>;
+  projectSaved?: ProjectTabState['savedPages'];
+  homeTarget?: WorkTarget;
+  homeScroll?: number;
+  boardExpanded?: ReadonlySet<string>;
+  boardToggled?: ReadonlySet<string>;
+  boardFolded?: ReadonlySet<string>;
+  boardNewest?: string;
+  boardAnchor?: string;
+  boardInspect?: WorkTarget;
+  inspectCursor?: string;
+  tree?: { selectedId?: string | null; showAll?: boolean };
+  focus?: 'agents' | 'changes' | 'details';
+  modes?: MonitorState['modes'];
+  scroll?: { changes?: number; details?: number };
+  help?: boolean;
+  helpScroll?: number;
+  splitCursor?: string;
+  filterQuery?: string;
+  filterOpen?: boolean;
+  control?: ControlTabState;
+  exp?: Omit<ExpTabState, 'revealed'>;
   controlNav?: LegacyNav;
   controlHarnessNav?: LegacyNav;
   controlHarnesses?: boolean;
@@ -18,29 +51,24 @@ type LegacyState = Omit<MonitorState, 'control' | 'exp'> & Partial<Pick<MonitorS
   expPage?: Partial<ExpTabState> & { edit?: unknown };
 };
 
-function restoreNav(view: ControlViewState, legacy: LegacyNav | undefined): void {
-  if (!legacy) return;
-  const { projectCursor, projectScroll, projectFolded, boardRevealed, splitFocus, splitList, splitSub, splitScroll, splitListScroll, splitFor } = legacy;
-  view.nav = { cursor: projectCursor, scroll: projectScroll ?? 0, revealed: boardRevealed,
+function readNav({ projectCursor, projectScroll, boardRevealed, splitFocus, splitList, splitSub, splitScroll, splitListScroll, splitFor }: LegacyNav): ClassicSplitNav {
+  return { cursor: projectCursor, scroll: projectScroll ?? 0, revealed: boardRevealed,
     split: { focus: splitFocus ?? 'list', listCursor: splitList, previewCursor: splitSub,
       previewScroll: splitScroll ?? 0, listScroll: splitListScroll ?? 0, previewFor: splitFor } };
-  view.folded = projectFolded ?? view.folded;
+}
+function restoreNav(view: ControlViewState, legacy: LegacyNav | undefined): void {
+  if (!legacy) return;
+  view.nav = readNav(legacy);
+  view.folded = legacy.projectFolded ?? view.folded;
 }
 
-function restoreState(raw: LegacyState): MonitorState {
-  const { control, controlNav, controlHarnessNav, controlHarnesses, controlPresetNotice, controlHarnessNotice, modelPrevious,
-    exp, expPage, ...state } = raw;
+const homeFold = (id: string) => /^(task|ledger):/.test(id);
+function restoreState(state: LegacyState, settings?: HudSettings): MonitorState {
+  const initial = initialMonitorState(settings);
+  const { control, controlNav, controlHarnessNav, controlHarnesses, controlPresetNotice, controlHarnessNotice, modelPrevious, exp, expPage } = state;
   // Older builds saved Skills as a main tab; it now lives in Help.
-  if ((state.mainTab as string | undefined) === 'skills') state.mainTab = 'home';
-  delete state.trySelection; // Legacy handoffs encoded a marked batch as a plain object.
-  delete state.overlay;
-  // A pre-overlay panel could hand off transient drafts and retired fields.
-  for (const key of ['confirmStop', 'controlPresetInput', 'controlChain', 'controlQuickModel',
-    'projectInput', 'controlHarnessAdd', 'preview', 'zoom']) Reflect.deleteProperty(state, key);
-  if (state.scroll) Reflect.deleteProperty(state.scroll, 'agents');
-  if (state.tree) for (const key of ['view', 'collapsed', 'filter', 'scroll']) Reflect.deleteProperty(state.tree, key);
-
-  const tab = control ?? initialControlTab();
+  let activeTab = !state.mainTab || state.mainTab === 'skills' ? 'home' : state.mainTab;
+  const tab = control ?? initial.control;
   if (!control) {
     tab.subTab = controlHarnesses ? 'harnesses' : 'roles';
     restoreNav(tab.roles, controlNav);
@@ -50,7 +78,7 @@ function restoreState(raw: LegacyState): MonitorState {
     else if (controlPresetNotice) tab.notice = 'index' in controlPresetNotice
       ? { kind: 'model', ...controlPresetNotice } : { kind: 'preset', ...controlPresetNotice };
   }
-  if ((state.projectPage as string | undefined) === 'control') {
+  if (state.projectPage === 'control') {
     const old = state.projectCursor?.replace('project:fold:role:', 'project:role:');
     const role = controlRoleOf(old), roleItem = role && controlRoleItem(role);
     const folded = new Set<string>(CONTROL_FOLDS);
@@ -61,16 +89,72 @@ function restoreState(raw: LegacyState): MonitorState {
       projectScroll: state.projectScroll, projectFolded: folded, splitScroll: state.splitScroll,
       splitListScroll: state.splitListScroll, splitFor: state.splitFor,
     });
-    if (state.mainTab === 'project') state.mainTab = 'control';
+    if (activeTab === 'project') activeTab = 'control';
     state.projectPage = state.projectList = state.projectBack = undefined;
     state.projectCursor = state.projectScroll = state.projectFolded = state.boardRevealed = undefined;
     state.splitFocus = state.splitList = state.splitSub = state.splitScroll = state.splitListScroll = state.splitFor = undefined;
   }
-  const { edit: _draft, ...legacyExp } = expPage ?? {};
-  return { ...state, control: tab, exp: exp ?? { ...legacyExp, scroll: legacyExp.scroll ?? 0 } };
+  const { detail, cursor, scroll = 0, notice } = exp ?? expPage ?? {};
+  const nav = readNav(state), page = state.projectPage, home = initial.home, project = initial.project;
+  const view: ProjectView = page === 'progress' ? { kind: page, onlyTry: state.projectTry }
+    : page === 'waiting' ? { kind: page, index: state.projectWait ?? -1 }
+    : page === 'tickets' || page === 'tree' || page === 'docs' ? { kind: page } : { kind: state.projectList ? 'projects-list' : 'hub' };
+  const filter = state.filterQuery || state.filterOpen ? { query: state.filterQuery ?? '', editing: !!state.filterOpen } : undefined;
+  const folds = state.projectFolded ?? project.folded;
+  // There is only one shared preview and one task-fold set in this version of the handoff.
+  const homeSplit = state.splitFor?.startsWith('home|') ?? (activeTab === 'home');
+  const changes = state.scroll?.changes ?? 0, reveal = state.boardRevealed;
+  const subpage = state.focus === 'changes' ? { kind: 'changes' as const, scroll: changes }
+    : state.focus === 'details' && state.boardInspect ? { kind: 'inspector' as const, target: state.boardInspect,
+      cursor: state.inspectCursor, selectedNodeId: state.tree?.selectedId ?? undefined, scroll: state.scroll?.details ?? 0, revealed: reveal } : undefined;
+  const prefs = { ...initial.prefs, splitRatio: state.splitRatio };
+  for (const key of ['experiments', 'panelLayout', 'projectLayout', 'acceptance', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes'] as const) {
+    const value = state[key];
+    if (value !== undefined) Object.assign(prefs, { [key]: value });
+  }
+  return { activeTab, selectedProject: state.projectRoot, control: tab, exp: { detail, cursor, scroll, notice, revealed: activeTab === 'exp' ? reveal : undefined },
+    prefs, modes: state.modes ?? initial.modes, subpage, lastChangesScroll: changes,
+    help: state.help ? { scroll: state.helpScroll } : undefined,
+    project: { ...project, view, fromProjectsList: !!state.projectBack, savedPages: state.projectSaved ?? project.savedPages,
+      nav: { ...nav, revealed: !subpage && activeTab === 'project' ? reveal : undefined, split: homeSplit ? emptySplitNav() : nav.split },
+      folded: activeTab === 'home' ? new Set([...folds].filter((id) => !homeFold(id))) : folds,
+      filter: activeTab === 'project' ? filter : undefined },
+    home: { ...home, cursor: homeCursor(state.homeTarget, state.boardAnchor), scroll: state.homeScroll ?? 0,
+      revealed: !subpage && activeTab === 'home' ? reveal : undefined, showAll: !!state.tree?.showAll,
+      expanded: state.boardExpanded ?? home.expanded, toggled: state.boardToggled ?? home.toggled,
+      foldedLanes: state.boardFolded ?? home.foldedLanes, newestCard: state.boardNewest,
+      split: { ...(homeSplit ? nav.split : emptySplitNav()), listCursor: state.splitCursor },
+      expandedTasks: activeTab === 'home' ? new Set([...folds].filter(homeFold)) : home.expandedTasks,
+      filter: activeTab === 'home' ? filter : undefined },
+  };
 }
 
-export function readPanelPlace(): Place | undefined {
+function handoffState(state: MonitorState): LegacyState {
+  const { activeTab, home, project, subpage, help, exp } = state;
+  const inspector = subpage?.kind === 'inspector' ? subpage : undefined;
+  const filter = activeFilter(state);
+  const split = activeTab === 'home' || (activeTab !== 'project' && !project.nav.split.previewFor) ? home.split : project.nav.split;
+  const revealed = inspector?.revealed ?? (activeTab === 'home' ? home.revealed : activeTab === 'exp' ? exp.revealed : project.nav.revealed);
+  return { ...state.prefs, mainTab: activeTab, projectRoot: state.selectedProject, control: state.control,
+    exp: { detail: exp.detail, cursor: exp.cursor, scroll: exp.scroll, notice: exp.notice },
+    projectPage: projectPage(project.view), projectList: project.view.kind === 'projects-list' || undefined,
+    projectBack: project.fromProjectsList || undefined, projectWait: project.view.kind === 'waiting' ? project.view.index : undefined,
+    projectTry: onlyTry(project.view), projectSaved: project.savedPages, projectCursor: project.nav.cursor, projectScroll: project.nav.scroll,
+    projectFolded: activeTab === 'home' ? new Set([...project.folded].filter((id) => !homeFold(id)).concat([...home.expandedTasks])) : project.folded,
+    homeTarget: homeTarget(home), boardAnchor: homeAnchor(home), homeScroll: home.scroll,
+    boardExpanded: home.expanded, boardToggled: home.toggled, boardFolded: home.foldedLanes, boardNewest: home.newestCard, boardRevealed: revealed,
+    focus: inspector ? 'details' : subpage?.kind === 'changes' ? 'changes' : 'agents', modes: state.modes,
+    boardInspect: inspector?.target, inspectCursor: inspector?.cursor, tree: { selectedId: inspector?.selectedNodeId ?? null, showAll: home.showAll || undefined },
+    scroll: { changes: subpage?.kind === 'changes' ? subpage.scroll : state.lastChangesScroll, details: inspector?.scroll ?? 0 },
+    help: !!help, helpScroll: help?.scroll,
+    splitCursor: home.split.listCursor, splitFocus: split.focus === 'preview' ? 'preview' : undefined,
+    splitList: split === project.nav.split ? split.listCursor : undefined, splitSub: split.previewCursor,
+    splitListScroll: split.listScroll, splitScroll: split.previewScroll, splitFor: split.previewFor,
+    filterQuery: filter?.query, filterOpen: filter?.editing || undefined,
+  };
+}
+
+export function readPanelPlace(settings?: HudSettings): Place | undefined {
   const raw = process.env[PLACE];
   delete process.env[PLACE];
   try {
@@ -78,9 +162,13 @@ export function readPanelPlace(): Place | undefined {
       ? JSON.parse(raw, (_key, value) => value?.panelSet ? new Set(value.panelSet) : value) : undefined;
     if (!place) return;
     // Legacy handoffs start their lifetime when consumed.
-    return { ...place, state: place.state && restoreState(place.state), openedAt: place.openedAt ?? Date.now() };
+    return { ...place, state: place.state && restoreState(place.state, settings), openedAt: place.openedAt ?? Date.now() };
   } catch { return undefined; }
 }
+export function encodePanelPlace(place: Place): string {
+  return JSON.stringify({ ...place, state: handoffState(place.state) }, (_key, value) => value instanceof Set ? { panelSet: [...value] } : value);
+}
+
 /** One metadata probe per collection; only a quiet, loadable generation may replace this process. */
 export class PanelReload {
   private seen: string;
@@ -117,8 +205,7 @@ export class PanelReload {
   }
   async restart(place: Place, finish: () => void): Promise<void> {
     // Drafts delay reload; a clean focus can be reopened from its role row. Never put raw launch options in the handoff environment.
-    const { trySelection: _marks, overlay: _overlay, ...state } = place.state;
-    const saved = JSON.stringify({ ...place, state }, (_key, value) => value instanceof Set ? { panelSet: [...value] } : value);
+    const saved = encodePanelPlace(place);
     const env: NodeJS.ProcessEnv = { ...this.env, [PLACE]: saved };
     if (this.env[SUPERVISED]) {
       await new Promise<void>((resolve, reject) => process.send!(saved, (err) => err ? reject(err) : resolve()));

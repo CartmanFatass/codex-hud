@@ -1,3 +1,4 @@
+import { projectPageOf } from '../../dist/render/project-view.js';
 /** The Project hub uses its room: whole waiting items, a Now about work in flight, unlisted worktrees counted on their page (synthetic STATE and worktrees). */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -59,7 +60,7 @@ test('a waiting item flows whole into the hub\'s spare rows, is cut to one row b
   assert.deepEqual(shape(21), { wrapped: 0, latest: 1, pages: 3 }, 'Latest gives way after, never before, the wrapping');
   // The item the cursor is on keeps its whole text whatever the panel has, and the others stay one row.
   const long = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
-  const kept = plain(long.render(38, 'en', onPage(undefined, { projectCursor: 'project:wait:1' }), 24));
+  const kept = plain(long.render(38, 'en', onPage(undefined, { project: { nav: { cursor: 'project:wait:1' } } }), 24));
   assert.ok(kept.join(' ').replace(/\s+/g, ' ').includes('not on the first one.'), 'the cursor item is whole');
   assert.equal(block(kept, /^Waiting for you/).filter((l) => l.startsWith('? ')).length, 3);
 });
@@ -67,7 +68,7 @@ test('a waiting item flows whole into the hub\'s spare rows, is cut to one row b
 test('the 40×24 Classic hub keeps the selected waiting item whole even when the hub must scroll', async (t) => {
   const waiting = [TRY_LONG, ...Array.from({ length: 22 }, (_, i) => `Choose synthetic option ${i + 1}`)];
   const f = await fixture(t, { waiting });
-  const frame = f.render(40, 'en', onPage(undefined, { projectCursor: 'project:wait:0' }), 24);
+  const frame = f.render(40, 'en', onPage(undefined, { project: { nav: { cursor: 'project:wait:0' } } }), 24);
   assert.ok(frame.panes[0].contentLength > frame.panes[0].height, 'even the smallest tier overflows');
   const lines = plain(frame);
   assert.match(lines.join(' ').replace(/\s+/g, ' '), /not on the first one\./);
@@ -98,7 +99,7 @@ test('the Working tree row counts the worktrees with no ledger row, and its page
 
 test('the name row says what its count counts, and a bar tells to try from accepted by glyph and by ink in every theme', async (t) => {
   const f = await fixture(t);
-  const name = (lang) => plain(f.render(38, lang, onPage(undefined, { projectRoot: PROJECTS[1].root }), 46, { projects: PROJECTS, projectName: PROJECTS[1].name }))[2];
+  const name = (lang) => plain(f.render(38, lang, onPage(undefined, { selectedProject: PROJECTS[1].root }), 46, { projects: PROJECTS, projectName: PROJECTS[1].name }))[2];
   assert.equal(name('en'), 'second-project ───── 0.2 ▾ project 2/3');
   assert.equal(name('zh'), 'second-project ──────── 0.2 ▾ 项目 2/3');
   const bar = (icons) => plain(f.render(38, 'en', undefined, 46, {}, icons)).find((l) => /^[█▒░#=.]{20,}$/.test(l));
@@ -127,12 +128,12 @@ test('Enter or a click on a waiting item opens its whole STATE text on a page, i
   const f = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
   // The parse keeps the continuation lines as written; the hub shows the item whole under the cursor.
   assert.equal(f.data.waiting[1].text, TRY_LONG);
-  const hubAt = (lang, state) => f.render(38, lang, state ?? onPage(undefined, { projectCursor: 'project:wait:1' }), 24);
+  const hubAt = (lang, state) => f.render(38, lang, state ?? onPage(undefined, { project: { nav: { cursor: 'project:wait:1' } } }), 24);
   assert.match(plain(hubAt('en'))[6], /^\? Try 0\.3 PANEL-NEXT, a synthetic try$/);
   const key = press(hubAt('en'), 'enter'), click = press(hubAt('en'), { type: 'mouse', button: 'left', x: 4, y: 6 });
   for (const opened of [key, click]) {
-    assert.equal(opened.state.projectPage, 'waiting');
-    assert.equal(opened.state.projectWait, 1);
+    assert.equal(projectPageOf(opened.state), 'waiting');
+    assert.equal(opened.state.project.view.index, 1);
     assert.equal(opened.action, undefined, 'it reads here; it does not open the editor');
   }
   assert.deepEqual(press(hubAt('en'), 'open-session').action, { type: 'open-files', files: [f.data.statePath] });
@@ -165,28 +166,28 @@ test('Enter or a click on a waiting item opens its whole STATE text on a page, i
 test('the page scrolls with the movement keys and the wheel; Esc or a click on the crumb returns with the cursor on the same item', async (t) => {
   const f = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
   for (const lang of ['en', 'zh']) {
-    let frame = f.render(38, lang, press(f.render(38, lang, onPage(undefined, { projectCursor: 'project:wait:1' }), 24), 'enter').state, 12);
+    let frame = f.render(38, lang, press(f.render(38, lang, onPage(undefined, { project: { nav: { cursor: 'project:wait:1' } } }), 24), 'enter').state, 12);
     const top = plain(frame), rows = 12 - 2;
-    assert.equal(frame.state.projectScroll, 0);
+    assert.equal(frame.state.project.nav.scroll, 0);
     // End moves the cursor to the last row, and the page scrolls to show it: the end of the text is what matters.
     frame = f.render(38, lang, press(frame, 'end').state, 12);
     const end = plain(frame);
-    assert.ok(frame.state.projectScroll > 0);
+    assert.ok(frame.state.project.nav.scroll > 0);
     assert.match(end.slice(1, rows + 1).join(' '), /not on the first one\.$/);
     assert.notDeepEqual(end.slice(1, rows + 1), top.slice(1, rows + 1));
     // The wheel moves three rows at a time and stays inside the text.
     const up = f.render(38, lang, press(frame, { type: 'mouse', button: 'wheel-up', x: 4, y: 5 }).state, 12);
-    assert.equal(up.state.projectScroll, frame.state.projectScroll - 3);
+    assert.equal(up.state.project.nav.scroll, frame.state.project.nav.scroll - 3);
     const down = f.render(38, lang, press(up, { type: 'mouse', button: 'wheel-down', x: 4, y: 5 }).state, 12);
-    assert.equal(down.state.projectScroll, frame.state.projectScroll);
-    assert.equal(f.render(38, lang, press(down, { type: 'mouse', button: 'wheel-down', x: 4, y: 5 }).state, 12).state.projectScroll, frame.state.projectScroll, 'not past the end');
+    assert.equal(down.state.project.nav.scroll, frame.state.project.nav.scroll);
+    assert.equal(f.render(38, lang, press(down, { type: 'mouse', button: 'wheel-down', x: 4, y: 5 }).state, 12).state.project.nav.scroll, frame.state.project.nav.scroll, 'not past the end');
     // Esc and a click on the crumb row both land on the item's own row, which the hub keeps in view.
     for (const back of ['escape', { type: 'mouse', button: 'left', x: 6, y: 0 }]) {
       const hub = f.render(38, lang, press(frame, back).state, 24);
-      assert.equal(hub.state.projectPage, undefined);
-      assert.equal(hub.state.projectCursor, 'project:wait:1');
+      assert.equal(projectPageOf(hub.state), undefined);
+      assert.equal(hub.state.project.nav.cursor, 'project:wait:1');
       assert.match(plain(hub)[6], /^\? Try 0\.3 PANEL-NEXT/);
-      assert.equal(hub.state.projectScroll, 0);
+      assert.equal(hub.state.project.nav.scroll, 0);
     }
   }
 });

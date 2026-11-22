@@ -66,10 +66,8 @@ import {
   renderMonitor,
   fit,
   initialMonitorState,
-  reconcileMonitor,
   handleMonitorInput,
   monitorModes,
-  monitorSettings,
   monitorPreferences,
   nextRepaintDelay,
   msUntilAgeChanges,
@@ -78,7 +76,7 @@ import {
   type MonitorFrame,
   type MonitorState,
 } from './render/monitor.js';
-import { acceptsMonitorInput, blocksReload, filterBatchInputs } from './render/monitor-state.js';
+import { acceptsMonitorInput, applyViewPrefs, blocksReload, filterBatchInputs, onlyTry, reconcileMonitor } from './render/monitor-state.js';
 import { projectListOpen, projectPageOf } from './render/project-view.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { fileSignature } from './utils/file-signature.js';
@@ -209,7 +207,7 @@ function restoreTerminal(): void {
 }
 
 export async function runLivePage(options: { installCleanup?: (end: () => void) => () => void } = {}): Promise<void> {
-  const reload = new PanelReload(), place = readPanelPlace(), openedAt = place?.openedAt ?? Date.now();
+  const reload = new PanelReload();
   let restarting: Promise<void> | undefined;
   startProfiling('panel');
   for (const key of [
@@ -227,6 +225,15 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const selectedRoot = process.env.CODEX_HUD_PANEL_ROOT
     ? formatRosterRoot(parseRosterRoot(process.env.CODEX_HUD_PANEL_ROOT))
     : null;
+  let settings = defaultSettings();
+  let settingsError = '';
+  let settingsFailure: unknown = null;
+  try {
+    settings = runtimeSettings();
+  } catch (err) {
+    settingsFailure = err;
+  }
+  const place = readPanelPlace(settings), openedAt = place?.openedAt ?? Date.now();
   const jobPipeline = new PanelJobPipeline(getHudHome(), {
     project: HUD_CWD_REAL,
     pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
@@ -249,7 +256,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let overview = new Map<string, ProjectOverview>();
   let overviewAt = -Infinity;
   const listing = (s: MonitorState) => projectShown(s) && projectListOpen(s, projects);
-  const shownRoot = () => projects.find((p) => p.root === state.projectRoot)?.root ?? HUD_CWD_REAL;
+  const shownRoot = () => projects.find((p) => p.root === state.selectedProject)?.root ?? HUD_CWD_REAL;
   let lastControlShown = false;
   let modelListRefresh: Promise<void> | null = null;
   let modelListAbort: AbortController | null = null;
@@ -267,24 +274,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       });
   };
   const decoder = new WorkbenchInputDecoder('workboard');
-  let settings = defaultSettings();
-  let settingsError = '';
-  let settingsFailure: unknown = null;
-  try {
-    settings = runtimeSettings();
-  } catch (err) {
-    settingsFailure = err;
-  }
   applyDisplaySettings(settings);
   setLanguage(resolveLanguage(settings.language));
   if (settingsFailure) settingsError = t('Settings: {reason}', { reason: String(settingsFailure) });
-  const configuredState = () => {
-    const next = initialMonitorState();
-    next.modes = monitorModes(settings);
-    return { ...next, ...monitorSettings(settings) };
-  };
   const availableDecisionKeys = () => { try { return decisionKeys(readHudCredentials()); } catch { return undefined; } };
-  let state: MonitorState = { ...configuredState(), ...place?.state, experiments: settings.experiments };
+  let state = place?.state ?? initialMonitorState(settings);
+  if (place?.state) state = reconcileMonitor({ ...state, prefs: { ...state.prefs, experiments: settings.experiments } });
   let expData = expShown(state) ? readExpData(jobPipeline.home) : undefined;
   let settingsPage: SettingsPageState | null = place?.settings
     ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
@@ -314,7 +309,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let roleNotice = '';
   // `w`: the board's saved name (or why not), at the top until the next key.
   let boardNotice = '';
-  let frame: MonitorFrame | undefined;
+  let frame: MonitorFrame | undefined, frameSource: MonitorState | undefined;
+  // Painting derives a place for the rows it drew. Only input and collection adopt it as live state.
+  const framePlace = (source: MonitorState): MonitorState => frame && frameSource === source ? frame.state : source;
   let lastPaint: string[] | null = null;
   let closed = false;
   let collecting = false;
@@ -399,25 +396,26 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const backupSkills = readBackupSkills();
   const render = () => {
     if (closed || (place && !collected)) return;
+    const source = state, painted = framePlace(source);
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
-    const control = controlShown(state, Boolean(settingsPage)), chosen = shownRoot();
+    const control = controlShown(painted, Boolean(settingsPage)), chosen = shownRoot();
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
-      : state.mainTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
-    const page = projectPageOf(state);
-    const taskMode = state.acceptance !== 'slice';
-    const showTries = taskMode || state.panelLayout === 'split' || state.projectLayout === 'board' || state.projectLayout === 'inbox' ? !page || page === 'progress' : !!state.projectTry;
-    const homeTries = taskMode && state.mainTab === 'home' && state.focus === 'agents' && !state.help && !settingsPage;
-    const tryMarks = (homeTries || projectShown(state, !!settingsPage) && !listing(state) && showTries) && shown.snapshot
+      : painted.activeTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
+    const page = projectPageOf(painted);
+    const taskMode = painted.prefs.acceptance !== 'slice';
+    const showTries = taskMode || painted.prefs.panelLayout === 'split' || painted.prefs.projectLayout === 'board' || painted.prefs.projectLayout === 'inbox' ? !page || page === 'progress' : !!onlyTry(painted.project.view);
+    const homeTries = taskMode && painted.activeTab === 'home' && !painted.subpage && !painted.help && !settingsPage;
+    const tryMarks = (homeTries || projectShown(painted, !!settingsPage) && !listing(painted) && showTries) && shown.snapshot
       ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;
     const output = time('render', () => {
       let lines: string[];
       if (settingsPage && settingsHelp) {
         // Help is drawn over Settings without changing Settings or the underlying tab.
         frame = withDisplaySettings(settingsPage.draft, () => renderMonitor({
-          tree, state: settingsHelp!, backupSkills, mouse: settingsPage!.draft.mouse,
+          tree, state: framePlace(settingsHelp!), backupSkills, mouse: settingsPage!.draft.mouse,
           width: process.stdout.columns || 30, height: process.stdout.rows || 24,
         }));
-        settingsHelp = frame.state;
+        frameSource = settingsHelp;
         lines = frame.lines;
       } else if (settingsPage) {
         settingsFrame = withDisplaySettings(settingsPage.draft, () =>
@@ -447,19 +445,19 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const nowMs = Date.now();
         frame = renderMonitor({
           tree,
-          workboard: state.mainTab === 'home' && state.focus === 'agents' && !state.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
+          workboard: painted.activeTab === 'home' && !painted.subpage && !painted.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
           modelEnabled: settings.modelEnabled,
           mouse: settings.mouse,
-          state,
+          state: painted,
           worktrees,
-          expData: expShown(state) ? expData : undefined,
+          expData: expShown(painted) ? expData : undefined,
           project: control ? shown.snapshot : tryBriefs.apply(shown.root, shown.snapshot),
           projectDisplayRoot: shown.root,
           projectWaiting: control ? visits.snapshot(chosen)?.waiting.length : undefined,
           tryMarks,
           backupSkills,
           projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
-          projects: listing(state) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
+          projects: listing(painted) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
           error,
           publicationNotice: boardNotice || null,
           nowMs,
@@ -467,7 +465,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           width,
           height: process.stdout.rows || 24,
         });
-        state = frame.state;
+        frameSource = source;
         lines = frame.lines;
       }
       return lines;
@@ -562,7 +560,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     try {
       const pane = frame?.panes.find((p) => p.id === 'agents');
       const wanted = new Set<string>();
-      if (state.tree.selectedId) wanted.add(state.tree.selectedId);
+      if (state.subpage?.kind === 'inspector' && state.subpage.selectedNodeId) wanted.add(state.subpage.selectedNodeId);
       if (pane) {
         for (let i = pane.offset; i < pane.offset + Math.max(0, pane.height - (pane.edge ?? 1)); i++) {
           const item = pane.rows[i]?.item;
@@ -604,17 +602,17 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       readingAgentContext = false;
     }
   };
-  const collectionScope = () => `${tree.rootId}:${state.focus}:${JSON.stringify(state.modes)}`;
+  const collectionScope = () => `${tree.rootId}:${state.subpage?.kind ?? 'main'}:${JSON.stringify(state.modes)}`;
   const collect = async (force = false) => {
     if (force) {
       adaptive = forceAdaptivePoll(adaptive);
       collectionEpoch++;
     }
     if (closed || collecting) return;
-    const ready = await reload.poll(() => (settingsPage !== null && settingsDirty(settingsPage)) || blocksReload(state));
+    const ready = await reload.poll(() => (settingsPage !== null && settingsDirty(settingsPage)) || blocksReload(framePlace(state)));
     if (closed) return;
     if (ready) {
-      restarting = reload.restart({ state, openedAt, widthOverride: widthOverride ?? null,
+      restarting = reload.restart({ state: framePlace(state), openedAt, widthOverride: widthOverride ?? null,
         settings: settingsPage && { selected: settingsPage.selected, offset: settingsPage.offset } }, () => finish());
       await restarting;
       return;
@@ -653,6 +651,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
   };
   const collectNowBody = async () => {
+    state = framePlace(state);
     let session: ReturnType<typeof finder.check> = null;
     let stale = false;
     // Where a failure happened, for the health row.
@@ -667,7 +666,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         boundJobRoot = session ? `${makeSourceId('codex', fs.realpathSync(getCodexHome()))}/${session.sessionId}` : '';
         if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
       }
-      const inspect = !settingsPage && !state.help && state.focus === 'details' ? state.boardInspect : undefined;
+      const inspect = !settingsPage && !state.help && state.subpage?.kind === 'inspector' ? state.subpage.target : undefined;
       await jobPipeline.refresh(inspect?.kind === 'worker' ? inspect.workerId : undefined);
       if (closed) return;
       stage = 'rollout';
@@ -701,7 +700,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           : undefined;
       const rootId = main?.session?.id ?? session?.sessionId ?? claude?.rootId ?? selectedRoot ?? '';
       if (rootId !== tree.rootId) {
-        if (treeBuilt) state = configuredState();
+        if (treeBuilt) state = initialMonitorState(settings);
         worktrees = null;
         // Cancel old-root writers before loading the next root's model log.
         decisionTitles.stop();
@@ -739,10 +738,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (closed) return;
       treeBuilt = true;
       applyAgentContext();
-      state = reconcileMonitor(state, tree, Date.now());
+      state = reconcileMonitor(framePlace(state));
       const board = jobPipeline.workboard(tree);
       decisionTitles.inspect(board, jobPipeline.home,
-        !settingsPage && !state.help && state.focus === 'details' ? state.boardInspect : undefined);
+        !settingsPage && !state.help && state.subpage?.kind === 'inspector' ? state.subpage.target : undefined);
       decisionLabels.update(board, jobPipeline.home, tree);
       jobSentences.update(board, jobPipeline.home, tree);
       homeRecommendation.update(displayBoard());
@@ -764,8 +763,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       const root = shown || control ? shownRoot() : HUD_CWD_REAL;
       const visit = visits.visit(root);
       const projectFacts = await visit.collector.collect(
-        control ? 'control' : shown ? full : state.focus === 'agents' && !state.help && !settingsPage
-          ? state.acceptance === 'slice' ? 'home' : 'home-tasks'
+        control ? 'control' : shown ? full : !state.subpage && !state.help && !settingsPage
+          ? state.prefs.acceptance === 'slice' ? 'home' : 'home-tasks'
           : false,
         jobPipeline.workboard(tree),
         Date.now()
@@ -811,7 +810,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       gitAgain = true;
       return;
     }
-    if (state.focus !== 'changes') return;
+    if (state.subpage?.kind !== 'changes') return;
     collectingGit = true;
     const candidates = sources();
     const requestKey = JSON.stringify(candidates);
@@ -875,7 +874,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const page = settingsPage;
     if (!page) return false;
     try {
-      const previousWidth = settings.treeWidth, previousLayout = settings.panelLayout, previousProjectLayout = settings.projectLayout, previousAcceptance = settings.acceptance;
+      const previousWidth = settings.treeWidth;
       settings = saveSettings(page.draft);
       if (settings.treeWidth !== previousWidth) widthOverride = undefined;
       settingsError = '';
@@ -885,14 +884,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       configureModel();
 
       armCollect();
-      state = {
-        ...state,
-        ...monitorSettings(settings),
-        modes: monitorModes(settings),
-        // The rows of the other layout are not these: the cursors and the to-try filter start over.
-        ...(settings.panelLayout !== previousLayout ? { boardAnchor: undefined, homeTarget: undefined, projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, homeScroll: 0 } : {}),
-        ...(settings.projectLayout !== previousProjectLayout || settings.acceptance !== previousAcceptance ? { projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, splitFocus: undefined, splitList: undefined, splitSub: undefined, splitScroll: 0, splitListScroll: 0, splitFor: undefined } : {}),
-      };
+      state = { ...applyViewPrefs(framePlace(state), settings), modes: monitorModes(settings) };
       if (!settings.experiments) expData = undefined;
       worktrees = null;
       void refreshGit();
@@ -925,7 +917,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   };
   // `w`: one full collection of the shown project, off the paint path; the file opens in a browser when an opener exists.
   const exportBoard = () => {
-    const root = state.mainTab === 'project' || state.mainTab === 'control' ? shownRoot() : HUD_CWD_REAL;
+    const root = state.activeTab === 'project' || state.activeTab === 'control' ? shownRoot() : HUD_CWD_REAL;
     void writeBoard({ cwd: root, hudHome: jobPipeline.home, env: process.env, now: Date.now(), lang: language(), acceptance: settings.acceptance, workboard: displayBoard(), briefs: tryBriefs })
       .then((file) => {
         openBoard(file, process.env);
@@ -943,6 +935,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     for (let input of inputs) {
       if (closed) break;
+      state = framePlace(state);
       if (expSaving && expShown(state)) continue;
       if (input.type === 'mouse' && !settings.mouse) continue;
       if (!acceptsMonitorInput(settingsPage ? undefined : state, input)) continue;
@@ -975,14 +968,14 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       if (settingsPage && settingsFrame) {
         if (settingsHelp) {
-          const result = handleMonitorInput(settingsHelp, input, { tree, frame });
+          const result = handleMonitorInput(framePlace(settingsHelp), input, { tree, frame });
           // `q` returns to Settings too, so an unsaved draft is not lost.
           settingsHelp = !result.close && result.state.help ? result.state : undefined;
           render();
           continue;
         }
         if (input.type === 'key' && input.key === 'help') {
-          settingsHelp = { ...initialMonitorState(), panelLayout: settingsPage.draft.panelLayout, help: true };
+          settingsHelp = { ...initialMonitorState(settingsPage.draft), help: {} };
           render();
           continue;
         }
@@ -1022,11 +1015,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       });
       state = result.state;
       if (expShown(state) && !expShown(previous)) expData = readExpData(jobPipeline.home);
-      if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
+      if (previous.subpage?.kind !== 'changes' && state.subpage?.kind === 'changes') void refreshGit();
       if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) ||
-        (controlShown(state) && (!controlShown(previous) || state.projectRoot !== previous.projectRoot)) ||
-        ((state.focus === 'details' || previous.focus === 'details') &&
-          (state.focus !== previous.focus || state.help !== previous.help || state.boardInspect !== previous.boardInspect))) void collect(true);
+        (controlShown(state) && (!controlShown(previous) || state.selectedProject !== previous.selectedProject)) ||
+        ((state.subpage?.kind === 'inspector' || previous.subpage?.kind === 'inspector') &&
+          (state.subpage?.kind !== previous.subpage?.kind || !!state.help !== !!previous.help ||
+            (state.subpage?.kind === 'inspector' && previous.subpage?.kind === 'inspector' && state.subpage.target !== previous.subpage.target)))) void collect(true);
       if (result.close) {
         finish();
         break;
@@ -1045,9 +1039,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           render();
         });
       }
-      const tryRoot = state.mainTab === 'home' ? HUD_CWD_REAL : shownRoot();
+      const tryRoot = state.activeTab === 'home' ? HUD_CWD_REAL : shownRoot();
       if (result.action?.type === 'record-try' && visits.snapshot(tryRoot) &&
-          (state.acceptance === 'slice' || frame?.projectDisplayRoot === tryRoot)) {
+          (state.prefs.acceptance === 'slice' || frame?.projectDisplayRoot === tryRoot)) {
         try {
           appendTry(jobPipeline.home, tryRoot, result.action.action, result.action.target);
           roleNotice = '';
@@ -1176,7 +1170,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     if (!settingsPage) probe.cancel();
   };
   const dispatch = (all: WorkbenchInput[]) => {
-    const inputs = filterBatchInputs(settingsPage ? undefined : state, all);
+    const inputs = filterBatchInputs(settingsPage ? undefined : framePlace(state), all);
     return withInputRefresh(
       inputs.length > 0,
       () => processInput(inputs),

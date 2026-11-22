@@ -1,10 +1,11 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jobBoard, nativeBoard, drawAt, rowsOf, MIN, NOW } from '../fixtures/card-fold.mjs';
-import { initialMonitorState, handleMonitorInput, monitorSettings } from '../../dist-test/src/render/monitor.js';
+import { initialMonitorState, handleMonitorInput } from '../../dist-test/src/render/monitor.js';
 import { SETTING_ROWS, handleSettingsInput, renderSettingsPage, resetSettingsGroup } from '../../dist-test/src/render/settings-page.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist-test/src/settings.js';
 import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
@@ -18,7 +19,7 @@ const temp = (t) => {
 };
 const text = (frame) => frame.lines.map(stripAnsi).join('\n');
 const press = (frame, key, target, tree) =>
-  handleMonitorInput({ ...frame.state, homeTarget: target }, { type: 'key', key }, { tree, frame }).state;
+  handleMonitorInput(withState(frame.state, { home: { cursor: { kind: 'work', target: target } } }), { type: 'key', key }, { tree, frame }).state;
 const targetOf = (w) => ({ kind: 'worker', laneId: w.laneId, workerId: w.id });
 // A settled HUD job and a settled native subagent, each as [board, tree, the card, its title].
 const subjects = (t) => {
@@ -59,13 +60,13 @@ test('only a result before its fold time opens by itself; a card the owner opene
     newest = board.workers.find((w) => w.task.startsWith('Add the retry')),
     older = board.workers.find((w) => w.task.startsWith('Write the migration'));
   const first = drawAt(board, initialMonitorState(), 3.9);
-  assert.equal(first.state.boardNewest, targetKey(targetOf(newest)));
+  assert.equal(first.state.home.newestCard, targetKey(targetOf(newest)));
   assert.equal(rowsOf(first, older).length, 3, 'the older result stays collapsed: title and two sentence rows');
   assert.ok(rowsOf(first, newest).length > 3, 'the newest opens in full');
   // Each card folds 5 minutes after its own settlement; once the newest has, nothing opens by itself.
   for (const m of [5, 6, 14]) {
     const frame = drawAt(board, initialMonitorState(), m);
-    assert.equal(frame.state.boardNewest, undefined, `${m} min`);
+    assert.equal(frame.state.home.newestCard, undefined, `${m} min`);
     assert.equal(rowsOf(frame, newest).length, 1);
   }
   // Opened at 5 min by Enter, a card stays open until Enter folds it, past the next frames.
@@ -105,7 +106,7 @@ test('Fold after and Hide after: defaults, validator, rows, save, reset, and a c
   assert.deepEqual([reset.cardFoldMinutes, reset.cardHideMinutes], [5, 15]);
   // Applied without a restart: the same board, the saved values on the next frame.
   const board = jobBoard(temp(t)), card = board.workers[0];
-  const frame = (m, settings) => drawAt(board, { ...initialMonitorState(), ...monitorSettings(settings) }, m);
+  const frame = (m, settings) => drawAt(board, initialMonitorState(settings), m);
   assert.equal(rowsOf(frame(7, defaultSettings()), card).length, 1, 'default: folded at 7 min');
   assert.ok(rowsOf(frame(7, loadSettings()), card).length > 1, 'fold 10: still full at 7 min');
   assert.equal(rowsOf(frame(10, loadSettings()), card).length, 1, 'fold 10: folded at 10 min');
@@ -116,8 +117,8 @@ test('Fold after and Hide after: defaults, validator, rows, save, reset, and a c
 test('a hide time before the fold time is the fold time; failed and protected cards keep their own rules', (t) => {
   const board = jobBoard(temp(t)), card = board.workers[0];
   const short = { cardFoldMinutes: 10, cardHideMinutes: 5 };
-  assert.ok(rowsOf(drawAt(board, { ...initialMonitorState(), ...short }, 9), card).length > 1, 'full before the fold time');
-  assert.equal(rowsOf(drawAt(board, { ...initialMonitorState(), ...short }, 10), card).length, 0, 'gone when it would fold');
+  assert.ok(rowsOf(drawAt(board, initialMonitorState({ ...defaultSettings(), ...short }), 9), card).length > 1, 'full before the fold time');
+  assert.equal(rowsOf(drawAt(board, initialMonitorState({ ...defaultSettings(), ...short }), 10), card).length, 0, 'gone when it would fold');
   const settled = { settledAt: NOW, homeNeedsHuman: false, state: 'done' };
   const worker = (extra) => ({ ...card, ...settled, ...extra });
   assert.ok(!currentWorker(worker({}), NOW + 15 * MIN) && currentWorker(worker({}), NOW + 15 * MIN - 1));

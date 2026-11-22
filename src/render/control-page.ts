@@ -28,7 +28,7 @@ const reason = (place: PlaceFact, now: number) => place.state === 'off' ? t('off
   : place.state === 'missing' ? [t('not installed'), place.missing].filter(Boolean).join(' · ') : '';
 
 export function controlHeader(input: MonitorData, state: MonitorState, width: number): MonitorRow[] {
-  const projects = input.projects ?? [], at = Math.max(0, projects.findIndex((p) => p.root === state.projectRoot));
+  const projects = input.projects ?? [], at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
   const roles = ` ${t('Roles')} `, harnesses = ` ${t('Harnesses')} `, x = visualLength(roles);
   const { subTab, notice } = state.control, showingHarnesses = subTab === 'harnesses';
   const change = notice?.kind === 'harness' ? notice : undefined;
@@ -174,9 +174,9 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
   const hints = controlHints(data), overlay = state.overlay;
   const preset = overlay?.kind === 'control-preset' ? overlay.sheet : undefined;
   const scene = projectSplitScene(view.nav, { list, preview, hints, start: list.find((r) => r.item)?.item },
-    `control|${state.projectRoot ?? ''}|${preset?.mode ?? ''}`);
+    `control|${state.selectedProject ?? ''}|${preset?.mode ?? ''}`);
   if (overlay?.kind === 'control-chain' || overlay?.kind === 'control-preset') {
-    const room = splitPreviewRoom({ ...scene, compact: true }, state.splitRatio, view.nav.split.focus, height, notes);
+    const room = splitPreviewRoom({ ...scene, compact: true }, state.prefs.splitRatio, scene.nav.split.focus, height, notes);
     const sheet = overlay.kind === 'control-chain' ? chainSheet(overlay, data.models, previewWidth, room, now)
       : presetSheet(overlay.sheet, previewWidth, room);
     return { ...scene, rule: sheet.rule, preview: sheet.rows, sub: sheet.cursor, hints: sheet.hints, compact: true };

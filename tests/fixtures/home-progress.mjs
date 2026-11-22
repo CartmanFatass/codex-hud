@@ -1,7 +1,8 @@
+import { sliceState } from './state-helpers.mjs';
 /** Home's spare-row progress: synthetic questions, decisions, HUD and native cards. */
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
-import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
+import { renderMonitor } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { ticketFixture } from './project-tickets.mjs';
@@ -18,9 +19,9 @@ export async function homeFixture(root) {
   const board = { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions) };
   const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
   const data = await collector.collect('home', board, NOW);
-  const render = (width, lang = 'en', height = 56, state = initialMonitorState(), snapshot = data, extras = {}) => {
+  const render = (width, lang = 'en', height = 56, state = sliceState(), snapshot = data, extras = {}) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, state: { acceptance: 'slice', ...state }, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, state, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   return { ...f, board, collector, data, render };

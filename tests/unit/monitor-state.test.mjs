@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialMonitorState } from '../../dist/render/monitor.js';
@@ -34,9 +35,9 @@ test('overlay policy distinguishes a reload blocker from a draft and a raw-text 
     const state = { ...initial, overlay };
     assert.deepEqual([hasUnsavedDraft(state), blocksReload(state), acceptsRawText(state)], [draft, blocked, raw], JSON.stringify(overlay));
   }
-  const help = { ...initial, overlay: chain(places, { run: [] }), help: true };
+  const help = { ...initial, overlay: chain(places, { run: [] }), help: {} };
   assert.deepEqual([blocksReload(help), acceptsRawText(help)], [true, false]);
-  const kept = { ...initial, filterQuery: 'sonic' }, typing = { ...kept, filterOpen: true };
+  const kept = withState(initial, { home: { filter: { query: 'sonic', editing: false } } }), typing = withState(kept, { home: { filter: { editing: true } } });
   assert.deepEqual([blocksReload(kept), acceptsRawText(kept)], [false, false]);
   assert.deepEqual([blocksReload(typing), acceptsRawText(typing)], [true, true]);
 });

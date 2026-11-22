@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
+import { homeAnchor, homeTarget } from './monitor-state.js';
 import { theme } from './colors.js';
 import { fit, monitorText } from './monitor-text.js';
 import { boardRow } from './workboard-rows.js';
@@ -17,8 +18,8 @@ const idOf = (worker: OwnerWorker) => THIN.exec(worker.id)?.[1];
 
 /** The HUD job the owner is on: Home's selected card (Classic or Split), or the one open in the Inspector. */
 export function jobUnderCursor(state: MonitorState, board: WorkboardSnapshot | undefined) {
-  const target = state.focus === 'details' ? state.boardInspect
-    : state.focus === 'agents' && state.mainTab === 'home' && !state.boardAnchor ? state.homeTarget : undefined;
+  const target = state.subpage?.kind === 'inspector' ? state.subpage.target
+    : !state.subpage && state.activeTab === 'home' && !homeAnchor(state.home) ? homeTarget(state.home) : undefined;
   if (target?.kind !== 'worker') return undefined;
   const lane = board?.lanes.find((l) => l.id === target.laneId), worker = lane?.workers.find((w) => w.id === target.workerId);
   const jobId = worker && idOf(worker);
@@ -41,7 +42,7 @@ export function answerKeys(worker: OwnerWorker): string[] {
 }
 /** Home's footer for the row under the cursor, most useful first (a narrow row drops the last): a card takes `o` and `v`, a HUD job also its tab and, while it runs, stop. */
 export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefined, enter: 'open' | 'expand', preview = false): string[] {
-  const job = jobUnderCursor(state, board), card = state.focus === 'agents' && state.mainTab === 'home' && !state.boardAnchor && !!state.homeTarget;
+  const job = jobUnderCursor(state, board), card = !state.subpage && state.activeTab === 'home' && !homeAnchor(state.home) && !!homeTarget(state.home);
   return [...(job ? ['g job tab', ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
     `⏎ ${enter}`, ...(preview ? ['Esc back'] : []), ...(card || preview ? ['o file', 'v inspect'] : []), 'a all'];
 }
@@ -66,7 +67,7 @@ export function openJobAction(next: MonitorState, input: WorkbenchInput, key: st
   }
   // The slab has to be open (its options are numbered there): a digit on a collapsed card is not an answer.
   const a = answerable(job.worker);
-  if (!a || (next.focus !== 'details' && !next.boardExpanded?.has(targetKey(job.target)))) return undefined;
+  if (!a || (next.subpage?.kind !== 'inspector' && !next.home.expanded?.has(targetKey(job.target)))) return undefined;
   const answer = digit ? a.options[Number(digit) - 1] : a.suggested;
   return answer ? result({ type: 'answer-job', home: job.home, jobId: a.jobId, qid: a.qid, answer, role: job.worker.role }) : undefined;
 }

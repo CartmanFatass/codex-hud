@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -59,10 +60,10 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
   ] };
   const expData = { config: defaultExpConfig(), profiles: [] };
   for (const panelLayout of ['split', 'classic']) for (const [i, lang] of ['en', 'zh'].entries()) for (const width of [40, 56, 80, 120]) {
-    const layout = { panelLayout }, state = split(layout), draw = (s, snapshot, extra) => f.render(width, lang, 50, s, snapshot, extra);
+    const layout = { prefs: { panelLayout } }, state = split(layout), draw = (s, snapshot, extra) => f.render(width, lang, 50, s, snapshot, extra);
     const page = (p, extra = {}) => onPage(p, { ...layout, ...extra });
     const harnesses = onControl(undefined, layout, { subTab: 'harnesses' });
-    const exp = { ...state, mainTab: 'exp', experiments: true };
+    const exp = withState(state, { activeTab: 'exp', prefs: { experiments: true } });
     const settings = () => {
       const old = setLanguage(lang);
       try { return renderSettingsPage({ draft: defaultSettings(), selected: 0, offset: 0, message: '' }, width, 50); }
@@ -70,10 +71,10 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
     };
     const scenes = {
       ...(panelLayout === 'split' ? {
-        'split Home job': draw({ ...state, splitCursor: JSON.stringify(['lane', running.laneId]) }),
-        'split Home block': draw({ ...state, splitCursor: 'home-progress:waiting' }, f.data, { workboard: withDone(5) }),
+        'split Home job': draw(withState(state, { home: { split: { listCursor: JSON.stringify(['lane', running.laneId]) } } })),
+        'split Home block': draw(withState(state, { home: { split: { listCursor: 'home-progress:waiting' } } }), f.data, { workboard: withDone(5) }),
       } : {
-        'classic Home card': draw({ ...state, homeTarget: target(native) }, f.data, { workboard: withDone(3) }),
+        'classic Home card': draw(withState(state, { home: { cursor: { kind: 'work', target: target(native) } } }), f.data, { workboard: withDone(3) }),
         'classic Project switch': draw(page(undefined), f.data, { projects: PROJECTS }),
       }),
       [`${panelLayout} Project hub`]: draw(page(undefined), f.control),
@@ -82,9 +83,9 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
       Roles: draw(onControl({ cursor: 'project:role:imp' }, layout), f.control),
       Chain: draw(onControl({ cursor: 'project:role:imp' }, { ...layout, overlay: chainOverlay(role) }), f.control),
       Harnesses: draw(harnesses, harnessData),
-      Inspector: draw({ ...state, focus: 'details', boardInspect: target(running) }),
+      Inspector: draw(withState(state, { subpage: { kind: 'inspector', scroll: 0, target: target(running) } })),
       Settings: settings(), EXP: draw(exp, f.data, { expData }),
-      Changes: draw({ ...state, focus: 'changes' }),
+      Changes: draw(withState(state, { subpage: { kind: 'changes', scroll: 0 } })),
     };
     const word = (en) => words.find((pair) => pair[0] === en)[i];
     const help = word('? help'), known = new Set(words.map((pair) => pair[i]));
@@ -113,13 +114,13 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
       assert.ok(footer.includes(label), label);
       assert.deepEqual([control?.x, control?.width], [visualLength(footer.slice(0, footer.indexOf(label))), visualLength(label)]);
       const result = handleMonitorInput(harnessFrame.state, { type: 'mouse', button: 'left', x: control.x, y: control.y }, { tree: TREE, frame: harnessFrame, nowMs: NOW });
-      if (kind === 'help') assert.equal(result.state.help, true);
+      if (kind === 'help') assert.equal(!!result.state.help, true);
       else if (kind === 'harness-add') assert.equal(result.state.overlay?.kind, 'control-harness-add');
       else assert.deepEqual(result.action, { type: 'harness-switch', id: 'pi', off: true });
     }
     const read = (frame) => stripAnsi(frame.lines.at(-1)).trim();
-    assert.equal(read(draw({ ...state, help: true })), word('Esc back'));
-    for (const modal of [draw({ ...state, filterOpen: true }),
+    assert.equal(read(draw({ ...state, help: {} })), word('Esc back'));
+    for (const modal of [draw(withState(state, { home: { filter: { editing: true } } })),
       draw({ ...harnesses, overlay: { kind: 'control-harness-add', text: '' } }, harnessData),
       draw(onControl(undefined, { ...layout, overlay: { kind: 'control-preset', sheet: { mode: 'list', role, text: '', at: 0 } } }), f.control),
       draw({ ...exp, exp: { ...exp.exp, cursor: 'binding' }, overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }, f.data, { expData })]) {

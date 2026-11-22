@@ -1,3 +1,6 @@
+import { sliceState } from '../fixtures/state-helpers.mjs';
+import { homeAnchor } from '../../dist/render/monitor-state.js';
+import { projectPageOf } from '../../dist/render/project-view.js';
 /** Home tells the truth: the top line, the milestone's own counts, and the spare rows (synthetic STATE only). */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { homeFixture } from '../fixtures/home-progress.mjs';
 import { NOW, TREE, plain } from '../fixtures/project-page.mjs';
-import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'home-truth-'));
@@ -33,15 +36,15 @@ test('Home top line counts STATE waiting items with job questions, ✓ only when
   assert.doesNotMatch(plain(f.quiet(38, 'zh', 46)).at(-1), /今日完成/);
   // Enter and a click on the line open the Project hub on its Waiting block.
   let frame = f.quiet(38, 'en', 46);
-  assert.equal(frame.state.boardAnchor, 'home-progress:waiting', 'an idle Home rests on its first stop');
+  assert.equal(homeAnchor(frame.state.home), 'home-progress:waiting', 'an idle Home rests on its first stop');
   const click = { type: 'mouse', button: 'left', x: 4, y: frame.workboard.rows.findIndex((r) => r.item === 'home-progress:waiting') + 1 };
   for (const input of [{ type: 'key', key: 'enter' }, click]) {
     const state = press(frame, input).state;
-    assert.equal(state.mainTab, 'project');
-    assert.equal(state.projectPage, undefined);
-    assert.equal(state.projectCursor, 'project:fold:waiting');
+    assert.equal(state.activeTab, 'project');
+    assert.equal(projectPageOf(state), undefined);
+    assert.equal(state.project.nav.cursor, 'project:fold:waiting');
     const hub = f.quiet(38, 'en', 46, state);
-    assert.equal(hub.state.projectCursor, 'project:fold:waiting', 'the hub keeps the cursor on the Waiting fold');
+    assert.equal(hub.state.project.nav.cursor, 'project:fold:waiting', 'the hub keeps the cursor on the Waiting fold');
     assert.ok(plain(hub).some((l) => /^Waiting for you ─+ 2 · 1 to try$/.test(l)));
   }
 });
@@ -52,19 +55,19 @@ test('Enter or a click on a waiting item on Home opens its whole text on the Pro
   for (const lang of ['en', 'zh']) {
     // The top line and the block's header are one stop; each waiting item is a stop of its own.
     let frame = f.quiet(38, lang, 46);
-    for (const stop of ['wait:0', 'wait:1']) frame = f.quiet(38, lang, 46, press(frame, { type: 'key', key: 'down' }).state), assert.equal(frame.state.boardAnchor, `home-progress:${stop}`);
+    for (const stop of ['wait:0', 'wait:1']) frame = f.quiet(38, lang, 46, press(frame, { type: 'key', key: 'down' }).state), assert.equal(homeAnchor(frame.state.home), `home-progress:${stop}`);
     const row = frame.workboard.rows.findIndex((r) => r.item === 'home-progress:wait:1') + 1;
     for (const input of [{ type: 'key', key: 'enter' }, { type: 'mouse', button: 'left', x: 4, y: row }]) {
       const state = press(input.type === 'key' ? frame : f.quiet(38, lang, 46), input).state;
-      assert.equal(state.mainTab, 'project');
-      assert.equal(state.projectPage, 'waiting');
-      assert.equal(state.projectWait, 1);
+      assert.equal(state.activeTab, 'project');
+      assert.equal(projectPageOf(state), 'waiting');
+      assert.equal(state.project.view.index, 1);
       const page = f.quiet(38, lang, 46, state), lines = plain(page);
       assert.equal(lines[0], lang === 'en' ? '‹ Project › Waiting' : '‹ 项目 › 等你处理');
       assert.deepEqual(lines.slice(2, 4), ['? Choose the browser profile after', '  trying the synthetic setup']);
       const hub = f.quiet(38, lang, 46, press(page, { type: 'key', key: 'escape' }).state);
-      assert.equal(hub.state.projectPage, undefined);
-      assert.equal(hub.state.projectCursor, 'project:wait:1');
+      assert.equal(projectPageOf(hub.state), undefined);
+      assert.equal(hub.state.project.nav.cursor, 'project:wait:1');
       assert.equal(plain(hub).findIndex((l) => l.startsWith('? Choose the browser profile')) >= 0, true, 'the item is on the hub');
     }
   }
@@ -73,7 +76,7 @@ test('Enter or a click on a waiting item on Home opens its whole text on the Pro
 test('Home counts the current milestone\'s slices as the hub does; without one the block is the whole ledger and says so', async (t) => {
   const f = await fixture(t);
   for (const width of [38, 80]) {
-    const home = plain(f.quiet(width, 'en', 46)), hub = plain(f.quiet(width, 'en', 46, { ...initialMonitorState(), mainTab: 'project' }));
+    const home = plain(f.quiet(width, 'en', 46)), hub = plain(f.quiet(width, 'en', 46, { ...sliceState(), activeTab: 'project' }));
     const progress = hub.find((l) => /^Progress /.test(l));
     // The name row already shows the milestone, so both facts fit on the Progress row.
     assert.match(hub.find((l) => l.startsWith('Project ─')), / M3b$/);

@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -20,7 +21,7 @@ function fixture(t) {
   return cardFixture(home);
 }
 function enter(f, frame, worker) {
-  return handleMonitorInput({ ...frame.state, homeTarget: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } },
+  return handleMonitorInput(withState(frame.state, { home: { cursor: { kind: 'work', target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } } } }),
     { type: 'key', key: 'enter' }, { frame, tree: f.tree, nowMs: NOW }).state;
 }
 test('Home opens only the newest current result by itself; running cards stay two rows; owner choices survive', (t) => {
@@ -41,11 +42,11 @@ test('Home opens only the newest current result by itself; running cards stay tw
     assert.ok(!cardExpanded(frame.state, key(w)), w.id);
     assert.equal(rows(w).length, 3, `${w.id}: a collapsed card is its title plus two sentence rows`);
   }
-  const newest = f.board.workers.find((w) => key(w) === frame.state.boardNewest);
+  const newest = f.board.workers.find((w) => key(w) === frame.state.home.newestCard);
   assert.ok(newest && newest.settledAt !== null, 'the newest result opens');
   job.settledAt = NOW - 500; // the job settles: it is now the newest result
   frame = f.render(frame.state);
-  assert.equal(frame.state.boardNewest, key(job));
+  assert.equal(frame.state.home.newestCard, key(job));
   assert.ok(cardExpanded(frame.state, key(job)));
   assert.match(rows(job).map((r) => stripAnsi(r.text)).join(' '), /final word/);
   let state = enter(f, frame, job); // explicitly fold the newest
@@ -190,7 +191,7 @@ test('Home frames EN/ZH at 80/120 columns retain all colour kinds (ANSI assertio
 test('settled cards drop stale still-working or prompt-report quiet_decision while unsettled and quiet-failed keep it', (t) => {
   const f = fixture(t);
   const base = f.board.workers[0];
-  const state = { ...initialMonitorState(), mainTab: 'home' };
+  const state = { ...initialMonitorState(), activeTab: 'home' };
   for (const [choice, action] of [['still-working', 'wait'], ['finished-no-report', 'prompt-report']]) {
     const settled = {
       ...base,

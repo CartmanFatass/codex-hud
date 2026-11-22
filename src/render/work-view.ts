@@ -3,7 +3,8 @@ import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-type
 import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
-import { homeRows } from './home-view.js';
+import { homeRows, newestCard } from './home-view.js';
+import { activeFilter, homeAnchor, homeCursor, homeTarget, onlyTry, type ClassicSplitNav, type HomeCursor } from './monitor-state.js';
 import { skillsRows } from './skills-view.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
@@ -15,9 +16,9 @@ import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { homeScene } from './split-home.js';
 import { projectScene, TRY_ACTIONS } from './split-project.js';
-import { paintSplit, splitPreviewRoom } from './split-frame.js';
+import { paintSplit, splitPreviewRoom, type SplitScene } from './split-frame.js';
 import { homeKeys, stopPromptRows } from './job-actions.js';
-import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
+import { filterHints, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 import { controlShown, expShown, mainTabs } from './main-tabs.js';
 import { controlHeader, controlHints, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
@@ -98,7 +99,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   add('Home', home);
   const projectStart = add('Project', project);
   const controlStart = add('Control', control);
-  if (state.panelLayout === 'split') add('Split', split);
+  if (state.prefs.panelLayout === 'split') add('Split', split);
 
   const legend = (label: string, ...groups: string[][]) => groups.map((group, i) =>
     boardRow(`${theme.board.muted(fit(i ? '' : t(label).toLowerCase(), 7))} ${group.join('  ')}`));
@@ -119,7 +120,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const rows = width < 80 ? [...keys, boardRow(''), ...marks]
     : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
         boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4)));
-  const start = state.mainTab === 'project' ? projectStart : state.mainTab === 'control' ? controlStart : undefined;
+  const start = state.activeTab === 'project' ? projectStart : state.activeTab === 'control' ? controlStart : undefined;
   return { rows: [boardRow(''), ...rows, ...skillsRows(input.backupSkills, width)], anchor: start === undefined ? undefined : rows[start] };
 }
 export function renderWorkboardFrame(
@@ -139,33 +140,36 @@ export function renderWorkboardFrame(
     ...((input.projects?.length ?? 0) > 1 ? { projects: input.projects } : {}),
   };
   if (!width || !height) return frame;
-  const help = state.help,
-    inspector = !help && state.focus === 'details',
-    changes = !help && state.focus === 'changes';
-  const sub = inspector || help || changes;
-  const project = !sub && state.mainTab === 'project';
+  const help = state.help, subpage = !help ? state.subpage : undefined;
+  const inspector = subpage?.kind === 'inspector' ? subpage : undefined;
+  const changes = subpage?.kind === 'changes' ? subpage : undefined;
+  const sub = subpage || help;
+  const project = !sub && state.activeTab === 'project';
   const control = controlShown(state), exp = expShown(state);
-  const controlView = control ? state.control[state.control.subTab] : undefined, controlNav = controlView?.nav;
-  const harnesses = control && state.control.subTab === 'harnesses', addingHarness = harnesses && state.overlay?.kind === 'control-harness-add';
+  const controlView = control ? state.control[state.control.subTab] : undefined;
+  const withControlNav = (nav: ClassicSplitNav) => ({ ...state.control, [state.control.subTab]: { ...controlView!, nav } });
+  const harnesses = control && state.control.subTab === 'harnesses';
   const roles = control && !harnesses;
-  const overlay = state.overlay;
+  let overlay = state.overlay;
+  const addingHarness = harnesses && overlay?.kind === 'control-harness-add' ? overlay : undefined;
   if (roles) {
     frame.controlModels = input.project?.models;
     frame.controlNow = now;
     if (overlay?.kind === 'control-chain' && !overlay.draft && overlay.mode.kind === 'places') {
-      const latest = input.project?.roles.find((r) => r.role === overlay.role.role);
-      if (latest && latest !== overlay.role) state.overlay = { ...overlay, role: latest };
+      const role = overlay.role.role;
+      const latest = input.project?.roles.find((r) => r.role === role);
+      if (latest && latest !== overlay.role) overlay = { ...overlay, role: latest };
     }
   }
   // The picker is for a place that can take a model: with it gone it closes, returning to its parent view.
   const picker = roles ? modelInput(overlay) : undefined;
   const pick = picker && pickOf(input.project, picker, overlay?.kind === 'control-chain' && overlay.draft ? undefined : state.control.modelPrevious);
   if (picker && !pick) {
-    if (overlay?.kind === 'control-quick-model') state.overlay = undefined;
-    else if (overlay?.kind === 'control-chain') state.overlay = { ...overlay,
+    if (overlay?.kind === 'control-quick-model') overlay = undefined;
+    else if (overlay?.kind === 'control-chain') overlay = { ...overlay,
       mode: overlay.mode.kind === 'sheet' ? { ...overlay.mode, input: undefined } : { kind: 'places' } };
   }
-  const chain = roles && state.overlay?.kind === 'control-chain' ? state.overlay : undefined;
+  const chain = roles && overlay?.kind === 'control-chain' ? overlay : undefined;
   const experiment = exp ? state.exp : undefined;
   const expEdit = exp && overlay?.kind === 'exp-edit' ? overlay : undefined;
   if (exp) frame.expData = input.expData;
@@ -173,16 +177,20 @@ export function renderWorkboardFrame(
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   // The `/` filter: Home's board keeps the cards that match; Progress and Tickets read a snapshot of the slices or tickets that do.
-  const filtering = !!filterScope(state) && (!!state.filterOpen || !!state.filterQuery), needle = filtering ? filterNeedle(state) : '';
+  const filter = filterScope(state) ? activeFilter(state) : undefined, needle = filter?.query.toLowerCase() ?? '';
+  const progressOnly = onlyTry(state.project.view);
   let matches: number | undefined;
   if (needle && input.project && (page === 'progress' || page === 'tickets')) {
-    const found = filterProject(input.project, page, needle, state.acceptance, !!state.projectTry);
+    const found = filterProject(input.project, page, needle, state.prefs.acceptance, !!progressOnly);
     input = { ...input, project: found.data };
     matches = found.count;
   }
-  const board = inspector || pick ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.cardStallMinutes) : undefined);
-  if (home && needle) matches = board.workers.length;
-  const bar = filtering ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
+  const board = inspector || pick ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.prefs.cardStallMinutes) : undefined);
+  if (home) {
+    state = { ...state, home: { ...state.home, newestCard: newestCard(board, state, now) } };
+    if (needle) matches = board.workers.length;
+  }
+  const bar = filter ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
     (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
   ) : undefined;
   const controlTop = control && !pick ? controlHeader(input, state, width) : [];
@@ -194,7 +202,7 @@ export function renderWorkboardFrame(
   controlTop.slice(0, top).forEach((row, i) => {
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: 1 + i });
   });
-  const target = state.boardInspect;
+  const target = inspector?.target;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
   const worker = target?.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
   const crumb = help
@@ -204,7 +212,7 @@ export function renderWorkboardFrame(
       : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}`;
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
-    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '', state.acceptance);
+    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '', state.prefs.acceptance);
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
@@ -221,7 +229,7 @@ export function renderWorkboardFrame(
     if (visualLength(titles.join('')) > width) titles = labels(false);
     const modelsWidth = visualLength(models);
     const leftRoom = Math.max(0, width - (modelsWidth ? modelsWidth + 1 : 0));
-    frame.lines[0] = pair(titles.map((label, i) => (state.mainTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''),
+    frame.lines[0] = pair(titles.map((label, i) => (state.activeTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''),
       models && theme.board.attention(models), width);
     let x = 0;
     for (const [i, label] of titles.entries()) {
@@ -236,9 +244,11 @@ export function renderWorkboardFrame(
   if (roles && overlay?.kind === 'control-preset') {
     const captured = overlay.sheet.role;
     const latest = input.project?.roles.find((r) => r.role === captured.role && r.revision === captured.revision);
-    if (latest && latest !== captured) state.overlay = { ...overlay, sheet: { ...overlay.sheet, role: latest } };
+    if (latest && latest !== captured) overlay = { ...overlay, sheet: { ...overlay.sheet, role: latest } };
   }
-  const presetInput = roles && state.overlay?.kind === 'control-preset' ? state.overlay.sheet : undefined;
+  state = overlay === state.overlay ? state : { ...state, overlay };
+  frame.state = state;
+  const presetInput = roles && overlay?.kind === 'control-preset' ? overlay.sheet : undefined;
   const targets = new Map<string, WorkTarget>();
   for (const lane of board.lanes) {
     const all: WorkTarget[] = [
@@ -257,21 +267,32 @@ export function renderWorkboardFrame(
     ).length;
   };
   // The Split layout draws Home, the hub and the pages that are lists in its own frame (split-*.ts); the rest is Classic's.
-  if (state.panelLayout === 'split' && !sub && !list && !exp) {
-    const build = (w: number) => home ? homeScene(input, board, state, targets, w, now, doneToday())
-      : project ? projectScene(input, state, board, page, w, now) : undefined;
+  if (state.prefs.panelLayout === 'split' && !sub && !list && !exp) {
     const notes = [...headers, ...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), !control && input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
     const controlSplit = control && input.project;
-    const sceneFor = (w: number) => controlSplit ? harnesses ? harnessScene(controlSplit, state, width, w)
-      : controlScene(controlSplit, state, width, now, w, height, notes.length) : build(w);
-    let scene = sceneFor(width);
-    // A preview that scrolls keeps its last cell for the scrollbar: its rows are laid out one cell narrower, so none is cut.
-    if (scene && scene.preview.length > splitPreviewRoom(scene, state.splitRatio, controlNav?.split.focus ?? state.splitFocus ?? 'list', height, notes.length)) scene = { ...scene,
-      preview: sceneFor(width - 1)?.preview ?? scene.preview };
-    if (scene) {
+    const sceneFor = (w: number): (SplitScene & { homeCursor?: HomeCursor }) | undefined => {
+      if (controlSplit) return harnesses ? harnessScene(controlSplit, state, width, w)
+        : controlScene(controlSplit, state, width, now, w, height, notes.length);
+      if (home) return homeScene(input, board, state, targets, w, now, doneToday());
+      if (project) return projectScene(input, state, board, page, w, now);
+    };
+    const wide = sceneFor(width);
+    if (wide) {
+      // A preview that scrolls keeps its last cell for the scrollbar: lay its rows out one cell narrower.
+      const narrow = wide.preview.length > splitPreviewRoom(wide, state.prefs.splitRatio, wide.nav.split.focus, height, notes.length)
+        ? sceneFor(width - 1) : undefined;
+      const scene = narrow ? { ...wide, preview: narrow.preview, nav: narrow.nav } : wide;
       if (harnesses && height > 1) harnessFooterControls(frame, scene.hints, width, height - 1);
       if (control && !harnesses && height > 1) presetFooterControls(frame, scene.hints, width, height - 1);
-      return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes, controlNav);
+      const resolved = narrow ?? wide;
+      const cursor = home ? resolved.homeCursor : state.home.cursor;
+      const nav = paintSplit(frame, scene, board, targets, homeTarget({ ...state.home, cursor }), width, height, notes);
+      if (home) frame.state = { ...state, home: { ...state.home, cursor, split: nav.split, revealed: nav.revealed } };
+      else if (project) frame.state = { ...state, project: { ...state.project, nav,
+        ...(!page && state.project.nav.split.focus === 'preview' && !wide.sub ? { trySelection: undefined } : {}) } };
+      else if (control) frame.state = { ...state, control: withControlNav(nav),
+        overlay: addingHarness ? { ...addingHarness, pick: resolved.sub } : overlay };
+      return frame;
     }
   }
   const anchor = chain && roleRows(chain.role, width, now);
@@ -292,17 +313,19 @@ export function renderWorkboardFrame(
     }
   }
   const helpContent = help ? helpRows(input, state, width) : undefined;
+  const harnessAdd = addingHarness && input.project ? harnessAddRows(input.project, addingHarness, width) : undefined;
+  if (harnessAdd && addingHarness) state = { ...state, overlay: { ...addingHarness, pick: harnessAdd.pick } };
   const rows: MonitorRow[] = helpContent
     ? helpContent.rows
     : changes
       ? [boardRow(''), ...changesRows(input, state, width, now)]
       : inspector
-        ? boardInspectorRows(lane, state.boardInspect, state, width, now)
+        ? boardInspectorRows(lane, inspector.target, state, width, now)
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
-          : control ? harnesses && input.project ? addingHarness
-              ? [section(t('Add back'), width), ...harnessAddRows(input.project, state, width)] : harnessRows(input.project, state.control.harnesses, width)
+          : control ? harnesses && input.project ? harnessAdd
+              ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
           : experiment ? expRows(experiment, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.error) - Number(!!input.publicationNotice))) : homeRows(board, state, width, now, input);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
@@ -314,9 +337,8 @@ export function renderWorkboardFrame(
     const spare = height - 2 - top - rows.length;
     if (!needle) rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim(), state, input.tryMarks));
   }
-  if (home && state.boardAnchor && /^(home-progress:|project:fold:task:)/.test(state.boardAnchor) && !rows.some((r) => r.item === state.boardAnchor))
-    state.boardAnchor = undefined;
-  let selected = state.homeTarget;
+  let item = homeAnchor(state.home), selected = homeTarget(state.home);
+  if (home && item && /^(home-progress:|project:fold:task:)/.test(item) && !rows.some((r) => r.item === item)) item = undefined;
   if (home && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
     const order = source.lanes.flatMap((l) => [
       { kind: 'lane' as const, laneId: l.id },
@@ -327,55 +349,46 @@ export function renderWorkboardFrame(
       .map((target, i) => ({ target, distance: Math.abs(i - at) }))
       .filter(({ target }) => rows.some((r) => r.item === targetKey(target)))
       .sort((a, b) => a.distance - b.distance)[0]?.target;
-    state.homeTarget = selected;
   }
-  if (home && !selected && !state.boardAnchor)
-    state.boardAnchor = rows.find((r) => r.item?.startsWith('home-progress:'))?.item;
+  if (home && !selected && !item) item = rows.find((r) => r.item?.startsWith('home-progress:'))?.item;
   const files = rows.filter((r) => r.files?.length);
-  if (inspector && !files.some((r) => r.item === state.inspectCursor))
-    state.inspectCursor =
-      files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))
-        ?.item ?? files[0]?.item;
+  const inspectCursor = inspector && (files.some((r) => r.item === inspector.cursor) ? inspector.cursor :
+    files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))?.item ?? files[0]?.item);
+  const nav = controlView?.nav ?? (project ? state.project.nav : undefined);
+  const hasCursor = (cursor?: string) => rows.some((r) => r.item && r.item === cursor);
   // A new hub or page starts on its first destination (Inbox hub: first Needs-you row; else a page row, not the Waiting fold).
-  if (project && (!state.projectCursor || !rows.some((r) => r.item === state.projectCursor)))
-    state.projectCursor = (!page && !list && state.projectLayout === 'inbox'
-      ? rows.find((r) => r.item && r.item !== 'project:switch') || rows.find((r) => r.item)
-      : rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
-  if (controlNav && !addingHarness && !sheet && input.project && !rows.some((r) => r.item && r.item === controlNav.cursor))
-    controlNav.cursor = rows.find((r) => r.item)?.item;
-  if (experiment && !expEdit && !rows.some((r) => r.item && r.item === experiment.cursor))
-    experiment.cursor = rows.find((r) => r.item)?.item;
-  if (expEdit) state.boardRevealed = undefined;
-  const key = addingHarness && state.overlay?.kind === 'control-harness-add' ? state.overlay.pick
-    : sheet ? sheet.cursor : controlNav ? controlNav.cursor : project ? state.projectCursor : inspector ? state.inspectCursor
-    : experiment ? expEdit ? undefined : experiment.cursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
+  const cursor = nav && !hasCursor(nav.cursor) && (project || (!addingHarness && !sheet && input.project))
+    ? (project ? (!page && !list && state.prefs.projectLayout === 'inbox'
+      ? rows.find((r) => r.item && r.item !== 'project:switch') : rows.find((r) => r.item?.startsWith('project:page:')))
+      ?? rows.find((r) => r.item) : rows.find((r) => r.item))?.item : nav?.cursor;
+  const expCursor = experiment && !expEdit && !hasCursor(experiment.cursor) ? rows.find((r) => r.item)?.item : experiment?.cursor;
+  const key = addingHarness ? harnessAdd?.pick : sheet ? sheet.cursor : nav ? cursor : inspector ? inspectCursor
+    : experiment ? expEdit ? undefined : expCursor : item ?? (selected ? targetKey(selected) : '');
   const room = Math.max(0, height - 2 - top);
   const helpStart = helpContent?.anchor ? rows.indexOf(helpContent.anchor) : 0;
   const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(helpStart, rows.length - room);
   const scroll = help
-    ? (state.helpScroll ?? helpStart)
+    ? (help.scroll ?? helpStart)
     : sheet ? chainTop + Number(!!input.publicationNotice && !!anchor)
-    : addingHarness ? 0
-    : sub
-      ? state.scroll[changes ? 'changes' : 'details']
-      : controlNav ? controlNav.scroll : project ? (state.projectScroll ?? 0) : experiment ? experiment.scroll : (state.homeScroll ?? 0);
+    : addingHarness ? 0 : subpage?.scroll ?? nav?.scroll ?? experiment?.scroll ?? state.home.scroll;
   let offset = Math.max(0, Math.min(max, scroll));
   if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
-  if (!help && !changes && !sheet && key && (addingHarness || (controlNav ? controlNav.revealed : state.boardRevealed) !== key) && room) {
+  let revealed = nav ? nav.revealed : inspector ? inspector.revealed : experiment ? experiment.revealed : state.home.revealed;
+  if (!help && !changes && !sheet && key && (addingHarness || revealed !== key) && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
-    if (controlNav) {
-      if (!addingHarness) controlNav.revealed = key;
-    } else state.boardRevealed = key;
+    if (!addingHarness) revealed = key;
   }
   if (help) {
-    state.helpScroll = offset;
+    state = { ...state, help: { scroll: offset } };
     frame.helpPage = { count: room, maxOffset: max };
-  } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
-  else if (controlNav) { if (!addingHarness && !sheet && input.project) controlNav.scroll = offset; }
-  else if (project) state.projectScroll = offset;
-  else if (experiment) experiment.scroll = offset;
-  else state.homeScroll = offset;
+  } else if (inspector) state = { ...state, subpage: { ...inspector, cursor: inspectCursor, scroll: offset, revealed } };
+  else if (changes) state = { ...state, subpage: { ...changes, scroll: offset } };
+  else if (nav && project) state = { ...state, project: { ...state.project, nav: { ...nav, cursor, scroll: offset, revealed } } };
+  else if (nav && !addingHarness && !sheet && input.project) state = { ...state, control: withControlNav({ ...nav, cursor, scroll: offset, revealed }) };
+  else if (experiment) state = { ...state, exp: { ...experiment, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
+  else if (home) state = { ...state, home: { ...state.home, cursor: homeCursor(selected, item), scroll: offset, revealed } };
+  frame.state = state;
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
@@ -388,21 +401,21 @@ export function renderWorkboardFrame(
   }
   const done = doneToday();
   const projectSwitch = frame.projects ? ['[ ] project'] : [];
-  const onTry = (project || home) && rows.some((r) => r.item === (project ? state.projectCursor : state.boardAnchor) && r.tryTarget);
+  const onTry = (project || home) && rows.some((r) => r.item === (project ? cursor : item) && r.tryTarget);
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
     : inspector ? ['⏎ open', 'Esc back']
       : changes ? ['Esc back']
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
-            : sheet ? sheet.hints : controlHints(input.project, controlNav?.cursor)
+            : sheet ? sheet.hints : controlHints(input.project, cursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
-          : page === 'progress' ? (state.projectTry ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
-            : onTry && (state.acceptance !== 'slice' || state.projectLayout === 'board' || state.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
-            : state.acceptance !== 'slice' && state.projectCursor?.startsWith('project:fold:task:') ? ['⏎ details', 'Esc back', 'o file', 't to try']
+          : page === 'progress' ? (progressOnly ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
+            : onTry && (state.prefs.acceptance !== 'slice' || state.prefs.projectLayout === 'board' || state.prefs.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
+            : state.prefs.acceptance !== 'slice' && state.project.nav.cursor?.startsWith('project:fold:task:') ? ['⏎ details', 'Esc back', 'o file', 't to try']
             : ['t to try', '⏎ open', 'Esc back'])
-          : page === 'tickets' && state.acceptance !== 'slice' ? ['⏎ details', 'Esc back', 'o file']
+          : page === 'tickets' && state.prefs.acceptance !== 'slice' ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
-          : onTry && (state.acceptance !== 'slice' || state.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
+          : onTry && (state.prefs.acceptance !== 'slice' || state.prefs.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
           : ['⏎ open', ...projectSwitch])
         : experiment ? expHints(experiment, expEdit) : onTry ? [...TRY_ACTIONS, '⏎ details', 'o file'] : homeKeys(state, source, 'expand');
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);

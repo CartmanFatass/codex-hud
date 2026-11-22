@@ -1,3 +1,5 @@
+import { withState, sliceState } from '../fixtures/state-helpers.mjs';
+import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,11 +14,11 @@ import { renderWorkCard } from '../../dist/render/work-card.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { STATE_BYTES } from '../../dist/collectors/state-ledger.js';
-import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { openEditorPane } from '../../dist/cli/panel-pane.js';
-import { readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/project-frames.json', import.meta.url), 'utf8'));
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-page-'));
@@ -211,20 +213,20 @@ test('arrows/Tab cycle main tabs with independent Project cursor/scroll; the dig
   const f = await fixture(t),
     decoder = new WorkbenchInputDecoder('workboard');
   const send = (frame, raw) => handleMonitorInput(frame.state, decoder.push(Buffer.from(raw))[0], ctx(frame));
-  let frame = f.render(80, 'en', { ...initialMonitorState(), homeScroll: 3 });
+  let frame = f.render(80, 'en', withState(sliceState(), { home: { scroll: 3 } }));
   assert.equal(projectShown(frame.state), false);
   frame = f.render(80, 'en', send(frame, '2').state);
-  assert.equal(frame.state.mainTab, 'home', 'a digit is no tab key');
+  assert.equal(frame.state.activeTab, 'home', 'a digit is no tab key');
   frame = f.render(80, 'en', send(frame, '\x1b[C').state);
-  assert.equal(frame.state.mainTab, 'project');
+  assert.equal(frame.state.activeTab, 'project');
   assert.equal(projectShown(frame.state), true);
-  frame.state.projectCursor = 'project:page:docs';
+  frame.state.project.nav.cursor = 'project:page:docs';
   for (const [raw, order] of [['\x1b[D', ['home', 'control', 'project']], ['\x1b[C', ['control', 'home', 'project']], ['\t', ['control', 'home', 'project']], ['\x1b[Z', ['home', 'control', 'project']]]) {
     for (const tab of order) {
       frame = f.render(80, 'en', send(frame, raw).state);
-      assert.equal(frame.state.mainTab, tab);
+      assert.equal(frame.state.activeTab, tab);
     }
-    assert.equal(frame.state.projectCursor, 'project:page:docs');
+    assert.equal(frame.state.project.nav.cursor, 'project:page:docs');
   }
   const homeControl = frame.controls.find((c) => c.kind === 'board-home');
   frame = f.render(
@@ -232,18 +234,18 @@ test('arrows/Tab cycle main tabs with independent Project cursor/scroll; the dig
     'en',
     handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: homeControl.x, y: 0 }, ctx(frame)).state
   );
-  assert.equal(frame.state.mainTab, 'home');
+  assert.equal(frame.state.activeTab, 'home');
   const control = frame.controls.find((c) => c.kind === 'board-project');
   frame = f.render(
     80,
     'en',
     handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x, y: 0 }, ctx(frame)).state
   );
-  assert.equal(frame.state.mainTab, 'project');
+  assert.equal(frame.state.activeTab, 'project');
   frame = f.render(80, 'en', send(frame, '3').state);
-  assert.equal(frame.state.focus, 'agents', 'a digit opens no page');
+  assert.equal(frame.state.subpage, undefined, 'a digit opens no page');
   frame = f.render(80, 'en', send(frame, 'f').state);
-  assert.equal(frame.state.focus, 'changes');
+  assert.equal(frame.state.subpage?.kind, 'changes');
   assert.equal(projectShown(frame.state), false);
 });
 
@@ -323,13 +325,13 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
   });
   assert.ok(found.length > 20);
   for (const { frame, row } of found) {
-    if (frame.state.mainTab === 'control') frame.state.control.roles.nav.cursor = row.item;
-    else frame.state.projectCursor = row.item;
+    if (frame.state.activeTab === 'control') frame.state.control.roles.nav.cursor = row.item;
+    else frame.state.project.nav.cursor = row.item;
     for (const key of /^project:(wait:|try$|role:[^:]+$)/.test(row.item) ? ['open-session'] : ['enter', 'open-session'])
       assert.deepEqual(press(frame, key).action, { type: 'open-files', files: row.files });
   }
   const { frame, row: file } = found.find(({ row }) => row.files[0] === join(f.sliceJob, 'report.md'));
-  frame.state.projectCursor = file.item;
+  frame.state.project.nav.cursor = file.item;
   await openEditorPane(press(frame, 'enter').action.files, env);
   assert.deepEqual(calls(), [
     ['pane', 'get', 'w4E:p2'],
@@ -391,13 +393,13 @@ test('Home and overlays collect nothing; warm Project uses signatures and git wa
     syncBuiltinESMExports();
   });
   for (const state of [
-    initialMonitorState(),
-    { mainTab: 'project', focus: 'details', help: false },
-    { mainTab: 'project', focus: 'agents', help: true },
+    sliceState(),
+    { activeTab: 'project', subpage: { kind: 'inspector', target: { kind: 'lane', laneId: 'synthetic' }, scroll: 0 }, help: undefined },
+    { activeTab: 'project', subpage: undefined, help: {} },
   ]) {
     assert.equal(await f.collector.collect(projectShown(state), f.board, NOW + 1), undefined);
   }
-  assert.equal(projectShown({ mainTab: 'project', focus: 'agents', help: false }, true), false);
+  assert.equal(projectShown({ activeTab: 'project', subpage: undefined, help: undefined }, true), false);
   assert.deepEqual(calls, { readSync: 0, lstatSync: 0, opendirSync: 0 });
   fs.renameSync(join(f.cwd, '.git'), join(f.cwd, '.git-hidden'));
   const warm = await f.collector.collect(true, f.board, NOW + 4999);
@@ -428,49 +430,49 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   let frame = f.render(80);
   assert.match(plain(frame).join('\n'), /^demo-project ─/m);
   assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
-  assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
+  assert.equal(frame.state.project.nav.cursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /^Progress +1 to try · 1 working$/m);
   assert.doesNotMatch(plain(frame).join('\n'), /^Control plane /m);
-  frame.state.projectCursor = 'project:fold:waiting';
+  frame.state.project.nav.cursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ Waiting for you/);
   assert.doesNotMatch(plain(frame).join('\n'), /Try the Project tab/);
   frame = f.render(80, 'en', press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   // Down visits each entry once: the Progress bar row below its entry does not trap the cursor.
-  frame.state.projectCursor = 'project:page:progress';
+  frame.state.project.nav.cursor = 'project:page:progress';
   const visited = [];
   for (let i = 0; i < 4; i++) {
     frame = f.render(80, 'en', press(frame, 'down').state);
-    visited.push(frame.state.projectCursor);
+    visited.push(frame.state.project.nav.cursor);
   }
   assert.deepEqual(visited, ['tree', 'docs', 'docs', 'docs'].map((p) => `project:page:${p}`));
   for (const page of ['progress', 'tree', 'docs']) {
-    frame.state.projectCursor = `project:page:${page}`;
+    frame.state.project.nav.cursor = `project:page:${page}`;
     frame = f.render(80, 'en', press(frame, 'enter').state);
-    assert.equal(frame.state.projectPage, page);
+    assert.equal(projectPageOf(frame.state), page);
     assert.equal(projectShown(frame.state), true, 'a page is Project: collection runs');
     assert.match(frame.lines[0] && stripAnsi(frame.lines[0]), /^‹ Project › /);
     const crumb = frame.controls.find((c) => c.kind === 'board-back');
     assert.deepEqual([crumb.x, crumb.y, crumb.width], [0, 0, 80], 'the whole crumb row goes back');
     frame = f.render(80, 'en', press(frame, 'escape').state);
-    assert.equal(frame.state.projectPage, undefined);
-    assert.equal(frame.state.projectCursor, `project:page:${page}`);
+    assert.equal(projectPageOf(frame.state), undefined);
+    assert.equal(frame.state.project.nav.cursor, `project:page:${page}`);
     assert.match(stripAnsi(frame.lines[0]), /^ Home \?1  Project \?2/);
     frame = f.render(80, 'en', press(frame, 'enter').state);
     frame = f.render(80, 'en', click(frame, 33, 0).state);
-    assert.equal(frame.state.projectPage, undefined, 'a click anywhere on the crumb returns');
-    assert.equal(frame.state.mainTab, 'project', 'to the hub, not to Home');
+    assert.equal(projectPageOf(frame.state), undefined, 'a click anywhere on the crumb returns');
+    assert.equal(frame.state.activeTab, 'project', 'to the hub, not to Home');
   }
   // Esc on the hub is not consumed: the panel decides what it means there.
-  assert.equal(press(frame, 'escape').state.projectPage, undefined);
-  assert.equal(press(frame, 'escape').state.mainTab, 'project');
+  assert.equal(projectPageOf(press(frame, 'escape').state), undefined);
+  assert.equal(press(frame, 'escape').state.activeTab, 'project');
   // One click opens a hub entry, the Progress bar included; no editor or execution action.
   for (const [page, at] of [['docs', 'project:page:docs'], ['progress', 'project:page:progress']]) {
     const rows = frame.workboard.rows, index = rows.findIndex((r) => r.item === at) + (page === 'progress' ? 1 : 0);
     const result = click(frame, 10, index + 1);
-    assert.equal(result.state.projectPage, page);
+    assert.equal(projectPageOf(result.state), page);
     assert.equal(result.action, undefined);
   }
 });
@@ -522,7 +524,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
   assert.match(quiet, /^Docs /m);
   // The shortest panel scrolls: the cursor goes down to the last page row and the view follows it.
   let frame = hub(40, 8);
-  frame.state.projectCursor = 'project:page:docs';
+  frame.state.project.nav.cursor = 'project:page:docs';
   frame = f.render(40, 'en', frame.state, 8, f.rich);
   assert.match(plain(frame).join('\n'), /^Docs /m);
 });
@@ -531,31 +533,31 @@ test('Each Project page keeps its own cursor and scroll, leaving it and across a
   let frame = f.render(80, 'en', onPage('progress'), height, f.rich);
   const draw = (state) => f.render(80, 'en', state, height, f.rich);
   for (let i = 0; i < 12; i++) frame = draw(press(frame, 'down').state);
-  const { projectCursor: cursor, projectScroll: scroll } = frame.state;
+  const { project: { nav: { cursor, scroll } } } = frame.state;
   assert.ok(scroll > 0 && cursor.startsWith('project:') && !cursor.startsWith('project:page:'), 'a short panel scrolls the page with the cursor');
   const before = plain(frame);
   frame = draw(press(frame, 'escape').state);
-  assert.equal(frame.state.projectCursor, 'project:page:progress');
-  frame.state.projectCursor = 'project:page:docs';
+  assert.equal(frame.state.project.nav.cursor, 'project:page:progress');
+  frame.state.project.nav.cursor = 'project:page:docs';
   frame = draw(press(frame, 'enter').state);
   frame = draw(press(frame, 'down').state);
-  assert.equal(frame.state.projectCursor.endsWith(':1'), true, 'Docs has its own cursor');
+  assert.equal(frame.state.project.nav.cursor.endsWith(':1'), true, 'Docs has its own cursor');
   frame = draw(press(frame, 'escape').state);
-  frame.state.projectCursor = 'project:page:progress';
+  frame.state.project.nav.cursor = 'project:page:progress';
   frame = draw(press(frame, 'enter').state);
-  assert.deepEqual([frame.state.projectCursor, frame.state.projectScroll], [cursor, scroll]);
+  assert.deepEqual([frame.state.project.nav.cursor, frame.state.project.nav.scroll], [cursor, scroll]);
   assert.deepEqual(plain(frame), before);
   // The panel restarts itself with the whole state, sets included.
-  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: frame.state }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
+  process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: frame.state, settings: null });
   const place = readPanelPlace();
-  assert.equal(place.state.projectPage, 'progress');
+  assert.equal(projectPageOf(place.state), 'progress');
   frame = draw(place.state);
-  assert.deepEqual([frame.state.projectCursor, frame.state.projectScroll], [cursor, scroll]);
+  assert.deepEqual([frame.state.project.nav.cursor, frame.state.project.nav.scroll], [cursor, scroll]);
   assert.deepEqual(plain(frame), before);
   // Esc, then the same page again from the hub, still finds its place; so does a reload on the hub.
   frame = f.render(80, 'en', press(frame, 'escape').state, height);
-  assert.equal(frame.state.projectPage, undefined);
-  assert.equal(frame.state.projectSaved.progress.cursor, cursor);
+  assert.equal(projectPageOf(frame.state), undefined);
+  assert.equal(frame.state.project.savedPages.progress.cursor, cursor);
 });
 test('polish: Next text aligns without filename tails and slice states use the bar colours', async (t) => {
   const f = await fixture(t);
@@ -566,7 +568,7 @@ test('polish: Next text aligns without filename tails and slice states use the b
       assert.equal(short.workboard.rows.filter((r) => /:next:\d+$/.test(r.item ?? '')).length, 2);
       const more = short.workboard.rows.find((r) => r.item === 'project:fold:next');
       assert.match(stripAnsi(more.text).trimEnd(), lang === 'en' ? /^ {2}▸ 3 more$/ : /^ {2}▸ 还有 3 项$/);
-      short.state.projectCursor = 'project:fold:next';
+      short.state.project.nav.cursor = 'project:fold:next';
       const frame = f.render(width, lang, press(short, 'enter').state),
         next = frame.workboard.rows.filter((r) => /:next:\d+$/.test(r.item ?? ''));
       assert.match(stripAnsi(frame.workboard.rows.find((r) => r.item === 'project:fold:next').text).trimEnd(), lang === 'en' ? /^ {2}▾ fewer$/ : /^ {2}▾ 收起$/);
@@ -578,7 +580,7 @@ test('polish: Next text aligns without filename tails and slice states use the b
         assert.equal(text.indexOf(f.data.next[i].value), 4);
         assert.match(text, /^  → /);
         assert.doesNotMatch(text, /STATE\.md/);
-        frame.state.projectCursor = row.item;
+        frame.state.project.nav.cursor = row.item;
         for (const key of ['enter', 'open-session'])
           assert.deepEqual(press(frame, key).action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
       }
@@ -650,7 +652,7 @@ test('drift distinguishes a missing worktree, an unlisted tree and a landed tree
 test('slice lines use the same Home worker fact/model and keep hidden jobs available; files fall back to STATE', async (t) => {
   const f = await fixture(t),
     worker = f.board.workers.find((w) => w.evidence[0]?.sourceId === 'j0000000000000002');
-  const home = renderWorkCard(projectWorkCard(worker, NOW), initialMonitorState(), 120).map(stripAnsi).join('\n');
+  const home = renderWorkCard(projectWorkCard(worker, NOW), sliceState(), 120).map(stripAnsi).join('\n');
   assert.match(home, /Question: Which synthetic option\?/);
   assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /now: Question: Which synthetic option\?/);
   worker.modelSentence = 'Building «synthetic agents» in the Home lane.';
@@ -682,7 +684,7 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.cwd, 'docs/handoff/STATE.md'));
   const frame = f.render(120, 'en', 'progress', 56, data);
   for (const suffix of ['summary', 'bar', 'slice:0']) {
-    frame.state.projectCursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
+    frame.state.project.nav.cursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
     assert.deepEqual(press(frame, 'enter').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
   }
 });

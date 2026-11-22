@@ -1,3 +1,5 @@
+import { withState } from '../fixtures/state-helpers.mjs';
+import { homeTarget } from '../../dist/render/monitor-state.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, existsSync } from 'node:fs';
@@ -115,12 +117,9 @@ function fixture(t) {
 }
 const plain = (frame) => frame.lines.map(stripAnsi);
 // Everything starts collapsed; this is the state of a panel where every card was expanded with Enter.
-const expandAll = (board, from = initialMonitorState()) => ({
-  ...from,
-  boardExpanded: new Set([
+const expandAll = (board, from = initialMonitorState()) => (withState(from, { home: { expanded: new Set([
     ...board.workers.map((w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id })),
-  ]),
-});
+  ]) } }));
 const joined = (frame) =>
   plain(frame)
     .map((l) => l.replace(/^[┃|]\s?/, '').trim())
@@ -233,7 +232,7 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
   const open = (id, key = 'open-session') => {
     const worker = board.workers.find((w) => w.id === 'thin-job:j' + String(id).padStart(16, '0'));
     const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-    const state = { ...frame.state, homeTarget: target };
+    const state = withState(frame.state, { home: { cursor: { kind: 'work', target: target } } });
     return handleMonitorInput(state, { type: 'key', key }, { tree: f.tree, frame });
   };
   const jobs = join(f.env.HUD_HOME, 'jobs', 'j');
@@ -268,7 +267,7 @@ test('Home Enter toggles cards and lanes; navigation opens Project; a reveals ol
       [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from(bytes));
     return handleMonitorInput(frame.state, input, { tree: f.tree, frame, nowMs: now }).state;
   };
-  const at = (target) => ({ ...initialMonitorState(), mainTab: 'home', homeTarget: target });
+  const at = (target) => (withState(initialMonitorState(), { activeTab: 'home', home: { cursor: { kind: 'work', target: target } } }));
   const card = at({ kind: 'worker', laneId: w.laneId, workerId: w.id });
   assert.doesNotMatch(text(card), /cannot be finished/);
   assert.match(text(press(card, '\r')), /cannot be finished/);
@@ -279,12 +278,12 @@ test('Home Enter toggles cards and lanes; navigation opens Project; a reveals ol
   assert.match(text(press(folded, '\r')), /thin job cards/);
   const before = rendered(card).state;
   for (const [key, tab] of [['\x1b[D', 'control'], ['\x1b[C', 'project'], ['\t', 'project'], ['\x1b[Z', 'control']]) {
-    assert.equal(press(before, key).mainTab, tab);
-    assert.deepEqual(press(before, key).homeTarget, before.homeTarget);
+    assert.equal(press(before, key).activeTab, tab);
+    assert.deepEqual(homeTarget(press(before, key).home), homeTarget(before.home));
   }
-  for (const digit of ['1', '2']) assert.equal(press(before, digit).mainTab, 'home', 'the digits switch no tab');
-  assert.equal(press(before, 'n').mainTab, 'home');
-  assert.equal(press(before, 'N').mainTab, 'home');
+  for (const digit of ['1', '2']) assert.equal(press(before, digit).activeTab, 'home', 'the digits switch no tab');
+  assert.equal(press(before, 'n').activeTab, 'home');
+  assert.equal(press(before, 'N').activeTab, 'home');
   assert.doesNotMatch(text(before), /imp q0/);
   assert.doesNotMatch(text(press(before, 'a')), /imp q0|Older choice/);
   assert.match(text(press(before, 'a')), /Folded old success/);
@@ -320,9 +319,9 @@ test('Home expiry thresholds and show-all use the real render/input path', async
     assert.equal(rows.length, 1, 'old items start as one row');
     assert.doesNotMatch(stripAnsi(rows[0].text), /older/);
     assert.match(plain(shown).join('\n'), /\d+ older shown · a hide/);
-    const state = { ...shown.state, homeTarget: target };
+    const state = withState(shown.state, { home: { cursor: { kind: 'work', target: target } } });
     const expanded = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: shown }).state;
-    assert.ok(expanded.boardExpanded.has(targetKey(target)));
+    assert.ok(expanded.home.expanded.has(targetKey(target)));
     if (item !== worker(6))
       assert.ok(draw(edge, expanded).workboard.rows.filter((r) => r.item === targetKey(target)).length > 1, item.id);
     assert.ok(!has(draw(edge, toggle(shown))), `${kind} hidden again by a`);
@@ -410,13 +409,13 @@ test('Home → thin-job Inspector → Changes preserves summary mouse controls w
   const board = f.pipeline.workboard(f.tree);
   const worker = board.workers[0];
   const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  let frame = f.render(board, 24, 56, { ...initialMonitorState(), homeTarget: target });
+  let frame = f.render(board, 24, 56, withState(initialMonitorState(), { home: { cursor: { kind: 'work', target: target } } }));
   const act = (input) => handleMonitorInput(frame.state, input, { tree: f.tree, frame, nowMs: now }).state;
   const inspecting = act({ type: 'key', key: 'inspect' });
-  assert.ok(inspecting.boardInspect, 'exercise the thin-job Inspector, not a native agent');
+  assert.ok(inspecting.subpage?.target, 'exercise the thin-job Inspector, not a native agent');
   frame = f.render(board, 24, 56, inspecting);
   const changes = act({ type: 'key', key: 'changes' });
-  assert.equal(changes.boardInspect, undefined);
+  assert.equal(changes.subpage?.target, undefined);
   const worktrees = {
     sourcePath: '/synthetic/w0',
     updatedAt: now,
@@ -433,11 +432,11 @@ test('Home → thin-job Inspector → Changes preserves summary mouse controls w
   frame = render(changes);
   assert.ok(frame.workboard, 'keep the production sidecar on every subsequent frame');
   const pane = frame.panes.find((p) => p.id === 'changes');
-  assert.ok(act({ type: 'mouse', button: 'wheel-down', x: pane.x + 1, y: pane.y + 1 }).scroll.changes > 0);
+  assert.ok(act({ type: 'mouse', button: 'wheel-down', x: pane.x + 1, y: pane.y + 1 }).subpage.scroll > 0);
   const title = frame.controls.find((c) => c.kind === 'board-back');
-  assert.equal(act({ type: 'mouse', button: 'left', x: title.x, y: title.y }).focus, 'agents');
+  assert.equal(act({ type: 'mouse', button: 'left', x: title.x, y: title.y }).subpage, undefined);
   frame = render(act({ type: 'key', key: 'escape' }));
-  assert.equal(frame.state.focus, 'agents');
+  assert.equal(frame.state.subpage, undefined);
 });
 
 test('statusline notices and explicit detail counts read job folders with no role-summary cache', (t) => {

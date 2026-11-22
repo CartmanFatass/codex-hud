@@ -1,20 +1,19 @@
 /** Pure Home, Project and retained passive pages. No legacy Agents layout. */
 import type { HudData, SubagentTree } from '../types.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
-import type { HudSettings } from '../settings.js';
-import { initialPanelState, type PanelState } from './panel-state.js';
+import { DEFAULT_PANEL_VIEW, type HudSettings } from '../settings.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
-import type { ProjectPage } from './project-view.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import { copyControlTab, initialControlTab, type ControlTabState, type ExpTabState, type OverlayState } from './monitor-state.js';
+import { initialHomeTab, initialProjectTab, initialControlTab, viewPrefs, reconcileMonitor, type MonitorModes, type MonitorState } from './monitor-state.js';
+export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
-import { mainTabOf, type MainTab } from './main-tabs.js';
+import type { MainTab } from './main-tabs.js';
 import type { ExpData, ExpEdit } from '../exp-config.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
@@ -41,78 +40,8 @@ export {
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
 export { monitorRowAt, monitorItemAt, handleMonitorInput } from './monitor-input.js';
 
-// `agents` is the internal Home viewport id, not a separate pane or tab.
-export const MONITOR_PANES = ['agents', 'changes', 'details'] as const;
-export type MonitorPane = (typeof MONITOR_PANES)[number];
-export type PaneMode = 'open' | 'closed';
-export type MonitorModes = Record<MonitorPane, PaneMode>;
-export interface MonitorState {
-  mainTab?: MainTab;
-  experiments?: boolean;
-  exp: ExpTabState;
-  control: ControlTabState;
-  overlay?: OverlayState;
-  /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
-  projectPage?: ProjectPage;
-  /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
-  projectRoot?: string;
-  /** The Projects list is open (with several projects) instead of the hub; its cursor is `projectCursor`. */
-  projectList?: boolean;
-  /** The hub was opened from the Projects list, so Esc on it goes back there. */
-  projectBack?: boolean;
-  projectCursor?: string;
-  projectScroll?: number;
-  /** The waiting item (its index in STATE's list) the `waiting` page shows. */
-  projectWait?: number;
-  /** Progress shows only the slices in state `try`; where the full feed's cursor and scroll were, so clearing it lands there. */
-  projectTry?: { cursor?: string; scroll: number };
-  /** Space-marked rows in the current to-try view, before recording a decision. */
-  trySelection?: ReadonlyMap<string, TryTarget>;
-  /** Where each page the owner left was, so opening it again finds the same row and scroll. */
-  projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
-  projectFolded?: ReadonlySet<string>;
-  homeTarget?: WorkTarget;
-  homeScroll?: number;
-  boardExpanded?: ReadonlySet<string>;
-  boardToggled?: ReadonlySet<string>;
-  boardNewest?: string;
-  boardFolded?: ReadonlySet<string>;
-  boardRevealed?: string;
-  boardAnchor?: string;
-  boardInspect?: WorkTarget;
-  inspectCursor?: string;
-  tree: PanelState;
-  focus: MonitorPane;
-  modes: MonitorModes;
-  scroll: Record<Exclude<MonitorPane, 'agents'>, number>;
-  help: boolean;
-  helpScroll?: number;
-  cardStallMinutes?: number;
-  /** A settled card folds to one row after this, and leaves Home after the hide time (Settings). */
-  cardFoldMinutes?: number;
-  cardHideMinutes?: number;
-  /** Settings → Panel → Layout; unset is Classic. */
-  panelLayout?: HudSettings['panelLayout'];
-  /** Settings → Panel → Project layout; unset is Timeline. */
-  projectLayout?: HudSettings['projectLayout'];
-  /** Settings → Panel → Acceptance; unset groups by task. */
-  acceptance?: HudSettings['acceptance'];
-  /** Split: the list's cursor (an item id), the preview's cursor while the keys are in the preview, and the preview's scroll. */
-  splitCursor?: string;
-  splitFocus?: 'preview';
-  splitSub?: string;
-  /** Where the list's cursor was while the keys are in the preview (Project has one acting cursor, `projectCursor`). */
-  splitList?: string;
-  splitScroll?: number;
-  splitListScroll?: number;
-  /** The list's share of the list-and-preview rows, set with `=` `+` `-`; unset, the list is as tall as it needs. Kept across the panel's reload. */
-  splitRatio?: number;
-  /** The `/` filter (`filter.ts`): what is typed, and whether keys still go to it. Cleared on leaving the view; kept across the panel's reload. */
-  filterQuery?: string;
-  filterOpen?: boolean;
-  /** What the preview's scroll belongs to; another page or cursor row starts it at the top. */
-  splitFor?: string;
-}
+// `agents` is the internal main viewport id, not a separate pane or tab.
+export type MonitorPane = keyof MonitorModes;
 export interface RowControl {
   kind: MonitorControl['kind'];
   item?: string;
@@ -188,6 +117,7 @@ export interface MonitorFrame {
   lines: string[];
   panes: MonitorRect[];
   controls: MonitorControl[];
+  /** Cursor/scroll reconciliation for these rows; the supplied state is not changed. */
   state: MonitorState;
   /** Set when there is more than one project to switch between: the panel's own first. */
   projects?: ProjectChoice[];
@@ -251,40 +181,18 @@ export interface MonitorOutcome {
     /** `w` on Home or Project: the panel writes the shown project's HTML review board and opens it. */
     | { type: 'export-board' };
 }
-export function initialMonitorState(): MonitorState {
-  return {
-    mainTab: 'home',
-    control: initialControlTab(),
-    exp: { scroll: 0 },
-    tree: initialPanelState(),
-    focus: 'agents',
-    modes: { agents: 'open', changes: 'closed', details: 'closed' },
-    scroll: { changes: 0, details: 0 },
-    help: false,
-    helpScroll: 0,
-  };
+export function initialMonitorState(settings?: HudSettings): MonitorState {
+  return { activeTab: 'home', home: initialHomeTab(), project: initialProjectTab(), control: initialControlTab(),
+    exp: { scroll: 0 }, prefs: settings ? viewPrefs(settings) : { ...DEFAULT_PANEL_VIEW }, modes: monitorModes(settings), lastChangesScroll: 0 };
 }
-export function monitorModes(settings: HudSettings): MonitorModes {
-  return { agents: 'open', changes: settings.changesPane, details: settings.detailsPane };
-}
-export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
-  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout, projectLayout: settings.projectLayout, acceptance: settings.acceptance, experiments: settings.experiments };
+export function monitorModes(settings?: HudSettings): MonitorModes {
+  return { agents: 'open', changes: settings?.changesPane ?? 'closed', details: settings?.detailsPane ?? 'closed' };
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return { changesPane: state.modes.changes, detailsPane: state.modes.details };
 }
-export function reconcileMonitor(
-  state: MonitorState,
-  _tree: SubagentTree,
-  _nowMs?: number
-): MonitorState {
-  return { ...state, mainTab: mainTabOf(state), control: copyControlTab(state.control),
-    exp: state.experiments ? { ...state.exp } : { scroll: 0 },
-    overlay: !state.experiments && state.overlay?.kind === 'exp-edit' ? undefined : state.overlay,
-    tree: { ...state.tree }, scroll: { ...state.scroll }, modes: { ...state.modes } };
-}
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();
   const board = input.workboard ?? buildWorkboard(input.tree);
-  return renderWorkboardFrame(input, reconcileMonitor(input.state, input.tree), board, now);
+  return renderWorkboardFrame(input, reconcileMonitor(input.state), board, now);
 }

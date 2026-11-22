@@ -37,7 +37,7 @@ test('empty draft cancel writes nothing; a reordered two-place draft is the chai
   const before = fs.readFileSync(file), inode = fs.statSync(file).ino;
   const collector = new ProjectCollector(f.root, home, f.env, f.env.HOME), data = await collector.collect('control', {}, now);
   const decoder = new WorkbenchInputDecoder('workboard');
-  let state = onControl({ cursor: 'project:role:imp' }, { panelLayout: 'split' });
+  let state = onControl({ cursor: 'project:role:imp' }, { prefs: { panelLayout: 'split' } });
   const frame = () => renderMonitor({ state, tree: TREE, project: data, projectName: 'harbor-api', width: 40, height: 28, nowMs: now });
   const keys = (raw) => {
     for (const input of [...decoder.push(Buffer.from(raw)), ...decoder.flushEscape()]) {
@@ -123,7 +123,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   const snapshot = await new ProjectCollector(f.root, home, f.env, f.env.HOME).collect('control', {}, Date.now());
   const role = snapshot.roles.find((r) => r.role === 'imp');
   assert.deepEqual(role.places.map((p) => p.state), assigned.places.map((p) => p.state));
-  const state = onControl({ cursor: 'project:role:imp' }, { panelLayout: 'split' });
+  const state = onControl({ cursor: 'project:role:imp' }, { prefs: { panelLayout: 'split' } });
   const panel = plain(renderMonitor({ state, tree: TREE, project: snapshot, projectName: 'harbor-api', width: 40, height: 38 }));
   assert.match(panel.join('\n'), /imp \[daily\] → agy/);
   assert.match(panel.join('\n'), /1 ⊘ pi\/xai +\[grok-4.7 ▾\][\s\S]*off · pi:xai/);

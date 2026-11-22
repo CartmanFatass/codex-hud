@@ -1,12 +1,13 @@
 /** Main-tab routing. It mutates nothing: the owner's micro-actions on a job leave as actions (`job-actions.ts`) for the panel to run. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
-import { copyControlTab, controlRoleItem, controlRoleOf, harnessFold, initialControlView, type OverlayState } from './monitor-state.js';
+import { closeSubpage, copyControlTab, controlRoleItem, controlRoleOf, harnessFold, homeAnchor, homeCursor, homeTarget,
+  onlyTry, openSubpage, switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { cardExpanded } from './work-card.js';
-import { projectFoldedSet, projectPageOf, projectListOpen, type ProjectPage } from './project-view.js';
+import { projectPageOf, projectListOpen } from './project-view.js';
 import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
 import { splitHomeInput, splitProjectInput } from './split-input.js';
@@ -53,100 +54,54 @@ export function harnessAddInput(state: MonitorState, add: Extract<OverlayState, 
 }
 
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
-  let next = { ...state, control: copyControlTab(state.control), tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
+  // Only the routed tab's navigation is edited. Transitions replace other branches as needed.
+  let next: MonitorState = { ...state };
+  switch (state.activeTab) {
+    case 'home': next.home = { ...state.home, split: { ...state.home.split } }; break;
+    case 'project': next.project = { ...state.project, nav: { ...state.project.nav, split: { ...state.project.nav.split } } }; break;
+    case 'control': next.control = copyControlTab(state.control); break;
+    case 'exp': break;
+  }
   const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
   const frame = ctx.frame,
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
   const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
-  const main = next.focus === 'agents', classic = next.panelLayout !== 'split';
-  const inspector = next.focus === 'details';
-  const goTab = (tab: MainTab = 'home') => {
-    next.control.notice = undefined;
-    const keepingProject = next.mainTab === 'control' || tab === 'control';
-    next.mainTab = tab;
-    if (tab === 'home' || next.trySelection && state.mainTab === 'home') next.trySelection = undefined;
-    next.focus = 'agents';
-    next.modes.agents = 'open';
-    next.boardInspect = undefined;
-    if (!keepingProject) {
-      next.boardRevealed = undefined;
-      next.boardAnchor = undefined;
-      next.projectList = undefined;
-      next.projectBack = undefined;
-    }
+  const main = !next.subpage, classic = next.prefs.panelLayout !== 'split';
+  const inspector = next.subpage?.kind === 'inspector' ? next.subpage : undefined;
+  const goTab = (tab: MainTab = 'home') => { next = transitionTab(next, tab); };
+  const goProject = (page?: ProjectSubPage, cursor?: string) => {
+    next = transitionProjectView(next, page ? { kind: page } : { kind: 'hub' }, { cursor });
   };
-  // Opening a page keeps where it was left; closing it lands the hub's cursor on that page's row.
-  const goProject = (page?: ProjectPage, cursor?: string) => {
-    const from = projectPageOf(next), saved = { ...next.projectSaved };
-    const full = (classic ? next.projectTry : undefined) ?? { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
-    if (from) saved[from] = full;
-    next.trySelection = undefined;
-    next.projectTry = undefined;
-    const kept = page && !cursor ? saved[page] : undefined;
-    next.projectSaved = saved;
-    next.projectPage = page;
-    next.projectCursor = page ? cursor ?? kept?.cursor : from && (from === 'waiting' ? `project:wait:${next.projectWait}` : `project:page:${from}`);
-    next.projectScroll = kept?.scroll ?? 0;
-    next.boardRevealed = kept?.cursor;
-  };
-  // Progress's to-try filter: on, it keeps where the full feed was; off (the same key, Enter on its header or Esc), the feed is back there.
+  // Progress's to-try filter keeps the full feed's place until it is turned off.
   const tryOnly = () => {
-    const full = next.projectTry;
-    next.trySelection = undefined;
-    next.projectTry = full ? undefined : { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
-    next.projectCursor = full ? full.cursor : 'project:try';
-    next.projectScroll = full?.scroll ?? 0;
-    next.boardRevealed = full?.cursor;
+    const { view, nav } = next.project;
+    if (view.kind !== 'progress') return;
+    const full = view.onlyTry;
+    next.project = { ...next.project, trySelection: undefined,
+      view: { kind: 'progress', onlyTry: full ? undefined : { cursor: nav.cursor, scroll: nav.scroll } },
+      nav: { ...nav, cursor: full ? full.cursor : 'project:try', scroll: full?.scroll ?? 0, revealed: full?.cursor } };
   };
-  // A waiting item's whole text; closing the page puts the cursor back on the item's row.
-  const readWait = (i: number) => {
-    next.projectWait = i;
-    goProject('waiting', `project:wait:${i}:0`);
+  const readWait = (index: number) => {
+    next = transitionProjectView(next, { kind: 'waiting', index }, { cursor: `project:wait:${index}:0` });
   };
-  // Another project for the tab: its pages start fresh (cursor, scroll, folds), the open page stays open.
-  const useProject = (root?: string) => {
-    if (root === next.projectRoot) return;
-    next.projectRoot = root;
-    next.control.notice = undefined;
-    next.control.roles = initialControlView('roles');
-    next.trySelection = undefined;
-    // Esc goes back to the list only from a hub opened out of it, not from one stepped to with `[` and `]`.
-    next.projectBack = undefined;
-    next.projectSaved = {};
-    next.projectTry = undefined;
-    // Resting on the name row, `[` and `]` keep it there.
-    if (next.projectCursor !== 'project:switch') next.projectCursor = undefined;
-    next.projectScroll = 0;
-    next.projectFolded = undefined;
-    next.boardRevealed = undefined;
-  };
+  const useProject = (root?: string) => { next = switchProject(next, root); };
   const cycleProject = (step: number) => {
     const list = frame?.projects;
     if (!list) return;
-    const at = Math.max(0, list.findIndex((p) => p.root === next.projectRoot)), to = list[(at + step + list.length) % list.length];
+    const at = Math.max(0, list.findIndex((p) => p.root === next.selectedProject)), to = list[(at + step + list.length) % list.length];
     useProject(to === list[0] ? undefined : to.root);
   };
   // The Projects list sits above the hubs: the name row opens it, a click on its entry opens that project's hub.
   const listed = projectListOpen(next, frame?.projects);
   const showList = (on: boolean) => {
-    const root = next.projectRoot ?? frame?.projects?.[0].root;
-    next.projectList = on || undefined;
-    next.trySelection = undefined;
-    next.projectBack = undefined;
-    next.projectCursor = on ? `project:list:${root}` : 'project:switch';
-    next.projectScroll = 0;
-    next.boardRevealed = undefined;
+    const root = next.selectedProject ?? frame?.projects?.[0].root;
+    next = transitionProjectView(next, { kind: on ? 'projects-list' : 'hub' }, {
+      cursor: on ? `project:list:${root}` : 'project:switch', fromProjectsList: false });
   };
   const openProject = (root: string) => {
     useProject(root === frame?.projects?.[0].root ? undefined : root);
-    next.projectList = undefined;
-    // Esc on a hub reached from the list goes back to it; on any other hub it does what it always did.
-    next.projectBack = true;
-    next.projectPage = undefined;
-    next.projectCursor = undefined;
-    next.projectScroll = 0;
-    next.boardRevealed = undefined;
+    next = transitionProjectView(next, { kind: 'hub' }, { fromProjectsList: true });
   };
   const back =
     input.type === 'mouse' &&
@@ -154,26 +109,26 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     frame?.controls.some(
       (c) => c.kind === 'board-back' && c.y === input.y && input.x >= c.x && input.x < c.x + c.width
     );
-  if (back && main && next.mainTab === 'project' && (projectPageOf(next) || listed)) {
+  if (back && main && next.activeTab === 'project' && (projectPageOf(next) || listed)) {
     if (listed) showList(false);
     else goProject();
     return result();
   }
-  if (back || (key === 'escape' && next.focus === 'changes')) {
+  if (back || (key === 'escape' && next.subpage?.kind === 'changes')) {
     goTab();
     return result();
   }
   // `g`, `r` and `X` on a HUD job, on Home (either layout) and in the Inspector; before the keys that move the cursor take `g` for Home.
-  const job = (main && next.mainTab === 'home') || (inspector && next.boardInspect) ? openJobAction(next, input, key, boardFrame.snapshot, result) : undefined;
+  const job = (main && next.activeTab === 'home') || inspector ? openJobAction(next, input, key, boardFrame.snapshot, result) : undefined;
   if (job) return job;
-  if (inspector && next.boardInspect) {
+  if (inspector) {
     const rows = boardFrame.rows.filter((r) => r.files?.length),
-      at = rows.findIndex((r) => r.item === next.inspectCursor);
+      at = rows.findIndex((r) => r.item === inspector.cursor);
     if (input.type === 'mouse' && input.button === 'left') {
       const pane = frame?.panes.find((p) => p.id === 'details'),
         row = pane && monitorRowAt(pane, input.x, input.y);
       if (row?.files?.length) {
-        next.inspectCursor = row.item;
+        next.subpage = { ...inspector, cursor: row.item };
         return result({ type: 'open-files', files: row.files });
       }
     }
@@ -181,9 +136,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return result(rows[at] ? { type: 'open-files', files: rows[at].files! } : undefined);
     if (['up', 'down', 'home', 'end', 'page-up', 'page-down'].includes(key)) {
       const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
-      next.inspectCursor =
+      const cursor =
         rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]
           ?.item;
+      next.subpage = { ...inspector, cursor };
       return result();
     }
     if (['left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
@@ -209,10 +165,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return expInput(next, input, ctx) ?? result();
   }
   if (key === 'changes') {
-    next.trySelection = undefined;
-    next.focus = 'changes';
-    next.boardInspect = undefined;
-    next.modes.changes = 'open';
+    if (next.activeTab === 'home' || next.activeTab === 'project') next[next.activeTab].trySelection = undefined;
+    next = openSubpage(next, { kind: 'changes', scroll: next.subpage?.kind === 'changes' ? next.subpage.scroll : next.lastChangesScroll });
     return result();
   }
   if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
@@ -220,15 +174,16 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     cycleProject(key === 'project-next' ? 1 : -1);
     return result();
   }
-  if (control || (main && next.mainTab === 'project')) {
-    const view = control ? next.control[next.control.subTab] : undefined, nav = view?.nav;
-    const cursor = nav ? nav.cursor : next.projectCursor;
-    const select = (item?: string) => { if (nav) nav.cursor = item; else next.projectCursor = item; };
+  // Project and Control share list navigation, but own their views and actions.
+  if (control || (main && next.activeTab === 'project')) {
+    const view = control ? next.control[next.control.subTab] : undefined;
+    const nav = view?.nav ?? next.project.nav, cursor = nav.cursor;
+    const select = (item?: string) => { nav.cursor = item; };
     const toggleFold = (id: string) => {
-      const folded = new Set(view?.folded ?? projectFoldedSet(next));
+      const folded = new Set(view?.folded ?? next.project.folded);
       if (!folded.delete(id)) folded.add(id);
       if (view) view.folded = folded;
-      else next.projectFolded = folded;
+      else next.project.folded = folded;
     };
     // A hub entry may span two rows (the bar); the cursor visits it once.
     const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
@@ -239,7 +194,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (id && row?.harnessOff !== undefined && (!remove || !row.harnessOff))
         return { type: 'harness-switch', id, off: !row.harnessOff };
     };
-    if (nav && !harnesses) {
+    if (view && !harnesses) {
       const openChain = (role: RoleFact, at = 0) => {
         nav.cursor = controlRoleItem(role.role);
         nav.split.focus = 'list';
@@ -299,7 +254,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         return result();
       }
       if (tab === 'harness-refresh') return result({ type: 'refresh-models' });
-      if (tab === 'help') { next.help = true; next.helpScroll = 0; return result(); }
+      if (tab === 'help') { next.help = {}; return result(); }
     }
     // `o` opens a row's file even where Enter folds (a ticket, a long Next bullet); folds with no file toggle on either.
     const activate = (row = rows[at], open = false) => {
@@ -310,7 +265,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (harnesses && harnessId(row?.item)) return switchAction(row);
       const role = /^inbox:role:(.+)$/.exec(row?.item ?? '')?.[1];
       if (role) {
-        const selectedRoot = next.projectRoot ?? frame?.projects?.[0].root;
+        const selectedRoot = next.selectedProject ?? frame?.projects?.[0].root;
         // Project can still be rendering the previous root while a switch is loading.
         if (selectedRoot && frame?.projectDisplayRoot && frame.projectDisplayRoot !== selectedRoot) return;
         goTab('control');
@@ -320,7 +275,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           revealed: undefined, split: { ...roles.split, focus: 'list', listCursor: undefined, previewCursor: undefined } } };
       } else if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
-      else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
+      else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
       else if (classic && row?.item === 'project:try') tryOnly();
       else if (/^project:wait:\d+$/.test(row?.item ?? '')) readWait(Number(row!.item!.slice(13)));
       else if (row?.item?.startsWith('project:fold:')) toggleFold(row.item.slice(13));
@@ -328,16 +283,14 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     };
     // The Split layout has its own list and preview; what it does not do is Classic's, below.
     if (!classic && frame?.panes.some((p) => p.id === 'preview')) {
-      const out = splitProjectInput(next, nav, input, key, ctx, result, () => result(activate()));
+      const out = splitProjectInput(next, view?.nav, input, key, ctx, result, () => result(activate()));
       if (out) return out;
     }
     if (input.type === 'mouse') {
       const pane = frame?.panes.find((p) => p.id === 'agents');
       if (input.button !== 'left') {
         const page = Math.max(1, pane?.height ?? 1), max = Math.max(0, (pane?.contentLength ?? 0) - page);
-        const scroll = Math.max(0, Math.min(max, (nav?.scroll ?? next.projectScroll ?? 0) + (input.button === 'wheel-down' ? 3 : -3)));
-        if (nav) nav.scroll = scroll;
-        else next.projectScroll = scroll;
+        nav.scroll = Math.max(0, Math.min(max, nav.scroll + (input.button === 'wheel-down' ? 3 : -3)));
       } else {
         const row = pane && monitorRowAt(pane, input.x, input.y);
         if (row?.item) {
@@ -364,10 +317,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         tryOnly();
         return result();
       }
-      const tried = (next.acceptance !== 'slice' || next.projectTry || next.projectLayout === 'board' || next.projectLayout === 'inbox') && tryInput(next, key, rows[at]);
+      const tried = (next.prefs.acceptance !== 'slice' || onlyTry(next.project.view) || next.prefs.projectLayout === 'board' || next.prefs.projectLayout === 'inbox') && tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
-    if (!control && classic && !projectPageOf(next) && !listed && (next.acceptance !== 'slice' || next.projectLayout === 'inbox')) {
+    if (!control && classic && !projectPageOf(next) && !listed && (next.prefs.acceptance !== 'slice' || next.prefs.projectLayout === 'inbox')) {
       const tried = tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
@@ -375,60 +328,54 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (key === 'reset') return result({ type: 'refresh-models' });
       return ['help', 'settings'].includes(key) ? null : result();
     }
-    if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {
+    if (key === 'escape' && (projectPageOf(next) || listed || (next.project.fromProjectsList && frame?.projects))) {
       if (listed) showList(false);
-      else if (classic && next.projectTry) tryOnly();
+      else if (classic && onlyTry(next.project.view)) tryOnly();
       else if (projectPageOf(next)) goProject();
       else showList(true);
       return result();
     }
-    if (!['help', 'settings', 'escape'].includes(key)) return result();
+    return ['help', 'settings', 'escape'].includes(key) ? null : result();
   }
-  const homeTry = boardFrame?.rows.find((r) => r.item === next.boardAnchor && r.tryTarget);
-  if (main && (homeTry || next.trySelection) && !(key === 'space' && !homeTry)) {
+
+  // Home's cards, list stops, task folds and mouse actions (including Inspector scrolling).
+  const anchor = () => homeAnchor(next.home);
+  const selected = () => homeTarget(next.home);
+  const setAnchor = (item?: string) => { next.home.cursor = homeCursor(selected(), item); };
+  const homeTry = boardFrame.rows.find((r) => r.item === anchor() && r.tryTarget);
+  if (main && (homeTry || next.home.trySelection) && !(key === 'space' && !homeTry)) {
     const tried = tryInput(next, key, homeTry);
     if (tried) return tried;
     if (key === 'open-session' && homeTry?.files) return result({ type: 'open-files', files: homeTry.files });
   }
   const inspect = () => {
-    const target = next.homeTarget;
-    if (!target || target.kind === 'decision' || !boardFrame || next.boardAnchor) return;
+    const target = selected();
+    if (!target || target.kind === 'decision' || anchor()) return;
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
-    next.boardInspect = target;
-    if (worker?.nodeId) next.tree.selectedId = worker.nodeId;
-    next.focus = 'details';
-    next.modes.details = 'open';
-    next.scroll.details = 0;
-    next.inspectCursor = undefined;
-    next.boardRevealed = undefined;
+    next = openSubpage(next, { kind: 'inspector', target, scroll: 0, selectedNodeId: worker?.nodeId });
   };
   if ((key === 'inspect' || key === 'details' || key === 'detail-toggle' || key === 'space') && main) {
     inspect();
     return result();
   }
-  if (key === 'escape' && inspector && (next.mainTab || next.boardInspect)) {
-    next.focus = 'agents';
-    next.modes.details = 'closed';
-    next.boardInspect = undefined;
+  if (key === 'escape' && inspector) {
+    next = closeSubpage(next);
+    next.modes = { ...next.modes, details: 'closed' };
     return result();
   }
-  if (!boardFrame || (!main && !next.boardInspect)) return null;
-  const selected = () => next.homeTarget;
-  const setTarget = (target: WorkTarget) => {
-    next.boardAnchor = undefined;
-    next.homeTarget = target;
-  };
+  if (!main && !inspector) return null;
+  const setTarget = (target: WorkTarget) => { next.home.cursor = homeCursor(target); };
   const toggle = (item: string, open?: boolean) => {
-    const set = new Set(next.boardExpanded);
+    const set = new Set(next.home.expanded);
     const worker = boardFrame.snapshot.workers.find(
       (w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id }) === item
     );
     const expanded = worker && !worker.homeNeedsHuman ? cardExpanded(next, item) : set.has(item);
     if (open === false || (open === undefined && expanded)) set.delete(item);
     else set.add(item);
-    next.boardExpanded = set;
-    if (worker) next.boardToggled = new Set([...(next.boardToggled ?? []), item]);
+    next.home.expanded = set;
+    if (worker) next.home.toggled = new Set([...(next.home.toggled ?? []), item]);
   };
   const jobFiles = (): MonitorOutcome['action'] => {
     const target = selected();
@@ -458,9 +405,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     useProject(undefined);
     if (id === 'waiting') {
       // The hub's Waiting block, with the cursor on its fold.
-      next.projectPage = undefined;
-      next.projectCursor = 'project:fold:waiting';
-      next.projectScroll = 0;
+      next = transitionProjectView(next, { kind: 'hub' }, { cursor: 'project:fold:waiting' });
       return;
     }
     if (/^wait:\d+$/.test(id)) return readWait(Number(id.slice(5)));
@@ -471,31 +416,31 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const taskStop = (item?: string) => item?.startsWith('project:fold:task:');
   // Cards expand in place; the compact progress block opens its Project destination.
   const activate = (target = selected()) => {
-    if (taskStop(next.boardAnchor)) {
-      const item = next.boardAnchor!;
+    if (taskStop(anchor())) {
+      const item = anchor()!;
       goTab('project');
       useProject(undefined);
       goProject('progress', item);
-      next.projectFolded = new Set([...(next.projectFolded ?? []), item.slice('project:fold:'.length)]);
+      next.project.folded = new Set([...(next.project.folded ?? []), item.slice('project:fold:'.length)]);
       return;
     }
-    if (next.boardAnchor?.startsWith('home-progress:')) return openProgress(next.boardAnchor);
-    if (next.boardAnchor) {
-      toggle(next.boardAnchor);
+    if (anchor()?.startsWith('home-progress:')) return openProgress(anchor()!);
+    if (anchor()) {
+      toggle(anchor()!);
       return;
     }
     if (!target) return;
     if (target.kind !== 'lane') return toggle(targetKey(target));
-    const folded = new Set(next.boardFolded);
+    const folded = new Set(next.home.foldedLanes);
     if (!folded.delete(target.laneId)) folded.add(target.laneId);
-    next.boardFolded = folded;
+    next.home.foldedLanes = folded;
   };
-  if (next.panelLayout === 'split' && main && frame?.panes.some((p) => p.id === 'preview')) {
+  if (next.prefs.panelLayout === 'split' && main && frame?.panes.some((p) => p.id === 'preview')) {
     const out = splitHomeInput(next, input, key, ctx, result, { toggle: (item) => {
       if (/^project:fold:(task|ledger):/.test(item)) {
-        const id = item.slice('project:fold:'.length), folded = new Set(next.projectFolded);
-        if (!folded.delete(id)) folded.add(id);
-        next.projectFolded = folded;
+        const id = item.slice('project:fold:'.length), expanded = new Set(next.home.expandedTasks);
+        if (!expanded.delete(id)) expanded.add(id);
+        next.home.expandedTasks = expanded;
       } else toggle(item);
     }, openProgress });
     if (out) return out;
@@ -520,7 +465,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (control?.kind === 'brief') return result({ type: 'brief-toggle' });
     if (control?.kind === 'settings') return result({ type: 'settings' });
     if (control?.kind === 'help') {
-      next.help = true;
+      next.help = {};
       return result();
     }
     const pane = frame?.panes.find((p) => p.id === (inspector ? 'details' : 'agents'));
@@ -528,15 +473,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (input.button !== 'left') {
       const page = Math.max(1, pane.height), max = Math.max(0, pane.contentLength - page);
       const delta = input.button === 'wheel-down' ? 3 : -3;
-      if (inspector) next.scroll.details = Math.max(0, Math.min(max, next.scroll.details + delta));
-      else next.homeScroll = Math.max(0, Math.min(max, (next.homeScroll ?? 0) + delta));
+      if (inspector) next.subpage = { ...inspector, scroll: Math.max(0, Math.min(max, inspector.scroll + delta)) };
+      else next.home.scroll = Math.max(0, Math.min(max, (next.home.scroll ?? 0) + delta));
       return result();
     }
     const row = monitorRowAt(pane, input.x, input.y),
       item = control?.kind === 'board-pick' ? control.item : row?.item;
     if (item && taskStop(item)) {
-      const again = next.boardAnchor === item;
-      next.boardAnchor = item;
+      const again = anchor() === item;
+      setAnchor(item);
       if (again) activate();
       return result();
     }
@@ -545,13 +490,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return result();
     }
     if (item?.startsWith('fold:')) {
-      next.boardAnchor = item;
+      setAnchor(item);
       toggle(item);
       return result();
     }
     const target = item ? boardFrame.targets.get(item) : undefined;
     if (target) {
-      if (!next.boardAnchor && selected() && targetKey(selected()!) === targetKey(target)) activate(target);
+      if (!anchor() && selected() && targetKey(selected()!) === targetKey(target)) activate(target);
       else setTarget(target);
     }
     return result();
@@ -561,9 +506,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   // `o` opens the selected job's file in $EDITOR.
-  if (key === 'open-session' && main) return result(next.boardAnchor ? undefined : jobFiles());
+  if (key === 'open-session' && main) return result(anchor() ? undefined : jobFiles());
   if (key === 'show-all' && main) {
-    next.tree.showAll = !next.tree.showAll;
+    next.home.showAll = !next.home.showAll;
     return result();
   }
   // Removed controls cannot act through hidden legacy shortcuts either.
@@ -572,18 +517,18 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (key === 'next-trouble' || key === 'previous-trouble') {
     const workers = boardFrame.snapshot.workers;
     const targets = [
-      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.cardStallMinutes).state === 'needs-you'),
-      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.cardStallMinutes).state === 'stalled'),
+      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.prefs.cardStallMinutes).state === 'needs-you'),
+      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.prefs.cardStallMinutes).state === 'stalled'),
     ].map((w) => ({ kind: 'worker' as const, laneId: w.laneId, workerId: w.id }));
     if (targets.length) {
       const at = targets.findIndex((t) => selected() && targetKey(t) === targetKey(selected()!));
       const target =
         targets[(at + (key === 'previous-trouble' ? targets.length - 1 : 1) + targets.length) % targets.length];
       setTarget(target);
-      const folded = new Set(next.boardFolded);
+      const folded = new Set(next.home.foldedLanes);
       folded.delete(target.laneId);
-      next.boardFolded = folded;
-      next.boardRevealed = undefined;
+      next.home.foldedLanes = folded;
+      next.home.revealed = undefined;
     }
     return result();
   }
@@ -595,21 +540,21 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (row.item && !items.includes(row.item)) items.push(row.item);
       for (const c of row.controls ?? []) if (c.item && !items.includes(c.item)) items.push(c.item);
     }
-    const current = next.boardAnchor ?? (selected() ? targetKey(selected()!) : ''),
+    const current = anchor() ?? (selected() ? targetKey(selected()!) : ''),
       at = items.indexOf(current);
     const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
     const index =
       key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + step));
     const item = items[index];
     if (item?.startsWith('home-progress:') || taskStop(item)) {
-      next.boardAnchor = item;
-      next.boardRevealed = undefined;
+      setAnchor(item);
+      next.home.revealed = undefined;
       return result();
     }
     if (item?.startsWith('fold:')) {
-      next.boardAnchor = item;
+      setAnchor(item);
       toggle(item, true);
-      next.boardRevealed = undefined;
+      next.home.revealed = undefined;
       return result();
     }
     const target = boardFrame.targets.get(item);

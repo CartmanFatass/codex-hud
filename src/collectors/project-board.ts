@@ -105,8 +105,8 @@ export const insideRoot = (root: string, path: string) => {
 const jobState = (job: { dispatch_exit_code?: unknown }, s: { state?: unknown }) => typeof s.state === 'string' && s.state ? s.state
   : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
 const firstFile = (...paths: string[]) => paths.find((p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } });
-export const projectShown = (state: { mainTab?: string; focus: string; help: boolean }, modal = false) =>
-  state.mainTab === 'project' && state.focus === 'agents' && !state.help && !modal;
+export const projectShown = (state: Pick<import('../render/monitor-state.js').MonitorState, 'activeTab' | 'subpage' | 'help'>, modal = false) =>
+  state.activeTab === 'project' && !state.subpage && !state.help && !modal;
 export class ProjectCollector {
   private cache = new Map<string, { stamp: string; value: unknown }>();
   private seen = new Set<string>();

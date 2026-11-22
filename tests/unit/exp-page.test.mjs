@@ -1,3 +1,5 @@
+import { applyViewPrefs } from '../../dist/render/monitor-state.js';
+import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
 import { knownExpProfiles, readExpConfig, readExpData, saveExpEdit } from '../../dist/collectors/exp-store.js';
 import { appendExpEvent } from '../../dist/collectors/exp-ledger.js';
-import { handleMonitorInput, initialMonitorState, monitorSettings, renderMonitor } from '../../dist/render/monitor.js';
+import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import {
   handleSettingsInput,
   renderSettingsPage,
@@ -42,7 +44,7 @@ function fixture(t) {
   return { env, main, other, dir: join(env.HUD_HOME, 'exp') };
 }
 
-function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiments: true }) {
+function panel(f, state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { experiments: true } })) {
   const data = () => readExpData(f.env.HUD_HOME, f.env, NOW);
   const decoder = new WorkbenchInputDecoder('workboard');
   let expData = data(),
@@ -81,11 +83,10 @@ function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiment
 test('EXP returns to its detail and cursor after visiting Control in either panel layout', (t) => {
   const f = fixture(t), expData = readExpData(f.env.HUD_HOME, f.env, NOW);
   for (const panelLayout of ['classic', 'split']) {
-    const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout,
-      exp: { detail: 'openai-api', cursor: 'calibration', scroll: 0 } };
+    const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true }, exp: { detail: 'openai-api', cursor: 'calibration', scroll: 0 } });
     const before = draw(state, expData);
     const control = draw(send(before, key('shift-tab')).state, expData);
-    assert.equal(control.state.mainTab, 'control');
+    assert.equal(control.state.activeTab, 'control');
     const after = draw(send(control, key('tab')).state, expData);
     assert.deepEqual(after.state.exp, before.state.exp);
     assert.deepEqual(after.lines, before.lines);
@@ -109,14 +110,14 @@ test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP 
   const settings = loadSettings();
   assert.equal(settings.experiments, false);
   const expData = readExpData(f.env.HUD_HOME, f.env);
-  let frame = draw({ ...initialMonitorState(), ...monitorSettings(settings), mainTab: 'exp' }, expData);
-  assert.equal(frame.state.mainTab, 'home');
+  let frame = draw({ ...initialMonitorState(settings), activeTab: 'exp' }, expData);
+  assert.equal(frame.state.activeTab, 'home');
   assert.equal(frame.expData, undefined);
   assert.deepEqual(
     frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind),
     ['board-home', 'board-project', 'board-control']
   );
-  assert.equal(send(frame, key('left')).state.mainTab, 'control');
+  assert.equal(send(frame, key('left')).state.activeTab, 'control');
 
   const selected = SETTING_ROWS.findIndex((row) => row.key === 'experiments');
   assert.equal(SETTING_ROWS[selected].group, 'Panel');
@@ -127,10 +128,10 @@ test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP 
   assert.equal(resetSettingsGroup(enabled, 'Panel').experiments, false);
   saveSettings(enabled);
   assert.equal(loadSettings().experiments, true);
-  frame = draw({ ...initialMonitorState(), ...monitorSettings(loadSettings()) }, expData);
+  frame = draw(initialMonitorState(loadSettings()), expData);
   const go = (input) => {
     frame = draw(send(frame, input).state, expData);
-    return frame.state.mainTab;
+    return frame.state.activeTab;
   };
   assert.equal(go(key('right')), 'project');
   assert.equal(go(key('tab')), 'control');
@@ -146,7 +147,7 @@ test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP 
   assert.equal(go(key('escape')), 'exp');
   assert.equal(fs.existsSync(f.dir), false, 'showing EXP does not write');
   saveSettings({ experiments: false });
-  frame = draw({ ...frame.state, ...monitorSettings(loadSettings()) }, expData);
+  frame = draw(applyViewPrefs(frame.state, loadSettings()), expData);
   assert.equal(
     frame.controls.some((c) => c.kind === 'board-exp'),
     false
@@ -232,14 +233,7 @@ test('EXP edits every group, Esc drops drafts, and another project sees the same
   assert.ok(cfg.grants['anthropic-api'].schedule.startsAt > NOW);
   assert.equal(cfg.grants['openai-api'].grantMicros, 12_345_678);
   assert.equal(cfg.grants['openai-api'].enabled, false);
-  const reloaded = panel(f, {
-    ...initialMonitorState(),
-    mainTab: 'exp',
-    experiments: true,
-    projectRoot: '/synthetic/other-project',
-    projectLayout: 'inbox',
-    panelLayout: 'split',
-  });
+  const reloaded = panel(f, withState(initialMonitorState(), { activeTab: 'exp', selectedProject: '/synthetic/other-project', prefs: { panelLayout: 'split', projectLayout: 'inbox', experiments: true } }));
   assert.match(plain(reloaded.frame()), /Second profile \(\.codex-secondary\)/);
   assert.match(plain(reloaded.frame()), /60 min/);
   assert.match(plain(reloaded.frame()), /anthropic-api\s+on · uncalibrated/);
@@ -304,7 +298,7 @@ test('40-column EXP form indents its rows and gives up blanks before sections in
     setLanguage(lang);
     const en = lang === 'en';
     for (const panelLayout of ['classic', 'split']) {
-      const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout };
+      const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true } });
       const frame = draw(state, expData);
       const lines = plain(frame).split('\n');
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
@@ -348,7 +342,7 @@ test('EXP options show every profile with a count and separate cursor/current ma
     setLanguage(lang);
     const en = lang === 'en';
     for (const panelLayout of ['classic', 'split']) {
-      const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout, exp: { cursor: 'binding', scroll: 0 } };
+      const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true }, exp: { cursor: 'binding', scroll: 0 } });
       const opened = send(draw(state, expData), key('enter'));
       assert.equal(opened.action, undefined);
       const sheet = draw(opened.state, expData, 16);
@@ -372,7 +366,7 @@ test('EXP options show every profile with a count and separate cursor/current ma
   }
 
   const crowded = { ...expData, profiles: Array.from({ length: 20 }, (_, i) => ({ home: `/synthetic/profile-${i}`, name: `profile-${i}` })) };
-  const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, exp: { cursor: 'binding', scroll: 0 } };
+  const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { experiments: true }, exp: { cursor: 'binding', scroll: 0 } });
   const sheet = draw(send(draw(state, crowded), key('enter')).state, crowded, 16);
   const wrapped = draw(send(sheet, key('up')).state, crowded, 16);
   assert.match(plain(wrapped), /^Codex 配置 ─+ 21$/m);
@@ -404,7 +398,7 @@ test('40 columns in EN and ZH: both layouts show whole control labels, both ledg
   for (const lang of ['en', 'zh'])
     for (const panelLayout of ['classic', 'split']) {
       setLanguage(lang);
-      const p = panel(f, { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout });
+      const p = panel(f, withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true } }));
       const exact = () => {
         const frame = p.frame();
         assert.equal(frame.lines.length, 24);

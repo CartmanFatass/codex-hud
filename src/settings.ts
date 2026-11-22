@@ -59,6 +59,12 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   icons: IconMode;
 }
 
+/** Display defaults shared by settings and the pure panel initializer. */
+export const DEFAULT_PANEL_VIEW = {
+  panelLayout: 'classic', projectLayout: 'timeline', acceptance: 'task', experiments: false,
+  cardStallMinutes: 10, cardFoldMinutes: 5, cardHideMinutes: 15,
+} as const;
+
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
   return {
@@ -83,10 +89,7 @@ export function defaultSettings(): HudSettings {
       }
     })(),
     homeMode: 'default',
-    panelLayout: 'classic',
-    projectLayout: 'timeline',
-    acceptance: 'task',
-    experiments: false,
+    ...DEFAULT_PANEL_VIEW,
     language: 'auto',
     briefingApiBase: 'https://api.mistral.ai/v1',
     model: 'deepseek-v4-1-flash-1017',
@@ -95,9 +98,6 @@ export function defaultSettings(): HudSettings {
     modelCallsPerHour: 60,
     decisionCallsPerHour: 0,
     summaryIntervalMinutes: 5,
-    cardStallMinutes: 10,
-    cardFoldMinutes: 5,
-    cardHideMinutes: 15,
     notify: false,
     notifyDesktop: false,
     icons: 'unicode',

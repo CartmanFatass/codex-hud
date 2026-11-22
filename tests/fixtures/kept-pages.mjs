@@ -1,3 +1,4 @@
+import { withState } from './state-helpers.mjs';
 /** PAGES-DESIGN's synthetic rows, collected through the real thin-job reader. */
 import { mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
@@ -138,24 +139,15 @@ export function pageFixture(home) {
   };
   const apiWorker = board.workers.find((w) => w.id.endsWith('1')),
     askingWorker = board.workers.find((w) => w.id.endsWith('4'));
-  const inspect = (item) => ({
-    ...initialMonitorState(),
-    focus: 'details',
-    modes: { agents: 'open', changes: 'closed', details: 'open' },
-    boardInspect: item,
-  });
+  const inspect = (item) => (withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: item }, modes: { agents: 'open', changes: 'closed', details: 'open' } }));
   const target = (w) => ({ kind: 'worker', laneId: w.laneId, workerId: w.id });
   const states = {
     home: initialMonitorState(),
-    older: { ...initialMonitorState(), tree: { ...initialMonitorState().tree, showAll: true } },
+    older: withState(initialMonitorState(), { home: { showAll: true } }),
     job: inspect(target(apiWorker)),
     asking: inspect(target(askingWorker)),
-    help: { ...initialMonitorState(), help: true },
-    changes: {
-      ...initialMonitorState(),
-      focus: 'changes',
-      modes: { agents: 'open', changes: 'open', details: 'closed' },
-    },
+    help: { ...initialMonitorState(), help: {} },
+    changes: withState(initialMonitorState(), { subpage: { kind: 'changes', scroll: 0 }, modes: { agents: 'open', changes: 'open', details: 'closed' } }),
   };
   // Help lists three more keys (the job micro-actions) and still shows the skills catalog under them.
   const render = (page, width, lang = 'en', height = page === 'help' ? 50 : 40) => {
@@ -185,7 +177,7 @@ export function pageFixture(home) {
         workboard: board,
         worktrees,
         backupSkills,
-        state: { ...states[page], tree: { ...states[page].tree }, scroll: { ...states[page].scroll } },
+        state: states[page],
         width,
         height,
         modelEnabled: true,

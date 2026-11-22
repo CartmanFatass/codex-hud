@@ -8,10 +8,10 @@ const MAIN_TABS = [
 ] as const;
 export type MainTab = (typeof MAIN_TABS)[number]['id'];
 export const mainTabs = (state: MonitorState) =>
-  MAIN_TABS.filter((tab) => !('experimental' in tab) || state.experiments);
+  MAIN_TABS.filter((tab) => !('experimental' in tab) || state.prefs.experiments);
 export const mainTabOf = (state: MonitorState): MainTab =>
-  mainTabs(state).find((tab) => tab.id === state.mainTab)?.id ?? 'home';
+  state.activeTab === 'exp' && !state.prefs.experiments ? 'home' : state.activeTab;
 export const controlShown = (state: MonitorState, modal = false): boolean =>
-  state.mainTab === 'control' && state.focus === 'agents' && !state.help && !modal;
+  state.activeTab === 'control' && !state.subpage && !state.help && !modal;
 export const expShown = (state: MonitorState): boolean =>
-  !!state.experiments && state.mainTab === 'exp' && state.focus === 'agents' && !state.help;
+  state.prefs.experiments && state.activeTab === 'exp' && !state.subpage && !state.help;

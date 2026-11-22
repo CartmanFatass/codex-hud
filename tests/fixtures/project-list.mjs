@@ -31,7 +31,7 @@ export async function listFixture(root) {
   const pool = () => new ProjectOverviews((r) => new ProjectCollector(r, f.hud, f.env, f.home), own);
   const overview = await pool().read(places.map(([r]) => r), f.board, NOW);
   const projects = places.map(([root, name]) => ({ root, name, overview: overview.get(root) }));
-  const list = (width, lang = 'en', state = onPage(undefined, { projectList: true }), height = 24, icons = 'unicode', choices = projects) =>
+  const list = (width, lang = 'en', state = onPage(undefined, { project: { view: { kind: 'projects-list' } } }), height = 24, icons = 'unicode', choices = projects) =>
     f.render(width, lang, state, height, f.data, true, icons, 'none', { projects: choices, projectName: 'demo-project' });
   return { ...f, projects, places, pool, list, overview };
 }

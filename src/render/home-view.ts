@@ -18,7 +18,7 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
   const target = { kind: 'worker' as const, laneId: worker.laneId, workerId: worker.id };
   const lane = underLane ? undefined : board.lanes.find((l) => l.id === worker.laneId);
   // Collapsed, the short card; Enter expands it to the question whole, the context and every option.
-  const open = state.boardExpanded?.has(targetKey(target)) === true;
+  const open = state.home.expanded?.has(targetKey(target)) === true;
   const keys = open ? footHints(answerKeys(worker).join('  '), width - 2) : '';
   rows.push(
     boardRow(
@@ -54,14 +54,14 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
   return rows;
 }
 /** Only the newest result opens by itself, and only before its fold time: running cards change activity constantly and would make Home jump. */
-export function markNewest(board: WorkboardSnapshot, state: MonitorState, now: number): void {
+export function newestCard(board: WorkboardSnapshot, state: MonitorState, now: number): string | undefined {
   const newest = board.workers
-    .filter((w) => !state.boardFolded?.has(w.laneId) && w.settledAt !== null && !w.parentJobId && currentWorker(w, now, state) && !foldedWorker(w, now, state))
+    .filter((w) => !state.home.foldedLanes?.has(w.laneId) && w.settledAt !== null && !w.parentJobId && currentWorker(w, now, state.prefs) && !foldedWorker(w, now, state.prefs))
     .reduce<(typeof board.workers)[number] | undefined>(
       (a, w) => (!a || (w.settledAt ?? 0) > (a.settledAt ?? 0) ? w : a),
       undefined
     );
-  state.boardNewest = newest ? targetKey({ kind: 'worker', laneId: newest.laneId, workerId: newest.id }) : undefined;
+  return newest ? targetKey({ kind: 'worker', laneId: newest.laneId, workerId: newest.id }) : undefined;
 }
 export function homeRows(
   board: WorkboardSnapshot,
@@ -70,9 +70,8 @@ export function homeRows(
   now: number,
   input?: MonitorData
 ): MonitorRow[] {
-  markNewest(board, state, now);
   // With a `/` filter the board holds only what matches: no summary line, brief, older count or progress block of the whole.
-  const filtering = !!state.filterQuery;
+  const filtering = !!state.home.filter?.query;
   const rows: MonitorRow[] = [boardRow('')];
   const needs = board.workers.filter((w) => w.homeNeedsHuman)
     .sort((a, b) => Number(b.labels?.category === 'owner authorisation') - Number(a.labels?.category === 'owner authorisation'));
@@ -93,16 +92,16 @@ export function homeRows(
   for (const worker of needs) rows.push(...askSlabRows(worker, board, state, width, now));
   if (!filtering && board.homeBrief) rows.push(...flowLines(monitorText(board.homeBrief), width).map((s) => boardRow(theme.board.text(s))), boardRow(''));
   if (input)
-    for (const lane of state.tree.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now)) {
+    for (const lane of state.home.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now)) {
       if (!lane.workers.length) continue;
       rows.push(...laneRows(input, lane, state, width, now));
     }
   const source = input?.workboard;
   if (filtering && !board.workers.length) rows.push(boardRow(theme.board.muted('  ' + t('No matches'))));
-  const hidden = source && !filtering ? source.workers.filter((w) => !currentWorker(w, now, state)).length : 0;
+  const hidden = source && !filtering ? source.workers.filter((w) => !currentWorker(w, now, state.prefs)).length : 0;
   if (hidden)
     rows.push(
-      boardRow(theme.board.muted(t(state.tree.showAll ? '{n} older shown · a hide' : '+{n} older · a', { n: hidden })))
+      boardRow(theme.board.muted(t(state.home.showAll ? '{n} older shown · a hide' : '+{n} older · a', { n: hidden })))
     );
   return rows;
 }

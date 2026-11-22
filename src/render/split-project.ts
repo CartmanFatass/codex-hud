@@ -10,7 +10,7 @@ import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import type { ClassicSplitNav } from './monitor-state.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, cutTicketTitle, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
-  ledgerText, ledgerFoldItem, newestTasks, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark, taskDetailRows, taskItem, taskLabel, taskRows,
+  ledgerText, ledgerFoldItem, newestTasks, pageRows, pageSummary, progressSegments, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark, taskDetailRows, taskItem, taskLabel, taskRows,
   progressTasks, progressTaskRow, progressTaskDetails, progressTasksHeading, sliceDetailRows, featureItem, featureRow,
   type ProjectPage } from './project-view.js';
 import { glyph, placeRows, placeTarget, radarFacts, roleToday } from './control-view.js';
@@ -40,7 +40,7 @@ const tryTotals = (n: number) => (n ? t('{n} to try', { n }) : '');
 
 /** To-try rows for a Split hub preview (shared by Timeline and Board): `Space`/`y`/`n` act on `act` or the focused row. */
 export function hubTryRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>) {
-  if (state.acceptance !== 'slice') {
+  if (state.prefs.acceptance !== 'slice') {
     const tasks = newestTasks(data), pending = (task: typeof tasks[number]) => task.slices.some((r) => !marks?.get(r.id));
     const todo = tasks.filter(pending), done = tasks.filter((task) => !pending(task));
     return {
@@ -65,18 +65,18 @@ export function hubTryRows(data: ProjectSnapshot, state: MonitorState, width: nu
 }
 
 function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number): Part {
-  const projects = input.projects ?? [], many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.projectRoot));
+  const projects = input.projects ?? [], many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
   const name: MonitorRow = { ...section(theme.board.title(monitorText(input.projectName ?? '') || t('Project')), width,
     [data.ladder.current && theme.board.active(monitorText(data.ladder.current)), many && `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}`].filter(Boolean).join(' ')),
   ...(many ? { item: 'project:switch' } : {}) };
-  const waitFacts = [data.waiting.length, tryTotals(tryCount(data, state.acceptance))].filter(Boolean).join(' · ');
+  const waitFacts = [data.waiting.length, tryTotals(tryCount(data, state.prefs.acceptance))].filter(Boolean).join(' · ');
   const waiting: MonitorRow[] = data.waiting.length ? [{ item: 'project:fold:waiting', text: pair(`${theme.board.attention('?')} ${theme.board.title(t('Waiting for you'))}`, muted(waitFacts), width) }] : [];
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);
   const mark_ = (page: ProjectPage) => page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
     : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
     : page === 'tree' || page === 'docs' ? ' ' : muted(mark('○', 'o'));
   const pages = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length).map((page): MonitorRow => {
-    const facts = pageSummary(page, data, now, false, state.acceptance), room = width - 2 - 14 - 1;
+    const facts = pageSummary(page, data, now, false, state.prefs.acceptance), room = width - 2 - 14 - 1;
     while (facts.length > 1 && visualLength(facts.join(' · ')) > room) facts.pop();
     return { item: `project:page:${page}`, text: fit(`${mark_(page)} ${theme.board.title(fit(t(PAGE_WORD[page]), 14))}${facts.join(' · ') || mark('–', '-')}`, width) };
   });
@@ -130,7 +130,7 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
   const label = cur.whole || !data.ladder.current ? '' : ` ${monitorText(data.ladder.current)} `, frac = acceptedText(cur.counts, cur.rows.length);
   if (cur.rows.length) list.push(plain(`  ${label ? theme.board.title(label) + ' ' : ''}${barText({ counts: cur.counts }, Math.max(6, Math.min(24, width - 3 - visualLength(label) - visualLength(frac) - 2)))} ${muted(frac)}`, width), boardRow(''));
   else if (!path) list.push(plain('  ' + muted(t('no STATE.md')), width));
-  const slices = cur.whole || state.filterQuery ? data.ledger : [...cur.rows, ...data.ledger.filter((r) => r.state === 'try' && r.milestone !== data.ladder.current)];
+  const slices = cur.whole || state.project.filter?.query ? data.ledger : [...cur.rows, ...data.ledger.filter((r) => r.state === 'try' && r.milestone !== data.ladder.current)];
   const ids = slices.map((r) => visualLength(monitorText(r.id))), col = Math.max(8, Math.min(14, Math.max(0, ...ids)));
   const info = (r: LedgerSlice) => data.slices.find((s) => s.label === r.id), workerOf = (r: LedgerSlice) => board.workers.find((w) => w.evidence[0]?.sourceId === info(r)?.jobId);
   for (const st of ['working', 'blocked', 'try', 'todo'] as const) {
@@ -170,7 +170,7 @@ const looseJobRows = (data: ProjectSnapshot, width: number, now: number): Monito
     job.asking ? theme.board.attention(`${t('asking')} ?`) : muted(minuteAge(job.at ?? null, now)), width),
 }));
 function progressTaskPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number): Part {
-  const tasks = progressTasks(data, state.projectLayout), marks = input.tryMarks;
+  const tasks = progressTasks(data, state.prefs.projectLayout), marks = input.tryMarks;
   const pending = tasks.filter((task) => task.slices.some((r) => r.state === 'try')).length;
   const list: MonitorRow[] = tasks.length ? [progressTasksHeading(tasks.length, width, tryTotals(pending)), ...tasks.map((task) => progressTaskRow(task, data, state, width, now, marks))]
     : [plain('  ' + muted(t(data.statePath ? 'none' : 'no STATE.md')), width)];
@@ -209,8 +209,8 @@ export function inboxRolePreview(data: ProjectSnapshot, width: number, now: numb
 
 /** Tickets: a ticket a row under its lane (as Classic), the cursor ticket's checklist and latest comment below; Enter opens its file. */
 function ticketsPart(data: ProjectSnapshot, state: MonitorState, width: number, now: number): Part {
-  const folded = projectFoldedSet(state), seen = new Set<string>(), prefix = 'project:fold:ticket:';
-  if (state.acceptance !== 'slice') {
+  const folded = state.project.folded, seen = new Set<string>(), prefix = 'project:fold:ticket:';
+  if (state.prefs.acceptance !== 'slice') {
     const list = data.tickets.map((feature) => featureRow(feature, width));
     const preview = (cursor?: string): Shown => {
       const feature = data.tickets.find((f) => featureItem(f) === cursor);
@@ -253,34 +253,12 @@ function factsPart(page: 'tree' | 'docs', data: ProjectSnapshot, width: number, 
 export function projectScene(input: MonitorData, state: MonitorState, board: WorkboardSnapshot, page: ProjectPage | undefined, width: number, now: number): SplitScene | undefined {
   const data = input.project;
   if (!data || page === 'waiting') return undefined;
-  const layout = state.projectLayout;
+  const layout = state.prefs.projectLayout;
   const part = !page ? (layout === 'board' ? boardHubPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxHubPart(input, data, state, board, width, now) : hubPart(input, data, state, board, width, now))
-    : page === 'progress' ? (state.acceptance !== 'slice' ? progressTaskPart(input, data, state, board, width, now) : layout === 'board' ? boardProgressPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxProgressPart(input, data, state, board, width, now) : progressPart(input, data, state, board, width, now))
+    : page === 'progress' ? (state.prefs.acceptance !== 'slice' ? progressTaskPart(input, data, state, board, width, now) : layout === 'board' ? boardProgressPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxProgressPart(input, data, state, board, width, now) : progressPart(input, data, state, board, width, now))
     : page === 'tickets' ? ticketsPart(data, state, width, now) : factsPart(page, data, width, now);
-  const nav = projectSplitNav(state);
-  const scene = projectSplitScene(nav, part, `project|${page ?? 'hub'}|${state.projectRoot ?? ''}`);
-  if (!page && state.splitFocus && !scene.sub) state.trySelection = undefined;
-  saveProjectSplitNav(state, nav);
+  const scene = projectSplitScene(state.project.nav, part, `project|${page ?? 'hub'}|${state.selectedProject ?? ''}`);
   return (input.projects?.length ?? 0) > 1 ? scene : { ...scene, hints: scene.hints.filter((hint) => hint !== '[ ] project') };
-}
-
-/** Project still owns its legacy flat fields until its own tab-state slice. */
-export function projectSplitNav(state: MonitorState): ClassicSplitNav {
-  return { cursor: state.projectCursor, scroll: state.projectScroll ?? 0, revealed: state.boardRevealed,
-    split: { focus: state.splitFocus ?? 'list', listCursor: state.splitList, listScroll: state.splitListScroll ?? 0,
-      previewCursor: state.splitSub, previewScroll: state.splitScroll ?? 0, previewFor: state.splitFor } };
-}
-
-export function saveProjectSplitNav(state: MonitorState, nav: ClassicSplitNav): void {
-  const { split } = nav;
-  state.projectCursor = nav.cursor;
-  state.boardRevealed = nav.revealed;
-  state.splitFocus = split.focus === 'preview' ? 'preview' : undefined;
-  state.splitList = split.listCursor;
-  state.splitSub = split.previewCursor;
-  if (state.splitScroll !== undefined || split.previewScroll !== 0 || state.splitFor !== split.previewFor)
-    state.splitScroll = split.previewScroll;
-  state.splitFor = split.previewFor;
 }
 
 /** Shared cursor/preview machinery; each view supplies its own navigation and rows. */
@@ -289,21 +267,16 @@ export function projectSplitScene(nav: ClassicSplitNav, part: Part, view: string
   const items = splitItems(part.list), wait = (at?: string) => (at?.startsWith('project:wait:') && items.includes('project:fold:waiting') ? 'project:fold:waiting' : at);
   let focus = split.focus === 'preview', cursor = wait(focus ? split.listCursor : nav.cursor);
   cursor = cursor && items.includes(cursor) ? cursor : part.start;
-  let shown = part.preview(cursor);
+  let shown = part.preview(cursor), previewCursor = split.previewCursor;
   // Classic moved the cursor: to another row of this preview (a place added or moved), or off it (a page opened, a project switched).
-  if (focus && nav.cursor !== split.previewCursor) {
-    if (splitItems(shown.rows).includes(nav.cursor ?? '')) split.previewCursor = nav.cursor;
+  if (focus && nav.cursor !== previewCursor) {
+    if (splitItems(shown.rows).includes(nav.cursor ?? '')) previewCursor = nav.cursor;
     else { focus = false; cursor = wait(nav.cursor); cursor = cursor && items.includes(cursor) ? cursor : part.start; shown = part.preview(cursor); }
   }
   const scope = `${view}|${cursor}`;
-  if (split.previewFor !== scope) {
-    split.previewFor = scope;
-    split.previewScroll = 0;
-  }
-  const sub = focus && shown.rows.some((row) => row.item === split.previewCursor) ? split.previewCursor : undefined;
-  split.focus = sub ? 'preview' : 'list';
-  split.listCursor = cursor;
-  nav.cursor = sub ?? cursor;
+  const sub = focus && shown.rows.some((row) => row.item === previewCursor) ? previewCursor : undefined;
   const hints = !sub ? shown.hints ?? part.hints : shown.act ? [...TRY_ACTIONS, 'Esc back'] : part.focusHints ?? part.hints;
-  return { list: part.list, cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, act: sub ? undefined : shown.act, scope, hints };
+  return { list: part.list, cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, act: sub ? undefined : shown.act,
+    scope, hints, nav: { ...nav, cursor: sub ?? cursor, split: { ...split, focus: sub ? 'preview' : 'list', listCursor: cursor, previewCursor,
+      previewFor: scope, previewScroll: split.previewFor === scope ? split.previewScroll : 0 } } };
 }

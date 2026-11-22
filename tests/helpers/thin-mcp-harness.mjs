@@ -24,7 +24,7 @@ export const workerFor = (f, id) =>
     .flatMap((lane) => lane.workers)
     .find((worker) => worker.id === 'thin-job:' + id);
 export const cardText = (worker) =>
-  renderWorkCard(projectWorkCard(worker, Date.now()), { ...initialMonitorState(), mainTab: 'home' }, 56)
+  renderWorkCard(projectWorkCard(worker, Date.now()), { ...initialMonitorState(), activeTab: 'home' }, 56)
     .map(stripAnsi)
     .join('\n');
 

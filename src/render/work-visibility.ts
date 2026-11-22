@@ -4,7 +4,7 @@ import type { MonitorData, MonitorState } from './monitor.js';
 
 const FAILED_HIDE_MS = 30 * 60000;
 const FAILED_STALE_MS = 24 * 3600000;
-export type CardTimes = Pick<MonitorState, 'cardFoldMinutes' | 'cardHideMinutes'>;
+export type CardTimes = Pick<MonitorState['prefs'], 'cardFoldMinutes' | 'cardHideMinutes'>;
 /** Fold and hide times in ms; a hide time before the fold time is the fold time. */
 function cardTimes(times?: CardTimes) {
   const fold = (times?.cardFoldMinutes ?? 5) * 60000;
@@ -32,8 +32,8 @@ export function visibleWorkboard(
   now: number,
   match?: (worker: OwnerWorker) => boolean
 ): WorkboardSnapshot {
-  const all = state.tree.showAll || !!match;
-  const workers = board.workers.filter((w) => (match ? match(w) : all || currentWorker(w, now, state)));
+  const all = state.home.showAll || !!match;
+  const workers = board.workers.filter((w) => (match ? match(w) : all || currentWorker(w, now, state.prefs)));
   const workerIds = new Set(workers.map((w) => w.id));
   const lanes = board.lanes.map((lane) => ({
     ...lane,

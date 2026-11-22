@@ -1,3 +1,4 @@
+import { viewFor, withState } from './state-helpers.mjs';
 /** The Split layout's synthetic scene: several package lanes (one asks, one failed, one with a finished report), a native lane, decisions, tickets. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
@@ -9,7 +10,7 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { ticketFixture } from './project-tickets.mjs';
 import { NOW, TREE, plain, onControl, richProgress, richControl } from './project-page.mjs';
 
-export const split = (extra) => ({ ...initialMonitorState(), panelLayout: 'split', ...extra });
+export const split = (extra) => (withState(initialMonitorState(), { prefs: { panelLayout: 'split', acceptance: 'slice' } }, extra));
 /** `idle`: every job has settled and nothing asks, so Home's list is what finished plus Waiting and Progress. */
 export async function splitFixture(root, { idle = false } = {}) {
   const f = await ticketFixture(root);
@@ -38,14 +39,14 @@ export async function splitFixture(root, { idle = false } = {}) {
   const rich = { ...richProgress(data), tickets: data.tickets, waiting: data.waiting };
   const render = (width, lang = 'en', height = 40, state = split(), snapshot = data, { icons = 'unicode', ...extras } = {}) => {
     const display = setDisplayConfig({ theme: 'none', icons }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state: { acceptance: 'slice', ...state }, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state: state, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   return { ...f, board, data, rich, control: richControl(rich), render };
 }
 /** The frames the snapshot keeps: Home busy, idle and short, the hub, and the pages, at 40 columns in both languages (80 and 120 for Home busy). */
 export function splitFrames(busy, idle) {
-  const frames = {}, page = (p, extra) => split({ mainTab: 'project', projectPage: p, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
+  const frames = {}, page = (p, extra) => split(withState({ activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(p) } }, extra));
   for (const lang of ['en', 'zh']) {
     frames[`home-busy-40-${lang}`] = plain(busy.render(40, lang, 40));
     frames[`home-short-40-${lang}`] = plain(busy.render(40, lang, 24));
@@ -54,8 +55,8 @@ export function splitFrames(busy, idle) {
     frames[`hub-short-40-${lang}`] = plain(busy.render(40, lang, 24, page(undefined), busy.control));
     frames[`progress-40-${lang}`] = plain(busy.render(40, lang, 40, page('progress'), busy.rich));
     const control = { ...busy.control, radar: undefined };
-    frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, onControl(undefined, split({ mainTab: 'control' })), control));
-    const unfolded = onControl({ cursor: 'project:role:reviewer', folded: new Set(['agents', 'usage', 'files']) }, split({ mainTab: 'control' }));
+    frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, onControl(undefined, split({ activeTab: 'control' })), control));
+    const unfolded = onControl({ cursor: 'project:role:reviewer', folded: new Set(['agents', 'usage', 'files']) }, split({ activeTab: 'control' }));
     frames[`control-unfolded-40-${lang}`] = plain(busy.render(40, lang, 40, unfolded, control));
     frames[`tickets-40-${lang}`] = plain(busy.render(40, lang, 40, page('tickets')));
     frames[`tree-40-${lang}`] = plain(busy.render(40, lang, 40, page('tree')));

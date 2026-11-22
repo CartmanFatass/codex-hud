@@ -1,3 +1,5 @@
+import { withState } from '../fixtures/state-helpers.mjs';
+import { homeTarget } from '../../dist/render/monitor-state.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
@@ -114,9 +116,9 @@ test('the Inspector and expanded running cards show exactly one localized milest
     const previous = setLanguage(lang);
     try {
       for (const panelLayout of ['classic', 'split']) {
-        const state = { ...initialMonitorState(), panelLayout, homeTarget: target, splitCursor: targetKey({ kind: 'lane', laneId }) };
+        const state = withState(initialMonitorState(), { home: { split: { listCursor: targetKey({ kind: 'lane', laneId }) }, cursor: { kind: 'work', target: target } }, prefs: { panelLayout } });
         const draw = (expanded) => renderMonitor({ tree: TREE, workboard: f.board, width, height: 48, nowMs: NOW,
-          state: { ...state, boardExpanded: new Set(expanded ? [targetKey(target)] : []) },
+          state: withState(state, { home: { expanded: new Set(expanded ? [targetKey(target)] : []) } }),
         });
         assert.equal(lines(draw(false)).length, 0);
         check(draw(true));
@@ -134,7 +136,7 @@ test('Inspector shows elapsed run time for running and settled jobs, not for unk
     })), workers: f.board.workers.map((w) => w.id === worker.id ? worker : w) };
     return plainFrame(renderMonitor({
       tree: TREE, workboard: board, width: 40, height: 30, nowMs,
-      state: { ...f.states.job, boardInspect: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } },
+      state: withState(f.states.job, { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } } }),
     })).join('\n');
   };
   const settled = f.board.workers.find((w) => w.task === 'Add the retry helper');
@@ -149,37 +151,32 @@ test('Inspector uses collected files, selects the open question/report/brief and
   const f = fixture(t);
   const ctx = (frame) => ({ tree: TREE, frame, nowMs: NOW, standalone: true });
   let frame = f.render('asking', 80);
-  assert.equal(frame.state.inspectCursor, 'file:' + join(f.ux, 'qa/q3.md'));
+  assert.equal(frame.state.subpage?.cursor, 'file:' + join(f.ux, 'qa/q3.md'));
   const press = (key) => handleMonitorInput(frame.state, { type: 'key', key }, ctx(frame));
   assert.deepEqual(press('enter').action.files, [join(f.ux, 'qa/q3.md')]);
   const before = press('up').state;
   frame = renderMonitor({ tree: TREE, workboard: f.board, state: before, width: 80, height: 40, nowMs: NOW });
   assert.deepEqual(press('open-session').action.files, [join(f.ux, 'qa/q2.md'), join(f.ux, 'qa/q2.answer.md')]);
   for (const key of ['home-tab', 'project-tab', 'left', 'right', 'tab'])
-    assert.equal(press(key).state.focus, 'details');
+    assert.equal(press(key).state.subpage?.kind, 'inspector');
   const rowAt = frame.lines.findIndex((s) => stripAnsi(s).startsWith('◇ q1'));
   assert.deepEqual(
     handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 2, y: rowAt }, ctx(frame)).action.files,
     [join(f.ux, 'qa/q1.md'), join(f.ux, 'qa/q1.answer.md')]
   );
   const home = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 0, y: 0 }, ctx(frame)).state;
-  assert.equal(home.focus, 'agents');
-  assert.equal(f.render('job', 80).state.inspectCursor, 'file:' + join(f.api, 'brief.md'));
+  assert.equal(home.subpage, undefined);
+  assert.equal(f.render('job', 80).state.subpage?.cursor, 'file:' + join(f.api, 'brief.md'));
   const done = f.board.workers.find((w) => w.task === 'Check the retry tests');
   const report = renderMonitor({
     tree: TREE,
     workboard: f.board,
-    state: {
-      ...initialMonitorState(),
-      focus: 'details',
-      modes: { agents: 'open', details: 'open', changes: 'closed' },
-      boardInspect: { kind: 'worker', laneId: done.laneId, workerId: done.id },
-    },
+    state: withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: done.laneId, workerId: done.id } }, modes: { agents: 'open', details: 'open', changes: 'closed' } }),
     width: 80,
     height: 40,
     nowMs: NOW,
   });
-  assert.match(report.state.inspectCursor, /report\.md$/);
+  assert.match(report.state.subpage?.cursor, /report\.md$/);
 });
 test('old rows have only muted ink, no band; expansion restores the card and a returns to a nearby row', (t) => {
   const f = fixture(t),
@@ -193,7 +190,7 @@ test('old rows have only muted ink, no band; expansion restores the card and a r
     target = { kind: 'worker', laneId: old.laneId, workerId: old.id },
     key = targetKey(target);
   const draw = (state) => renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 60, nowMs: NOW });
-  const frame = draw({ ...f.states.older, homeTarget: target });
+  const frame = draw(withState(f.states.older, { home: { cursor: { kind: 'work', target: target } } }));
   const oldRow = frame.workboard.rows.find((r) => r.item === key);
   assert.equal(oldRow.text, theme.board.muted(stripAnsi(oldRow.text)));
   assert.ok(f.board.decisions.length);
@@ -206,8 +203,8 @@ test('old rows have only muted ink, no band; expansion restores the card and a r
   assert.ok(expanded.length > 1);
   assert.notEqual(expanded[0].text, theme.board.muted(stripAnsi(expanded[0].text)));
   const hidden = draw(act('show-all'));
-  assert.notDeepEqual(hidden.state.homeTarget, target);
-  assert.equal(hidden.state.homeTarget.laneId, target.laneId);
+  assert.notDeepEqual(homeTarget(hidden.state.home), target);
+  assert.equal(homeTarget(hidden.state.home).laneId, target.laneId);
 });
 test('Settings Bar style cycles the exported styles, saves barStyle, and ignores retired keys', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'page-settings-')),
@@ -378,7 +375,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(text, /@ imp  Retry/);
   assert.doesNotMatch(text, /◉|●/);
   const asking = draw(f.states.asking),
-    cursor = asking.state.inspectCursor;
+    cursor = asking.state.subpage?.cursor;
   const ctx = (frame) => ({ tree: TREE, frame, nowMs: NOW });
   const opened = handleMonitorInput(asking.state, { type: 'key', key: 'help' }, ctx(asking)).state;
   const help = draw(opened, { mouse: false });
@@ -387,16 +384,16 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(body, /\+ done\s+x failed\s+- stopped/);
   assert.doesNotMatch(body, /click|Codex's own panel|Timeline|press .* first/);
   assert.match(body, /switch tab/);
-  assert.equal(help.state.inspectCursor, cursor);
+  assert.equal(help.state.subpage?.cursor, cursor);
   const returned = handleMonitorInput(help.state, { type: 'key', key: 'escape' }, ctx(help)).state;
-  assert.equal(returned.help, false);
-  assert.equal(returned.focus, 'details');
-  assert.equal(draw(returned).state.inspectCursor, cursor);
-  const withMouse = plainFrame(draw({ ...opened, focus: 'agents' }, { mouse: true })).join('\n');
+  assert.equal(!!returned.help, false);
+  assert.equal(returned.subpage?.kind, 'inspector');
+  assert.equal(draw(returned).state.subpage?.cursor, cursor);
+  const withMouse = plainFrame(draw({ ...opened, subpage: undefined }, { mouse: true })).join('\n');
   assert.match(withMouse, /click\s+select; again = ⏎; wheel\s+scrolls/);
   assert.doesNotMatch(withMouse, /press .* first/);
   setLanguage('zh');
-  const chinese = plainFrame(draw({ ...opened, focus: 'agents' }, { width: 120 })).join('\n');
+  const chinese = plainFrame(draw({ ...opened, subpage: undefined }, { width: 120 })).join('\n');
   assert.doesNotMatch(chinese, /在 Codex 自带的面板中|press .*first/);
   assert.match(chinese, /c C\s+角色：下一个／上一个预设[\s\S]*m\s+角色或位置：本窗格选模型/);
   assert.match(chinese, /单击或按 Enter 设定。有\s*草稿则填入/);

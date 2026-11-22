@@ -70,7 +70,7 @@ function fixture(t, keys = true) {
   };
   f.render = (board, width = 80, lang = 'en', all = false) => {
     const previous = setLanguage(lang), display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
-    const state = initialMonitorState(); state.tree.showAll = all;
+    const state = initialMonitorState(); state.home.showAll = all;
     try { return renderMonitor({ tree: { rootId: 'synthetic', nodes: [], totalCount: 0, updatedAt: new Date(NOW) }, workboard: board, state, width, height: 55, nowMs: f.now, modelEnabled: true }); }
     finally { setLanguage(previous); setDisplayConfig(display); }
   };

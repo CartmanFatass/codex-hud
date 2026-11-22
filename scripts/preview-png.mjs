@@ -26,8 +26,8 @@ const chrome = process.env.CHROME ?? '/usr/bin/google-chrome';
 const root = process.cwd();
 const load = (p) => import(new URL(`../${p}`, import.meta.url));
 const { splitFixture, split } = await load('tests/fixtures/split-layout.mjs');
-const { NOW, TREE } = await load('tests/fixtures/project-page.mjs');
-const { renderMonitor, initialMonitorState } = await load('dist/render/monitor.js');
+const { NOW, TREE, onControl, onPage } = await load('tests/fixtures/project-page.mjs');
+const { renderMonitor } = await load('dist/render/monitor.js');
 const { setDisplayConfig } = await load('dist/render/hud-config.js');
 const { setLanguage } = await load('dist/render/i18n.js');
 const { visualLength } = await load('dist/render/colors.js');
@@ -42,7 +42,8 @@ try {
   const busy = await splitFixture(join(home, 'busy'));
   const idle = await splitFixture(join(home, 'idle'), { idle: true });
   const briefed = (d) => ({ ...d, ledger: d.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, brief: BRIEF } : r)) });
-  const page = (p, extra) => split({ mainTab: 'project', projectPage: p, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
+  const page = (p, nav, folded) => onPage(p, { prefs: { panelLayout: 'split', acceptance: 'task' },
+    project: { ...(nav && { nav }), ...(folded && { folded }) } });
   const render = (f, height, state, snapshot = f.data, extras = {}) => {
     const display = setDisplayConfig({ theme: themeName, icons: 'unicode' }), previous = setLanguage(lang);
     try {
@@ -56,11 +57,11 @@ try {
     ['home-busy', 'Home, busy', render(busy, 40, split())],
     ['home-idle', 'Home, all done', render(idle, 40, split())],
     ['hub', 'Project hub', render(busy, 40, page(undefined), briefed(busy.control))],
-    ['progress', 'Progress, a briefed slice selected', render(busy, 40, page('progress', { projectCursor: 'project:slice:DATA-ONE' }), briefed(busy.rich))],
-    ['progress-unfolded', 'Progress, ledger line unfolded', render(busy, 40, page('progress', { projectCursor: 'project:slice:DATA-ONE', projectFolded: new Set(['agents', 'healthy', 'files', 'ledger:DATA-ONE']) }), briefed(busy.rich))],
-    ['control', 'Control plane', render(busy, 40, page('control'), { ...busy.control, radar: undefined })],
+    ['progress', 'Progress, a briefed slice selected', render(busy, 40, page('progress', { cursor: 'project:slice:DATA-ONE' }), briefed(busy.rich))],
+    ['progress-unfolded', 'Progress, ledger line unfolded', render(busy, 40, page('progress', { cursor: 'project:slice:DATA-ONE' }, new Set(['agents', 'healthy', 'files', 'ledger:DATA-ONE'])), briefed(busy.rich))],
+    ['control', 'Control plane', render(busy, 40, onControl({}, { prefs: { panelLayout: 'split' } }), { ...busy.control, radar: undefined })],
     ['tickets', 'Tickets', render(busy, 40, page('tickets'))],
-    ['help', 'Help', render(busy, 56, { ...initialMonitorState(), panelLayout: 'split', help: true })],
+    ['help', 'Help', render(busy, 56, split({ help: {} }))],
   ];
 } finally {
   fs.rmSync(home, { recursive: true, force: true });

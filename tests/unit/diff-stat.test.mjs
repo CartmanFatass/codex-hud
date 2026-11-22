@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -124,15 +125,13 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
 
   const r = project.ledger.at(-2), item = 'diff:' + file;
   r.brief = { brief: 'Synthetic brief', steps: ['Check the synthetic edit'] };
-  const render = (state) => renderMonitor({ tree: TREE, project, state: { acceptance: 'slice', ...state }, width: 40, height: 48, nowMs: NOW });
+  const render = (state) => renderMonitor({ tree: TREE, project, state: withState({ prefs: { acceptance: 'slice' } }, state), width: 40, height: 48, nowMs: NOW });
   for (const panelLayout of ['classic', 'split']) {
     for (const page of ['tree', 'progress']) {
-      const state = onPage(page, {
-        panelLayout,
-        ...(panelLayout === 'split'
-          ? { projectCursor: page === 'tree' ? 'project:row:0' : `project:slice:${r.id}` }
-          : { projectCursor: item, projectTry: true, projectFolded: new Set([`hist:${r.id}`]) }),
-      });
+      const state = onPage(page, withState({ prefs: { panelLayout } }, (panelLayout === 'split'
+          ? { project: { nav: { cursor: page === 'tree' ? 'project:row:0' : `project:slice:${r.id}` } } }
+          : { project: { nav: { cursor: item }, folded: new Set([`hist:${r.id}`]),
+            ...(page === 'progress' ? { view: { kind: 'progress', onlyTry: { scroll: 0 } } } : {}) } })));
       let frame = render(state);
       const rows = frame.workboard.rows;
       const shown = rows.findIndex((row) => row.item === item);
@@ -140,8 +139,8 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
       assert.ok(rows.slice(0, shown).some((row) => row.text.includes(page === 'progress' ? 'synthetic edit' : 'changed')));
       if (panelLayout === 'split') frame = render(enter(frame).state);
       // A briefed to-try slice's preview opens on its folded ledger line (the Enter that toggles it); the diff is the next row down.
-      if (frame.state.projectCursor !== item) frame = render(action(frame, { type: 'key', key: 'down' }).state);
-      assert.equal(frame.state.projectCursor, item);
+      if (frame.state.project.nav.cursor !== item) frame = render(action(frame, { type: 'key', key: 'down' }).state);
+      assert.equal(frame.state.project.nav.cursor, item);
       assertOpens(frame, file);
     }
   }
@@ -180,10 +179,7 @@ test('thin-job Inspector uses a linked worktree BASE, gates active probes, and f
   await panel.refresh(id);
   const workboard = panel.workboard(TREE), worker = workboard.workers[0];
   assert.equal(worker.diffStat.files[0].absPath, file);
-  const frame = renderMonitor({ tree: TREE, workboard, width: 40, height: 40, nowMs: NOW, state: onPage(undefined, {
-    mainTab: 'home', focus: 'details', inspectCursor: 'diff:' + file,
-    boardInspect: { kind: 'worker', laneId: worker.laneId, workerId: id },
-  }) });
+  const frame = renderMonitor({ tree: TREE, workboard, width: 40, height: 40, nowMs: NOW, state: onPage(undefined, { activeTab: 'home', subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: worker.laneId, workerId: id }, cursor: 'diff:' + file } }) });
   const rows = frame.workboard.rows.map((r) => stripAnsi(r.text));
   assert.ok(rows.findIndex((line) => /^Changes ─/.test(line)) < rows.findIndex((line) => /^Files ─/.test(line)));
   assertOpens(frame, file);

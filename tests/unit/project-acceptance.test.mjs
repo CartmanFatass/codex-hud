@@ -1,3 +1,5 @@
+import { tabState, withState } from '../fixtures/state-helpers.mjs';
+import { homeAnchor, homeCursor } from '../../dist/render/monitor-state.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,7 +10,7 @@ import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { renderMonitor } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
-import { handleMonitorInput, monitorSettings } from '../../dist/render/monitor.js';
+import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { handleSettingsInput, renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
@@ -63,7 +65,7 @@ test('Detail defaults to task and the Panel setting persists slice, with bilingu
   const draft = handleSettingsInput(frame.state, { type: 'key', key: 'right' }, frame).state;
   saveSettings(draft.draft);
   assert.equal(JSON.parse(fs.readFileSync(path)).acceptance, 'slice');
-  assert.equal(monitorSettings(loadSettings()).acceptance, 'slice');
+  assert.equal(initialMonitorState(loadSettings()).prefs.acceptance, 'slice');
   setLanguage('zh');
   frame = renderSettingsPage(draft, 40, 24);
   assert.match(plain(frame).join('\n'), /粒度\s+‹ 切片 ›/);
@@ -74,7 +76,7 @@ test('Detail defaults to task and the Panel setting persists slice, with bilingu
 test('task acceptance in all Progress layouts keeps one row, the oldest age and all slices under filter and keys', async (t) => {
   const f = await fixture(t);
   for (const panelLayout of ['classic', 'split']) for (const projectLayout of ['timeline', 'board', 'inbox']) {
-    const state = () => onPage('progress', { acceptance: undefined, panelLayout, projectLayout, projectCursor: taskItem });
+    const state = () => onPage('progress', { project: { nav: { cursor: taskItem } }, prefs: { acceptance: 'task', panelLayout, projectLayout } });
     const frame = f.draw(state());
     const rows = frame.panes[0].rows.filter((r) => r.tryTarget);
     assert.equal(rows.length, 2, `${panelLayout}/${projectLayout}`);
@@ -86,14 +88,14 @@ test('task acceptance in all Progress layouts keeps one row, the oldest age and 
     assert.match(plain(detail).join('\n'), /Third slice: show the preview\./);
     assert.match(plain(detail).join('\n'), /Open the preview\./);
     const marked = f.draw(press(frame, 'space').state);
-    assert.deepEqual(targetIds(marked.state.trySelection.get(taskItem)), memberIds);
+    assert.deepEqual(targetIds(tabState(marked.state)?.trySelection.get(taskItem)), memberIds);
     for (const key of ['try-accept', 'try-flag']) {
       const out = press(marked, key);
       assert.equal(out.action?.type, 'record-try');
       assert.equal(out.action?.target.milestone, 'M-ALPHA');
       assert.deepEqual(targetIds(out.action?.target), memberIds);
     }
-    const filtered = f.draw({ ...state(), filterQuery: 'compact detail' });
+    const filtered = f.draw(withState(state(), { project: { filter: { query: 'compact detail', editing: false } } }));
     assert.match(plain(filtered).join('\n'), /1 match/);
     assert.deepEqual(targetIds(press(filtered, 'try-accept').action?.target), memberIds);
   }
@@ -102,11 +104,10 @@ test('task acceptance in all Progress layouts keeps one row, the oldest age and 
 test('Home task rows expose the same members and acceptance actions in Classic and Split', async (t) => {
   const f = await fixture(t);
   for (const panelLayout of ['classic', 'split']) {
-    const state = { ...onPage(undefined, { acceptance: 'task', panelLayout }), mainTab: 'home', boardAnchor: taskItem,
-      splitCursor: 'home-progress:waiting', splitFocus: 'preview', splitSub: taskItem };
+    const state = withState(onPage(undefined, { prefs: { acceptance: 'task', panelLayout } }), { activeTab: 'home', home: { split: { listCursor: 'home-progress:waiting', focus: 'preview', previewCursor: taskItem }, cursor: homeCursor(undefined, taskItem) } });
     const frame = f.draw(state, 80);
-    assert.equal(frame.state.boardAnchor, taskItem);
-    assert.deepEqual(targetIds(press(frame, 'space').state.trySelection.get(taskItem)), memberIds);
+    assert.equal(homeAnchor(frame.state.home), taskItem);
+    assert.deepEqual(targetIds(tabState(press(frame, 'space').state)?.trySelection.get(taskItem)), memberIds);
     assert.deepEqual(targetIds(press(frame, 'try-accept').action.target), memberIds);
     const opened = f.draw(press(frame, 'enter').state, 80);
     assert.match(plain(opened).join('\n'), /First slice: keep the old route\./);
@@ -118,23 +119,21 @@ test('Home and the hub use task counts; the synthetic HTML board honors both mod
   const frames = [];
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) for (const panelLayout of ['classic', 'split']) {
     const render = (label, state) => {
-      const frame = f.draw({ panelLayout, ...state }, width, lang), lines = plain(frame);
+      const frame = f.draw(withState(state, { prefs: { panelLayout } }), width, lang), lines = plain(frame);
       assert.ok(frame.lines.every((line) => visualLength(line) === width));
       frames.push(`### ${label} — ${panelLayout}, ${lang.toUpperCase()}, ${width} columns\n\n\x60\x60\x60text\n${lines.map((line) => line.trimEnd()).join('\n')}\n\x60\x60\x60\n`);
       return frame;
     };
     assert.ok(f.board.decisions.length > 0);
-    const home = render('Home', { ...onPage(undefined, { acceptance: 'task' }), mainTab: 'home', splitCursor: 'home-progress:waiting' });
+    const home = render('Home', withState(onPage(undefined, { prefs: { acceptance: 'task' } }), { activeTab: 'home', home: { split: { listCursor: 'home-progress:waiting' } } }));
     assert.doesNotMatch(plain(home).join('\n'), /Decided for you|已替你决定|Use the synthetic layout/);
     assert.ok(![...home.workboard.targets.values()].some((target) => target.kind === 'decision'));
     assert.equal(home.workboard.snapshot.decisions.length, f.board.decisions.length);
     for (const acceptance of ['task', 'slice']) {
-      const hub = render(`Project hub — ${acceptance}`, onPage(undefined, { acceptance, projectCursor: 'project:page:progress' }));
+      const hub = render(`Project hub — ${acceptance}`, onPage(undefined, { project: { nav: { cursor: 'project:page:progress' } }, prefs: { acceptance } }));
       const n = acceptance === 'task' ? 2 : 4;
       assert.match(plain(hub).join('\n'), new RegExp(`${n} ${lang === 'zh' ? '待试用' : 'to try'}`));
-      const progress = onPage('progress', { acceptance,
-        projectCursor: acceptance === 'task' ? taskItem : 'project:slice:THIRD',
-        ...(panelLayout === 'classic' && acceptance === 'slice' ? { projectTry: { scroll: 0 } } : {}) });
+      const progress = onPage('progress', withState({ project: { nav: { cursor: acceptance === 'task' ? taskItem : 'project:slice:THIRD' } }, prefs: { acceptance } }, (panelLayout === 'classic' && acceptance === 'slice' ? { project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } } : {})));
       render(`Progress — ${acceptance}`, progress);
     }
   }
@@ -179,7 +178,7 @@ test('task pages group actual features and mixed ledger states; drilling in and 
   const project = await new ProjectCollector(cwd, join(cwd, 'hud')).collect('home', board, NOW);
   const draw = (page, state, width, lang) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }), previous = setLanguage(lang);
-    try { return renderMonitor({ state: onPage(page, { acceptance: 'task', ...state }), tree: TREE, workboard: board, project, width, height: 23, nowMs: NOW }); }
+    try { return renderMonitor({ state: onPage(page, withState({ prefs: { acceptance: 'task' } }, state)), tree: TREE, workboard: board, project, width, height: 23, nowMs: NOW }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   const feature = 'project:fold:feature:export', milestone = 'project:fold:task:milestone:M-EXPORT';
@@ -192,7 +191,7 @@ test('task pages group actual features and mixed ledger states; drilling in and 
   };
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) for (const panelLayout of ['classic', 'split']) {
     const text = (frame) => plain(frame).join('\n');
-    const render = (page, cursor, extra = {}) => draw(page, { panelLayout, projectCursor: cursor, ...extra }, width, lang);
+    const render = (page, cursor, extra = {}) => draw(page, withState({ project: { nav: { cursor } }, prefs: { panelLayout } }, extra), width, lang);
     const tickets = render('tickets', feature);
     assert.match(text(tickets), lang === 'en' ? /export\s+1\/3\s+needs-info/ : /export\s+1\/3\s+待补充/);
     assert.match(text(tickets), /search\s+2\/2/);
@@ -200,7 +199,7 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     assert.match(text(ticketsDetail), /Download CSV/);
     assert.match(text(ticketsDetail), /Save as text/);
     assert.doesNotMatch(text(ticketsDetail), /Find phrases/);
-    const filteredTickets = render('tickets', feature, { filterQuery: 'download csv' });
+    const filteredTickets = render('tickets', feature, { project: { filter: { query: 'download csv', editing: false } } });
     assert.match(text(filteredTickets), lang === 'en' ? /1 match/ : /1 个匹配/);
     assert.doesNotMatch(text(filteredTickets), /search/);
     record(`Tickets — ${panelLayout}`, tickets, width, lang);
@@ -211,12 +210,12 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     assert.match(text(progress), /– — SKIP\s+– 1/);
     const progressDetail = panelLayout === 'classic' ? draw('progress', press(progress, 'enter').state, width, lang) : progress;
     for (const id of ['COLUMNS', 'LABELS', 'CSV', 'SAVE']) assert.match(text(progressDetail), new RegExp(id));
-    assert.deepEqual(targetIds(press(progress, 'space').state.trySelection.get(milestone)), ['CSV']);
+    assert.deepEqual(targetIds(tabState(press(progress, 'space').state)?.trySelection.get(milestone)), ['CSV']);
     for (const key of ['try-accept', 'try-flag']) assert.deepEqual(targetIds(press(progress, key).action?.target), ['CSV']);
-    const filtered = render('progress', milestone, { filterQuery: 'column chooser' });
+    const filtered = render('progress', milestone, { project: { filter: { query: 'column chooser', editing: false } } });
     assert.deepEqual(targetIds(press(filtered, 'try-accept').action?.target), ['CSV']);
     for (const projectLayout of ['timeline', 'board', 'inbox']) {
-      const hub = render(undefined, 'project:page:progress', { projectLayout });
+      const hub = render(undefined, 'project:page:progress', { prefs: { projectLayout } });
       assert.match(text(hub), lang === 'en' ? /1 to try · 3 tasks/ : /1 待试用 · 3 个任务/);
       assert.match(text(hub), lang === 'en' ? /Tickets\s+2 features/ : /工单\s+2 个功能/);
     }

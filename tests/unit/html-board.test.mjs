@@ -142,18 +142,18 @@ test('w is the panel key for the board, on Home and Project only', () => {
   const press = (state, extra = {}) => handleMonitorInput({ ...state, ...extra }, { type: 'key', key: 'export-board', text: 'w' }, { tree: TREE, nowMs: NOW, standalone: true }).action;
   assert.deepEqual(press(initialMonitorState()), { type: 'export-board' });
   assert.deepEqual(press(onPage()), { type: 'export-board' });
-  assert.deepEqual(press(onPage('control')), { type: 'export-board' });
-  assert.equal(press(initialMonitorState(), { focus: 'changes' }), undefined);
-  assert.equal(press(initialMonitorState(), { focus: 'details' }), undefined);
-  assert.equal(press(initialMonitorState(), { help: true }), undefined);
+  assert.deepEqual(press({ ...initialMonitorState(), activeTab: 'control' }), { type: 'export-board' });
+  assert.equal(press(initialMonitorState(), { subpage: { kind: 'changes', scroll: 0 } }), undefined);
+  assert.equal(press(initialMonitorState(), { subpage: { kind: 'inspector', target: { kind: 'lane', laneId: 'synthetic' }, scroll: 0 } }), undefined);
+  assert.equal(press(initialMonitorState(), { help: {} }), undefined);
 });
 
 test('the Help page lists w and the saved board shows at the top in both languages', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'html-board-help-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await projectFixture(root);
-  assert.match(plain(f.render(120, 'en', { ...initialMonitorState(), help: true }, 80)).join('\n'), /\bw\s+write the review board \(HTML\)/);
-  assert.match(plain(f.render(120, 'zh', { ...initialMonitorState(), help: true }, 80)).join('\n'), /导出审阅看板/);
+  assert.match(plain(f.render(120, 'en', { ...initialMonitorState(), help: {} }, 80)).join('\n'), /\bw\s+write the review board \(HTML\)/);
+  assert.match(plain(f.render(120, 'zh', { ...initialMonitorState(), help: {} }, 80)).join('\n'), /导出审阅看板/);
   const frame = f.render(80, 'en', undefined, 24, f.data, true, 'unicode', 'none', { publicationNotice: 'Board saved: board-project.html' });
   assert.match(plain(frame).join('\n'), /^Board saved: board-project\.html$/m);
 });

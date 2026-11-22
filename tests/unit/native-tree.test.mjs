@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -96,11 +97,11 @@ test('native hide rules: done 15m, failed/stopped 30m; a reveals in place and na
   native.tokensSpent = { input: 1200, cached: 200, output: 300 };
   const worker = f.board(tree).workers.find((w) => w.task === 'Repair parser');
   const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  frame = f.render(120, 'en', { ...all, homeTarget: target }, tree);
+  frame = f.render(120, 'en', withState(all, { home: { cursor: { kind: 'work', target: target } } }), tree);
   const nativeOpen = handleMonitorInput(frame.state, { type: 'key', key: 'open-session' }, ctx(frame));
   assert.deepEqual(nativeOpen.action.files, [join(f.dir, 'agent-lead.jsonl')]);
   const inspect = handleMonitorInput(frame.state, { type: 'key', key: 'inspect' }, ctx(frame));
-  assert.deepEqual(inspect.state.boardInspect, target);
+  assert.deepEqual(inspect.state.subpage?.target, target);
   frame = f.render(120, 'en', inspect.state, tree);
   assert.match(frame.lines.map(stripAnsi).join('\n'), /Files|custom-builder|claude-sonnet-4-5/);
   assert.match(frame.lines.map(stripAnsi).join('\n'), /42% · ~38 tok\/s · 1\.5K tokens spent/);
@@ -109,7 +110,7 @@ test('native hide rules: done 15m, failed/stopped 30m; a reveals in place and na
     handleMonitorInput(frame.state, { type: 'key', key: 'open-session' }, ctx(frame)).action.files,
     nativeOpen.action.files
   );
-  assert.equal(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, ctx(frame)).state.focus, 'agents');
+  assert.equal(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, ctx(frame)).state.subpage, undefined);
   // Exact expiry boundaries, including stopped, use the same projector as jobs.
   for (const [state, minutes, visible] of [
     ['done', 14, true],
@@ -147,7 +148,7 @@ test('native cards without a transcript offer no open-files action on Home or in
   tree.nodes[0].rolloutPath = undefined;
   const worker = f.board(tree).workers.find((w) => w.task === 'Repair parser');
   const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  let frame = f.render(120, 'en', { ...initialMonitorState(), homeTarget: target }, tree);
+  let frame = f.render(120, 'en', withState(initialMonitorState(), { home: { cursor: { kind: 'work', target: target } } }), tree);
   const press = (key) => handleMonitorInput(frame.state, { type: 'key', key }, { frame, tree, nowMs: NOW, standalone: true });
   assert.equal(press('open-session').action, undefined);
   frame = f.render(120, 'en', press('inspect').state, tree);

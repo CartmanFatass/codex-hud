@@ -6,7 +6,7 @@
  * are in the preview; a preview with more rows than fit shows a scrollbar in its last cell.
  */
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
-import type { MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
+import type { MonitorFrame, MonitorRow } from './monitor.js';
 import type { ClassicSplitNav, SplitNav } from './monitor-state.js';
 import { boardCursor, footRow, mark, section, type FooterHints } from './workboard-rows.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
@@ -15,6 +15,7 @@ import { t } from './i18n.js';
 import { filterHints } from './filter.js';
 
 export interface SplitScene {
+  nav: ClassicSplitNav;
   /** Every row of an entry carries the entry's `item` (a reason row too); header and blank rows carry none. */
   list: MonitorRow[];
   /** The entry under the cursor: its rows are the band. */
@@ -41,15 +42,9 @@ const blank = (r: MonitorRow) => !r.item && !stripAnsi(r.text).trim();
 export const splitItems = (rows: readonly MonitorRow[] = []): string[] => [...new Set(rows.flatMap((r) => (r.item ? [r.item] : [])))];
 /** The entry's rows are one band; in the preview only its first row is, as in Classic. */
 const first = (rows: readonly MonitorRow[], item: string | undefined) => (item ? rows.findIndex((r) => r.item === item) : -1);
-/** What the preview's scroll belongs to, and the cursor state a new scope clears. */
-export function splitScope(state: MonitorState, scope: string): void {
-  if (state.splitFor === scope) return;
-  state.splitFor = scope;
-  state.splitScroll = 0;
-}
 /** Keep the keys in the preview only while it has the row they are on. */
-export const splitSubValid = (state: MonitorState, preview: readonly MonitorRow[]): string | undefined =>
-  state.splitFocus === 'preview' && state.splitSub && preview.some((r) => r.item === state.splitSub) ? state.splitSub : undefined;
+export const splitSubValid = (split: SplitNav, preview: readonly MonitorRow[]): string | undefined =>
+  split.focus === 'preview' && preview.some((r) => r.item && r.item === split.previewCursor) ? split.previewCursor : undefined;
 
 /** How the body's rows divide: whether blank rows stay, the list's rows and the room each part gets. */
 function rooms(scene: SplitScene, ratio: number | undefined, focus: SplitNav['focus'], body: number) {
@@ -68,33 +63,26 @@ export const splitPreviewRoom = (scene: SplitScene, ratio: number | undefined, f
 
 export function paintSplit(
   frame: MonitorFrame, scene: SplitScene, board: WorkboardSnapshot,
-  targets: ReadonlyMap<string, WorkTarget>, selected: WorkTarget | undefined, width: number, height: number, notes: string[], nav?: ClassicSplitNav,
-): MonitorFrame {
+  targets: ReadonlyMap<string, WorkTarget>, selected: WorkTarget | undefined, width: number, height: number, notes: string[],
+): ClassicSplitNav {
   // A notice or an error sits on the rows under the tab row, as it does in Classic.
   const state = frame.state, top = 1 + notes.length, body = Math.max(0, height - 1 - top);
   notes.forEach((text, i) => { if (1 + i < height - 1) frame.lines[1 + i] = fit(text, width); });
-  const split = nav?.split;
-  const { gaps, list, lead, compact, listRoom, previewRoom } = rooms(scene, state.splitRatio, split?.focus ?? state.splitFocus ?? 'list', body);
+  const { nav } = scene, { split } = nav;
+  const { gaps, list, lead, compact, listRoom, previewRoom } = rooms(scene, state.prefs.splitRatio, split.focus, body);
   const at = first(list, scene.cursor), last = at < 0 ? -1 : list.map((r) => r.item).lastIndexOf(scene.cursor);
-  let listAt = Math.max(0, Math.min(list.length - listRoom, split?.listScroll ?? state.splitListScroll ?? 0));
+  let listAt = Math.max(0, Math.min(list.length - listRoom, split.listScroll));
   if (compact && at >= 0) listAt = Math.max(0, Math.min(list.length - listRoom, at - Math.floor((listRoom - (last - at + 1)) / 2)));
   if (at >= 0 && at < listAt) listAt = at;
   if (last >= listAt + listRoom) listAt = last - listRoom + 1;
-  if (!compact) {
-    if (split) split.listScroll = listAt;
-    else state.splitListScroll = listAt;
-  }
   const reveal = first(scene.preview, scene.sub), marker = `${scene.scope}|${scene.sub}`;
-  let previewAt = Math.max(0, Math.min(scene.preview.length - previewRoom, split?.previewScroll ?? state.splitScroll ?? 0));
+  let previewAt = Math.max(0, Math.min(scene.preview.length - previewRoom, split.previewScroll));
+  const revealChanged = reveal >= 0 && nav.revealed !== marker;
   // The row the keys moved to comes into view once; the scroll keys then move the window as they like.
-  if (reveal >= 0 && (nav ? nav.revealed : state.boardRevealed) !== marker) {
+  if (revealChanged) {
     if (reveal < previewAt) previewAt = reveal;
     else if (reveal >= previewAt + previewRoom) previewAt = reveal - previewRoom + 1;
-    if (nav) nav.revealed = marker;
-    else state.boardRevealed = marker;
   }
-  if (split) split.previewScroll = previewAt;
-  else state.splitScroll = previewAt;
   // `edge` takes the row's last cell (the scrollbar): no column is added.
   const put = (y: number, row: MonitorRow, banded: boolean, edge = '') => {
     const raw = row.paint?.() ?? row.text, text = edge ? cells(raw, width - 1) + edge : fit(raw, width);
@@ -125,5 +113,6 @@ export function paintSplit(
     { id: 'preview', x: 0, y: previewTop, width, height: previewRoom, offset: previewAt, contentLength: scene.preview.length, rows: scene.preview, edge: 0, visible: previewRoom },
   );
   frame.workboard = { snapshot: board, targets, selected, rows: [...list, ...scene.preview] };
-  return frame;
+  return { ...nav, revealed: revealChanged ? marker : nav.revealed,
+    split: { ...split, listScroll: compact ? split.listScroll : listAt, previewScroll: previewAt } };
 }

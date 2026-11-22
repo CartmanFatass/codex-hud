@@ -1,10 +1,11 @@
+import { withState, sliceState } from '../fixtures/state-helpers.mjs';
 /** PROJECT-LAYOUTS 02: the Inbox project layout (Split and Classic, EN and ZH at 40 columns). */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { tryCount } from '../../dist/render/project-view.js';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
@@ -47,15 +48,15 @@ test('Inbox leaves Home, Control plane and Tickets identical to Timeline in both
   const { busy } = await fixture(t);
   const control = { ...busy.control, radar: undefined };
   for (const panelLayout of ['classic', 'split']) {
-    const base = (extra) => ({ ...initialMonitorState(), panelLayout, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
+    const base = (extra) => (withState(sliceState(), { project: { folded: new Set(['agents', 'healthy', 'files']) }, prefs: { panelLayout } }, extra));
     for (const [label, extra, snap] of [
-      ['Home', { mainTab: 'home' }, busy.data],
-      ['Tickets', { mainTab: 'project', projectPage: 'tickets' }, busy.data],
-      ['Control plane', { mainTab: 'control' }, control],
+      ['Home', { activeTab: 'home' }, busy.data],
+      ['Tickets', { activeTab: 'project', project: { view: { kind: 'tickets' } } }, busy.data],
+      ['Control plane', { activeTab: 'control' }, control],
     ]) {
       assert.deepEqual(
-        plain(busy.render(40, 'en', 36, base({ ...extra, projectLayout: 'inbox' }), snap)),
-        plain(busy.render(40, 'en', 36, base({ ...extra, projectLayout: 'timeline' }), snap)),
+        plain(busy.render(40, 'en', 36, base(withState(extra, { prefs: { projectLayout: 'inbox' } })), snap)),
+        plain(busy.render(40, 'en', 36, base(withState(extra, { prefs: { projectLayout: 'timeline' } })), snap)),
         `${panelLayout}: ${label} unchanged`,
       );
     }
@@ -74,9 +75,9 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
       const state = layout === 'split'
-        ? split({ mainTab: 'project', projectLayout: 'inbox', projectFolded: new Set(['agents', 'healthy', 'files', 'inbox:more']) })
-        : onPage(undefined, { projectLayout: 'inbox', projectFolded: new Set(['agents', 'healthy', 'files', 'inbox:more']) });
-      const timelineState = layout === 'split' ? split({ mainTab: 'project', projectLayout: 'timeline' }) : onPage(undefined, { projectLayout: 'timeline' });
+        ? split({ activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files', 'inbox:more']) }, prefs: { projectLayout: 'inbox' } })
+        : onPage(undefined, { project: { folded: new Set(['agents', 'healthy', 'files', 'inbox:more']) }, prefs: { projectLayout: 'inbox' } });
+      const timelineState = layout === 'split' ? split({ activeTab: 'project', prefs: { projectLayout: 'timeline' } }) : onPage(undefined, { prefs: { projectLayout: 'timeline' } });
       const frame = busy.render(40, lang, 42, state, briefed);
       const timeline = busy.render(40, lang, 42, timelineState, briefed);
       assertWidth(frame, 40, `hub ${layout} ${lang}`);
@@ -108,7 +109,7 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
     active: [...briefed.active, { jobId: 'j00000000000000bb', role: 'reviewer', state: 'waiting_orchestrator', title: 'Approve synthetic migration', at: NOW - 3 * 60000, asking: true }],
   };
   for (const lang of ['en', 'zh']) {
-    const askFrame = busy.render(40, lang, 36, split({ mainTab: 'project', projectLayout: 'inbox' }), askingSnap);
+    const askFrame = busy.render(40, lang, 36, split({ activeTab: 'project', prefs: { projectLayout: 'inbox' } }), askingSnap);
     assertWidth(askFrame, 40, `hub asking ${lang}`);
     const listLines = askFrame.panes.find((p) => p.id === 'agents').rows.map((r) => stripAnsi(r.text).trimEnd()).join('\n');
     const askPos = listLines.indexOf('Approve synthetic');
@@ -119,14 +120,14 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
   }
 
   // Default cap (7) shows `▸ N more` and Enter unfolds the remaining ranked items.
-  const capped = driver(busy, { data: briefed, height: 38, state: split({ mainTab: 'project', projectLayout: 'inbox', projectCursor: 'project:fold:inbox:more' }) });
+  const capped = driver(busy, { data: briefed, height: 38, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:fold:inbox:more' } }, prefs: { projectLayout: 'inbox' } }) });
   assert.match(capped.lines().join('\n'), /▸ 6 more/);
   capped.run('enter');
   assert.match(capped.lines().join('\n'), /PAGE-TWO\s+blocked/);
   assert.match(capped.lines().join('\n'), /imp\s+pi out 42m/);
 
   // Split hub: Space/y/n act directly on Inbox Needs-you to-try rows; preview shows brief, steps and folded Ledger line.
-  const sp = driver(busy, { data: briefed, height: 42, state: split({ mainTab: 'project', projectLayout: 'inbox', projectCursor: 'project:slice:DATA-ONE' }) });
+  const sp = driver(busy, { data: briefed, height: 42, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:slice:DATA-ONE' } }, prefs: { projectLayout: 'inbox' } }) });
   const spText = sp.lines().join('\n');
   assert.match(spText, /How to try/);
   assert.match(spText, /1\. Open Project tab/);
@@ -137,7 +138,7 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
   assert.equal(sp.run({ type: 'key', key: 'try-flag', text: 'n' }).action.action, 'flag');
 
   // Classic hub: Enter expands to-try row with brief + steps + folded Ledger line; Space/y/n act directly.
-  const cl = driver(busy, { data: briefed, height: 44, state: onPage(undefined, { projectLayout: 'inbox', projectCursor: 'project:fold:hist:DATA-ONE' }) });
+  const cl = driver(busy, { data: briefed, height: 44, state: onPage(undefined, { project: { nav: { cursor: 'project:fold:hist:DATA-ONE' } }, prefs: { projectLayout: 'inbox' } }) });
   cl.run('enter');
   assert.match(cl.lines().join('\n'), /How to try/);
   assert.match(cl.lines().join('\n'), /▸ Ledger line/);
@@ -157,7 +158,7 @@ test('Inbox Progress at 40 cols EN and ZH (Split and Classic): To try newest fir
   const tries = tryCount(briefed, 'slice');
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
-      const state = layout === 'split' ? split({ mainTab: 'project', projectPage: 'progress', projectLayout: 'inbox' }) : onPage('progress', { projectLayout: 'inbox' });
+      const state = layout === 'split' ? split({ activeTab: 'project', prefs: { projectLayout: 'inbox' }, project: { view: { kind: 'progress' } } }) : onPage('progress', { prefs: { projectLayout: 'inbox' } });
       const frame = busy.render(40, lang, 44, state, briefed);
       assertWidth(frame, 40, `progress ${layout} ${lang}`);
       const lines = plain(frame), text = lines.join('\n');
@@ -186,22 +187,22 @@ test('Inbox Progress at 40 cols EN and ZH (Split and Classic): To try newest fir
   }
 
   // Split Progress: Space/y/n on to-try row, preview of Done shows accepted slices.
-  const sp = driver(busy, { data: briefed, height: 42, state: split({ mainTab: 'project', projectPage: 'progress', projectLayout: 'inbox', projectCursor: 'project:slice:DATA-ONE' }) });
+  const sp = driver(busy, { data: briefed, height: 42, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:slice:DATA-ONE' }, view: { kind: 'progress' } }, prefs: { projectLayout: 'inbox' } }) });
   assert.match(sp.lines().join('\n'), /How to try/);
   sp.run('space');
   assert.match(sp.lines().join('\n'), /▣ ◇ DATA-ONE/);
   assert.deepEqual(sp.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
   assert.equal(sp.run({ type: 'key', key: 'try-flag', text: 'n' }).action.action, 'flag');
-  const spDone = driver(busy, { data: briefed, height: 42, state: split({ mainTab: 'project', projectPage: 'progress', projectLayout: 'inbox', projectCursor: 'split:done' }) });
+  const spDone = driver(busy, { data: briefed, height: 42, state: split({ activeTab: 'project', project: { nav: { cursor: 'split:done' }, view: { kind: 'progress' } }, prefs: { projectLayout: 'inbox' } }) });
   assert.match(spDone.lines().join('\n'), /BAR-LINES/);
 
   // Classic Progress: Space/y/n on to-try row; Enter on Done unfolds accepted slices.
-  const cl = driver(busy, { data: briefed, height: 46, state: onPage('progress', { projectLayout: 'inbox', projectCursor: 'project:fold:hist:DATA-ONE' }) });
+  const cl = driver(busy, { data: briefed, height: 46, state: onPage('progress', { project: { nav: { cursor: 'project:fold:hist:DATA-ONE' } }, prefs: { projectLayout: 'inbox' } }) });
   cl.run('enter');
   assert.match(cl.lines().join('\n'), /▸ Ledger line/);
   cl.run('space');
   assert.deepEqual(cl.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
-  const clDone = driver(busy, { data: briefed, height: 50, state: onPage('progress', { projectLayout: 'inbox', projectCursor: 'project:fold:inbox:done' }) });
+  const clDone = driver(busy, { data: briefed, height: 50, state: onPage('progress', { project: { nav: { cursor: 'project:fold:inbox:done' } }, prefs: { projectLayout: 'inbox' } }) });
   clDone.run('enter');
   assert.match(clDone.lines().join('\n'), /BAR-LINES/);
 });
@@ -209,7 +210,7 @@ test('Inbox Progress at 40 cols EN and ZH (Split and Classic): To try newest fir
 test('Inbox Projects list at 40 and 80 cols EN and ZH: Needs you / Running / Quiet groups, quiet is one row, exact width', async (t) => {
   const { lists } = await fixture(t);
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const icons of ['unicode', 'text']) {
-    const frame = lists.list(width, lang, onPage(undefined, { projectList: true, projectLayout: 'inbox' }), 22, icons);
+    const frame = lists.list(width, lang, onPage(undefined, { prefs: { projectLayout: 'inbox' }, project: { view: { kind: 'projects-list' } } }), 22, icons);
     assertWidth(frame, width, `list ${width} ${lang} ${icons}`);
     const lines = plain(frame), text = lines.join('\n');
     const heads = (lang === 'zh' ? ['需要你处理', '运行中', '安静'] : ['Needs you', 'Running', 'Quiet']).map((h) => text.indexOf(h));

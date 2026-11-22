@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -108,7 +109,7 @@ function fixture(t, mode = 'on', language = 'en') {
     return f.service.apply(f.board());
   };
   f.render = (board, width = 56) =>
-    renderWorkCard(projectWorkCard(board.workers[0], f.now), { ...initialMonitorState(), mainTab: 'home' }, width).join(
+    renderWorkCard(projectWorkCard(board.workers[0], f.now), { ...initialMonitorState(), activeTab: 'home' }, width).join(
       '\n'
     );
   const previous = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
@@ -322,7 +323,7 @@ for (const language of ['en', 'zh']) {
       };
       for (const width of [80, 120]) {
         const home = renderMonitor({ tree, workboard: board, state: initialMonitorState(), width, height: 30, nowMs: f.now });
-        const state = handleMonitorInput({ ...home.state, homeTarget: target }, { type: 'key', key: 'inspect' }, { tree, frame: home }).state;
+        const state = handleMonitorInput(withState(home.state, { home: { cursor: { kind: 'work', target: target } } }), { type: 'key', key: 'inspect' }, { tree, frame: home }).state;
         const inspector = renderMonitor({ tree, workboard: board, state, width, height: 30, nowMs: f.now });
         for (const frame of [home, inspector]) {
           const text = frame.lines.map(stripAnsi).join('\n');
@@ -330,7 +331,7 @@ for (const language of ['en', 'zh']) {
           assert.doesNotMatch(text, /Read and carry out|\/synthetic\/brief/);
           for (const line of frame.lines) assert.equal(visualLength(line), width);
         }
-        const progress = renderMonitor({ tree, workboard: board, project, state: { ...initialMonitorState(), mainTab: 'project', projectPage: 'progress' }, width, height: 30, nowMs: f.now });
+        const progress = renderMonitor({ tree, workboard: board, project, state: withState(initialMonitorState(), { activeTab: 'project', project: { view: { kind: 'progress' } } }), width, height: 30, nowMs: f.now });
         assert.match(progress.lines.map(stripAnsi).join('\n'), /CLAUDE-BIND/);
         assert.doesNotMatch(progress.lines.map(stripAnsi).join('\n'), /Read and carry out|\/synthetic\/brief/);
         for (const line of progress.lines) assert.equal(visualLength(line), width);
@@ -384,7 +385,7 @@ test('ordinary cards start collapsed, expand the whole marked sentence and factu
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
   const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
   {
-    let state = { ...initialMonitorState(), mainTab: 'home', homeTarget: target };
+    let state = withState(initialMonitorState(), { activeTab: 'home', home: { cursor: { kind: 'work', target: target } } });
     const render = () => renderMonitor({ tree, workboard: board, state, width: 32, height: 40, nowMs: f.now });
     const enter = () => {
       const frame = render();
@@ -528,7 +529,7 @@ test('Chinese request, question/review/answer changes, one request per job in fl
   const asking = await f.update();
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[1].messages[1].content, /Use parser B/);
-  const home = laneRows({}, asking.lanes[0], { ...initialMonitorState(), mainTab: 'home' }, 56, f.now)
+  const home = laneRows({}, asking.lanes[0], { ...initialMonitorState(), activeTab: 'home' }, 56, f.now)
     .map((r) => r.text)
     .join('\n');
   assert.match(stripAnsi(home), /正在检查解析器边界/);
@@ -601,7 +602,7 @@ test('decision title requests are scoped to the inspected worker’s Files', asy
   f.service.inspect(board, f.home, target);
   await settle();
   assert.equal(f.calls.length, 1);
-  const state = { ...initialMonitorState(), focus: 'details', boardInspect: target };
+  const state = withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target } });
   const frame = renderMonitor({ state, workboard: f.service.apply(board), width: 90, height: 40, now: f.now });
   assert.match(stripAnsi(frame.lines.join('\n')), /Use the durable parser for all future input/);
 });
@@ -667,7 +668,7 @@ test('decision JSON: localized detail stays collected and cached without a Home 
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
   const target = { kind: 'decision', laneId: d.laneId, decisionId: d.id };
   for (const panelLayout of ['classic', 'split']) {
-    const state = { ...initialMonitorState(), panelLayout, mainTab: 'home', homeTarget: target, boardExpanded: new Set([targetKey(target)]) };
+    const state = withState(initialMonitorState(), { activeTab: 'home', home: { expanded: new Set([targetKey(target)]), cursor: { kind: 'work', target: target } }, prefs: { panelLayout } });
     const home = renderMonitor({ tree, workboard: board, state, width: 80, height: 40, nowMs: f.now });
     assert.ok(!home.workboard.targets.has(targetKey(target)));
     assert.doesNotMatch(home.lines.map(stripAnsi).join('\n'), /已替你决定|哪个解析器处理|保留输入/);

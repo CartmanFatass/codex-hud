@@ -186,7 +186,7 @@ export function chainInputKey(state: MonitorState, chain: ChainInput, input: Wor
     return out({ mode: { ...fieldState, input: { kind: 'choice', text: '', at } } });
   };
   if (key === 'help' && !choice)
-    return draft ? { state: { ...state, help: true }, close: false } : route(finishChain(state), input, ctx);
+    return draft ? { state: { ...state, help: {} }, close: false } : route(finishChain(state), input, ctx);
   const leave = (!sheet || (!choice && !cancelKey)) && (
     ['escape', 'close', 'tab', 'shift-tab', 'left', 'right', 'project-prev', 'project-next', 'settings', 'changes'].includes(key) ||
     hit?.kind.startsWith('board-') || hit?.kind === 'control-harnesses' || (!sheet && hit?.kind === 'chain-back'));

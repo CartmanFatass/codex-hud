@@ -1,3 +1,5 @@
+import { withState, sliceState } from '../fixtures/state-helpers.mjs';
+import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,12 +11,12 @@ import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { listFixture, listFrames } from '../fixtures/project-list.mjs';
 import { NOW, TREE, plain, onPage } from '../fixtures/project-page.mjs';
-import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { projectOrder } from '../../dist/render/project-view.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-list-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -84,66 +86,66 @@ test('Projects list: the panel project first, then waiting, running, then the mo
 test('Projects list through real input: name row opens it, Enter opens a hub, Esc and the crumb come back, 2 opens the hub, reload keeps it', async (t) => {
   const l = await fixture(t), { projects } = l, byName = (name) => projects.find((p) => p.name === name).root;
   const view = (state) => l.render(40, 'en', state, 24, l.data, true, 'unicode', 'none', {
-    projects, projectName: (projects.find((p) => p.root === state.projectRoot) ?? projects[0]).name });
+    projects, projectName: (projects.find((p) => p.root === state.selectedProject) ?? projects[0]).name });
   let frame = view(onPage());
   assert.match(text(frame), /^demo-project ─+ M3b ▾ project 1\/6$/m);
   // Enter on the name row opens the list with the cursor on the shown project.
-  frame.state.projectCursor = 'project:switch';
+  frame.state.project.nav.cursor = 'project:switch';
   frame = view(send(frame, '\r').state);
-  assert.equal(frame.state.projectList, true);
-  assert.equal(frame.state.projectCursor, `project:list:${byName('demo-project')}`);
+  assert.equal((frame.state.project.view.kind === 'projects-list'), true);
+  assert.equal(frame.state.project.nav.cursor, `project:list:${byName('demo-project')}`);
   assert.match(plain(frame)[0], /^‹ Projects/);
   // [ ] do nothing on the list; the cursor moves through the entries (two rows, one stop) and Enter opens that hub.
-  assert.equal(view(send(frame, ']').state).state.projectRoot, undefined);
+  assert.equal(view(send(frame, ']').state).state.selectedProject, undefined);
   for (const raw of [DOWN, DOWN]) frame = view(send(frame, raw).state);
   frame = view(send(frame, '\r').state);
-  assert.equal(frame.state.projectRoot, byName('busy-project'));
-  assert.deepEqual([frame.state.projectList, frame.state.projectPage], [undefined, undefined]);
+  assert.equal(frame.state.selectedProject, byName('busy-project'));
+  assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), projectPageOf(frame.state)], [false, undefined]);
   assert.match(text(frame), /^busy-project ─+ M3b ▾ project 4\/6$/m, 'the hub of that project, numbered by the switch order');
   // Stepping on with ] leaves that hub: Esc no longer goes back to the list it was opened from.
   const stepped = view(send(frame, ']').state);
-  assert.equal(stepped.state.projectBack, undefined);
-  assert.equal(esc(stepped).state.projectList, undefined);
+  assert.equal(stepped.state.project.fromProjectsList, false);
+  assert.equal((esc(stepped).state.project.view.kind === 'projects-list'), false);
   // Esc on a hub reached from the list goes back to it, with the cursor on that project; Esc on the list returns to the hub.
   frame = view(esc(frame).state);
-  assert.equal(frame.state.projectList, true);
-  assert.equal(frame.state.projectCursor, `project:list:${byName('busy-project')}`);
+  assert.equal((frame.state.project.view.kind === 'projects-list'), true);
+  assert.equal(frame.state.project.nav.cursor, `project:list:${byName('busy-project')}`);
   frame = view(esc(frame).state);
-  assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('busy-project')]);
+  assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('busy-project')]);
   // That hub was not reached from the list now: Esc on it does what it always did (nothing here), so keys can be given back.
-  assert.equal(esc(frame).state.projectList, undefined);
+  assert.equal((esc(frame).state.project.view.kind === 'projects-list'), false);
   assert.match(text(view(esc(frame).state)), /^busy-project ─+ M3b ▾ project 4\/6$/m);
   // One click on an entry opens its hub; a click on the crumb row returns to the shown project's hub.
-  frame = view(onPage(undefined, { projectList: true }));
+  frame = view(onPage(undefined, { project: { view: { kind: 'projects-list' } } }));
   const at = frame.workboard.rows.findIndex((r) => r.item === `project:list:${byName('waiting-project')}`);
   frame = view(click(frame, 3, at + 1).state);
-  assert.equal(frame.state.projectRoot, byName('waiting-project'));
+  assert.equal(frame.state.selectedProject, byName('waiting-project'));
   frame = view(esc(frame).state);
-  assert.equal(frame.state.projectList, true);
+  assert.equal((frame.state.project.view.kind === 'projects-list'), true);
   frame = view(click(frame, 1, 0).state);
-  assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('waiting-project')]);
+  assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('waiting-project')]);
   // A page: Esc goes up to the hub, then (the hub being reached from the list) to the list.
-  frame = view(send(view(onPage(undefined, { projectList: true })), '\r').state);
+  frame = view(send(view(onPage(undefined, { project: { view: { kind: 'projects-list' } } })), '\r').state);
   frame = view(send(frame, '\r').state);
-  assert.equal(frame.state.projectPage, 'progress');
+  assert.equal(projectPageOf(frame.state), 'progress');
   frame = view(esc(frame).state);
-  assert.equal(frame.state.projectPage, undefined);
+  assert.equal(projectPageOf(frame.state), undefined);
   frame = view(esc(frame).state);
-  assert.equal(frame.state.projectList, true);
+  assert.equal((frame.state.project.view.kind === 'projects-list'), true);
   // The right arrow opens the hub of the project shown last, not the list; so does the left arrow then the right one.
   frame = view(send(frame, '\x1b[D').state);
-  assert.equal(frame.state.mainTab, 'home');
+  assert.equal(frame.state.activeTab, 'home');
   frame = view(send(frame, '\x1b[C').state);
-  assert.deepEqual([frame.state.mainTab, frame.state.projectList, frame.state.projectRoot], ['project', undefined, undefined]);
-  frame = view(send(view(onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') })), '\x1b[D').state);
+  assert.deepEqual([frame.state.activeTab, (frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], ['project', false, undefined]);
+  frame = view(send(view(onPage(undefined, { selectedProject: byName('quiet-project'), project: { view: { kind: 'projects-list' } } })), '\x1b[D').state);
   frame = view(send(frame, '\x1b[C').state);
-  assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('quiet-project')]);
+  assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('quiet-project')]);
   assert.match(text(frame), /^quiet-project ─+ M3b ▾ project 2\/6$/m);
   // The list survives the panel's own restart: the whole state goes through the reload place.
-  const listed = onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') });
-  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: listed }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
+  const listed = onPage(undefined, { selectedProject: byName('quiet-project'), project: { view: { kind: 'projects-list' } } });
+  process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: listed, settings: null });
   const place = readPanelPlace();
-  assert.deepEqual([place.state.projectList, place.state.projectRoot], [true, byName('quiet-project')]);
+  assert.deepEqual([(place.state.project.view.kind === 'projects-list'), place.state.selectedProject], [true, byName('quiet-project')]);
   assert.match(plain(view(place.state))[0], /^‹ Projects/);
   // A root that left the list is the panel's own again; a list that shrank to one project is the plain hub.
   assert.match(text(l.render(40, 'en', place.state, 24, l.data, true, 'unicode', 'none', { projects: projects.slice(0, 1), projectName: 'demo-project' })), /^demo-project ─+ M3b$/m);
@@ -151,15 +153,15 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
 test('one project shows no list: no `▾ i/n`, no list, Esc and [ ] as before', async (t) => {
   const l = await fixture(t), one = l.projects.slice(0, 1);
   const view = (state, projects = one) => l.render(40, 'en', state, 24, l.data, true, 'unicode', 'none', { projects, projectName: 'demo-project' });
-  const forced = view(onPage(undefined, { projectList: true, projectBack: true }));
+  const forced = view(onPage(undefined, { project: { fromProjectsList: true, view: { kind: 'projects-list' } } }));
   assert.equal(forced.projects, undefined);
   assert.doesNotMatch(text(forced), /▾|‹ Projects|\[ \]/);
   assert.match(text(forced), /^Progress /m);
-  assert.equal(esc(forced).state.projectList, true, 'a stale flag is left alone, never acted on');
+  assert.equal((esc(forced).state.project.view.kind === 'projects-list'), true, 'a stale flag is left alone, never acted on');
   assert.doesNotMatch(plain(view(esc(forced).state))[0], /Projects/);
-  assert.equal(send(forced, ']').state.projectRoot, undefined);
+  assert.equal(send(forced, ']').state.selectedProject, undefined);
   // Enter on the first row opens a page, exactly as with no list at all.
-  assert.equal(send(forced, '\r').state.projectPage, 'progress');
+  assert.equal(projectPageOf(send(forced, '\r').state), 'progress');
   assert.deepEqual(plain(view(onPage())), plain(l.render(40, 'en', onPage(), 24, l.data, true, 'unicode', 'none', { projectName: 'demo-project' })));
 });
 test('the list reads no Git and re-reads only the files that changed', async (t) => {
@@ -209,7 +211,7 @@ ProjectCollector.prototype.collect = function (shown, ...rest) { process.stderr.
 await runLivePage();
 `);
   // The panel opens on the list, as after a reload.
-  const place = JSON.stringify({ state: { ...initialMonitorState(), mainTab: 'project', projectList: true } }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
+  const place = encodePanelPlace({ state: onPage(undefined, { project: { view: { kind: 'projects-list' } } }), settings: null });
   const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...l.env, CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: l.cwd, HUD_PANEL_RELOAD_PLACE: place } });
   let log = '', stderr = '';

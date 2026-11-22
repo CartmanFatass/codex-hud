@@ -1,3 +1,4 @@
+import { splitOf, withState, sliceState } from '../fixtures/state-helpers.mjs';
 /** What the owner tries is never cut (spec §2.2, PANEL-REDESIGN 04): a to-try slice and a waiting item wrap whole at 40 columns in Classic and
  *  Split; with the model on a slice's brief and acceptance steps sit above its text, with it off nothing is asked and the text stands alone. */
 import test from 'node:test';
@@ -8,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
 import { NOW, TREE, plain } from '../fixtures/project-page.mjs';
-import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { SmallModel } from '../../dist/collectors/small-model.js';
 import { parseBrief, TryBriefs } from '../../dist/collectors/try-brief.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
@@ -26,7 +27,8 @@ async function fixture(t) {
     ledger: f.rich.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, text: `${LONG} (d0e1f2a3)` } : r.id === 'NO-HASH' ? { ...r, milestone: '0.1.3', text: LONG.replace('ENDOFLEDGER', 'ENDOFOTHER') } : r)) };
   return { f, data, root };
 }
-const progress = (extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage: 'progress', projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
+const asSplit = (state) => withState(state, { prefs: { panelLayout: 'split' } });
+const progress = (extra) => (withState(sliceState(), { activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: { kind: 'progress' } } }, extra));
 const text = (frame) => plain(frame).join('\n');
 /** The words wrapped across rows, read back as one line. */
 const flat = (frame) => text(frame).replace(/\s+/g, ' ');
@@ -35,18 +37,18 @@ const fits = (frame) => frame.lines.forEach((l) => assert.equal(visualLength(l),
 
 test('Classic at 40 columns: a long to-try slice and a long waiting item wrap whole instead of being cut', async (t) => {
   const { f, data } = await fixture(t);
-  const tryView = f.render(40, 'en', 40, progress({ projectTry: { scroll: 0 } }), data);
+  const tryView = f.render(40, 'en', 40, progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), data);
   fits(tryView);
   whole(tryView, 'ENDOFLEDGER');
   assert.ok(text(tryView).split('\n').filter((l) => /watcher|loop|folder|every open|ENDOFLEDGER/.test(l)).length >= 3, 'the text is on several rows under the id');
-  const hub = f.render(40, 'en', 40, { ...initialMonitorState(), mainTab: 'project', projectFolded: new Set(['agents', 'healthy', 'files']) }, data);
+  const hub = f.render(40, 'en', 40, withState(sliceState(), { activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']) } }), data);
   fits(hub);
   assert.ok(flat(hub).includes('ENDOFWAITING'), 'the hub flows the waiting item whole into its spare rows');
 });
 
 test('Classic short of room: the row the cursor is on keeps its whole text, the others keep two rows', async (t) => {
   const { f, data } = await fixture(t);
-  const rows = (cursor, height) => f.render(40, 'en', height, progress({ projectTry: { scroll: 0 }, projectCursor: cursor }), data).panes[0].rows.map((r) => r.text).join('\n').replace(/\s+/g, ' ');
+  const rows = (cursor, height) => f.render(40, 'en', height, progress({ project: { nav: { cursor }, view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), data).panes[0].rows.map((r) => r.text).join('\n').replace(/\s+/g, ' ');
   const tall = rows('project:fold:hist:DATA-ONE', 60);
   assert.ok(tall.includes('ENDOFLEDGER') && tall.includes('ENDOFOTHER'), 'with the rows, every slice is whole');
   const short = rows('project:fold:hist:DATA-ONE', 16);
@@ -56,13 +58,13 @@ test('Classic short of room: the row the cursor is on keeps its whole text, the 
 
 test('Split at 40 columns: the hub and Progress preview wrap a long to-try slice and a long waiting item whole', async (t) => {
   const { f, data } = await fixture(t);
-  const hub = f.render(40, 'en', 60, split({ mainTab: 'project' }), data);
+  const hub = f.render(40, 'en', 60, split({ activeTab: 'project' }), data);
   fits(hub);
   whole(hub, 'ENDOFLEDGER');
-  const waiting = f.render(40, 'en', 60, split({ mainTab: 'project', projectCursor: 'project:fold:waiting' }), data);
+  const waiting = f.render(40, 'en', 60, split({ activeTab: 'project', project: { nav: { cursor: 'project:fold:waiting' } } }), data);
   fits(waiting);
   assert.ok(flat(waiting).includes('ENDOFWAITING'));
-  const page = f.render(40, 'en', 60, split({ ...progress(), projectCursor: 'project:slice:DATA-ONE' }), data);
+  const page = f.render(40, 'en', 60, asSplit(withState(progress(), { project: { nav: { cursor: 'project:slice:DATA-ONE' } } })), data);
   fits(page);
   // The Progress list row is cut at a word (UX-PASS D2); the preview below it keeps the whole text.
   assert.ok(flat(page).includes('ENDOFLEDGER'), 'the preview keeps the whole slice text');
@@ -78,7 +80,7 @@ test('a to-try row with a brief: its id and age on one row, the first sentence b
   const SENTENCE = 'Job rows no longer vanish when a session file loops back.';
   // The id row, then the rows under it up to the next row that starts at the margin (the next slice).
   const under = (lines) => { const at = lines.findIndex((l) => /^\s*[◇✓] DATA-ONE/.test(l)); return { id: lines[at], text: lines.slice(at + 1).slice(0, 3).filter((l) => /^ {2,}[^\s◇◆◐○✓▸]/.test(l)).map((l) => l.trim()).join(' ') }; };
-  for (const [view, state] of [['Classic to-try view', progress({ projectTry: { scroll: 0 } })], ['Classic history', progress()], ['Split Progress list', split({ ...progress(), projectCursor: 'project:slice:DATA-ONE' })]]) {
+  for (const [view, state] of [['Classic to-try view', progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } })], ['Classic history', progress()], ['Split Progress list', asSplit(withState(progress(), { project: { nav: { cursor: 'project:slice:DATA-ONE' } } }))]]) {
     const frame = f.render(40, 'en', 60, state, withBrief);
     fits(frame);
     const lines = view.startsWith('Split') ? frame.panes.find((p) => p.id === 'agents').rows.map((r) => stripAnsi(r.text).trimEnd()) : plain(frame);
@@ -89,21 +91,21 @@ test('a to-try row with a brief: its id and age on one row, the first sentence b
     assert.doesNotMatch(lines.join(' '), /Nothing else changes|ENDOFLEDGER/, `${view}: neither the second sentence nor the ledger text on a list row`);
   }
   // Wide enough, the sentence is whole beside the id, and still only the first.
-  const wide = plain(f.render(100, 'en', 60, progress({ projectTry: { scroll: 0 } }), withBrief)).filter((l) => /DATA-ONE/.test(l));
+  const wide = plain(f.render(100, 'en', 60, progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), withBrief)).filter((l) => /DATA-ONE/.test(l));
   assert.match(wide[0], /DATA-ONE {2}Job rows no longer vanish when a session file loops back\.(?! Nothing)/);
   // A long id does not take the sentence's room: it goes under the id, whole.
   const long = { ...withBrief, ledger: withBrief.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, id: 'SUPERVISOR-MCP-LONG-ID' } : r)) };
-  const longRows = plain(f.render(40, 'en', 60, progress({ projectTry: { scroll: 0 } }), long)), at = longRows.findIndex((l) => /SUPERVISOR-MCP-LONG-ID/.test(l));
+  const longRows = plain(f.render(40, 'en', 60, progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), long)), at = longRows.findIndex((l) => /SUPERVISOR-MCP-LONG-ID/.test(l));
   assert.ok(at >= 0 && !/Job rows/.test(longRows[at]) && /^ {2,}Job rows no longer vanish/.test(longRows[at + 1]), 'the sentence is under the long id');
   // Chinese ends a sentence with 。 and wraps no word; the rows still fit 40 columns.
-  const frame = f.render(40, 'zh', 60, progress({ projectTry: { scroll: 0 } }), zh);
+  const frame = f.render(40, 'zh', 60, progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), zh);
   fits(frame);
   assert.ok(under(plain(frame)).text.startsWith('会话文件回环时，任务行不再消失。'), 'the sentence under the id');
   assert.doesNotMatch(flat(frame), /其余保持不变/);
   // The hub's Latest is a one-row list: it says the id alone unless a useful part of the sentence fits. Split's To try gives the id a row.
-  const hub = f.render(40, 'en', 60, { ...initialMonitorState(), mainTab: 'project', projectFolded: new Set(FOLDED) }, withBrief);
+  const hub = f.render(40, 'en', 60, withState(sliceState(), { activeTab: 'project', project: { folded: new Set(FOLDED) } }), withBrief);
   assert.match(plain(hub).find((l) => /◇ DATA-ONE/.test(l)), /DATA-ONE {2}Job rows|DATA-ONE\s+to try/);
-  const preview = f.render(40, 'en', 60, split({ mainTab: 'project' }), withBrief);
+  const preview = f.render(40, 'en', 60, split({ activeTab: 'project' }), withBrief);
   fits(preview);
   const rows = plain(preview), idRow = rows.findIndex((l) => /◇ DATA-ONE/.test(l));
   assert.equal(rows.filter((l) => /◇ DATA-ONE/.test(l)).length, 1, 'Split hub: one id row');
@@ -116,7 +118,7 @@ test('without a brief (model off, pending or failed) a to-try row keeps the whol
   const { f, data } = await fixture(t);
   const path = '.scratch/panel-ux/issues/01-owner-text-counts-keys.md';
   const long = { ...data, ledger: data.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, text: `ticket ${path} and an overlong-hyphenated-compound-name-that-has-no-spaces-at-all-ENDOFPATH (d0e1f2a3)` } : r)) };
-  for (const state of [progress({ projectTry: { scroll: 0 } }), split({ mainTab: 'project' })]) {
+  for (const state of [progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), split({ activeTab: 'project' })]) {
     const frame = f.render(40, 'en', 60, state, long);
     fits(frame);
     const lines = plain(frame).map((l) => l.trimEnd());
@@ -140,37 +142,37 @@ test('the preview of a briefed slice: whole brief, numbered steps, then the orig
     assert.equal(at('ENDOFLEDGER') >= 0, open, open ? 'unfolded: the original text follows the fold row' : 'folded: the original text is not there');
     if (open) assert.ok(at('ENDOFLEDGER') > at('Ledger line'));
   };
-  const cursor = { projectCursor: 'project:slice:DATA-ONE' };
-  const preview = f.render(40, 'en', 60, split({ ...progress(), ...cursor }), withBrief);
+  const cursor = { project: { nav: { cursor: 'project:slice:DATA-ONE' } } };
+  const preview = f.render(40, 'en', 60, asSplit(withState(progress(), cursor)), withBrief);
   fits(preview);
   order(preview, false);
   assert.match(text(preview), /▸ Ledger line/);
-  const unfolded = f.render(40, 'en', 60, split({ ...progress(), ...cursor, projectFolded: new Set([...FOLDED, 'ledger:DATA-ONE']) }), withBrief);
+  const unfolded = f.render(40, 'en', 60, asSplit(withState(progress(), cursor, { project: { folded: new Set([...FOLDED, 'ledger:DATA-ONE']) } })), withBrief);
   fits(unfolded);
   order(unfolded, true);
   assert.match(text(unfolded), /▾ Ledger line/);
   // Classic: the row that is not expanded shows the sentence only; expanded, the brief and steps with the original text folded; one more Enter unfolds it.
-  const row = f.render(40, 'en', 60, progress({ projectTry: { scroll: 0 } }), withBrief);
+  const row = f.render(40, 'en', 60, progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), withBrief);
   assert.doesNotMatch(flat(row), /How to try|Ledger line/);
-  const open = f.render(40, 'en', 60, progress({ projectTry: { scroll: 0 }, projectFolded: new Set([...FOLDED, 'hist:DATA-ONE']) }), withBrief);
+  const open = f.render(40, 'en', 60, progress({ project: { folded: new Set([...FOLDED, 'hist:DATA-ONE']), view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), withBrief);
   fits(open);
   order(open, false);
-  const both = f.render(40, 'en', 60, progress({ projectTry: { scroll: 0 }, projectFolded: new Set([...FOLDED, 'hist:DATA-ONE', 'ledger:DATA-ONE']) }), withBrief);
+  const both = f.render(40, 'en', 60, progress({ project: { folded: new Set([...FOLDED, 'hist:DATA-ONE', 'ledger:DATA-ONE']), view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), withBrief);
   fits(both);
   order(both, true);
   const press = (frame, key, extra = {}) => handleMonitorInput({ ...frame.state, ...extra }, { type: 'key', key }, { tree: TREE, frame, nowMs: NOW });
-  const onFold = f.render(40, 'en', 60, progress({ projectTry: { scroll: 0 }, projectFolded: new Set([...FOLDED, 'hist:DATA-ONE']), projectCursor: 'project:fold:ledger:DATA-ONE' }), withBrief);
-  assert.ok(press(onFold, 'enter').state.projectFolded.has('ledger:DATA-ONE'), 'Classic: Enter on the fold row unfolds the original text');
+  const onFold = f.render(40, 'en', 60, progress({ project: { nav: { cursor: 'project:fold:ledger:DATA-ONE' }, folded: new Set([...FOLDED, 'hist:DATA-ONE']), view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), withBrief);
+  assert.ok(press(onFold, 'enter').state.project.folded.has('ledger:DATA-ONE'), 'Classic: Enter on the fold row unfolds the original text');
   // Split: Enter on the slice's row goes into the preview, onto the fold row; Enter there unfolds, again folds.
   const inside = press(preview, 'enter');
-  assert.equal(inside.state.splitFocus, 'preview');
-  assert.equal(inside.state.splitSub, 'project:fold:ledger:DATA-ONE');
+  assert.equal(splitOf(inside.state).focus, 'preview');
+  assert.equal(splitOf(inside.state).previewCursor, 'project:fold:ledger:DATA-ONE');
   const afterInside = f.render(40, 'en', 60, inside.state, withBrief);
   const unfoldedByKey = press(afterInside, 'enter');
-  assert.ok(unfoldedByKey.state.projectFolded.has('ledger:DATA-ONE'));
+  assert.ok(unfoldedByKey.state.project.folded.has('ledger:DATA-ONE'));
   assert.match(text(f.render(40, 'en', 60, unfoldedByKey.state, withBrief)), /ENDOFLEDGER/);
   // Without a brief the slice's preview is the whole text as before: nothing to fold, so Enter still opens the file.
-  const plainPreview = f.render(40, 'en', 60, split({ ...progress(), ...cursor }), data);
+  const plainPreview = f.render(40, 'en', 60, asSplit(withState(progress(), cursor)), data);
   assert.doesNotMatch(text(plainPreview), /Ledger line|How to try/);
   assert.equal(press(plainPreview, 'enter').action?.type, 'open-files');
 });
@@ -182,8 +184,8 @@ test('one count, one form: Waiting, the Progress row and the hub page row say th
   for (const lang of ['en', 'zh']) {
     const word = lang === 'en' ? 'to try' : '待试用', numbers = (frame) => [...text(frame).matchAll(new RegExp(`(\\d+) ${word}`, 'g'))].map((m) => Number(m[1]));
     const frames = {
-      hub: f.render(60, lang, 40, { ...initialMonitorState(), mainTab: 'project', projectFolded: new Set(FOLDED) }, data),
-      split: f.render(60, lang, 40, split({ mainTab: 'project' }), data),
+      hub: f.render(60, lang, 40, withState(sliceState(), { activeTab: 'project', project: { folded: new Set(FOLDED) } }), data),
+      split: f.render(60, lang, 40, split({ activeTab: 'project' }), data),
       home: f.render(60, lang, 40, split(), data),
     };
     for (const [name, frame] of Object.entries(frames)) {
@@ -254,7 +256,7 @@ test('a changed ticket hides the old brief during a replacement and after refusa
   const row = { ...s.row('the watcher now survives a link loop (.scratch/demo/issues/01-thing.md)'), milestone: '0.1.3' };
   const snapshot = { ...data, ledger: data.ledger.map((r) => r.id === row.id ? row : r) };
   const current = (snap = snapshot) => s.briefs.apply(s.root, snap);
-  const frame = (snap = snapshot) => f.render(40, 'en', 24, split(progress({ projectCursor: 'project:slice:DATA-ONE' })), current(snap));
+  const frame = (snap = snapshot) => f.render(40, 'en', 24, asSplit(progress({ project: { nav: { cursor: 'project:slice:DATA-ONE' } } })), current(snap));
   s.briefs.update(s.root, [row]);
   await until(() => current() !== snapshot);
   assert.match(flat(frame()), /Job rows no longer vanish/);

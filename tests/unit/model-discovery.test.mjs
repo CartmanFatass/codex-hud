@@ -1,3 +1,4 @@
+import { encodePanelPlace } from '../../dist/utils/panel-reload.js';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -290,16 +291,8 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
     runner,
     `import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};\nawait runLivePage();\nprocess.exit(0);\n`
   );
-  const place = JSON.stringify(
-    {
-      state: {
-        ...initialMonitorState(),
-        mainTab: 'project',
-        control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'files', 'usage']) }).control,
-      },
-    },
-    (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v)
-  );
+  const place = encodePanelPlace({ state: { ...initialMonitorState(), activeTab: 'project',
+    control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'files', 'usage']) }).control }, settings: null });
   const child = spawn(process.execPath, [runner], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {

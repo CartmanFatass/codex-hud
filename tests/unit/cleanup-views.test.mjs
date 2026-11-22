@@ -87,7 +87,7 @@ test('Changes keeps key f and repository/worktree summary; no file selection, pr
   });
   const [key] = new WorkbenchInputDecoder('workboard').push(Buffer.from('f'));
   const state = handleMonitorInput(home.state, key, { tree, frame: home }).state;
-  assert.equal(state.focus, 'changes');
+  assert.equal(state.subpage?.kind, 'changes');
   const frame = renderMonitor({ tree, worktrees, state, width: 120, height: 30 });
   const pane = frame.panes.find((p) => p.id === 'changes');
   const text = pane.rows.map((row) => stripAnsi(row.text)).join('\n');

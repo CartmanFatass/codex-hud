@@ -1,3 +1,5 @@
+import { withState } from '../fixtures/state-helpers.mjs';
+import { homeTarget } from '../../dist/render/monitor-state.js';
 /** PANEL-UX-02: one meaning per key, a row says its state once, 40-column rows keep the part that identifies them, the fixed words follow the panel language. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -66,7 +68,7 @@ test('a printable key is one decoder name, and Help covers the decoder with each
     for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
       const prev = setLanguage(lang);
       try {
-        const draw = (width) => renderMonitor({ tree: TREE, state: { ...initialMonitorState(), panelLayout, help: true }, width, height: 40, nowMs: NOW });
+        const draw = (width) => renderMonitor({ tree: TREE, state: withState(initialMonitorState(), { prefs: { panelLayout }, help: {} }), width, height: 40, nowMs: NOW });
         const read = (width) => {
           const rows = draw(width).workboard.rows;
           const body = rows.slice(0, rows.findIndex((r) => /(?:Backup skills|备用技能) ─/.test(r.text)));
@@ -114,9 +116,9 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
             const backupSkills = [{ name: 'synthetic', en: 'A short test description.', zh: '用于测试的说明。' }];
             const draw = (state) => renderMonitor({ tree: TREE, width, height, state, nowMs: NOW, backupSkills });
             const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW }).state;
-            const from = draw({ ...initialMonitorState(), panelLayout, experiments: true, mainTab, helpScroll: 11 });
+            const from = draw(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout, experiments: true } }));
             const help = draw(press(from, '?'));
-            assert.equal(help.state.mainTab, mainTab);
+            assert.equal(help.state.activeTab, mainTab);
             const anchored = i === 1 || i === 2;
             assert.match(help.lines[anchored ? 1 : 2], new RegExp(`^${titles[i]} ─`));
             if (!anchored) assert.equal(help.lines[1].trim(), '');
@@ -126,8 +128,8 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
             assert.match(top.lines[2], new RegExp(`^${titles[0]} ─`));
             for (const key of ['\x1b', '?', '\r']) {
               const closed = press(help, key);
-              assert.equal(closed.help, false);
-              assert.equal(closed.mainTab, mainTab);
+              assert.equal(!!closed.help, false);
+              assert.equal(closed.activeTab, mainTab);
             }
           }
         } finally { setLanguage(previous); }
@@ -139,12 +141,12 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
 test('Help scrolls over a Control draft and closes back to the same place without a write or discard', async (t) => {
   const { busy } = await fixtures(t);
   for (const panelLayout of ['classic', 'split']) {
-    const state = onControl({ cursor: 'project:role:imp' }, { panelLayout });
+    const state = onControl({ cursor: 'project:role:imp' }, { prefs: { panelLayout } });
     const d = driver(busy, { state, data: busy.control, height: 24 });
     const press = (raw) => d.run(decode(raw)[0]);
     press('N');
     assert.equal(press('?').state.overlay.sheet.text, '?');
-    assert.equal(d.state.help, false);
+    assert.equal(!!d.state.help, false);
     press('\x1b');
     press('\r');
     press('J');
@@ -157,7 +159,7 @@ test('Help scrolls over a Control draft and closes back to the same place withou
     for (const back of ['\x1b', '?', '\r']) {
       const opened = press('?');
       assert.equal(opened.action, undefined);
-      assert.equal(d.state.help, true);
+      assert.equal(!!d.state.help, true);
       assert.equal(d.state.overlay.mode.kind, 'places');
       assert.match(d.lines()[1], /^Control ─/);
       press('\x1b[H');
@@ -165,7 +167,7 @@ test('Help scrolls over a Control draft and closes back to the same place withou
       assert.equal(d.state.overlay.at, chain.at);
       const returned = press(back);
       assert.equal(returned.action, undefined);
-      assert.equal(d.state.help, false);
+      assert.equal(!!d.state.help, false);
       assert.deepEqual(d.state.overlay, chain);
       assert.deepEqual(d.state.control.roles, roles);
       assert.deepEqual(d.lines(), original);
@@ -174,7 +176,7 @@ test('Help scrolls over a Control draft and closes back to the same place withou
     press('i');
     press('\r');
     assert.equal(press('?').state.overlay.mode.input.text, '?');
-    assert.equal(d.state.help, false);
+    assert.equal(!!d.state.help, false);
     press('\x1b');
     press('\x1b');
     for (const [raw, key] of [['\t', 'tab'], [']', 'project-next'], ['q', 'close']]) {
@@ -195,7 +197,7 @@ test('top row names each tab once and shows a model-text switch only when off an
     const previous = setLanguage(lang);
     try {
       for (const panelLayout of ['classic', 'split']) for (const experiments of [false, true]) for (const width of [40, 80, 120]) {
-        const state = { ...initialMonitorState(), panelLayout, experiments };
+        const state = withState(initialMonitorState(), { prefs: { panelLayout, experiments } });
         for (const modelEnabled of [true, false]) {
           const frame = renderMonitor({ tree: TREE, state, modelEnabled, width, height: 16, nowMs: NOW });
           assert.equal(visualLength(frame.lines[0]), width);
@@ -213,7 +215,7 @@ test('top row names each tab once and shows a model-text switch only when off an
       }
     } finally { setLanguage(previous); }
   }
-  const narrow = renderMonitor({ tree: TREE, state: { ...initialMonitorState(), experiments: true },
+  const narrow = renderMonitor({ tree: TREE, state: withState(initialMonitorState(), { prefs: { experiments: true } }),
     modelEnabled: false, projectWaiting: 2, width: 40, height: 16, nowMs: NOW });
   assert.equal(stripAnsi(narrow.lines[0]).trim(), 'Home  Project ?2  Control  EXP');
   assert.equal(narrow.controls.some((c) => c.kind === 'brief'), false);
@@ -225,10 +227,10 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
   for (const panelLayout of ['classic', 'split']) for (const mainTab of ['home', 'project', 'control', 'exp']) {
     const render = (state) => busy.render(40, 'en', 40, state, busy.control, { expData });
     const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW, standalone: true });
-    const root = render({ ...initialMonitorState(), panelLayout, mainTab, experiments: true });
+    const root = render(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout, experiments: true } }));
     const moved = render(press(root, '\x1b[B').state);
-    const cursor = ({ home: panelLayout === 'split' ? (s) => s.splitCursor : (s) => s.homeTarget,
-      project: (s) => s.projectCursor, control: (s) => s.control.roles.nav.cursor, exp: (s) => s.exp.cursor })[mainTab];
+    const cursor = ({ home: panelLayout === 'split' ? (s) => s.home.split.listCursor : (s) => homeTarget(s.home),
+      project: (s) => s.project.nav.cursor, control: (s) => s.control.roles.nav.cursor, exp: (s) => s.exp.cursor })[mainTab];
     assert.ok(cursor(moved.state), `${panelLayout} ${mainTab} has a cursor`);
     assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${panelLayout} ${mainTab} moved off its first row`);
     const escaped = press(moved, '\x1b');
@@ -242,16 +244,16 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
 test('n flags a to-try row and does nothing on Home; > and < are Home’s next and previous card that needs the owner', async (t) => {
   const { busy } = await fixtures(t);
   // Home (Split): `n` moves nothing; `>` goes to the next card that asks or stalled, `<` back.
-  const home = driver(busy), start = home.state.splitCursor;
+  const home = driver(busy), start = home.state.home.split.listCursor;
   const flag = home.run({ type: 'key', key: 'try-flag', text: 'n' });
   assert.equal(flag.action, undefined);
-  assert.equal(home.state.splitCursor, start, 'n does not jump on Home');
+  assert.equal(home.state.home.split.listCursor, start, 'n does not jump on Home');
   home.run({ type: 'key', key: 'next-trouble', text: '>' });
-  assert.notEqual(home.state.splitCursor, start, '> moves to the next card that needs the owner');
+  assert.notEqual(home.state.home.split.listCursor, start, '> moves to the next card that needs the owner');
   home.run({ type: 'key', key: 'previous-trouble', text: '<' });
-  assert.equal(home.state.splitCursor, start, '< comes back');
+  assert.equal(home.state.home.split.listCursor, start, '< comes back');
   // The hub's to-try rows (Split): `n` flags, `>` and `<` do nothing.
-  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { panelLayout: 'split' }) });
+  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' } }) });
   for (const input of [{ type: 'key', key: 'next-trouble', text: '>' }, { type: 'key', key: 'previous-trouble', text: '<' }]) {
     const out = hub.run(input);
     assert.equal(out.action, undefined);
@@ -261,7 +263,7 @@ test('n flags a to-try row and does nothing on Home; > and < are Home’s next a
 
 test('the Control plane’s place keys are not the Split ratio’s: i and Delete add and remove, + - = leave the places alone', async (t) => {
   const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.control, state: split({ mainTab: 'control' }) });
+  const d = driver(busy, { data: busy.control, state: split({ activeTab: 'control' }) });
   d.run('enter');
   assert.equal(d.state.overlay.at, 0, 'the keys are on the places');
   const ratio = d.state.splitRatio;
@@ -277,16 +279,16 @@ test('the Control plane’s place keys are not the Split ratio’s: i and Delete
 
 test('g means one thing: a HUD job’s tab; the top of the list is the Home key', async (t) => {
   const { busy } = await fixtures(t);
-  const d = driver(busy), at = d.state.splitCursor, key = (state, raw) => handleMonitorInput(state, decode(raw)[0], { tree: TREE, frame: d.frame, nowMs: NOW, standalone: true });
+  const d = driver(busy), at = d.state.home.split.listCursor, key = (state, raw) => handleMonitorInput(state, decode(raw)[0], { tree: TREE, frame: d.frame, nowMs: NOW, standalone: true });
   // On a HUD job's row g opens its tab.
   assert.equal(key(d.state, 'g').action?.type, 'focus-job-tab');
   // Elsewhere it does nothing (it does not jump to the top, as it once did).
-  while (d.state.splitCursor !== 'home-progress:waiting') d.run('down');
-  const here = d.state.splitCursor, out = key(d.state, 'g');
+  while (d.state.home.split.listCursor !== 'home-progress:waiting') d.run('down');
+  const here = d.state.home.split.listCursor, out = key(d.state, 'g');
   assert.equal(out.action, undefined);
-  assert.equal(out.state.splitCursor, here);
+  assert.equal(out.state.home.split.listCursor, here);
   // The top of the list is the Home key.
-  assert.equal(key(d.state, '\x1b[H').state.splitCursor, at, 'the Home key goes to the top');
+  assert.equal(key(d.state, '\x1b[H').state.home.split.listCursor, at, 'the Home key goes to the top');
 });
 
 test('the footer shows the keys the selected row accepts', async (t) => {
@@ -295,20 +297,20 @@ test('the footer shows the keys the selected row accepts', async (t) => {
   // Home: a HUD job row offers its tab and stop; the Waiting block offers neither.
   const home = driver(busy, { width: 80 });
   assert.match(foot(home), /g job tab {2}X stop {2}⏎ open .*\? help$/);
-  while (home.state.splitCursor !== 'home-progress:waiting') home.run('down');
+  while (home.state.home.split.listCursor !== 'home-progress:waiting') home.run('down');
   assert.doesNotMatch(foot(home), /g job tab|X stop|o file|v inspect/);
   assert.match(foot(home), /⏎ open {2}\/ filter {2}a all {2}\? help$/);
   // The hub: the Progress row's to-try slices take Space, y and n; the other rows' pages do not.
-  const hub = driver(busy, { width: 80, data: busy.control, state: onPage(undefined, { panelLayout: 'split' }) });
+  const hub = driver(busy, { width: 80, data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' } }) });
   assert.match(foot(hub), /Space mark {2}y accept {2}n flag/, 'the Progress row previews the to-try slices');
   hub.run('down');
   assert.doesNotMatch(foot(hub), /y accept|n flag|Space mark/, 'Tickets takes none of them');
   // The Control plane: a role takes presets, the Usage and Harnesses rows do not; a place takes its own keys.
-  const control = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'control' }) });
+  const control = driver(busy, { width: 120, data: busy.control, state: split({ activeTab: 'control' }) });
   assert.match(foot(control), /c C preset/);
   while (control.state.control.roles.nav.cursor !== 'project:fold:usage') control.run('down');
   assert.doesNotMatch(foot(control), /c C preset|⏎ places/);
-  const places = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'control' }) });
+  const places = driver(busy, { width: 120, data: busy.control, state: split({ activeTab: 'control' }) });
   places.run('enter');
   assert.match(foot(places), /i add.*Del remove/);
   assert.doesNotMatch(foot(places), /\+ -/);
@@ -326,7 +328,7 @@ test('a row says its state once: Home’s lane rows, its cards and their model m
     return { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers) };
   };
   for (const f of [busy, idle]) for (const lang of ['en', 'zh']) for (const width of [40, 56, 80]) for (const layout of ['split', 'classic']) {
-    const state = { ...split(), panelLayout: layout }, board = marked(f);
+    const state = withState(split(), { prefs: { panelLayout: layout } }), board = marked(f);
     const frame = f.render(width, lang, 40, state, f.data, undefined, { workboard: board });
     for (const line of plain(frame)) assert.deepEqual(repeated(line, lang), [], `${layout} ${lang} ${width}: ${line}`);
     if (layout === 'classic') for (const line of plain(frame)) assert.doesNotMatch(line, /\[(done|failed|完成|失败)\] (done|failed|完成|失败)/);
@@ -341,8 +343,7 @@ test('at 40 columns the role row retains the next target without a placeholder t
   const { busy } = await fixtures(t);
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
-    const state = split({ mainTab: 'control', panelLayout, control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'usage', 'files']) }).control,
-      ...(panelLayout === 'classic' ? { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) } : {}) });
+    const state = split(withState({ activeTab: 'control', prefs: { panelLayout }, control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'usage', 'files']) }).control }, (panelLayout === 'classic' ? { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) } : {})));
     const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
     assert.match(text, /imp → agy/);
     assert.match(text, /pi\/openai +\[gpt-6\.1-sol ▾\]/);
@@ -355,11 +356,11 @@ test('at 40 columns the role row retains the next target without a placeholder t
 test('fixed words follow the panel language: the invalid role file’s reason, the Usage block with what is left, the Settings (no key) mark', async (t) => {
   const { busy } = await fixtures(t);
   const control = { ...busy.control, radar: { quotas: { codex: [{ label: '5h', remaining: 71 }], claude: [{ label: '7d', remaining: 7 }] }, roleStats: {} } };
-  const zh = plain(busy.render(40, 'zh', 60, split({ mainTab: 'control' }), control)).join('\n');
+  const zh = plain(busy.render(40, 'zh', 60, split({ activeTab: 'control' }), control)).join('\n');
   assert.match(zh, /JSON 无法解析/);
   assert.doesNotMatch(zh, /unparseable|雷达/);
   assert.match(zh, /用量 ─+ Codex 剩余 71%/, 'the figure says it is what is left');
-  const en = plain(busy.render(80, 'en', 60, split({ mainTab: 'control' }), control)).join('\n');
+  const en = plain(busy.render(80, 'en', 60, split({ activeTab: 'control' }), control)).join('\n');
   assert.match(en, /Usage ─+ codex 71% left · claude 7% left/);
   assert.match(en, /unparseable JSON/);
   // Settings: the mark on a Decision API without a key is the panel's language too.

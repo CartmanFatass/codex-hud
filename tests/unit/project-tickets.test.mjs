@@ -1,3 +1,4 @@
+import { withState, sliceState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +7,7 @@ import { join, dirname } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { ticketFixture, ticketFrames, ticketVocabulary } from '../fixtures/project-tickets.mjs';
 import { plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
-import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { homeProgressRows } from '../../dist/render/project-view.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
@@ -68,7 +69,7 @@ for (const [number, word, expectedState] of ticketVocabulary) test(`local tracke
   assert.deepEqual(ticket.blockers, [], 'resolved and wontfix dependencies do not block');
   for (const lang of ['en', 'zh']) {
     // The Done lane is folded by default; its rows are open here.
-    const frame = f.render(120, lang, onPage('tickets', { projectFolded: new Set(['agents', 'lane:done']) }), f.data, 'mocha');
+    const frame = f.render(120, lang, onPage('tickets', { project: { folded: new Set(['agents', 'lane:done']) } }), f.data, 'mocha');
     const row = frame.workboard.rows.find((r) => r.files?.[0] === ticket.path), text = stripAnsi(row.text);
     // A ticket that waits on a person is a `?` in For you, whatever else holds it; the rest keep their state's mark.
     const asks = ['needs-triage', 'needs-info', 'ready-for-human'].includes(word);
@@ -113,9 +114,9 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
   assert.match(plain(f.render(80, 'en', 'tickets', data)).join('\n'), /Project › Tickets\n\n  none/);
 });
 test('tickets are lanes by state: For you first, then Working, Ready, Blocked; Done starts folded and Enter/o toggle it without mutating state on render', async (t) => {
-  const f = await fixture(t), state = { ...initialMonitorState(), mainTab: 'project', projectPage: 'tickets' };
+  const f = await fixture(t), state = withState(sliceState(), { activeTab: 'project', project: { view: { kind: 'tickets' } } });
   let frame = f.render(120, 'en', state);
-  assert.equal(state.projectFolded, undefined);
+  assert.deepEqual(state.project.folded, new Set());
   const lines = plain(frame), at = (re) => lines.findIndex((l) => re.test(l));
   // The lanes in order, each with its count; the meter counts the done tickets of every feature, the codes name the features.
   assert.ok(at(/^For you ─+ 3$/) < at(/^Working ─+ 2$/) && at(/^Working ─+ 2$/) < at(/^Ready ─+ 3$/) && at(/^Ready ─+ 3$/) < at(/^Blocked ─+ 2$/) && at(/^Blocked ─+ 2$/) < at(/^▸ Done ─+ 4$/));
@@ -128,7 +129,7 @@ test('tickets are lanes by state: For you first, then Working, Ready, Blocked; D
   assert.match(lane('Working'), /◐ nt 02 Home lanes +imp 12m +1\/4/);
   assert.match(lane('Blocked'), /◆ nt 05 Shortcuts +← 03 ● +0\/1/);
   assert.doesNotMatch(lines.join('\n'), /Claude collector/);
-  frame.state.projectCursor = 'project:fold:lane:done';
+  frame.state.project.nav.cursor = 'project:fold:lane:done';
   frame = f.render(120, 'en', press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^Done ─+ 4$/m);
   assert.match(plain(frame).join('\n'), /✓ rt 01 Claude collector +0\/2/);
@@ -151,7 +152,7 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   const ticketRow = (frame) => frame.workboard.rows.find((r) => r.files?.[0] === f.paths.working);
   let frame = f.render(80, 'en', 'tickets');
   assert.doesNotMatch(plain(frame).join('\n'), /Criterion|first criterion landed/, 'a ticket starts closed');
-  frame.state.projectCursor = ticketRow(frame).item;
+  frame.state.project.nav.cursor = ticketRow(frame).item;
   const before = plain(frame);
   const opened = send(frame, '\r');
   assert.equal(opened.action, undefined, 'Enter shows the ticket here; it does not open an editor');
@@ -160,9 +161,9 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   assert.match(text, /02 Home lanes.*1\/4\n +✓ Criterion 1\n +○ Criterion 2\n +○ Criterion 3\n +○ Criterion 4\n +comment +The first criterion landed; the others wait for a synthetic/);
   assert.match(text, /decision that has not come yet\./, 'the latest comment, not the first');
   assert.doesNotMatch(text, /An earlier note/);
-  assert.equal(frame.state.projectCursor, ticketRow(frame).item, 'the cursor stays on the ticket');
+  assert.equal(frame.state.project.nav.cursor, ticketRow(frame).item, 'the cursor stays on the ticket');
   // Every row of the open ticket belongs to it: a click on its checklist folds it again, as the next Enter does.
-  assert.ok(frame.workboard.rows.filter((r) => r.item === frame.state.projectCursor).length >= 7);
+  assert.ok(frame.workboard.rows.filter((r) => r.item === frame.state.project.nav.cursor).length >= 7);
   frame = f.render(80, 'en', send(frame, '\r').state);
   assert.deepEqual(plain(frame), before);
   // o opens the exact file, closed or open, through the existing action and the herdr tab.
@@ -179,7 +180,7 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   ]);
   assert.deepEqual(calls.slice(3), calls.slice(0, 3));
   // A ticket with no checklist says so; a long title keeps its row and the status moves under it at 40 columns.
-  const bare = f.render(40, 'en', onPage('tickets', { projectFolded: new Set(['agents', 'ticket:native-tree:06-polish.md']) }));
+  const bare = f.render(40, 'en', onPage('tickets', { project: { folded: new Set(['agents', 'ticket:native-tree:06-polish.md']) } }));
   assert.match(plain(bare).join('\n'), /● nt 06 Polish +triaging +0\/0\n +no checklist/);
   assert.match(plain(bare).join('\n'), /◆ nt 04 Settings cleanup +← 02, 03 +0\/2\n/, 'the blockers share the row at 40 columns');
   // One meter for every ticket: thin, as full as the done share (a started one never empty, an unfinished one never full).
@@ -188,7 +189,7 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
 });
 test('Home collects no tickets; warm signatures read/parse nothing, changes unblock and reorder without cached overlays', async (t) => {
   const f = await fixture(t), calls = observe(t);
-  assert.equal(await f.collector.collect(projectShown(initialMonitorState()), f.board, NOW + 2), undefined);
+  assert.equal(await f.collector.collect(projectShown(sliceState()), f.board, NOW + 2), undefined);
   assert.ok(Object.values(calls).every((c) => c.length === 0));
   const warm = await f.collector.collect(true, f.board, NOW + 2);
   assert.equal(calls.readSync.length, 0);
@@ -281,7 +282,7 @@ test('40-column Tickets frame (EN and ZH) cuts titles at whole words or CJK char
   };
   for (const lang of ['en', 'zh']) {
     for (const layout of ['classic', 'split']) {
-      const state = onPage('tickets', { panelLayout: layout });
+      const state = onPage('tickets', { prefs: { panelLayout: layout } });
       const frame = f.render(40, lang, state, data);
       const lines = plain(frame);
       for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
@@ -300,7 +301,7 @@ test('40-column Tickets frame (EN and ZH) cuts titles at whole words or CJK char
       if (lang === 'en') assert.match(joined, /◐ nt 09 Vocabulary…       working  0\/1/);
     }
     // Split preview rule for a selected long-titled ticket cuts at a word boundary too.
-    const previewed = plain(f.render(40, lang, onPage('tickets', { panelLayout: 'split', projectCursor: 'project:tk:native-tree:12-ready-for-human.md' }), data)).join('\n');
+    const previewed = plain(f.render(40, lang, onPage('tickets', { project: { nav: { cursor: 'project:tk:native-tree:12-ready-for-human.md' } }, prefs: { panelLayout: 'split' } }), data)).join('\n');
     assert.match(previewed, /^12 Vocabulary… ─+ ready-for-human$/m);
   }
   // Home's open-tickets rows cut at a word boundary when narrow, and fall back to cell cut when the first word cannot fit.

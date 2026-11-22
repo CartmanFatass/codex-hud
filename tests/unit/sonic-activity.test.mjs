@@ -1,3 +1,4 @@
+import { withState } from '../fixtures/state-helpers.mjs';
 /** PANEL-V2 04: the ten-minute activity ring and its row, and sonic children as one-line branches under their parent on Home. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -52,8 +53,8 @@ test('Activity ring: a write counts in the current minute, buckets slide with th
 
 test('Activity row: an expanded running card and the Inspector show it under the milestone, in both languages, and nothing without activity', async (t) => {
   const s = await scene(t, { activity: [0, 0, 1, 2, 4, 6, 8, 3, 1, 2] });
-  const expanded = { ...initialMonitorState(), boardExpanded: new Set([s.key(s.main)]) };
-  const inspector = { ...initialMonitorState(), focus: 'details', boardInspect: { kind: 'worker', laneId: s.lane.id, workerId: s.main.id } };
+  const expanded = withState(initialMonitorState(), { home: { expanded: new Set([s.key(s.main)]) } });
+  const inspector = withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: s.lane.id, workerId: s.main.id } } });
   for (const width of [40, 80]) for (const [lang, word, span] of [['en', 'Activity', '10m'], ['zh', '活动', '10分']]) for (const state of [expanded, inspector]) {
     const lines = s.render(width, lang, state), row = text(lines).filter((l) => l.includes('▁▂▄▆█▃▁▂'));
     assert.equal(row.length, 1, `${lang} ${width}\n${lines.join('\n')}`);
@@ -61,13 +62,13 @@ test('Activity row: an expanded running card and the Inspector show it under the
     for (const line of lines) assert.equal(visualLength(line), width, line);
   }
   const quiet = await scene(t, { activity: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
-  assert.ok(!quiet.render(40, 'en', { ...expanded, boardExpanded: new Set([quiet.key(quiet.main)]) }).some((l) => l.includes('Activity')));
+  assert.ok(!quiet.render(40, 'en', withState(expanded, { home: { expanded: new Set([quiet.key(quiet.main)]) } })).some((l) => l.includes('Activity')));
 });
 
 test('Sonic children hang under their parent as one-line branches, in Classic and in Split’s preview, at 40 and 80 columns in both languages', async (t) => {
   const s = await scene(t);
   const lane = targetKey({ kind: 'lane', laneId: s.lane.id });
-  for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const [name, state] of [['classic', initialMonitorState()], ['split', split({ splitCursor: lane })]]) {
+  for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const [name, state] of [['classic', initialMonitorState()], ['split', split({ home: { split: { listCursor: lane } } })]]) {
     const lines = s.render(width, lang, state), shown = text(lines), at = shown.findIndex((l) => l.includes('├─ ⚡ sonic · check retry fl'));
     assert.ok(at > 0, `${name} ${lang} ${width}\n${lines.join('\n')}`);
     assert.match(shown[at], /^ {2}├─ ⚡ sonic · check retry fl\S* +3(m|分) ◉$/);
@@ -90,7 +91,7 @@ test('A folded parent shows how many sonic children still run on its title row, 
 
 test('The / filter keeps a matching sonic child under its parent', async (t) => {
   const s = await scene(t);
-  const lines = text(s.render(40, 'en', { ...initialMonitorState(), filterQuery: 'slow tests' }));
+  const lines = text(s.render(40, 'en', withState(initialMonitorState(), { home: { filter: { query: 'slow tests', editing: false } } })));
   const parent = lines.findIndex((l) => l.includes('reviewer') && l.includes('AUTH-REFRESH') || l.startsWith('◉ reviewer'));
   const child = lines.findIndex((l) => l.includes('└─ ⚡ sonic · list slow tests'));
   assert.ok(parent >= 0 && child > parent, lines.join('\n'));

@@ -129,7 +129,7 @@ test('full Project collection and both Control views include radar without chang
     piToday: { costUsd: 1.42, tokens: 184000, sessions: 2 },
     roleStats: { imp: { total: 6, ok: 5, failed: 1, quietEscalated: 1, avgMinutes: 6 } },
   } };
-  const split = (projectCursor, projectFolded) => onControl({ cursor: projectCursor, folded: projectFolded }, { panelLayout: 'split' });
+  const split = (projectCursor, projectFolded) => onControl({ cursor: projectCursor, folded: projectFolded }, { prefs: { panelLayout: 'split' } });
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
     const render = (snapshot, state) => f.render(width, lang, state, 80, snapshot);
     for (const state of ['control', split('project:role:imp')]) assert.deepEqual(render(empty, state).lines, render(baseline, state).lines);

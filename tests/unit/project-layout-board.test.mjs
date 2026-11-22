@@ -1,3 +1,4 @@
+import { withState, sliceState } from '../fixtures/state-helpers.mjs';
 /** PROJECT-LAYOUTS 01: `projectLayout` setting and the Board project layout (Split and Classic, EN and ZH at 40 columns). */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
-import { handleMonitorInput, initialMonitorState, monitorSettings } from '../../dist/render/monitor.js';
+import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { SETTING_ROWS, handleSettingsInput, renderSettingsPage, resetSettingsGroup } from '../../dist/render/settings-page.js';
 import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -55,7 +56,7 @@ test('Settings → Panel → Project layout defaults to Timeline, cycles Timelin
   t.after(() => { process.env = saved; });
 
   assert.equal(defaultSettings().projectLayout, 'timeline');
-  assert.equal(monitorSettings(defaultSettings()).projectLayout, 'timeline');
+  assert.equal(initialMonitorState(defaultSettings()).prefs.projectLayout, 'timeline');
 
   const selected = SETTING_ROWS.findIndex((r) => r.key === 'projectLayout');
   assert.ok(selected >= 0, 'projectLayout setting row exists');
@@ -72,7 +73,7 @@ test('Settings → Panel → Project layout defaults to Timeline, cycles Timelin
   state = handleSettingsInput(state, { type: 'key', key: 'right' }, renderSettingsPage(state, 40, 24)).state;
   saveSettings(state.draft);
   assert.equal(loadSettings().projectLayout, 'board');
-  assert.equal(monitorSettings(loadSettings()).projectLayout, 'board');
+  assert.equal(initialMonitorState(loadSettings()).prefs.projectLayout, 'board');
   assert.equal(resetSettingsGroup(state.draft, 'Panel').projectLayout, 'timeline');
 
   // Unknown value falls back to default timeline.
@@ -92,11 +93,11 @@ test('Settings → Panel → Project layout defaults to Timeline, cycles Timelin
 test('Board leaves Home and Tickets unchanged', async (t) => {
   const { busy } = await fixture(t);
   for (const panelLayout of ['classic', 'split']) {
-    const base = (extra) => ({ ...initialMonitorState(), panelLayout, ...extra });
-    assert.deepEqual(plain(busy.render(40, 'en', 32, base({ mainTab: 'home', projectLayout: 'board' }))),
-      plain(busy.render(40, 'en', 32, base({ mainTab: 'home', projectLayout: 'timeline' }))), `${panelLayout}: Home unchanged`);
-    assert.deepEqual(plain(busy.render(40, 'en', 32, base({ mainTab: 'project', projectPage: 'tickets', projectLayout: 'board' }))),
-      plain(busy.render(40, 'en', 32, base({ mainTab: 'project', projectPage: 'tickets', projectLayout: 'timeline' }))), `${panelLayout}: Tickets unchanged`);
+    const base = (extra) => (withState(sliceState(), { prefs: { panelLayout } }, extra));
+    assert.deepEqual(plain(busy.render(40, 'en', 32, base({ activeTab: 'home', prefs: { projectLayout: 'board' } }))),
+      plain(busy.render(40, 'en', 32, base({ activeTab: 'home', prefs: { projectLayout: 'timeline' } }))), `${panelLayout}: Home unchanged`);
+    assert.deepEqual(plain(busy.render(40, 'en', 32, base({ activeTab: 'project', prefs: { projectLayout: 'board' }, project: { view: { kind: 'tickets' } } }))),
+      plain(busy.render(40, 'en', 32, base({ activeTab: 'project', prefs: { projectLayout: 'timeline' }, project: { view: { kind: 'tickets' } } }))), `${panelLayout}: Tickets unchanged`);
   }
 });
 
@@ -105,8 +106,8 @@ test('Board hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
   const tries = tryCount(busy.control, 'slice');
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
-      const state = layout === 'split' ? split({ mainTab: 'project', projectLayout: 'board' }) : onPage(undefined, { projectLayout: 'board' });
-      const timelineState = layout === 'split' ? split({ mainTab: 'project', projectLayout: 'timeline' }) : onPage(undefined, { projectLayout: 'timeline' });
+      const state = layout === 'split' ? split({ activeTab: 'project', prefs: { projectLayout: 'board' } }) : onPage(undefined, { prefs: { projectLayout: 'board' } });
+      const timelineState = layout === 'split' ? split({ activeTab: 'project', prefs: { projectLayout: 'timeline' } }) : onPage(undefined, { prefs: { projectLayout: 'timeline' } });
       const frame = busy.render(40, lang, 34, state, busy.control);
       const timeline = busy.render(40, lang, 34, timelineState, busy.control);
       assertWidth(frame, 40, `hub ${layout} ${lang}`);
@@ -131,7 +132,7 @@ test('Board hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
     ledger: Array.from({ length: 30 }, (_, i) => ({ id: `S-${i + 1}`, state: i < 20 ? 'accepted' : 'todo', milestone: '0.1.3', text: `slice ${i + 1}`, at: NOW - 3600_000 })),
   };
   for (const lang of ['en', 'zh']) {
-    const frame = busy.render(40, lang, 30, onPage(undefined, { projectLayout: 'board' }), huge);
+    const frame = busy.render(40, lang, 30, onPage(undefined, { prefs: { projectLayout: 'board' } }), huge);
     assertWidth(frame, 40, `hub overflow ${lang}`);
     assert.match(plain(frame).join('\n'), /0\.1\.3 [✓○]+\+\d+\s+20\/30/);
   }
@@ -148,7 +149,7 @@ test('Board Progress at 40 cols EN and ZH (Split and Classic): cell order, brief
   const tries = tryCount(briefed, 'slice');
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
-      const state = layout === 'split' ? split({ mainTab: 'project', projectPage: 'progress', projectLayout: 'board' }) : onPage('progress', { projectLayout: 'board' });
+      const state = layout === 'split' ? split({ activeTab: 'project', prefs: { projectLayout: 'board' }, project: { view: { kind: 'progress' } } }) : onPage('progress', { prefs: { projectLayout: 'board' } });
       const frame = busy.render(40, lang, 38, state, briefed);
       assertWidth(frame, 40, `progress ${layout} ${lang}`);
       const lines = plain(frame), text = lines.join('\n');
@@ -171,7 +172,7 @@ test('Board Progress at 40 cols EN and ZH (Split and Classic): cell order, brief
     }
   }
   // Split: selecting DATA-ONE previews brief, steps and folded Ledger line; Space/y/n act on it.
-  const sp = driver(busy, { data: briefed, state: split({ mainTab: 'project', projectPage: 'progress', projectLayout: 'board', projectCursor: 'project:slice:DATA-ONE' }) });
+  const sp = driver(busy, { data: briefed, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:slice:DATA-ONE' }, view: { kind: 'progress' } }, prefs: { projectLayout: 'board' } }) });
   const spText = sp.lines().join('\n');
   assert.match(spText, /How to try/);
   assert.match(spText, /1\. Open Project tab/);
@@ -182,7 +183,7 @@ test('Board Progress at 40 cols EN and ZH (Split and Classic): cell order, brief
   assert.equal(sp.run({ type: 'key', key: 'try-flag', text: 'n' }).action.action, 'flag');
 
   // Classic: Enter on DATA-ONE expands brief + steps + folded Ledger line; Space/y/n work directly without projectTry.
-  const cl = driver(busy, { data: briefed, state: onPage('progress', { projectLayout: 'board', projectCursor: 'project:fold:hist:DATA-ONE' }) });
+  const cl = driver(busy, { data: briefed, state: onPage('progress', { project: { nav: { cursor: 'project:fold:hist:DATA-ONE' } }, prefs: { projectLayout: 'board' } }) });
   cl.run('enter');
   assert.match(cl.lines().join('\n'), /How to try/);
   assert.match(cl.lines().join('\n'), /▸ Ledger line/);
@@ -194,10 +195,10 @@ test('Board has no Control page and does not change the standalone Control tab',
   const { busy } = await fixture(t);
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
-    const board = { projectLayout: 'board', panelLayout };
+    const board = { prefs: { panelLayout, projectLayout: 'board' } };
     const hub = busy.render(40, lang, 36, onPage(undefined, board), control);
     assert.ok(!hub.workboard.rows.some((r) => r.item === 'project:page:control'));
-    const controlState = { ...split(), mainTab: 'control', panelLayout };
+    const controlState = withState(split(), { activeTab: 'control', prefs: { panelLayout } });
     const draw = (state) => busy.render(40, lang, 36, state, control).lines;
     assert.deepEqual(draw({ ...controlState, ...board }), draw(controlState));
   }
@@ -206,7 +207,7 @@ test('Board has no Control page and does not change the standalone Control tab',
 test('Board Projects list at 40 and 80 cols EN and ZH: aligned one-row-per-project table, exact width, no STATE.md whole', async (t) => {
   const { lists } = await fixture(t);
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const icons of ['unicode', 'text']) {
-    const frame = lists.list(width, lang, onPage(undefined, { projectList: true, projectLayout: 'board' }), 18, icons);
+    const frame = lists.list(width, lang, onPage(undefined, { prefs: { projectLayout: 'board' }, project: { view: { kind: 'projects-list' } } }), 18, icons);
     assertWidth(frame, width, `list ${width} ${lang} ${icons}`);
     const text = plain(frame).join('\n');
     assert.match(text, /demo-project/);
