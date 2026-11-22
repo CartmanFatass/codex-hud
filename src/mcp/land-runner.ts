@@ -53,6 +53,16 @@ function command(cwd: string, bin: string, argv: string[], failures?: TestFailur
   });
 }
 const fields = (out: string) => out.split('\0').filter(Boolean);
+function pathsOverlap(a: string[], b: string[]) {
+  const exact = new Set(a), dirs = new Set<string>();
+  for (const p of a)
+    for (let i = p.indexOf('/'); i !== -1; i = p.indexOf('/', i + 1)) dirs.add(p.slice(0, i));
+  for (const p of b) {
+    if (exact.has(p) || dirs.has(p)) return true;
+    for (let i = p.indexOf('/'); i !== -1; i = p.indexOf('/', i + 1)) if (exact.has(p.slice(0, i))) return true;
+  }
+  return false;
+}
 async function execute(home: string, f: LandFlow, cleanup: string[]) {
   const { wt, config: c } = f, main = wt.main_root;
   const scratch = (id: string) => join(dirname(wt.root), `land-${id}`);
@@ -164,20 +174,72 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     checkCancel(); await checkSource();
     step('records');
     const tested = f.tested_sha!, base = f.base_sha!;
-    f.records_sha = await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who);
-    const tip = f.records_sha ?? tested;
+    let records = await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who);
+    f.records_sha = records;
+    let landed = tested, tip = records ?? landed;
     checkCancel(); step('fast-forward');
-    const paths = fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', base, tip, '--']));
+    const touched = async (from: string, to: string) => [...new Set([
+      ...fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', from, to, '--'])),
+      ...fields(await git(main, ['log', '--format=', '--name-only', '--no-renames', '-m', '--first-parent', '-z', `${from}..${to}`, '--'])),
+    ])];
     const filters = await neutralizeFilters(git, main);
-    for (let i = 0; i < paths.length; i += 128) {
-      const batch = paths.slice(i, i + 128);
-      const status = await git(main, [...filters, 'status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', ...batch]);
-      const hidden = fields(await git(main, ['ls-files', '-v', '-z', '--', ...batch])).some(row => /^[a-zS] /.test(row));
-      if (status || hidden) throw Error('Main checkout has dirty or hidden changes on paths the landing touches');
+    const checkClean = async (paths: string[]) => {
+      for (let i = 0; i < paths.length; i += 128) {
+        const batch = paths.slice(i, i + 128);
+        const status = await git(main, [...filters, 'status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', ...batch]);
+        const hidden = fields(await git(main, ['ls-files', '-v', '-z', '--', ...batch])).some(row => /^[a-zS] /.test(row));
+        if (status || hidden) throw Error('Main checkout has dirty or hidden changes on paths the landing touches');
+      }
+    };
+    const paths = await touched(base, tip);
+    await checkClean(paths);
+    checkCancel(); await checkSource();
+    if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref)
+      throw Error('Main checkout is not at the recorded base tip');
+    let target = base;
+    const current = await head(main);
+    if (current !== base) {
+      let ancestor = false;
+      try { ancestor = (await git(main, ['merge-base', base, current])).trim() === base; } catch { /* not an ancestor */ }
+      if (!ancestor) throw Error('Main checkout is not at the recorded base tip');
+      const mainPaths = await touched(base, current);
+      if (pathsOverlap(paths, mainPaths)) throw Error('Main checkout is not at the recorded base tip');
+      checkCancel();
+      const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${base}..${tested}`, '--'])).trim().split(/\s+/).filter(Boolean);
+      if (!picks.length) throw Error('Main checkout is not at the recorded base tip');
+      await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
+      await git(main, ['worktree', 'add', '--detach', '--', integration, current], 120000);
+      try {
+        for (const sha of picks) {
+          checkCancel();
+          await command(integration, 'git', [...SAFE_GIT_ARGS, ...filters, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
+        }
+        landed = await head(integration);
+        if (records) {
+          checkCancel();
+          await command(integration, 'git', [...SAFE_GIT_ARGS, ...filters, ...who, 'cherry-pick', '--no-gpg-sign', records]);
+          await git(integration, [...filters, 'reset', '--hard', landed]);
+          const replayedRecords = await recordLanding(integration, join(home, 'jobs', f.job), landed, c.gate.length, who);
+          if (replayedRecords && pathsOverlap(await touched(landed, replayedRecords), mainPaths))
+            throw Error('Main checkout is not at the recorded base tip');
+          records = replayedRecords;
+        }
+      } catch (e) {
+        if (f.state === 'cancelled') throw e;
+        if (e instanceof CommandError) throw new CommandError('Main checkout is not at the recorded base tip', e.tail);
+        throw e;
+      }
+      tip = records ?? landed;
+      target = current;
+      await checkClean(await touched(current, tip));
+      checkCancel(); await checkSource(); await checkMain(target);
+    } else {
+      await checkMain(base);
     }
-    checkCancel(); await checkSource(); await checkMain(base);
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', tip], 120000);
-    f.landed_sha = tested; writeLand(home, f);
+    if (target !== base) f.replayed_onto = target;
+    f.records_sha = records;
+    f.landed_sha = landed; writeLand(home, f);
     await checkMain(tip);
     await commands('after', main);
     if (c.push) {
@@ -196,7 +258,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     try {
       const receiptPath = join(home, 'jobs', f.job, 'job.json');
       const result = await reapWorktree(f.job, { job: f.job, cwd: wt.root, worktree: wt }, home,
-        { source_sha: f.source_sha, landed_sha: tested });
+        { source_sha: f.source_sha, landed_sha: landed });
       const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
       writePrivateFile(receiptPath, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mkdir: false });
       if ('worktree_kept_reason' in result) notes.push(result.worktree_kept_reason);

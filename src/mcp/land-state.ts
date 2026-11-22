@@ -11,7 +11,7 @@ export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string;
-  base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; cleanup_note?: string; error?: string; tail?: string[];
+  base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
   repairs?: { step: string; job?: string; outcome: string }[];
   reruns?: (string | { step: string; tests: string[] })[];
 }
@@ -54,12 +54,13 @@ export function landAttempt(home: string, job: string) {
   return { flow, prior, cleanup };
 }
 export function landView(f: LandFlow) {
-  const { flow, job, state, step, landed_sha, records_sha, cleanup_note, repairs, reruns, error, tail } = f;
-  return { flow, job, state, step, landed_sha, records_sha, cleanup_note, repairs, reruns, error, tail };
+  const { flow, job, state, step, landed_sha, records_sha, replayed_onto, cleanup_note, repairs, reruns, error, tail } = f;
+  return { flow, job, state, step, landed_sha, records_sha, replayed_onto, cleanup_note, repairs, reruns, error, tail };
 }
 export function landNotice(f: LandFlow) {
   const one = (text: string) => text.replace(/\s+/g, ' ').trim();
   return [`${f.flow} (land ${f.job}) — ${f.state}: ${f.step}${f.landed_sha ? ` ${f.landed_sha}` : ''}${f.error ? `: ${f.error}` : ''}`,
+    ...(f.replayed_onto ? [`Replayed onto ${one(f.replayed_onto)}${f.base_sha ? ` (base moved from ${one(f.base_sha)})` : ''}`] : []),
     ...(f.cleanup_note ? [`Cleanup note: ${one(f.cleanup_note)}`] : []),
     ...(f.repairs ?? []).map((r, i) => `Repair ${i + 1}: ${one(r.step)} → ${r.job ?? 'dispatch'}: ${one(r.outcome)}`),
     ...(f.reruns ?? []).map(r => typeof r === 'string' ? `${one(r)} passed on immediate rerun` :
