@@ -1,7 +1,5 @@
 /** Small deterministic local grammars. Never a model input or an execution adapter. */
-import { createHash } from 'node:crypto';
 import type { DecisionRecord, EvidenceRef } from './workboard-types.js';
-export const revisionOf = (text: string): string => createHash('sha256').update(text).digest('hex');
 const clip = (text: string): string => text.trim().replace(/\s+/g, ' ');
 const prose = (text: string): string =>
   text
@@ -109,97 +107,4 @@ export function answerRecord(
 export function reviewVerdict(text: string): 'accept' | 'changes-required' | null {
   const line = text.split('\n', 1)[0].replace(/\r$/, '');
   return line === 'Verdict: accept' ? 'accept' : line === 'Verdict: changes-required' ? 'changes-required' : null;
-}
-/** Explicit reported facts only; no rerun aggregation or inferred pass count. */
-export function reportedWorkFacts(text: string): {
-  tests: number | null;
-  passed: number | null;
-  failed: number | null;
-  files: number | null;
-} {
-  const taps = [
-    ...text.matchAll(/(?:^|\n)# tests (\d+)\r?\n# suites \d+\r?\n# pass (\d+)\r?\n# fail (\d+)(?=\r?\n|$)/g),
-  ];
-  const tap = taps.length === 1 && taps[0].slice(1).every((n) => Number.isSafeInteger(Number(n))) ? taps[0] : null;
-  const section = text.match(/(?:^|\n)#{1,6} (?:Files changed|Changed files)\s*\r?\n([\s\S]*?)(?=\n#{1,6} |$)/i)?.[1];
-  const paths = section
-    ?.split(/\r?\n/)
-    .flatMap((line) => /^[-*] [`]?([^`\s]+)[`]?(?:\s|$)/.exec(line)?.slice(1, 2) ?? []);
-  return {
-    tests: tap ? Number(tap[1]) : null,
-    passed: tap ? Number(tap[2]) : null,
-    failed: tap ? Number(tap[3]) : null,
-    files: paths?.length && !/\btruncat|\.\.\.|…/.test(section!) ? new Set(paths).size : null,
-  };
-}
-export function reviewRecord(
-  laneId: string,
-  round: number,
-  text: string,
-  evidence: EvidenceRef
-): DecisionRecord | null {
-  const verdict = reviewVerdict(text);
-  return verdict
-    ? {
-        id: `${laneId}:review:${evidence.relativePath}`,
-        laneId,
-        kind: 'review',
-        title: verdict,
-        round,
-        verdict,
-        departure: false,
-        oneWay: false,
-        stale: false,
-        evidence: [evidence],
-      }
-    : null;
-}
-/** Only explicit sections; code blocks and quoted historical notes never become calls. */
-export function designRecords(laneId: string, text: string, evidence: EvidenceRef): DecisionRecord[] {
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
-  const sections: { key: string; body: string[] }[] = [];
-  let active: { key: string; body: string[] } | null = null,
-    code = false;
-  for (const line of lines) {
-    if (/^\s*```/.test(line)) {
-      code = !code;
-      continue;
-    }
-    if (code || /^\s*>/.test(line)) continue;
-    const heading = line.match(/^#{1,6}\s+(.+)$/);
-    if (heading) {
-      active =
-        /^(?:(?:\d+[.)]?|[A-Z][.)])\s+)?(?:recommendation|recommendations|decision|decisions)(?:\s*[:—-].*)?$/i.test(
-          heading[1]
-        )
-          ? { key: `section-${sections.length}`, body: [] }
-          : null;
-      if (active) sections.push(active);
-    } else if (active) active.body.push(line);
-    else if (!sections.length && /^(?:\*\*)?Recommendation:\*\*?\s*\S|^Recommendation:\s*\S/i.test(line)) {
-      sections.push({ key: 'recommendation', body: [line.replace(/^(?:\*\*)?Recommendation:(?:\*\*)?\s*/i, '')] });
-    }
-  }
-  return sections.slice(0, 12).flatMap((section) => {
-    const body = section.body.join('\n');
-    const title = prose(body.replace(/^(?:Instead|Alternative|Rationale|Why|One-way):.*$/gim, ''));
-    if (!title) return [];
-    const field = (name: string) => body.match(new RegExp(`^(?:${name}):\\s*(.+)$`, 'im'))?.[1];
-    const instead = field('Instead|Alternative'),
-      rationale = field('Rationale|Why');
-    return [
-      {
-        id: `${laneId}:${evidence.relativePath}:${section.key}`,
-        laneId,
-        kind: 'recommendation' as const,
-        title: clip(title),
-        departure: false,
-        oneWay: oneWay(body),
-        ...(instead ? { instead: clip(instead) } : {}),
-        ...(rationale ? { rationale: clip(rationale) } : {}),
-        stale: false,
-        evidence: [{ ...evidence, section: section.key }],
-      },
-    ];
-  });
 }

@@ -27,7 +27,6 @@ function fixture(t, count = 1) {
     TZ: 'UTC',
     CODEX_HUD_CWD: join(root, 'project'),
     CODEX_HUD_STANDALONE_PANEL: '1',
-    CODEX_HUD_PANEL_ALL_DELEGATIONS: '1',
     HUD_PANEL_CALLER_PANE: 'w4E:p1',
   };
   for (const k of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'CODEX_HUD_CWD'])
@@ -51,7 +50,7 @@ function fixture(t, count = 1) {
     put(join(d, 'STATUS.json'), { state: 'done', settled_at: new Date().toISOString() });
     put(join(d, 'brief.md'), '# SYNTHETIC: backoff');
   }
-  const pipeline = new PanelJobPipeline(env.HUD_HOME, null, {
+  const pipeline = new PanelJobPipeline(env.HUD_HOME, {
     project: null,
     pane: 'w4E:p1',
   }, Date.now() - 60000);

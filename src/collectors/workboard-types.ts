@@ -1,6 +1,5 @@
 /** Panel-local evidence. None of these identities is an execution or material grant. */
 export type LaneIdentity =
-  | { kind: 'task-directory'; workspace: string; directory: string }
   | { kind: 'invocation'; home: string; root: string; jobId: string }
   | { kind: 'native'; refKey: string };
 export type WorkTarget =
@@ -123,21 +122,6 @@ export interface WorkCoverage {
   readonly incomplete: boolean;
   readonly diagnostics: readonly string[];
   readonly workspace: string | null;
-}
-export interface ObservationCost {
-  entries: number;
-  files: number;
-  bytes: number;
-  probes: number;
-  enumerations: number;
-  parses: number;
-  elapsedMs: number;
-}
-export interface TaskSnapshot {
-  readonly revision: number;
-  readonly lanes: readonly WorkLane[];
-  readonly coverage: WorkCoverage;
-  readonly cost: Readonly<ObservationCost>;
 }
 export interface WorkboardSnapshot {
   readonly homeBrief?: string;

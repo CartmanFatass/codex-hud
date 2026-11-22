@@ -1,12 +1,9 @@
-/** Pure projection of native subagents and workspace tasks. */
+/** Pure projection of thin jobs and native subagents. */
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import { nativeWorker } from './work-card.js';
-import type { DecisionRecord, OwnerWorker, TaskSnapshot, WorkboardSnapshot, WorkLane } from './workboard-types.js';
+import type { OwnerWorker, WorkboardSnapshot, WorkLane } from './workboard-types.js';
 
-const callTime = (record: DecisionRecord): number => record.evidence.at(-1)?.at ?? 0;
-
-export function buildWorkboard(tree: SubagentTree, tasks?: TaskSnapshot): WorkboardSnapshot {
-  const lanes: WorkLane[] = [...(tasks?.lanes ?? [])];
+export function buildWorkboard(tree: SubagentTree, thinJobs: readonly WorkLane[] = []): WorkboardSnapshot {
   const nativeLanes = new Map<string, WorkLane>();
   const addNative = (node: SubagentTreeNode, parent?: SubagentTreeNode) => {
     const harness = node.ref?.harness ?? 'codex';
@@ -29,35 +26,19 @@ export function buildWorkboard(tree: SubagentTree, tasks?: TaskSnapshot): Workbo
         evidence: [],
       };
       nativeLanes.set(id, lane);
-      lanes.push(lane);
     }
     (lane.workers as OwnerWorker[]).push(worker);
     for (const child of node.children) addNative(child, node);
   };
   for (const node of tree.nodes) addNative(node);
-  lanes.sort((a, b) => (a.startedAt ?? Infinity) - (b.startedAt ?? Infinity) || a.id.localeCompare(b.id));
-  let partial = !!tree.incomplete || !!tasks?.coverage.incomplete;
-  if (lanes.length > 200) {
-    lanes.length = 200;
-    partial = true;
-  }
-  const workers = lanes.flatMap((l) => l.workers).slice(0, 200);
-  const all = lanes.flatMap((l) => l.decisions);
-  // Preserve explicit one-way facts before routine history at the resident bound.
-  const decisions =
-    all.length <= 1000
-      ? all
-      : [...all].sort((a, b) => Number(b.oneWay) - Number(a.oneWay) || callTime(b) - callTime(a)).slice(0, 1000);
-  partial ||= all.length > decisions.length;
+  const native = [...nativeLanes.values()]
+    .sort((a, b) => (a.startedAt ?? Infinity) - (b.startedAt ?? Infinity) || a.id.localeCompare(b.id))
+    .slice(0, 200);
   return {
-    revision: String(tasks?.revision ?? 0),
-    lanes,
-    workers,
-    decisions,
-    coverage: {
-      incomplete: partial,
-      workspace: tasks?.coverage.workspace ?? null,
-      diagnostics: tasks?.coverage.diagnostics ?? [],
-    },
+    revision: '0',
+    lanes: [...thinJobs, ...native],
+    workers: [...thinJobs.flatMap((l) => l.workers), ...native.flatMap((l) => l.workers).slice(0, 200)],
+    decisions: thinJobs.flatMap((l) => l.decisions),
+    coverage: { incomplete: !!tree.incomplete || nativeLanes.size > 200, workspace: null, diagnostics: [] },
   };
 }

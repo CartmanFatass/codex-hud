@@ -94,8 +94,6 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
       ...io.env,
       HUD_SETTINGS_PATH: resolveHudEnv(io.env, 'HUD_SETTINGS_PATH') || join(getHudHome(io.env), 'hud-settings.json'),
       ...(harness === 'codex' && source ? { CODEX_HOME: source } : {}),
-
-      CODEX_HUD_PANEL_ALL_DELEGATIONS: root ? '0' : '1',
       ...(root ? { CODEX_HUD_PANEL_ROOT: root } : {}),
       CODEX_HUD_PANEL_SOURCE: source ?? '',
       CODEX_HUD_PANEL_HARNESS: harness ?? '',

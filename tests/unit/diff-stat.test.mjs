@@ -173,7 +173,7 @@ test('thin-job Inspector uses a linked worktree BASE, gates active probes, and f
   assert.strictEqual(await diffs.job(dir, NOW + 10500, NOW + 50000), final);
   assert.equal((await diffs.job(dir, null, NOW + 50000)).files[0].added, 3, 'resumed work samples again');
 
-  const panel = new PanelJobPipeline(f.home, null, scope, 0);
+  const panel = new PanelJobPipeline(f.home, scope, 0);
   t.after(() => panel.dispose());
   await panel.refresh();
   assert.equal(panel.workboard(TREE).workers[0].diffStat, undefined, 'no Git read in the ordinary jobs pass');

@@ -21,12 +21,11 @@ import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
 import { theme } from './render/colors.js';
 import { makeSourceId } from './core/identity.js';
 import { parseRosterRoot, formatRosterRoot } from './roles/selection.js';
-import { TaskObservationCollector } from './collectors/task-observations.js';
 import { buildWorkboard } from './collectors/workboard.js';
 import { readThinJobs, type ThinJobScope } from './collectors/thin-jobs.js';
 import { DiffStatCollector } from './collectors/diff-stat.js';
 import { ActivityRings } from './collectors/activity-ring.js';
-import type { OwnerWorker, TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
+import type { OwnerWorker, WorkboardSnapshot } from './collectors/workboard-types.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import {
   withInputRefresh,
@@ -105,10 +104,8 @@ import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.
 import type { HealthSource } from './collectors/hud-health.js';
 import type { SubagentTree, SubagentTreeNode } from './types.js';
 
-/** Collect thin jobs and workspace task artifacts; project them alongside the native tree. */
+/** Collect thin jobs and project them alongside the native tree. */
 export class PanelJobPipeline {
-  private readonly artifacts: TaskObservationCollector;
-  private taskSnapshot?: TaskSnapshot;
   private boardCache?: { tree: SubagentTree; board: WorkboardSnapshot };
   private thinJobs: ReturnType<typeof readThinJobs> = [];
   private rings = new ActivityRings();
@@ -119,30 +116,16 @@ export class PanelJobPipeline {
 
   constructor(
     readonly home: string,
-    workspace: string | null = null,
-    private readonly thinScope: ThinJobScope = { project: workspace, pane: null },
+    private readonly thinScope: ThinJobScope,
     readonly openedAt = Date.now()
-  ) {
-    this.artifacts = new TaskObservationCollector(workspace);
-  }
+  ) {}
   dispose(): void {
     this.closed = true;
-    this.taskSnapshot = undefined;
     this.boardCache = undefined;
-    this.artifacts.dispose();
-  }
-  get artifactCost() {
-    return this.taskSnapshot?.cost;
   }
   workboard(tree: SubagentTree): WorkboardSnapshot {
     if (this.boardCache?.tree === tree) return this.boardCache.board;
-    const base = buildWorkboard(tree, this.taskSnapshot);
-    let board = {
-      ...base,
-      lanes: [...this.thinJobs, ...base.lanes],
-      workers: [...this.thinJobs.flatMap((lane) => lane.workers), ...base.workers],
-      decisions: [...this.thinJobs.flatMap((lane) => lane.decisions), ...base.decisions],
-    };
+    let board = buildWorkboard(tree, this.thinJobs);
     // Each running worker's activity ring, fed once per recomposition; a worker is one object in the lanes and the list.
     const activity = this.rings.observe(board.workers, Date.now());
     if (activity.size) {
@@ -159,7 +142,6 @@ export class PanelJobPipeline {
   async refresh(inspecting?: string): Promise<boolean> {
     if (this.closed) return false;
     const generation = ++this.generation;
-    const tasks = this.artifacts.refresh({ maxEntries: 32 });
     const observation = { complete: false };
     let lanes = readThinJobs(this.home, this.thinScope, JSON.parse, { openedAt: this.openedAt }, observation);
     const id = /^thin-job:(j[0-9a-f]{16})$/.exec(inspecting ?? '')?.[1];
@@ -174,7 +156,6 @@ export class PanelJobPipeline {
     }
     this.thinJobs = lanes;
     this.thinObservation = observation;
-    this.taskSnapshot = tasks;
     this.boardCache = undefined;
     return true;
   }
@@ -246,9 +227,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const selectedRoot = process.env.CODEX_HUD_PANEL_ROOT
     ? formatRosterRoot(parseRosterRoot(process.env.CODEX_HUD_PANEL_ROOT))
     : null;
-  // Keep the existing workspace scope for the remaining tmp/tasks collector.
-  const allDelegations = !selectedRoot && process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
-  const jobPipeline = new PanelJobPipeline(getHudHome(), allDelegations ? null : HUD_CWD_REAL, {
+  const jobPipeline = new PanelJobPipeline(getHudHome(), {
     project: HUD_CWD_REAL,
     pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
   }, openedAt);
