@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · ORCH-LEAN · ORCH-LEAN-04 · Owner panel actions reach MCP-task clients; retry and land intents (e59e9319)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-10 · Continuing a closed CLI job keeps its worktree (49e57b75)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-02 · Tests never leave hud-watch or hud-cli processes behind (be73d2f8)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-09 · a failed or cancelled hud_land can be started again; a failing gate test file is rerun once before failing; a rebased worker branch lands only its own commits; the auto STATE row uses the ticket title (1f3a6e92)
