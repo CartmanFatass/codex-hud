@@ -110,7 +110,8 @@ test('worker ping can release a contended Antigravity hud_ask mailbox before flo
 });
 
 test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 30000 }, async (t) => {
-  const f = await fixture(t);
+  // Allow the real watcher to retry a runner reap inside the test's short wait budget.
+  const f = await fixture(t, { watcherTickMs: 200 });
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', request_key: 'sonic-parent', task: 'Synthetic parent.' });
   const call = workerClient(t, f, parent.task_dir);
@@ -173,10 +174,14 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.match(sonicParent.stderr, /a sonic worker cannot start sonic/);
   const inline = await runSonic(f, 'start', parent.task_dir, '--task', 'Synthetic inline sub-task.');
   assert.equal(inline.status, 0, inline.stderr);
-  assert.match(fs.readFileSync(join(dir(inline.stdout.trim()), 'brief.md'), 'utf8'), /^Synthetic inline sub-task\./);
-  fs.writeFileSync(join(dir(inline.stdout.trim()), 'fail-sonic'), '');
-  fs.writeFileSync(join(dir(inline.stdout.trim()), 'release-sonic'), '');
-  const failed = await wait(inline.stdout.trim(), '5');
+  const inlineId = inline.stdout.trim(), inlineDir = dir(inlineId);
+  assert.match(fs.readFileSync(join(inlineDir, 'brief.md'), 'utf8'), /^Synthetic inline sub-task\./);
+  fs.writeFileSync(join(inlineDir, 'fail-sonic'), '');
+  fs.writeFileSync(join(inlineDir, 'release-sonic'), '');
+  // The watcher publishes the failure after the runner exits and is reaped. Verify the CLI exit
+  // code for a settled failure separately from the short live-wait timeout checks above.
+  await until(() => cliState(inlineDir)?.state === 'failed', 15000);
+  const failed = await wait(inlineId);
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, /pi exited: 4/);
   for (const opts of [[], ['--task', 'Synthetic.', '--task-file', task], ['--task', ' ']]) {
