@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { withDistLock } from '../../scripts/dist-lock.mjs';
 import { fixture, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 
@@ -26,8 +28,8 @@ async function repair(f, flow, index) {
   }, 20000);
   return f.flowState(flow).repairs[index].job;
 }
-async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s } = {}) {
-  const f = await fixture(t);
+async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry } = {}) {
+  const f = await fixture(t, { mcpEntry });
   const home = f.env.HUD_HOME, main = f.root, root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
   t.after(() => fs.rmSync(`${main}-wt`, { recursive: true, force: true }));
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: f.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -258,6 +260,64 @@ test('red gate continues the source in grace; its rebased fix passes on a fresh 
   assert.equal(done.state, 'completed', JSON.stringify(done)); assert.equal(done.repairs[0].outcome, 'gate passed');
   assert.equal(done.changes.length, 1); assert.match(done.changes[0], /Repair 1: .*gate passed/);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
+});
+
+async function isolatedLand(t, gate) {
+  // Publish to a private installation so the real dist and other test processes are untouched.
+  const install = fs.mkdtempSync(join(tmpdir(), 'hud-land-build-'));
+  for (const name of ['dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
+    fs.cpSync(resolve(name), join(install, name), { recursive: true });
+  fs.symlinkSync(resolve('node_modules'), join(install, 'node_modules'));
+  const f = await checkout(t, gate, { mcpEntry: join(install, 'packages/hud-mcp/bin/hud-mcp.mjs') });
+  t.after(() => fs.rmSync(install, { recursive: true, force: true }));
+  const dist = join(install, 'dist');
+  const publish = (files) => withDistLock(() => {
+    for (const [name, content] of Object.entries(files)) {
+      const file = join(dist, name);
+      fs.writeFileSync(`${file}.next`, content);
+      fs.renameSync(`${file}.next`, file);
+    }
+    const now = new Date(); fs.utimesSync(join(dist, 'index.js'), now, now);
+  }, install);
+  return { ...f, dist, publish };
+}
+
+test('land repairs using its original modules after dist is rebuilt during the gate', async t => {
+  const f = await isolatedLand(t, ['while test ! -f "$HOME/release"; do sleep .05; done; grep fixed tracked']);
+  fs.writeFileSync(join(jobDir(f), 'SESSION.txt'), 'PRIMARY=source-agent\n');
+  fs.writeFileSync(join(jobDir(f), 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).step.startsWith('gate[1]'), 10000);
+  // The old lazy repair path imported thin-main here, but abstract-lock was already cached.
+  const read = (name) => fs.readFileSync(join(f.dist, name), 'utf8');
+  await f.publish({
+    'utils/abstract-lock.js': read('utils/abstract-lock.js') + '\nexport const newBuildOnly = true;\n',
+    'mcp/thin-main.js': read('mcp/thin-main.js') + "\nimport { newBuildOnly } from '../utils/abstract-lock.js';\nif (!newBuildOnly) throw Error('mixed build');\n",
+  });
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  assert.equal(await repair(f, flow, 0), job);
+  fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  assert.equal(f.flowState(flow).state, 'completed', JSON.stringify(f.flowState(flow)));
+  assert.equal(f.flowState(flow).repairs[0].outcome, 'gate passed');
+});
+
+test('a land helper that cannot import its build leaves a retryable flow', async t => {
+  const f = await isolatedLand(t, ['true']);
+  const entry = 'mcp/land-runner.js', original = fs.readFileSync(join(f.dist, entry), 'utf8');
+  await f.publish({ [entry]: original + "\nimport { missingAfterBuild } from '../utils/abstract-lock.js';\n" });
+  const { flow } = await f.call('hud_land', { job });
+  const failed = await f.call('hud_read', { job: flow });
+  assert.equal(failed.state, 'failed');
+  assert.equal(failed.step, 'load land helper');
+  assert.equal(failed.error, 'HUD was rebuilt; retry the land');
+  assert.equal(f.git(f.main, 'rev-parse', 'base'), f.base_head);
+  await f.publish({ [entry]: original });
+  const retry = await f.call('hud_land', { job });
+  assert.notEqual(retry.flow, flow);
+  await until(() => ['failed', 'completed'].includes(f.flowState(retry.flow).state), 15000);
+  assert.equal(f.flowState(retry.flow).state, 'completed', JSON.stringify(f.flowState(retry.flow)));
 });
 
 test('a red gate resumes the closed source session in its managed checkout', async t => {

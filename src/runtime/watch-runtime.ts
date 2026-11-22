@@ -10,6 +10,7 @@ import { reapWorktree, mainHead } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
+import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { killSonicRoot, sonicExit, SONIC_TIMEOUT_MS } from '../mcp/sonic-process.js';
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
@@ -380,11 +381,9 @@ function startReap(job: ReapInput) {
   });
   inFlightReaps.set(id, entry);
 }
-let thinMainPromise: Promise<typeof import('../mcp/thin-main.js')> | undefined;
-const loadThinMain = () => (thinMainPromise ??= import('../mcp/thin-main.js'));
 function startQueued(id: string, targetRole: string, overflowed: boolean) {
   if (inFlightStarts.has(id)) return;
-  const promise = loadThinMain().then(({ startQueuedJob }) => startQueuedJob(id, targetRole, overflowed)).then((res) => {
+  const promise = Promise.resolve().then(() => startQueuedJob(id, targetRole, overflowed)).then((res) => {
     if (res.started) log(`queue start ${id} role=${targetRole}${overflowed ? ' (overflow from imp)' : ''}`);
     else if (res.failed) warn(`queue ${id}`, `queue start failed ${id}: ${res.reason ?? 'unknown'}`);
   }).catch((error) => {
@@ -679,8 +678,8 @@ function scan(retryWatch = false) {
       const overflowCandidates = queuedJobs.filter(({ id, job }) => !dispatched.has(id) && job.role === 'imp');
       if (overflowCandidates.length && (generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap)) {
         const freeSlots = generalCap === 0 ? overflowCandidates.length : generalCap - (workingByRole.get('general') ?? 0);
-        // Check preset/place compatibility lazily via thin-main before claiming overflow.
-        void loadThinMain().then(({ canOverflowImpJob }) => {
+        // Check preset/place compatibility after the scan, before claiming overflow.
+        void Promise.resolve().then(() => {
           if (stopped || pauseReady) return;
           let started = 0;
           for (const { id, job } of overflowCandidates) {

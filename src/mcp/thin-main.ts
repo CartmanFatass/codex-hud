@@ -64,6 +64,7 @@ import { sharedRoot } from '../roles/projects.js';
 import { resumedWorkerRefusal } from '../roles/resume-guard.js';
 import { capForRole, computeQueuePositions, isWorkingForCap, loadConcurrencySettings, QUEUE_START_MARKER, queuedTimestamp } from '../roles/concurrency.js';
 import { closedReport, DEFAULT_RESUME_S, resumeDeadline, resumeIdentity, type NativeResume } from './worker-resume.js';
+import * as workerTools from '../worker/tools.js';
 
 const jobDir = process.env.HUD_JOB_DIR;
 const isWorker = jobDir !== undefined;
@@ -80,7 +81,7 @@ function checkResume(agent: 'agy' | 'claude' | 'codex', id: unknown) {
 }
 const bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url));
 const binScript = (name: string) => join(bundled, 'bin', name);
-const worker = isWorker ? await import('../worker/tools.js') : undefined;
+const worker = isWorker ? workerTools : undefined;
 function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
 }

@@ -1,6 +1,13 @@
 // Decision backend interface extracted from Jev Ultrafast model.py choose() (github.com/browser-use/jev-ultrafast @ 1231850a).
 // Wire formats live in providers/. validateChoice stays in model.ts and is unchanged for TypeSafe.
 
+import { join } from 'node:path';
+import { getHudHome } from '../hud-home.js';
+import { readHudCredentials, readHudConfig, resolveDecisions, decisionFallback } from './ask/config.js';
+import { FailoverDecisionProvider } from './failover.js';
+import { GeminiDecisionProvider } from './providers/gemini.js';
+import { OpenAIDecisionProvider } from './providers/openai.js';
+import { TypeSafeDecisionProvider } from './providers/typesafe.js';
 import type { JudgmentRequest } from './judge.js';
 import {
   buildDecisionRequest,
@@ -194,13 +201,6 @@ export async function selectDecisionProvider(
   env: NodeJS.ProcessEnv = process.env,
   fetcher?: typeof fetch
 ): Promise<DecisionProvider> {
-  const { readHudCredentials, readHudConfig, resolveDecisions, decisionFallback } = await import('./ask/config.js');
-  const { getHudHome } = await import('../hud-home.js');
-  const { join } = await import('node:path');
-  const { FailoverDecisionProvider } = await import('./failover.js');
-  const { OpenAIDecisionProvider } = await import('./providers/openai.js');
-  const { TypeSafeDecisionProvider } = await import('./providers/typesafe.js');
-  const { GeminiDecisionProvider } = await import('./providers/gemini.js');
   const creds = readHudCredentials(env);
   const config = resolveDecisions(readHudConfig(join(getHudHome(env), 'config.json')));
   const primary = explicit ?? config.primary;

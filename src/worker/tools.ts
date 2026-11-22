@@ -12,7 +12,8 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { sonicState } from '../worker/sonic-jobs.js';
-import { withDistLock } from '../../scripts/dist-lock.mjs';
+import { dispatchJob } from '../mcp/thin-main.js'; // Cyclic binding, called only after startup.
+import { notify, taskDelivery } from '../roles/notify.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
 type Worker = ReturnType<typeof workerJob>;
@@ -92,7 +93,6 @@ export async function progress({ dir }: Pick<Worker, 'dir'>, message: string) {
 export async function startSonic({ job: parent }: Pick<Worker, 'job'>, task: string, cwd?: unknown) {
   if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
   if (!task.trim()) throw new Error('the sub-task is empty');
-  const { dispatchJob } = await withDistLock(() => import('../mcp/thin-main.js'));
   const result = await dispatchJob({
     role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd, task,
   }, parent.herdr_pane, parent);
@@ -322,7 +322,6 @@ function orchestrator(dir: string) {
 
 export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: QuestionInput, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal?: AbortSignal) {
   if (job.role === 'sonic') throw new Error('sonic cannot ask questions');
-  const { notify, taskDelivery } = await withDistLock(() => import('../roles/notify.js'));
   signal?.throwIfAborted();
   const tag = `${typeof job.role === 'string' ? job.role : 'cli'}@${basename(job.cwd || dir)}`;
   const qa = join(dir, jobFiles.qa);

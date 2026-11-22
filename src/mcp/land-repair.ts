@@ -7,6 +7,7 @@ import { readJsonFile } from '../utils/atomic-fs.js';
 import { jobRow } from '../collectors/thin-jobs.js';
 import { cachedReportSignature } from '../roles/report-meta.js';
 import { writeLand, type LandFlow } from './land-state.js';
+import { dispatchLandRepair, releaseLandTurn } from './thin-main.js';
 
 function questions(dir: string) {
   try { return fs.readdirSync(join(dir, jobFiles.qa)).filter(file => /^q\d+\.md$/.test(file)); }
@@ -22,7 +23,6 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
   const task = `Repair this landing in ${f.wt.root} on branch ${f.wt.branch}. Rebase onto the current ${f.config.base} base, fix the failure and commit. Do not push or change the main checkout.\nFailing step: ${f.step}: ${f.error}\nLog tail:\n${f.tail?.join('\n')}`;
   f.step = `repair ${repairs.length}`; writeLand(home, f);
   try {
-    const { dispatchLandRepair } = await import('./thin-main.js');
     checkCancel();
     const started = Date.now();
     const id = await dispatchLandRepair(source, f.wt.root, task, key, f.pane);
@@ -50,7 +50,7 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
     attempt.outcome = 'settled; retrying gate';
   } catch (e) {
     // A question or cancellation hands the worker (and its later notices) back to the caller.
-    if (attempt.job) (await import('./thin-main.js')).releaseLandTurn(attempt.job, key);
+    if (attempt.job) releaseLandTurn(attempt.job, key);
     attempt.outcome = (e as Error).message; throw e;
   }
 }

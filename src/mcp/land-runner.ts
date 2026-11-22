@@ -303,6 +303,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     writeLand(home, f);
   } finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
 }
+// The bootstrap reports ready only after this listener and the complete import graph are loaded.
 process.once('message', async ({ home, flow, cleanup }: { home: string; flow: string; cleanup: string[] }) => {
   const f = readLand(home, flow);
   if (f?.state === 'queued' && f.pid === process.pid) {

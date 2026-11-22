@@ -8,6 +8,7 @@ import { notifyRunner } from '../utils/runner-lifetime.js';
 import { procStat } from '../utils/proc.js';
 import { activeLand, landAttempt, landFile, landNotice, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
 import { managedReceiptMatches } from './managed-worktree.js';
+import { binScript } from './paths.js';
 import type { Job } from './job-contracts.js';
 
 function config(home: string, root: string): LandConfig {
@@ -35,20 +36,25 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
       !managedReceiptMatches(id, { ...job, worktree: wt }))
     throw Error('Source is no longer the registered job worktree');
   fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
-  // Publish the helper identity before it gets permission to run. Losing a creation race never starts a second land.
-  const child = fork(new URL('./land-runner.js', import.meta.url), [], { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], execArgv: [] });
-  child.on('error', () => { /* A dead helper is reported against its last persisted step. */ });
+  const child = fork(binScript('land-runner'), [], { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], execArgv: [] });
+  const ready = new Promise<boolean>((done) => {
+    child.once('message', (msg) => done(msg === 'ready'));
+    child.once('disconnect', () => done(false));
+    child.on('error', () => done(false));
+  });
   try {
     const pid = child.pid, start = pid && procStat(pid)?.start;
     if (!pid || !start) throw Error('Could not start land helper');
-    const now = new Date().toISOString();
+    const loaded = await ready, now = new Date().toISOString();
     const f: LandFlow = { flow, job: id, pane, task, wt, config: c, source_sha: tree.head, pid, start,
-      state: 'queued', step: 'main-checkout lease', created_at: now, updated_at: now };
+      state: loaded ? 'queued' : 'failed', step: loaded ? 'main-checkout lease' : 'load land helper', created_at: now, updated_at: now };
+    if (!loaded) f.error = 'HUD was rebuilt; retry the land';
+    // Publish before granting permission to run; a concurrent caller can win the receipt but cannot start a second land.
     try { writeLand(home, f, true); }
     catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') return readLand(home, flow)!; throw e; }
-    // flows/ is outside the jobs watch. Announce the identity even if the helper never finishes startup.
+    // flows/ is outside the jobs watch. Wake it on startup failure too so a terminal notice can be delivered.
     notifyRunner(join(home, 'jobs', id), pid);
-    child.send({ home, flow, cleanup });
+    if (loaded) child.send({ home, flow, cleanup });
     return f;
   } finally { if (child.connected) child.disconnect(); child.unref(); }
 }

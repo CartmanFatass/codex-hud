@@ -76,13 +76,11 @@ function eventLine(message) {
 
 // Return how many notices were persisted. A live watcher retains overflow and
 // retries on its next regular wake rather than dropping older pending events.
-export async function pushAgyEvents(pane, home, messages, env, type) {
+export async function pushAgyEvents(pane, home, messages, env, writePrivateFile, type) {
   const file = pendingFile(pane, home);
   let accepted = 0;
   try {
     if (!file) throw new Error('Missing Antigravity mailbox pane or home');
-    // The standalone PreInvocation hook only consumes claims; it doesn't need a build.
-    const { writePrivateFile } = await import('../../../dist/utils/atomic-fs.js');
     fs.mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     return await locked(file, env, false, async () => {
       if (messages.length) {

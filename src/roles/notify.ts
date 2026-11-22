@@ -77,7 +77,7 @@ export async function paneInfo(pane: string | null, env = process.env, { signal 
 const agyIdle = (info: Pane | null) => info?.agent === 'agy' && (info.agent_status === 'idle' || info.agent_status === 'done');
 
 export function notifyAgy(pane: string, messages: string[], home: string, env: NodeJS.ProcessEnv, info: Pane | null, { signal }: Options = {}) {
-  return pushAgyEvents(pane, home, messages, env, agyIdle(info) ? async (text) => {
+  return pushAgyEvents(pane, home, messages, env, writePrivateFile, agyIdle(info) ? async (text) => {
     // Another prompt may have started while this batch waited for the mailbox.
     if (!agyIdle(await paneInfo(pane, env, { signal })) || signal?.aborted) {
       return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
