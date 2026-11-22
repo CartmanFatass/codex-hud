@@ -40,6 +40,16 @@ test('launch thinking facts map CLI efforts before opening the worker; unknown m
   }
 });
 
+test('a cwd that is not an existing directory is refused before dispatch instead of failing as a launcher ENOENT', async (t) => {
+  const f = await fixture(t);
+  const missing = join(f.root, 'no-such-worktree');
+  const { result } = await f.rpc('tools/call', { name: 'hud_create', arguments: { role: 'imp', task: 'Synthetic task.', cwd: missing } });
+  assert.equal(result.isError, true);
+  assert.deepEqual(JSON.parse(result.content[0].text), { ok: false, code: 'tool_error', error: 'invalid_arguments: cwd is not an existing directory' });
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
+  assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
+});
+
 test('worktree isolation validates before dispatch, links dependencies and carries only the selected CLI grant', async (t) => {
   const f = await fixture(t), cwd = initRepo(f.root);
   fs.chmodSync(f.env.HUD_HOME, 0o700); // Trust backups require a private HUD home.

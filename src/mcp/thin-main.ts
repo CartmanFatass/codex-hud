@@ -65,7 +65,11 @@ function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
 }
 function jobCwd(args: Args): string {
-  return resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
+  if (args.cwd === undefined) return resolve(process.cwd());
+  const cwd = resolve(required(args, 'cwd'));
+  // A missing directory otherwise surfaces later as a misleading `spawn <launcher> ENOENT`.
+  if (!fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) throw new Error('invalid_arguments: cwd is not an existing directory');
+  return cwd;
 }
 type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 type LaunchAttempt = { index: number; place: string; reason?: string };
