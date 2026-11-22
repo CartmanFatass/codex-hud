@@ -541,7 +541,7 @@ test('hud_lease wakes on release and terminal status without lock or wait subpro
   const status = join(home, 'jobs', holder, 'STATUS.json');
   fs.mkdirSync(join(home, 'jobs', holder), { recursive: true });
   const writeStatus = (state) => writeFixtureFile(status, JSON.stringify({ state, pid: process.pid }));
-  const lease = (caller, args) => takeLease({ name: 'install', ...args }, caller);
+  const lease = (caller, args, waitOptions) => takeLease({ name: 'install', ...args }, caller, undefined, waitOptions);
   const stats = trackFsWatches(t);
   const subprocesses = [];
   for (const method of ['spawn', 'spawnSync']) {
@@ -560,16 +560,23 @@ test('hud_lease wakes on release and terminal status without lock or wait subpro
   for (const end of ['release', 'closed']) {
     writeStatus('working');
     assert.deepEqual(await lease(owner, { wait_s: 0 }), { granted: true });
-    const waiting = lease(waiter, { wait_s: 3 });
+    const checks = [];
+    const watching = Promise.withResolvers();
+    const waiting = lease(waiter, { wait_s: 10 }, {
+      fallbackIntervalMs: 60_000,
+      onCheck: (reason, done) => {
+        checks.push({ reason, done });
+        if (reason === 'catchup') watching.resolve();
+      },
+    });
+    await Promise.race([watching.promise, waiting]);
     await new Promise(setImmediate);
     assert.equal(stats.active, 2);
-    const start = performance.now();
     if (end === 'release') assert.deepEqual(await lease(owner, { release: true }), { released: true });
     else writeStatus(end);
     assert.deepEqual(await waiting, { granted: true });
-    const latency = performance.now() - start;
-    t.diagnostic(`${end} to grant: ${latency.toFixed(1)} ms`);
-    assert.ok(latency < 150, 'the watcher should wake before the fallback tick');
+    assert.deepEqual(checks.at(-1), { reason: 'event', done: true }, `${end} grant should wake from fs.watch, not fallback or timeout`);
+    assert.equal(checks.some((c) => c.reason === 'fallback' || c.reason === 'timeout'), false);
     assert.equal(stats.active, 0);
     assert.deepEqual(await lease(waiter, { release: true }), { released: true });
   }

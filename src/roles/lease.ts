@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { leaseActive, leaseJob, readLease, type LeaseRecord } from '../collectors/thin-jobs.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { writeJsonPrivate } from '../utils/atomic-fs.js';
-import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
+import { waitUntilFs, type FsWaitCheckContext, type WatchTarget } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
 import { sharedRoot } from './projects.js';
 
@@ -23,13 +23,22 @@ export const LEASE_TOOL = {
 type HeldBy = Pick<LeaseRecord, 'holder' | 'since'>;
 type Result = { granted: true } | { granted: false; held_by: HeldBy } | { released: boolean; held_by?: HeldBy };
 type Caller = { home: string; cwd: string; holder: string | null; worker?: boolean; fallback?: boolean };
+type WaitOptions = {
+  fallbackIntervalMs?: number;
+  onCheck?: (reason: FsWaitCheckContext['reason'], done: boolean) => void;
+};
 const heldBy = ({ holder, since }: LeaseRecord) => ({ holder, since });
 
 function publish(file: string, lease: LeaseRecord): void {
   writeJsonPrivate(file, lease, { mkdir: false, exclusive: true });
 }
 
-export async function takeLease(args: Record<string, unknown>, caller: Caller, signal?: AbortSignal): Promise<Result> {
+export async function takeLease(
+  args: Record<string, unknown>,
+  caller: Caller,
+  signal?: AbortSignal,
+  waitOptions?: WaitOptions,
+): Promise<Result> {
   const { home, cwd, holder, worker, fallback } = caller;
   const name = typeof args.name === 'string' ? args.name.trim() : '';
   if (!name || name.length > 120 || /\p{Cc}/u.test(name)) throw new Error('invalid_arguments: name');
@@ -86,10 +95,12 @@ export async function takeLease(args: Record<string, unknown>, caller: Caller, s
     timeoutMs: args.release ? 0 : Math.min(seconds, MAX_WAIT) * 1000,
     signal,
     coalesceMs: 10,
-    fallbackIntervalMs: 750, // An exited process need not change any watched file.
-    check: async ({ timedOut }) => {
+    fallbackIntervalMs: waitOptions?.fallbackIntervalMs ?? 750, // An exited process need not change any watched file.
+    check: async ({ timedOut, reason }) => {
       const value = await attempt();
-      return 'granted' in value && !value.granted && !timedOut ? { done: false } : { done: true, value };
+      const done = !('granted' in value && !value.granted && !timedOut);
+      waitOptions?.onCheck?.(reason, done);
+      return done ? { done: true, value } : { done: false };
     },
   });
 }
