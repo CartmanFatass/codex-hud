@@ -61,6 +61,13 @@ The owner approved the lean spec and resolved the draft questions:
   gap holds switch to sol-fast default with astra for complex slices picked by the main session (that changes
   the §2.1.4 no-override sentence; told to the owner first). CodeGraph removed from every harness (Claude,
   Codex, pi) and from worker instructions; code lookup is grep and read.
+- **D-2026-11-22-18** (§2.1.4; worker instructions; owner configs): Non-imp workers (docs/llm/workers-load-2026-11-22.md,
+  owner 2026-11-22: accept the recommendations, global not per project): Sonic auto-thinking on; sonic batches
+  turns, ~20-turn soft budget, ≤60-line report, no hud_sonic of its own; callers give sonic narrow briefs; reviewer
+  stays gpt-6.2-sol max and keeps context under 150k (file-by-file diffs, sonic lookups); oracle pinned to
+  thinking high with a max preset and gets a sonic fact dossier first; CLI workers load only the HUD MCP plus
+  role-named servers and get instructions as system prompt with short briefs inline. frontend-imp stays
+  cli:claude claude-sonnet-5-5 xhigh (earlier neon dispatches were one-off mistakes).
 
 ## 2026-11-21
 
