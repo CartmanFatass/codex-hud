@@ -1,0 +1,275 @@
+# HUD product decisions log
+
+`docs/spec.md` states the current boundary. This log records provenance and superseded decisions.
+Dates are the owner dates in the source spec unless marked *recorded*: a spec revision date, not a
+separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-NN`. Section refs point into
+`docs/spec.md`.
+
+## 2026-11-22
+
+- **D-2026-11-22-01** (§2.1.6, §2.2.8): Reject self-graded outcomes; keep independent Decision API labels.
+  A single `hud_report` writes report, optional one-line summary and file list, and done receipt. Reuse the
+  signature-bound summary for result line, notices and `hud_read`, with model fallback for absent, stale
+  or wrong-language summaries. No two-minute hold for settled results (qualifies D-2026-11-11-05).
+
+The owner approved the lean spec and resolved the draft questions:
+
+- **D-2026-11-22-02** (§2.2.2, §2.2.4, §2.2.5): Control is a main tab, not a Project page. Narrows the
+  original Project hub scope (D-2026-11-12-04 and D-2026-11-14-04).
+- **D-2026-11-22-03** (§2.2.9): Backup skills are listed in Help (`?`), not in a Skills tab. Drops the
+  earlier setup wording (D-2026-11-17-12 and D-2026-11-17-14).
+- **D-2026-11-22-04** (§2.1.1): Update the main-session inventory to match the real tools, including
+  `hud_lease` and `hud_statusline`. No tool-count cap (D-2026-11-17-02 and D-2026-11-21-07).
+- **D-2026-11-22-05** (§2.2.2, §2.2.4): The removal in D-2026-11-18-08 was of the panel-level Inbox.
+  Project keeps Timeline (default), Board and Inbox (D-2026-11-20-06).
+- **D-2026-11-22-06** (§5): Document MCP tasks only under MCP-ORCH, where D-2026-11-21-12 moved them.
+- **D-2026-11-22-07** (§5): List 0.2.0 (MCP orchestration & Panel V2) as the current milestone. The ladder
+  accepts concrete `0.x.y` IDs as well as `M`-prefixed IDs.
+- **D-2026-11-22-08** (§2.1.6): Native pi gets the same worker tools, without a fixed count. Clarifies
+  D-2026-11-21-03 after `hud_lease` was added.
+- **D-2026-11-22-09** (§2.1.6): Per-response `changes`, `watcher_alive`, `hud_wait` and `hud watch` are for
+  clients without MCP tasks. Declaring clients get task completions instead (D-2026-11-20-09 takes
+  precedence over D-2026-11-14-03 and D-2026-11-18-03).
+- **D-2026-11-22-10** (§2.1.5, §3): No general process-supervision platform. The per-job CLI supervisor
+  and on-demand watcher are allowed (clarifies D-2026-11-10-03).
+- **D-2026-11-22-11** (§2.2.3, §5): D-2026-11-20-04 wins: collect worker decisions without showing them.
+  Drops the earlier display and title rules in D-2026-11-11-04 and D-2026-11-11-05.
+
+## 2026-11-21
+
+- **D-2026-11-21-01** (§2.1.2): Skip pre-input launch failures for that dispatch; report the places tried.
+- **D-2026-11-21-02** (§2.1.2): Grok paused; switch off `grok` and `xai`, remove Grok `imp` presets.
+  The shipped `imp` combinations include Antigravity Hydrogen at high.
+- **D-2026-11-21-03** (§2.1.6): Move job protocol out of worker prompts into HUD. The dedicated worker MCP
+  gets job from environment; pi gets "the same four tools" natively, and the worker list includes leases once
+  available. Scripts are fallback only. D-2026-11-22-01 adds report fields; D-2026-11-22-08 removes the count.
+- **D-2026-11-21-04** (§2.1.4): HUD owns launch parameters; check model facts before opening tabs, map to
+  supported thinking and report the level used. Pre-start failure closes the tab and names the real cause.
+- **D-2026-11-21-05** (§2.1.4): Sonic uses role default `high`, not caller choice. Decision API auto-pick
+  `low`/`high`/`max` is optional and off by default: the marginal gain does not justify changing model
+  behaviour; sonic tasks are simple. Supersedes same-day caller selection and default high with no HUD
+  auto-pick (`bdfcf3a0`, `605c908d`).
+- **D-2026-11-21-06** (§2.1.5, §5): Closed-job `hud_send` automatically creates a repair job referencing old
+  brief and report. Derive create/send idempotency keys when omitted. Builds on D-2026-11-17-08.
+- **D-2026-11-21-07** (§2.1.1, §2.1.6, §5): Named exclusive leases before brief-named shared resources;
+  release when the holder ends, no resident process. See D-2026-11-22-04 and D-2026-11-22-08 for the
+  updated main and native worker tool inventories.
+- **D-2026-11-21-08** (§2.1.6, §5): Optional check commands run by HUD after explicit turn completion,
+  attached to the report signature. They cannot settle, accept or fail jobs.
+- **D-2026-11-21-09** (§2.1.6, §5): Scope jobs to project root, adopt after pane disappears. Choice B on
+  restart: recovery stays manual; herdr resume loses HUD bindings, and HUD does not relaunch.
+- **D-2026-11-21-10** (§2.3.1, §5): Optional standing `.hud/brief.md` in set-up projects; reference it after
+  the task in each brief.
+- **D-2026-11-21-11** (§5): Accept MCP-ORCH from oracle job `j61e7649cba37181c`, summarized in
+  `.scratch/mcp-orch/`. Milestone follows WORKER-MCP; see §5 for ordered scope and non-goals. Done is a real
+  owner project day compared using the same counts as the 2026-11-21 study.
+- **D-2026-11-21-12** (§5): Pull MCP tasks forward from M5. D-2026-11-22-06 removes the duplicate text.
+
+## 2026-11-20
+
+- **D-2026-11-20-01** (§2.2.2, §2.2.5): Make Control a main tab alongside Home, Project and experimental EXP
+  (see D-2026-11-22-02). Control presents project roles, attention, usage and files, with shared harness
+  switches and direct preset/chain editing. See `docs/design/control-tab/design.md`, `docs/design/control-tab/index.html`,
+  `.scratch/control-tab/`. Project layouts apply only to Project pages.
+- **D-2026-11-20-02** (§2.2.5): Pi model discovery on demand; terminal picker, all enabled providers, local
+  model facts. UX-PASS: quick path via `m` or click, in-pane, ranked search with pins; single-model edits save
+  immediately. See `docs/design/model-picker/index.html`, `.scratch/model-picker/`, `docs/design/ux-pass/`,
+  `.scratch/ux-pass/`.
+- **D-2026-11-20-03** (§2.1.7, §2.3.2): Adapted `to-tickets` moved from installed skill to `hud_tickets`,
+  the sole workflow exception. Every client uses shipped method/template; no convention additions. Main
+  drafts tickets. Local `add`/`update`, `sync` for the mirror; remove old Claude, Codex and pi skill links.
+  Supersedes per-client skill delivery, not the method.
+- **D-2026-11-20-04** (§2.2.3, §5): Keep collecting worker decisions for the owner but no longer show them.
+  Default to seeing, trying and accepting tasks (milestones/features), with a setting for slices/tickets.
+  Supersedes the older hide/reveal and title rules, as confirmed in D-2026-11-22-11.
+- **D-2026-11-20-05** (§2.2.4): Resolve `(waits on ...)` in display and counts without a STATE edit when all
+  dependencies finish. A to-try slice is never also a waiting item.
+- **D-2026-11-20-06** (§2.2.2, §2.2.4): Project Timeline (default), Board and Inbox in Classic and Split;
+  PROJECT-UX B/C in `docs/design/project-ux/` and `.scratch/project-layouts/spec.md`. Arrangement only;
+  counts, keys, rows, cuts, words, Home and Tickets unchanged. See D-2026-11-22-05 for Inbox scope.
+- **D-2026-11-20-07** (§2.2.7): Opt-in EXP collects only when on. Codex native line alongside tmux, pi
+  subscription proxy and machine-wide API grant ledgers. UX-PASS proxy uses Claude quota style plus source
+  and `≈`. No resident refresh or billing/requests integration; zero is not blocking. See
+  `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
+- **D-2026-11-20-08** (§2.3.1): Allow project CLI routing like owner chains (agent/model/thinking, no args).
+  Worker customization remains pi-only.
+- **D-2026-11-20-09** (§5): MCP tasks for declaring clients (then Claude Code): a moderate gain over
+  `hud watch` plus Monitor, no re-arm and fewer wake-ups. One task per turn, ends at report/question, result
+  state/path/summary is not a read, cancel closes job. Replaces wait/watch/changes/watcher-alive for those
+  clients (see D-2026-11-22-09); first verify wake, cancel and `/tasks`. Moved from M5 by D-2026-11-21-12.
+- **D-2026-11-20-10** (§2.2.2): UX-PASS mouse everywhere: select on first click, Enter on second, scroll by
+  wheel, set model on picker row click.
+
+## 2026-11-19
+
+- **D-2026-11-19-01** (§2.1.5): Explicit current-turn done receipt with a fresh report signature, or pi native
+  settlement plus changed report. Invalidate on new turn or rewritten report, not screen or idle. Valid
+  completion clears the live-child settlement block; close reaps proven descendants only.
+- **D-2026-11-19-02** (§2.2.4): Ledger text is written for agents. The list row shows the ID and first
+  sentence of the to-try brief from D-2026-11-18-07. The preview or expanded row shows the full brief and
+  steps, with ledger text folded below. If no brief exists yet, show the full original text wrapped.
+- **D-2026-11-19-03** (§2.2.2, §2.2.6): Arrow keys, Tab or clicks switch tabs, not numbers. Split adjusts
+  only with `=` / `-`, no divider drag.
+
+## 2026-11-18
+
+- **D-2026-11-18-01** (§2.1.2): One-job preset override leaves role file intact. Quota reset is parsed,
+  with an hour if no window is named. Refines D-2026-11-14-01 and D-2026-11-17-04.
+- **D-2026-11-18-02** (§2.1.3): CLI trust preflight before opening tab; concurrent per-job launches so
+  other jobs and answers are not held up. Refines D-2026-11-13-01.
+- **D-2026-11-18-03** (§2.1.4, §2.1.6): Add context files and prior-job inputs without main-context round
+  trip, clean worktree isolation with read summary and conservative reap, multi-job wait and bounded peek.
+- **D-2026-11-18-04** (§2.1.5): Known-launched MCP servers (`npm exec`, `npx`, `uvx`) do not count as live
+  turn children even if startup ends after first input. Refines D-2026-11-17-05.
+- **D-2026-11-18-05** (§2.1.5): Intentional stop wins tab-close race; retry failed cleanup. Pre-input
+  continuation refusal starts no working turn.
+- **D-2026-11-18-06** (§2.1.6): Pi native session message queue, not editor typing. No typing while native
+  or watched delivery is active.
+- **D-2026-11-18-07** (§2.2.4): Batch trial marks into one record/line. Never cut what the owner tries to a
+  name; show whole wrapped waiting text. A model writes a short brief explaining what changed in plain
+  words, and steps for trying it, from the ledger line, ticket and commits. With the model off, show the
+  original text. Only board model use. D-2026-11-19-02 changes how the brief is shown.
+- **D-2026-11-18-08** (§2.2.2): Owner tried both and kept Split. "Inbox is deleted; Classic stays the
+  default" (panel-v8 decision; panel-level Inbox scope confirmed in D-2026-11-22-05).
+- **D-2026-11-18-09** (§2.2.2, §2.2.4–§2.2.6): Owner job focus/answer/reap micro-actions without briefing
+  or chaining. V2 adds Split/preview cues, filter, sparklines, progress/sonic trees, safe numstat, Control
+  quota/spend/health, and self-contained offline HTML board export.
+
+## 2026-11-17
+
+- **D-2026-11-17-01** (preamble): Only the owner decides the spec; tell the owner change and reason before
+  editing. Boundary for briefs, answers and reviews over concept and older decisions.
+- **D-2026-11-17-02** (§2.1.1): One MCP across all three main sessions. Opening tool inventory is not a
+  cap; add a tool when clearer. See D-2026-11-22-04 for the updated inventory.
+- **D-2026-11-17-03** (§2.1.2): Merge architect into oracle, turning former setups into presets and
+  retaining create alias unless a file defines `architect`. Strongest-model read-only seat beyond design.
+- **D-2026-11-17-04** (§2.1.2, §2.2.5): Apply a whole named chain at once, not place by place, and show the
+  current preset. Later one-job override D-2026-11-18-01.
+- **D-2026-11-17-05** (§2.1.5): A live turn child proves work. After two live Antigravity runs: background
+  and daemon commands are its descendants while herdr can look idle. Session-long helpers do not count,
+  otherwise Claude and Codex workers would never close. Later launcher and done-receipt refinements in
+  D-2026-11-18-04 and D-2026-11-19-01.
+- **D-2026-11-17-06** (§2.1.6): WORKER-UNIFY: neutral workers, one text across harnesses; only sonic may be
+  started by workers, for useful simple fully specified tasks, with report collection.
+- **D-2026-11-17-07** (§2.1.7): Short replace-whole dispatch convention, mechanics only. Methods are
+  on-demand skills, optionally uninstalled; `hud_roster` returns current roles/convention.
+- **D-2026-11-17-08** (§2.1.5): Close a settled worker as soon as main reads its report; an unread report
+  keeps it until the idle deadline. Repair after closure is a new job; D-2026-11-21-06 adds automatic creation.
+- **D-2026-11-17-09** (§2.2.1, §2.2.2): One standalone herdr sidebar via `/hud`. Retire Codex tmux panel,
+  F12/Shift-F12, prefix keys and setting, gutter focus lock; keep tmux bar. Extend pi's output tokens/s to
+  Claude and Codex.
+- **D-2026-11-17-10** (§2.2.3): Include waiting items in Home question count; idle Home adds waiting items
+  and newest landed slices above progress.
+- **D-2026-11-17-11** (§2.2.4): To-try `y`/`n` records only in HUD home; main hears and edits STATE.
+- **D-2026-11-17-12** (§2.2.2, §2.2.9): First a standalone Skills tab, then Help (`?`) the same day. That
+  left Home and Project as the only main tabs until Control and EXP joined in D-2026-11-20-01. Wrap the
+  full localized catalog description in the 40-column panel; display only. D-2026-11-22-03 drops the
+  stale Skills tab wording from setup.
+- **D-2026-11-17-13** (§2.2.2): PANEL-REDESIGN: Classic and Split (panel-v8 option 2). Split only departs
+  from the Home/Project layout rules where the notes say so; never hide owner needs. See D-2026-11-18-08.
+- **D-2026-11-17-14** (§2.3.2, §2.2.9): Second decision supersedes the same day's adapted-skills and
+  MATT-PARADIGM decisions. Use HUD delegation, `to-tickets` slicing and one review per milestone. Turn
+  off upstream plugin; keep adapted and verbatim backup collection inactive with upstream commit IDs, no
+  tracking. Install `hud-handoff` beside HUD delegate/setup in all three. Later D-2026-11-20-03 moves
+  `to-tickets` to MCP. D-2026-11-22-03 confirms Help for the catalog.
+- **D-2026-11-17-15** (§2.3.3): Sync GitHub parent/sub-issues one way via `gh` to Project-format `.scratch/`
+  for panel and workers; only the sync tool writes the mirror. Sync after each tracker write, no polling.
+
+## 2026-11-16
+
+- **D-2026-11-16-01** (§2.1.2): Ship `general`, global ad-hoc role with brief-defined work and per-job model.
+
+## 2026-11-14
+
+- **D-2026-11-14-01** (§2.1.2): Logical roles, ordered places with owner control and single-job harness choice.
+  No per-harness/site names. `bro`, not Jev; distinct web `pro` seat. See D-2026-11-18-01 for refinements.
+- **D-2026-11-14-02** (§2.1.5, §3): Exception to main deciding next steps: a quiet CLI job with no report
+  past idle grace gets one Decision API choice, with confidence, key and error fallback. The fail choice
+  requires a quoted quota/rate-limit message from the worker's screen. Only facts end a CLI job. No
+  live-worker quit/failure from screen status, absent report or dead supervisor. See D-2026-11-22-10.
+- **D-2026-11-14-03** (§2.1.6): Whatever the panel shows about a job reaches the dispatching session; panel
+  and MCP share one reader. Return failure, response changes and watcher signal; command-watch lines and
+  silent Codex queue. Later pi delivery in D-2026-11-18-06; task-client scope in D-2026-11-22-09.
+- **D-2026-11-14-04** (§2.2.2, §2.2.4, §2.2.5): Project hub with per-page summaries originally including
+  Control; project switcher with Home remaining local. PROJECT-UX A: Timeline Now/Latest, last seven days,
+  ticket lanes. Control opens on attention and next place, healthy roles folded (`48002b18:docs/spec.md`).
+  D-2026-11-22-02 confirms Control is not a Project page.
+- **D-2026-11-14-05** (§5): 0.1.3 Project hub (`.scratch/project-hub/spec.md`); 0.1.4 roles apart from harnesses
+  (`.scratch/role-bind/spec.md`).
+
+## 2026-11-13
+
+- **D-2026-11-13-01** (§2.1.3): Official interactive CLIs use herdr, model/effort/bypass only, preserve
+  CLI config/session store. `hud trust <dir>` alone writes owner-chosen trust after backup under `$HUD_HOME`.
+  Trust preflight and concurrency refined by D-2026-11-18-02.
+- **D-2026-11-13-02** (§2.3.1): Conversational `hud-setup` modeled on claude-hud, explicit owner setup in
+  `projects.json` before `.hud/` activates. Committed project roles; pi-only customization. Later CLI
+  routing D-2026-11-20-08.
+- **D-2026-11-13-03** (§5): 0.1.1 CLI workers/`hud trust`; 0.1.2 `hud setup` (`.scratch/hud-setup/spec.md`).
+  Later D-2026-11-14-05; D-2026-11-22-07 adds 0.2.0 and version IDs in the ladder.
+- **D-2026-11-13-04** (§2.4; *recorded*): One-command install/uninstall, core plus chosen extensions, using
+  client registration commands where available.
+
+## 2026-11-12
+
+- **D-2026-11-12-01** (§2.2.1): Keep pi ribbon location and other extension statuses. Add BAR-THEMES on
+  three bars plus ribbon, with unchanged default and one two-row opt-in (Stacked).
+- **D-2026-11-12-02** (§2.2.3, §2.2.8): Decision API display labels only; Settings default OpenAI; no consent
+  or authority layer. Default or model-ranked Recommended Home, never hide owner needs.
+- **D-2026-11-12-03** (§2.2.3, §2.2.8): Native subagents from transcripts get Home lanes, nesting and model
+  summary under the master switch. Drop agent log, card label and card summary settings.
+- **D-2026-11-12-04** (§2.2.2–§2.2.5): Project at a glance: control plane (roles/models, convention source,
+  key and browser availability), tree, docs, progress and tickets. STATE conventions, compact Home
+  progress with card priority, and Control assignments/files with editor open. D-2026-11-22-02 separates
+  Control from the Project hub.
+- **D-2026-11-12-05** (§5): M4 follows open items without waiting on Matt's skills. Tickets stay empty until
+  a later `to-tickets` slice. Freeze M4 at review, fixes, three last slices (panel self-reload after a new
+  build, Settings model calls per feature, one test snapshot-update command), and release. New ideas go to
+  M5 candidates, not M4.
+- **D-2026-11-12-06** (§2.2.9): Changes keeps only Git/worktree summary, no file lists, diffs or previews.
+- **D-2026-11-12-07** (§5; *recorded*): Unscheduled M5 retention, tail-first transcript on open and Advanced
+  folding candidates, selected by the owner.
+
+## 2026-11-11
+
+- **D-2026-11-11-01** (§2.1.2, §3): Jev/Decision API is structured decision output, not browser work.
+  Browser tasks use the shared browser; execution remains on existing runtimes.
+- **D-2026-11-11-02** (§2.1.4): Single-job model/thinking override, named pi switches and raw extra pi args.
+- **D-2026-11-11-03** (§2.1.5, §4): HUD, not main, starts and closes workers; `hud_close` closes early.
+  Watcher starts on demand, listens to job-file/herdr events and exits after reaping the last open job.
+- **D-2026-11-11-04** (§2.2.1–§2.2.3): Merge Home and Work, owner needs before package lanes. Hide finished
+  jobs and older decisions after a short time; `a` reveals in place. D-2026-11-22-11 supersedes this for
+  decisions only. Bottom bars always on and side panel only with `/hud`, delegation tools registered both ways.
+- **D-2026-11-11-05** (§2.2.3, §2.2.8, §5): AI-THIN: small external model with owner's keys, job files in and
+  display text out. Originally: decision titles ≤8 words from question and answer saying what was decided,
+  and one sentence each on card, decision and result lines. D-2026-11-22-11 drops the decision display rules.
+  Try real owner jobs and keep keywords scannable. Remove consent/authority (`src/core/materials`),
+  "Job consent denied",
+  progress only used by removed facade jobs, and text in hidden views (main recap, approval words, change
+  summary, session title, `S` overview). Keep native-card text for NATIVE-TREE. Later visibility change
+  D-2026-11-20-04 and worker summary/cadence change D-2026-11-22-01.
+- **D-2026-11-11-06** (§2.2.9, §5): Keep Inspector (`v`), Settings and Help in Home's look. Delete old
+  Timeline, Activity hub, Summary and diagnostics except model-call count in Settings → LLM. Remove old
+  Agents pane after NATIVE-TREE; separate cleanup after ONE-PAGE. Drop Settings panel picture, Look presets,
+  Nerd Font and emoji sets, motion switch, stack/tabs layouts, foot status card and rows only they used.
+  Changes narrowed in D-2026-11-12-06.
+- **D-2026-11-11-07** (§5; *recorded*): M2 right after M1 deletes R6b slice L, old role facade and its
+  identity/release checks (replaced by the thin layer), old hud-mcp default managed surface and role-main,
+  and their tests. M3 adds browser tasks and oracle.
+- **D-2026-11-11-08** (§2.2.3; *recorded*): Optional package label from `hud_create`, else the brief title.
+  Group lanes for display only; MCP does not interpret the label (`b94b5f00:docs/spec.md`).
+
+## 2026-11-10
+
+- **D-2026-11-10-01** (§2.1.1, §3, §5): Thin HUD, unbundled pi-roles; no upstream tracking for ours (ported
+  claude-hud statusline, p10k-style footer). M1: repo `./install` core + Claude/pi/Codex, `hud uninstall`,
+  MCP and skill registered in all three, `hud panel`, six tools for imp/reviewer/sonic via herdr, Claude
+  parity and pi replacing p10k-footer. Owner installs and uses it.
+- **D-2026-11-10-02** (preamble, §1; *recorded*): Original owner-draft date. One Linux/WSL user in herdr,
+  one HUD across three clients, one boundary above concept and older decisions.
+- **D-2026-11-10-03** (§3; *recorded*): No own execution platform, automation engine, adversarial/multi-user
+  security, transactional installer, vendor pins, native Windows, publishing to npm or cross-machine use.
+  D-2026-11-22-10 clarifies the scope of the process-supervision non-goal.
+- **D-2026-11-10-04** (§4; *recorded*): Local owner trust, guard data/config loss and untrusted repositories
+  only. Simplicity; no new guard/option/abstraction without a reason. Match prior speed; done is usable.
+- **D-2026-11-10-05** (§6; *recorded*): Brief limits and milestone review. Owner trial is main review.

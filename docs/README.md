@@ -2,6 +2,7 @@
 
 Start with the product spec for what HUD supports, the reference for how to use it,
 and the architecture for how it works.
+The [decisions log](decisions-log.md) records the history behind the spec, including superseded decisions.
 
 ## Core documents
 

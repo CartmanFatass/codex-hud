@@ -135,6 +135,14 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
     [...f.collector.cache.get(join(f.hud, 'credentials.env')).value.values()].every((v) => typeof v === 'boolean')
   );
 });
+test('the Project milestone ladder matches a numeric version from STATE', async (t) => {
+  const f = await fixture(t);
+  f.put(join(f.cwd, 'docs/spec.md'), '# Synthetic spec\n\n## 5. Milestones\n\n- **M1, start.**\n- **0.2.0, sample release.**\n');
+  f.put(join(f.cwd, 'docs/handoff/STATE.md'), '# Synthetic state\n\nMilestone: 0.2.0 · sample release\n\n## Slices\n- accepted · 0.2.0 · SAMPLE · try the sample\n');
+  const data = await f.collector.collect(true, f.board, NOW + 1);
+  assert.deepEqual(data.ladder, { ids: ['M1', '0.2.0'], current: '0.2.0' });
+  assert.match(plain(f.render(80, 'en', 'progress', 56, data)).join('\n'), /^ {3}0\.2\.0 {2}█+ 1\/1 accepted$/m);
+});
 test('a registered project shows its roles, hides the rest and uses its convention', async (t) => {
   const f = await fixture(t);
   const root = fs.realpathSync(f.cwd);

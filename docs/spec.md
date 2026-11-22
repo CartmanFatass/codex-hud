@@ -1,209 +1,414 @@
-# HUD product spec (draft for the owner)
+# HUD product spec
 
-Status: **draft, 2026-11-10.** Only the owner decides what this page says: an agent may edit it only after telling the owner the change and the reason for it (owner, 2026-11-17). It is the boundary for every brief, answer and
-review. When anything here conflicts with the concept document or older decisions, this page wins.
+Only the owner decides what this page says. An agent may edit it only after telling the owner the change
+and why. This page is the boundary for every brief, answer and review. It overrides the concept document
+and older decisions. (17.01, 10.02)
+
+Decision refs use `DD.NN` for `D-2026-11-DD-NN` in `docs/decisions-log.md`.
 
 ## 1. What it is
 
 One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Linux/WSL machine, inside herdr.
+(10.02)
 
 ## 2. What it must do
 
-1. **Delegate through one MCP.** From any of the three main sessions, start and use roles with its tools, today `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`,
-   `hud_close`, `hud_wait`, `hud_peek`, `hud_tickets`; the count is not a limit, and a tool is added when it is the clearer interface (owner, 2026-11-17). CLI roles run through herdr and pi-roles, or on an interactive coding CLI herdr knows (Grok Build, Antigravity, Claude Code, Codex): a role names a job's work (its instructions and whether it can continue) and an ordered list of places to run (harness, model, thinking): the first available one is used, a place that hit its quota is skipped until its parsed reset time (or for an hour when no reset window is named), a place whose launch fails before the worker takes any input is skipped for that dispatch and the result names the places tried (owner, 2026-11-21), the owner switches places on the control plane, and `hud_create` may still pick a harness or a named `preset` for one job (owner, 2026-11-14; preset override and parsed quota reset, owner 2026-11-18: the MCP shows logical roles such as imp, reviewer, sonic, oracle; no per-harness or per-site role names; browser work runs on the `bro` harness, not called Jev; `oracle` is a local read-only advisor role on a model harness, the strongest-model seat for any judgement the brief sets, not only design (owner, 2026-11-17), and the strong web model (ChatGPT 6 Pro, then Gemini, then AI Studio) is its own browser role `pro`, owner 2026-11-14); the HUD checks local CLI trust files before opening a tab and starts the CLI in the job's herdr tab with only its model, effort and permission-bypass flags, drives the job like a pi job from herdr's status (report, idle grace, continuation, questions, stop, reap), never changes the CLI's own config or session store, and refuses a directory the CLI does not trust (owner, 2026-11-13; pre-flight trust check and per-job concurrency so slow launches never block other jobs or answers, owner 2026-11-18); `hud trust <dir>` is the one exception: it adds an owner-chosen project directory to the trust lists of Grok Build, Antigravity and Claude Code by writing their files directly, after a backup under `$HUD_HOME` (owner, 2026-11-13); browser tasks (ChatGPT, Gemini, AI Studio, Flow) run through the shared browser. **Jev** and the **Decision API** name the structured-output decision model (choice/predicate answers with probabilities), not the browser (owner, 2026-11-11). Roles are defined by files; the HUD ships defaults. Role presets (owner, 2026-11-17): a role file may carry named presets, each a whole ordered list of places; on the control plane the owner applies a preset to a role in one step instead of editing place by place, the row shows which preset is in force, and `hud_create` may pass `preset` to select one for a single job without editing the role file (owner, 2026-11-18). Control tab (owner, 2026-11-20; design `docs/design/control-tab/design.md`, sample `docs/design/control-tab/index.html`, tickets `.scratch/control-tab/`): the main tabs are Home, Project, Control and the experimental EXP; Control shows roles, attention, usage and files for the selected project, and Project layouts arrange Project pages only. The owner can turn a supported CLI agent, browser tool, the pi runner or a pi provider off or on for future jobs (`disabled` in `$HUD_HOME/harnesses.json`; absent means on, new providers appear on); an off place stays in its chain and is skipped like an exhausted one, role files are never rewritten, and the panel, `hud_roster` and `hud_create` share one evaluation; a provider that cannot be attributed is reported unknown, not guessed or blocked. One key on a role row switches presets; the owner can save the current chain or an empty draft under a new name, rename or remove a preset, and edit a chain in place (add a place with its model and thinking, move, remove, save); the row shows the preset and the next place. The pi model picker offers every discovered model of the providers that are on, grouped by provider in one list and filtered by typing; discovery runs on demand, never per key or tick. The picker stays in the terminal (no web console): each place shows a clickable model field, `m` on a role row or a place opens the picker in the panel's own pane (two columns from about 100 columns wide; no pane zoom), a model change on one place saves at once while other chain edits stay a draft until saved, the likely models (current, this role's presets, the providers the roles use) come first and typing gives one ranked flat list, pins the current model and the role's preset models, and shows each model's context, output, thinking and image facts with its HUD state; no price column without a local source (owner, 2026-11-20; sample `docs/design/model-picker/index.html`, tickets `.scratch/model-picker/`; quick path, in-pane picker and ranking: UX-PASS, `docs/design/ux-pass/`, tickets `.scratch/ux-pass/`). The HUD ships presets for the owner's current combinations; imp also ships Antigravity Hydrogen (high); its Grok presets were removed (owner, 2026-11-21: Grok paused, the `grok` CLI and `xai` provider are switched off). `architect` and `oracle` are one role, `oracle`, whose former setups are its presets; `architect` is also accepted as another name for `oracle` when a job is created, unless a role file defines its own `architect` (owner, 2026-11-17). The HUD also ships `general` (owner, 2026-11-16): a global role with no fixed specialty for ad-hoc dispatch, whose brief defines the work; the main session points it at any model for one job with `hud_create`'s `model`/`thinking` (for example a pi provider's model). A project the owner set up with `hud setup` adds its own role files under `.hud/roles` (committed) and may hide the others; its pi role files may name skills (linked under `.hud/skills`) and a worker prompt (`.hud/agents`) (owner, 2026-11-13). Such a project may also keep a standing brief, `.hud/brief.md`, that every brief of that project references after its task (owner, 2026-11-21). `hud_create` may override a role's model and thinking for one job (owner, 2026-11-11), pass `context_files` and `from_jobs` (writing a reference index into local worker briefs and splicing bounded file contents directly into browser briefs without round-tripping through the main session's context, owner 2026-11-18), request `isolation: "worktree"` (creating a clean git worktree with `node_modules` linked, reporting `git_summary` in `hud_read`, and letting the watcher reap clean merged/unmodified worktrees after closure while preserving dirty or unmerged ones, owner 2026-11-18), and, for pi roles, the common launch options as named switches (pi-lens, MCP adapter, tokens/s, UI extensions, the helper pane, personal skills) plus a free list of pi arguments passed through as given (owner, 2026-11-11). `hud_wait` waits on multiple jobs (or all open session jobs) for `any` or `all` settlements or open questions over one event-driven watch; `hud_peek` reads bounded recent pane output and optional `progress.jsonl` entries written by `hud-progress` without altering job state (owner, 2026-11-18). The MCP knows no particular role and no workflow, with one exception (owner, 2026-11-20): `hud_tickets` carries the ticket method that was the `to-tickets` skill, so every client gets it through the MCP it already has instead of a skill installed per client. Called without an operation it returns the method and the ticket template (one text, shipped with the HUD; nothing is added to the convention); `add` takes a feature slug and the tickets the session drafted (title, blocked-by numbers, what it delivers, acceptance items) and writes them numbered into `.scratch/<feature>/issues/` in the Project tab's format, refusing a blocked-by number that does not exist; `update` changes a ticket's status or ticks its acceptance items; `sync` runs `hud tickets sync`. `add` and `update` write only a local tracker; a GitHub-mirrored `.scratch/` is refused with the gh-plus-sync route. Drafting the slices stays the main session's work. The main session decides every next step; the HUD never chains roles itself. One exception (owner, 2026-11-14): a CLI job that stays quiet without a report past its idle grace gets one Decision API choice among fixed actions (keep waiting; send one fixed prompt to write the report; fail it and mark its place exhausted; hand it to the main session); below a confidence threshold, without a key or on any error it goes to the main session. The "fail" choice stands only when the quoted screen line is a quota or rate-limit message; any other reading goes to the main session (owner, 2026-11-14). Only facts end a CLI job (owner, 2026-11-14): it fails only when its process is gone, its tab was closed or dispatch was rejected before any input; a worker that exits after writing its report is closed, not failed; herdr's screen status, a missing report and a dead supervisor never fail or quit a live worker, they hand it to the main session. A live child process the worker started in its current turn is a fact that it is still working (owner, 2026-11-17, after two live agy runs: agy's background and daemon commands are its own descendants while herdr may show idle; session-long helpers such as MCP servers do not count, or no Claude or Codex worker would ever close; an MCP server a known launcher (`npm exec`, `npx`, `uvx`) brought up for the worker does not count even when it finishes starting after the first turn was sent, owner 2026-11-18): such a job is not settled, gets no quiet-job decision and is not closed until the worker declares the turn finished. For a CLI worker, the declaration is an explicit done receipt for the current turn, with the signature of a fresh report that still matches the report on disk. A new turn or a rewritten report invalidates that receipt; terminal output and herdr idle do not declare or invalidate completion. Pi's native turn settlement with a changed report is its equivalent. Leftover shells, test runners and daemons then do not prevent settlement: a continuable worker with an unread report enters idle grace, and a settled worker closes when its report is read or the deadline passes. Close terminates the worker and its proven descendants, including leftovers; processes without captured ancestry are left alone. Without a valid declaration the original live-child rule still applies (owner, 2026-11-19). A stop on purpose is recorded as stopped whichever writer sees it first, even when the tab closes at the same moment; a closed worker whose process or tab cleanup failed is retried until it is gone; a continuation that was refused before any input does not open a new working turn (owner, 2026-11-18). A settled job's worker is closed as soon as the main session has read its report (owner, 2026-11-17); an unread report keeps it until its idle deadline as before; a repair after that is a new job, which `hud_send` to the closed job creates itself, referencing the earlier brief and report; `hud_create` and `hud_send` derive their idempotency keys when none is given (owner, 2026-11-21). Whatever the panel shows about a job also reaches the session that dispatched it (owner, 2026-11-14): `hud_create` returns a dispatch failure as a failure, every MCP response carries the changes to that session's jobs since its last call (plus `watcher_alive` when a pane watcher is registered), `hud watch` prints one line per job event for a session that can watch a command (Claude Code's Monitor), Codex queues events silently, and pi's HUD extension delivers events natively through session message queuing without typing into the editor (owner, 2026-11-18); nothing is typed into the main session's pane when native or watched delivery is active; the panel and the MCP derive a job's state through one shared reader. Workers are neutral: each does only its own job (owner, 2026-11-17, WORKER-UNIFY): a worker
-   on any harness may start sonic on its own for a simple, fully specified sub-task whenever it judges that useful,
-   and waits for its report; it starts no other role, and the HUD refuses
-   any other role a worker tries to start. A worker's role has one instruction text whatever harness runs it. The job protocol belongs to the HUD, not to the worker's memory (owner, 2026-11-21): in a worker the HUD MCP lists only the worker's own tools, `hud_report` (writes the report, an optional one-line summary and file list, and the done receipt in one step; owner, 2026-11-22), `hud_ask`, `hud_sonic` (start one or more sonic sub-tasks without blocking, then collect their reports), `hud_progress` and, once leases exist, `hud_lease`, and finds the job from the worker's environment, so briefs and role texts carry no protocol paths or commands; pi workers get the same four tools natively, and the command-line scripts stay only as the fallback for a harness without MCP. Launch parameters are the HUD's to manage, not the model's (owner, 2026-11-21): before opening a tab the HUD checks every dispatch's model, thinking and place against its model facts; a tool shows only the levels the place supports, an unsupported value maps to the nearest supported one and the result names the value used; callers do not choose sonic's thinking: a sonic job runs at the role's default (`high`), and the tools do not ask the model to pick a level; an optional setting, off by default, lets the Decision API pick `low`, `high` or `max` for each sonic job from its brief, using the purposes the sonic role file gives each level, and any failure falls back to the default (owner, 2026-11-21: the marginal gain does not justify changing model behaviour; sonic tasks are simple); a launch that fails before the agent starts closes its tab and reports the real cause, not a startup timeout. A worker or the main session takes a named lease (`hud_lease`) before using a shared resource the brief names (a real install, paid or live runs, the shared browser); the HUD grants one holder at a time and frees a lease whose holder ended, with no resident process (owner, 2026-11-21). `hud_create` may name check commands; the HUD runs them once the worker declared the turn finished, records them against that report's signature and attaches the results; they never settle, accept or fail a job (owner, 2026-11-21). Jobs belong to a project, not to a pane: job lists are scoped to the project root, a session in the same project adopts jobs whose recorded pane is gone, and after a machine restart recovering a worker stays manual: herdr's resume drops the HUD's job bindings, and the HUD does not relaunch resumed sessions (owner, 2026-11-21). The HUD ships a short default dispatch convention; a project's or the owner's own file replaces it whole. The convention
-   carries only HUD's dispatch mechanics; method (grilling, specs, tickets, design vocabulary, build recipes) lives in
-   skills that load on demand and may stay uninstalled, never in the convention every session receives (owner,
-   2026-11-17). `hud_roster` returns the roles and the convention in effect. The
-   tools are a thin layer over the locally installed pi-roles and herdr (pi-roles' pi package, `STATUS.json`, `qN.answer.md`,
-   `pi-role-reap`); the MCP opens each job's herdr tab itself; jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles
-   is not bundled (owner, 2026-11-10). The main session never manages workers: `hud_create` starts them, the job
-   watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
-2. **Show what is happening.** A side panel (Home, Project) shows the main session's jobs and their state; Home is one page: what needs the owner, then the package lanes with their job cards (Home and Work merged, owner, 2026-11-11; the decisions a worker made for the owner are still collected but no longer shown, owner, 2026-11-20). Tickets and slices are agent-facing: by default the owner sees, tries and accepts work as one task (a ledger milestone; a ticket feature), and a setting shows each slice and ticket instead (owner, 2026-11-20). Finished jobs and older decisions hide after a short time; `a` shows them again in place (owner, 2026-11-11). The bottom
-   status lines are always on (Claude's statusline, pi's footer; Codex's tmux bar comes with `codexH`); only the side panel is opt-in: it opens only with
-   `/hud` (owner, 2026-11-11). One sidebar for every client (owner, 2026-11-17): Codex opens the same standalone herdr
-   sidebar with `/hud` as Claude and pi do; Codex's tmux panel (F12/Shift-F12, the prefix keys, the gutter focus lock and
-   the prefix setting) is retired, and Codex's tmux bar stays. The sidebar takes the mouse in every client: a click
-   selects a tab, row or button, a second click acts as Enter, the wheel scrolls; a click on a model picker row sets it (owner, 2026-11-20, UX-PASS). The delegation tools stay registered either way (owner,
-   2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
-   (taking in p10k-footer; its ribbon stays at the right end of the editor's top border and other extensions' statuses
-   stay visible, owner, 2026-11-12), Codex's existing tmux bar. Every status line shows output tokens/s (owner, 2026-11-17): the pi footer already does; Claude's statusline and Codex's bar show it too. Bar themes (owner, 2026-11-12): Gauge Plates, Tide, Micro
-   Glyphs, Stacked (two rows, the one opt-in exception), Headline and Triptych from the BAR-THEMES concepts join as
-   choices on all three bars, the pi ribbon included; the default stays today's look. The panel and status lines can use external models with the
-   owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
-   These features only read job files and write display text; they never prompt, brief or steer a worker. A worker's own one-line summary, given to `hud_report` and bound to that report's signature, is a
-   finished job's result line and the summary in notices and `hud_read`; the model is called only when the summary is
-   missing, stale or not in the panel's language, and a settled job's result line is not held back by the 2-minute
-   spacing; outcome labels stay independent Decision-API judgements of the report, never the worker's own (owner,
-   2026-11-22).
-   Decision-API labels (owner, 2026-11-12): a settled job's outcome, a job's kind, a quiet running card that repeats
-   the same failure, a worker question's category and a review's findings by severity, through the Decision API chosen in Settings
-   (default OpenAI). Display only, like the rest. No consent
-   or authority layer. Home mode (owner, 2026-11-12): Default or Recommended; Recommended orders and folds Home's cards by a Decision-API ranking and shows a short progress brief; cards that need the owner are never hidden. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
-   title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
-   The panel also shows the main session's native subagents (Claude Code's Agent subagents incl. custom ones, Codex
-   subagents, pi's), read from the client's own transcripts, each with an external-model summary of what it is doing.
-   On Home each main session gets one lane beside the package lanes, one card per subagent with the same hide rules;
-   a subagent's own subagents indent one level, deeper ones are flat with `↳ parent`. Their model text follows the one
-   master switch; the agent log, card label and card summary settings go (owner, 2026-11-12).
-   A Project tab shows the project at a glance: the control plane (roles in effect with their models,
-   the convention and its source, which keys and the browser are available), the working tree (branch, changes,
-   which job is editing it, last commit), docs (spec milestone, STATE's items waiting for the owner, the newest
-   review; STATE.md carries a `## Waiting for the owner` list and a `Milestone:` line, owner, 2026-11-12), a progress board so the owner need not ask (owner, 2026-11-12: read straight from the project files, no model: STATE's `## Now` line as a summary, one stacked bar and legend counting STATE's `## Slices` ledger by state (working, blocked, landed to try, accepted, todo, dropped), milestone chips from §5 with the current one from `Milestone:`, a block per slice in flight with what its job is doing now, and STATE's `## Next` list) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). Home shows a compact copy of the progress board and
-   the open tickets in its spare rows; cards always win the space (owner, 2026-11-12). Home's top line counts STATE's waiting items with the job questions, and an idle Home also lists the waiting items and the newest landed slices above the progress block (owner, 2026-11-17). The control
-   plane shows each role's assignment (role, harness, model and thinking, source file) and lists its files: HUD role files, pi-roles role definitions (model, thinking), the clients' native custom
-   agents (`~/.claude/agents`, a project's `.claude/agents`, `~/.codex/agents`), the convention in effect and the
-   instruction files (CLAUDE.md, AGENTS.md). Enter opens the item's file in `$EDITOR` (default `vim`) in a herdr pane
-   beside the panel. Project hub (owner, 2026-11-14): Project is a hub with one summary row per page (progress,
-   tickets, working tree, docs, control plane) and each of those is its own page. The progress page shows what is in
-   flight now (ledger slices and the project's running HUD jobs), Next, the slices landed to try and the accepted
-   ones grouped by milestone (older milestones folded); the tickets page shows each ticket's checklist and latest
-   comment in the panel. Project switches between the panel's own project and the projects set up with `hud setup`;
-   Home stays on the panel's project. Timeline layout (owner, 2026-11-14, PROJECT-UX direction A): the hub also shows
-   Now (who is on which slice, for how long) and Latest (the last landed slices, their age and whether they wait for a
-   try) above the page rows, and when the panel is short Latest folds first; the hub's bar is the current milestone's;
-   Progress is a dated feed of the last 7 days with older work one row per milestone; Tickets are lanes by state with
-   a For-you lane; try records (owner, 2026-11-17): on the Progress page's to-try view `y` accepts and `n` flags the
-   selected row, a milestone row meaning all its slices still to try and a slice row that slice; the panel writes only a
-   record under `$HUD_HOME` (never a project file) and shows the mark at once, the main session hears it through
-   `hud watch` and MCP `changes` and updates STATE (accepted slices become `accepted`; a flagged one goes under
-   Waiting for the owner and the main session asks the owner what is wrong). A waiting item may end with
-   `(waits on <slice ID>, <feature>/<NN>)`; once every named slice is accepted or dropped and every named ticket done or
-   dropped, the panel no longer shows or counts it, with no STATE edit needed; a try slice is never also a waiting item
-   (owner, 2026-11-20); the owner can mark several rows first and
-   `y`/`n` then records them as one record, so the main session hears one line (owner, 2026-11-18). What the owner
-   tries is never cut to a name (owner, 2026-11-18): a waiting item shows its whole text, wrapped, wherever the panel
-   has the rows. With the model on, a to-try slice gets a short brief (what changed, in plain words) and acceptance
-   steps (how to try it), made from its ledger line, ticket and commits; its list row then shows its ID and the
-   brief's first sentence, and its preview (or expanded row) shows the whole brief, the steps and, folded below them,
-   the original ledger text (owner, 2026-11-19: the ledger text is written for agents). With the model off, or before
-   its brief exists, the row shows the whole original text, wrapped. This is the one place the progress board uses the model; the control plane opens with what needs attention and the place the next job will use, healthy
-   roles folded. Skills list (owner, 2026-11-17; moved from a third main tab into Help, owner, 2026-11-17 second decision: Home and Project are the only main tabs; 2026-11-20: a Control tab and the experimental EXP tab join them): a section of Help (`?`) lists the backup skills, Matt Pocock
-   skills that are not installed (adapted copies in `integrations/skills-optional/` and the upstream text) and that
-   the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
-   the HUD ships; the description wraps under the name rather than being cut, so the list reads at the owner's 40-column
-   panel (owner, 2026-11-17). Display only: no action on a row, no install state, no adopted or dropped skills.
-   Project layouts (owner, 2026-11-20): Settings → Panel → Project layout offers Timeline (the Project tab described
-   above, the default), Board and Inbox (PROJECT-UX directions B and C, `docs/design/project-ux/`, detailed in
-   `.scratch/project-layouts/spec.md`), in Split and Classic. A Project layout arranges the Project tab's pages only:
-   counts, keys, to-try rows, cuts and words are the same in every layout, Home and Tickets do not change.
-   EXP (owner, 2026-11-20, experimental; plan `docs/design/exp-usage-plan.md`, tickets `.scratch/exp/`): a main tab shown
-   only when Settings → Panel → Experiments is on (default off; off means no tab, no collection, no refresh). It holds
-   the HUD's own usage settings for this machine and all projects: a Codex native status line (beside `codexH`'s tmux
-   bar, which stays), a pi subscription proxy (a bound Codex profile's rate-limit windows, shown in pi's footer as an
-   approximation with its source, drawn like Claude's statusline quota: bar, percent used, threshold colour, reset, `≈`
-   marking an estimate; owner 2026-11-20, UX-PASS), and API grant ledgers (anthropic-api, openai-api: monthly grant, renewal day, manual
-   calibration, estimated remaining USD). The proxy refreshes only while used: a pi session drawing its footer starts
-   one locked asynchronous refresh when the reading is older than the interval; no timer, no resident service. Ledgers
-   are append-only JSONL under `$HUD_HOME/exp/` with a dedup key per request; balances are computed on read. No vendor
-   billing sync, balance scraping, request blocking or admin keys; a zero estimate never stops a CLI.
-   Panel layouts (owner, 2026-11-17, PANEL-REDESIGN): Settings → Panel → Layout offers Classic (Home and Project as
-   described above, the default) and Split (option 2 of `docs/design/panel-v8/`: a list over a preview of the selected
-   row). Split departs from this section's Home and Project layout sentences only where `docs/design/panel-v8/notes.md` says so;
-   in every layout what needs the owner is never hidden. The owner tried both and kept Split (2026-11-18): Inbox is
-   deleted; Classic stays the default.
-   Panel micro-actions and V2 visual upgrades (owner, 2026-11-18): while the panel never briefs workers or chains workflows, it offers three direct owner controls equivalent to local commands—`g` focuses the selected HUD job's herdr tab, `1`–`4` or `d` on an expanded question slab writes `qa/qN.answer.md` once (reported to the main session via `changes` / `hud watch`); number keys do not switch tabs (←→, Tab and a click do; owner, 2026-11-19), and `X` with confirmation reaps a runaway job via `pi-role-reap`. Split shows compact keyword/progress cues on non-selected working list rows, supports `=` / `-` (keys only, no divider drag; owner, 2026-11-19) to adjust list/preview split ratio while auto-compacting the list when focus enters the preview, and paints a zero-width scrollbar indicator on the right edge of scrollable previews. `/` filters rows live across Home, Progress slices and Tickets. Cards and the Inspector show a 10-bucket activity sparkline (`▁`–`█`), worker `hud-progress` milestones, and nested `sonic` child trees under parent jobs. Inspector, Working tree and To-try previews render a bounded safe Git `--numstat` diff bar (top 12 files) for the job's worktree or slice commits. The Control plane surfaces client quota watermarks, today's pi spend and today's per-role dispatch health alongside presets. `hud board [--html] [--open]` (and `w` in the panel) exports a self-contained static HTML project and to-try review board with zero network fetches and no resident server.
-3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation of the worker itself (skills, prompt, settings) is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour. A project role's chain may still name CLI places (agent, model and thinking only; no extra arguments), the same routing the owner's own role files allow (owner, 2026-11-20). A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
-   Skills (owner, 2026-11-17, second decision; supersedes the same day's adapted-skills and MATT-PARADIGM
-   decisions): the HUD's own flow is the one in `docs/delegation.md`, slicing with `to-tickets` and one review per
-   milestone. Matt Pocock's skills are an inactive collection taken on demand: the upstream plugin is off
-   everywhere (Claude, Codex, pi, other harnesses), and none is installed: the adapted `to-tickets` became the `hud_tickets` MCP tool (owner, 2026-11-20), and the install removes the `to-tickets` skill links earlier installs made in Claude, Codex and pi. The other adapted copies
-   (`grill-with-docs` with `grilling` and `domain-modeling`, `to-spec`, `hud-build`, `tdd`, `diagnosing-bugs`) and
-   verbatim copies of the rest of the collection (`wayfinder`, `triage`, `improve-codebase-architecture`, `wizard`,
-   `teach`, `wait-what`, `writing-for-agents`, `to-questionnaire`, `prototype`, `retro`, `pr`, `codebase-design`;
-   owner, 2026-11-17) live in `integrations/skills-optional/`: not installed, not linked to workers, not offered by
-   `hud setup`, and no role loads one by default, the oracle included; the main session reads one when the owner
-   asks, or names one by path in a worker's brief. Each names the upstream commit it came from; we own the adapted
-   text and do not track upstream. `hud-handoff` is installed for Claude, Codex and pi beside
-   `hud-delegate` and `hud-setup`. The Skills tab lists the whole inactive collection. Ticket tracking: a project's tracker may be GitHub Issues, mirrored one way into `.scratch/` for the Project
-   tab and workers; only the mirror tool writes the mirror. The mirror tool is `hud tickets sync` (owner, 2026-11-17):
-   it reads the project's GitHub issues through `gh`, takes each parent issue with sub-issues as a feature (its slug
-   from the parent's title) and its sub-issues as that feature's tickets, and writes them into `.scratch/` in the
-   format the Project tab reads. The main session runs it after each tracker write; nothing polls, and the panel
-   never touches the network.
-4. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, browser,
-   herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
+### 2.1 Delegation through one MCP
+
+#### 2.1.1 Tool surface and thin layer
+
+- Start and use roles through one MCP from any of the three main sessions. Add tools when clearer; no cap.
+  (17.02)
+- Main-session tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`, `hud_close`,
+  `hud_wait` (hidden from MCP-task clients), `hud_peek`, `hud_tickets`, `hud_lease`, `hud_statusline`.
+  (17.02, 21.07, 22.04)
+- Thin tools over local herdr and unbundled pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
+  `pi-role-reap`). The MCP opens the job's herdr tab. Jobs are plain JSON under `$HUD_HOME/jobs`. (10.01)
+
+#### 2.1.2 Roles, routing and presets
+
+- Role files set instructions and continuability; HUD ships defaults. MCP names logical roles (`imp`,
+  `reviewer`, `sonic`, `oracle`, etc.), not roles per harness or site. (14.01)
+- Use the first available place (harness, model, thinking) in the role's ordered chain. Skip exhausted
+  places until parsed quota reset (one hour if unspecified). Skip pre-input launch failures for this
+  dispatch. Name places tried in the result. (14.01, 18.01, 21.01)
+- CLI roles use herdr with pi-roles or an interactive CLI (§2.1.3). Browser tasks (ChatGPT, Gemini, AI Studio,
+  Flow) use the shared browser via `bro`. Jev and Decision API name the structured choice/predicate model
+  with probabilities, not the browser. (11.01, 14.01)
+- `oracle`: strongest-model local, read-only advisor on a model harness for any judgement in the brief.
+  `architect` and `oracle` share `oracle`, with former setups as presets. On create, `architect` aliases
+  `oracle` unless a role file defines `architect`. Strong web role `pro`: ChatGPT 6 Pro, then Gemini, then
+  AI Studio. (14.01, 17.03)
+- `general`: global ad-hoc work set by the brief, with any model (e.g. a pi provider's) via `hud_create`
+  `model`/`thinking` for one job (§2.1.4). (16.01)
+- Named presets in role files are full chains. Owner switches places and presets in Control (§2.2.5).
+  `hud_create` can pick a harness (`on`) or `preset` for one job without editing role files (§2.1.4).
+  (14.01, 17.04, 18.01)
+- Ship presets for the owner's current combinations, including Antigravity Hydrogen (`high`) for `imp`.
+  No shipped Grok presets for `imp`; `grok` and `xai` are currently switched off. (21.02)
+
+#### 2.1.3 Interactive CLI harnesses and trust
+
+- Support Grok Build, Antigravity, Claude Code and Codex. Check local CLI trust files before opening a tab;
+  refuse untrusted directories. Launch in the job's herdr tab with only model, effort and permission-bypass
+  flags. Never edit CLI config or session stores. Use herdr status for report, idle grace, continuation,
+  questions, stop and reap as with pi. Launch per job without blocking other jobs or answers. (13.01, 18.02)
+- Sole write exception: `hud trust <dir>` backs up files under `$HUD_HOME`, then directly adds the owner's
+  chosen project directory `<dir>` to Grok Build, Antigravity and Claude Code trust lists. (13.01)
+
+#### 2.1.4 Dispatch inputs, isolation and launch guards
+
+- `hud_create` can override model and thinking for one job. Per `docs/delegation.md`, the main session
+  passes `preset`, `on`, `model` or `thinking` only if the owner asks for it in that request; no carryover.
+  For pi roles, named switches cover pi-lens, MCP adapter, tokens/s, UI extensions, helper pane and personal
+  skills; pass extra pi args as given. (11.02)
+- `context_files` and `from_jobs` write a reference index into local worker briefs and splice bounded file
+  contents into browser briefs, without round-tripping through main-session context. (18.03)
+- `isolation: "worktree"` creates a clean Git worktree with linked `node_modules`; `hud_read` gives
+  `git_summary`. After closure the watcher reaps only clean worktrees that are merged or unmodified;
+  preserve dirty worktrees or those with unmerged work. (18.03)
+- HUD, not the model, manages launch parameters. Check each dispatch's model, thinking and place against
+  model facts before opening a tab. Show only supported levels; map to nearest supported and report the
+  level used. On pre-start failure close the tab and report the cause, not a timeout. (21.04)
+- Sonic thinking uses the role default (`high`), not caller choice or a tool prompt. Off by default:
+  Decision API chooses `low`/`high`/`max` using each brief and the role file's level purposes. Any failure
+  falls back to the default. (21.05)
+
+#### 2.1.5 Lifecycle, settlement and cleanup
+
+- Main decides each step except the quiet-job choice below, never manages workers. `hud_create` starts
+  them, the watcher closes them, `hud_close` only closes early. No HUD role chaining. (11.03, 14.02)
+- Only facts end a CLI job. It fails only if its process is gone, its tab closes or dispatch is rejected
+  before input. Exit after reporting means closed, not failed. Herdr screen status, absent report or dead
+  supervisor hand live workers to main; never fail or quit them. (14.02, 22.10)
+- Quiet CLI job past idle grace with no report: one Decision API choice to wait, send one fixed prompt to
+  write the report, fail and mark the place exhausted, or hand to main. A fail choice stands only if it
+  quotes a quota or rate-limit line from the worker's screen; otherwise hand to main. Also hand to main
+  below confidence threshold, without a key or on any error. (14.02)
+- A live child the worker starts this turn proves work. No settlement, quiet-job decision or closure before
+  declared completion. Session-long helpers (e.g. MCP servers) don't count. Exempt MCP servers launched by
+  `npm exec`, `npx` or `uvx` even if startup ends after first turn dispatch. (17.05, 18.04)
+- Require an explicit current-turn CLI done receipt with the signature of a fresh report that still matches
+  the report on disk. A new turn or rewritten report invalidates it; terminal output and herdr idle neither
+  declare nor invalidate. Pi native settlement plus changed report is equivalent. Without valid declaration
+  the live-child rule applies. (19.01)
+- After declaration, leftover shells, test runners and daemons don't block settlement. An unread report
+  puts a continuable worker in idle grace. Close a settled worker as soon as main reads its report; else
+  keep it until its idle deadline. Terminate only the worker and proven descendants, including leftovers;
+  leave processes without captured ancestry alone. (17.08, 19.01)
+- Intentional stop records stopped regardless of first writer, even with simultaneous tab close. Retry failed
+  process/tab cleanup after closure until gone. Pre-input continuation refusal opens no turn. (18.05)
+- `hud_send` to a closed job creates a new repair job referencing the old brief and report. `hud_create`
+  and `hud_send` derive omitted idempotency keys. (21.06)
+
+#### 2.1.6 Events, project scope and the worker surface
+
+- `hud_peek`: bounded recent pane output and optional `hud-progress` `progress.jsonl` entries; no state
+  changes. (18.03)
+- Whatever the panel shows about a job also reaches the session that dispatched it. `hud_create` returns
+  dispatch failures as failures. For clients without MCP tasks, each MCP response carries session job
+  `changes` since its last call and `watcher_alive` if a pane watcher is registered. `hud_wait` gives one
+  event watch for `any`/`all` settlements or open questions across named jobs or all open session jobs;
+  `hud watch` prints one line per job event for command watchers (Claude Code Monitor). Clients that
+  declare MCP tasks get task completions instead. (14.03, 18.03, 20.09, 22.09)
+- Codex queues silently; pi uses its HUD extension's native session message queue. No main-pane typing with
+  native or watched delivery. The panel and MCP share a state reader. (14.03, 18.06)
+- Neutral workers do only their job, with one role text across harnesses. On any harness a worker may
+  choose to start sonic for a useful, simple, fully specified sub-task. If it does, it collects the report.
+  HUD refuses worker requests to start other roles. (17.06)
+- HUD identifies jobs from the worker environment; no protocol paths or commands in briefs or role texts.
+  Worker MCP lists only `hud_report` (report, optional one-line summary and file list, done receipt in one
+  step), `hud_ask`, `hud_sonic` (start one or more without blocking, then collect reports), `hud_progress`
+  and `hud_lease` once leases exist. Pi gets the same worker tools natively. Scripts only for harnesses
+  without MCP. (21.03, 21.07, 22.01, 22.08)
+- Worker or main takes a named `hud_lease` before using a shared resource named in the brief (real install,
+  paid or live runs, shared browser). One holder; free on holder end. No resident process. (21.07)
+- `hud_create` may name check commands. HUD runs them once the worker declares completion, records them
+  against that report's signature and attaches results. Checks never settle, accept or fail a job. (21.08)
+- Job lists are per project root, not pane. Same-project sessions adopt jobs whose recorded pane is gone.
+  Manual restart recovery: herdr resume loses job bindings; no relaunch of resumed sessions. (21.09)
+
+#### 2.1.7 Ticket method and dispatch convention
+
+- No role- or workflow-specific MCP logic except `hud_tickets`. With no operation it returns one shipped
+  method/template text for every MCP client, without per-client skills or additions to the convention.
+  Main drafts the slices. (20.03)
+- `add`: feature slug and drafted tickets (title, blocked-by numbers, deliverables, acceptance items) in
+  numbered Project-format files in `.scratch/<feature>/issues/`; reject unknown blocker numbers.
+  `update`: set status or tick acceptance items. `sync`: run `hud tickets sync`. `add` and `update` write
+  local trackers only; refuse GitHub mirrors and give the `gh` plus sync route. (20.03)
+- `hud_roster` returns roles and effective convention. Ship a short default, replaced whole by a project or
+  owner file. Only dispatch mechanics; methods (grilling, specs, tickets, design vocabulary, build recipes)
+  go in on-demand skills that may stay uninstalled, not every session's convention. (17.07)
+
+### 2.2 Observation, status bars and side panel
+
+#### 2.2.1 Status lines and themes
+
+- Every status line shows output tokens/s. Each client keeps one always-on bottom line: Claude replaces
+  claude-hud (same owner fields), pi absorbs p10k-footer, `codexH` keeps its tmux bar. Pi ribbon stays at the
+  right end of the editor's top border; other extensions' statuses stay visible. (11.04, 12.01, 17.09)
+- BAR-THEMES for all three bars and pi ribbon: Gauge Plates, Tide, Micro Glyphs, Stacked, Headline, Triptych.
+  Keep default look. Stacked is the sole opt-in two-row theme. (12.01)
+
+#### 2.2.2 Side panel, tabs and layouts
+
+Reference: `docs/design/panel-v8/` (option 2) and `docs/design/panel-v8/notes.md`.
+
+- All clients: `/hud` alone opens the same standalone herdr sidebar with main-session jobs and state.
+  Delegation tools stay registered either way. No Codex tmux panel (F12/Shift-F12, prefix keys/setting,
+  gutter focus lock). (11.04, 17.09)
+- All clients: click selects tabs/rows/buttons, second click is Enter, wheel scrolls. Click a picker row to
+  set the model. Left/Right, Tab and clicks switch tabs, not numbers. (20.10, 19.03)
+- Settings → Panel → Layout: Classic (default), Split (list over selected-row preview). Only the notes
+  override Home/Project layout rules in Split. Never hide owner needs. Split ratio: `=` / `-`, no drag.
+  Compact the list on preview focus; zero-width right-edge scrollbar on scrollable previews. `/` filters
+  Home, Progress slices and Tickets live. (17.13, 18.08, 18.09, 19.03)
+- Main tabs: Home, Project, Control and experimental EXP. Project layouts apply only to Project pages.
+  (11.04, 20.01, 22.02)
+- The old panel-level Inbox is removed, not Project's Inbox layout (§2.2.4). (18.08, 20.06, 22.05)
+
+#### 2.2.3 Home and native subagents
+
+- One Home page: owner needs, then job cards in lanes. Group by optional `hud_create` package label, else
+  brief title; display only, not interpreted by MCP. Default: see, try and accept tasks (ledger milestones
+  or ticket features). A setting shows slices and tickets. (11.04, 11.08, 20.04)
+- Finished jobs hide after a short time; `a` reveals them in place. (11.04)
+- Collect worker decisions for the owner but do not show them. (20.04, 22.11)
+- Default or Recommended. Recommended ranks and folds cards via Decision API and shows a short progress
+  brief. Never hide cards needing the owner. (12.02)
+- Read native subagents from transcripts (Claude Agent incl. custom, Codex, pi). One lane per main session
+  beside package lanes; one card per subagent with same hide rules. Indent nested agents one level; deeper
+  use flat `↳ parent`. External current-work summaries follow the master switch. No agent log, card label
+  or card summary settings. (12.03)
+- Spare rows: compact board and open tickets; cards win. Top line counts STATE waiting items with questions.
+  Idle Home lists waiting items and newest landed slices above progress. (12.04, 17.10)
+
+#### 2.2.4 Project hub, progress, layouts and export
+
+Reference: `docs/design/project-ux/` (A: Timeline; B and C: Board and Inbox),
+`.scratch/project-layouts/spec.md`.
+
+- Project can switch among the panel's project and `hud setup` projects. Home stays local. Progress,
+  Tickets, Working tree and Docs each have a hub summary row and their own page. (12.04, 14.04, 22.02)
+- Working tree: branch, changes, editing job, last commit. Docs: spec milestone, STATE waiting items, newest
+  review. STATE carries `## Waiting for the owner` and `Milestone:`. Tickets (`to-tickets`): status,
+  blocked-by,
+  package lane links, checklist and latest comment. (12.04, 14.04)
+- Progress reads project files: STATE `## Now` summary, one stacked bar and legend from `## Slices` (working,
+  blocked, landed to try, accepted, todo, dropped), §5 chips with current from `Milestone:`, in-flight slice
+  blocks with current job work, and `## Next`. Include running project jobs; group to-try and accepted slices
+  by milestone, older folded. (12.04, 14.04)
+- Timeline hub: Now (who, slice, duration) and Latest (landed slices, age, awaiting try) above page rows;
+  fold Latest first when short. Hub bar is current milestone. Progress: dated feed of the last 7 days, one
+  row per older milestone. Tickets: state lanes and For-you. (14.04)
+- In Progress's to-try view, `y` accepts and `n` flags one slice or all still-to-try slices on a milestone
+  row. Multi-select
+  emits one record and one line. Write only under `$HUD_HOME`, never to project files. Mark at once.
+  Main hears via `hud watch` and MCP `changes`, updates STATE (`accepted` or Waiting for the owner) and
+  asks what's wrong for flags.
+  (17.11, 18.07)
+- A waiting item can end in `(waits on <slice ID>, <feature>/<NN>)`. When all named slices are accepted or
+  dropped and tickets done or dropped, hide it and stop counting it without editing STATE. No to-try slice
+  is also a waiting item. Wrap the whole item where rows permit. Never cut what the owner tries to a name.
+  (18.07, 20.05)
+- Only to-try briefs use a board model: a short brief explaining what changed in plain words, and steps for
+  trying it, from the ledger line, ticket and commits. List: ID and first sentence. Preview or expanded row:
+  full brief and steps, ledger text folded below. No model or no brief: wrap full original text. (18.07, 19.02)
+- Settings → Panel → Project layout offers Timeline (default), Board and Inbox in Classic and Split. It
+  only arranges Project pages; counts, keys, to-try rows, cuts, words, Home and Tickets stay unchanged.
+  (20.06, 22.05)
+- `hud board [--html] [--open]` or panel `w` exports self-contained static HTML for the project and to-try
+  review, with no network fetches or resident server. (18.09)
+
+#### 2.2.5 Control and model picker
+
+Reference: `docs/design/control-tab/design.md`, `docs/design/control-tab/index.html`, `.scratch/control-tab/`,
+`docs/design/model-picker/index.html`, `.scratch/model-picker/`, `docs/design/ux-pass/`, `.scratch/ux-pass/`.
+
+- Roles, Attention, Usage and Files for the selected project. Open on owner attention and next job place;
+  fold healthy roles. Show role/harness/model/thinking/source, convention/source, available keys, browser
+  availability, client quota watermarks, today's pi spend and today's per-role dispatch health beside
+  presets. (12.04, 14.04, 18.09, 20.01, 22.02)
+- List HUD roles, pi-roles definitions (model/thinking), native custom agents (`~/.claude/agents`,
+  `.claude/agents`, `~/.codex/agents`), active convention, `CLAUDE.md`, `AGENTS.md`. Enter opens file beside
+  panel in herdr with `$EDITOR` (default `vim`). (12.04)
+- Toggle supported CLI agents, browser tools, pi runner and pi providers for future jobs via `disabled` in
+  `$HUD_HOME/harnesses.json`. Absent or new means on. Keep off places in chains; skip like exhausted places.
+  Don't rewrite role files. Panel, `hud_roster` and `hud_create` share evaluation. Unattributable provider:
+  report unknown, don't guess or block. (20.01)
+- One role-row key applies a preset. Show active preset and next place. Save current chain or empty draft as
+  a new preset; rename/remove presets. Add places with model/thinking; move/remove/save in place.
+  (17.04, 20.01)
+- Discover pi models on demand, not per key or tick. List all enabled providers' discovered models grouped by
+  provider. Click a place's model field or press `m` on role/place for same-pane picker (two columns from
+  about 100 columns; no zoom or web console). Save a place's model instantly; other edits stay drafts.
+  (20.02)
+- Likely first: current, role presets, providers roles use. Typing filters one ranked flat list. Pin current
+  and role preset models; show context, output, thinking, image facts and HUD state. No price without local
+  source. (20.02)
+
+#### 2.2.6 Micro-actions and visual cues
+
+- No panel briefing or chaining. Owner actions equivalent to local commands: `g` focuses selected job's
+  herdr tab; `1`–`4` or `d` on expanded question writes `qa/qN.answer.md` once, notifies main via `changes` /
+  `hud watch`; confirmed `X` reaps a runaway via `pi-role-reap`. (18.09)
+- Split's unselected working rows show compact keyword and progress cues. Cards and Inspector show a 10-bucket
+  activity sparkline (`▁`–`█`), `hud-progress` milestones and nested `sonic` trees under their parent jobs.
+  Inspector, Working tree and To-try previews show a bounded safe Git `--numstat` diff bar (top 12 files)
+  for the job's worktree or slice commits. (18.09)
+
+#### 2.2.7 Experimental EXP tab
+
+Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
+
+- EXP: machine-wide HUD usage settings. Settings → Panel → Experiments defaults off: no tab, collection
+  or refresh. (20.07)
+- Codex native line beside `codexH` tmux bar. Pi footer subscription proxy: bound Codex profile's rate-limit
+  windows, source and estimate `≈`; Claude-style bar, percent used, threshold colour and reset. (20.07)
+- Refresh only while used: pi footer draw starts one locked async refresh when the reading is older than
+  the interval. No timer or resident service. (20.07)
+- `anthropic-api`/`openai-api` grant ledgers: monthly grant, renewal day, manual calibration and estimated USD
+  remaining. Append-only JSONL in `$HUD_HOME/exp/` with a dedup key per request; balance on read. No vendor
+  billing sync, balance scraping, request blocking or admin keys. Zero estimate never stops a CLI. (20.07)
+
+#### 2.2.8 External models for display
+
+- Optional external Decision API text in panel and bars: summaries, recaps and sentences with owner keys
+  (`$HUD_HOME/credentials.env`). Read only job files; write only display text. Never prompt, brief or steer
+  workers. No consent or authority layer. (11.05, 12.02)
+- Settings API (default OpenAI) labels settled outcome, job kind, quiet repeated failures on running cards,
+  question category and review finding severity. Outcome is independent report judgement, never self-graded.
+  (12.02, 22.01)
+- Signature-bound worker `hud_report` summary supplies the finished result line, notices and `hud_read`.
+  Model fallback only if absent, stale or wrong panel language. No two-minute hold on settled results.
+  (22.01)
+- Small external model: thin-card third line (one sentence on current work), one-line finished result subject
+  to the rule above, 1–3 marked keywords for panel colour. On state change, in panel language, ≥2 minutes
+  apart per job except above. Factual line with no key or switch off. Settings: master switch (on with a key),
+  model and call cap; no per-feature switches. (11.05, 22.01)
+- Same approach on native cards: names, progress, result digest and failure cause. No consent setting or
+  "Job consent denied", no card progress used only by retired facade jobs, no model text only for hidden views
+  (main recap, approval words, change summary, session title, `S` overview). (11.05, 12.03)
+
+#### 2.2.9 Help and backup skills
+
+- Help (`?`) has a section listing backup skills. (17.12, 17.14, 22.03)
+- Shipped catalog: uninstalled Matt Pocock skills (adapted and upstream, §2.3.2). Show name and full one-line
+  panel-language description, wrapped under name at 40 columns. Display only: no row action, install state
+  or adopted/dropped skills. Main reads a skill on owner request. (17.12)
+- Keep Inspector (`v`), Settings and Help in Home's look. No old Timeline page (not Project's Timeline
+  layout), Activity hub, Summary, diagnostics pages or old Agents pane. Keep only the model-call count
+  from diagnostics in Settings → LLM. No Settings panel picture, Look presets, Nerd Font or emoji icon
+  sets, motion switch, stack/tabs layouts, foot status card or rows only they used. (11.06)
+- Changes: Git/worktree summary only (branch, ahead/behind, change counts, row per worktree); no file lists,
+  diffs or previews. (12.06)
+
+### 2.3 Project setup, skills and ticket sync
+
+#### 2.3.1 Setup and trust gate
+
+- One owner conversation via `hud-setup`, like claude-hud. `hud setup --detect | --apply PLAN | --remove`
+  writes `.hud/`. Load only for owner-set-up projects (`$HUD_HOME/projects.json`), never on clone alone.
+  (13.02)
+- Commit project roles in `.hud/roles`; set-up projects may hide others. Pi-only worker customization:
+  role-named skills linked under `.hud/skills`, prompt in `.hud/agents`, settings. Main sessions and official
+  CLIs (§2.1.3) keep their behaviour. Like owner files, project chains can name CLI places (agent, model,
+  thinking only, no extra args). (13.02, 20.08)
+- Optional `.hud/brief.md` for set-up projects; every brief there references it after the task. (21.10)
+
+#### 2.3.2 Skills policy
+
+- Use the HUD flow in `docs/delegation.md`: the `to-tickets` method (§2.1.7) and one review per milestone.
+  The Matt Pocock collection is inactive and on demand. The upstream plugin is off in Claude, Codex, pi and
+  all other harnesses. Install none of it; remove earlier `to-tickets` links in Claude, Codex and pi. Install
+  `hud-delegate`, `hud-setup` and `hud-handoff` for all three. (17.14, 20.03)
+- Keep adapted `grill-with-docs` (with `grilling` and `domain-modeling`), `to-spec`, `hud-build`, `tdd` and
+  `diagnosing-bugs` in `integrations/skills-optional/`. Keep verbatim `wayfinder`, `triage`,
+  `improve-codebase-architecture`, `wizard`, `teach`, `wait-what`, `writing-for-agents`, `to-questionnaire`,
+  `prototype`, `retro`, `pr`, `codebase-design` there too. Each names its upstream commit; we own adapted text
+  and do not track upstream. (17.14)
+- Do not install, link to workers or offer these in `hud setup`. No role, including oracle, loads them by
+  default.
+  The main session reads one at the owner's request or names it by path in a worker brief. (17.14)
+
+#### 2.3.3 One-way GitHub Issues mirror
+
+- `hud tickets sync` alone writes the one-way GitHub Issues mirror in `.scratch/` for Project and workers.
+  Read via `gh`: parent with sub-issues becomes title-slug feature, sub-issues its tickets. Use Project
+  format. Main syncs after each tracker write. No polling or panel network access. (17.15)
+
+### 2.4 Installation and uninstallation
+
+One command each: `./install` with core and chosen extensions (Claude, pi, Codex, browser, herdr);
+`hud uninstall` removes them. Register via official client commands where available. (13.04)
 
 ## 3. What it does not do
 
-- No own execution platform: no ledger database, process supervisor, native host or bridge, no SDK-driven sessions.
-  herdr, pi-roles and the browser runtime already do execution.
-- No workflow engine and no automatic role chaining.
-- No multi-user or adversarial security model; no identity proofs between local processes.
-- No transactional installer: no plan IDs, receipts or byte-exact restore. A plain backup of each edited client file
-  is enough.
-- No vendor version pins.
-- No tracking of upstream for ported parts (the claude-hud statusline, the p10k-style footer): they are ours and
-  change only for our needs (owner, 2026-11-10). pi and its extensions are updated with `pi update` when useful.
-- No Windows native, no npm publishing, no cross-machine use.
+- No own execution platform: no ledger database, no general process-supervision platform, no native host
+  or bridge, no SDK-driven sessions. herdr, pi-roles and the browser runtime already do execution. The
+  per-job CLI supervisor and on-demand watcher are allowed (§2.1.5 and §4). (10.01, 10.03, 14.02, 22.10)
+- No workflow engine or automatic role chaining. No multi-user or adversarial security model and no identity
+  proofs between local processes. (10.03)
+- No transactional installer: no plan IDs, receipts or byte-exact restore. A plain backup of each edited
+  client
+  file is enough. No vendor version pins. (10.03)
+- Do not track upstream for the ported claude-hud statusline or p10k-style footer. They are ours and change
+  only for our needs. Update pi and its extensions with `pi update` when useful. (10.01, 10.03)
+- No native Windows, npm publishing or cross-machine use. (10.03)
 
 ## 4. Threat model and quality bar
 
-- Trusted: the owner, the owner's own configs and tools. Guard against only two things: **irreversible loss of the
-  owner's data or config**, and **running commands from an untrusted repository** (for example git config in a
-  cloned repo).
-- Everything else takes the simplest implementation that works. A new guard, option or abstraction needs a concrete
-  reason written in the brief.
-- Lightweight: no resident service; a job watcher that `hud_create` starts on demand reacts to job-file and herdr
-  events, reaps finished jobs and exits when none is open (owner, 2026-11-11); the statusline and panel stay at least as fast as what they replace.
-- **Done means the owner can install it and use it**, not that the tests are green.
+- Trust the owner, their configs and tools. Guard against only irreversible loss of the owner's data or
+  config,
+  and commands from an untrusted repository (e.g. Git config in a clone). (10.04)
+- Otherwise use the simplest implementation that works. New guards, options or abstractions require a concrete
+  reason in the brief. (10.04)
+- No resident service. `hud_create` starts the watcher on demand. It reacts to job-file and herdr events,
+  reaps
+  finished jobs and exits when none is open. Keep statusline and panel at least as fast as what they replace.
+  (11.03, 10.04)
+- Done means the owner can install and use it, not that tests are green. (10.04)
 
 ## 5. Milestones
 
-- **M1, usable** (owner, 2026-11-10): `./install` run from the repo (core + Claude, pi, Codex extensions) and
-  `hud uninstall`; MCP and skill registered in all three clients; `hud panel`; the six tools work for imp, reviewer
-  and sonic through herdr; Claude statusline at claude-hud parity; pi footer replacing p10k-footer. The owner
-  installs and uses it.
-- **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its identity/release checks (replaced by the thin layer), the old hud-mcp surfaces (the default managed surface and role-main), and their tests.
-- **M3, extend:** browser tasks and oracle jobs.
-- **M3b, AI-THIN** (owner, 2026-11-11): the panel's words for HUD jobs come from an external small model with the
-  owner's key; it only reads job files and only writes display text.
-  - Where: the third line of a thin-job card (one sentence on what it is doing now); decision titles (≤ 8 words,
-    what was decided, from question and answer); a finished job's one-line result. The model marks 1–3 keywords in
-    its sentence and the panel colours them.
-  - When: on a job's state change, at least 2 minutes apart per job, in the panel's language. Without a key, or
-    with the switch off, the factual line shows as today.
-  - Settings: one master switch (on when a key exists), the model, the call cap. No per-feature switches.
-  - Deleted: the consent setting and authority layer (`src/core/materials`), "Job consent denied"; card progress
-    used only by the removed facade jobs; model text seen only in hidden views (main recap, approval words, change
-    summary, session title, the `S` overview).
-  - Kept for NATIVE-TREE: model text on native agent cards (agent names, progress, result digest, failure cause),
-    redone there the same way.
-  - Old views (owner, 2026-11-11): keep the Inspector (`v`), Settings and Help; delete Timeline, the
-    Activity hub, Summary and the diagnostics pages, keeping only the model-call count (in Settings → LLM). Changes
-    keeps only the git and worktree summary (branch, ahead/behind, change counts, one row per worktree), no file lists,
-    diffs or previews (owner, 2026-11-12). The old
-    Agents pane goes after NATIVE-TREE redoes native agents on Home. A separate cleanup slice after ONE-PAGE. The kept
-    pages are redrawn in Home's look; Settings drops the panel picture, Look presets, the Nerd Font and emoji icon sets,
-    the motion switch, the stack/tabs layouts, the foot status card and the rows only they used (owner, 2026-11-11).
-  - Done: the owner runs real jobs on the real panel; card, decision and result lines are one sentence each, not a
-    wall of text, and the keywords scan at a glance.
-- **M4, project view:** the Project tab, after the other open items. It does not wait for Matt's skills: the tickets
-  section stays empty until a later slice adapts to-tickets (owner, 2026-11-12).
-  - Frozen (owner, 2026-11-12): M4 closes with the whole-project review, its fixes, three last slices (the panel
-    reloads itself after a new build; Settings shows model calls per feature; one command updates the test
-    snapshots) and the release. New ideas go to the M5 candidates below, not into M4.
-- **0.1.x** (owner, 2026-11-13): 0.1.1 CLI workers and `hud trust`; 0.1.2 `hud setup` (`.scratch/hud-setup/spec.md`); 0.1.3 the Project hub
-  (`.scratch/project-hub/spec.md`, owner 2026-11-14); 0.1.4 roles apart from harnesses (`.scratch/role-bind/spec.md`,
-  owner 2026-11-14).
-- **MCP-ORCH, orchestration mechanics into the HUD** (owner, 2026-11-21; proposal: oracle report of job j61e7649cba37181c,
-  summarised in `.scratch/mcp-orch/`): after WORKER-MCP, in order: launch facts (supported thinking levels per model,
-  next place on a failed launch, worker HUD home from the job directory); derived keys, repair of a closed job,
-  one send to several jobs, `retry_of`; the standing brief and a convention trimmed of per-harness delivery text,
-  which moves into tool results; leases; project scope and restart recovery; HUD-run checks; MCP tasks for Claude
-  Code pulled forward from the M5 candidates (verify wake, cancel and /tasks first); settlement notices arriving
-  within seconds coalesce into one, questions stay immediate. Not in this milestone (owner): plan execution or
-  `after` chaining (the main session still decides every next step), a resident server (the on-demand watcher with
-  short-lived helpers is enough), project notes (only if repeated answers remain after the standing brief).
-  Done: the owner runs a real project day and the same counts as the 2026-11-21 study are compared.
-- **M5 candidates (not scheduled; the owner picks):** job directories and model caches get a retention period
-  (the owner sees the deletion list first); a transcript is read tail-first on open so status shows at once, with the
-  nesting filled in behind; rarely changed Settings rows fold under "Advanced". (Moved into MCP-ORCH, owner 2026-11-21:) MCP tasks for clients that declare them (today Claude Code; owner 2026-11-20, a moderate gain over `hud watch` + Monitor: no re-arm, fewer wake-ups): one task per worker turn (`hud_create`, `hud_send`, `hud_respond`), ending at a report or question; the result is state, report path and a one-line summary, not a read; cancel closes the job; such clients do not see `hud_wait`, `hud watch`, `changes` or `watcher_alive`; the first slice verifies Claude Code's wake, cancel and /tasks behaviour.
+- **M1, usable.** Repo `./install` (core + Claude, pi, Codex), `hud uninstall` (§2.4); MCP and skill
+  registered in all three clients; `hud panel`; M1's six tools work for imp, reviewer and sonic via herdr.
+  Claude statusline at claude-hud parity; pi footer replaces p10k-footer (§2.2.1). Owner installs and uses
+  it. (10.01)
+- **M2, clean.** Right after M1, acceptance: retired execution stack (R6b slice L), old role facade and its
+  identity/release checks (replaced by the thin layer), old hud-mcp default managed surface and `role-main`,
+  and their tests removed. (11.07)
+- **M3, extend.** Browser tasks and oracle jobs. (11.07)
+- **M3b, AI-THIN.** Small-model display text (§2.2.8). The owner tries real jobs on the real panel.
+  Card and result lines are one sentence each; keywords scan at a glance. (11.05, 20.04, 22.11)
+- **M4, project view.** Project after other open items, without waiting for Matt's skills. Frozen close:
+  whole-project review and fixes; three last slices (panel reloads itself after a new build, Settings shows
+  model calls per feature, one test snapshot-update command); release. New ideas go to M5 candidates,
+  not M4. (12.05)
+- **0.1.x**: 0.1.1 CLI workers and `hud trust`; 0.1.2 `hud setup` (`.scratch/hud-setup/spec.md`);
+  0.1.3 Project hub (`.scratch/project-hub/spec.md`); 0.1.4 roles apart from harnesses
+  (`.scratch/role-bind/spec.md`). (13.03, 14.05)
+- **0.2.0, MCP orchestration & Panel V2.** Current milestone. (22.07)
+- **MCP-ORCH, orchestration mechanics into the HUD.** After WORKER-MCP, in order: launch facts (supported
+  thinking per model, next place on failed launch, worker HUD home from job directory); derived keys, repair
+  of closed jobs, one send to multiple jobs and `retry_of`; standing brief and convention without per-harness
+  delivery text (that goes into tool results); leases; project scope and restart recovery; HUD-run checks;
+  MCP tasks; coalesce settlement notices arriving within seconds, with questions still immediate.
+  (21.11, 21.12, 22.06)
+  - MCP tasks for declaring clients (today Claude Code): first verify wake, cancel and `/tasks`. One task
+    per worker turn (`hud_create`, `hud_send`, `hud_respond`) until report or question. Result: state,
+    report path and one-line summary, not a read. Cancel closes the job. (20.09, 21.12, 22.06)
+  - Excludes plan execution and `after` chaining (main session decides every next step), resident server
+    (on-demand watcher with short-lived helpers suffices) and project notes (only if repeated answers remain
+    after the standing brief). Done: The owner runs a real project day; compare its counts with the
+    2026-11-21 study using the same measures. (21.11)
+- **M5 candidates (not scheduled; the owner picks):** retention period for job directories and model caches
+  (owner sees the deletion list first); read transcripts tail-first on open for immediate status, filling
+  in nesting behind; fold rarely changed Settings rows under Advanced. (12.07)
 
 ## 6. How work is done
 
-See `docs/delegation.md`. In short: each brief names the spec line it serves, what is out of scope, a size budget
-and a stop rule. Review happens at milestones and before the owner installs, not per package. The owner trying the
-build is the main review.
+- Follow `docs/delegation.md`. Each brief names the spec line served, what is out of scope, a size budget
+  and a stop rule. Review at milestones and before the owner installs, not per package. Trying the build as
+  owner is the main review. (10.05)

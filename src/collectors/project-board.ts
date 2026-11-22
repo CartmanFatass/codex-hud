@@ -410,7 +410,7 @@ export class ProjectCollector {
     const specPath = join(this.cwd, 'docs/spec.md'), specFile = this.read(specPath);
     if (specFile?.truncated) out.specTruncated = true;
     const spec = specFile?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
-    out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+),/gm)].map((m) => m[1]);
+    out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+|0\.\d+\.\d+),/gm)].map((m) => m[1]);
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: specPath });
     const reviews = join(this.cwd, 'docs/reviews');
     const review = this.orderedNames(reviews, 12, (entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(entry.name), true)
