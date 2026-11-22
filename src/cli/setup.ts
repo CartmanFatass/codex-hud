@@ -36,6 +36,7 @@ interface Plan {
 interface Records {
   land?: unknown;
   worktree?: unknown;
+  scratch?: unknown;
   links: Set<string>;
   role_files: Set<string>;
   agents: Set<string>;
@@ -335,7 +336,7 @@ function loadRecords(file: string): Records {
     const parsed = readJson(file);
     if (!isRecord(parsed)) return { links: new Set(), role_files: new Set(), agents: new Set(), convention: false };
     return {
-      land: parsed.land, worktree: parsed.worktree,
+      land: parsed.land, worktree: parsed.worktree, scratch: parsed.scratch,
       links: names(parsed.links),
       role_files: names(parsed.role_files),
       agents: names(parsed.agents),
@@ -720,7 +721,7 @@ async function apply(planPath: string, cwd: string, env: NodeJS.ProcessEnv, io: 
         role_files: [...next.role_files].sort(cmp),
         agents: [...next.agents].sort(cmp),
         convention: next.convention,
-        land: records.land, worktree: records.worktree,
+        land: records.land, worktree: records.worktree, scratch: records.scratch,
       },
       null,
       2

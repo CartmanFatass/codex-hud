@@ -68,23 +68,20 @@ function sameRoot(stored: string, root: string): boolean {
   }
 }
 
+export function projectRegistryRoots(value: unknown): string[] {
+  const registry = value as { version?: unknown; projects?: unknown } | null;
+  if (registry?.version !== 1 || !Array.isArray(registry.projects)) return [];
+  return registry.projects.flatMap((item) => typeof item?.root === 'string' && item.root ? [item.root] : []);
+}
+
 /** Missing or unparseable `projects.json` means nothing is registered. Never throws. */
 export function registeredProject(hudHome: string, cwd: string): ProjectGate {
   const root = projectRoot(cwd);
   const hud_dir = join(root, '.hud');
   let registered = false;
   try {
-    const parsed = JSON.parse(fs.readFileSync(join(hudHome, 'projects.json'), 'utf8')) as {
-      version?: unknown;
-      projects?: unknown;
-    };
-    if (parsed && parsed.version === 1 && Array.isArray(parsed.projects)) {
-      registered = parsed.projects.some((item) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
-        const stored = (item as { root?: unknown }).root;
-        return typeof stored === 'string' && stored.length > 0 && sameRoot(stored, root);
-      });
-    }
+    registered = projectRegistryRoots(JSON.parse(fs.readFileSync(join(hudHome, 'projects.json'), 'utf8')))
+      .some((stored) => sameRoot(stored, root));
   } catch {
     registered = false;
   }
@@ -106,16 +103,9 @@ export function projectList(hudHome: string, panelRoot: string): ListedProject[]
   const out: ListedProject[] = [{ root: first, name: basename(first) || first }];
   const seen = new Set<string>([first]);
   try {
-    const parsed = JSON.parse(fs.readFileSync(join(hudHome, 'projects.json'), 'utf8')) as {
-      version?: unknown;
-      projects?: unknown;
-    };
-    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.projects)) return out;
-    for (const item of parsed.projects) {
+    const roots = projectRegistryRoots(JSON.parse(fs.readFileSync(join(hudHome, 'projects.json'), 'utf8')));
+    for (const stored of roots) {
       if (out.length >= MAX_LISTED_PROJECTS) break;
-      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-      const stored = (item as { root?: unknown }).root;
-      if (typeof stored !== 'string' || !stored) continue;
       const real = realDir(stored);
       if (!real || seen.has(real)) continue;
       seen.add(real);

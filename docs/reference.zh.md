@@ -232,9 +232,16 @@ CLI 任务的监督进程只观察；只有事实能结束任务：记录的进�
 失败标签页保留两小时；没有未结束任务或待到期失败任务时退出。watcher 通过套接字关闭事件发现 HUD 启动的运行进程退出，无需定期扫描。原生 pi-roles 工作者没有这样的套接字，等待停止或已读关闭时仍可按 `HUD_WATCH_CLI_CHECK_MS`（默认 30000 毫秒）复查。监督进程已死而工作者仍在时任务为 `waiting_orchestrator`（“supervisor exited; worker still running”），watcher 按指数退避复查该工作者，对它 `hud_send` 会启动新的监督进程。已结算目录在**关闭一天后**的
 后续扫描时清理，不设专门到期定时器；包括报告及 `hud_read` 访问。删除旧 pi 任务前先将真实 JSONL
 会话移至 pi 存储；CLI 和浏览器会话留在各自存储。cwd 无效、目标冲突或移动失败则保留任务。删除会话链接不删除目标。
+任务正常结算（`done` 或已有报告且已关闭）后，watcher 在 `resume_s` 到期后的扫描中删除 `stdout.jsonl` 和 `stderr.log`。
+Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或已停止任务的原始日志保留到任务目录被删除为止。
 删除任务目录前，watcher 向 `$HUD_HOME/archive/YYYY-MM.jsonl` 追加一行任务事实，不含任务说明或报告正文；写入失败不影响删除，HUD 暂不读取或清理归档。
 
 ## 项目工作者
+
+已注册的项目可在 `.hud/project.json` 中启用临时文件清理，例如 `"scratch": {"paths": ["tmp/tasks"], "keep_days": 7}`。
+请仅指定存放可丢弃数据的目录。watcher 在按需扫描中最多每小时清理一次：若指定目录下某个顶层条目中最新的文件也早于
+`keep_days`（默认 7 天），则删除该条目。不接受含 `..` 的路径段、项目根目录本身或根目录之外的路径；不跟随符号链接，
+并在 `$HUD_HOME/watch.log` 中记录删除的条目数。
 
 ```sh
 hud setup --detect [--cwd DIR]

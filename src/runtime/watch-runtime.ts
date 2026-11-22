@@ -29,6 +29,7 @@ import { RUNNER_READY } from '../utils/runner-lifetime.js';
 import { isProcAlive } from '../utils/proc.js';
 import { request } from '../runtime/herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
+import { pruneJobLogs, pruneProjectScratch } from './work-retention.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
 import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 
@@ -340,9 +341,13 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     }
     const now = new Date().toISOString();
     const stopped = fs.existsSync(join(dir, jobFiles.stopRequested));
+    const size = (name: string) => {
+      const stat = fs.lstatSync(join(dir, name), { throwIfNoEntry: false });
+      return stat?.isFile() ? stat.size : undefined;
+    };
     writeJsonAtomic(statusFile, { ...status, ...end, ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
       output_written: fs.existsSync(join(dir, jobFiles.report)), settled_at: now, ended_at: now,
-      stdout_bytes: fs.statSync(join(dir, jobFiles.sonicStdout)).size, stderr_bytes: fs.statSync(join(dir, jobFiles.sonicStderr)).size });
+      stdout_bytes: size(jobFiles.sonicStdout), stderr_bytes: size(jobFiles.sonicStderr) });
     const latest = readJson<Job>(jobFile);
     if (latest) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
     if (cleanup.unrecoverable) log(`reap ${id}: ${cleanup.unrecoverable}; ${UNVERIFIED_TREE_NOTE}`);
@@ -447,6 +452,8 @@ function scan(retryWatch = false) {
     pruneDisplayFiles(join(home, 'display'));
     const removed = pruneLegacyTrustBackups(home);
     if (removed) log(`pruned legacy trust backups: ${removed}`);
+    const scratch = pruneProjectScratch(home);
+    if (scratch !== null) log(`pruned project scratch entries: ${scratch}`);
   }
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
   const busyWorktrees = new Set<string>(), knownWorktrees = new Set<string>(), knownWorktreeRoots = new Set<string>();
@@ -525,7 +532,7 @@ function scan(retryWatch = false) {
         }
         continue;
       }
-      if (!['closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
+      if (!['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
         let update: JobStatus | undefined;
         const now = new Date().toISOString();
         if (job?.cli) {
@@ -537,7 +544,7 @@ function scan(retryWatch = false) {
           if (!quitting && (tabClosed || (pid && !liveSupervisor))) {
             // The quit marker is removed after STATUS is published; ignore a snapshot taken before that write.
             ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile));
-            if (['closed', 'failed', 'stopped'].includes(status?.state ?? '')) { schedule(); continue; }
+            if (['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) { schedule(); continue; }
             const alive = workerAlive(status?.pid ?? null, status?.pid_start_time ?? null);
             const end = terminalFact({ alive, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
               turn: readTurn(dir), reportSig: reportSignature(dir) });
@@ -612,6 +619,7 @@ function scan(retryWatch = false) {
         continue;
       }
       const readClose = Boolean(resumeReadReap || readInGrace);
+      if (job && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now());
       if (!readClose && !['closed', 'failed', 'stopped'].includes(status.state ?? '')) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
         const text = String(status.exit_reason ?? status.error ?? '');

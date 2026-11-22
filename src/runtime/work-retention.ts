@@ -1,0 +1,123 @@
+/** On-demand cleanup of raw job logs and explicitly configured project scratch. */
+import * as fs from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { projectRegistryRoots } from '../roles/projects.js';
+import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
+import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { jobFiles } from '../mcp/paths.js';
+import { DEFAULT_RESUME_S } from '../mcp/worker-resume.js';
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+const CONFIG_LIMIT = 256 * 1024;
+const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+const hasParentStep = (path: string) => path.split(sep).includes('..');
+
+// The watcher runs on Linux/WSL. Pin each parent by fd before opening the next
+// component, so a path swapped for a symlink between inspection and removal
+// cannot redirect the walk. Never pass an unverified path to a recursive rm.
+function inDirectory<T>(path: string, use: (dir: string, fd: number) => T): T {
+  const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  try { return use(`/proc/self/fd/${fd}`, fd); }
+  finally { fs.closeSync(fd); }
+}
+
+function descend<T>(dir: string, parts: string[], use: (dir: string, fd: number) => T): T {
+  return inDirectory(join(dir, parts[0]!), (child, fd) =>
+    parts.length === 1 ? use(child, fd) : descend(child, parts.slice(1), use));
+}
+
+function inAbsoluteDir<T>(path: string, use: (dir: string, fd: number) => T): T {
+  const parts = path.split(sep).filter(Boolean);
+  return inDirectory(sep, (dir, fd) => parts.length ? descend(dir, parts, use) : use(dir, fd));
+}
+
+export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, now: number): void {
+  if (status.state !== 'done' && (status.state !== 'closed' || status.output_written === false)) return;
+  // Headless and legacy jobs have no native resume receipt. Give their logs the default window.
+  const seconds = job.resume_s ?? DEFAULT_RESUME_S;
+  const ended = Date.parse(status.ended_at ?? status.settled_at ?? '');
+  if (!Number.isFinite(ended) || !Number.isFinite(seconds) || seconds < 0 || now < ended + seconds * 1000) return;
+  try {
+    inAbsoluteDir(dir, (jobDir) => {
+      const stat = (name: string) => fs.lstatSync(join(jobDir, name), { throwIfNoEntry: false });
+      if (stat(jobFiles.stopRequested) || (status.state === 'closed' && !stat(jobFiles.report)?.isFile())) return;
+      for (const name of [jobFiles.sonicStdout, jobFiles.sonicStderr]) {
+        try { if (stat(name)?.isFile()) fs.unlinkSync(join(jobDir, name)); }
+        catch { /* Missing or inaccessible log; continue with the other one. */ }
+      }
+    });
+  } catch { /* Missing or redirected job directory; leave it alone. */ }
+}
+
+function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
+  return a.dev === b?.dev && a.ino === b.ino;
+}
+
+function oldEntry(path: string, cutoff: number, device: number, remove: boolean): boolean {
+  const stat = fs.lstatSync(path);
+  if (stat.dev !== device) return false;
+  if (stat.isDirectory()) {
+    const old = inDirectory(path, (dir, fd) => {
+      if (!sameInode(stat, fs.fstatSync(fd))) return false;
+      const names = fs.readdirSync(dir);
+      // For an empty entry, use the directory timestamp; otherwise only its contents matter.
+      return names.length ? names.every((name) => oldEntry(join(dir, name), cutoff, device, remove))
+        : stat.mtimeMs < cutoff;
+    });
+    if (!old || !sameInode(stat, fs.lstatSync(path, { throwIfNoEntry: false }))) return false;
+    if (remove) fs.rmdirSync(path);
+    return true;
+  }
+  if ((!stat.isFile() && !stat.isSymbolicLink()) || stat.mtimeMs >= cutoff) return false;
+  if (remove) fs.unlinkSync(path); // Links are leaves; the target never participates in age or removal.
+  return true;
+}
+
+export function pruneProjectScratch(home: string, now = Date.now()): number | null {
+  try {
+    return inAbsoluteDir(home, (hud) => {
+      const stamp = join(hud, 'scratch-pruned');
+      try {
+        const last = readJsonBounded(stamp, 64);
+        if (typeof last !== 'number' || now - last < HOUR_MS) return null;
+      } catch (error) { if (!missing(error)) return null; }
+      const registered = projectRegistryRoots(readJsonBounded(join(hud, 'projects.json'), CONFIG_LIMIT));
+      const roots = new Set(registered.filter((root) => isAbsolute(root) && !hasParentStep(root)).map((root) => resolve(root)));
+      let count = 0, attempted = false;
+      for (const root of roots) {
+        try {
+          inAbsoluteDir(root, (project, fd) => {
+            const config = inDirectory(join(project, '.hud'), (dir) =>
+              readJsonBounded(join(dir, 'project.json'), CONFIG_LIMIT)) as { scratch?: { paths?: unknown; keep_days?: unknown } } | null;
+            const { paths, keep_days: days = 7 } = config?.scratch ?? {};
+            if (!Array.isArray(paths) || !paths.length || typeof days !== 'number' || !Number.isFinite(days) || days < 0) return;
+            if (!attempted) {
+              // Record the attempt before deletion, including across watcher restarts or reloads.
+              writePrivateFile(stamp, String(now), { mkdir: false });
+              attempted = true;
+            }
+            const cutoff = now - days * DAY_MS, device = fs.fstatSync(fd).dev;
+            for (const path of paths) {
+              if (typeof path !== 'string' || !path || hasParentStep(path)) continue;
+              const local = relative(root, resolve(root, path));
+              if (!local || local === '..' || local.startsWith(`..${sep}`)) continue;
+              try {
+                descend(project, local.split(sep), (dir, childFd) => {
+                  if (fs.fstatSync(childFd).dev !== device) return;
+                  for (const name of fs.readdirSync(dir)) {
+                    try {
+                      const entry = join(dir, name);
+                      if (oldEntry(entry, cutoff, device, false) && oldEntry(entry, cutoff, device, true)) count++;
+                    } catch { /* Replaced or inaccessible entry; continue with siblings. */ }
+                  }
+                });
+              } catch { /* Missing, inaccessible or symlinked scratch path. */ }
+            }
+          });
+        } catch { /* Missing, unreadable or symlinked project/config; continue with other roots. */ }
+      }
+      return attempted ? count : null;
+    });
+  } catch { return null; }
+}

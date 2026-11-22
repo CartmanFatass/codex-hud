@@ -372,9 +372,18 @@ worker still running"); the watcher rechecks this unsupervised worker with expon
 JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job. Removing session
 links never removes their targets.
+On a scan after `resume_s` expires, the watcher removes `stdout.jsonl` and `stderr.log` from cleanly settled jobs
+(`done` or closed with a report). Sonic and older jobs without `resume_s` get the default 1620 seconds.
+Failed or stopped jobs keep their raw logs until their directories expire.
 Before deletion the watcher appends job facts, not the brief or report, to `$HUD_HOME/archive/YYYY-MM.jsonl`; append failures do not delay deletion, and HUD neither reads nor expires the archive.
 
 ## Project workers
+
+A registered project can opt into scratch cleanup in `.hud/project.json`, for example
+`"scratch": {"paths": ["tmp/tasks"], "keep_days": 7}`. Only designate directories holding disposable data.
+At most once an hour, during an on-demand scan, the watcher removes top-level entries in those directories
+whose newest file is older than `keep_days` (default 7). It refuses `..` path components, paths outside the project
+root, and the root itself. It never follows symlinks and logs the number of entries removed in `$HUD_HOME/watch.log`.
 
 ```sh
 hud setup --detect [--cwd DIR]
