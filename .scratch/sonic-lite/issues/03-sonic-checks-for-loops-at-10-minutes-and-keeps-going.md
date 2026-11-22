@@ -1,6 +1,6 @@
 # 03: Sonic checks for loops at 10 minutes and keeps going in the same session
 
-**Status:** ready-for-agent
+**Status:** done
 **Blocked by:** 01
 **Owner try:** no
 
@@ -10,9 +10,11 @@
 - Separate stall rule: no stdout growth and no hud_progress for `stall_s` (default 180) stops it as `stalled`. Safety cap `max_s` (default 1800) stops it as `timeout`. All three are optional sonic role-file fields, shown in `hud_roster(detail:true)`.
 - A stopped query keeps its partial stdout; its digest carries the last progress line. Run pi with a session file in the job dir; `hud_create({role:"sonic", retry_of})` on a stopped query resumes that pi session (pi --session) with a short "continue; you were stopped for <reason>" message instead of a fresh start, so context and cache are reused; if the session cannot be resumed, fall back to a new query whose brief carries the original brief plus the partial result.
 
-- [ ] A query that keeps making progress runs past 10 minutes in the same process and posts a checkpoint progress line
-- [ ] A synthetic query repeating the same tool call is stopped at the checkpoint as `looping`; a silent one as `stalled` after stall_s; max_s as `timeout`
-- [ ] retry_of on a stopped sonic resumes its pi session (fallback: partial result in the brief)
-- [ ] role-file values change the limits; npm test and check:fixtures pass
+- [x] A query that keeps making progress runs past 10 minutes in the same process and posts a checkpoint progress line
+- [x] A synthetic query repeating the same tool call is stopped at the checkpoint as `looping`; a silent one as `stalled` after stall_s; max_s as `timeout`
+- [x] retry_of on a stopped sonic resumes its pi session (fallback: partial result in the brief)
+- [x] role-file values change the limits; npm test and check:fixtures pass
 
 ## Comments
+
+- Landed 1001aa02bbf9094e6f326e7849183e46f37b7ea6; gate 5/5 passed.

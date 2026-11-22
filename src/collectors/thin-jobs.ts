@@ -202,7 +202,7 @@ export interface JobRowExtras {
   progress?: JobProgress;
   queuePosition?: number;
 }
-/** Milestones are display metadata: watch/list rows do not read this file. */
+/** Milestones are display metadata, except for active Sonic checkpoints delivered by watch. */
 export function readJobProgress(dir: string, cached = false, store?: ArtifactStore, seenSet?: Set<string>): JobProgress {
   const file = readArtifact(join(dir, 'progress.jsonl'), 65536, store ?? (cached ? artifactStoreFor(getJobIndexCache(resolve(dir, '../..'))) : null), seenSet);
   if (!file?.whole) return { progress: [], latest_progress: null };
@@ -496,7 +496,8 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
     statuses.set(id, status);
     try {
       const checks = jobChecks(dir, job);
-      const row = jobRow(job, status, { dir, cache });
+      const progress = job.role === 'sonic' && status?.state === 'working' ? readJobProgress(dir, true) : undefined;
+      const row = jobRow(job, status, { dir, cache, progress });
       const reportMeta = jobRowReportMeta(row, dir);
       rows.push({ ...row, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
     } catch {

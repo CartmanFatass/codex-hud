@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
-import { checksJustFinished, failureUnobserved, formatJobChange, jobChanges, readJobProgress, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { checksJustFinished, failureUnobserved, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
@@ -80,13 +80,13 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
   });
 }
 
-function sonicCheckpointNotices(home: string) {
+function sonicCheckpointNotices() {
   let seen = new Map<string, string>();
   return (rows: JobRow[]): string[] => {
     const next = new Map<string, string>();
     const lines = rows.flatMap(row => {
       if (row.role !== 'sonic' || row.state !== 'working') return [];
-      const checkpoint = readJobProgress(join(home, 'jobs', row.job), true).progress.filter(p => p.source === 'checkpoint').at(-1);
+      const checkpoint = row.progress?.filter(p => p.source === 'checkpoint').at(-1);
       const before = seen.get(row.job);
       const at = checkpoint?.at ?? before;
       if (at) next.set(row.job, at);
@@ -168,7 +168,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
   let prev = new Map<string, JobRow>();
   let first = true, stopped = false, scanning = false, dirty = false;
   let timer: ReturnType<typeof setTimeout>;
-  const notices = settlementNotices(settlementWindowMs), checkpoints = sonicCheckpointNotices(home);
+  const notices = settlementNotices(settlementWindowMs), checkpoints = sonicCheckpointNotices();
   const inputs = watchInputs(home, () => {
     if (scanning) dirty = true;
     else schedule(DEBOUNCE_MS);
@@ -240,7 +240,7 @@ export async function watchCommand(
   if (options.signal?.aborted) return 0;
   const controller = new AbortController(), { signal } = controller;
   let idleSince: number | null = null;
-  const notices = settlementNotices(options.settlementWindowMs ?? settlementWindow(io.env)), checkpoints = sonicCheckpointNotices(home);
+  const notices = settlementNotices(options.settlementWindowMs ?? settlementWindow(io.env)), checkpoints = sonicCheckpointNotices();
   const inputs = watchInputs(home, () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;
