@@ -9,6 +9,7 @@ import {
 import { getHudHome } from '../../hud-home.js';
 import { settingsPath } from '../../settings.js';
 import {
+  proxyDueAt,
   proxyObject,
   proxyStale,
   proxyWindow,
@@ -62,6 +63,8 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
   let expWatch: FSWatcher | undefined;
   let epoch = 0;
   let revision = 0;
+  let observed = false;
+  let expEnabled = false;
   let poll: Promise<void> | undefined;
   let refresh: Promise<boolean> | undefined;
   let reading: ProxyObservation | undefined;
@@ -70,35 +73,56 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
   const slots = ['primary', 'secondary'] as const;
   let direct: Partial<Record<(typeof slots)[number], WindowReading>> = {};
 
-  function watchDir(dir: string, change: (file: string | null) => void, closed: () => void) {
+  function watchDir(dir: string, change: (file: string | null) => void, closed: (watcher: FSWatcher) => void) {
     try {
       const watcher = watch(dir, { persistent: false }, (_, file) => change(file));
       watcher.on('error', () => watcher.close());
-      watcher.on('close', closed);
+      watcher.on('close', () => closed(watcher));
       return watcher;
     } catch {
       return;
     }
   }
-  function invalidate() {
+  function invalidate(clear = true) {
     revision++;
-    reading = undefined;
+    observed = false;
+    if (clear) reading = undefined;
     repaint();
+  }
+  function maybeRefresh(target: ProxyObservation, captured: number) {
+    if (refresh) return;
+    const dueAt = proxyDueAt(target.snapshot, target.intervalMinutes);
+    if (dueAt === null || dueAt > now()) return;
+    const mounted = epoch;
+    const active = () => mounted === epoch;
+    refresh = refreshProxyIfDue(env, target, active, options);
+    void refresh.then((wrote) => {
+      if (!active()) return;
+      refresh = undefined;
+      if (wrote) invalidate(false);
+      else if (captured !== revision) repaint();
+    });
   }
   function observe() {
     if (poll) return;
+    if (observed && settingsWatch && (!expEnabled || expWatch)) return;
     const mounted = epoch;
     const captured = revision;
     const active = () => mounted === epoch;
     poll = observeProxy(env, (enabled) => {
       if (!active()) return;
+      expEnabled = enabled;
       settingsWatch ??= watchDir(
         dirname(preferences),
         (file) => {
           if (!file || file === basename(preferences)) invalidate();
+          else if (expEnabled && !expWatch && file === 'exp') invalidate(false);
         },
-        () => {
-          if (active()) settingsWatch = undefined;
+        (watcher) => {
+          if (active() && settingsWatch === watcher) {
+            settingsWatch = undefined;
+            observed = false;
+          }
         }
       );
       if (enabled) {
@@ -106,37 +130,41 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
           expDir,
           (file) => {
             if (!file || file === 'config.json') invalidate();
-            else if (file === 'proxy.json') repaint();
+            else if (file === 'proxy.json') invalidate(false);
           },
-          () => {
-            if (active()) expWatch = undefined;
+          (watcher) => {
+            if (active() && expWatch === watcher) {
+              expWatch = undefined;
+              observed = false;
+            }
           }
         );
       } else {
-        expWatch?.close();
+        const watcher = expWatch;
         expWatch = undefined;
+        watcher?.close();
         clearRequest();
       }
-    }).then((next) => {
-      if (!active()) return;
-      poll = undefined;
-      if (captured !== revision) return repaint();
-      if (
-        next?.proxy.bindingVersion !== reading?.proxy.bindingVersion ||
-        next?.proxy.profile !== reading?.proxy.profile
-      )
-        clearRequest();
-      const changed = JSON.stringify(next) !== JSON.stringify(reading);
-      reading = next;
-      if (next && !refresh) {
-        refresh = refreshProxyIfDue(env, next, active, options);
-        void refresh.then((wrote) => {
-          refresh = undefined;
-          if (wrote || captured !== revision) repaint();
-        });
+    }).then(
+      (next) => {
+        if (!active()) return;
+        poll = undefined;
+        if (captured !== revision) return repaint();
+        observed = true;
+        if (
+          next?.proxy.bindingVersion !== reading?.proxy.bindingVersion ||
+          next?.proxy.profile !== reading?.proxy.profile
+        )
+          clearRequest();
+        const changed = JSON.stringify(next) !== JSON.stringify(reading);
+        reading = next;
+        if (next) maybeRefresh(next, captured);
+        if (changed) repaint();
+      },
+      () => {
+        if (active()) poll = undefined;
       }
-      if (changed) repaint();
-    });
+    );
   }
   function clearRequest() {
     request = undefined;
@@ -146,15 +174,21 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
     stop() {
       epoch++;
       poll = undefined;
+      refresh = undefined;
+      observed = false;
+      expEnabled = false;
       reading = undefined;
       clearRequest();
-      settingsWatch?.close();
-      expWatch?.close();
+      const sw = settingsWatch;
+      const ew = expWatch;
       settingsWatch = expWatch = undefined;
+      sw?.close();
+      ew?.close();
     },
     draw(ctx: FooterContext): BarQuotaWindow[] {
       observe();
       if (!reading) return [];
+      if (!poll) maybeRefresh(reading, revision);
       const key = route(ctx);
       if (request !== key) clearRequest();
       if (!key) return [];

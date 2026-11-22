@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import fsMutable, { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { parityFixture } from '../fixtures/pi-footer.js';
+import { parityFixture, parityHost } from '../fixtures/pi-footer.js';
 import { PI_QUOTA_WIDTHS } from '../fixtures/bar-widths.js';
 import { HUD_STATUS_KEY } from '../../dist/harness/pi/segment.js';
+import { createP10kFooter } from '../../dist/harness/pi/p10k-footer.js';
+import type { FooterComponent } from '../../dist/harness/pi/footer-host.js';
 import { stripAnsi, visualWidth } from '../../dist/render/colors.js';
 import { expProxyPath, readExpConfig, saveExpEdit } from '../../dist/collectors/exp-store.js';
 
@@ -276,4 +279,141 @@ test('pi footer counts the HUD workers by role, `!2` for the two asking; the zon
   // The jobs are gone: so is the group.
   f.publish('unavailable');
   assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /⚒/);
+});
+
+test('120 paced paints with EXP off read settings once, and turning EXP on or updating proxy is picked up without restart', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: quotaNow });
+  const f = fixture(t, undefined, { NO_COLOR: '1' });
+  const home = join(f.ctx.sessionManager.getCwd(), '../..');
+  const settingsFile = join(home, 'hud-settings.json');
+  writeFileSync(settingsFile, JSON.stringify({ experiments: false }), { mode: 0o600 });
+
+  const open = t.mock.method(fsMutable.promises, 'open');
+  const openSync = t.mock.method(fsMutable, 'openSync');
+  const settingsReads = () =>
+    open.mock.calls.filter((c) => c.arguments[0] === settingsFile).length +
+    openSync.mock.calls.filter((c) => c.arguments[0] === settingsFile).length;
+
+  f.render(120);
+  for (let attempt = 0; attempt < 50 && settingsReads() < 1; attempt++) await sleep(2);
+  await sleep(10);
+  assert.equal(settingsReads(), 1);
+  for (let i = 1; i < 120; i++) {
+    f.render(120);
+    await sleep(2);
+  }
+  assert.equal(settingsReads(), 1, '120 paced paints with EXP off read settings only once');
+
+  const profile = join(home, '.codex');
+  mkdirSync(profile);
+  writeFileSync(join(profile, 'config.toml'), '# synthetic profile\n');
+  saveExpEdit(home, { field: 'binding', value: profile }, quotaNow, { HOME: home, CODEX_HOME: profile });
+  saveExpEdit(home, { field: 'proxy-enabled', value: true }, quotaNow);
+  const proxyPayload = (usedPercent: number) =>
+    JSON.stringify({
+      profile,
+      bindingVersion: readExpConfig(home).proxy.bindingVersion,
+      secondary: { usedPercent, windowDurationMins: 10_080, resetsAt: (quotaNow + 52 * 3_600_000) / 1000 },
+      observedAtMs: quotaNow,
+      error: 'not_logged_in',
+      failures: 1,
+      nextAttemptMs: null,
+    });
+  writeFileSync(expProxyPath(home), proxyPayload(43), { mode: 0o600 });
+  f.ctx.model!.id = 'gpt-6.2-sol';
+  f.ctx.modelRegistry = { isUsingOAuth: () => true };
+
+  writeFileSync(settingsFile, JSON.stringify({ experiments: true }), { mode: 0o600 });
+  for (let attempt = 0; attempt < 100 && !f.render(120)[0]?.includes('≈43%'); attempt++) await sleep(5);
+  assert.match(f.render(120)[0]!, /≈43%/);
+
+  await sleep(10);
+  const readsAfterEnable = settingsReads();
+  for (let i = 0; i < 20; i++) {
+    f.render(120);
+    await sleep(2);
+  }
+  assert.equal(settingsReads(), readsAfterEnable, 'cached enabled state does not reread settings on paint');
+
+  writeFileSync(expProxyPath(home), proxyPayload(77), { mode: 0o600 });
+  for (let attempt = 0; attempt < 100 && !f.render(120)[0]?.includes('≈77%'); attempt++) await sleep(5);
+  assert.match(f.render(120)[0]!, /≈77%/);
+});
+
+test('missing settings directory retries on draw until the watch attaches, then caches', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: quotaNow });
+  const root = mkdtempSync(join(tmpdir(), 'hud-missing-watch-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const hudHome = join(root, 'hud');
+  const settingsFile = join(hudHome, 'hud-settings.json');
+  const open = t.mock.method(fsMutable.promises, 'open');
+  const reads = () => open.mock.calls.filter((c) => c.arguments[0] === settingsFile).length;
+
+  let footer: FooterComponent | undefined;
+  const ctx = {
+    mode: 'tui',
+    hasUI: true,
+    model: { id: 'gpt-6.2-sol', name: 'Sol', provider: 'openai', reasoning: true, contextWindow: 200_000 },
+    modelRegistry: { isUsingOAuth: () => true },
+    getContextUsage: () => ({ contextWindow: 200_000, percent: 42 }),
+    sessionManager: {
+      getSessionId: () => 's1',
+      getLeafId: () => 'leaf',
+      getEntries: () => [],
+      getBranch: () => [],
+      getCwd: () => root,
+    },
+    ui: {
+      theme: { fg: (_token: string, text: string) => text },
+      notify() {},
+      setEditorComponent() {},
+      setFooter(factory: Parameters<typeof createP10kFooter>[0] extends never ? never : any) {
+        footer?.dispose?.();
+        footer = factory?.({ requestRender() {} }, ctx.ui.theme, { getExtensionStatuses: () => new Map() });
+      },
+    },
+  };
+  const controller = createP10kFooter(
+    {},
+    parityHost,
+    { HOME: root, HUD_HOME: hudHome, NO_COLOR: '1' },
+    { gitStatus: (_cwd, done) => done(null, '') }
+  );
+  t.after(() => controller.dispose());
+  controller.start(ctx as never);
+
+  footer!.render(120);
+  await sleep(10);
+  assert.equal(reads(), 1);
+
+  mkdirSync(hudHome, { recursive: true });
+  const profile = join(root, '.codex');
+  mkdirSync(profile);
+  writeFileSync(join(profile, 'config.toml'), '# synthetic profile\n');
+  saveExpEdit(hudHome, { field: 'binding', value: profile }, quotaNow, { HOME: root, CODEX_HOME: profile });
+  saveExpEdit(hudHome, { field: 'proxy-enabled', value: true }, quotaNow);
+  writeFileSync(
+    expProxyPath(hudHome),
+    JSON.stringify({
+      profile,
+      bindingVersion: readExpConfig(hudHome).proxy.bindingVersion,
+      secondary: { usedPercent: 55, windowDurationMins: 10_080, resetsAt: (quotaNow + 52 * 3_600_000) / 1000 },
+      observedAtMs: quotaNow,
+      error: 'not_logged_in',
+      failures: 1,
+      nextAttemptMs: null,
+    }),
+    { mode: 0o600 }
+  );
+  writeFileSync(settingsFile, JSON.stringify({ experiments: true }), { mode: 0o600 });
+
+  for (let attempt = 0; attempt < 100 && !footer!.render(120)[0]?.includes('≈55%'); attempt++) await sleep(5);
+  assert.match(footer!.render(120)[0]!, /≈55%/);
+  await sleep(10);
+  const settledReads = reads();
+  for (let i = 0; i < 10; i++) {
+    footer!.render(120);
+    await sleep(2);
+  }
+  assert.equal(reads(), settledReads);
 });
