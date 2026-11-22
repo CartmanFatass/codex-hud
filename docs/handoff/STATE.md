@@ -13,7 +13,7 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Next
 
-- HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01 HOME-SUPERSEDE 与 02 ROLLUP-TRUTH 并行（进行中） → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
+- HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01 HOME-SUPERSEDE 已落地，02 ROLLUP-TRUTH 集成中 → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
 - ORCH-LEAN（owner 2026-11-22：A/B/C 全做）：A 已做（本仓库禁用不用的工具、全局去掉 codegraph 提示钩子、STATE 归档、习惯）；B：01 合入交给 sonic + 回收已 cherry-pick 的 worktree（已落地 8cf766b6，首次由 sonic 合入）、02 hud_read 摘要、03 通知等检查并瘦身；C：04 面板操作送达任务客户端 + r/m 意图键、05 批量 MCP 调用。
 - MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. Two follow-ups to
   try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
@@ -45,6 +45,7 @@ board counts these; update at every landing or decision. -->
 - todo · MCP-ORCH · IMP-MODEL-COST · owner 2026-11-22: imp's default is now openai/gpt-6.2-astra high (preset astra, from 11:43Z; before: 6.2-sol high, then 6.2-sol-fast); once every open ticket has landed, compare average time and cost per imp task across the three (pi session usage.cost)
 - accepted · MCP-ORCH · ORCH-LOAD · read docs/llm/orch-load-2026-11-22.md: ~73% of orch turns are chores (search 32%, land/test/poll 25%, STATE/tickets 6%, full reports 6%) and 30% of context is fixed schema/skill overhead; 10 ranked cuts (~80% fewer Opus tokens if ranks 1–8 land) and 5 questions (d61876c7)
 - accepted · PANEL · DESIGN-HOME-PROGRESS · open docs/design/home-progress/sample.html: the proposed Home in zh and en (milestone bar, one ticket meter, planned features folded into one row, failed jobs leave once retried); README has the diagnosis, 4 slices and 5 questions; pick before any build (3cf299cc)
+- try · HOME-PROGRESS · HOME-PROGRESS-01 · a failed job leaves Home once a retry, a newer job on the same target, or a landed slice/ticket supersedes it (a shows it muted as 已替代); an unhandled failure leaves Home after 30 minutes while hud_read({}) still lists it; the AI brief shows only for the exact current inputs (e8945375)
 - try · ORCH-LEAN · ORCH-LEAN-01 · sonic now integrates a slice in its own worktree (cherry-pick, full test gate, ≤10-line report; template in docs/delegation.md) and the watcher removes closed managed worktrees whose commits are already cherry-picked onto the base, also when the pick comes later (8cf766b6)
 - try · CODE-HEALTH · JOB-ARCHIVE-01 · when the watcher deletes an old job it first appends one line of facts (role, model, times, outcome; no report or brief text) to $HUD_HOME/archive/YYYY-MM.jsonl; nothing reads it yet (f796f2eb)
 - try · CODE-HEALTH · ASYNC-WATCH-05 · review fixes: stopping the watcher while a build publishes leaves no stale watch.pid; no paid Decision call starts after a stop; agy delivery no longer blocks the worker; a dead reap leader's herdr child is cleaned up only when proven ours; a failed read-close retries even after the tab is gone (0bc03c05)

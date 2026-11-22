@@ -25,7 +25,7 @@ agent proposes.
 4. **Integrate.** The orchestrator reads each diff and tries the slice. Send sonic this integration brief:
 
    > Integrate `<ordered slice commit IDs>` onto `<base branch>`. Run every command through the main checkout's
-   > `tmp/env.sh`. Create a fresh detached worktree at the base tip and link the main checkout's `node_modules`.
+   > `tmp/env.sh`. Create a fresh detached worktree at the base tip (`node_modules` is tracked; no link).
    > From the integration worktree, cherry-pick the commits in order. Run `npm run` for each script in order:
    > `build`, `build:test`, `test:mjs`, `test:mjs`, `test:unit`, `check:fixtures`. Stop at the first conflict or
    > failed step; never edit code. Report in at most 10 lines: picked cleanly or conflict files; pass/fail and
@@ -96,7 +96,7 @@ Codex tests use `codex2` (the free account), never the main `codex` account.
 - Task scratch: `tmp/tasks/<slice>/` (git-ignored).
 - One worktree per code imp (owner, 2026-11-12): the owner's statusline, pi footer and panel run from the main
   checkout's `dist/`, so an imp never builds there. `tmp/wt-new.sh <slice>` makes `../MyHUD-wt/<slice>` on branch
-  `wt/<slice>` with `node_modules` symlinked; `hud_create` gets that `cwd`. The orchestrator commits in the worktree,
+  `wt/<slice>` (`node_modules` is tracked, so no link); `hud_create` gets that `cwd`. The orchestrator commits in the worktree,
   hands the commit IDs and `universal-hud` to sonic for step 4, then removes the slice worktree after landing.
 - Every test run uses a temporary HOME / HUD_HOME / CODEX_HOME / CLAUDE_CONFIG_DIR: `tmp/env.sh <command>`, run from
   inside the checkout or worktree it should act on.
