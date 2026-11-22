@@ -1,0 +1,454 @@
+import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import {
+  workerFor,
+  cardText,
+  withoutHint,
+  withoutCallerLookups,
+  fixture,
+  until,
+  assertCliStatus,
+  cliState,
+} from '../helpers/thin-mcp-harness.mjs';
+
+test(
+  'a grok role runs a brief through idle grace and the watcher reaps the closed tab',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    const job = await f.call('hud_create', {
+      role: 'imp',
+      on: 'grok',
+      request_key: 'grok-life',
+      task: 'Synthetic grok task.',
+    });
+    const tab = f.commands().find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').args;
+    assert.equal(tab[tab.indexOf('--env') + 1], `HUD_JOB_DIR=${job.task_dir}`);
+    const start = f.commands().find((c) => c.args[0] === 'agent' && c.args[1] === 'start').args;
+    const dash = start.indexOf('--');
+    assert.deepEqual(start.slice(0, dash), [
+      'agent',
+      'start',
+      `${job.job}-primary`,
+      '--kind',
+      'grok',
+      '--pane',
+      'w4E:p2',
+    ]);
+    assert.deepEqual(start.slice(dash + 1), [
+      '-m',
+      'grok-4.7',
+      '--reasoning-effort',
+      'high',
+      '--permission-mode',
+      'bypassPermissions',
+    ]);
+    assert.equal(
+      start.some((arg) => /^--(home|session|config|profile|worktree)/.test(arg)),
+      false
+    );
+    const prompt = f.commands().find((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit').args[3];
+    assert.match(prompt, /instructions\/implementer\.md/);
+    assert.match(prompt, /brief\.md/);
+    assert.match(prompt, /do exactly what the brief asks/);
+    const session = Object.fromEntries(
+      fs
+        .readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => line.split('='))
+    );
+    assert.equal(session.TASK, job.job);
+    assert.equal(session.TAB, 'w4E:t2');
+    assert.ok(session.TAB_NAME);
+    assert.equal(session.LEFT, 'w4E:p2');
+    assert.equal(session.RIGHT, '');
+    assert.equal(session.ORCH, 'w4E:p1');
+    assert.equal(session.BASE, 'HEAD');
+    assert.equal(session.PRIMARY, `${job.job}-primary`);
+    await until(() => fs.existsSync(join(f.env.HOME, 'seen-grace.json')));
+    const grace = JSON.parse(fs.readFileSync(join(f.env.HOME, 'seen-grace.json'), 'utf8'));
+    assertCliStatus(grace, job.task_dir);
+    assert.equal(grace.state, 'idle_grace');
+    assert.equal(grace.output_written, true);
+    assert.equal(grace.model, 'grok-4.7');
+    assert.equal(grace.thinking, 'high');
+    assert.equal(grace.agent_session_id, 'synthetic-grok-session');
+    assert.equal(typeof grace.pid, 'number');
+    assert.match(grace.pid_start_time, /^\d+$/);
+    assert.equal(String(grace.supervisor_pid), fs.readFileSync(join(job.task_dir, 'supervisor.pid'), 'utf8').trim());
+    assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
+    assert.ok(f.socketRequests.some((req) => req.method === 'agent.get'));
+    await until(() => {
+      const file = join(job.task_dir, 'STATUS.json');
+      return fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).state === 'closed';
+    });
+    const closed = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'));
+    assertCliStatus(closed, job.task_dir);
+    assert.equal(closed.state, 'closed');
+    assert.equal(closed.exit_reason, 'settled');
+    assert.equal(closed.output_written, true);
+    assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic grok report.\n');
+    assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+    assert.match(cardText(workerFor(f, job.job)), /\bimp\b/);
+    assert.match(cardText(workerFor(f, job.job)), /Synthetic grok report/);
+    await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
+    assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+  }
+);
+
+test('cli launch accepts model and thinking overrides and refuses pi-only switches', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  for (const [key, value] of [
+    ['pi_args', ['--tools', 'read']],
+    ['lens', true],
+  ])
+    assert.deepEqual(
+      withoutHint(await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'reject-' + key, task: 'Synthetic.', [key]: value })),
+      { ok: false, code: 'invalid_arguments' }
+    );
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  fs.writeFileSync(
+    join(f.env.HUD_HOME, 'roles', 'plain.json'),
+    JSON.stringify({
+      role: 'plain-grok',
+      harness: 'cli',
+      agent: 'grok',
+      can_continue: false,
+      args: ['--extra', 'literal space'],
+    })
+  );
+  const job = await f.call('hud_create', {
+    role: 'imp',
+    on: 'grok',
+    request_key: 'grok-override',
+    task: 'Synthetic override.',
+    model: 'grok-4.7-build-fast',
+    thinking: 'low',
+  });
+  const start = f.commands().find((c) => c.args[1] === 'start').args;
+  assert.deepEqual(start.slice(start.indexOf('--') + 1), [
+    '-m',
+    'grok-4.7-build-fast',
+    '--reasoning-effort',
+    'low',
+    '--permission-mode',
+    'bypassPermissions',
+  ]);
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.equal(receipt.model, 'grok-4.7-build-fast');
+  assert.equal(receipt.thinking, 'low');
+  assert.equal(receipt.model_source, 'hud_create');
+  await until(() => {
+    const file = join(job.task_dir, 'STATUS.json');
+    return fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).state === 'closed';
+  });
+  const plain = await f.call('hud_create', { role: 'plain-grok', request_key: 'plain', task: 'Synthetic plain.' });
+  const plainStart = f
+    .commands()
+    .filter((c) => c.args[1] === 'start')
+    .at(-1).args;
+  assert.deepEqual(plainStart.slice(plainStart.indexOf('--') + 1), [
+    '--permission-mode',
+    'bypassPermissions',
+    '--extra',
+    'literal space',
+  ]);
+  await until(() => {
+    const file = join(plain.task_dir, 'STATUS.json');
+    return fs.existsSync(file) && ['closed', 'failed'].includes(JSON.parse(fs.readFileSync(file, 'utf8')).state);
+  });
+});
+
+test('local CLI trust refuses missing grants without creating a tab', async (t) => {
+  const f = await fixture(t);
+  const cwd = join(f.root, 'quota fixtures');
+  fs.mkdirSync(cwd);
+  fs.unlinkSync(join(f.env.HOME, '.gemini', 'antigravity-cli', 'settings.json'));
+  for (const agent of ['grok', 'agy', 'claude']) {
+    const args = { role: 'imp', on: agent, request_key: `not-trusted-${agent}`, task: 'Synthetic task.', cwd };
+    const job = await f.call('hud_create', args);
+    assert.equal(job.ok, false);
+    assert.equal(job.code, 'untrusted_cwd');
+    assert.equal(job.reason, `${agent} has not trusted ${cwd}; run hud trust ${cwd}`);
+    assert.equal(job.agent, null);
+    assert.equal(cliState(job.task_dir).state, 'failed');
+    assert.deepEqual(await f.call('hud_create', args), withoutHint(job));
+  }
+  assert.equal(f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'create'), false);
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+});
+
+test('a grok trust dialog is declined and the job fails naming the directory', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
+  const args = { role: 'imp', on: 'grok', request_key: 'grok-trust', task: 'Synthetic trust.' };
+  const job = await f.call('hud_create', args);
+  const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'));
+  const cwd = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).cwd;
+  assert.equal(job.ok, false);
+  assert.equal(job.code, 'dispatch_failed');
+  assert.equal(job.reason, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
+  assert.deepEqual(await f.call('hud_create', args), withoutHint(job));
+  assertCliStatus(status, job.task_dir);
+  assert.equal(status.state, 'failed');
+  assert.equal(status.error, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
+  assert.equal(status.exit_reason, status.error);
+  const commands = f.commands();
+  const decline = commands.find((c) => c.args[1] === 'send-keys');
+  assert.deepEqual(decline.args.slice(3), ['n']);
+  assert.ok(commands.some((c) => c.args[1] === 'wait' && c.args.includes('idle')));
+  assert.equal(
+    commands.some((c) => c.args[1] === 'prompt'),
+    false
+  );
+  assert.equal(fs.existsSync(join(job.task_dir, 'supervisor.pid')), false);
+  assert.ok(commands.some((c) => c.args[0] === 'tab' && c.args[1] === 'close' && c.args[2] === 'w4E:t2'));
+});
+
+test(
+  'an agy role launches without an effort flag, and a startup done does not settle the job',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    fs.writeFileSync(join(f.env.HOME, 'startup-done'), '');
+    const job = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'agy-life', task: 'Synthetic agy task.' });
+    const start = f.commands().find((c) => c.args[1] === 'start').args;
+    assert.deepEqual(start.slice(start.indexOf('--') + 1), [
+      '--model',
+      'gemini-4-argon-high',
+      '--dangerously-skip-permissions',
+    ]);
+    assert.equal(start.includes('--effort'), false);
+    await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+    const commands = f.commands();
+    const promptAt = commands.findIndex((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit');
+    assert.ok(promptAt >= 0);
+    assert.equal(commands.some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
+    const closed = cliState(job.task_dir);
+    assert.equal(closed.agent, 'agy');
+    assert.equal(closed.model, 'gemini-4-argon-high');
+    assert.equal(closed.thinking, null);
+    assert.equal(closed.state, 'closed');
+    assert.equal(closed.exit_reason, 'settled');
+    assert.equal(closed.error, null);
+    assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic grok report.\n');
+    assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+  }
+);
+
+test(
+  'agent_not_ready runs the trust check for any kind, and a start error without that text is unchanged',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    fs.writeFileSync(join(f.env.HOME, 'start-not-ready'), '');
+    fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), 'Do you trust the contents of this project?');
+    const agy = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'agy-trust', task: 'Synthetic trust.' });
+    const agyStatus = cliState(agy.task_dir);
+    const cwd = JSON.parse(fs.readFileSync(join(agy.task_dir, 'job.json'), 'utf8')).cwd;
+    assert.equal(agyStatus.state, 'failed');
+    assert.equal(agyStatus.error, `agy has not trusted ${cwd}; run hud trust ${cwd}`);
+    assert.deepEqual(
+      f
+        .commands()
+        .find((c) => c.args[1] === 'send-keys')
+        .args.slice(3),
+      ['down', 'enter']
+    );
+    assert.equal(
+      f.commands().some((c) => c.args[1] === 'prompt'),
+      false
+    );
+    assert.equal(fs.existsSync(join(agy.task_dir, 'supervisor.pid')), false);
+    fs.unlinkSync(join(f.env.HOME, 'trust-dialog'));
+    const bare = await f.call('hud_create', {
+      role: 'imp',
+      on: 'agy',
+      request_key: 'agy-not-ready',
+      task: 'Synthetic not ready.',
+    });
+    assert.equal(f.commands().filter((c) => c.args[1] === 'send-keys').length, 1);
+    assert.match(cliState(bare.task_dir).exit_reason, /agent_not_ready/);
+    assert.equal(fs.existsSync(join(bare.task_dir, 'supervisor.pid')), false);
+    fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
+    const grok = await f.call('hud_create', {
+      role: 'imp',
+      on: 'grok',
+      request_key: 'grok-not-ready',
+      task: 'Synthetic grok trust.',
+    });
+    assert.deepEqual(
+      f
+        .commands()
+        .filter((c) => c.args[1] === 'send-keys')
+        .at(-1)
+        .args.slice(3),
+      ['n']
+    );
+    assert.match(cliState(grok.task_dir).error, /^grok has not trusted /);
+  }
+);
+
+test('a claude role launches with its flags and settles through idle grace', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const job = await f.call('hud_create', {
+    role: 'imp',
+    on: 'claude',
+    request_key: 'claude-life',
+    task: 'Synthetic claude task.',
+  });
+  const start = f.commands().find((c) => c.args[1] === 'start').args;
+  const dash = start.indexOf('--');
+  assert.deepEqual(start.slice(0, dash), [
+    'agent',
+    'start',
+    `${job.job}-primary`,
+    '--kind',
+    'claude',
+    '--pane',
+    'w4E:p2',
+  ]);
+  assert.deepEqual(start.slice(dash + 1), ['--model', 'opus', '--effort', 'high', '--dangerously-skip-permissions']);
+  assert.equal(start.includes('--timeout'), false);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+  const closed = cliState(job.task_dir);
+  assert.equal(closed.agent, 'claude');
+  assert.equal(closed.model, 'opus');
+  assert.equal(closed.thinking, 'high');
+  assert.equal(closed.state, 'closed');
+  assert.equal(closed.exit_reason, 'settled');
+  assert.equal(closed.error, null);
+  assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+  assert.equal(
+    f.commands().some((c) => c.args[1] === 'send-keys'),
+    false
+  );
+});
+
+test(
+  'a claude trust dialog is declined with enter and the launch fails with the reason',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    fs.writeFileSync(join(f.env.HOME, 'start-not-ready'), '');
+    fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), 'Is this a project you created or one you trust?');
+    const job = await f.call('hud_create', {
+      role: 'imp',
+      on: 'claude',
+      request_key: 'claude-trust',
+      task: 'Synthetic trust.',
+    });
+    const status = cliState(job.task_dir);
+    const cwd = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).cwd;
+    assert.equal(status.state, 'failed');
+    assert.equal(status.error, `claude has not trusted ${cwd}; run hud trust ${cwd}`);
+    assert.deepEqual(
+      f
+        .commands()
+        .find((c) => c.args[1] === 'send-keys')
+        .args.slice(3),
+      ['enter']
+    );
+    assert.equal(
+      f.commands().some((c) => c.args[1] === 'prompt'),
+      false
+    );
+    assert.equal(fs.existsSync(join(job.task_dir, 'supervisor.pid')), false);
+  }
+);
+
+test('a codex role waits out a phantom startup and passes the start timeout', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
+  const job = await f.call('hud_create', {
+    role: 'imp',
+    on: 'codex',
+    request_key: 'codex-life',
+    task: 'Synthetic codex task.',
+  });
+  const start = f.commands().find((c) => c.args[1] === 'start').args;
+  const dash = start.indexOf('--');
+  assert.deepEqual(start.slice(0, dash), [
+    'agent',
+    'start',
+    `${job.job}-primary`,
+    '--kind',
+    'codex',
+    '--pane',
+    'w4E:p2',
+    '--timeout',
+    '90000',
+  ]);
+  assert.deepEqual(start.slice(dash + 1), [
+    '-m',
+    'gpt-6.1-sol',
+    '-c',
+    'model_reasoning_effort=high',
+    '--dangerously-bypass-approvals-and-sandbox',
+  ]);
+  assert.equal(
+    start.some((arg) => /^--(home|session|config|profile|worktree)/.test(arg) || arg.includes('CODEX_HOME')),
+    false
+  );
+  const commands = f.commands();
+  const settleAt = commands.findIndex(
+    (c) => c.args[1] === 'wait' && c.args.includes('done') && c.args.includes('idle') && !c.args.includes('blocked')
+  );
+  const promptAt = commands.findIndex((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit');
+  assert.ok(settleAt >= 0 && promptAt > settleAt);
+  assert.equal(commands[settleAt].args[commands[settleAt].args.indexOf('--timeout') + 1], '60000');
+  assert.equal(fs.existsSync(join(f.env.HOME, 'phantom-settled')), true);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+  const closed = cliState(job.task_dir);
+  assert.equal(closed.agent, 'codex');
+  assert.equal(closed.model, 'gpt-6.1-sol');
+  assert.equal(closed.thinking, 'high');
+  assert.equal(closed.state, 'closed');
+  assert.equal(closed.exit_reason, 'settled');
+  assert.equal(closed.error, null);
+  assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic grok report.\n');
+  assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+  assert.equal(
+    f.commands().some((c) => c.args[1] === 'send-keys'),
+    false
+  );
+});
+
+test(
+  'a cli job records agent_session_id when herdr publishes it after the first get',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    fs.writeFileSync(join(f.env.HOME, 'late-session'), '0');
+    const job = await f.call('hud_create', {
+      role: 'imp',
+      on: 'grok',
+      request_key: 'late-session',
+      task: 'Synthetic late session.',
+    });
+    await until(() => fs.existsSync(join(f.env.HOME, 'seen-grace.json'))).catch((error) => {
+      t.diagnostic(JSON.stringify({ status: cliState(job.task_dir), requests: f.socketRequests }));
+      throw error;
+    });
+    const grace = JSON.parse(fs.readFileSync(join(f.env.HOME, 'seen-grace.json'), 'utf8'));
+    assert.equal(grace.state, 'idle_grace');
+    assert.equal(grace.agent_session_id, 'synthetic-grok-session');
+    await until(() => cliState(job.task_dir)?.state === 'closed');
+    assert.equal(cliState(job.task_dir).agent_session_id, 'synthetic-grok-session');
+  }
+);
+
+test('a failed cli job records agent_session_id published after start, before exit', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'late-session'), '0');
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  fs.writeFileSync(join(f.env.HOME, 'exit-after-done'), '');
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'late-fail', task: 'Synthetic late fail.' });
+  await until(() => cliState(job.task_dir)?.state === 'failed');
+  assert.equal(cliState(job.task_dir).error, 'worker exited');
+  assert.equal(cliState(job.task_dir).agent_session_id, 'synthetic-grok-session');
+});
