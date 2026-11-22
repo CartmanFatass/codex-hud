@@ -50,7 +50,8 @@ for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'chang
       assert.doesNotMatch(text, /Time basis|Source details|Evidence time/);
     }
     if (page === 'settings') {
-      assert.match(text, /Bar style\s+line/);
+      assert.match(text, /Advanced \(13\)/);
+      assert.doesNotMatch(text, /Bar style|imp cap/);
       assert.match(text, /Calls this hour\s+██▍░░░░░░░ 14\/60/);
       assert.match(text, /\* Call cap\s+‹ 120\/h ›/);
       assert.doesNotMatch(text, /Preview|Reset all|HUD read the session/);

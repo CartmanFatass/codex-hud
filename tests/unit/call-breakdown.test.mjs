@@ -111,7 +111,7 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120])
     const health = { state: undefined, modelCalls: model.usage(), decisionCalls: labels.usage() };
     assert.equal(read.mock.callCount(), 2, 'one existing read per ledger supplies counters and features');
     const previous = setLanguage(lang); t.after(() => setLanguage(previous));
-    const state = { draft: defaultSettings(), selected: SETTING_ROWS.findIndex((r) => r.key === 'modelCallsPerHour'), offset: 0, message: '' };
+    const state = { draft: defaultSettings(), selected: SETTING_ROWS.findIndex((r) => r.key === 'modelCallsPerHour'), offset: 0, message: '', advanced: true };
     const frame = renderSettingsPage(state, width, 60, health), lines = frame.lines.map(stripAnsi);
     assert.ok(frame.lines.every((line) => visualLength(line) === width));
     const modelAt = lines.findIndex((line) => line.includes(lang === 'en' ? 'Calls this hour' : '本小时调用'));
@@ -120,9 +120,10 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120])
       ? 'Job sentence 40 · Decision title 3 · Earlier format 1 · Home brief 1'
       : '任务句子 40 · 决定标题 3 · 早期格式 1 · 首页简报 1');
     assert.ok(lines[decisionAt + 1].trim().startsWith(lang === 'en' ? 'Quiet job 7 · Home ranking 6' : '静默任务 7 · 首页排序 6'));
-    assert.equal(lines.filter((line) => line.includes(' · ')).length, 2, 'exactly one breakdown per counter');
+    const breakdowns = (rows) => rows.filter((line) => line.includes(' · ') && !/^(?:\*| ) (?:Display|Panel|Models|Workers|Codex|显示|面板|模型|工作者) · /.test(line));
+    assert.equal(breakdowns(lines).length, 2, 'exactly one breakdown per counter');
     const zero = renderSettingsPage(state, width, 60, { state: undefined,
       modelCalls: { today: 0, lastHour: 0, cap: 60, byFeature: {} }, decisionCalls: { lastHour: 0, cap: 0, byFeature: {} } });
-    assert.equal(zero.lines.map(stripAnsi).filter((line) => line.includes(' · ')).length, 0);
+    assert.equal(breakdowns(zero.lines.map(stripAnsi)).length, 0);
     assert.equal(read.mock.callCount(), 2, 'rendering adds no file reads');
   });

@@ -98,7 +98,7 @@ test('Fold after and Hide after: defaults, validator, rows, save, reset, and a c
   next();
   assert.equal(state.draft.cardHideMinutes, 30);
   const page = renderSettingsPage(state, 120, 50).lines.map(stripAnsi).join('\n');
-  assert.match(page, /\* Fold after\s+10m/);
+  assert.match(page, /\* Panel · Fold after\s+10m/);
   assert.match(page, /Hide after\s+‹ 30m ›/);
   saveSettings(state.draft);
   assert.deepEqual([loadSettings().cardFoldMinutes, loadSettings().cardHideMinutes], [10, 30]);

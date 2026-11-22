@@ -50,9 +50,9 @@ test('Models exposes the master, provider, separate budgets, sonic opt-in and su
     );
     const text = stripAnsi(
       renderSettingsPage(
-        { draft, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models'), offset: 0, message: '' },
+        { draft, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models'), offset: 0, message: '', advanced: true },
         100,
-        40,
+        45,
         { state: undefined, decisionCalls: { lastHour: 2, cap: 0, byFeature: { 'sonic-thinking': 2 } } }
       ).lines.join('\n')
     );

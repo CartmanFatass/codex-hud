@@ -314,7 +314,7 @@ test('Home mode settings row cycles, round-trips, resets and refuses unknown val
   saveSettings({ modelCallsPerHour: 0, decisionCallsPerHour: 2000, summaryIntervalMinutes: 10 });
   assert.equal(loadSettings().modelCallsPerHour, 0); assert.equal(loadSettings().decisionCallsPerHour, 2000); assert.equal(loadSettings().summaryIntervalMinutes, 10);
   saveSettings({ summaryIntervalMinutes: 121 }); assert.equal(loadSettings().summaryIntervalMinutes, 10);
-  const capState = { draft: { ...changed.draft, modelCallsPerHour: 0, decisionCallsPerHour: 0 }, selected, offset: 0 };
+  const capState = { draft: { ...changed.draft, modelCallsPerHour: 0, decisionCallsPerHour: 0 }, selected, offset: 0, advanced: true };
   const capText = renderSettingsPage(capState, 80, 55, { state: undefined, modelCalls: { today: 9, lastHour: 9, cap: 0 }, decisionCalls: { lastHour: 99, cap: 0 } }).lines.map(stripAnsi).join('\n');
   assert.match(capText, /Calls this hour\s+9\/∞/); assert.match(capText, /Decision calls this hour\s+99\/∞/); assert.doesNotMatch(capText, /at the cap|█|░/);
   assert.equal(defaultSettings().summaryIntervalMinutes, 5); assert.equal(defaultSettings().decisionCallsPerHour, 0);

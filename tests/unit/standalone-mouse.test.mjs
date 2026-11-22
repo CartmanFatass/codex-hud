@@ -114,22 +114,22 @@ test('Settings mouse: first click selects row without changing value, second cli
     const draft = defaultSettings();
     let state = { draft, original: draft, selected: 0, offset: 0, message: '' };
     let frame = renderSettingsPage(state, 80, 14);
-    const barStyleIndex = SETTING_ROWS.findIndex((r) => r.key === 'barStyle');
-    const rowY = frame.rows.indexOf(barStyleIndex);
-    assert.ok(rowY >= 0, 'barStyle visible in viewport');
-    const beforeStyle = state.draft.barStyle;
+    const languageIndex = SETTING_ROWS.findIndex((r) => r.key === 'language');
+    const rowY = frame.rows.indexOf(languageIndex);
+    assert.ok(rowY >= 0, 'language visible in viewport');
+    const beforeLanguage = state.draft.language;
 
-    // First click selects Bar style without changing its value
+    // First click selects Language without changing its value
     let res = handleSettingsInput(state, { type: 'mouse', button: 'left', x: 4, y: rowY }, frame);
     state = res.state;
-    assert.equal(state.selected, barStyleIndex);
-    assert.equal(state.draft.barStyle, beforeStyle);
+    assert.equal(state.selected, languageIndex);
+    assert.equal(state.draft.language, beforeLanguage);
 
-    // Second click on the already-selected row cycles Bar style
+    // Second click on the already-selected row cycles Language
     frame = renderSettingsPage(state, 80, 14);
-    res = handleSettingsInput(state, { type: 'mouse', button: 'left', x: 4, y: frame.rows.indexOf(barStyleIndex) }, frame);
+    res = handleSettingsInput(state, { type: 'mouse', button: 'left', x: 4, y: frame.rows.indexOf(languageIndex) }, frame);
     state = res.state;
-    assert.notEqual(state.draft.barStyle, beforeStyle);
+    assert.notEqual(state.draft.language, beforeLanguage);
 
     // Wheel scrolls without moving selected
     const selectedBeforeWheel = state.selected;

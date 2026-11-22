@@ -994,16 +994,21 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 
 | Group | Rows |
 |---|---|
-| Display | Theme, Bar style, Icons, Language |
-| Panel | Home mode, Layout, Width, Stall threshold, Fold after, Hide after, Notifications, Refresh, Mouse |
-| Models | Model text, Model, Decision API, Call cap, Decision cap, Sonic auto-thinking, Summary interval, separate hourly counters, Test API |
-| Workers | imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
+| Display | Theme, Language; in **Advanced**: Bar style, Icons |
+| Panel | Home mode, Layout, Project layout, Detail, Width, Notifications; in **Advanced**: Stall threshold, Fold after, Hide after, Refresh, Mouse, Experiments |
+| Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking; in **Advanced**: Decision cap (with hourly counter), Summary interval |
+| Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
-All groups are open. Up/Down selects; Left/Right or Enter changes; `s` saves, `r`
-resets only this group, `t` runs/cancels Test API. Dirty leave asks Save and leave /
-Discard changes / Continue editing (default); failed saves retain the draft. Theme
-and Icons preview in the draft itself. No Reset all, accordion or picture.
+Common rows are open; the 13 rarely changed rows above fold under one **Advanced**
+row at the bottom (collapsed on each open; Enter, Left/Right or click expands or
+collapses it, and `*`/highlight mark folded unsaved or non-default values).
+Expanded rows show their source group prefix so `r` still resets that row's group
+(pressing `r` on the Advanced row shows a hint). Up/Down selects; Left/Right or
+Enter changes; `s` saves, `r` resets only this group, `t` runs/cancels Test API.
+Dirty leave asks Save and leave / Discard changes / Continue editing (default);
+failed saves retain the draft. Theme and Icons preview in the draft itself. No
+Reset all or picture.
 
 Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default.
 Saving a changed width resizes every client's panel, preserving 41 columns for the

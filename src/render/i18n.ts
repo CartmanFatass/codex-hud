@@ -420,6 +420,10 @@ const ZH: Record<string, string> = {
 
   // Settings page frame
   Settings: '设置',
+  Advanced: '高级',
+  'Advanced ({n})': '高级（{n}）',
+  'Rarely changed settings; Enter to show or hide': '较少修改的设置；按 Enter 展开或收起',
+  'Choose a row to reset its group': '选择一行以重置该分组',
 
   // Settings groups, labels and help
   Display: '显示',

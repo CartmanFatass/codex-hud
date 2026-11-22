@@ -75,7 +75,7 @@ for (const [herdr, override, tmuxHere] of [[true, false], [false, false], [true,
       await until(() => f.calls().some((a) => a[1] === 'layout'), 'no initial width read');
       assert.equal(f.calls().filter((a) => a[1] === 'resize').length, 0, 'opening width was retained');
     }
-    const index = SETTING_ROWS.findIndex((r) => r.key === 'treeWidth');
+    const index = SETTING_ROWS.filter((r) => !r.advanced).findIndex((r) => r.key === 'treeWidth');
     child.stdin.write('\x1b[H' + '\x1b[B'.repeat(index) + '\x1b[Cs');
     const file = join(f.dir, 'hud', 'hud-settings.json');
     const expectedWidth = override ? 100 : 64;
