@@ -419,7 +419,7 @@ if (command === 'pi-dispatch') {
   command === 'herdr' &&
   args[0] === 'agent' &&
   args[1] === 'prompt' &&
-  args[3]?.startsWith('Read ') &&
+  args[4] === '--wait' &&
   fs.existsSync(join(process.env.HOME, 'pi-quota-fail'))
 ) {
   console.error('HTTP 429 rate limit exceeded');

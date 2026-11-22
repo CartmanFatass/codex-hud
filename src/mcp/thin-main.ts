@@ -13,6 +13,8 @@ import { readCodexStatusline, statuslineResource, statuslineTool } from './codex
 import { editTickets } from './local-tickets.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
+import { briefPrompt } from './brief-prompt.js';
+import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
 import { watcherReady } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
@@ -392,6 +394,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     if (!launcher) throw new Error('pi-role not found on PATH');
     const dir = directory(job.job),
       output = join(dir, 'report.md');
+    const prompt = briefPrompt(join(dir, 'brief.md'));
     const piRole = place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
     const argv: string[] = [
@@ -423,6 +426,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     if (place.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
     for (const key of ['lens', 'mcp', 'tps'] as const)
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
+    if (job.mcp === undefined && piMcpConfigEmpty(job.cwd, job.pi_args)) argv.push('--no-mcp');
     if (job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
     argv.push('--', '--tui-mode', 'regular', '--hud-worker-tools', '-e',
@@ -497,7 +501,6 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     }
     const started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
     if (started.exit_code !== 0) return reject(await startupFailure(started, left));
-    const prompt = `Read ${join(dir, 'brief.md')} and do exactly what it asks.`;
     job.pi_sent_at = new Date().toISOString();
     save(job);
     mayHaveInput = true;

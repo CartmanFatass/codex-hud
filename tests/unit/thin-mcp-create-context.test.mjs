@@ -185,6 +185,26 @@ test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }
   assert.equal((await f.call('hud_read', { job: job.job })).state, 'working');
 });
 
+test('pi dispatch preserves explicit MCP switches and the launcher default for nonempty or unreadable config', async (t) => {
+  const f = await fixture(t);
+  const cwd = join(f.root, 'project');
+  fs.mkdirSync(join(cwd, '.pi'), { recursive: true });
+  const project = join(cwd, '.pi', 'mcp.json');
+  const args = async (key, mcp) => {
+    const job = await f.call('hud_create', { role: 'imp', request_key: key, task: 'Synthetic task.', cwd, mcp });
+    assert.equal(job.state, 'working', JSON.stringify(job));
+    return f.commands().filter(c => c.command === 'pi-role').at(-1).args.filter(arg => ['--mcp', '--no-mcp'].includes(arg));
+  };
+  fs.writeFileSync(project, '{"mcpServers":{}}');
+  assert.deepEqual(await args('empty'), ['--no-mcp']);
+  assert.deepEqual(await args('forced-on', true), ['--mcp']);
+  fs.writeFileSync(project, '{"mcpServers":{"synthetic":{"command":"unused"}}}');
+  assert.deepEqual(await args('project-server'), []);
+  assert.deepEqual(await args('forced-off', false), ['--no-mcp']);
+  fs.writeFileSync(project, 'unparseable');
+  assert.deepEqual(await args('unknown'), []);
+});
+
 test('request and place pi_args cannot override the inherited caller notification binding', async (t) => {
   const f = await fixture(t);
   for (const pi_args of [
@@ -365,6 +385,7 @@ esac
     resolve('packages/hud-mcp/instructions/implementer.md'),
     '--hud-sonic-jobs',
     resolve('packages/hud-mcp/bin/sonic-jobs.mjs'),
+    '--no-mcp',
     '--',
     '--tui-mode',
     'regular',
@@ -419,7 +440,7 @@ esac
     'agent',
     'prompt',
     job.agent,
-    `Read ${job.task_dir}/brief.md and do exactly what it asks.`,
+    `Carry out this brief:\n\n${fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8')}`,
     '--wait',
     '--until',
     'working',
@@ -597,6 +618,7 @@ test('hud_create prepends resolved local references and does not revalidate an e
   const brief = fs.readFileSync(briefPath, 'utf8');
   assert.equal(brief, `${args.task}\n\n## Context References\n\nRead these files for task context:\n\n- ${JSON.stringify(path)}\n\nFinish with \`hud_report\`.\n`);
   assert.ok(!brief.includes(line));
+  assert.equal(f.commands().find(c => c.args[1] === 'prompt').args[3], `Carry out this brief:\n\n${brief}`);
   const receiptPath = join(job.task_dir, 'job.json');
   const receipt = fs.readFileSync(receiptPath, 'utf8');
   assert.deepEqual(JSON.parse(receipt).context_files, [path]);
