@@ -128,8 +128,8 @@ export async function gitSummary(wt: ManagedWorktree, candidates: () => OverlapC
     ]);
     const mine = new Set([...committed, ...dirty]);
     return { ...base, head, ahead_commits: Number(commits), changed_files: mine.size, dirty: dirty.length > 0,
-      ...await worktreeOverlaps(wt, trees, mine, candidates) };
-  } catch { return { ...base, head: null, ahead_commits: null, changed_files: null, dirty: null, overlaps: null }; }
+      paths: [...mine].slice(0, MAX_REPORT_PATHS), ...await worktreeOverlaps(wt, trees, mine, candidates) };
+  } catch { return { ...base, head: null, ahead_commits: null, changed_files: null, paths: null, dirty: null, overlaps: null }; }
 }
 
 function nestedGitReason(root: string): string | undefined {

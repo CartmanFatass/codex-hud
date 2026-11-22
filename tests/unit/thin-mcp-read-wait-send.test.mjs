@@ -107,7 +107,7 @@ try {
       assert.equal(receipt().read_at, undefined, 'notification does not consume the report');
       assert.equal(cliState(created.task_dir).state, 'idle_grace');
       collected = await call('hud_read', { job: created.job });
-      assert.equal(collected.report, 'Synthetic settled pi report.\n');
+      assert.equal(collected.digest.result, 'Synthetic settled pi report.');
       assert.ok(receipt().read_at);
       await until(() => cliState(created.task_dir)?.exit_reason === 'closed after report read');
     }
@@ -145,7 +145,10 @@ test('only a one-job read includes a bounded summary of committed and pending wo
   fs.appendFileSync(join(root, 'tracked.txt'), 'pending\n');
   fs.writeFileSync(join(root, 'new.txt'), 'untracked\n');
   const head = git(root, 'rev-parse', 'HEAD');
-  const read = await f.call('hud_read', { job: job.job });
+  const compact = await f.call('hud_read', { job: job.job });
+  assert.deepEqual(compact.changed_files.sort(), ['new.txt', 'tracked.txt']);
+  assert.equal(compact.git_summary, undefined);
+  const read = await f.call('hud_read', { job: job.job, mode: 'full' });
   assert.equal(read.worktree.root, root);
   assert.deepEqual(read.git_summary, { branch, base_head, head, ahead_commits: 1, changed_files: 2, dirty: true, overlaps: [] });
   for (const result of [await f.call('hud_read'), await f.call('hud_read', { view: 'recent' }),
@@ -166,7 +169,7 @@ test('one-job reads show managed sibling overlaps until the sibling file version
   const a = await create('overlap-a'), b = await create('overlap-b');
   assert.equal(a.git_summary, undefined);
   assert.equal(b.git_summary, undefined);
-  const read = async ({ job }) => (await f.call('hud_read', { job })).git_summary;
+  const read = async ({ job }) => (await f.call('hud_read', { job, mode: 'full' })).git_summary;
   const checkout = ({ task_dir }) => JSON.parse(fs.readFileSync(join(task_dir, 'job.json'))).worktree;
   const { root: ar } = checkout(a), { root: br, branch, base_head } = checkout(b);
   const manual = join(f.root, 'manual');
@@ -233,7 +236,11 @@ test('one-job reads cap the number of sibling worktrees and reported files', asy
     writeFixtureFile(join(job.dir, 'job.json'), JSON.stringify({ ...job.receipt, cwd: root, worktree: { main_root: cwd, root, branch, base_head } }));
     return job.job;
   });
-  const { git_summary } = await f.call('hud_read', { job: jobs[0] });
+  const compact = await f.call('hud_read', { job: jobs[0] });
+  assert.deepEqual(compact.changed_files, [...files.slice(0, 20), '+1 more']);
+  assert.deepEqual(compact.overlaps, jobs.slice(2).reverse());
+  assert.equal(compact.overlaps_incomplete, true);
+  const { git_summary } = await f.call('hud_read', { job: jobs[0], mode: 'full' });
   assert.equal(git_summary.overlaps_incomplete, true);
   assert.deepEqual(git_summary.overlaps, jobs.slice(2).reverse().map((job) => ({ job, files: files.slice(0, 20), more: 1 })));
 });
@@ -262,6 +269,35 @@ test('hud_read lists and MCP changes include only current settled report summari
   assert.ok(compact.changes.includes(`${working.job} imp: closed | report | ${[...summary].slice(0, 140).join('')}`));
   assert.ok(compact.changes.includes(`${stale.job} imp: closed | report`));
   assert.equal(recent.changes, undefined, 'metadata does not trigger another change');
+});
+
+test('hud_read collects bounded report digests or full text, with independent batch results', async (t) => {
+  const f = await fixture(t), current = waitFixtureJob(f, 1, 'closed'), stale = waitFixtureJob(f, 2, 'closed');
+  const report = 'Synthetic first line.\n' + 'Synthetic evidence. 测试\n'.repeat(1900) + '**Verdict:** Accept\nBlockers: None\n';
+  const path = join(current.dir, 'report.md');
+  writeFixtureFile(path, report);
+  const summary = 'Synthetic validation passed.';
+  writeReportMeta(current.dir, cachedReportSignature(current.dir), { summary });
+  const revised = join(stale.dir, 'report.md');
+  writeFixtureFile(revised, 'Original synthetic text.');
+  writeReportMeta(stale.dir, cachedReportSignature(stale.dir), { summary });
+  writeFixtureFile(revised, '# Synthetic revision\n\nRevised synthetic text.\nDiscuss verdict and blockers without stating either.');
+  await f.call('hud_read'); // Drain unrelated session events.
+  const missing = 'j0000000000000099';
+  const { jobs: [first, error, last] } = await f.call('hud_read', { jobs: [current.job, missing, stale.job] });
+  assert.deepEqual(first.digest, { state: 'closed', result: summary, verdict: 'Accept', blockers: 'None', report_path: path,
+    report_bytes: Buffer.byteLength(report) });
+  assert.ok(Buffer.byteLength(JSON.stringify(first)) < 1024);
+  assert.equal(first.report, undefined);
+  assert.deepEqual(error, { job: missing, ok: false, code: 'job_not_found' });
+  assert.equal(last.digest.result, 'Revised synthetic text.');
+  assert.equal(last.digest.verdict, undefined);
+  assert.equal(last.digest.blockers, undefined);
+  assert.ok(JSON.parse(fs.readFileSync(join(current.dir, 'job.json'))).read_at);
+  assert.ok(JSON.parse(fs.readFileSync(join(stale.dir, 'job.json'))).read_at);
+  const full = await f.call('hud_read', { jobs: [stale.job, current.job], mode: 'full' });
+  assert.equal(full.jobs[0].report, fs.readFileSync(revised, 'utf8'));
+  assert.equal(full.jobs[1].report, report);
 });
 
 test('hud_read compact lists actionable jobs without losing unread reports or hidden changes', async (t) => {
@@ -424,7 +460,10 @@ test('single-job reads and the panel get progress without changes or narration i
     fs.writeFileSync(log, jsonLines(records.slice(0, -1)));
     assert.deepEqual(workerFor(f, job).latest_progress, records.at(-2));
     fs.appendFileSync(log, jsonLines(records.slice(-1)));
-    const detail = await f.call('hud_read', { job });
+    const ordinary = await f.call('hud_read', { job });
+    assert.deepEqual(ordinary.latest_progress, records.at(-1));
+    assert.equal(ordinary.progress, undefined);
+    const detail = await f.call('hud_read', { job, mode: 'full' });
     assert.deepEqual(detail.progress, records.slice(-10));
     assert.deepEqual(detail.latest_progress, records.at(-1));
     assert.equal(detail.changes, undefined);
@@ -569,7 +608,7 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   assert.equal(recent.report_unread, true);
   assert.equal(recent.report, undefined);
   const first = await f.call('hud_read', { job: id, detail: true });
-  assert.equal(first.report, 'First report.');
+  assert.equal(first.digest.result, 'First report.');
   assert.equal(first.idle_grace_s, 120);
   const stamp = JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at;
   assert.ok(stamp);
@@ -582,7 +621,7 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   assert.equal((await f.call('hud_read', { job: id, full: true })).report, 'First report.');
   await new Promise((r) => setTimeout(r, 10));
   writeFixtureFile(join(dir, 'report.md'), 'Second report.');
-  assert.equal((await f.call('hud_read', { job: id })).report, 'Second report.');
+  assert.equal((await f.call('hud_read', { job: id })).digest.result, 'Second report.');
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at > stamp);
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
   assert.equal((await f.call('hud_read', { job: id })).report_unchanged, true);
@@ -666,12 +705,14 @@ syncBuiltinESMExports();`
   assert.equal(reads().length, before);
   const timeout = await waiting;
   const omitted = { ...question, questions: [], report_unread: false, report_unchanged: true };
-  delete omitted.report;
-  delete omitted.report_truncated;
+  delete omitted.digest;
   assert.deepEqual(timeout, omitted);
   assert.equal(reads().length, before, 'already-read report is not reopened');
-  assert.equal(question.report.length, 65536);
-  assert.equal(question.report_truncated, true);
+  assert.equal(question.digest.report_bytes, 65537);
+  assert.ok(Buffer.byteLength(JSON.stringify(question.digest)) < 1024);
+  const full = await f.call('hud_read', { job, mode: 'full' });
+  assert.equal(full.report.length, 65536);
+  assert.equal(full.report_truncated, true);
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at);
   const newQuestion = read(3000);
   setTimeout(() => writeFixtureFile(join(dir, 'qa', 'q2.md'), 'New question.'), 100);
@@ -689,12 +730,14 @@ syncBuiltinESMExports();`
     const pending = read(700);
     const timer = setTimeout(() => (state === null ? fs.unlinkSync(join(dir, 'STATUS.json')) : status(state)), 100);
     t.after(() => clearTimeout(timer));
-    assert.deepEqual(await pending, { ...question, questions: [], state, display_state });
+    assert.deepEqual(await pending, { ...question, questions: [], state, display_state,
+      digest: { ...question.digest, state: state ?? display_state } });
     assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at);
   }
   receipt.dispatch_exit_code = 1;
   save();
-  assert.deepEqual(await read(), { ...question, questions: [], state: 'failed', display_state: 'failed', dispatch_exit_code: 1 });
+  assert.deepEqual(await read(), { ...question, questions: [], state: 'failed', display_state: 'failed', dispatch_exit_code: 1,
+    digest: { ...question.digest, state: 'failed' } });
 });
 
 test('hud_create and hud_send derive keys for concurrent identical calls', async (t) => {
@@ -830,7 +873,7 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
     const unread = workerFor(f, job.job);
     assert.equal(projectWorkCard(unread, settled).state, 'done');
     assert.doesNotMatch(cardText(unread), /report ready/);
-    assert.equal((await f.call('hud_read', { job: job.job })).report, 'Second report after repairs.');
+    assert.equal((await f.call('hud_read', { job: job.job })).digest.result, 'Second report after repairs.');
     const secondStamp = JSON.parse(fs.readFileSync(receiptFile)).read_at;
     assert.ok(secondStamp);
     assert.deepEqual(await f.call('hud_send', { ...args, message_key: 'successful-send' }), { ok: true, sent: false });

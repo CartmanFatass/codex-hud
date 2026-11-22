@@ -155,7 +155,7 @@ function entries(directory: string): string[] {
     throw error;
   }
 }
-function slice(file: string, limit: number): { text: string; truncated: boolean } | null {
+function slice(file: string, limit: number): { text: string; truncated: boolean; bytes: number } | null {
   let fd: number;
   try {
     fd = fs.openSync(file, 'r');
@@ -166,7 +166,8 @@ function slice(file: string, limit: number): { text: string; truncated: boolean 
   try {
     const buffer = Buffer.alloc(limit + 1);
     const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    return { text: buffer.subarray(0, Math.min(size, limit)).toString('utf8'), truncated: size > limit };
+    return { text: buffer.subarray(0, Math.min(size, limit)).toString('utf8'), truncated: size > limit,
+      bytes: size > limit ? fs.fstatSync(fd).size : size };
   } finally {
     fs.closeSync(fd);
   }
@@ -984,7 +985,47 @@ function jobDiagnostics(job: Job) {
     stderr_tail: job.stderr_tail,
   };
 }
-function observation(job: Job, full: boolean, detail: boolean) {
+type GitSummary = Awaited<ReturnType<typeof gitSummary>>;
+function readGit(summary: GitSummary | undefined, full: boolean) {
+  if (!summary) return {};
+  const { paths, ...git_summary } = summary;
+  if (full) return { git_summary };
+  const more = (summary.changed_files ?? 0) - (paths?.length ?? 0);
+  return {
+    changed_files: paths && (more ? [...paths, `+${more} more`] : paths),
+    ...(summary.overlaps?.length ? { overlaps: summary.overlaps.map(({ job }) => job) } : {}),
+    ...('overlaps_incomplete' in summary && summary.overlaps_incomplete ? { overlaps_incomplete: true } : {}),
+  };
+}
+
+// Count JSON escapes and UTF-8, not UTF-16 units; never split a code point.
+function digestLine(text: string, budget: number) {
+  let line = '';
+  for (const ch of text.trim()) {
+    budget -= Buffer.byteLength(JSON.stringify(ch)) - 2;
+    if (budget < 0) return line + '…';
+    line += ch;
+  }
+  return line;
+}
+const RESULT_HEAD_BYTES = 2048;
+function fallbackResultLine(text: string) {
+  // The notice reads only this prefix; use the same evidence when the digest has a larger body.
+  const head = Buffer.from(text.slice(0, RESULT_HEAD_BYTES)).subarray(0, RESULT_HEAD_BYTES).toString('utf8');
+  return (firstReportProse(head) ?? 'Report ready').slice(0, 240);
+}
+function reportDigest(report: NonNullable<ReturnType<typeof slice>>, path: string, state: string | null,
+  summary: string | undefined, git: GitSummary | undefined) {
+  const verdict = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?verdict(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
+  const blockers = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?blockers?(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
+  const facts = { state, report_path: path, report_bytes: report.bytes,
+    ...(git ? { changed_files: git.changed_files } : {}),
+    ...(verdict ? { verdict: digestLine(verdict, 100) } : {}),
+    ...(blockers ? { blockers: digestLine(blockers, 160) } : {}) };
+  const budget = 1000 - Buffer.byteLength(JSON.stringify({ ...facts, result: '…' }));
+  return { ...facts, result: digestLine(summary ?? fallbackResultLine(report.text), budget) };
+}
+function observation(job: Job, full: boolean, detail: boolean, git: GitSummary | undefined) {
   const dir = directory(job.job);
   const { row, status } = readRow(job, !isWorker);
   const report = row.report_unread || full ? slice(join(dir, 'report.md'), 65536) : null;
@@ -1004,17 +1045,21 @@ function observation(job: Job, full: boolean, detail: boolean) {
     ...(detail || row.reason ? { reason: row.reason } : {}),
     ...(detail || row.blocked ? { blocked: row.blocked } : {}),
     ...(detail || exit_reason ? { exit_reason } : {}),
-    ...(status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
+    ...(full && status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
     ...(detail ? jobDiagnostics(job) : {}),
-    ...(job.worktree ? { worktree: job.worktree } : {}),
-    ...(job.worktree_removed_at ? { worktree_removed_at: job.worktree_removed_at } : {}),
-    ...(job.worktree_kept_reason ? { worktree_kept_reason: job.worktree_kept_reason } : {}),
+    ...readGit(git, full),
+    ...(full && job.worktree ? { worktree: job.worktree } : {}),
+    ...(full && job.worktree_removed_at ? { worktree_removed_at: job.worktree_removed_at } : {}),
+    ...(full && job.worktree_kept_reason ? { worktree_kept_reason: job.worktree_kept_reason } : {}),
     report_exists: row.report_present,
-    ...(reportMeta ? { report_meta: reportMeta } : {}),
-    ...(detail || row.report_unread ? { report_unread: row.report_unread } : {}),
-    ...(detail || progress.latest_progress ? progress : {}),
-    ...(checks ? { checks } : {}),
-    ...(row.report_present && !report ? { report_unchanged: true } : {
+    ...(full && reportMeta ? { report_meta: reportMeta } : {}),
+    ...(detail || (full && row.report_unread) ? { report_unread: row.report_unread } : {}),
+    ...(full && (detail || progress.latest_progress) ? progress : { latest_progress: progress.latest_progress ?? undefined }),
+    ...(checks ? { checks: full ? checks : { state: checks.state, stale: checks.stale,
+      results: checks.results.map(({ command, passed }) => `${passed ? 'pass' : 'fail'}: ${digestLine(command.replace(/\s+/g, ' '), 120)}`) } } : {}),
+    ...(row.report_present && !report ? { report_unchanged: true } : report && !full ? {
+      digest: reportDigest(report, join(dir, 'report.md'), row.state ?? row.display_state, reportMeta?.summary, git),
+    } : {
       ...(detail || report ? { report: report?.text ?? null } : {}),
       ...(detail || report?.truncated ? { report_truncated: report?.truncated ?? false } : {}),
     }),
@@ -1727,23 +1772,37 @@ async function call(name: string, args: Args): Promise<unknown> {
     const { view } = args;
     if (view !== undefined) {
       if (view !== 'compact' && view !== 'recent') throw new Error('invalid_arguments: view');
-      if (args.job !== undefined) throw new Error('invalid_arguments: view is list-only');
+      if (args.job !== undefined || args.jobs !== undefined) throw new Error('invalid_arguments: view is list-only');
+    }
+    if (args.mode !== undefined && args.mode !== 'digest' && args.mode !== 'full') throw new Error('invalid_arguments: mode');
+    if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
+    if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
+      throw new Error('invalid_arguments: wait_ms');
+    if (args.jobs !== undefined) {
+      if (args.job !== undefined || !Array.isArray(args.jobs) || !args.jobs.length) throw new Error('invalid_arguments: jobs');
+      return { jobs: await Promise.all(args.jobs.map(async (job) => {
+        try { return { job, ...await callJob(name, { ...args, job }, detail) }; }
+        catch (error) { return { job, ok: false, code: 'tool_error', error: String(error) }; }
+      })) };
     }
     if (args.job === undefined) {
+      if (args.mode !== undefined) throw new Error('invalid_arguments: mode requires job or jobs');
       if (args.detail !== undefined) throw new Error('invalid_arguments: detail requires job');
       return { jobs: listJobs(view === 'recent') };
     }
   }
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
+  return callJob(name, args, detail);
+}
+
+async function callJob(name: string, args: Args, detail: boolean) {
   const id = required(args, 'job');
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
   if (name === 'hud_peek') return job.job === id ? peekJob(job, args) : { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   if (name === 'hud_read') {
-    if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
-    if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
-      throw new Error('invalid_arguments: wait_ms');
+    const full = args.mode === 'full' || (args.mode === undefined && args.full === true);
     const end = Date.now() + Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
     const initial = readRow(job, !isWorker).row;
     const ready = (row: JobRow) =>
@@ -1753,19 +1812,19 @@ async function call(name: string, args: Args): Promise<unknown> {
       row.open_questions > 0 ||
       jobChanges([initial], [row]).length > 0 ||
       Date.now() >= end;
-    let summary: Awaited<ReturnType<typeof gitSummary>> | undefined;
+    let summary: GitSummary | undefined;
     while (true) {
       const { row } = readRow(job, !isWorker);
       if (Date.now() >= end || ready(row)) {
         const receipt = json<Job>(join(dir, 'job.json')) ?? job;
         const wt = receipt.worktree;
         // Only probe once per read, even if a concurrent answer or continuation resumes the wait.
-        const git = wt ? { git_summary: summary ??= await gitSummary(wt, () => jobs()
+        if (wt) summary ??= await gitSummary(wt, () => jobs()
           .flatMap((other) => other.job !== receipt.job && other.worktree?.main_root === wt.main_root &&
             other.worktree.root !== wt.root && !other.worktree_removed_at
             ? [{ job: other.job, worktree: other.worktree, created_at: other.created_at }] : [])
-          .sort((a, b) => b.created_at.localeCompare(a.created_at))) } : {};
-        const result = observation(json<Job>(join(dir, 'job.json')) ?? receipt, args.full === true, detail);
+          .sort((a, b) => b.created_at.localeCompare(a.created_at)));
+        const result = observation(json<Job>(join(dir, 'job.json')) ?? receipt, full, detail, summary);
         // A question may have been answered or a settled job continued since the lightweight poll.
         const currentRow = jobRow(job, json<Record<string, unknown>>(join(dir, 'STATUS.json')), {
           dir,
@@ -1777,7 +1836,7 @@ async function call(name: string, args: Args): Promise<unknown> {
           await sleep(Math.max(0, Math.min(200, end - Date.now())));
           continue;
         }
-        const collected = 'report' in result && result.report_exists;
+        const collected = ('report' in result || 'digest' in result) && result.report_exists;
         const observed = result.blocked || failedAttempt(currentRow);
         if (!isWorker && (collected || observed)) {
           const latest = json<Job>(join(dir, 'job.json'))!;
@@ -1786,7 +1845,7 @@ async function call(name: string, args: Args): Promise<unknown> {
           if (observed) latest.observed_at = at;
           save(latest);
         }
-        return { ...result, ...git };
+        return result;
       }
       await sleep(Math.min(500, end - Date.now()));
     }
@@ -2054,7 +2113,7 @@ function sampleTask(task: HudTask): TaskView {
     const outcome = taskCheckOutcome(dir, job, status);
     if (outcome === null) return updateTask(task, 'working', `${label} — awaiting checks`);
     const meta = jobRowReportMeta(row, dir);
-    const summary = meta?.summary ?? (firstReportProse(slice(report, 2048)?.text ?? '') ?? 'Report ready').slice(0, 240);
+    const summary = meta?.summary ?? fallbackResultLine(slice(report, RESULT_HEAD_BYTES)?.text ?? '');
     return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}${outcome}`);
   }
   if (state === 'closed' || state === 'done') {

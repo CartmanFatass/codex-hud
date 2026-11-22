@@ -71,11 +71,13 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_read',
-    'List the caller project’s active jobs or collect any job by ID. Reading a settled report closes the worker. For inspection use hud_peek.',
+    'List the caller project’s active jobs, or collect by job or jobs. Default: report digest, changed paths, open questions, check outcomes and latest progress. Full mode includes report text and diagnostics. Reading a settled report closes the worker; use hud_peek to inspect.',
     {
       job: text,
+      jobs: { type: 'array', items: text, minItems: 1, description: 'Read each job in order of input; errors are per item.' },
+      mode: { ...text, enum: ['digest', 'full'], default: 'digest' },
       wait_ms: { type: 'integer', minimum: 0, maximum: 120000, description: 'Wait for settlement or attention.' },
-      full: { ...bool, description: 'Include the report even if already read.' },
+      full: { ...bool, description: 'Legacy alias for mode: full.' },
       detail: { ...bool, description: 'Job only: include launch diagnostics.' },
       view: {
         type: 'string',

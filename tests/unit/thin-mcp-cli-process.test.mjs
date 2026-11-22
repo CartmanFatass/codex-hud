@@ -148,7 +148,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
     writeFixtureFile(report, 'Synthetic fresh report with MCP infrastructure still alive.\n');
     f.push(job.job, 'idle');
     if (work) {
-      assert.match((await f.call('hud_read', { job: job.job })).report, /Synthetic fresh report/);
+      assert.match((await f.call('hud_read', { job: job.job })).digest.result, /Synthetic fresh report/);
       assert.ok(procStat(work));
       declareDone(f, job);
     } else {
@@ -156,7 +156,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
       const listing = await f.call('hud_read');
       assert.match(listing.changes.find((line) => line.startsWith(job.job)), /: idle_grace \| report/);
       assert.equal(cliState(dir).output_written, true);
-      assert.match((await f.call('hud_read', { job: job.job })).report, /Synthetic fresh report/);
+      assert.match((await f.call('hud_read', { job: job.job })).digest.result, /Synthetic fresh report/);
     }
     await until(() => cliState(dir)?.state === 'closed', 1700);
     assert.equal(cliState(dir).exit_reason, 'closed after report read');

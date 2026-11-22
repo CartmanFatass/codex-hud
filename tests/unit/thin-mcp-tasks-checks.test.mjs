@@ -77,13 +77,19 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), done);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
   assert.equal(f.commands().some(({ command }) => command === 'pi-role-reap'), false);
-  const report = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
+  const compact = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
+  assert.deepEqual(text.split('\n'), [`${compact.job} (${compact.role}) — ${compact.state}`,
+    `Report: ${compact.digest.report_path}`, `Summary: ${compact.digest.result}`]);
+  assert.equal(compact.report_meta, undefined);
+  assert.equal(compact.report, undefined);
+  const report = resultValue(await taskCall(rpc, 'hud_read', { job: job.job, mode: 'full' }));
   assert.ok(report.report.includes(migrationProse));
   assert.deepEqual(report.report_meta, { summary: summaryText, files });
   assert.equal(report.changes, undefined);
   const repeat = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
   assert.equal(repeat.report_unchanged, true);
-  assert.deepEqual(repeat.report_meta, report.report_meta);
+  assert.equal(repeat.report_meta, undefined);
+  assert.deepEqual(resultValue(await taskCall(rpc, 'hud_read', { job: job.job, mode: 'full' })).report_meta, report.report_meta);
   writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed', exit_reason: 'closed after report read' }));
   const repair = taskJob(f, await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic repair.' }));
   assert.notEqual(repair.job, job.job);
@@ -170,6 +176,7 @@ test('MCP tasks: fan-out sends keep the create task through report settlement', 
   assert.equal(done.result.content[0].text.split('\n')[2], `Summary: ${parserProse}`);
   assert.doesNotMatch(done.result.content[0].text, /Stale synthetic summary|stale\.ts/);
   const read = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
+  assert.equal(read.digest.result, parserProse);
   assert.equal(read.report_meta, undefined);
 });
 
@@ -281,7 +288,10 @@ test('HUD checks: CLI declaration starts ordered checks, delays reap and announc
     assert.equal(fs.statSync(checkFile(job)).mode & 0o777, 0o600);
     assert.deepEqual(receipt.results.map((r) => r.exit_code), [0, 7]);
     assert.ok(receipt.results.every((r) => r.duration_ms >= 0 && Buffer.byteLength(r.output_tail) <= 2048));
-    const read = await f.call('hud_read', { job: job.job });
+    const compact = await f.call('hud_read', { job: job.job });
+    assert.match(compact.checks.results[0], /^pass: /);
+    assert.match(compact.checks.results[1], /^fail: /);
+    const read = await f.call('hud_read', { job: job.job, mode: 'full' });
     assert.equal(read.state, 'closed', 'the failing check does not fail the job');
     assert.equal(read.checks.stale, false);
     assert.deepEqual(read.checks.results.map((r) => r.passed), [true, false]);

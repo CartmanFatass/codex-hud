@@ -436,7 +436,7 @@ esac
   assert.equal(receipt.package, args.package);
   assert.equal(receipt.ticket, args.ticket);
   assert.equal(receipt.slice, args.slice);
-  assert.equal((await f.call('hud_read', { job: job.job })).report, 'Synthetic implementation report.');
+  assert.equal((await f.call('hud_read', { job: job.job })).digest.result, 'Synthetic implementation report.');
   assert.ok(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at);
   const waiting = f.call('hud_read', { job: job.job, wait_ms: 2000 });
   const settle = setTimeout(
@@ -863,7 +863,7 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   assert.match(cardText(workerFor(f, job.job)), /pro.*Synthetic question/);
   assert.equal(state.output_written, true);
   assert.equal(state.exit_reason, 'settled');
-  assert.equal((await f.call('hud_read', { job: job.job })).report, 'Synthetic Jev answer.');
+  assert.equal((await f.call('hud_read', { job: job.job })).digest.result, 'Synthetic Jev answer.');
   assert.equal(
     (await f.call('hud_send', { job: job.job, message_key: 'no-send', text: 'Synthetic follow-up.' })).code,
     'not_continuable'
@@ -921,7 +921,7 @@ test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, a
       .filter(({ command }) => command === 'jev-flow')
       .at(-1).args;
     assert.equal(args.includes('--confirm-credits'), confirmed);
-    const read = await f.call('hud_read', { job: job.job });
+    const read = await f.call('hud_read', { job: job.job, mode: 'full' });
     assert.equal(read.state, confirmed ? 'closed' : 'failed');
     if (confirmed) {
       assert.equal(args[args.indexOf('--confirm-credits') + 1], '20');

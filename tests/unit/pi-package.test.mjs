@@ -835,7 +835,7 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   assert.equal(peek.details.status.report_unread, true);
   assert.equal(peek.details.pane_lines, undefined);
   assert.equal(JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at, undefined);
-  assert.equal((await call('hud_read', { job: id })).details.report, 'Synthetic report.');
+  assert.equal((await call('hud_read', { job: id })).details.digest.result, 'Synthetic report.');
   assert.ok(JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at);
   const next = context(f, h, 'session-b');
   const rebinding = h.emit('session_tree', next.ctx);

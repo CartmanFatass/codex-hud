@@ -22,6 +22,7 @@ machine, inside herdr. (10.02, 22.12)
 - Main-session tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`, `hud_close`,
   `hud_wait` (hidden from MCP-task clients), `hud_peek`, `hud_tickets`, `hud_lease`, `hud_statusline`.
   (17.02, 21.07, 22.04)
+- `hud_read` returns a digest by default (state, result line, changed files, verdict and blockers when the report gives them); `mode: "full"` returns the whole report; `jobs` reads several at once. (22.15)
 - Thin tools over local herdr and unbundled pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
   `pi-role-reap`). The MCP opens the job's herdr tab. Jobs are plain JSON under `$HUD_HOME/jobs`. (10.01)
 

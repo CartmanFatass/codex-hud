@@ -155,7 +155,7 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
       assert.deepEqual(turn(), provisional);
       await until(() => cliState(dir)?.state === 'idle_grace' && cliState(dir).settled_at !== grace.settled_at);
       assert.equal(cliState(dir).output_written, true);
-      assert.match((await f.call('hud_read', { job: job.job })).report, /fast report after input/);
+      assert.match((await f.call('hud_read', { job: job.job })).digest.result, /fast report after input/);
     }
   });
 }

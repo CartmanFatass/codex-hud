@@ -146,7 +146,7 @@ can override them. It selects an available place through the role or preset chai
 
 Pass `checks` for up to five shell commands you would otherwise run yourself in the job's `cwd`. The HUD runs them
 in order with `bash -lc` after a declared pi or CLI settlement, with a ten-minute timeout per command. Retries and
-closed-job repairs inherit them. `hud_read({job})` shows pass/fail and a bounded failure tail; a new turn or rewritten
+closed-job repairs inherit them. `hud_read({job})` shows check outcomes; `mode: "full"` includes the bounded failure tail; a new turn or rewritten
 report marks the previous results stale. `hud watch` adds `checks 2/3` on settlement or in a follow-up notice when the
 results arrive. The job card and Inspector show the same count of passed/total checks (`✓` pass, `✗` fail, `↻` running,
 `~` stale). Checks do not settle jobs or decide acceptance.
@@ -180,7 +180,7 @@ browser service. Attaching an upstream report does not mark it read or close its
 
 `isolation: "worktree"` runs the job in its own linked Git checkout beside the repository (`<repo>-wt/<slug>-<id6>`,
 branch `wt/<slug>-<id6>` from HEAD, `node_modules` linked, the CLI's trust of the main checkout copied). It is
-refused for browser roles and outside Git. `hud_read` of that job adds the `worktree` receipt (including the checkout path) and `git_summary`.
+refused for browser roles and outside Git. `hud_read` in full mode adds the `worktree` receipt (including the checkout path) and `git_summary`.
 Its `overlaps` lists other managed jobs and paths they also changed, excluding committed paths whose versions already match
 the main checkout's HEAD. An empty list means no overlaps found, `null` means the job's own Git summary failed, and
 `overlaps_incomplete` flags partial coverage. After the job closes, the watcher removes the checkout and branch only
@@ -215,14 +215,14 @@ after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is sk
 block, wait or failure `reason`. A closed job with an unread report still appears. Use `view: "recent"` for the
 newest 20 full rows, including handled history. Both list views include a settled job's current `summary` when
 available (up to 120 characters; no file list). Neither list marks anything read; `changes` still includes events
-for jobs hidden from the snapshot. `view` cannot be combined with `job`.
+for jobs hidden from the snapshot. `view` cannot be combined with `job` or `jobs`.
 
 `hud_wait({ jobs?, mode?, wait_ms? })` watches several jobs at once. Omit `jobs` to take the caller session's
 unsettled jobs at the start of the call. `mode: "any"` (default) returns when one settles or needs attention;
 `"all"` waits for every target to settle, but a question, block, orchestrator wait or failure returns early.
 `wait_ms` is an integer from 0 to 120000 (default 60000; `0` checks once). The response includes `ready`, `timed_out`,
 `triggered` job IDs and compact `jobs` rows. No targets returns ready with empty lists. Waiting does not read
-report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID for the full result.
+report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID to collect the report.
 
 Main sessions in herdr and workers use `hud_lease({name, release?, wait_s?})` before using a named shared resource.
 Waits stay inside the caller's turn (120 seconds by default, capped at 300; `0` checks once). Use the resource
@@ -235,16 +235,21 @@ or time expiry is involved; the tool uses util-linux `flock`.
 fetch the pane tail as `pane_lines`; if unavailable, that field is `null` with a `pane_reason`. `detail: true` adds
 launch `diagnostics`. Peeking does not read the report, mark the job seen or close the worker. Workers
 can use `hud_progress` to log milestones (one line, up to 240 characters;
-newest 50 stored). Peek and single-job read show the newest 10 as `progress` and the last as `latest_progress`;
+newest 50 stored). Peek and full-mode reads show the newest 10 as `progress`; ordinary reads show only `latest_progress`;
 ordinary reads omit empty progress, and list/wait rows omit all progress. Milestones do not emit watch events.
 
-With a `job`, `hud_read` reads STATUS, open questions and an unread report (up to 64 KiB). A report is unread when
-newer than `read_at`, or when no `read_at` exists. Already-read reports return `report_unchanged: true` without a
-body; `full: true` includes it again. A settled job's `report_meta` contains its optional `summary` and `files`,
-even on `report_unchanged`. Metadata is ignored when the report changes or the job is still running.
+`hud_read({ job })` returns state and a `digest` for an unread report. Its `result` is the signature-bound worker summary
+when current and settled. Otherwise it uses the same fallback as the task notice: the first prose line in the first
+2 KiB, skipping headings and blank lines, or `Report ready` if there is none. The digest gives the report path, byte size, Git changed-file
+count for a managed worktree, and explicit `Verdict:` and `Blockers:` lines when present in the first 64 KiB.
+The response keeps open questions, one line per completed check and the latest milestone. For worktrees it lists up to
+20 changed paths, then `+N more`, and warns about overlaps. Already-read reports return `report_unchanged: true` without
+reopening the body. `mode: "full"` (or `full: true`) returns the report even if already read, up to 64 KiB, with the usual
+metadata, progress, checks and worktree diagnostics. Use `jobs: [id, …]` instead of `job` to get a `jobs` array of
+results in input order; all use the same mode, and an unknown ID returns an error only for that entry.
 `detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
 use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
-question or timeout. Every returned report body stamps `read_at` (including during work and idle grace), not
+question or timeout. Collecting either the digest or the report body stamps `read_at` (including during work and idle grace), not
 acceptance. A settled pi or CLI worker closes when its current turn's report is read (`closed after report read`);
 reading an earlier turn's report after a continuation does not close the worker. An unread report keeps the usual
 idle deadline. Reading a failure/block separately marks that attention as seen.
