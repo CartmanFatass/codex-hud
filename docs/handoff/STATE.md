@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · EVENT-WAITS · EVENT-WAITS-01 · One event-driven file wait for hud_read and hud_wait (e82c77ba)
 - try · ORCH-LEAN · ORCH-LEAN-05 · Batch forms for the mutating MCP tools (cd3f4e8b)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-11 · Land cleanup trusts its own landing (554096a0)
 - try · ORCH-LEAN · ORCH-LEAN-04 · Owner panel actions reach MCP-task clients; retry and land intents (e59e9319)

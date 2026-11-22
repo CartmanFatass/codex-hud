@@ -9,3 +9,5 @@
 - [x] No watcher leaks on abort; thin-mcp tests pass
 
 ## Comments
+
+- Landed e82c77ba794c23a10f62409060a1a23039a4d1c9; gate 6/6 passed.
