@@ -89,7 +89,7 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
     return 0;
   }
   return foreground(
-    { argv: [process.execPath, join(installationRoot(), 'dist/tree-page.js')] },
+    { argv: [process.execPath, join(installationRoot(), 'bin/hud-dist.mjs'), 'panel'] },
     {
       ...io.env,
       HUD_SETTINGS_PATH: resolveHudEnv(io.env, 'HUD_SETTINGS_PATH') || join(getHudHome(io.env), 'hud-settings.json'),

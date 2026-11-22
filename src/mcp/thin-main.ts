@@ -2125,7 +2125,7 @@ async function receive(line: string): Promise<void> {
         return;
       }
       if (worker) {
-        if (!worker.workerTools(true).some((tool: { name: string }) => tool.name === name)) {
+        if (!(await worker.workerTools(true)).some((tool: { name: string }) => tool.name === name)) {
           result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'worker_cannot_dispatch' }) }], isError: true };
         } else {
           try {

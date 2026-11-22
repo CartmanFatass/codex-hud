@@ -33,7 +33,7 @@ function setup(t) {
     path.join(release, 'dist/harness/pi/package-entry.js'),
     `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b,deps,mode) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')] ?? deps,mode); }`
   );
-  for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs', 'packages/hud-mcp/bin/worker-tools.mjs', 'dist/mcp']) {
+  for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs', 'packages/hud-mcp/bin/worker-tools.mjs', 'dist/mcp', 'scripts/dist-lock.mjs']) {
     fs.mkdirSync(path.dirname(path.join(release, entry)), { recursive: true });
     fs.symlinkSync(path.resolve(entry), path.join(release, entry));
   }

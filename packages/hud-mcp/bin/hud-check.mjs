@@ -5,8 +5,11 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
-import { checkBinding, CHECKS_FILE, readCheckReceipt, sameChecks } from '../../../dist/roles/job-checks.js';
-import { procStat } from '../../../dist/roles/worker-tree.js';
+import { withDistLock } from '../../../scripts/dist-lock.mjs';
+
+const [{ checkBinding, CHECKS_FILE, readCheckReceipt, sameChecks }, { procStat }] = await withDistLock(() => Promise.all([
+  import('../../../dist/roles/job-checks.js'), import('../../../dist/roles/worker-tree.js'),
+]));
 
 const dir = fs.realpathSync(process.argv[2]), file = join(dir, CHECKS_FILE);
 const expected = JSON.parse(process.argv[3]);

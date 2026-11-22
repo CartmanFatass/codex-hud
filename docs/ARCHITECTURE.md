@@ -79,9 +79,13 @@ No panel opens at launch.
 checks Node, then runs prerequisite hooks before any build or filesystem change.
 Core is always included. The default builds the HUD and MCP together into `dist/`; `--skip-build` uses
 existing outputs. Commands link into this checkout/extraction, and client bindings
-also retain its path: keep that directory. The installer backs up edited client
-files, uses official registration commands where available, and never edits shell
-rc files. `hud uninstall` invokes `./install --uninstall`, removes owned bindings
+also retain its path: keep that directory. Runtime launchers and the panel reload
+probe hold a per-checkout lock while loading their initial `dist/` module graph.
+The builder takes that lock only to publish or clean `dist/`, not to compile.
+A timed-out launcher fails rather than importing a partial build.
+
+The installer backs up edited client files, uses official registration commands
+where available, and never edits shell rc files. `hud uninstall` invokes `./install --uninstall`, removes owned bindings
 and command links, and retains HUD data. See [installer extensions](../install.d/README.md).
 
 **Node floor: ≥24.0.0. Node 24 is the tested supported line.** Root/MCP package

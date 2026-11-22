@@ -6,12 +6,10 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { notify, taskDelivery } from './hud-notify.mjs';
 import { sonicState } from './sonic-jobs.mjs';
-import { LEASE_TOOL, takeLease } from '../../../dist/roles/lease.js';
-import { normalizeReportMeta, writeReportMeta } from '../../../dist/roles/report-meta.js';
+import { withDistLock } from '../../../scripts/dist-lock.mjs';
 
 const idPattern = /^j[0-9a-f]{16}$/;
-const dispatch = () => import('../../../dist/mcp/thin-main.js');
-const judge = () => import('../../../dist/mcp/cli-judge.js');
+const lease = () => withDistLock(() => import('../../../dist/roles/lease.js'));
 function readJob(dir) {
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
   if (job.job !== basename(dir)) throw new Error('not a HUD job directory');
@@ -42,8 +40,12 @@ function replace(file, data) {
 export async function finishReport({ dir, job }, turn, text, metadata = {}) {
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
   if (text !== undefined && (typeof text !== 'string' || !text.trim())) throw new Error('write a nonempty report');
+  const [{ normalizeReportMeta, writeReportMeta }, { DONE_FILE, readTurn, turnToken, reportSignature }, workerTree] =
+    await withDistLock(() => Promise.all([
+      import('../../../dist/roles/report-meta.js'), import('../../../dist/mcp/cli-judge.js'),
+      job.cli ? undefined : import('../../../dist/roles/worker-tree.js'),
+    ]));
   const fields = normalizeReportMeta(metadata);
-  const { DONE_FILE, readTurn, turnToken, reportSignature } = await judge();
   const path = join(dir, 'report.md');
   if (job.cli) {
     const current = readTurn(dir);
@@ -58,7 +60,7 @@ export async function finishReport({ dir, job }, turn, text, metadata = {}) {
   } else {
     // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
     if (turn !== undefined) throw new Error('pi does not use a turn token');
-    const { rememberWorkerTree } = await import('../../../dist/roles/worker-tree.js');
+    const { rememberWorkerTree } = workerTree;
     if (text !== undefined) replace(path, text);
     const sig = reportSignature(dir);
     if (!sig) throw new Error('write the pi report first');
@@ -95,7 +97,7 @@ export function progress({ dir }, message) {
 export async function startSonic({ job: parent }, task) {
   if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
   if (!task.trim()) throw new Error('the sub-task is empty');
-  const { dispatchJob } = await dispatch();
+  const { dispatchJob } = await withDistLock(() => import('../../../dist/mcp/thin-main.js'));
   const result = await dispatchJob({
     role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd: parent.cwd, task,
   }, parent.herdr_pane, parent.job);
@@ -154,8 +156,10 @@ export async function waitSonic({ dir, root, job: parent }, ids, seconds = 480, 
   }
 }
 
-export const workerLease = ({ job, root }, args, signal, fallback = false) => takeLease(args,
-  { home: dirname(root), cwd: job.cwd, holder: job.job, worker: true, fallback }, signal);
+export async function workerLease({ job, root }, args, signal, fallback = false) {
+  const { takeLease } = await lease();
+  return takeLease(args, { home: dirname(root), cwd: job.cwd, holder: job.job, worker: true, fallback }, signal);
+}
 
 export async function callWorkerTool(name, args, signal) {
   const context = workerJob();
@@ -197,7 +201,8 @@ export function listWorkerTools(cli) {
   try { return workerTools(Boolean(workerJob().job.cli)); } catch { return workerTools(cli); }
 }
 
-export function workerTools(cli) {
+export async function workerTools(cli) {
+  const { LEASE_TOOL } = await lease();
   const tool = (name, description, properties, required = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
   return [

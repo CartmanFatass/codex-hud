@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { initialMonitorState } from '../render/monitor.js';
 import { CONTROL_FOLDS, activeFilter, controlRoleItem, controlRoleOf, emptySplitNav, homeAnchor, homeCursor, homeTarget, onlyTry, projectPage,
@@ -7,6 +8,7 @@ import { CONTROL_FOLDS, activeFilter, controlRoleItem, controlRoleOf, emptySplit
 import type { MainTab } from '../render/main-tabs.js';
 import type { WorkTarget } from '../collectors/workboard-types.js';
 import type { HudSettings } from '../settings.js';
+import { installationRoot } from '../cli/compat.js';
 
 const PLACE = 'HUD_PANEL_RELOAD_PLACE', SUPERVISED = 'HUD_PANEL_RELOAD_SUPERVISED', RESTART = 75;
 type Place = { state: MonitorState; settings: { selected: number; offset: number } | null; widthOverride?: number | null; openedAt?: number };
@@ -195,8 +197,8 @@ export class PanelReload {
     if (this.busy || dirty() || signature === this.attempted || now - this.changedAt < this.quietMs) return false;
     this.busy = true;
     const ok = await new Promise<boolean>((resolve) => execFile(process.execPath,
-      ['--input-type=module', '--eval', 'await import(process.argv[1])', pathToFileURL(this.entry).href],
-      { env: this.env, timeout: 5000 }, (error) => resolve(!error)));
+      [join(installationRoot(), 'bin/hud-dist.mjs'), 'probe-panel', this.entry],
+      { env: this.env, timeout: 20000 }, (error) => resolve(!error)));
     this.busy = false;
     if (this.signature() !== signature || dirty()) return false;
     this.attempted = signature;
@@ -214,13 +216,17 @@ export class PanelReload {
       return;
     }
     const execve = (process as typeof process & { execve?: (file: string, args: string[], env: NodeJS.ProcessEnv) => never }).execve;
+    // A direct legacy launch switches to the guarded launcher on its first reload.
+    const argv = process.argv[1] && resolve(process.argv[1]) === this.entry
+      ? [process.execPath, ...process.execArgv, join(installationRoot(), 'bin/hud-dist.mjs'), 'panel', ...process.argv.slice(2)]
+      : this.argv;
     finish();
-    if (execve) execve(process.execPath, this.argv, env);
+    if (execve) execve(process.execPath, argv, env);
     // Older Node: one supervisor owns all subsequent replacements, never a chain of waiting parents.
     env[SUPERVISED] = '1';
     let code: number | null = RESTART, signal: NodeJS.Signals | null = null;
     while (code === RESTART) {
-      const child = spawn(process.execPath, this.argv.slice(1), { env, stdio: ['inherit', 'inherit', 'inherit', 'ipc'] });
+      const child = spawn(process.execPath, argv.slice(1), { env, stdio: ['inherit', 'inherit', 'inherit', 'ipc'] });
       const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
       const forward = signals.map((sig) => () => { child.kill(sig); });
       signals.forEach((sig, i) => process.on(sig, forward[i]));

@@ -3,7 +3,8 @@ if (Number(process.versions.node.split('.')[0]) < 24) {
   process.stderr.write('runtime_unavailable: Node >=24.0.0 required\n');
   process.exit(5);
 }
-import('../dist/cli/statusline.js')
+import { withDistLock } from '../scripts/dist-lock.mjs';
+withDistLock(() => import('../dist/cli/statusline.js'))
   .then(async ({ statuslineCommand }) => {
     process.exitCode = await statuslineCommand(process.argv.slice(2), {
       env: process.env,

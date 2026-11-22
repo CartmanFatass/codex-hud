@@ -12,6 +12,8 @@ import { loadParitySettings, paritySettings } from '../statusline-parity/setting
 import { collectAndRenderParity } from '../statusline-parity/collect.js';
 import { forwardInput } from '../statusline-parity/forward.js';
 import { recordClaudeQuota } from '../statusline-parity/quota-cache.js';
+import { importStatusline } from '../statusline-parity/import.js';
+import { statuslineSettings } from '../statusline-settings.js';
 
 export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
        hud statusline --details [--lang en|zh] [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
@@ -41,7 +43,6 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
   }
   if (args[0] === 'import') {
     try {
-      const { importStatusline } = await import('../statusline-parity/import.js');
       await io.stdout(JSON.stringify(importStatusline(args.slice(1), io.env), null, 2) + '\n');
       return 0;
     } catch (e) {
@@ -54,7 +55,6 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
   }
   if (args[0] === 'settings') {
     try {
-      const { statuslineSettings } = await import('../statusline-settings.js');
       const result = statuslineSettings(
         args.slice(1),
         io.env.HOME ?? '',

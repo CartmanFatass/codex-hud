@@ -13,12 +13,18 @@ if (process.argv[2] === 'uninstall') {
   if (result.error) process.stderr.write(`${result.error.message}\n`);
   process.exit(result.status ?? 1);
 }
-const compatibility = ['codex', 'codex-hud'].includes(process.argv[2]);
-import(compatibility ? '../dist/cli/compat.js' : '../dist/cli/hud.js').then(async (module) => {
-  process.exitCode = compatibility
-      ? await module.codexCommand(process.argv.slice(3), { env: process.env })
-      : await module.main();
-}).catch(() => {
+try {
+  const { withDistLock } = await import('../scripts/dist-lock.mjs');
+  const run = await withDistLock(async () => {
+    if (['codex', 'codex-hud'].includes(process.argv[2])) {
+      const { codexCommand } = await import('../dist/cli/compat.js');
+      return () => codexCommand(process.argv.slice(3), { env: process.env });
+    }
+    const { prepareMain } = await import('../dist/cli/hud.js');
+    return prepareMain();
+  });
+  process.exitCode = await run();
+} catch {
   process.stderr.write('internal_or_output_failure\n');
   process.exitCode = 1;
-});
+}

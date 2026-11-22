@@ -1220,7 +1220,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   await restarting;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+export function runPanelEntry(): void {
   const onCrash = (err: unknown) => {
     restoreTerminal();
     process.stderr.write(`${String(err)}\n`);
@@ -1240,3 +1240,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       process.exit(process.exitCode ?? 0);
     });
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) runPanelEntry();

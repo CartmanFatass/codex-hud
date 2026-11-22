@@ -27,28 +27,41 @@ function writeStdout(text: string): Promise<void> {
   });
 }
 
-/** Import the selected owner-facing command. */
-export async function main(
+/** Load the selected command under the startup lock; run it after releasing the lock. */
+export async function prepareMain(
   args: readonly string[] = process.argv.slice(2),
   io: HudIO = {
     env: process.env,
     stdout: writeStdout,
     stderr: (text) => process.stderr.write(text),
   }
-): Promise<number> {
+): Promise<() => Promise<number>> {
+  let run: () => Promise<number>;
   try {
     if (args[0] === 'import') {
       const { importCommand } = await import('./import.js');
-      return await importCommand(args.slice(1), io);
+      run = () => importCommand(args.slice(1), io);
+    } else {
+      const cli = await import('./hud-main.js');
+      run = () => cli.main(args, io);
     }
-    const cli = await import('./hud-main.js');
-    return await cli.main(args, io);
   } catch (error) {
-    if (error instanceof CliError) {
-      io.stderr(`${error.reason}\n`);
-      return error.exitCode;
-    }
-    io.stderr('internal_or_output_failure\n');
-    return 1;
+    run = () => { throw error; };
   }
+  return async () => {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof CliError) {
+        io.stderr(`${error.reason}\n`);
+        return error.exitCode;
+      }
+      io.stderr('internal_or_output_failure\n');
+      return 1;
+    }
+  };
+}
+
+export async function main(args?: readonly string[], io?: HudIO): Promise<number> {
+  return (await prepareMain(args, io))();
 }

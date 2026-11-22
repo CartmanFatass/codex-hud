@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -29,6 +30,7 @@ function fixture(t) {
   const stages = () => fs.readdirSync(root).filter((name) => /^\.dist(?:-test)?-stage-/.test(name));
   fs.mkdirSync(file('scripts'));
   fs.copyFileSync(script, file('scripts/build.mjs'));
+  fs.copyFileSync(new URL('dist-lock.mjs', script), file('scripts/dist-lock.mjs'));
   fs.mkdirSync(file('node_modules'));
   fs.symlinkSync(compiler, file('node_modules/typescript'), 'dir');
   put('package.json', '{"type":"module"}');
@@ -85,6 +87,77 @@ test('concurrent readers see only complete old or new panel entry bytes', async 
   assert.ok(samples > 0 && after.includes('replacement') && before !== after);
   seen.add(after);
   assert.deepEqual(seen, new Set([before, after]));
+});
+
+test('hud-sonic starts without a retry when idle and waits for a consistent generation during publish', async (t) => {
+  const f = fixture(t);
+  fs.cpSync(new URL('../../packages/hud-mcp/bin', import.meta.url), f.file('packages/hud-mcp/bin'), { recursive: true });
+  const job = 'j0000000000000001', jobDir = f.file(`hud/jobs/${job}`);
+  f.put(`hud/jobs/${job}/job.json`, JSON.stringify({ job, role: 'oracle' }));
+  const main = (binding) => `import { ${binding} } from '../render/sub.js';
+export function dispatchJob() { return { job: ${binding} }; }`;
+  f.put('src/mcp/thin-main.ts', main('oldJob'));
+  f.put('src/render/sub.ts', 'export const oldJob = "old", generation = 1;');
+  await f.run();
+
+  f.put('observe.mjs', `import {appendFileSync, writeFileSync} from 'node:fs';
+import {Server} from 'node:net';
+const {listen, emit} = Server.prototype;
+Server.prototype.listen = function (...args) {
+  appendFileSync('sonic-attempts', '1');
+  return listen.apply(this, args);
+};
+Server.prototype.emit = function (event, ...args) {
+  if (event === 'error' && args[0]?.code === 'EADDRINUSE') writeFileSync('sonic-blocked', '');
+  return emit.call(this, event, ...args);
+};`);
+  const sonic = () => exec(process.execPath, ['--import', f.file('observe.mjs'),
+    f.file('packages/hud-mcp/bin/hud-sonic.mjs'), 'start', '--dir', jobDir, '--task', 'synthetic'],
+  { cwd: f.file('.'), env: { ...process.env, HUD_HOME: f.file('hud'), HUD_JOB_DIR: jobDir }, timeout: 5000 });
+  const idle = await sonic();
+  assert.equal(idle.stdout, 'old\n');
+  assert.equal(idle.stderr, '');
+  assert.equal(fs.readFileSync(f.file('sonic-attempts'), 'utf8'), '1');
+
+  f.put('src/mcp/thin-main.ts', main('newJob'));
+  f.put('src/render/sub.ts', 'export const newJob = "new", generation = 2;');
+  f.put('pause.mjs', `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+const rename = fs.renameSync, timer = new Int32Array(new SharedArrayBuffer(4));
+fs.renameSync = (src, dst) => {
+  rename(src, dst);
+  if (!dst.endsWith('/dist/mcp/thin-main.js')) return;
+  fs.writeFileSync('publish-open', '');
+  const deadline = Date.now() + 12000;
+  while (!fs.existsSync('publish-release')) {
+    if (Date.now() >= deadline) throw new Error('test never released publish');
+    Atomics.wait(timer, 0, 0, 10);
+  }
+}; syncBuiltinESMExports();`);
+  const until = async (name) => {
+    const deadline = Date.now() + 10000;
+    while (!fs.existsSync(f.file(name))) {
+      assert.ok(Date.now() < deadline, `timed out waiting for ${name}`);
+      await delay(10);
+    }
+  };
+  const build = f.run([], 'pause.mjs');
+  build.catch(() => {});
+  let started;
+  try {
+    await until('publish-open');
+    // Prove the fixture really exposes the live bug if the lock is bypassed.
+    await assert.rejects(exec(process.execPath, ['--input-type=module', '-e', 'await import("./dist/mcp/thin-main.js")'],
+      { cwd: f.file('.'), timeout: 5000 }), /does not provide an export named 'newJob'/);
+    started = sonic();
+    started.catch(() => {});
+    await until('sonic-blocked');
+  } finally {
+    f.put('publish-release', '');
+    await build;
+  }
+  const result = await started;
+  assert.equal(result.stdout, 'new\n');
+  assert.equal(result.stderr, '');
 });
 
 test('panel sentinel is last; no-op and MCP-only builds leave it alone', async (t) => {

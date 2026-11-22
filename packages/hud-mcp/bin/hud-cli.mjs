@@ -6,13 +6,18 @@ import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { recordFailureExhaustion } from '../../../dist/roles/roster.js';
-import { decideQuietJob } from '../../../dist/mcp/quiet-decision.js';
-import { cliWorkerTools, firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn } from '../../../dist/mcp/cli-judge.js';
-import { rememberWorkerTree } from '../../../dist/roles/worker-tree.js';
-import { reportWasRead } from '../../../dist/collectors/thin-jobs.js';
+import { withDistLock } from '../../../scripts/dist-lock.mjs';
 import { request } from './herdr-request.mjs';
 import { sonicChildren, sonicCollectPrompt } from './sonic-jobs.mjs';
+
+const [
+  { recordFailureExhaustion }, { decideQuietJob },
+  { cliWorkerTools, firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn },
+  { rememberWorkerTree }, { reportWasRead },
+] = await withDistLock(() => Promise.all([
+  import('../../../dist/roles/roster.js'), import('../../../dist/mcp/quiet-decision.js'),
+  import('../../../dist/mcp/cli-judge.js'), import('../../../dist/roles/worker-tree.js'), import('../../../dist/collectors/thin-jobs.js'),
+]));
 
 const dir = fs.realpathSync(process.argv[2]);
 const bundled = fileURLToPath(new URL('..', import.meta.url)), hudHome = dirname(dirname(dir));

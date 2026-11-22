@@ -7,13 +7,18 @@ import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isQuotaFailure, recordFailureExhaustion } from '../../../dist/roles/roster.js';
-import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../../../dist/mcp/cli-judge.js';
-import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../../../dist/roles/worker-tree.js';
-import { piReadSettlement } from '../../../dist/mcp/pi-read-settlement.js';
-import { checkBinding, readCheckReceipt, sameChecks } from '../../../dist/roles/job-checks.js';
-import { reapWorktree } from '../../../dist/mcp/managed-worktree.js';
+import { withDistLock } from '../../../scripts/dist-lock.mjs';
 import { request } from './herdr-request.mjs';
+
+const [
+  { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
+  { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
+  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree },
+] = await withDistLock(() => Promise.all([
+  import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),
+  import('../../../dist/roles/worker-tree.js'), import('../../../dist/mcp/pi-read-settlement.js'),
+  import('../../../dist/roles/job-checks.js'), import('../../../dist/mcp/managed-worktree.js'),
+]));
 
 const bundled = fileURLToPath(new URL('..', import.meta.url));
 

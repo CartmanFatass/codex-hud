@@ -814,11 +814,7 @@ EOF
     mouse_setting=$(parse_boolean_setting "CODEX_HUD_MOUSE" "${CODEX_HUD_MOUSE:-}" "1") || exit 1
     local saved_statusline="1"
     if [[ -z "${CODEX_HUD_STATUSLINE:-}" && -f "$HUD_DIR/dist/settings.js" ]]; then
-        saved_statusline=$(HUD_HOME="$EFFECTIVE_HUD_HOME" node --input-type=module -e '
-            import { pathToFileURL } from "node:url";
-            const { loadSettings } = await import(pathToFileURL(process.argv[1]).href);
-            process.stdout.write(loadSettings().statusline ? "1" : "0");
-        ' "$HUD_DIR/dist/settings.js" 2>/dev/null) || saved_statusline="1"
+        saved_statusline=$(HUD_HOME="$EFFECTIVE_HUD_HOME" node "$HUD_DIR/bin/hud-dist.mjs" statusline-setting 2>/dev/null) || saved_statusline="1"
     fi
     hud_statusline=$(parse_boolean_setting "CODEX_HUD_STATUSLINE" "${CODEX_HUD_STATUSLINE:-$saved_statusline}" "1") || exit 1
 
@@ -873,7 +869,7 @@ EOF
     if [[ -n "$runtime_capture_file_windows" ]]; then
         hud_capture_file_env=" CODEX_HUD_PANE_CAPTURE_FILE=$(printf "%q" "$runtime_capture_file_windows")"
     fi
-    local hud_cmd="cd ${cwd_escaped} && LINES='$HUD_HEIGHT' COLUMNS='$term_width' CODEX_HOME=${codex_home_escaped} HUD_HOME=${hud_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION='$SESSION_NAME' CODEX_HUD_CLEAR_SCROLLBACK='${CODEX_HUD_CLEAR_SCROLLBACK:-}'${hud_capture_file_env} node '$HUD_DIR/dist/index.js'"
+    local hud_cmd="cd ${cwd_escaped} && LINES='$HUD_HEIGHT' COLUMNS='$term_width' CODEX_HOME=${codex_home_escaped} HUD_HOME=${hud_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION='$SESSION_NAME' CODEX_HUD_CLEAR_SCROLLBACK='${CODEX_HUD_CLEAR_SCROLLBACK:-}'${hud_capture_file_env} node '$HUD_DIR/bin/hud-dist.mjs' bar"
     if [[ -n "$tmux_windows_bash" ]]; then
         hud_runner="$session_runtime_dir/hud.sh"
         cat > "$hud_runner" <<EOF
@@ -1260,7 +1256,7 @@ case "${1:-}" in
     brief)
         # Only with --dry-run: `codex-hud brief` alone is a prompt for Codex.
         if [[ "${2:-}" == "--dry-run" ]]; then
-            exec node "$HUD_DIR/dist/brief-dry-run.js" "${@:3}"
+            exec node "$HUD_DIR/bin/hud-dist.mjs" brief "${@:3}"
         fi
         ;;
 esac

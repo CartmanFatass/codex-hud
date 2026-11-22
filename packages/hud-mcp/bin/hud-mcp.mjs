@@ -7,6 +7,7 @@ if (major < 24) {
   process.exit(1);
 }
 import { selectMcpEntry } from './surface.mjs';
+import { withDistLock } from '../../../scripts/dist-lock.mjs';
 
 let entry;
 try {
@@ -16,7 +17,8 @@ try {
   process.exit(1);
 }
 try {
-  (await import(entry)).serveMcp();
+  const { serveMcp } = await withDistLock(() => import(entry));
+  serveMcp();
 } catch (error) {
   process.stderr.write(`hud-mcp startup failed: ${error instanceof Error ? error.message : 'unknown_error'}\n`);
   process.exitCode = 1;

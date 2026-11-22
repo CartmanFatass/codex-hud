@@ -1,12 +1,13 @@
 /** Explicit locally authored argv only; never a shell. The detached worker owns its deadline. */
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { installationRoot } from '../cli/compat.js';
 export function forwardInput(argv: readonly string[] | undefined, bytes: Buffer, env: NodeJS.ProcessEnv): void {
   if (!argv?.length || bytes.length > 64 * 1024) return;
   try {
     const child = spawn(
       process.execPath,
-      [fileURLToPath(new URL('./forward-worker.js', import.meta.url)), JSON.stringify(argv)],
+      [join(installationRoot(), 'bin/hud-dist.mjs'), 'forward', JSON.stringify(argv)],
       {
         env,
         detached: true,

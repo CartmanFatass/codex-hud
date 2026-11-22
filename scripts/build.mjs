@@ -1,35 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { once } from 'node:events';
 import * as fs from 'node:fs';
-import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { acquireBuildLock, withDistLock } from './dist-lock.mjs';
 
 const root = fs.realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const legacy = 'packages/hud-mcp/dist';
 const stagePattern = /^\.dist(?:-test)?-stage-([1-9]\d*)$/;
-const lockName = `\0myhud-build-${createHash('sha256').update(root).digest('hex')}`;
-
-async function acquireLock() {
-  // Linux/WSL releases the abstract socket on exit, even after SIGKILL.
-  // Hold it through compilation so an older snapshot cannot publish after a newer one.
-  const lock = createServer((socket) => socket.destroy());
-  const deadline = performance.now() + 15_000;
-  while (true) {
-    const listening = once(lock, 'listening');
-    lock.listen(lockName);
-    try {
-      await listening;
-      return lock;
-    } catch (error) {
-      if (error.code !== 'EADDRINUSE') throw error;
-      if (performance.now() >= deadline) throw new Error('Timed out waiting for another HUD build or clean');
-      await delay(50);
-    }
-  }
-}
 
 function pidIsAlive(pid) {
   if (pid > 0x7fffffff) return false;
@@ -115,18 +92,20 @@ async function run(args) {
   const clean = args.length === 1 && args[0] === '--clean';
   if (!clean && target !== 'main' && target !== 'test') throw new Error('Usage: node scripts/build.mjs [--target main|test | --clean]');
 
-  const lock = await acquireLock();
+  // Keep compilation serialized, but only exclude dist readers while changing live files.
+  const lock = await acquireBuildLock('build');
   try {
     cleanStages(clean);
     if (clean) {
-      for (const name of ['dist', 'dist-test', legacy]) {
-        const path = join(root, name);
-        if (!fs.lstatSync(path, { throwIfNoEntry: false })) continue;
-        if (fs.realpathSync(dirname(path)) !== dirname(path)) throw new Error(`Refusing to clean ${name} through a symlink`);
-        console.log(`Removing ${name}`);
-        fs.rmSync(path, { recursive: true, force: true });
-      }
-      return;
+      return await withDistLock(() => {
+        for (const name of ['dist', 'dist-test', legacy]) {
+          const path = join(root, name);
+          if (!fs.lstatSync(path, { throwIfNoEntry: false })) continue;
+          if (fs.realpathSync(dirname(path)) !== dirname(path)) throw new Error(`Refusing to clean ${name} through a symlink`);
+          console.log(`Removing ${name}`);
+          fs.rmSync(path, { recursive: true, force: true });
+        }
+      });
     }
     const main = target === 'main';
     const dist = join(root, main ? 'dist' : 'dist-test');
@@ -142,6 +121,7 @@ async function run(args) {
       if (result.error) throw result.error;
       if (result.signal) throw new Error(`TypeScript compiler terminated by ${result.signal}`);
       if (result.status !== 0) process.exitCode = result.status;
+      else if (main) await withDistLock(() => publish(stage, dist, main));
       else publish(stage, dist, main);
     } finally {
       fs.rmSync(stage, { recursive: true, force: true });

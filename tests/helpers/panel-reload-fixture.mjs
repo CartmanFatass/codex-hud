@@ -90,6 +90,10 @@ console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
   }
   // Keep the entry and its reload probe local: the probe finds the entry relative to import.meta.url.
   stagePanel(resolve('dist-test/src'), join(f.root, 'dist'), 'tree-page.js', true);
+  for (const file of ['bin/hud', 'bin/hud-dist.mjs', 'scripts/dist-lock.mjs']) {
+    mkdirSync(join(f.root, file.split('/')[0]), { recursive: true });
+    copyFileSync(resolve(file), join(f.root, file));
+  }
   symlinkSync(resolve('node_modules'), join(f.root, 'node_modules'), 'dir');
   const log = join(f.root, 'events.jsonl'), runner = join(f.root, 'live.mjs'), entry = join(f.root, 'dist/tree-page.js');
   for (let i = 0; i < 2; i++) {
