@@ -125,7 +125,7 @@ machine, inside herdr. (10.02, 22.12)
   HUD refuses worker requests to start other roles. (17.06)
 - HUD identifies jobs from the worker environment; no protocol paths or commands in briefs or role texts.
   Worker MCP lists only `hud_report` (report, optional one-line summary and file list, done receipt in one
-  step), `hud_ask`, `hud_sonic` (start one or more without blocking, then collect reports), `hud_progress`
+  step), `hud_ask`, `hud_sonic` (start without blocking, then collect; pi workers get a ready notice when a child settles), `hud_progress`
   and `hud_lease` once leases exist. Pi gets the same worker tools natively. Scripts only for harnesses
   without MCP or the Antigravity fallback (§2.1.3). (21.03, 21.07, 22.01, 22.08, 22.12)
 - Worker or main takes a named `hud_lease` before using a shared resource named in the brief (real install,

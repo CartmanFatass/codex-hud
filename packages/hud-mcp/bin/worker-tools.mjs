@@ -114,6 +114,28 @@ export async function startSonic({ job: parent }, task) {
     ...(result.ok === false ? { error: result.reason } : {}) };
 }
 
+// A native pi start watches only its own launch receipt. This notice never collects the report.
+export function watchSonicReady(id, signal, ready) {
+  if (signal.aborted) return;
+  const child = join(workerJob().root, id);
+  let watcher;
+  function check() {
+    if (signal.aborted) return;
+    const { state } = sonicState(child);
+    if (state === 'open') return;
+    watcher.close();
+    if (!fs.existsSync(join(child, 'sonic-collected'))) ready(state);
+  }
+  try {
+    watcher = fs.watch(child, { persistent: false, signal }, (_event, file) => {
+      if (file && file !== 'STATUS.json') return;
+      try { check(); } catch { /* Retry on the next status write. */ }
+    });
+    watcher.on('error', () => watcher.close());
+    check(); // Subscribe before reading: the child may already have settled during launch.
+  } catch { /* Best effort; explicit wait and the end-of-turn collection prompt remain available. */ }
+}
+
 export async function waitSonic({ dir, root, job: parent }, ids, seconds = 480, signal) {
   if (!Number.isFinite(seconds * 1000) || seconds < 0) throw new Error('--timeout must be a nonnegative number of seconds');
   if (!ids?.length) {
@@ -216,7 +238,7 @@ export async function workerTools(cli) {
       cli ? ['text', 'turn'] : ['text']),
     tool('hud_ask', 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
       { question: string, default: string, options: strings, context: string }, ['question', 'default']),
-    tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. timeout_s defaults to 480; 0 checks once.',
+    tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. Pi sends a ready notice. timeout_s defaults to 480.',
       { task: string, wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
     LEASE_TOOL,

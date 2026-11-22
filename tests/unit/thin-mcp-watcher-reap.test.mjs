@@ -302,7 +302,7 @@ test('read-close: a settled Pi with a fresh report closes and reaps a current-tu
     import hud from ${JSON.stringify(pathToFileURL(resolve('integrations/pi/package/extensions/hud.mjs')).href)};
     process.argv.push('--hud-worker-tools');
     const tools = new Map();
-    await hud({ registerTool(tool) { tools.set(tool.name, tool); } });
+    await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
     const tool = tools.get('hud_report');
     const result = await tool.execute('report', {
       text: ${JSON.stringify(report)}, summary: 'Synthetic native result.', files: ['./src/native.ts'],

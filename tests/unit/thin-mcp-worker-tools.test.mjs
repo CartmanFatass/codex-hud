@@ -175,6 +175,38 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.match(outside.stderr, /under HUD_HOME/);
 });
 
+test('a working pi parent gets a native sonic-ready message without polling or collecting', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  const task = sonicTask(f);
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic pi parent.' });
+  const native = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import hud from ${JSON.stringify(new URL('../../integrations/pi/package/extensions/hud.mjs', import.meta.url).href)};
+    import { existsSync, renameSync, writeFileSync } from 'node:fs';
+    import { join } from 'node:path';
+    import assert from 'node:assert/strict';
+    process.argv.push('--hud-worker-tools');
+    const tools = new Map(), notice = Promise.withResolvers();
+    await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); },
+      sendMessage(message, options) { notice.resolve({ message, options }); } });
+    const sonic = tools.get('hud_sonic');
+    const { details: { job } } = await sonic.execute('start', { task: ${JSON.stringify(fs.readFileSync(task, 'utf8'))} });
+    const dir = join(process.env.HUD_HOME, 'jobs', job);
+    await tools.get('hud_progress').execute('unrelated', { message: 'Parent still editing.' });
+    const timeout = setTimeout(() => { throw Error('no sonic notice'); }, 3000);
+    writeFileSync(join(dir, 'status.tmp'), JSON.stringify({ state: 'idle_grace' }));
+    renameSync(join(dir, 'status.tmp'), join(dir, 'STATUS.json'));
+    const { message, options } = await notice.promise;
+    clearTimeout(timeout);
+    assert.equal(message.customType, 'hud-sonic-ready');
+    assert.match(message.content, new RegExp(job));
+    assert.deepEqual(options, { triggerTurn: true, deliverAs: 'steer' });
+    assert.equal(existsSync(join(dir, 'sonic-collected')), false);
+    const { details } = await sonic.execute('collect', { wait: [job] });
+    assert.equal(details.reports[0].body, 'Synthetic implementation report.');
+  `], { env: { ...f.env, HUD_JOB_DIR: parent.task_dir }, encoding: 'utf8', timeout: 12000 });
+  assert.equal(native.status, 0, native.stderr);
+});
+
 test('sonic tooling offers no per-task choice, but hud_create keeps explicit overrides', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   const compact = await f.call('hud_roster');
@@ -196,7 +228,7 @@ test('sonic tooling offers no per-task choice, but hud_create keeps explicit ove
   const call = workerClient(t, f, parent.task_dir);
   const sonic = (await call.rpc('tools/list')).result.tools.find(({ name }) => name === 'hud_sonic');
   assert.equal(sonic.inputSchema.properties.thinking, undefined);
-  assert.doesNotMatch(sonic.description, /thinking|level/);
+  assert.doesNotMatch(sonic.description, /thinking|level|0 checks once/);
   assert.equal((await call('hud_sonic', { task: 'Synthetic child.', thinking: 'off' })).isError, true);
   const script = await runSonic(f, 'start', parent.task_dir, '--task-file', task, '--thinking', 'max');
   assert.equal(script.status, 1);

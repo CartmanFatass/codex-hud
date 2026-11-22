@@ -23,6 +23,7 @@ out end to end in the working tree and report back. You never talk to an end use
 ## How to work
 
 - Start `hud_sonic` for facts from files you won't edit (callers, usages, docs, existing tests); read your own files meanwhile.
+  Give sonic reads that don't overlap your own.
   Near the end sonic may run a specified slow suite while you check your diff. Start without waiting and collect when needed;
   the HUD prompts once if you finish with uncollected reports. Start no other role.
 - Make the smallest change that fully satisfies the brief. No drive-by refactors outside its scope.
