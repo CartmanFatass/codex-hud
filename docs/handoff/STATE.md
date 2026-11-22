@@ -9,12 +9,8 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Waiting for the owner
 
-- Owner 2026-11-22 on agy's proposals 17–24: 17 do it (lean spec + archive old docs; spec-docs/01–03, spec lands
-  only after the owner approves the draft and errata); 18 drop the self-graded outcome/verdict, do the rest: HUD-side
-  summary fixes and an optional worker summary + file list (report-summary/01–03; spec updated; behaviour change approved); 19 restart recovery stays manual plus a guard so a resumed worker cannot use main-session tools
-  (resume-guard/01); 20 at most proposal 13's single-job form; 21 `after` chaining dropped; 22 waits for 14; 23 web
-  board server dropped; 24 deferred (at most worktree cleanup).
-- Owner 2026-11-22 ("do as your recommendation"): lean spec draft approved with F-1..F-10 resolved as recommended (spec-docs/03); proposals 10, 11, 14, 15, 16 ticketed with their §6 defaults (settings-advanced/01, claude-tail-first/01, job-archive/01, worktree-overlap/01, place-health/01; 14–16 spec sentences approved, each lands with its slice); 13 `hud doctor` not now; 05 Q1 no models.json (primitives/04).
+- 首页进度设计（docs/design/home-progress/，示例 sample.html 已在 Chrome 打开）：选推荐方案还是备选，并回答 README §6 的 5 个问题；选定后按 4 个切片开工（waits on DESIGN-HOME-PROGRESS）
+- 试用 agy 适配：`./install --with agy`，开一个新的 agy 会话，看底部状态行，并在 agy 里 hud_create 一个 imp（waits on AGY-ADAPTER-01, AGY-ADAPTER-02, AGY-ADAPTER-03, AGY-ADAPTER-04）
 
 ## Next
 
