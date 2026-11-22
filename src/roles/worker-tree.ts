@@ -2,30 +2,24 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import {
+  isActiveProcState as active,
+  isValidPid as validPid,
+  listProcPids,
+  procStat,
+  readBootId,
+  readProcStat as readStat,
+} from '../utils/proc.js';
 
-function readProcStat(pid: number) {
-  let stat;
-  try { stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8'); }
-  catch (error) {
-    if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return null;
-    throw error;
-  }
-  const fields = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/);
-  if (!/^\d+$/.test(fields[19] ?? '')) throw Error(`unreadable process identity for PID ${pid}`);
-  return { state: fields[0], ppid: Number(fields[1]), threads: Number(fields[17]), start: fields[19]! };
-}
+export { procStat };
 
-export function procStat(pid: number) {
-  try { return readProcStat(pid); } catch { return null; }
-}
+const readProcStat = (pid: number) => readStat(pid, { strict: true });
 
 type Stamp = { pid: number; start: string };
 type Snapshot = { version: 2; bootId: string; pid: number; start: string; members: Stamp[] };
 type Capture = { snapshot?: Snapshot; issue?: string; missingAfterExit?: boolean };
-const validPid = (pid: unknown): pid is number => typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 1;
 const validStart = (start: unknown): start is string => typeof start === 'string' && /^\d+$/.test(start);
-const active = (state: string | undefined) => !/^[ZXx]$/.test(state ?? '');
-const boot = () => fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+const boot = () => readBootId({ strict: true }) ?? '';
 export const UNVERIFIED_TREE_NOTE = 'descendants without captured ancestry left alone';
 
 function recordedRootAlive(pid: number, start: string) {
@@ -91,9 +85,8 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
     if (recordedRootAlive(pid, start)) {
       snapshot ??= { version: 2, bootId, pid, start, members: [] };
       const children = new Map<number, Stamp[]>();
-      for (const name of fs.readdirSync('/proc')) {
-        const id = Number(name);
-        if (!/^\d+$/.test(name) || !validPid(id) || id === pid || id === process.pid) continue;
+      for (const id of listProcPids()) {
+        if (!validPid(id) || id === pid || id === process.pid) continue;
         const child = readProcStat(id);
         if (!child || !active(child.state) || Number(child.start) < Number(start)) continue;
         const member = { pid: id, start: child.start };

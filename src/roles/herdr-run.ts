@@ -4,9 +4,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import { clearTimeout, setTimeout } from 'node:timers';
+import { isActiveProcState, listProcPids, readProcEnvValue, readProcStat, readProcUid } from '../utils/proc.js';
 
 export interface HerdrOutcome {
   readonly ok: boolean;
@@ -49,23 +49,21 @@ function groupOwnership(pgid: number, token: string): 'owned' | 'gone' | 'unveri
   try { process.kill(-pgid, 0); }
   catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'gone' : 'unverified'; }
   let unverified = false;
-  const matches = (pid: string) => {
+  const matches = (pid: number) => {
     try {
-      const dir = `/proc/${pid}`;
-      const stat = readFileSync(`${dir}/stat`, 'utf8');
-      const [state, , group, session] = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-      if (Number(group) !== pgid || Number(session) !== pgid || /^[ZXx]$/.test(state ?? '')) return false;
+      const stat = readProcStat(pid, { strict: true });
+      if (!stat || stat.pgrp !== pgid || stat.session !== pgid || !isActiveProcState(stat.state)) return false;
       unverified = true;
-      return statSync(dir).uid === process.getuid?.() &&
-        readFileSync(`${dir}/environ`, 'utf8').split('\0').includes(`HUD_REAP_GROUP_TOKEN=${token}`);
-    } catch (error) {
-      if (!['ESRCH', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) unverified = true;
+      return readProcUid(pid) === process.getuid?.() &&
+        readProcEnvValue(pid, 'HUD_REAP_GROUP_TOKEN') === token;
+    } catch {
+      unverified = true;
       return false;
     }
   };
-  if (matches(String(pgid))) return 'owned';
+  if (matches(pgid)) return 'owned';
   try {
-    if (readdirSync('/proc').some((pid) => /^\d+$/.test(pid) && matches(pid))) return 'owned';
+    if (listProcPids().some(matches)) return 'owned';
   } catch { return 'unverified'; }
   return unverified ? 'unverified' : 'gone';
 }

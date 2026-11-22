@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
-import { procStat } from '../roles/worker-tree.js';
+import { procStat } from '../utils/proc.js';
 import { activeLand, landAttempt, landFile, landNotice, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
 import { managedReceiptMatches, type ManagedWorktree } from './managed-worktree.js';
 

@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { writeJsonPrivate as atomicWrite } from '../utils/atomic-fs.js';
+import { isProcAlive, procStat } from '../utils/proc.js';
 import * as os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
@@ -40,27 +41,17 @@ const LOCK_WAIT_MS = 5000;
 const HOST = os.hostname();
 
 function processIdentity(pid: number): { start: string; state: string } | undefined {
-  try {
-    // comm may contain spaces and parentheses; field 22 follows the final ')'.
-    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-    return { start: createHash('sha256').update(fields[19]).digest('hex').slice(0, 16), state: fields[0] };
-  } catch {
-    return undefined;
-  }
+  const stat = procStat(pid);
+  if (!stat) return undefined;
+  return { start: createHash('sha256').update(stat.start).digest('hex').slice(0, 16), state: stat.state };
 }
 const OWNER: Owner = { pid: process.pid, start: processIdentity(process.pid)?.start ?? '', host: HOST };
 
 function alive(owner: Owner): boolean {
   // State is for panels on this machine; unknown remote owners fail closed.
   if (owner.host !== HOST) return true;
-  try {
-    process.kill(owner.pid, 0);
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
+  if (!isProcAlive(owner.pid)) return false;
   const current = processIdentity(owner.pid);
-  if (current?.state === 'Z' || current?.state === 'X') return false;
   return !owner.start || !current || current.start === owner.start;
 }
 

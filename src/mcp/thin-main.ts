@@ -7,7 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
+import { cliWorkerTools, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
 import { panelDelivery } from './panel-delivery.js';
 import { editTickets } from './local-tickets.js';
@@ -32,6 +32,7 @@ import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
 import { writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { isProcAlive, procStat } from '../utils/proc.js';
 import { TryLog } from '../collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
 import { herdrId, runCommand, runHerdr } from '../roles/herdr-run.js';
@@ -660,14 +661,7 @@ function supervisorPid(dir: string, status: Record<string, unknown> | null): num
   return typeof fromStatus === 'number' && Number.isInteger(fromStatus) && fromStatus > 1 ? fromStatus : null;
 }
 function supervisorAlive(pid: number): boolean {
-  const info = procStat(pid);
-  if (info) return info.state !== 'Z';
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
+  return isProcAlive(pid);
 }
 function spawnCliSupervisor(dir: string): number | null {
   const script = binScript('hud-cli.mjs');

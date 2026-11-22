@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { leaseActive, leaseJob, readLease, type LeaseRecord } from '../collectors/thin-jobs.js';
 import { sharedRoot } from './projects.js';
 import { executable } from './roster.js';
-import { procStat } from './worker-tree.js';
+import { procStat } from '../utils/proc.js';
 
 const MAX_WAIT = 300;
 export const LEASE_TOOL = {

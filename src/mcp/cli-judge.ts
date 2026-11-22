@@ -1,8 +1,15 @@
-import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonPrivate } from '../utils/atomic-fs.js';
+import {
+  isActiveProcState,
+  isProcAlive,
+  LINUX_USER_HZ,
+  procStat,
+  readBootTimeMs,
+  readProcChildren,
+  readProcCmdline,
+} from '../utils/proc.js';
 import type { QuietDecision } from './quiet-decision.js';
-import { procStat } from '../roles/worker-tree.js';
 import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 export { procStat };
 export { DONE_FILE, readDone, readTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
@@ -45,17 +52,16 @@ export function saveTurn(dir: string, turn: Turn): void {
 
 export function workerAlive(pid: number | null, start: string | null): boolean | null {
   if (!Number.isInteger(pid) || !pid || pid <= 0) return null;
+  if (start) return isProcAlive(pid, start);
   const info = procStat(pid);
-  if (info === null || info.state === 'Z') return false;
-  return start ? info.start === start : null;
+  return info === null || !isActiveProcState(info.state) ? false : null;
 }
 
 type Bootstrap = { stage: 'launcher' } | { stage: 'shell' | 'server'; entry: string };
 const base = (path = '') => path.split('/').at(-1);
 function bootstrap(pid: number, start: string, launchDirect: boolean, parent: number, chain?: Bootstrap): Bootstrap | boolean {
-  let argv;
-  try { argv = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0+$/, '').split('\0'); }
-  catch { return false; }
+  let argv = readProcCmdline(pid);
+  if (!argv) return false;
   if (workerAlive(pid, start) !== true) return false;
   if (launchDirect) {
     const command = base(argv[0]);
@@ -90,55 +96,37 @@ function bootstrap(pid: number, start: string, launchDirect: boolean, parent: nu
 /** Exempt launch helpers and their known bootstrap steps, not the work started below them. */
 export function workerHasChild(pid: number | null, start: string | null, sentAt: string, firstSentAt?: string): boolean | 'unknown' {
   if (pid === null || workerAlive(pid, start) !== true) return false;
-  const buffer = Buffer.alloc(4096);
   const parents: { pid: number; start: string | null; chain?: Bootstrap }[] = [{ pid, start }];
   let budget = 512;
   try {
-    const boot = +new Date() - parseFloat(fs.readFileSync('/proc/uptime', 'utf8')) * 1000;
-    const since = Math.floor((Date.parse(sentAt) - boot) / 10); // Linux USER_HZ is 100; include the send's whole tick.
-    const first = Math.floor((Date.parse(firstSentAt ?? '') - boot) / 10);
+    const boot = readBootTimeMs();
+    if (boot === null) return workerAlive(pid, start) === true ? 'unknown' : false;
+    const msPerTick = 1000 / LINUX_USER_HZ;
+    const since = Math.floor((Date.parse(sentAt) - boot) / msPerTick); // Linux USER_HZ is 100; include the send's whole tick.
+    const first = Math.floor((Date.parse(firstSentAt ?? '') - boot) / msPerTick);
     // First input can race helper startup. A continuation does not get a launch window.
-    const launchThrough = sentAt === firstSentAt ? first + 1000 : first - 1; // 10 s in USER_HZ ticks.
+    const launchThrough = sentAt === firstSentAt ? first + 10 * LINUX_USER_HZ : first - 1; // 10 s in USER_HZ ticks.
     if (!Number.isFinite(since)) return 'unknown';
     for (let item; (item = parents.pop()) !== undefined;) {
       const { pid: parent, chain } = item;
       if (chain && workerAlive(parent, item.start) !== true) return 'unknown';
-      const tasks = `/proc/${parent}/task`;
-      let threads;
-      try { threads = fs.opendirSync(tasks); }
-      catch (error) {
-        if (parent !== pid && ['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) continue;
-        throw error;
+      const children = readProcChildren(parent, { budget, strict: true });
+      if (children === null) {
+        if (parent !== pid) continue;
+        return workerAlive(pid, start) === true ? 'unknown' : false;
       }
-      try {
-        for (let thread; (thread = threads.readSync()) !== null;) {
-          if (--budget < 0) return 'unknown';
-          let size;
-          try {
-            const fd = fs.openSync(`${tasks}/${thread.name}/children`, 'r');
-            try { size = fs.readSync(fd, buffer, 0, buffer.length, null); }
-            finally { fs.closeSync(fd); }
-          } catch (error) {
-            if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) continue;
-            return 'unknown';
-          }
-          // Skip a possibly truncated final PID; incomplete coverage cannot justify closing.
-          const ids = buffer.toString('utf8', 0, size).trimStart().split(/\s+/);
-          if (size === buffer.length) ids.pop();
-          for (const id of ids) {
-            if (!id) continue;
-            if (--budget < 0) return 'unknown';
-            const child = procStat(Number(id));
-            if (child?.ppid !== parent || (child.threads <= 1 && /^[ZXx]$/.test(child.state ?? ''))) continue;
-            const childStart = Number(child.start);
-            const launchDirect = parent === pid && childStart <= launchThrough;
-            const match = launchDirect || chain ? bootstrap(Number(id), child.start, launchDirect, parent, chain) : false;
-            if (!match && childStart >= since) return workerAlive(pid, start) === true;
-            parents.push({ pid: Number(id), start: child.start, ...(typeof match === 'object' ? { chain: match } : {}) });
-          }
-          if (size === buffer.length) return 'unknown';
-        }
-      } finally { threads.closeSync(); }
+      budget = children.budgetRemaining;
+      for (const id of children.pids) {
+        if (--budget < 0) return 'unknown';
+        const child = procStat(id);
+        if (child?.ppid !== parent || (child.threads <= 1 && !isActiveProcState(child.state))) continue;
+        const childStart = Number(child.start);
+        const launchDirect = parent === pid && childStart <= launchThrough;
+        const match = launchDirect || chain ? bootstrap(id, child.start, launchDirect, parent, chain) : false;
+        if (!match && childStart >= since) return workerAlive(pid, start) === true;
+        parents.push({ pid: id, start: child.start, ...(typeof match === 'object' ? { chain: match } : {}) });
+      }
+      if (children.truncated) return 'unknown';
     }
   } catch {
     return workerAlive(pid, start) === true ? 'unknown' : false;

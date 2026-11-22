@@ -26,6 +26,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { procStartTimeSec, readProcChildren, readProcComm } from '../utils/proc.js';
 
 /** The few `node:sqlite` calls used here; Node 18 and 20 have no such module. */
 interface Statement {
@@ -320,25 +321,9 @@ export function tuiPidForPane(pane: string): number | null {
   return codexProcess(root);
 }
 
-const comm = (pid: number) => {
-  try {
-    return fs.readFileSync(`/proc/${pid}/comm`, 'utf8').trim();
-  } catch {
-    return '';
-  }
-};
+const comm = (pid: number) => readProcComm(pid) ?? '';
 
-const children = (pid: number): number[] => {
-  try {
-    return fs
-      .readdirSync(`/proc/${pid}/task`)
-      .flatMap((task) => fs.readFileSync(`/proc/${pid}/task/${task}/children`, 'utf8').trim().split(/\s+/))
-      .filter(Boolean)
-      .map(Number);
-  } catch {
-    return [];
-  }
-};
+const children = (pid: number): number[] => readProcChildren(pid)?.pids ?? [];
 
 /** `root` when it is Codex, else its shallowest `codex` descendant, three levels at most. */
 export function codexProcess(root: number): number | null {
@@ -353,17 +338,7 @@ export function codexProcess(root: number): number | null {
 
 /** When `pid` started, in Unix seconds, from /proc; null off Linux. */
 export function processStart(pid: number): number | null {
-  try {
-    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    // The command may hold spaces and parentheses: fields count from the last ')'.
-    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-    const ticks = Number(fields[19]);
-    const boot = /^btime (\d+)$/m.exec(fs.readFileSync('/proc/stat', 'utf8'))?.[1];
-    // USER_HZ is 100 on every Linux the HUD runs on.
-    return Number.isFinite(ticks) && boot ? Number(boot) + ticks / 100 : null;
-  } catch {
-    return null;
-  }
+  return procStartTimeSec(pid);
 }
 
 /** Least time between two reads of the log. */
