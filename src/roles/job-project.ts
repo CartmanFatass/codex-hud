@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId, listedPanes, runHerdr } from './herdr-run.js';
 import { sharedRoot } from './projects.js';
+import { JOB_ID_RE, type JobIndexCache } from './job-index-cache.js';
 import { jobFiles } from '../mcp/paths.js';
 import type { Job } from '../mcp/job-contracts.js';
 
@@ -25,7 +26,7 @@ export function projectJobFilter(cwd: string) {
 
 /** Missing/malformed herdr evidence cannot transfer ownership. Never use a workspace-filtered list. */
 export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv,
-  owesCaller: (dir: string, job: Record<string, unknown>) => boolean) {
+  owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache) {
   const other = jobs.filter((job) => herdrId(job.herdr_pane) && job.herdr_pane !== pane);
   if (!other.length) return false;
   const matches = projectJobFilter(cwd);
@@ -49,12 +50,22 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
     const lock = spawnSync('flock', ['-nx', '3'], { env, stdio: ['ignore', 'ignore', 'ignore', fd], timeout: 1000 });
     if (lock.status !== 0) return false;
     for (const job of orphans) {
-      if (typeof job.job !== 'string' || !/^j[0-9a-f]{16}$/.test(job.job)) continue;
+      if (typeof job.job !== 'string' || !JOB_ID_RE.test(job.job)) continue;
       const dir = join(root, job.job), file = join(dir, jobFiles.job);
       try {
-        const latest = readJsonFile(file) as Partial<Job>;
+        let latest: Partial<Job> | null;
+        if (cache) {
+          const res = cache.readJob<Partial<Job>>(job.job);
+          if (res.status === 'ok') latest = res.value;
+          else if (res.status === 'truncated') latest = readJsonFile(file) as Partial<Job>;
+          else continue;
+        } else {
+          latest = readJsonFile(file) as Partial<Job>;
+        }
         if (latest?.job !== job.job || latest.herdr_pane !== job.herdr_pane || !matches(latest) || !owesCaller(dir, latest)) continue;
-        writePrivateFile(file, JSON.stringify({ ...latest, herdr_pane: pane }, null, 2) + '\n', { mkdir: false });
+        const updated = { ...latest, herdr_pane: pane };
+        if (cache) cache.writeJsonAtomic(file, updated, { indent: 2, mkdir: false });
+        else writePrivateFile(file, JSON.stringify(updated, null, 2) + '\n', { mkdir: false });
         adopted = true;
       } catch {
         // Keep scanning if a job disappears or its receipt cannot be updated.

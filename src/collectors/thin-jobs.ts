@@ -3,7 +3,9 @@ import * as fs from 'node:fs';
 import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { jobFiles } from '../mcp/paths.js';
 import { herdrId } from '../roles/herdr-run.js';
+import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
@@ -163,9 +165,11 @@ export interface JobRow extends Partial<JobProgress> {
 }
 export interface JobRowExtras {
   dir?: string;
+  cache?: JobIndexCache;
+  questionIds?: readonly string[];
   openQuestions?: number;
   reportPresent?: boolean;
-  reportAt?: number;
+  reportAt?: number | null;
   progress?: JobProgress;
 }
 /** Milestones are display metadata: watch/list rows do not read this file. */
@@ -225,7 +229,14 @@ export function jobRow(
   const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
   const cliAgent = word(s.agent) ?? word(cliInfo?.agent) ?? 'CLI';
   const stderrFirstLine = word(j.stderr_tail)?.split(/\r?\n/)[0]?.trim() || null;
-  const questionIds = extras?.dir ? openQuestionIds(extras.dir) : [];
+  const questionIds =
+    extras?.questionIds !== undefined
+      ? [...extras.questionIds]
+      : extras?.dir
+        ? extras.cache
+          ? [...extras.cache.readQa(extras.dir).openIds]
+          : openQuestionIds(extras.dir)
+        : [];
   const openQuestions = extras?.openQuestions ?? questionIds.length;
   const reason =
     displayState === 'failed'
@@ -237,15 +248,30 @@ export function jobRow(
           : displayState === 'working'
             ? (word(s.reason) ?? null)
             : (word(s.reason) ?? word(s.exit_reason) ?? null);
-  const reportPresent =
-    extras?.reportPresent !== undefined
-      ? extras.reportPresent
-      : extras?.dir
-        ? fs.existsSync(join(extras.dir, 'report.md'))
-        : s.output_written === true;
+  let reportPresent: boolean;
   let reportMtime: number | null = extras?.reportAt ?? null;
-  if (extras?.dir && reportPresent) {
-    try { reportMtime = fs.statSync(join(extras.dir, 'report.md')).mtimeMs; } catch { /* disappeared */ }
+  if (extras?.reportPresent !== undefined) {
+    reportPresent = extras.reportPresent;
+    if (extras.dir && reportPresent && extras.reportAt === undefined) {
+      if (extras.cache) {
+        reportMtime = extras.cache.readReportStat(extras.dir).mtimeMs;
+      } else {
+        try { reportMtime = fs.statSync(join(extras.dir, jobFiles.report)).mtimeMs; } catch { /* disappeared */ }
+      }
+    }
+  } else if (extras?.dir) {
+    if (extras.cache) {
+      const rep = extras.cache.readReportStat(extras.dir);
+      reportPresent = rep.present;
+      reportMtime = extras.reportAt !== undefined ? extras.reportAt : rep.mtimeMs;
+    } else {
+      reportPresent = fs.existsSync(join(extras.dir, jobFiles.report));
+      if (reportPresent && extras.reportAt === undefined) {
+        try { reportMtime = fs.statSync(join(extras.dir, jobFiles.report)).mtimeMs; } catch { /* disappeared */ }
+      }
+    }
+  } else {
+    reportPresent = s.output_written === true;
   }
   const parent = word(j.parent_job);
   return {
@@ -266,11 +292,12 @@ export function jobRow(
     ...extras?.progress,
   };
 }
-export function failureUnobserved(dir: string, observedAt: unknown): boolean {
+export function failureUnobserved(dir: string, observedAt: unknown, statusAt?: number | null): boolean {
   const observed = when(observedAt);
   if (observed === null) return true;
+  if (statusAt !== undefined) return statusAt !== null && Math.floor(statusAt) > observed;
   try {
-    const status = fs.statSync(join(dir, 'STATUS.json'), { throwIfNoEntry: false });
+    const status = fs.statSync(join(dir, jobFiles.status), { throwIfNoEntry: false });
     return status !== undefined && Math.floor(status.mtimeMs) > observed;
   } catch { return true; }
 }
@@ -283,18 +310,34 @@ const evidenceText = (store: typeof cache | null) => (path: string) => {
 export const jobSupersession = (home: string, jobs: Receipt[], cwd: string) =>
   supersession(home, jobs, evidenceText(null), cwd);
 
-export function adoptionAttention(home: string, jobs: Receipt[], cwd: string) {
+export function adoptionAttention(home: string, jobs: Receipt[], cwd: string, jobCache?: JobIndexCache) {
   const superseded = jobSupersession(home, jobs, cwd);
-  return (dir: string, job: Record<string, unknown>) => jobOwesCaller(dir, job, superseded);
+  return (dir: string, job: Record<string, unknown>) => jobOwesCaller(dir, job, superseded, jobCache);
 }
-function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (job: Receipt) => boolean): boolean {
-  let status = null;
-  try { status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8')); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  const row = jobRow(job, status, { dir });
+function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (job: Receipt) => boolean, jobCache?: JobIndexCache): boolean {
+  let status: Partial<JobStatus> | null = null;
+  let statusAt: number | null | undefined;
+  if (jobCache) {
+    const res = jobCache.readJson<Partial<JobStatus>>(join(dir, jobFiles.status));
+    if (res.status === 'ok') {
+      status = res.value;
+      statusAt = res.at;
+    } else if (res.status === 'missing') {
+      status = null;
+      statusAt = null;
+    } else if (res.status === 'truncated') {
+      status = JSON.parse(fs.readFileSync(join(dir, jobFiles.status), 'utf8'));
+    } else {
+      throw res.error;
+    }
+  } else {
+    try { status = JSON.parse(fs.readFileSync(join(dir, jobFiles.status), 'utf8')); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  }
+  const row = jobRow(job, status, { dir, cache: jobCache });
   if (failedAttempt(row) && superseded(job)) return false;
   return row.display_state === 'working' || row.state === 'idle_grace' || row.report_unread || row.open_questions > 0 ||
-    (failedAttempt(row) && failureUnobserved(dir, job.observed_at));
+    (failedAttempt(row) && failureUnobserved(dir, job.observed_at, statusAt));
 }
 
 export interface LeaseRecord {
