@@ -32,11 +32,13 @@ try {
     await Promise.all([...calls]); // Never move a mutation, long wait or its response across the boundary.
     let next;
     try {
+      const state = await current.call('snapshot');
+      if (state?.scoutedCreatePending) return; // Keep serving calls; retry the reload after the handoff.
       await withDistLock(async () => {
         seen = buildStamp();
         next = await openGeneration(url);
       });
-      await next.call('start', await current.call('snapshot'));
+      await next.call('start', state);
       await current.call('stop');
       current.retire();
       current = next;
@@ -70,6 +72,7 @@ try {
   input.on('close', async () => {
     await switching;
     await Promise.all(calls);
+    await current.call('stop');
     current.retire();
   });
 } catch (error) {

@@ -71,6 +71,7 @@ machine, inside herdr. (10.02, 22.12)
   Claude and Codex CLI workers load only the HUD worker MCP and servers named by their role, except that unreadable Codex configuration leaves its MCPs unchanged with a launch diagnostic. (22.18)
 - `context_files` and `from_jobs` write a reference index into local worker briefs and splice bounded file
   contents into browser briefs, without round-tripping through main-session context. (18.03)
+- `hud_create(scout: "<question>")` runs sonic on its role defaults in the target cwd with the target's `context_files`, then starts the target with the dossier in `from_jobs` or a failure note in its brief, with one notice or MCP task for both stages; sonic cannot request a scout. (22.19)
 - `isolation: "worktree"` creates a clean Git worktree with linked `node_modules`; `hud_read` gives
   `git_summary`, including files also changed in other managed worktrees of the same checkout. After closure
   the watcher reaps only clean worktrees that are merged or unmodified, or whose commits are already on

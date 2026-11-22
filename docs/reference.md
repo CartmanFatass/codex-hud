@@ -145,6 +145,14 @@ defaults to a hash of the caller pane, role, cwd and task. By default it dispatc
 `hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields
 can override them. It selects an available place through the role or preset chain unless you supply `on`.
 
+Pass `scout: "<question>"` to run sonic first in the target's working directory (including its managed worktree),
+with the same `context_files` and sonic's normal role settings. `hud_create` returns the target job ID or one MCP task
+immediately; HUD starts the target after the scout and adds the dossier to `from_jobs` (leave one of the 16 slots free).
+There is no separate scout notice. If sonic fails, needs attention or exceeds ten minutes, HUD proceeds without the
+dossier, notes the failure in the target brief and closes a still-running scout. `role: "sonic"` rejects `scout`.
+The question becomes the sonic task text (including for Sonic auto-thinking if enabled). A browser target receives
+the dossier subject to the usual context byte limits.
+
 Pass `checks` for up to five shell commands you would otherwise run yourself in the job's `cwd`. The HUD runs them
 in order with `bash -lc` after a declared pi or CLI settlement, with a ten-minute timeout per command. Retries and
 closed-job repairs inherit them. `hud_read({job})` shows check outcomes; `mode: "full"` includes the bounded failure tail; a new turn or rewritten

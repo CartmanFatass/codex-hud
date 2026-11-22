@@ -29,6 +29,7 @@ export const ROLE_TOOLS = [
       role: text,
       request_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same caller, role, cwd and task match for 10 minutes.' },
       task: text,
+      scout: { ...text, minLength: 1, description: 'Run sonic on this question first and attach its report. Not available for role sonic.' },
       retry_of: { ...text, description: 'Failed or stopped job ID. Reuses its brief and options and selects an available place.' },
       cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
       package: { ...text, description: 'Display label.' },

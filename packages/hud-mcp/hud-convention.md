@@ -12,6 +12,7 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - When more than one job needs the same answer (a test source, an interface, who owns a step), put it in the next
   briefs or in a project file they name, not in one `hud_respond` per job.
 - A role defines the work (`instructions`) and an ordered `run` list of places (`pi`, `cli`, or `bro`); `hud_create` picks the first available place (`runs_on`) unless overridden with `on`.
+- `hud_create({ role, task, scout: "<question>" })` runs sonic first and attaches its dossier to the target via `from_jobs`; one notice or MCP task covers both, and a failed scout leaves a note instead.
 - Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
   otherwise choose the simplest option and note it.
 - Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
@@ -36,4 +37,4 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Give a ledger slice the milestone of the task the owner tries as one (a feature or milestone); the panel can group to-try rows by it.
 - The orchestrator writes Waiting items in the owner's panel language.
 - On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong. Never list a `try` slice under Waiting for the owner: the ledger's `try` rows are the to-try list, and Waiting holds only what is not a try (flagged slices, owner decisions). A Waiting item that depends on slices or tickets ends with `(waits on <slice ID>, <feature>/<NN>)`; the panel drops it once every one is accepted, dropped or done (a flagged slice: `(waits on <its ID>)`).
-The main session owns every handoff and decides every next step. HUD does not chain these steps.
+The main session owns handoffs and decides the next step; HUD only chains the steps within a requested fixed flow.

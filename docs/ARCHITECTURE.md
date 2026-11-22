@@ -296,7 +296,8 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 | `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
 | `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
 | `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240, can include the worker summary), question flag and outcome; no file bodies |
-| Sonic auto-thinking | First 4000 characters of the dispatched task, plus sonic role scope and thinking purposes; no standing brief or referenced files |
+| Sonic auto-thinking | First 4000 characters of the dispatched task (the scout question for scouted dispatch), plus sonic role scope and thinking purposes; no standing brief or referenced files |
+| Scouted dispatch | The scout question and target `context_files` go to sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
 | Settings Test API | Fixed synthetic messages only |
 
 `JobSentences` replaces separate native labels/digests/causes/progress schedulers;

@@ -300,8 +300,10 @@ export async function ask({ dir, job }, input, timeoutRaw = process.env.HUD_ASK_
   const published = publishQuestion(qa, { ...input, tag });
   let pushed = 'not pushed (no --notify / --orchestrator)';
   // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
-  const orch = readJob(dir).herdr_pane || orchestrator(dir);
-  if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
+  const receipt = readJob(dir);
+  const orch = receipt.herdr_pane || orchestrator(dir);
+  if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
+  else if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
   else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
     const ran = await notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))), { signal });
     signal?.throwIfAborted();

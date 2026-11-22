@@ -425,7 +425,7 @@ function watchRows(home: string, pane: string | null, receipts: ReturnType<typeo
   const rows: JobRow[] = [];
   for (const { id, job } of receipts) {
     if (rows.length === 200) break;
-    if (pane !== null && job.herdr_pane !== pane) continue;
+    if (job.scout_only === true || (pane !== null && job.herdr_pane !== pane)) continue;
     const dir = join(home, 'jobs', id);
     const status = json(join(dir, 'STATUS.json'), JSON.parse, watchCache)?.v ?? null;
     try {

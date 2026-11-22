@@ -105,6 +105,7 @@ interface Job extends PiOptions {
   model_source?: string | null;
   read_at?: string;
   parent_job?: string;
+  scout_only?: true;
   pi_sent_at?: string;
   observed_at?: string;
   reaped_at?: string;
@@ -1307,12 +1308,60 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined));
 }
 
-async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean, parentJob?: string, repairOf?: string, retryInput?: Args) {
+const pendingScouts = new Map<string, AbortController>();
+const scoutedCreates = new Set<Promise<void>>();
+const SCOUT_WAIT_MS = 10 * 60_000;
+
+async function runCreateScout(target: Job, question: string, contextCwd: string, contextFiles: unknown, signal: AbortSignal): Promise<{ id?: string; failure?: string }> {
+  let scout: Job | null = null;
+  let discard = false;
+  const deadline = performance.now() + SCOUT_WAIT_MS;
+  try {
+    const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
+      target.herdr_pane, `scout:${target.job}`, false, target.job, undefined, undefined, contextCwd);
+    if (!('job' in result)) {
+      return { failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch' };
+    }
+    const id = result.job;
+    while ((scout = findJob(id))) {
+      const { row } = readRow(scout);
+      if (signal.aborted) { discard = !settled(row.state); return {}; }
+      if (settled(row.state)) {
+        if (row.state === 'failed' || row.state === 'stopped') return { failure: row.reason ?? row.state };
+        if (!row.report_present) return { failure: 'settled without a report' };
+        save({ ...scout, read_at: new Date().toISOString() });
+        return { id };
+      }
+      const attention = row.open_questions || row.blocked || row.state === 'waiting_orchestrator';
+      const left = deadline - performance.now();
+      if (attention || left <= 0) {
+        discard = true;
+        return { failure: attention ? (row.open_questions ? 'asked a question' : row.reason ?? 'needed attention') : 'timed out' };
+      }
+      await sleep(Math.min(500, left), undefined, { signal });
+    }
+    return { failure: 'scout receipt disappeared' };
+  } catch (error) {
+    discard = !!scout;
+    return { failure: error instanceof Error ? error.message : String(error) };
+  } finally {
+    if (discard && scout) await closeJob(scout, true).catch(() => ensureWatcher());
+  }
+}
+
+async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean, parentJob?: string, repairOf?: string, retryInput?: Args, scoutContextCwd?: string) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
   // `architect` names oracle unless a role file defines its own architect.
   const role = asked === 'architect' && !found.roles().has(asked) ? 'oracle' : asked;
+  if (args.scout !== undefined && (role === 'sonic' || typeof args.scout !== 'string' || !args.scout.trim())) {
+    return { ok: false, code: 'invalid_arguments', error: role === 'sonic' ? 'scout is not available for role sonic' : 'scout must be a nonempty question' };
+  }
+  const scoutQuestion = args.scout as string | undefined;
+  if (scoutQuestion && Array.isArray(args.from_jobs) && args.from_jobs.length >= 16) {
+    return { ok: false, code: 'invalid_arguments', error: 'scouted dispatch reserves one of the 16 from_jobs entries' };
+  }
   const definition = found.roles().get(role);
   if (!definition) {
     const invalid = found.invalidRole(role);
@@ -1389,7 +1438,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const inline = initial.place.harness === 'bro';
   const project = found.project();
-  const context = await assembleContext(args, cwd, inline, project, repairOf);
+  const contextCwd = scoutContextCwd ?? cwd;
+  const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
+  const context = await contextFor(args, inline);
   if ('code' in context) return context;
   let overrideHarnesses: Record<string, { model?: string }> | null = null;
   if (onName) {
@@ -1418,6 +1469,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
     target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
     ...(parentJob ? { parent_job: parentJob } : {}),
+    ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
     ...(args.package === undefined ? {} : { package: args.package as string }),
     ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
     ...(args.slice === undefined ? {} : { slice: args.slice as string }),
@@ -1429,8 +1481,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const dir = directory(id);
   const selected = definition.presets?.some((p) => p.run === definition.run);
   const candidates = effective.places.filter((p) => p === details || p.state === 'standby');
+  let scoutTask: HudTask | undefined;
+  let scoutResult: Awaited<ReturnType<typeof runCreateScout>> | undefined;
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
-  return keyLock(`job:${id}`, async () => {
+  const launch = () => keyLock(`job:${id}`, async () => {
     let job = base;
     let result: DispatchResult = launchError('no launch attempted');
     let reason = '';
@@ -1477,10 +1531,18 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
-      const briefContext = inline === (place.harness === 'bro') ? context : await assembleContext(args, cwd, place.harness === 'bro', project, repairOf);
+      const browser = place.harness === 'bro';
+      let briefContext = inline === browser ? context : await contextFor(args, browser);
+      let scoutFailure = scoutResult?.failure;
+      if (scoutResult?.id && !('code' in briefContext)) {
+        const withScout = await contextFor({ ...args, from_jobs: [...(briefContext.metadata.from_jobs ?? []), scoutResult.id] }, browser);
+        if ('code' in withScout) scoutFailure = withScout.code === 'context_too_large' ? 'report exceeds the context limit' : 'report is unreadable';
+        else briefContext = withScout;
+      }
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
-        writeBrief(job, dir, task, briefContext.block, attempts.length === 0);
+        const note = scoutFailure ? `Scout failed: ${digestLine(scoutFailure.replace(/\s+/g, ' '), 300)}\n\n` : '';
+        writeBrief(job, dir, task, note + briefContext.block, !scoutQuestion && attempts.length === 0);
       }
       // Persist before dispatch: an interrupted launch must not dispatch again on retry.
       save(job, attempts.length > 0);
@@ -1489,16 +1551,17 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           const source = findJob(job.retry_of);
           if (source) save({ ...source, observed_at: new Date().toISOString() });
         }
-        if (parentJob) {
+        if (parentJob && !job.scout_only) {
           const children = join(directory(parentJob), '.sonic');
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
-        } else createdJobs.add(id);
+        } else if (!parentJob) createdJobs.add(id);
         ensureWatcher();
-        if (taskClient && !parentJob) taskEntry = beginTask(job);
-        else void ensureQueueWatcher(pane, hudHome);
+        if (taskClient && !parentJob && !scoutTask) taskEntry = beginTask(job);
+        else if (!scoutTask && !job.scout_only) void ensureQueueWatcher(pane, hudHome);
       }
       const launchRole = preset || selected ? { ...definition, skills: place.skills } : definition;
+      if (scoutQuestion && attempts.length === 0) fs.rmSync(join(dir, 'STATUS.json'), { force: true });
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
       else result = await launchPlace(job, launchRole, place, dir, task, worktree);
       reason = result.exit_code === 0 ? '' : launchReason(result);
@@ -1508,9 +1571,56 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (!result.preInput || result.cleanupFailed) break;
       save(job);
     }
-    finishLaunch(job, dir, result, reason);
+    finishLaunch(job, dir, result, reason, !scoutQuestion);
+    if (scoutTask) scoutTask.fence = taskFence(job);
     return finishTask(taskEntry, job, result.exit_code === 0, taskEntry && launchSummary(job)) ?? created(job);
   });
+  if (!scoutQuestion) return launch();
+
+  // The target ID (and task, if negotiated) is stable across both stages.
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeBrief({ ...base, place: initial.place }, dir, task, context.block, true);
+  save(base);
+  writeCreateStatus(dir, { state: 'working', reason: 'scouting' });
+  createdJobs.add(id);
+  cursor.set(id, readRow(base).row);
+  ensureWatcher();
+  if (taskClient) {
+    scoutTask = beginTask(base);
+    scoutTask.view.statusMessage = taskLabel(scoutTask, 'scouting');
+  } else void ensureQueueWatcher(pane, hudHome);
+  const reply = finishTask(scoutTask, base, true) ?? created(base);
+  const controller = new AbortController();
+  pendingScouts.set(id, controller);
+  const creating = (async () => {
+    try {
+      // Keep worktree creation behind the same trust gate as ordinary worktree dispatch.
+      if (worktree && candidates.some(({ place }) => !('code' in placeOptions(argsFor(place), place)) &&
+        (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
+        await prepareWorktree(base, worktree);
+      }
+      if (!controller.signal.aborted && (!worktree || base.worktree)) {
+        scoutResult = await runCreateScout(base, scoutQuestion, cwd, context.metadata.context_files, controller.signal);
+      }
+      if (controller.signal.aborted) {
+        save({ ...base, dispatch_exit_code: 1 });
+        writeCreateStatus(dir, { state: 'stopped', exit_reason: 'scouted dispatch stopped', ended_at: new Date().toISOString() });
+        return;
+      }
+      // Hand off synchronously: subsequent mutations queue behind the target launch lock.
+      pendingScouts.delete(id);
+      await launch();
+    } catch (error) {
+      const latest = findJob(id) ?? base;
+      finishLaunch(latest, dir, { ...launchError(String(error)), preInput: true }, String(error), false);
+      if (scoutTask) scoutTask.fence = taskFence(latest);
+    } finally {
+      pendingScouts.delete(id);
+    }
+  })();
+  scoutedCreates.add(creating);
+  void creating.then(() => scoutedCreates.delete(creating), () => scoutedCreates.delete(creating));
+  return reply;
 }
 
 function writeBrief(job: Job, dir: string, task: string, block: string, first: boolean) {
@@ -1530,6 +1640,14 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
   }
   // Standing brief and context references follow the task; labels read the brief's opening lines.
   fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: first ? 'wx' : 'w', mode: 0o600 });
+}
+
+async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
+  await addWorktree(worktree);
+  job.worktree = worktree;
+  job.cwd = worktree.root;
+  save(job);
+  await populateWorktree(worktree);
 }
 
 async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree): Promise<DispatchResult> {
@@ -1554,13 +1672,7 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
         return rejectLaunch({ ...failCli(dir, job, place, reason), code: 'untrusted_cwd' });
       }
     }
-    if (worktree && !job.worktree) {
-      await addWorktree(worktree);
-      job.worktree = worktree;
-      job.cwd = worktree.root;
-      save(job);
-      await populateWorktree(worktree);
-    }
+    if (worktree && !job.worktree) await prepareWorktree(job, worktree);
     if (worktree && place.harness === 'cli') propagateCliTrust(place.agent!, worktree.main_root, worktree.root);
     save(job);
   } catch (error) {
@@ -1584,7 +1696,13 @@ function launchReason(result: DispatchResult) {
   return (detail || result.stdout.trim().split(/\r?\n/, 1)[0] || `launch exited ${result.exit_code}`).slice(0, 500);
 }
 
-function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string) {
+function writeCreateStatus(dir: string, status: object) {
+  const file = join(dir, 'STATUS.json'), temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(status) + '\n', { mode: 0o600 });
+  fs.renameSync(temp, file);
+}
+
+function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string, advanceCursor = true) {
   job.dispatch_exit_code = result.exit_code;
   if (result.code) job.dispatch_code = result.code;
   if (result.path) job.dispatch_path = result.path;
@@ -1593,22 +1711,17 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
   if (result.exit_code !== 0 && (result.preInput || !fs.existsSync(statusFile))) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reason);
     if (outcome.marked) job.exhaustion_marked = true;
-    fs.writeFileSync(
-      `${statusFile}.${process.pid}.tmp`,
-      JSON.stringify({
-        ...result.status,
-        state: 'failed',
-        harness: job.place?.harness,
-        ...(job.bro ? { provider: job.bro.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
-        exit_reason: outcome.reason,
-        ended_at: new Date().toISOString(),
-      }) + '\n',
-      { mode: 0o600 }
-    );
-    fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+    writeCreateStatus(dir, {
+      ...result.status,
+      state: 'failed',
+      harness: job.place?.harness,
+      ...(job.bro ? { provider: job.bro.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
+      exit_reason: outcome.reason,
+      ended_at: new Date().toISOString(),
+    });
   }
   save(job);
-  if (!job.parent_job) cursor.set(job.job, readRow(job).row);
+  if (advanceCursor && !job.parent_job) cursor.set(job.job, readRow(job).row);
 }
 
 function harnessSwitchFailure(error: HarnessSwitchError) {
@@ -1940,6 +2053,11 @@ async function callJob(name: string, args: Args, detail: boolean) {
 }
 
 async function closeJob(job: Job, stop = false) {
+  const scouting = pendingScouts.get(job.job);
+  if (scouting) {
+    scouting.abort();
+    return { exit_code: 0, last_line: 'stopping scouted dispatch' };
+  }
   const dir = directory(job.job);
   const { row, status } = readRow(job);
   const { result, complete, issue } = await reapWorkerTree(dir, status, () => {
@@ -2003,7 +2121,7 @@ async function adoptSessionJobs() {
   return true;
 }
 function ownsJob(job: Job) {
-  return callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job);
+  return !job.scout_only && (callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
 }
 function sessionJobs() {
   const own = jobs().filter(ownsJob);
@@ -2380,7 +2498,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
 }
 // Private live-connection handoff, never a disk recovery or a new client's authority.
 function snapshot() {
-  return { version: 1, tasks, activeTasks, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
+  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, tasks, activeTasks, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
     callerHarness, sentConventionVersion, sentCreateHint, createdJobs, cursor, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
@@ -2399,7 +2517,9 @@ export function openRuntime() {
       answers.offset = state.answersAt;
       for (const task of tasks.values()) armExpiry(task);
     },
-    stop() {
+    async stop() {
+      for (const scout of pendingScouts.values()) scout.abort();
+      await Promise.allSettled([...scoutedCreates]);
       for (const timer of expiry) clearTimeout(timer);
       expiry.clear(); tasks.clear(); activeTasks.clear(); landTasks.clear(); createdJobs.clear(); cursor?.clear();
     },

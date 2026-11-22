@@ -1,0 +1,130 @@
+import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import { startSessionWatch } from '../../dist/cli/watch.js';
+import { git, initRepo } from '../fixtures/managed-worktree.mjs';
+import { fixture, publishSonic, resultValue, sonicTask, taskCall, taskJob, taskRpc, until, workerClient } from '../helpers/thin-mcp-harness.mjs';
+
+const receipt = (dir) => JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+const brief = (dir) => fs.readFileSync(join(dir, 'brief.md'), 'utf8');
+const jobsDir = (f) => join(f.env.HUD_HOME, 'jobs');
+async function getScout(f, parent) {
+  let scout;
+  await until(() => scout = fs.readdirSync(jobsDir(f)).map((id) => join(jobsDir(f), id)).find((dir) =>
+    fs.existsSync(join(dir, 'job.json')) && receipt(dir).parent_job === parent && receipt(dir).dispatch_exit_code !== null));
+  return scout;
+}
+const waitLaunch = (job) => until(() => receipt(job.task_dir).dispatch_exit_code !== null);
+const scoutQuestion = 'Where is the synthetic input parsed?';
+
+test('scouted create returns one MCP task, shares the managed cwd and appends the settled dossier', async (t) => {
+  const f = await fixture(t);
+  sonicTask(f);
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const cwd = initRepo(f.root);
+  fs.writeFileSync(join(cwd, 'input.md'), 'Synthetic input.');
+  git(cwd, 'add', 'input.md');
+  git(cwd, 'commit', '-m', 'Synthetic input');
+  const upstream = await f.call('hud_create', { role: 'imp', task: 'Synthetic prerequisite.', cwd });
+  fs.writeFileSync(join(upstream.task_dir, 'report.md'), 'Synthetic prerequisite report.');
+  publishSonic(upstream.task_dir, { state: 'done' });
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  const args = { role: 'imp', task: 'Implement the synthetic parser.', thinking: 'low',
+    cwd, isolation: 'worktree', context_files: ['input.md'], from_jobs: [upstream.job], scout: scoutQuestion };
+  const task = await taskCall(rpc, 'hud_create', args);
+  const target = taskJob(f, task);
+  assert.match(task.statusMessage, /scouting/);
+  const get = () => rpc('tasks/get', { taskId: task.taskId });
+  const scout = await getScout(f, target.job);
+  const scouted = receipt(scout);
+  assert.equal(scouted.role, 'sonic');
+  assert.equal(scouted.thinking, 'high');
+  assert.equal(scouted.thinking_source, 'default');
+  assert.equal(scouted.cwd, receipt(target.task_dir).worktree.root);
+  assert.deepEqual(scouted.context_files, [join(cwd, 'input.md')]);
+  assert.ok(brief(scout).startsWith(scoutQuestion + '\n'));
+  assert.ok(!fs.existsSync(join(scout, 'mcp-task.json')));
+  assert.ok(!fs.existsSync(join(target.task_dir, 'SESSION.txt')));
+  assert.equal(resultValue(await taskCall(rpc, 'hud_create', args)).job, target.job);
+  assert.equal(fs.readdirSync(jobsDir(f)).length, 3);
+
+  fs.writeFileSync(join(scout, 'report.md'), 'Synthetic dossier.');
+  assert.equal((await get()).status, 'working', 'writing a report alone does not settle the scout');
+  assert.ok(!fs.existsSync(join(target.task_dir, 'SESSION.txt')));
+  publishSonic(scout, { state: 'done' });
+  await waitLaunch(target);
+  assert.equal(receipt(target.task_dir).cwd, scouted.cwd);
+  assert.deepEqual(receipt(target.task_dir).from_jobs, [upstream.job, scouted.job]);
+  assert.ok(brief(target.task_dir).includes(`${scouted.job} report: ${JSON.stringify(join(scout, 'report.md'))}`));
+  assert.equal((await get()).status, 'working', 'the scout does not complete the task');
+  fs.writeFileSync(join(target.task_dir, 'report.md'), 'Synthetic target result.');
+  publishSonic(target.task_dir, { state: 'done' });
+  const done = await get();
+  assert.equal(done.taskId, task.taskId);
+  assert.equal(done.status, 'completed');
+  assert.match(done.result.content[0].text, /Synthetic target result/);
+  assert.ok(!done.result.content[0].text.includes(scouted.job));
+});
+
+test('a scout question is handled, the scout is closed, and only the target notifies', async (t) => {
+  const f = await fixture(t);
+  sonicTask(f);
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const lines = [];
+  t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, (batch) => lines.push(...batch), 10));
+  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic target.', scout: scoutQuestion });
+  const scout = await getScout(f, target.job);
+  const scouted = receipt(scout);
+  const worker = workerClient(t, f, scout, '0');
+  assert.match((await worker('hud_ask', { question: 'Which synthetic parser?', default: 'A' })).content[0].text,
+    /handled by scouted dispatch/);
+  await waitLaunch(target);
+  assert.match(brief(target.task_dir), /^Scout failed: asked a question$/m);
+  assert.equal(receipt(target.task_dir).from_jobs, undefined);
+  assert.ok(f.commands().some(({ command, args }) => command === 'pi-role-reap' && args[0] === scout));
+  assert.ok(!f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === f.env.HERDR_PANE_ID));
+  fs.writeFileSync(join(target.task_dir, 'report.md'), 'Synthetic target result.');
+  publishSonic(target.task_dir, { state: 'done' });
+  await until(() => lines.some((line) => line.includes(target.job)));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /report \| hud_read/);
+  const { changes } = await f.call('hud_read', { view: 'recent' });
+  assert.ok(!changes.some((line) => line.includes(scouted.job)));
+});
+
+test('an unavailable scout leaves a failure note, but sonic cannot request a scout', async (t) => {
+  const f = await fixture(t);
+  const invalid = await f.call('hud_create', { role: 'sonic', task: 'Synthetic scout.', scout: scoutQuestion });
+  assert.equal(invalid.code, 'invalid_arguments');
+  assert.ok(!fs.existsSync(jobsDir(f)));
+  fs.mkdirSync(join(f.root, '.hud'));
+  fs.writeFileSync(join(f.root, '.hud/project.json'), JSON.stringify({ version: 1, roles: ['imp'] }));
+  fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
+    version: 1, projects: [{ root: f.root, registered_at: '2026-01-01T00:00:00.000Z' }],
+  }));
+  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic fallback.', scout: scoutQuestion });
+  await waitLaunch(target);
+  assert.match(brief(target.task_dir), /^Scout failed: Role sonic is not configured or is hidden in this project$/m);
+  assert.equal(receipt(target.task_dir).dispatch_exit_code, 0);
+  assert.deepEqual(fs.readdirSync(jobsDir(f)), [target.job]);
+});
+
+test('a scout that exceeds its time cap is closed and the target still starts', async (t) => {
+  const f = await fixture(t, { probe: `
+    import fs from 'node:fs';
+    import { join } from 'node:path';
+    const now = performance.now.bind(performance);
+    Object.defineProperty(performance, 'now', { value: () => now() +
+      (fs.existsSync(join(process.env.HOME, 'expire-scout')) ? 600001 : 0) });
+  ` });
+  sonicTask(f);
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic time cap.', scout: scoutQuestion });
+  const scout = await getScout(f, target.job);
+  fs.writeFileSync(join(f.env.HOME, 'expire-scout'), '');
+  await waitLaunch(target);
+  assert.match(brief(target.task_dir), /^Scout failed: timed out$/m);
+  assert.ok(f.commands().some(({ command, args }) => command === 'pi-role-reap' && args[0] === scout));
+});

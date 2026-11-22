@@ -100,6 +100,13 @@ split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 
 split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
 浏览器（`bro`）位置拒绝这些 pi 选项。
 
+传入 `scout: "<问题>"` 时，HUD 先按 sonic 角色的常规设置，在目标任务的工作目录（包括托管工作树）中用相同的
+`context_files` 运行 sonic。`hud_create` 立即返回目标任务 ID，支持 MCP tasks 的客户端则获得一个覆盖两阶段的任务；
+收集结束后，HUD 自动启动目标任务，并把资料报告加入 `from_jobs`（16 个名额中须预留一个）。不会单独发送 sonic 通知。
+若 sonic 失败、需要人工处理或超过十分钟，HUD 仍会启动目标任务，在简报中注明原因，并关闭仍在运行的 sonic。
+`role: "sonic"` 不接受 `scout`。问题就是 sonic 的任务正文；若启用了 Sonic 自动选档，也会将它用于选档。
+浏览器目标接收的资料报告仍受通常的上下文字节限制。
+
 可传入 `checks`，指定原本要亲自复跑的检查命令，最多五条。Pi 或 CLI 工作者声明本轮完成后，HUD 在任务的 `cwd` 中
 用 `bash -lc` 依次运行命令，每条限时十分钟。重试和关闭后新建的修复任务会继承这些命令。`hud_read({job})` 显示
 每项是否通过；`mode: "full"` 同时显示失败输出的末尾；开始新一轮或重写报告会让旧结果过期。`hud watch` 在结算行或检查完成后的通知中附上
