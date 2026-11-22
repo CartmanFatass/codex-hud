@@ -10,3 +10,5 @@
 
 ## Comments
 - 2026-11-21: build on primitives/01 (atomic-fs) instead of adding job-io's second atomic layer; S1 keeps only the typed contracts and paths.
+
+- Landed 2b50bd0b80f326fd66afeaebfbde2391becd7c30; gate 6/6 passed.

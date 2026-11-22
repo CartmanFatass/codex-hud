@@ -29,6 +29,7 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · MCP-SPLIT · MCP-SPLIT-01 · Typed job contracts and one atomic write helper (2b50bd0b)
 - try · JOB-INDEX · JOB-INDEX-01 · Shared job-index mtime cache core (0f3d1968)
 - try · PRIMITIVES · PRIMITIVES-03 · hud-mcp sources and bins use the shared primitives (e0747c7a)
 - try · PRIMITIVES · PRIMITIVES-02 · One /proc reader (a865f39e)
