@@ -12,3 +12,5 @@
 ## Comments
 
 - Targeted checks: release-to-grant 17.3 ms, SIGKILL-to-grant 753.7 ms. No lock or wait subprocesses; the existing Git project lookup remains. Control lease rows passed in both layouts and languages.
+
+- Landed b448985e5816fa2d3fab29a78d2f8ebb23613730; gate 5/5 passed.
