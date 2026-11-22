@@ -13,6 +13,8 @@ interface OutputSample {
 }
 
 const STALE_MS = 10_000;
+/** Cap on open tool call IDs within a turn so orphaned calls cannot grow unboundedly. */
+export const TOKEN_RATE_MAX_OPEN_TOOLS = 256;
 const validTotal = (value: number | undefined): value is number =>
   value !== undefined && Number.isSafeInteger(value) && value >= 0;
 
@@ -109,6 +111,11 @@ export class TokenRateTracker {
     const atMs = at.getTime();
     if (!id || !this.validToolTime(atMs) || this.tools.has(id)) return;
     if (this.tools.size === 0) this.toolsStartedAtMs = atMs;
+    while (this.tools.size >= TOKEN_RATE_MAX_OPEN_TOOLS) {
+      const oldest = this.tools.values().next().value;
+      if (oldest === undefined) break;
+      this.tools.delete(oldest);
+    }
     this.tools.add(id);
     this.toolsLastAtMs = atMs;
   }
@@ -145,6 +152,11 @@ export class TokenRateTracker {
 
   get snapshot(): TokenRateSnapshot | undefined {
     return this.latest;
+  }
+
+  /** Number of currently open tool calls tracked for wait exclusion. */
+  get openToolCount(): number {
+    return this.tools.size;
   }
 }
 

@@ -12,7 +12,8 @@ import { readCodexStatusline, statuslineResource, statuslineTool } from './codex
 import { panelDelivery } from './panel-delivery.js';
 import { editTickets, readyTickets } from './local-tickets.js';
 import { startLand, landTask } from './land.js';
-import { isFlowId, landEvents, landView, readLand } from './land-state.js';
+import { activeLand, isFlowId, landEvents, landView, readLand } from './land-state.js';
+import { pruneCreatedJobs, pruneLandTasks, pruneTasks, rememberCreatedJob, rememberLandTask } from './task-bounds.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
@@ -1718,7 +1719,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       save(queuedJob);
       writeCreateStatus(dir, { state: 'queued', role, updated_at: nowIso });
       const position = queuePositionsForJobs().get(id) ?? 1;
-      createdJobs.add(id);
+      trackCreatedJob(id);
       const queuedRow = readRow(queuedJob, false, position).row;
       cursor.set(id, queuedRow);
       ensureWatcher();
@@ -1882,7 +1883,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           const children = join(directory(parentJob), jobFiles.sonic);
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
-        } else if (!parentJob) createdJobs.add(id);
+        } else if (!parentJob) trackCreatedJob(id);
         ensureWatcher();
         if (taskClient && !parentJob && !scoutTask) taskEntry = beginTask(job);
         else if (!scoutTask && !job.scout_only) void ensureQueueWatcher(pane, hudHome);
@@ -1917,7 +1918,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   writeBrief({ ...base, place: initial!.place }, dir, task, context!.block, true);
   save(base);
   writeCreateStatus(dir, { state: 'working', reason: 'scouting' });
-  createdJobs.add(id);
+  trackCreatedJob(id);
   const scoutRow = readRow(base).row;
   cursor.set(id, scoutRow);
   ensureWatcher();
@@ -2567,7 +2568,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, taskClient);
     ensureWatcher();
     if (taskClient) {
-      landTasks.add(flow.flow);
+      rememberLandTask(landTasks, flow.flow, landActive);
       return { resultType: 'task', ...landTask(hudHome, flow) };
     }
     if (callerPane) void ensureQueueWatcher(callerPane, hudHome);
@@ -2918,6 +2919,8 @@ function deliveryHint(watcherAlive: boolean): string {
   }
 }
 let createdJobs = new Set<string>();
+const trackCreatedJob = (id: string) => rememberCreatedJob(createdJobs, id, (jobId) => !!findJob(jobId));
+const landActive = (id: string) => { const flow = readLand(hudHome, id); return !!flow && activeLand(flow); };
 async function adoptSessionJobs() {
   if (!callerPane) return false;
   const receipts = jobs(), cwd = process.cwd();
@@ -3016,12 +3019,21 @@ let batchTimer: NodeJS.Timeout | undefined;
 let batchSending: Promise<void> | undefined;
 let handedOff = false;
 let landTasks = new Set<string>();
-const expiry = new Set<NodeJS.Timeout>();
+const expiry = new Map<string, NodeJS.Timeout>();
+function disarmExpiry(id: string) {
+  const timer = expiry.get(id);
+  if (timer) { clearTimeout(timer); expiry.delete(id); }
+}
 function armExpiry(task: HudTask) {
+  disarmExpiry(task.id);
   const timer = setTimeout(() => {
-    expiry.delete(timer); tasks.delete(task.id); releaseTask(task);
+    expiry.delete(task.id); tasks.delete(task.id); releaseTask(task);
   }, Math.max(0, task.expiresAt! - Date.now())).unref();
-  expiry.add(timer);
+  expiry.set(task.id, timer);
+}
+function evictTask(task: HudTask) {
+  disarmExpiry(task.id);
+  releaseTask(task);
 }
 const markerFile = (task: HudTask) => join(directory(task.job), jobFiles.task);
 function claimTask(task: HudTask, job: Job) {
@@ -3083,10 +3095,12 @@ function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: s
   if (!ok) { releaseTask(task); return; }
   task.fence = taskFence(job);
   if (launch) task.view.statusMessage += ` — ${launch}`;
+  tasks.delete(task.id);
   tasks.set(task.id, task);
   activeTasks.set(task.job, task);
   task.expiresAt = Date.now() + TASK_TTL;
   armExpiry(task);
+  pruneTasks(tasks, Date.now(), evictTask);
   return { resultType: 'task', ...wireTask(task) };
 }
 function registerBatchTask(task: HudTask | undefined, job: Job, ok: boolean): void {
@@ -3266,7 +3280,12 @@ function sampleTask(task: HudTask): TaskView {
 async function taskRequest(taskId: string, cancel: boolean) {
   if (landTasks.has(taskId)) {
     const flow = readLand(hudHome, taskId);
-    if (flow) return landTask(hudHome, flow, cancel);
+    if (flow) {
+      landTasks.delete(taskId);
+      landTasks.add(taskId);
+      return landTask(hudHome, flow, cancel);
+    }
+    landTasks.delete(taskId);
   }
   const task = tasks.get(taskId);
   if (!task) {
@@ -3450,6 +3469,9 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
 async function snapshot() {
   const toolsList = JSON.stringify(await toolsListResult());
   handedOff = true;
+  pruneCreatedJobs(createdJobs, (id) => !!findJob(id));
+  pruneLandTasks(landTasks, landActive);
+  pruneTasks(tasks, Date.now(), evictTask);
   return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
     callerHarness, sentConventionVersion, sentCreateHint, createdJobs, cursor, triesAt: tries.delivered, answersAt: answers.offset };
 }
@@ -3478,7 +3500,7 @@ export function openRuntime() {
       await stopBatchDelivery(!handedOff);
       for (const scout of pendingScouts.values()) scout.abort();
       await Promise.allSettled([...scoutedCreates]);
-      for (const timer of expiry) clearTimeout(timer);
+      for (const timer of expiry.values()) clearTimeout(timer);
       expiry.clear(); tasks.clear(); activeTasks.clear(); landTasks.clear(); createdJobs.clear(); cursor?.clear();
     },
     async request(line: string) {

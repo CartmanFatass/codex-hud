@@ -61,11 +61,46 @@ const log = (message: string) => {
   try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); }
   catch (error) { console.error(`watch log: ${(error as Error).message}; ${message}`); }
 };
+export const WATCH_WARNINGS_LIMIT = 256;
+export const WATCH_CLOSED_TABS_LIMIT = 512;
+const WARN_COOLDOWN_MS = 60_000;
+
+export function rememberClosedTab(tabs: Set<string>, id: string, limit = WATCH_CLOSED_TABS_LIMIT): void {
+  if (!id) return;
+  tabs.delete(id);
+  tabs.add(id);
+  while (tabs.size > limit) {
+    const oldest = tabs.values().next().value;
+    if (oldest === undefined) break;
+    tabs.delete(oldest);
+  }
+}
+
+export function recordWarning(
+  map: Map<string, number>,
+  kind: string,
+  now = Date.now(),
+  limit = WATCH_WARNINGS_LIMIT
+): boolean {
+  if (now - (map.get(kind) ?? -Infinity) < WARN_COOLDOWN_MS) return false;
+  map.delete(kind);
+  map.set(kind, now);
+  if (map.size > limit) {
+    for (const [k, at] of map) {
+      if (k !== kind && now - at >= WARN_COOLDOWN_MS) map.delete(k);
+    }
+    while (map.size > limit) {
+      const oldest = map.keys().next().value;
+      if (oldest === undefined) break;
+      map.delete(oldest);
+    }
+  }
+  return true;
+}
+
 const warnings = new Map<string, number>();
 function warn(kind: string, message: string) {
-  const now = Date.now();
-  if (now - (warnings.get(kind) ?? -Infinity) < 60000) return;
-  warnings.set(kind, now);
+  if (!recordWarning(warnings, kind)) return;
   log(message);
 }
 let watcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
@@ -369,7 +404,9 @@ function scan(retryWatch = false) {
   let open = false,
     safetyCheck = false,
     nearest = Infinity;
-  for (const id of jobCache.listJobIds({ onError: (error) => { throw error; } })) {
+  const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
+  const liveIds = new Set(listedIds);
+  for (const id of listedIds) {
     const dir = join(jobs, id);
     try {
       const starting = inFlightStarts.get(id);
@@ -582,6 +619,11 @@ function scan(retryWatch = false) {
       }
     }
   }
+  for (const id of [...reapRetries.keys()]) if (!liveIds.has(id)) reapRetries.delete(id);
+  for (const id of [...preflightHold.keys()]) if (!liveIds.has(id)) preflightHold.delete(id);
+  for (const id of [...worktreeRetries.keys()]) if (!liveIds.has(id)) worktreeRetries.delete(id);
+  const warnNow = Date.now();
+  for (const [kind, at] of warnings) if (warnNow - at >= WARN_COOLDOWN_MS) warnings.delete(kind);
   for (const { id, jobFile, job, root } of worktreeChecks) {
     if (busyWorktrees.has(job.worktree!.root)) continue;
     const at = worktreeRetries.get(id);
@@ -678,7 +720,7 @@ export function openRuntime(emit: typeof notify) {
   return {
     shutdown,
     tab(id: string) {
-      closedTabs.add(id);
+      rememberClosedTab(closedTabs, id);
       if (pauseReady) for (const active of inFlightReaps.values())
         if (active.phase === 'preflight' && active.tab === id) active.controller.abort();
       schedule();
@@ -691,7 +733,7 @@ export function openRuntime(emit: typeof notify) {
     start(state: Handoff | null, tabs: Set<string>) {
       if (state && state.version !== 1) throw new Error('incompatible watcher handoff');
       if (state) ({ reapRetries, preflightHold, worktreeRetries } = state);
-      for (const id of tabs) closedTabs.add(id);
+      for (const id of tabs) rememberClosedTab(closedTabs, id);
       stopped = false;
       startWatch();
       scan();

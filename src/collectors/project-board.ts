@@ -134,6 +134,7 @@ interface JobStatus {
   ended_at?: unknown;
 }
 const firstFile = (...paths: string[]) => paths.find((p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } });
+export const HOME_TRY_DATES_LIMIT = 256;
 export const projectShown = (state: Pick<import('../render/monitor-state.js').MonitorState, 'activeTab' | 'subpage' | 'help'>, modal = false) =>
   state.activeTab === 'project' && !state.subpage && !state.help && !modal;
 export class ProjectCollector {
@@ -153,6 +154,8 @@ export class ProjectCollector {
   private landed = new Set<string>();
   private ticketCommits = new Map<string, { sha: string; at: number }>();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) { this.tries = new TryLog(hudHome); }
+  /** Test seam: cached Home to-try commit timestamps currently retained. */
+  get homeTryDatesSize(): number { return this.homeTryDates.size; }
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
     try {
       const st = fs.lstatSync(path, { throwIfNoEntry: false });
@@ -529,12 +532,23 @@ export class ProjectCollector {
       const key = hashes.join(' ');
       if (key !== this.homePendingHashes) {
         // Unknown commits stay undated; don't retry an unchanged set of misses on the clock.
-        for (const [hash, at] of await this.commitDates(hashes)) this.homeTryDates.set(hash, at);
+        for (const [hash, at] of await this.commitDates(hashes)) {
+          this.homeTryDates.delete(hash);
+          this.homeTryDates.set(hash, at);
+        }
+        while (this.homeTryDates.size > HOME_TRY_DATES_LIMIT) {
+          this.homeTryDates.delete(this.homeTryDates.keys().next().value!);
+        }
         this.homePendingHashes = hashes.filter((hash) => !this.homeTryDates.has(hash)).join(' ');
       }
       for (const row of tries) {
-        const at = row.commit ? this.homeTryDates.get(row.commit.toLowerCase()) : undefined;
-        if (at !== undefined) row.at = at;
+        const commit = row.commit?.toLowerCase();
+        const at = commit ? this.homeTryDates.get(commit) : undefined;
+        if (at !== undefined && commit) {
+          this.homeTryDates.delete(commit);
+          this.homeTryDates.set(commit, at);
+          row.at = at;
+        }
       }
     }
     for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);

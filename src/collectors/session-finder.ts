@@ -27,10 +27,23 @@ const DEEP_RESCAN_MS = 30_000;
 
 // Entries kept in the per-file caches below. A HUD session sees far fewer
 // rollouts and snapshots than this; the cap only bounds a pathological home.
-const FILE_CACHE_LIMIT = 4096;
+export const SESSION_FINDER_CACHE_LIMIT = 4096;
+const FILE_CACHE_LIMIT = SESSION_FINDER_CACHE_LIMIT;
 
-function cachePut<K, V>(cache: Map<K, V>, key: K, value: V): V {
-  if (cache.size >= FILE_CACHE_LIMIT) {
+/** Read from a bounded Map cache, refreshing recency for LRU eviction. */
+export function cacheGet<K, V>(cache: Map<K, V>, key: K): V | undefined {
+  if (!cache.has(key)) return undefined;
+  const value = cache.get(key) as V;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+
+/** Insert or refresh a key in a bounded Map cache, evicting the least-recently-used entry when full. */
+export function cachePut<K, V>(cache: Map<K, V>, key: K, value: V, limit: number = FILE_CACHE_LIMIT): V {
+  if (cache.has(key)) {
+    cache.delete(key);
+  } else if (cache.size >= limit) {
     const oldest = cache.keys().next();
     if (!oldest.done) {
       cache.delete(oldest.value);
@@ -123,7 +136,7 @@ interface RolloutMeta {
 const rolloutMetaCache = new Map<string, RolloutMeta | null>();
 
 function peekRolloutMeta(filePath: string): RolloutMeta | null {
-  const cached = rolloutMetaCache.get(filePath);
+  const cached = cacheGet(rolloutMetaCache, filePath);
   if (cached !== undefined) {
     return cached;
   }
@@ -239,7 +252,7 @@ function listRollouts(dirPath: string): DirListing['entries'] {
     return [];
   }
 
-  const cached = dirListingCache.get(dirPath);
+  const cached = cacheGet(dirListingCache, dirPath);
   if (signature !== null && cached && cached.signature === signature) {
     return cached.entries;
   }
@@ -285,7 +298,7 @@ const dirEntryCache = new Map<string, { signature: string; entries: DirEntry[] }
 /** A directory's entries, re-read only when the directory itself changed. Throws like readdirSync. */
 function listDirectory(dirPath: string): DirEntry[] {
   const signature = directorySignature(fs.statSync(dirPath));
-  const cached = dirEntryCache.get(dirPath);
+  const cached = cacheGet(dirEntryCache, dirPath);
   if (signature !== null && cached && cached.signature === signature) {
     return cached.entries;
   }
@@ -362,13 +375,13 @@ export function treeLookbackDays(rootId: string, minimum = 3, knownIds: readonly
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const age = (id: string): number | undefined => {
     const key = JSON.stringify([sessions, id]);
-    let file = treeOriginPaths.get(key);
+    let file = cacheGet(treeOriginPaths, key);
     if (file && !fs.existsSync(file)) {
       treeOriginPaths.delete(key);
       file = undefined;
     }
     if (!file) {
-      if ((treeOriginMisses.get(key) ?? -Infinity) > now.getTime() - FALLBACK_RESCAN_MS) return;
+      if ((cacheGet(treeOriginMisses, key) ?? -Infinity) > now.getTime() - FALLBACK_RESCAN_MS) return;
       file = findRolloutPathBySessionIdInRoot(sessions, id) ?? undefined;
       if (!file) {
         cachePut(treeOriginMisses, key, now.getTime());
@@ -424,7 +437,7 @@ function rememberStat(
   const grew = Boolean(
     previous && (stats.size !== previous.size || stats.mtimeMs !== previous.mtimeMs || ino !== previous.ino)
   );
-  rolloutStatCache.set(entry.path, { size: stats.size, mtimeMs: stats.mtimeMs, modifiedAt: stats.mtime, ino, grew });
+  cachePut(rolloutStatCache, entry.path, { size: stats.size, mtimeMs: stats.mtimeMs, modifiedAt: stats.mtime, ino, grew });
   return rolloutFile(entry, stats.size, stats.mtime, ino);
 }
 
@@ -492,7 +505,7 @@ export async function findRolloutsInDaysYielding(
   const quiet: DirListing['entries'] = [];
   const results: SessionFile[] = [];
   for (const entry of listed) {
-    const memo = rolloutStatCache.get(entry.path);
+    const memo = cacheGet(rolloutStatCache, entry.path);
     if (!memo || memo.grew || priority.has(entry.path)) {
       const file = await statOne(entry);
       if (file) results.push(file);
@@ -705,7 +718,7 @@ interface SnapshotBinding {
 const snapshotBindingCache = new Map<string, SnapshotBinding | null>();
 
 function readSnapshotBinding(filePath: string): SnapshotBinding | null {
-  const cached = snapshotBindingCache.get(filePath);
+  const cached = cacheGet(snapshotBindingCache, filePath);
   if (cached !== undefined) {
     return cached;
   }
@@ -881,11 +894,11 @@ const rootThreadMiss = new Map<string, number>();
  * thread on the TUI's connection; the panel stays on the session.
  */
 function rootThreadOf(threadId: string): string {
-  const cached = rootThreadCache.get(threadId);
+  const cached = cacheGet(rootThreadCache, threadId);
   if (cached) return cached;
   // A thread with no rollout yet is its own root; whether it has one is the
   // caller's next question, so it is not asked twice here.
-  if ((rootThreadMiss.get(threadId) ?? 0) > Date.now() - FALLBACK_RESCAN_MS) return threadId;
+  if ((cacheGet(rootThreadMiss, threadId) ?? 0) > Date.now() - FALLBACK_RESCAN_MS) return threadId;
   const file = findSessionByThreadId(threadId);
   if (!file) {
     cachePut(rootThreadMiss, threadId, Date.now());

@@ -53,11 +53,29 @@ interface CacheEntry {
   reading: AgentTokens;
 }
 
+/** Maximum number of subagent rollout paths retained in the incremental token cache. */
+export const AGENT_CONTEXT_CACHE_LIMIT = 128;
+
 const cache = new Map<string, CacheEntry>();
+
+function touchCache(key: string, entry: CacheEntry): void {
+  cache.delete(key);
+  cache.set(key, entry);
+  while (cache.size > AGENT_CONTEXT_CACHE_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
 
 /** Test seam: the cache is keyed by path, and tests reuse temp paths. */
 export function resetAgentContextCache(): void {
   cache.clear();
+}
+
+/** Test seam: current number of cached subagent rollout states. */
+export function agentContextCacheSize(): number {
+  return cache.size;
 }
 
 async function readRange(handle: fs.promises.FileHandle, start: number, end: number): Promise<string> {
@@ -137,6 +155,7 @@ export async function readAgentTokens(rolloutPath: string): Promise<AgentTokens>
   const signature = fileSignature(rolloutPath);
   const cached = cache.get(rolloutPath);
   if (signature !== null && cached && cached.signature === signature) {
+    touchCache(rolloutPath, cached);
     return cached.reading;
   }
 
@@ -187,7 +206,7 @@ export async function readAgentTokens(rolloutPath: string): Promise<AgentTokens>
       : undefined;
   entry.reading = { ...(usage ? { usage } : {}), ...(rate ? { rate } : {}), ...(spent ? { spent } : {}) };
   if (signature !== null) {
-    cache.set(rolloutPath, entry);
+    touchCache(rolloutPath, entry);
   } else {
     cache.delete(rolloutPath);
   }

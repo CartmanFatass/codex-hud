@@ -15,6 +15,8 @@ import type { LedgerSlice, ProjectSnapshot, TryBrief } from './project-board.js'
 import type { Language } from '../render/i18n.js';
 
 const COMMITS = 5, COMMIT_CHARS = 1200, TICKETS = 4, TICKET_BYTES = 3000, SLICES = 12, PENDING = 3, LOOK_MS = 300_000, FAILED_MS = 600_000;
+export const TRY_BRIEF_HASH_LIMIT = 64;
+export const TRY_BRIEF_LOOKED_LIMIT = 256;
 interface Saved extends TryBrief { fingerprint: string; line: string }
 const ledgerLine = (row: LedgerSlice) => `${row.milestone} · ${row.text}`;
 
@@ -78,11 +80,31 @@ export class TryBriefs {
     this.active.clear();
     this.looked.clear();
   }
+  /** Test seam: sizes of the internal caches. */
+  get cacheSizes(): { rows: number; hashes: number; looked: number } {
+    return { rows: this.rows.size, hashes: this.hashes.size, looked: this.looked.size };
+  }
   /** The stored brief's key: the project, the slice and the language. */
   private key(root: string, id: string): string {
     let base = this.hashes.get(root);
-    if (!base) this.hashes.set(root, (base = createHash('sha1').update(root).digest('hex').slice(0, 8)));
+    if (base) {
+      this.hashes.delete(root);
+      this.hashes.set(root, base);
+    } else {
+      base = createHash('sha1').update(root).digest('hex').slice(0, 8);
+      this.hashes.set(root, base);
+      while (this.hashes.size > TRY_BRIEF_HASH_LIMIT) this.hashes.delete(this.hashes.keys().next().value!);
+    }
     return `${base}:${id}:${this.language}`;
+  }
+  private markLooked(key: string, entry: { line: string; until: number }, now: number): void {
+    this.looked.delete(key);
+    this.looked.set(key, entry);
+    if (this.looked.size <= TRY_BRIEF_LOOKED_LIMIT) return;
+    for (const [candidate, value] of this.looked) {
+      if (candidate !== key && value.until <= now) this.looked.delete(candidate);
+    }
+    while (this.looked.size > TRY_BRIEF_LOOKED_LIMIT) this.looked.delete(this.looked.keys().next().value!);
   }
   /** Start the calls the shown project's to-try slices still need: the newest first, a few at once, none when the model is off. */
   update(root: string, ledger: readonly LedgerSlice[], mayStart = () => true): void {
@@ -91,7 +113,7 @@ export class TryBriefs {
     for (const r of ledger.filter((x) => x.state === 'try').reverse().sort((a, b) => (b.at ?? -1) - (a.at ?? -1)).slice(0, SLICES)) {
       const key = this.key(root, r.id), seen = this.looked.get(key), line = ledgerLine(r);
       if (this.active.has(key) || this.active.size >= PENDING || (seen?.line === line && now < seen.until)) continue;
-      this.looked.set(key, { line, until: now + LOOK_MS });
+      this.markLooked(key, { line, until: now + LOOK_MS }, now);
       void this.run(key, root, r, line, mayStart);
     }
   }
@@ -114,7 +136,10 @@ export class TryBriefs {
       });
       const result = await handle.result, brief = result.ok ? parseBrief(result.text) : undefined;
       if (cancelled) return;
-      if (!brief) return void this.looked.set(key, { line, until: this.clock() + FAILED_MS });
+      if (!brief) {
+        const now = this.clock();
+        return void this.markLooked(key, { line, until: now + FAILED_MS }, now);
+      }
       this.rows.set(key, { ...brief, fingerprint, line });
       while (this.rows.size > 200) this.rows.delete(this.rows.keys().next().value!);
       this.save();

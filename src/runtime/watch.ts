@@ -11,6 +11,17 @@ import { buildStamp, withDistLock } from '../../scripts/dist-lock.mjs';
 import { openGeneration, type Generation } from '../../packages/hud-mcp/bin/generation.mjs';
 
 type Runtime = ReturnType<typeof import('./watch-runtime.js').openRuntime>;
+const CLOSED_TABS_LIMIT = 512;
+function rememberClosedTab(tabs: Set<string>, id: string): void {
+  if (!id) return;
+  tabs.delete(id);
+  tabs.add(id);
+  while (tabs.size > CLOSED_TABS_LIMIT) {
+    const oldest = tabs.values().next().value;
+    if (oldest === undefined) break;
+    tabs.delete(oldest);
+  }
+}
 
 /** Open the initial generation and publish readiness under the wrapper's dist lock. */
 export async function openWatcher() {
@@ -43,7 +54,7 @@ export async function openWatcher() {
       try { event = JSON.parse(line); } catch { return unavailable('invalid JSON'); }
       if (event.error) return unavailable(event.error.message);
       if (String(event.event ?? '').replace(/\./g, '_') === 'tab_closed') {
-        closedTabs.add(event.data.tab_id);
+        rememberClosedTab(closedTabs, event.data.tab_id);
         void current.call('tab', event.data.tab_id);
       }
     });

@@ -301,11 +301,29 @@ interface CacheEntry {
   inFlight: Promise<GitStatus> | null;
 }
 
+/** Maximum number of resolved `cwd` entries retained in the git status cache. */
+export const GIT_STATUS_CACHE_LIMIT = 64;
+
 const cache = new Map<string, CacheEntry>();
+
+function touchCache(key: string, entry: CacheEntry): void {
+  cache.delete(key);
+  cache.set(key, entry);
+  if (cache.size <= GIT_STATUS_CACHE_LIMIT) return;
+  for (const [candidate, value] of cache) {
+    if (cache.size <= GIT_STATUS_CACHE_LIMIT) break;
+    if (candidate !== key && !value.inFlight) cache.delete(candidate);
+  }
+}
 
 /** Test seam: forget every cached snapshot. */
 export function resetGitStatusCache(): void {
   cache.clear();
+}
+
+/** Test seam: current number of cached working-directory snapshots. */
+export function gitStatusCacheSize(): number {
+  return cache.size;
 }
 
 async function readGitStatus(cwd: string): Promise<{ status: GitStatus; upstream: string | null }> {
@@ -356,11 +374,13 @@ export async function collectGitStatus(cwd?: string): Promise<GitStatus> {
     if (cached.dirs) {
       const signature = await metadataSignature(cached.dirs, cached.status.branch, cached.upstream);
       if (signature === cached.signature) {
+        touchCache(key, cached);
         return cached.status;
       }
     } else if (!cached.status.isGitRepo) {
       // Nothing to invalidate on: a directory only becomes a repository
       // through `git init`, which the age bound picks up soon enough.
+      touchCache(key, cached);
       return cached.status;
     }
   }
@@ -368,7 +388,7 @@ export async function collectGitStatus(cwd?: string): Promise<GitStatus> {
   const inFlight = (async () => {
     const { status, upstream } = await readGitStatus(key);
     const dirs = findGitDirs(key);
-    cache.set(key, {
+    touchCache(key, {
       status,
       upstream,
       dirs,
@@ -379,7 +399,7 @@ export async function collectGitStatus(cwd?: string): Promise<GitStatus> {
     return status;
   })();
 
-  cache.set(key, {
+  touchCache(key, {
     status: cached?.status ?? emptyGitStatus(),
     upstream: cached?.upstream ?? null,
     dirs: cached?.dirs ?? null,

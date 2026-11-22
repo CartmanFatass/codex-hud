@@ -129,6 +129,9 @@ export function tmuxDeliver(event: NotifyEvent): void {
   }
 }
 
+/** Maximum number of notification kinds retained in `Notifier.lastFired`. */
+export const NOTIFIER_CACHE_LIMIT = 256;
+
 export class Notifier {
   private readonly lastFired = new Map<string, { fingerprint: string; at: number }>();
   private lastActiveAgents: number | null = null;
@@ -136,6 +139,30 @@ export class Notifier {
   private initialized = false;
 
   constructor(private options: NotifierOptions) {}
+
+  /** Number of tracked notification keys (test seam). */
+  get trackedCount(): number {
+    return this.lastFired.size;
+  }
+
+  private rememberFired(kind: string, entry: { fingerprint: string; at: number }): void {
+    this.lastFired.delete(kind);
+    this.lastFired.set(kind, entry);
+  }
+
+  private pruneFired(board?: WorkboardSnapshot): void {
+    if (board) {
+      const liveJobKinds = new Set(board.workers.map((w) => `job:${w.id}`));
+      for (const kind of this.lastFired.keys()) {
+        if (kind.startsWith('job:') && !liveJobKinds.has(kind)) this.lastFired.delete(kind);
+      }
+    }
+    while (this.lastFired.size > NOTIFIER_CACHE_LIMIT) {
+      const oldest = this.lastFired.keys().next().value;
+      if (oldest === undefined) break;
+      this.lastFired.delete(oldest);
+    }
+  }
 
   /** New options from settings saved since; the baselines stay, so nothing is replayed. */
   configure(options: Omit<NotifierOptions, 'deliver'>): void {
@@ -164,10 +191,11 @@ export class Notifier {
       // Opening (or enabling) the panel must not replay existing events.
       this.initialized = true;
       for (const event of candidates)
-        this.lastFired.set(event.kind, {
+        this.rememberFired(event.kind, {
           fingerprint: event.fingerprint,
           at: this.lastFired.get(event.kind)?.at ?? -Infinity,
         });
+      this.pruneFired(board);
       return [];
     }
 
@@ -176,13 +204,14 @@ export class Notifier {
       if (!this.shouldFire(event, nowMs)) {
         continue;
       }
-      this.lastFired.set(event.kind, { fingerprint: event.fingerprint, at: nowMs });
+      this.rememberFired(event.kind, { fingerprint: event.fingerprint, at: nowMs });
       (this.options.deliver ?? tmuxDeliver)(event);
       if (this.options.desktop) {
         desktopDeliver(event);
       }
       sent.push(event);
     }
+    this.pruneFired(board);
     return sent;
   }
 
@@ -191,6 +220,7 @@ export class Notifier {
     if (!previous) {
       return true;
     }
+    this.rememberFired(event.kind, previous);
     // The same occurrence never notifies twice. A different one waits out the
     // cooldown, so a flapping condition cannot turn into a stream of pop-ups.
     if (previous.fingerprint === event.fingerprint) {
