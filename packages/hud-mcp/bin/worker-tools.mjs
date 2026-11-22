@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { notify, taskDelivery } from './hud-notify.mjs';
 import { sonicState } from './sonic-jobs.mjs';
 import { withDistLock } from '../../../scripts/dist-lock.mjs';
 
 const idPattern = /^j[0-9a-f]{16}$/;
 const lease = () => withDistLock(() => import('../../../dist/roles/lease.js'));
+const fsWait = () => withDistLock(() => import('../../../dist/utils/fs-wait.js'));
 function readJob(dir) {
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
   if (job.job !== basename(dir)) throw new Error('not a HUD job directory');
@@ -152,30 +152,65 @@ export async function waitSonic({ dir, root, job: parent }, ids, seconds = 480, 
     }
     return { id, child };
   });
-  const deadline = performance.now() + seconds * 1000;
-  for (;;) {
-    signal?.throwIfAborted();
-    const states = children.map(({ id, child }) => ({ id, child, ...sonicState(child) }));
-    const working = states.filter(({ state }) => state === 'open').map(({ id }) => id);
-    const left = deadline - performance.now();
-    if (working.length && left > 0) {
-      await sleep(Math.min(250, left), undefined, { signal });
-      continue;
-    }
-    const failed = states.filter(({ state }) => state === 'failed').map(({ id, reason }) => ({ id, reason }));
-    const reports = [];
-    for (const { id, child, state } of states) {
-      if (state !== 'settled') continue;
-      const path = join(child, 'report.md');
-      try { reports.push({ id, path, body: fs.readFileSync(path, 'utf8') }); }
-      catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-        failed.push({ id, reason: 'settled without a report on disk' });
-      }
-    }
-    for (const { id } of reports) fs.writeFileSync(join(root, id, 'sonic-collected'), '', { mode: 0o600 });
-    return { reports, working, failed };
+  signal?.throwIfAborted();
+  const readStates = () => children.map(({ id, child }) => ({ id, child, ...sonicState(child) }));
+  let states;
+  if (children.length === 0 || seconds === 0) {
+    states = readStates();
+  } else {
+    const { waitUntilFs } = await fsWait();
+    let openChildren = children;
+    const openIds = new Set(children.map(({ id }) => id));
+    states = await waitUntilFs({
+      targets: () => {
+        if (openChildren.length <= 32) {
+          return openChildren.map(({ child }) => ({
+            dir: child,
+            filter: (name) => name === null || name === 'STATUS.json' || name === 'report.md',
+          }));
+        }
+        return [{
+          dir: root,
+          recursive: true,
+          filter: (name) => {
+            if (name === null) return true;
+            const sep = name.indexOf('/');
+            if (sep < 0) return openIds.has(name);
+            const id = name.slice(0, sep);
+            const file = name.slice(sep + 1);
+            return openIds.has(id) && (file === 'STATUS.json' || file === 'report.md');
+          },
+        }];
+      },
+      timeoutMs: seconds * 1000,
+      signal,
+      coalesceMs: 15,
+      fallbackIntervalMs: 5000,
+      isTransientError: (error) => error instanceof SyntaxError,
+      check: ({ timedOut }) => {
+        const current = readStates();
+        openChildren = current.filter(({ state }) => state === 'open');
+        openIds.clear();
+        for (const { id } of openChildren) openIds.add(id);
+        if (openChildren.length === 0 || timedOut) return { done: true, value: current };
+        return { done: false };
+      },
+    });
   }
+  const working = states.filter(({ state }) => state === 'open').map(({ id }) => id);
+  const failed = states.filter(({ state }) => state === 'failed').map(({ id, reason }) => ({ id, reason }));
+  const reports = [];
+  for (const { id, child, state } of states) {
+    if (state !== 'settled') continue;
+    const path = join(child, 'report.md');
+    try { reports.push({ id, path, body: fs.readFileSync(path, 'utf8') }); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      failed.push({ id, reason: 'settled without a report on disk' });
+    }
+  }
+  for (const { id } of reports) fs.writeFileSync(join(root, id, 'sonic-collected'), '', { mode: 0o600 });
+  return { reports, working, failed };
 }
 
 export async function workerLease({ job, root }, args, signal, fallback = false) {
@@ -311,16 +346,26 @@ export async function ask({ dir, job }, input, timeoutRaw = process.env.HUD_ASK_
     pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
   }
   const timeoutSec = timeoutRaw !== undefined && /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : 1200;
-  const started = Date.now();
+  const started = performance.now();
   let answer;
-  while (timeoutSec > 0 && Date.now() - started < timeoutSec * 1000) {
-    answer = readQuestionAnswer(published);
-    if (answer !== undefined) break;
-    const left = timeoutSec * 1000 - (Date.now() - started);
-    if (left <= 0) break;
-    await sleep(Math.min(2000, left), undefined, { signal });
+  if (timeoutSec > 0) {
+    const { waitUntilFs } = await fsWait();
+    const answerName = `q${published.n}.answer.md`;
+    answer = await waitUntilFs({
+      targets: [{ dir: qa, filter: (name) => name === null || name === answerName }],
+      timeoutMs: timeoutSec * 1000,
+      signal,
+      coalesceMs: 15,
+      fallbackIntervalMs: 5000,
+      check: ({ timedOut }) => {
+        const value = readQuestionAnswer(published);
+        if (value !== undefined) return { done: true, value };
+        if (timedOut) return { done: true, value: undefined };
+        return { done: false };
+      },
+    });
   }
-  const waited = Math.round((Date.now() - started) / 1000);
+  const waited = Math.round((performance.now() - started) / 1000);
   const defaultLine = `Proposed default: ${input.default.trim()}. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report.`;
   return answer
     ? `ANSWER from the orchestrator (q${published.n}, after ${waited}s):\n\n${answer}`

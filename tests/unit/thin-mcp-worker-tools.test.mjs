@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
+import fsDefault from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { basename, join, resolve } from 'node:path';
 import test from 'node:test';
 import { reportSignature, turnToken } from '../../dist/mcp/cli-judge.js';
 import { readReportMeta } from '../../dist/roles/report-meta.js';
+import { ask, waitSonic } from '../../packages/hud-mcp/bin/worker-tools.mjs';
 import {
   workerFor,
   entry,
@@ -803,4 +806,229 @@ test('hud-ask prints the default when no answer arrives', { timeout: 10000 }, as
     /No answer to q1 within 1s \(pushed via "herdr agent prompt w4E:p1"\)\. Proposed default: rows\. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report/
   );
   assert.equal(fs.existsSync(join(dir, 'qa', 'q1.md')), true);
+});
+
+function trackFsWatches(t) {
+  const realWatch = fsDefault.watch;
+  const stats = { opened: 0, closed: 0, active: 0 };
+  fsDefault.watch = function trackedWatch(...args) {
+    const watcher = realWatch.apply(this, args);
+    stats.opened++;
+    stats.active++;
+    const realClose = watcher.close.bind(watcher);
+    let closed = false;
+    watcher.close = function trackedClose() {
+      if (!closed) {
+        closed = true;
+        stats.closed++;
+        stats.active--;
+      }
+      return realClose();
+    };
+    return watcher;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fsDefault.watch = realWatch;
+    syncBuiltinESMExports();
+  });
+  return stats;
+}
+
+test('worker-tools ask and waitSonic wake within 100 ms, settle on timeout, and close watchers on settle, timeout and abort', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  const stats = trackFsWatches(t);
+  const jobsRoot = join(f.env.HUD_HOME, 'jobs');
+  const parentId = 'j00000000000000b0';
+  const parentDir = join(jobsRoot, parentId);
+  const parentJob = {
+    job: parentId,
+    role: 'imp',
+    cwd: f.root,
+    herdr_pane: '',
+    created_at: new Date().toISOString(),
+  };
+  fs.mkdirSync(parentDir, { recursive: true });
+  writeFixtureFile(join(parentDir, 'job.json'), JSON.stringify(parentJob));
+  writeFixtureFile(join(parentDir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+
+  // 1. ask wakes within 100 ms when q1.answer.md is written and closes its watcher.
+  const waitingAsk = ask({ dir: parentDir, job: parentJob }, { question: 'Which mode?', default: 'fast' }, '5');
+  await until(() => stats.active === 1);
+  const answerAt = performance.now();
+  writeFixtureFile(join(parentDir, 'qa', 'q1.answer.md'), 'event-driven\n');
+  const reply = await waitingAsk;
+  const askLatency = performance.now() - answerAt;
+  assert.match(reply, /^ANSWER from the orchestrator \(q1, after 0s\):\n\nevent-driven$/);
+  assert.ok(askLatency < 100, `ask wakeup expected < 100 ms, got ${askLatency.toFixed(1)} ms`);
+  assert.equal(stats.active, 0);
+  assert.equal(stats.closed, stats.opened);
+
+  // 2. ask with timeout 0 opens no watcher; timeout 1 settles cleanly and closes its watcher.
+  const openedBeforeZero = stats.opened;
+  const noWaitReply = await ask({ dir: parentDir, job: parentJob }, { question: 'Immediate?', default: 'yes' }, '0');
+  assert.match(noWaitReply, /^Question q2 recorded \(.*\); not waiting\./);
+  assert.equal(stats.opened, openedBeforeZero);
+
+  const askTimeoutStart = performance.now();
+  const timedOutReply = await ask({ dir: parentDir, job: parentJob }, { question: 'Anyone there?', default: 'skip' }, '1');
+  assert.ok(performance.now() - askTimeoutStart >= 950);
+  assert.match(timedOutReply, /^No answer to q3 within 1s /);
+  assert.equal(stats.active, 0);
+  assert.equal(stats.closed, stats.opened);
+
+  // 3. ask abort rejects immediately and leaves zero open watchers.
+  const askAbort = new AbortController();
+  const abortedAsk = ask({ dir: parentDir, job: parentJob }, { question: 'Cancel me?', default: 'no' }, '30', askAbort.signal);
+  await until(() => stats.active === 1);
+  const askAbortAt = performance.now();
+  askAbort.abort();
+  await assert.rejects(() => abortedAsk, (error) => error?.name === 'AbortError');
+  assert.ok(performance.now() - askAbortAt < 100);
+  assert.equal(stats.active, 0);
+  assert.equal(stats.closed, stats.opened);
+
+  // 4. waitSonic wakes within 100 ms on child reports and drops settled watchers early.
+  const makeChild = (id) => {
+    const childDir = join(jobsRoot, id);
+    fs.mkdirSync(childDir, { recursive: true });
+    writeFixtureFile(join(childDir, 'job.json'), JSON.stringify({
+      job: id,
+      parent_job: parentId,
+      role: 'sonic',
+      cwd: f.root,
+      herdr_pane: 'w4E:p1',
+      created_at: new Date().toISOString(),
+    }));
+    writeFixtureFile(join(childDir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+    return childDir;
+  };
+  const c1 = 'j00000000000000b1';
+  const c2 = 'j00000000000000b2';
+  const c1Dir = makeChild(c1);
+  const c2Dir = makeChild(c2);
+
+  const waitingSonic = waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c1, c2], 5);
+  await until(() => stats.active === 2);
+  writeFixtureFile(join(c1Dir, 'report.md'), 'Child one report.');
+  writeFixtureFile(join(c1Dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true }));
+  await until(() => stats.active === 1);
+
+  const reportAt = performance.now();
+  writeFixtureFile(join(c2Dir, 'report.md'), 'Child two report.');
+  writeFixtureFile(join(c2Dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true }));
+  const collected = await waitingSonic;
+  const sonicLatency = performance.now() - reportAt;
+  assert.deepEqual(collected, {
+    reports: [
+      { id: c1, path: join(c1Dir, 'report.md'), body: 'Child one report.' },
+      { id: c2, path: join(c2Dir, 'report.md'), body: 'Child two report.' },
+    ],
+    working: [],
+    failed: [],
+  });
+  assert.ok(sonicLatency < 100, `waitSonic wakeup expected < 100 ms, got ${sonicLatency.toFixed(1)} ms`);
+  assert.equal(fs.existsSync(join(c1Dir, 'sonic-collected')), true);
+  assert.equal(fs.existsSync(join(c2Dir, 'sonic-collected')), true);
+  assert.equal(stats.active, 0);
+  assert.equal(stats.closed, stats.opened);
+
+  // 5. waitSonic tolerates a transient non-atomic truncated STATUS.json write.
+  const c3 = 'j00000000000000b3';
+  const c3Dir = makeChild(c3);
+  const waitingTrunc = waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c3], 5);
+  await until(() => stats.active === 1);
+  writeFixtureFile(join(c3Dir, 'report.md'), 'Child three report.');
+  fs.writeFileSync(join(c3Dir, 'STATUS.json'), '{"state":');
+  setTimeout(() => writeFixtureFile(join(c3Dir, 'STATUS.json'), JSON.stringify({ state: 'done' })), 20);
+  const truncResult = await waitingTrunc;
+  assert.equal(truncResult.reports.length, 1);
+  assert.equal(truncResult.reports[0].body, 'Child three report.');
+  assert.equal(stats.active, 0);
+  assert.equal(stats.closed, stats.opened);
+
+  // 6. waitSonic timeout settles cleanly and abort rejects immediately with zero open watchers.
+  const c4 = 'j00000000000000b4';
+  makeChild(c4);
+  const sonicTimeoutStart = performance.now();
+  const timedOutSonic = await waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c4], 0.12);
+  assert.ok(performance.now() - sonicTimeoutStart >= 120);
+  assert.deepEqual(timedOutSonic, { reports: [], working: [c4], failed: [] });
+  assert.equal(stats.active, 0);
+  assert.equal(stats.closed, stats.opened);
+
+  const sonicAbort = new AbortController();
+  const abortedSonic = waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c4], 30, sonicAbort.signal);
+  await until(() => stats.active === 1);
+  const sonicAbortAt = performance.now();
+  sonicAbort.abort();
+  await assert.rejects(() => abortedSonic, (error) => error?.name === 'AbortError');
+  assert.ok(performance.now() - sonicAbortAt < 100);
+  assert.equal(stats.active, 0);
+  assert.equal(stats.closed, stats.opened);
+});
+
+test('worker MCP hud_ask and hud_sonic wake within 100 ms and leave no open watchers', { timeout: 15000 }, async (t) => {
+  const probe = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const watch = fs.watch;
+let opened = 0, closed = 0;
+const statsFile = process.env.HOME + '/worker-watch-stats.json';
+const record = () => {
+  const tmp = statsFile + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ opened, closed, active: opened - closed }));
+  fs.renameSync(tmp, statsFile);
+};
+fs.watch = function(...args) {
+  const w = watch.apply(this, args);
+  opened++;
+  record();
+  const close = w.close.bind(w);
+  let done = false;
+  w.close = function() {
+    if (!done) { done = true; closed++; record(); }
+    return close();
+  };
+  return w;
+};
+syncBuiltinESMExports();`;
+  const f = await fixture(t);
+  const parent = await f.call('hud_create', { role: 'imp', request_key: 'event-wait-worker', task: 'Synthetic parent.' });
+  const statsPath = join(f.env.HOME, 'worker-watch-stats.json');
+  const watchStats = () => JSON.parse(fs.readFileSync(statsPath, 'utf8'));
+  const call = workerClient(t, {
+    ...f,
+    env: { ...f.env, NODE_OPTIONS: `${f.env.NODE_OPTIONS ?? ''} --import=data:text/javascript,${encodeURIComponent(probe)}`.trim() },
+  }, parent.task_dir);
+
+  // 1. hud_ask via MCP wakes within 100 ms of hud_respond.
+  const pendingAsk = call('hud_ask', { question: 'Ship now?', default: 'wait' });
+  await until(() => fs.existsSync(join(parent.task_dir, 'qa', 'q1.md')) && fs.existsSync(statsPath) && watchStats().active > 0);
+  const respondAt = performance.now();
+  await f.call('hud_respond', { job: parent.job, request_id: 'q1', answer: 'ship it' });
+  const askResult = await pendingAsk;
+  const askLatency = performance.now() - respondAt;
+  assert.equal(askResult.isError, undefined);
+  assert.match(askResult.content[0].text, /ANSWER from the orchestrator \(q1, after 0s\):\n\nship it/);
+  assert.ok(askLatency < 100, `MCP hud_ask wakeup expected < 100 ms, got ${askLatency.toFixed(1)} ms`);
+  assert.equal(watchStats().active, 0);
+
+  // 2. hud_sonic wait via MCP wakes within 100 ms of child report settlement.
+  const child = resultValue(await call('hud_sonic', { task: 'Synthetic child task.' })).job;
+  const childDir = join(f.env.HUD_HOME, 'jobs', child);
+  const pendingSonic = call('hud_sonic', { wait: [child], timeout_s: 5 });
+  await until(() => watchStats().active > 0);
+  const settleAt = performance.now();
+  publishSonic(childDir, { state: 'closed', output_written: true });
+  const sonicResult = resultValue(await pendingSonic);
+  const sonicLatency = performance.now() - settleAt;
+  assert.deepEqual(sonicResult, {
+    reports: [{ id: child, path: join(childDir, 'report.md'), body: 'Synthetic implementation report.' }],
+    working: [],
+    failed: [],
+  });
+  assert.ok(sonicLatency < 100, `MCP hud_sonic wakeup expected < 100 ms, got ${sonicLatency.toFixed(1)} ms`);
+  assert.equal(watchStats().active, 0);
+  assert.equal(watchStats().closed, watchStats().opened);
 });
