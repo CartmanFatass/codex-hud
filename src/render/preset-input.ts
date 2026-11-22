@@ -28,24 +28,23 @@ const matches = (sheet: Extract<PresetInput, { mode: 'list' }>) => [
 ].filter(({ name }) => nameOf(name).toLowerCase().includes(sheet.text.toLowerCase()) ||
   (name === null && 'custom'.includes(sheet.text.toLowerCase())));
 
-export function presetInputKey(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
-  const sheet = state.controlPresetInput!;
-  const out = (value: PresetInput | undefined = sheet, action?: MonitorOutcome['action']): MonitorOutcome => ({
-    state: { ...state, controlPresetInput: value }, close: false, action,
+export function presetInputKey(state: MonitorState, sheet: PresetInput, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
+  const out = (value: PresetInput = sheet, action?: MonitorOutcome['action']): MonitorOutcome => ({
+    state: { ...state, overlay: { kind: 'control-preset', sheet: value } }, close: false, action,
   });
-  const cancel = (): MonitorOutcome => ({ state: { ...state, controlPresetInput: undefined }, close: false });
+  const cancel = (): MonitorOutcome => ({ state: { ...state, overlay: undefined }, close: false });
   const commit = (change: Exclude<PresetChange, { op: 'run' }>) =>
     out(sheet, { ...change, type: 'preset-edit', role: sheet.role.role, revision: sheet.role.revision });
   const entries = sheet.mode === 'list' ? matches(sheet) : [];
   const pick = (at: number) => sheet.mode === 'list' ? out({ ...sheet, at: Math.max(0, Math.min(entries.length - 1, at)), error: undefined }) : out();
-  const choose = (at = sheet.mode === 'list' ? sheet.at : 0) => {
+  const choose = (at = sheet.mode === 'list' ? sheet.at : 0): MonitorOutcome => {
     if (sheet.mode === 'list') return entries[at] ? commit({ op: 'select', name: entries[at].name }) : out();
     if (sheet.mode === 'delete') return commit({ op: 'delete' });
     const { text } = sheet;
     if (!validPresetName(text)) return out({ ...sheet, error: 'bad preset name' });
     if (sheet.role.presets?.some((p) => p.name === text)) return out({ ...sheet, error: 'preset name already exists' });
     if (sheet.mode === 'rename') return commit({ op: 'rename', name: text });
-    return { state: { ...state, controlPresetInput: undefined, controlChain: { role: sheet.role, at: 0,
+    return { state: { ...state, overlay: { kind: 'control-chain', role: sheet.role, at: 0, mode: { kind: 'places' },
       draft: { name: text, run: sheet.mode === 'empty' ? [] : sheet.role.editor?.places ?? [] } } }, close: false };
   };
   const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');

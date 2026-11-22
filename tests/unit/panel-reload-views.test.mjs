@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stripAnsi } from '../../dist-test/src/render/colors.js';
 import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
 import { SETTING_ROWS } from '../../dist-test/src/render/settings-page.js';
 import { delay, until, live, QUIET_MS } from '../helpers/panel-reload-fixture.mjs';
@@ -45,6 +46,66 @@ test('the 40-column Classic to-try view reloads with its cursor but without pend
   assert.doesNotMatch(f.output().slice(at), /▣/);
   f.child.stdin.write(' ');
   await until(() => f.output().slice(at).includes('▣'), 'could not mark the slice again after reload');
+});
+
+// Reload checks run on collection ticks; allow time for both detection and a later poll.
+const LIVE_INPUT_BLOCK_WINDOW_MS = QUIET_MS + 1200;
+
+test('live input: a batched / query and later keys survive a build until Enter keeps the filter', async (t) => {
+  const f = live(t);
+  await until(() => f.output().includes('SYNTHETIC reload job'), 'Home did not render');
+  f.child.stdin.write('/relo');
+  await until(() => stripAnsi(f.output()).includes('/ relo▌'), 'the batched slash and query did not reach the filter');
+  f.appendBuild('\n// build during a filter edit');
+  await delay(LIVE_INPUT_BLOCK_WINDOW_MS);
+  assert.equal(f.restarts().length, 0, 'reload must wait for the filter editor');
+  f.child.stdin.write('ad');
+  await until(() => stripAnsi(f.output()).includes('/ reload▌'), 'typing did not continue in the same filter');
+  f.child.stdin.write('\r');
+  await until(() => f.events().filter((e) => e.start).length === 2, 'reload did not resume after Enter');
+  await until(() => stripAnsi(f.output()).includes('esc clear'), 'kept filter was not drawn');
+  const saved = f.restarts()[0].restart.state;
+  assert.equal(saved.filterQuery, 'reload');
+  assert.equal(saved.filterOpen, undefined);
+});
+
+test('live input: g on a job reaches focus-job-tab after automatic reload', async (t) => {
+  const f = live(t);
+  await until(() => f.output().includes('SYNTHETIC reload job'), 'Home did not render');
+  const at = f.output().length;
+  f.appendBuild('\n// build on a selected job');
+  await until(() => f.events().filter((e) => e.start).length === 2 && f.output().slice(at).includes('SYNTHETIC reload job'), 'Home did not return after reload');
+  f.child.stdin.write('g');
+  // The synthetic job has no SESSION.txt. Reaching this diagnostic proves the action ran without invoking herdr.
+  await until(() => f.output().slice(at).includes('no tab recorded'), 'g never reached the tab-focus action', 3000);
+});
+
+test('live input: a build waits for the Harnesses Add back draft to close', async (t) => {
+  const f = live(t, (state) => ({ state: { ...state, mainTab: 'control', controlHarnesses: true }, settings: null }));
+  writeFixtureFile(join(f.env.HUD_HOME, 'harnesses.json'), JSON.stringify({ disabled: ['pi:xai'] }));
+  await until(() => f.output().includes('i add back'), 'Harnesses did not render');
+  f.child.stdin.write('ixa');
+  await until(() => stripAnsi(f.output()).includes('/ xa▌'), 'the Add back draft did not render');
+  f.appendBuild('\n// build during an Add back edit');
+  await delay(LIVE_INPUT_BLOCK_WINDOW_MS);
+  assert.equal(f.restarts().length, 0, 'reload must wait for Add back');
+  f.child.stdin.write('i');
+  await until(() => stripAnsi(f.output()).includes('/ xai▌'), 'the draft was not still editable');
+  f.child.stdin.write('\x1b');
+  await until(() => f.events().filter((e) => e.start).length === 2, 'reload did not resume after Esc');
+  assert.equal(f.restarts()[0].restart.state.controlHarnesses, true);
+});
+
+test('live input: a build waits for stop confirmation, and an unnamed key cancels it', async (t) => {
+  const f = live(t);
+  await until(() => f.output().includes('SYNTHETIC reload job'), 'Home did not render');
+  f.child.stdin.write('X');
+  await until(() => f.output().includes('y confirm'), 'stop prompt did not open');
+  f.appendBuild('\n// build during stop confirmation');
+  await delay(LIVE_INPUT_BLOCK_WINDOW_MS);
+  assert.equal(f.restarts().length, 0, 'reload must wait for stop confirmation');
+  f.child.stdin.write('z');
+  await until(() => f.events().filter((e) => e.start).length === 2, 'unnamed z did not cancel the prompt and unblock reload');
 });
 
 test('saving Width 64 from opening width 56 keeps 64 across real panel replacements', async (t) => {

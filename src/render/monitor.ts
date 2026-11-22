@@ -9,9 +9,8 @@ import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
-import type { ModelLists, PlaceEdit, PlaceFact, PresetEdit, RoleFact } from '../roles/role-control.js';
-import type { PresetInput } from './preset-input.js';
-import type { ChainInput, QuickModelInput } from './chain-input.js';
+import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
+import type { OverlayState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
@@ -56,11 +55,8 @@ export interface MonitorState {
   controlNav?: ControlNavigation;
   controlHarnesses?: boolean;
   controlHarnessNav?: ControlNavigation;
-  controlHarnessAdd?: { text: string; pick?: string };
   controlHarnessNotice?: { id: string; off: boolean };
-  controlPresetInput?: PresetInput;
-  controlChain?: ChainInput;
-  controlQuickModel?: QuickModelInput;
+  overlay?: OverlayState;
   controlPresetNotice?: { role: string; name: string | null } | { role: string; index: number; model: string | null };
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
@@ -81,11 +77,7 @@ export interface MonitorState {
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
-  /** Model picker on this place. Group overrides and viewport belong to the current query. */
-  projectInput?: { role: string; index: number; text: string; pick?: string; otherOpen?: boolean; scroll?: number; place?: PlaceFact };
   modelPrevious?: Record<string, string>;
-  /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
-  confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
   homeScroll?: number;
   boardExpanded?: ReadonlySet<string>;
@@ -99,10 +91,8 @@ export interface MonitorState {
   tree: PanelState;
   focus: MonitorPane;
   modes: MonitorModes;
-  scroll: Record<MonitorPane, number>;
-  preview: 'agent';
+  scroll: Record<Exclude<MonitorPane, 'agents'>, number>;
   help: boolean;
-  zoom: boolean;
   helpScroll?: number;
   cardStallMinutes?: number;
   /** A settled card folds to one row after this, and leaves Home after the hide time (Settings). */
@@ -274,10 +264,8 @@ export function initialMonitorState(): MonitorState {
     tree: initialPanelState(),
     focus: 'agents',
     modes: { agents: 'open', changes: 'closed', details: 'closed' },
-    scroll: { agents: 0, changes: 0, details: 0 },
-    preview: 'agent',
+    scroll: { changes: 0, details: 0 },
     help: false,
-    zoom: false,
     helpScroll: 0,
   };
 }
@@ -296,10 +284,8 @@ export function reconcileMonitor(
   _nowMs?: number
 ): MonitorState {
   return { ...state, mainTab: mainTabOf(state), expPage: state.experiments ? state.expPage : undefined,
+    overlay: !state.experiments && state.overlay?.kind === 'exp-edit' ? undefined : state.overlay,
     tree: { ...state.tree }, scroll: { ...state.scroll }, modes: { ...state.modes } };
-}
-export function paneShown(state: MonitorState, id: MonitorPane): boolean {
-  return state.focus === id && !state.help;
 }
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();

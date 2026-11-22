@@ -14,8 +14,17 @@ export function readPanelPlace(): Place | undefined {
     if (place) {
       // Older builds saved Skills as a main tab; it now lives in Help.
       if ((place.state?.mainTab as string | undefined) === 'skills') place.state.mainTab = 'home';
-      if (place.state) delete place.state.trySelection; // Legacy handoffs encoded a marked batch as a plain object.
       const state = place.state;
+      if (state) {
+        delete state.trySelection; // Legacy handoffs encoded a marked batch as a plain object.
+        delete state.overlay;
+        // A pre-overlay panel could hand off transient drafts and retired fields.
+        for (const key of ['confirmStop', 'controlPresetInput', 'controlChain', 'controlQuickModel',
+          'projectInput', 'controlHarnessAdd', 'preview', 'zoom']) Reflect.deleteProperty(state, key);
+        if (state.expPage) Reflect.deleteProperty(state.expPage, 'edit');
+        if (state.scroll) Reflect.deleteProperty(state.scroll, 'agents');
+        if (state.tree) for (const key of ['view', 'collapsed', 'filter', 'scroll']) Reflect.deleteProperty(state.tree, key);
+      }
       if ((state?.projectPage as string | undefined) === 'control') {
         const old = state.projectCursor?.replace('project:fold:role:', 'project:role:');
         const role = controlRoleOf(old), roleItem = role && controlRoleItem(role);
@@ -70,7 +79,7 @@ export class PanelReload {
   }
   async restart(place: Place, finish: () => void): Promise<void> {
     // Drafts delay reload; a clean focus can be reopened from its role row. Never put raw launch options in the handoff environment.
-    const { trySelection: _marks, controlChain: _chain, ...state } = place.state;
+    const { trySelection: _marks, overlay: _overlay, ...state } = place.state;
     const saved = JSON.stringify({ ...place, state }, (_key, value) => value instanceof Set ? { panelSet: [...value] } : value);
     const env: NodeJS.ProcessEnv = { ...this.env, [PLACE]: saved };
     if (this.env[SUPERVISED]) {

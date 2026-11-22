@@ -47,8 +47,8 @@ export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefin
 }
 /** The one-row prompt above the page while a stop waits for its answer. */
 export function stopPromptRows(state: MonitorState, width: number): MonitorRow[] {
-  const stop = state.confirmStop;
-  return stop ? [boardRow(fit(theme.board.attention(t('Stop {role} {id}?  y confirm · Esc cancel', { role: monitorText(stop.role), id: stop.jobId.slice(0, 8) })), width))] : [];
+  const stop = state.overlay;
+  return stop?.kind === 'confirm-stop' ? [boardRow(fit(theme.board.attention(t('Stop {role} {id}?  y confirm · Esc cancel', { role: monitorText(stop.role), id: stop.jobId.slice(0, 8) })), width))] : [];
 }
 
 /** `g`, `X` and the answer keys on the job under the cursor. Anything else (including `g` with no job: the top of the list) is Home's own. */
@@ -61,7 +61,7 @@ export function openJobAction(next: MonitorState, input: WorkbenchInput, key: st
   if (input.text === 'g') return result({ type: 'focus-job-tab', dir: job.dir });
   if (key === 'stop-job') {
     if (job.worker.settledAt !== null) return undefined;
-    next.confirmStop = { jobId: job.jobId, role: job.worker.role ?? 'job', dir: job.dir };
+    next.overlay = { kind: 'confirm-stop', jobId: job.jobId, role: job.worker.role ?? 'job', dir: job.dir };
     return result();
   }
   // The slab has to be open (its options are numbered there): a digit on a collapsed card is not an answer.
@@ -73,8 +73,8 @@ export function openJobAction(next: MonitorState, input: WorkbenchInput, key: st
 
 /** While a stop prompt is open it owns the keyboard: `y` or Enter stops, anything else cancels. */
 export function jobModalInput(state: MonitorState, input: WorkbenchInput): MonitorOutcome | null {
-  const { confirmStop } = state;
-  if (!confirmStop) return null;
+  const stop = state.overlay;
+  if (stop?.kind !== 'confirm-stop') return null;
   const confirmed = input.type === 'key' && (input.key === 'enter' || input.text === 'y');
-  return { state: { ...state, confirmStop: undefined }, close: false, action: confirmed ? { type: 'stop-job', dir: confirmStop.dir } : undefined };
+  return { state: { ...state, overlay: undefined }, close: false, action: confirmed ? { type: 'stop-job', dir: stop.dir } : undefined };
 }

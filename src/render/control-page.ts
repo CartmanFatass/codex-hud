@@ -171,13 +171,14 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
     return role ? { label: roleName(role), right: presetTag(role.preset), rows: roleDetail(data, role, previewWidth, now), hints }
       : { label: '', rows: [], hints };
   };
-  const hints = controlHints(data);
+  const hints = controlHints(data), overlay = state.overlay;
+  const preset = overlay?.kind === 'control-preset' ? overlay.sheet : undefined;
   const scene = projectSplitScene(state, { list, preview, hints, start: list.find((r) => r.item)?.item },
-    `control|${state.projectRoot ?? ''}|${state.controlPresetInput?.mode ?? ''}`);
-  if (state.controlChain || state.controlPresetInput) {
+    `control|${state.projectRoot ?? ''}|${preset?.mode ?? ''}`);
+  if (overlay?.kind === 'control-chain' || overlay?.kind === 'control-preset') {
     const room = splitPreviewRoom({ ...scene, compact: true }, state, height, notes);
-    const sheet = state.controlChain ? chainSheet(state.controlChain, data.models, previewWidth, room, now)
-      : presetSheet(state.controlPresetInput!, previewWidth, room);
+    const sheet = overlay.kind === 'control-chain' ? chainSheet(overlay, data.models, previewWidth, room, now)
+      : presetSheet(overlay.sheet, previewWidth, room);
     return { ...scene, rule: sheet.rule, preview: sheet.rows, sub: sheet.cursor, hints: sheet.hints, compact: true };
   }
   return scene;

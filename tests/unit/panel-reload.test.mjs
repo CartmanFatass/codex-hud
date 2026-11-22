@@ -16,9 +16,14 @@ test('reload place retains opening time; legacy handoffs use their consumption t
     const openedAt = Date.now() - 60000;
     process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: initialMonitorState(), settings: null, openedAt });
     assert.equal(readPanelPlace().openedAt, openedAt);
-    process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: initialMonitorState(), settings: null });
+    const initial = initialMonitorState();
+    process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: { ...initial, preview: 'agent', zoom: true,
+      scroll: { ...initial.scroll, agents: 4 }, tree: { ...initial.tree, collapsed: new Set(['retired']), showAll: true },
+      expPage: { detail: 'openai-api', edit: { text: 'not transferred' } }, controlHarnessAdd: { text: 'not transferred' },
+    }, settings: null });
     const before = Date.now(), legacy = readPanelPlace(), after = Date.now();
     assert.ok(legacy.openedAt >= before && legacy.openedAt <= after);
+    assert.deepEqual(legacy.state, { ...initial, tree: { ...initial.tree, showAll: true }, expPage: { detail: 'openai-api' } });
     assert.equal(process.env.HUD_PANEL_RELOAD_PLACE, undefined);
   } finally {
     if (previous === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE;
@@ -79,16 +84,17 @@ for (const fallback of [false, true]) test(`${fallback ? 'single-supervisor fall
   const f = fixture(t), runner = join(f.root, 'restart.mjs');
   const state = { ...initialMonitorState(), mainTab: 'project', homeTarget: { kind: 'worker', laneId: 'lane', workerId: 'worker' },
     boardExpanded: new Set(['worker:lane:worker']), boardToggled: new Set(['worker:lane:worker']), boardFolded: new Set(['other']),
-    projectFolded: new Set(['project']), help: true, tree: { ...initialMonitorState().tree, showAll: true, collapsed: new Set(['native']) } };
+    projectFolded: new Set(['project']), help: true, tree: { ...initialMonitorState().tree, showAll: true } };
   writeFixtureFile(runner, `import {PanelReload,readPanelPlace} from ${JSON.stringify(moduleUrl)};
 ${fallback ? 'process.execve=undefined;' : ''}
-const reload=new PanelReload();const place=readPanelPlace();
-console.log(JSON.stringify({pid:process.pid,ppid:process.ppid,argv:process.argv.slice(2),test:process.env.SYNTHETIC,consumed:!process.env.HUD_PANEL_RELOAD_PLACE,place},(_k,v)=>v instanceof Set?{panelSet:[...v]}:v));
+const reload=new PanelReload();const transportedOverlay=JSON.parse(process.env.HUD_PANEL_RELOAD_PLACE??'null')?.state?.overlay;const place=readPanelPlace();
+console.log(JSON.stringify({pid:process.pid,ppid:process.ppid,argv:process.argv.slice(2),test:process.env.SYNTHETIC,consumed:!process.env.HUD_PANEL_RELOAD_PLACE,place,transportedOverlay},(_k,v)=>v instanceof Set?{panelSet:[...v]}:v));
 const phase=place?.state.helpScroll??0;
 if(phase<3) await reload.restart({state:{...(place?.state??JSON.parse(process.env.SYNTHETIC_PLACE,(_k,v)=>v?.panelSet?new Set(v.panelSet):v)),helpScroll:phase+1},settings:{selected:2,offset:1}},()=>{});
 else process.exitCode=17;
 `);
-  const run = launch(f, runner, ['arg with spaces', '--root', 'synthetic/root'], { SYNTHETIC: 'preserved', SYNTHETIC_PLACE: encode(state) });
+  const run = launch(f, runner, ['arg with spaces', '--root', 'synthetic/root'], { SYNTHETIC: 'preserved', SYNTHETIC_PLACE: encode({ ...state, overlay: { kind: 'control-chain',
+    role: { editor: { places: [{ raw: { args: ['--synthetic-secret-flag'] } }] } }, at: 0, mode: { kind: 'places' } } }) });
   assert.deepEqual(await run.exited, { code: 17, signal: null }, run.stderr());
   const rows = run.output().trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(rows.length, 4);
@@ -98,6 +104,7 @@ else process.exitCode=17;
     assert.deepEqual(row.argv, ['arg with spaces', '--root', 'synthetic/root']);
     assert.equal(row.test, 'preserved');
     assert.equal(row.consumed, true);
+    assert.equal(row.transportedOverlay, undefined, 'the reload environment never contains the overlay');
     if (i) {
       assert.deepEqual(row.place.state, JSON.parse(encode({ ...state, helpScroll: i })));
       assert.deepEqual(row.place.settings, { selected: 2, offset: 1 });

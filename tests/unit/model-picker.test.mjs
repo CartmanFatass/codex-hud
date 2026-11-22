@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { build } from '../../docs/design/model-picker/gen/frames.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
-import { modelInputEvent, pickOf, pickView } from '../../dist/render/model-input.js';
+import { modelInput, modelInputEvent, pickOf, pickView } from '../../dist/render/model-input.js';
 import { visualLength } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { modelPickerSample, onControl, pickerOrderFrames, pickerOrderSample, plain, projectFixture, richControl, NOW, TREE } from '../fixtures/project-page.mjs';
+import { chainOverlay, modelPickerSample, onControl, pickerOrderFrames, pickerOrderSample, plain, projectFixture, richControl, NOW, TREE } from '../fixtures/project-page.mjs';
 
 async function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'hud-model-picker-'));
@@ -33,12 +33,11 @@ function picked(out, value) {
   const { action, state } = out;
   assert.equal(action?.type, 'preset-edit');
   assert.equal(action.op, 'run');
-  assert.equal(action.modelIndex, state.controlChain.at);
+  assert.equal(state.overlay.kind, 'control-chain');
+  assert.equal(action.modelIndex, state.overlay.at);
   assert.equal(action.run[action.modelIndex].model, value);
-  assert.equal(state.projectInput, undefined);
-  assert.equal(state.controlQuickModel, undefined);
-  assert.equal(state.controlChain.sheet, undefined);
-  assert.equal(state.controlChain.draft, undefined);
+  assert.equal(state.overlay.mode.kind, 'places');
+  assert.equal(state.overlay.draft, undefined);
 }
 
 test('40-column entry and ranked picker keep the quick model route in EN/ZH and both layouts', async (t) => {
@@ -50,22 +49,23 @@ test('40-column entry and ranked picker keep the quick model route in EN/ZH and 
     const compare = (actual, sampleId, re) => assert.deepEqual(plain(actual).filter((l) => re.test(l)).map(normalize),
       sample(sampleId).filter((l) => re.test(l)).map(normalize));
     if (layout === 'split') {
-      const roleRow = draw(lang, { ...state(layout), controlChain: undefined });
+      const roleRow = draw(lang, { ...state(layout), overlay: undefined });
       const hit = field(roleRow);
       const quick = click(roleRow, hit.x, hit.y);
-      assert.equal(quick.state.controlChain, undefined);
-      assert.deepEqual(quick.state.projectInput, send(roleRow, 'place-model').state.projectInput);
+      assert.equal(quick.state.overlay.kind, 'control-quick-model');
+      assert.deepEqual(quick.state.overlay, send(roleRow, 'place-model').state.overlay);
     }
     const entry = draw(lang, state(layout), 22);
     compare(entry, '1a', /^\s*(?:› )?\s*[123] [◉○].*\[.* ▾\]/);
     assert.match(entry.lines.at(-1).trimStart(), en ? /^m model/ : /^m 模型/);
     const open = click(entry, field(entry).x, field(entry).y);
     assert.equal(open.action, undefined);
-    assert.deepEqual(open.state.projectInput, send(entry, 'place-model').state.projectInput);
-    const cli = click(entry, field(entry, 1).x, field(entry, 1).y).state;
-    assert.equal(cli.projectInput.index, 1);
-    assert.equal(cli.projectInput.place.label, 'agy');
-    assert.equal(cli.controlChain.sheet, undefined);
+    assert.deepEqual(open.state.overlay, send(entry, 'place-model').state.overlay);
+    const cli = click(entry, field(entry, 1).x, field(entry, 1).y).state.overlay;
+    assert.equal(cli.kind, 'control-chain');
+    assert.equal(cli.mode.kind, 'quick-model');
+    assert.equal(cli.mode.index, 1);
+    assert.equal(cli.mode.picker.place.label, 'agy');
     const pinned = draw(lang, open.state);
     assert.match(plain(pinned)[2], /^\/ ▌ +88$/);
     assert.match(plain(pinned).join('\n'), /^xai ─+ 6\n +grok-4.5/m);
@@ -131,7 +131,7 @@ test('S4 first screen, flat filters and aggregate have the same order in both wi
 
 test('provider evidence comes only from Control places; match quality prefers starts over boundaries over interior', async (t) => {
   const f = await fixture(t), { data, open } = pickerOrderSample(f);
-  const input = open(40, 'en').state.projectInput, role = data.roles[0], pi = input.place;
+  const input = modelInput(open(40, 'en').state.overlay), role = data.roles[0], pi = input.place;
   const noModel = { ...pi, model: null, piModel: undefined };
   const explicit = { ...pi, model: 'xai/old', piModel: { ...pi.piModel, current: 'xai/old' } };
   const unset = { ...pi, model: 'arena/inherited', piModel: { isDefault: true, defaultId: 'arena/inherited' } };
@@ -165,9 +165,9 @@ test('resolved bare pi models open and rank their provider; ambiguous bare model
 
   const data = { ...snapshot, roles: [role] };
   const draw = (state) => f.render(40, 'en', state, 24, data);
-  const chain = draw(onControl({ projectCursor: 'project:role:imp' }, { controlChain: { role, at: 0 } }));
+  const chain = draw(onControl({ projectCursor: 'project:role:imp' }, { overlay: chainOverlay(role) }));
   const browse = draw(send(chain, 'place-model').state);
-  const input = browse.state.projectInput, pick = pickOf(data, input), { rows } = pickView(pick, input);
+  const input = modelInput(browse.state.overlay), pick = pickOf(data, input), { rows } = pickView(pick, input);
   assert.deepEqual([...pick.inUse], [['openai', 1], ['arena', 1]]);
   assert.deepEqual(rows.filter((row) => 'provider' in row).map((row) => row.provider), ['openai', 'arena']);
   assert.deepEqual(rows.find((row) => row.id === 'other').providers, ['anthropic', 'mistral']);
@@ -182,28 +182,28 @@ test('draft reorder keeps clickable pi and CLI model fields in the in-memory cha
     const render = (next) => draw(lang, next, 24);
     const entry = render(state(layout));
     const draft = render(send(entry, 'place-down').state);
-    assert.ok(draft.state.controlChain.draft, 'moving a place starts an unsaved draft');
+    assert.ok(draft.state.overlay.draft, 'moving a place starts an unsaved draft');
     assert.ok(draft.lines.every((line) => visualLength(line) === 40));
     const cliField = field(draft), piField = field(draft, 1);
     assert.ok(cliField && piField, plain(draft).join('\n'));
     for (const hit of [cliField, piField]) assert.match(plain(draft)[hit.y], /\[.* ▾\]/);
     const cli = click(draft, cliField.x, cliField.y);
     assert.equal(cli.action, undefined);
-    assert.equal(cli.state.projectInput.index, 0);
-    assert.equal(cli.state.controlChain.sheet, undefined);
+    assert.equal(cli.state.overlay.mode.kind, 'quick-model');
+    assert.equal(cli.state.overlay.mode.index, 0);
     const cliPicker = render(cli.state);
     const setCli = click(cliPicker, 3, rowY(cliPicker, /gemini-3\.8-flash-high$/));
     assert.equal(setCli.action, undefined, 'one click sets the CLI model in the draft only');
-    assert.equal(setCli.state.projectInput, undefined);
-    assert.equal(setCli.state.controlChain.draft.run[0].raw.model, 'gemini-3.8-flash-high');
+    assert.equal(setCli.state.overlay.mode.kind, 'places');
+    assert.equal(setCli.state.overlay.draft.run[0].raw.model, 'gemini-3.8-flash-high');
     const pi = click(draft, piField.x, piField.y);
     assert.equal(pi.action, undefined);
-    assert.equal(pi.state.projectInput.index, 1);
+    assert.equal(pi.state.overlay.mode.index, 1);
     const filtered = render(type(render(pi.state), 'grok-4.7-fast').state);
     const updated = send(filtered, 'enter');
     assert.equal(updated.action, undefined, 'Enter updates only the draft');
-    assert.equal(updated.state.controlChain.sheet, undefined);
-    assert.equal(updated.state.controlChain.draft.run[1].raw.model, 'xai/grok-4.7-fast');
+    assert.equal(updated.state.overlay.mode.kind, 'places');
+    assert.equal(updated.state.overlay.draft.run[1].raw.model, 'xai/grok-4.7-fast');
     if (process.env.CONTROL_REVIEW_FRAMES && layout === 'classic') t.diagnostic(`${lang} draft:\n${plain(draft).join('\n')}`);
   }
 });
@@ -213,40 +213,39 @@ test('picker mouse toggles other providers, ignores headers, sets in one click a
   for (const layout of ['classic', 'split']) {
     const render = (state) => draw('en', state, 32);
     let frame = render(state(layout));
-    assert.equal(click(frame, 2, field(frame, 1).y).state.projectInput, undefined, 'the rest of a place row is not the model field');
+    assert.equal(modelInput(click(frame, 2, field(frame, 1).y).state.overlay), undefined, 'the rest of a place row is not the model field');
     frame = render(send(frame, 'place-model').state);
     const hit = (re) => { const out = click(frame, 3, rowY(frame, re)); assert.equal(out.action, undefined); frame = render(out.state); };
-    const untouched = frame.state.projectInput;
+    const untouched = frame.state.overlay;
     for (const y of [0, 1, 2, rowY(frame, /^xai ─/), rowY(frame, /^256K ctx/)]) {
       const out = click(frame, 3, y);
       assert.equal(out.action, undefined);
-      assert.deepEqual(out.state.projectInput, untouched);
+      assert.deepEqual(out.state.overlay, untouched);
     }
     const cancel = frame.controls.find((c) => c.kind === 'model-cancel');
     assert.match(frame.lines[cancel.y].slice(cancel.x, cancel.x + cancel.width), /^esc cancel$/);
     const closed = click(frame, cancel.x, cancel.y);
     assert.equal(closed.action, undefined);
-    assert.equal(closed.state.projectInput, undefined);
+    assert.equal(closed.state.overlay.mode.kind, 'places');
     assert.deepEqual(closed.state.controlNav, frame.state.controlNav);
     const currentY = rowY(frame, /› ◉ xai\/grok-4.7/);
-    const set = modelInputEvent(frame.state, { type: 'mouse', button: 'left', x: 3, y: currentY }, { frame });
-    assert.deepEqual(set.action, { type: 'model-picked', value: 'xai/grok-4.7' });
-    assert.equal(set.state.projectInput, undefined);
+    const set = modelInputEvent(modelInput(frame.state.overlay), { type: 'mouse', button: 'left', x: 3, y: currentY }, { frame });
+    assert.deepEqual(set, { action: { type: 'model-picked', value: 'xai/grok-4.7' } });
     assert.match(plain(frame).join('\n'), /^xai ─+ 6\n[\s\S]*  ◉ grok-4.7/m, 'the current model stays in its group too');
     frame = render(send(frame, 'end').state);
     assert.match(plain(frame).join('\n'), /^› ▸ anthropic · arena · google \+1 ─+ 67$/m);
     hit(/▸ anthropic · arena/);
-    assert.ok(frame.state.projectInput.otherOpen);
+    assert.ok(frame.state.overlay.mode.picker.otherOpen);
     frame = render(click(frame, 3, 5, 65).state);
     assert.match(plain(frame).join('\n'), /^anthropic ─/m);
     hit(/▾ anthropic · arena/);
-    assert.equal(frame.state.projectInput.otherOpen, false);
+    assert.equal(frame.state.overlay.mode.picker.otherOpen, false);
     frame = render(type(frame, 'grok').state);
     picked(send(frame, 'enter'), 'xai/grok-4.5');
-    assert.deepEqual(click(frame, 3, rowY(frame, /^$/)).state.projectInput, frame.state.projectInput);
+    assert.deepEqual(click(frame, 3, rowY(frame, /^$/)).state.overlay, frame.state.overlay);
     picked(click(frame, 3, rowY(frame, /grok-4.7-fast$/)), 'xai/grok-4.7-fast');
     const tab = frame.controls.find((c) => c.kind === 'board-project');
-    assert.deepEqual(click(frame, tab.x, tab.y).state.projectInput, frame.state.projectInput, 'typing owns input');
+    assert.deepEqual(click(frame, tab.x, tab.y).state.overlay, frame.state.overlay, 'typing owns input');
   }
 });
 
@@ -257,12 +256,12 @@ test('wheel, arrows and page keys keep the cursor in the painted list at both wi
     const window = (frame) => frame.panes[0].rows.find((row) => row.modelWindow).modelWindow;
     const entry = draw(state()), browse = draw(send(entry, 'place-model').state);
     const start = draw(type(browse, 'arena/').state);
-    assert.equal(type(start, '?').state.projectInput.text, 'arena/?');
+    assert.equal(type(start, '?').state.overlay.mode.picker.text, 'arena/?');
     assert.doesNotMatch(start.lines.at(-1), /↑↓|\? help/);
     const { first, size } = window(start);
     const paged = draw(send(start, 'page-down').state);
     assert.equal(window(paged).first, first + size - 1);
-    assert.equal(window(paged).entries.find(({ id }) => id === paged.state.projectInput.pick).row, size - 1);
+    assert.equal(window(paged).entries.find(({ id }) => id === paged.state.overlay.mode.picker.pick).row, size - 1);
     assert.equal(window(draw(send(paged, 'page-up').state)).first, first);
     let frame = start;
     for (let row = 1; row < first + size; row++) {
@@ -295,15 +294,15 @@ test('the picker uses real collected preset chains, and locked and Flow places s
   f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW, pi: ['xai/current', 'openai/backup', 'xai/other'] });
   const data = await f.collector.collect('control', f.board, NOW);
   const placeState = (role, i = 0, snapshot = data) => onControl({ projectCursor: `project:role:${role}` }, {
-    controlChain: { role: snapshot.roles.find((r) => r.role === role), at: i },
+    overlay: chainOverlay(snapshot.roles.find((r) => r.role === role), i),
   });
   const opened = f.render(40, 'en', placeState('imp', 1), 32, data);
   const blank = field(opened, 1);
   assert.equal(blank.width, 3);
   assert.match(opened.lines[blank.y], /\[▾\]/);
   const openedCli = click(opened, blank.x + 1, blank.y);
-  assert.equal(openedCli.state.projectInput.index, 1);
-  assert.deepEqual(openedCli.state.projectInput, send(opened, 'place-model').state.projectInput);
+  assert.equal(openedCli.state.overlay.mode.index, 1);
+  assert.deepEqual(openedCli.state.overlay, send(opened, 'place-model').state.overlay);
   const pick = f.render(40, 'en', click(opened, field(opened).x, field(opened).y).state, 32, data);
   assert.match(plain(pick).join('\n'), /› ◉ xai\/current\n +openai\/backup +\[backup\] \[shared\]/);
   assert.doesNotMatch(plain(pick).join('\n'), /xai\/other|\[other\]|Pinned/);
@@ -312,7 +311,7 @@ test('the picker uses real collected preset chains, and locked and Flow places s
     const frame = f.render(40, 'en', placeState(role, 0, synthetic), 32, synthetic);
     assert.equal(frame.controls.some((c) => c.kind === 'control-model'), false);
     const out = send(frame, 'place-model');
-    assert.equal(out.state.projectInput, undefined);
+    assert.equal(out.state.overlay.mode.kind, 'places');
     assert.equal(out.action, undefined);
   }
 });

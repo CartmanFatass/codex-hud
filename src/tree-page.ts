@@ -75,10 +75,10 @@ import {
   msUntilAgeChanges,
   msUntilCountdownChanges,
   finishedAt,
-  paneShown,
   type MonitorFrame,
   type MonitorState,
 } from './render/monitor.js';
+import { acceptsMonitorInput, blocksReload, filterBatchInputs } from './render/monitor-state.js';
 import { projectListOpen, projectPageOf } from './render/project-view.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { fileSignature } from './utils/file-signature.js';
@@ -284,7 +284,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     return { ...next, ...monitorSettings(settings) };
   };
   const availableDecisionKeys = () => { try { return decisionKeys(readHudCredentials()); } catch { return undefined; } };
-  let state: MonitorState = { ...configuredState(), ...place?.state, experiments: settings.experiments, projectInput: undefined };
+  let state: MonitorState = { ...configuredState(), ...place?.state, experiments: settings.experiments };
   let expData = expShown(state) ? readExpData(jobPipeline.home) : undefined;
   let settingsPage: SettingsPageState | null = place?.settings
     ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
@@ -611,8 +611,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       collectionEpoch++;
     }
     if (closed || collecting) return;
-    const ready = await reload.poll(() => Boolean((settingsPage && settingsDirty(settingsPage)) || state.expPage?.edit ||
-      state.controlPresetInput || state.controlChain?.draft || state.controlChain?.sheet || state.controlQuickModel || state.projectInput));
+    const ready = await reload.poll(() => (settingsPage !== null && settingsDirty(settingsPage)) || blocksReload(state));
     if (closed) return;
     if (ready) {
       restarting = reload.restart({ state, openedAt, widthOverride: widthOverride ?? null,
@@ -890,8 +889,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         ...state,
         ...monitorSettings(settings),
         modes: monitorModes(settings),
-        zoom: false,
-        scroll: { ...state.scroll, agents: 0 },
         // The rows of the other layout are not these: the cursors and the to-try filter start over.
         ...(settings.panelLayout !== previousLayout ? { boardAnchor: undefined, homeTarget: undefined, projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, homeScroll: 0 } : {}),
         ...(settings.projectLayout !== previousProjectLayout || settings.acceptance !== previousAcceptance ? { projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, splitFocus: undefined, splitList: undefined, splitSub: undefined, splitScroll: 0, splitListScroll: 0, splitFor: undefined } : {}),
@@ -949,8 +946,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (closed) break;
       if (expSaving && expShown(state)) continue;
       if (input.type === 'mouse' && !settings.mouse) continue;
-      // Editors own unnamed printable keys; nowhere else do they trigger an action.
-      if (input.type === 'key' && !input.key && !state.projectInput && !state.controlQuickModel && !state.expPage?.edit && !state.controlPresetInput && !state.controlChain?.sheet && !state.controlHarnessAdd) continue;
+      if (!acceptsMonitorInput(settingsPage ? undefined : state, input)) continue;
       const fromSettings = Boolean(settingsPage);
       if (settingsLeave && confirmationFrame) {
         const result = handleSettingsConfirmation(settingsLeave, input, confirmationFrame);
@@ -1083,7 +1079,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (result.action?.type === 'exp-save' && expShown(state)) {
         const saved = () => {
           expData = readExpData(jobPipeline.home);
-          state.expPage = { ...state.expPage, edit: undefined, notice: 'Saved' };
+          state = { ...state, overlay: undefined, expPage: { ...state.expPage, notice: 'Saved' } };
         };
         const failed = () => { state.expPage = { ...state.expPage, notice: 'Could not save EXP setting' }; };
         try {
@@ -1105,7 +1101,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         try {
           setHarnessDisabled(jobPipeline.home, id, off);
           const nav = state.controlHarnessNav;
-          state = { ...state, controlHarnessAdd: undefined, controlHarnessNotice: { id, off }, controlHarnessNav: {
+          state = { ...state, overlay: undefined, controlHarnessNotice: { id, off }, controlHarnessNav: {
             ...nav, projectCursor: harnessItem(id), boardRevealed: undefined, splitFocus: undefined,
             projectFolded: off ? new Set() : nav?.projectFolded,
           } };
@@ -1128,16 +1124,17 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (result.action?.type === 'preset-edit') {
         const { type: _type, modelIndex, ...edit } = result.action;
         const done = editPreset(jobPipeline.home, shownRoot(), process.env, edit);
+        const chainSave = modelIndex === undefined && state.overlay?.kind === 'control-chain' ? state.overlay : undefined;
         if (modelIndex === undefined && done.ok) {
-          if (state.controlChain) state = finishChain(state);
-          state = { ...state, controlPresetInput: undefined,
+          if (chainSave) state = finishChain(state);
+          state = { ...state, overlay: undefined,
             controlPresetNotice: done.preset === undefined ? undefined : { role: edit.role, name: done.preset },
             controlNav: { ...state.controlNav, projectCursor: controlRoleItem(edit.role), boardRevealed: undefined } };
-        } else if (modelIndex === undefined && state.controlChain) {
-          state = { ...state, controlChain: { ...state.controlChain, error: done.message ?? 'could not save the change' } };
+        } else if (chainSave) {
+          state = { ...state, overlay: { ...chainSave, error: done.message ?? 'could not save the change' } };
         }
         // Keep the draft (and its revision) on failure; a quick save uses the ordinary notice slot.
-        notice(done.ok || (modelIndex === undefined && state.controlChain) ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : ''));
+        notice(done.ok || chainSave ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : ''));
         const visit = visits.visit(shownRoot());
         if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
         if (done.ok && modelIndex !== undefined && edit.op === 'run') {
@@ -1175,18 +1172,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     syncModelListDiscovery();
     if (!settingsPage) probe.cancel();
   };
-  /** Pass unnamed text when an editor is open or could be opened in this batch. */
-  const editorInput = (inputs: WorkbenchInput[]) => {
-    let picking = Boolean(state.projectInput || state.controlQuickModel || state.expPage?.edit || state.controlHarnessAdd || state.controlPresetInput || state.controlChain?.sheet);
-    return inputs.filter((i) => {
-      if (i.type !== 'key') { picking ||= (!!state.experiments || controlShown(state)) && i.button === 'left'; return true; }
-      if (i.key === 'place-model' || i.key === 'place-add' || (controlShown(state) && ['enter', 'preset-list', 'preset-copy', 'preset-empty', 'preset-rename'].includes(i.key)) ||
-          (state.experiments && i.key === 'enter')) picking = true;
-      return Boolean(i.key) || picking;
-    });
-  };
   const dispatch = (all: WorkbenchInput[]) => {
-    const inputs = editorInput(all);
+    const inputs = filterBatchInputs(settingsPage ? undefined : state, all);
     return withInputRefresh(
       inputs.length > 0,
       () => processInput(inputs),

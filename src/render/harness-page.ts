@@ -81,11 +81,12 @@ function harnessDetail(h: HarnessSwitchFact, width: number): MonitorRow[] {
   return [...detail, boardRow(''), ...flowLines(t('Role files untouched · restore any time'), width).map((s) => boardRow(muted(s)))];
 }
 export function harnessAddRows(data: ProjectSnapshot, state: MonitorState, width: number): MonitorRow[] {
-  const add = state.controlHarnessAdd!;
+  const add = state.overlay;
+  if (add?.kind !== 'control-harness-add') return [];
   const needle = add.text.toLowerCase();
   const matches = offSwitches(data).filter((h) => h.id.toLowerCase().includes(needle));
   const items = matches.map((h) => switchRow(h, width, true));
-  if (!items.some((r) => r.item === add.pick)) state.controlHarnessAdd = { ...add, pick: items[0]?.item };
+  if (!items.some((r) => r.item === add.pick)) state.overlay = { ...add, pick: items[0]?.item };
   const count = String(matches.length), text = squeeze(monitorText(add.text), Math.max(0, width - 5 - count.length));
   return [boardRow(pair(`/ ${text}${theme.board.active(mark('▌', '_'))}`, muted(count), width)),
     ...(data.harnessSwitchError ? harnessErrorRow(data, width) : items.length ? items : [boardRow(t('No matching switches'))])];
@@ -112,13 +113,13 @@ export function harnessScene(data: ProjectSnapshot, state: MonitorState, width: 
     }
     return { label: '', rows: [], hints };
   };
-  const add = state.controlHarnessAdd;
+  const add = state.overlay?.kind === 'control-harness-add';
   const scene = projectSplitScene(state, { list, preview, hints: harnessHints(data, state), start: list.find((r) => r.item)?.item },
     add ? 'harnesses|add' : 'harnesses');
   if (add) {
     scene.rule = { label: t('Add back'), right: scope() };
     scene.preview = harnessAddRows(data, state, previewWidth);
-    scene.sub = state.controlHarnessAdd?.pick;
+    scene.sub = state.overlay?.kind === 'control-harness-add' ? state.overlay.pick : undefined;
     scene.compact = true;
   }
   return add ? { ...scene, hints: addBackHints } : scene;

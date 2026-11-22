@@ -181,22 +181,22 @@ test('the answer keys do nothing on a job with no answerable question; a pane as
 test('X asks before stopping an unsettled job: y or Enter stops it, any other input cancels, a settled job has nothing to stop', (t) => {
   const f = fixture(t);
   const { out, frame } = f.press(RUNNING, 'X');
-  assert.deepEqual(out.state.confirmStop, { jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) });
+  assert.deepEqual(out.state.overlay, { kind: 'confirm-stop', jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) });
   assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
   const ctx = { tree: TREE, frame, nowMs: NOW };
   assert.deepEqual(handleMonitorInput(out.state, key('y'), ctx).action, { type: 'stop-job', dir: f.dir(RUNNING) });
   assert.deepEqual(handleMonitorInput(out.state, key('\r'), ctx).action, { type: 'stop-job', dir: f.dir(RUNNING) });
-  assert.equal(handleMonitorInput(out.state, key('y'), ctx).state.confirmStop, undefined);
+  assert.equal(handleMonitorInput(out.state, key('y'), ctx).state.overlay, undefined);
   for (const input of [{ type: 'key', key: 'escape' }, key('n'), key('j'), { type: 'mouse', button: 'left', x: 2, y: 4 }]) {
     const no = handleMonitorInput(out.state, input, ctx);
     assert.equal(no.action, undefined);
-    assert.equal(no.state.confirmStop, undefined);
+    assert.equal(no.state.overlay, undefined);
     assert.equal(no.close, false);
   }
-  assert.equal(f.press(DONE, 'X').out.state.confirmStop, undefined, 'a settled job is not stopped');
-  assert.equal(f.press(RUNNING, 'X', { mainTab: 'project' }).out.state.confirmStop, undefined);
+  assert.equal(f.press(DONE, 'X').out.state.overlay, undefined, 'a settled job is not stopped');
+  assert.equal(f.press(RUNNING, 'X', { mainTab: 'project' }).out.state.overlay, undefined);
   const inspected = f.press(RUNNING, 'X', { focus: 'details', boardInspect: { kind: 'worker', laneId: f.worker(RUNNING).laneId, workerId: f.worker(RUNNING).id } });
-  assert.equal(inspected.out.state.confirmStop?.jobId, RUNNING);
+  assert.equal(inspected.out.state.overlay?.jobId, RUNNING);
   assert.equal(plain(inspected.frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
 });
 
@@ -216,7 +216,7 @@ test('the Split layout takes the same keys for the job its list cursor is on', (
   assert.match(text, /1-2 answer {2}d default/);
   assert.deepEqual(run('2').action, { type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer: 'remove it now', role: 'imp' });
   frame = f.render({ ...frame.state, splitCursor: targetKey({ kind: 'lane', laneId: f.worker(RUNNING).laneId }) }, 60, 'en', 30);
-  assert.equal(run('X').state.confirmStop?.jobId, RUNNING);
+  assert.equal(run('X').state.overlay?.jobId, RUNNING);
   assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
   assert.deepEqual(run('y').action, { type: 'stop-job', dir: f.dir(RUNNING) });
   // The Home key still moves the list's cursor.
@@ -230,7 +230,7 @@ test('every row is exactly the panel width with the question expanded, a stop pr
   const at = (w) => ({ homeTarget: { kind: 'worker', laneId: w.laneId, workerId: w.id } });
   const states = [
     { ...at(asking), boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asking.laneId, workerId: asking.id })]) },
-    { ...at(running), confirmStop: { jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) } },
+    { ...at(running), overlay: { kind: 'confirm-stop', jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) } },
     { ...at(asking), focus: 'details', boardInspect: { kind: 'worker', laneId: asking.laneId, workerId: asking.id } },
   ];
   for (const layout of [undefined, 'split']) for (const lang of ['en', 'zh']) for (const width of [24, 32, 40, 60, 100]) for (const [i, state] of states.entries()) {

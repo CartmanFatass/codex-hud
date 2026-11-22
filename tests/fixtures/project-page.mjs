@@ -6,7 +6,7 @@ import { deflateSync } from 'node:zlib';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
-import { rememberModel } from '../../dist/render/model-input.js';
+import { modelInput, rememberModel } from '../../dist/render/model-input.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -165,6 +165,9 @@ export const PROJECTS = [{ root: '/synthetic/demo-project', name: 'demo-project'
 /** A Project tab state: the hub, or one page of it. */
 export const onPage = (projectPage, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
 export const onControl = (controlNav, extra) => ({ ...initialMonitorState(), mainTab: 'control', controlNav, ...extra });
+export const chainOverlay = (role, at = 0) => ({ kind: 'control-chain', role, at, mode: { kind: 'places' } });
+export const withChainPicker = (state, patch) => ({ ...state, overlay: { ...state.overlay,
+  mode: { ...state.overlay.mode, picker: { ...state.overlay.mode.picker, ...patch } } } });
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
 export const PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'];
 /** The hub at 40/80/120 (and text icons at 40), and each page at 40 and 120, so a regression shows in the diff. */
@@ -193,7 +196,7 @@ export function projectFrames(f) {
     frames[`control-rich-open-40-${lang}`] = plain(f.render(40, lang, opened, 56, control));
     frames[`control-chain-40-${lang}`] = plain(f.render(40, lang,
       onControl({ projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files', 'usage']) },
-        { controlChain: { role: control.roles.find((r) => r.role === 'imp'), at: 0 } }), 26, control));
+        { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) }), 26, control));
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
@@ -214,8 +217,8 @@ export function presetFrames(f, control) {
   const withImp = (role) => ({ ...control, roles: control.roles.map((r) => r === base ? role : r) });
   const nav = { projectCursor: 'project:role:imp' };
   const views = {
-    row: {}, list: { controlPresetInput: { mode: 'list', role: imp, text: '', at: 0 } },
-    delete: { controlPresetInput: { mode: 'delete', role: imp } },
+    row: {}, list: { overlay: { kind: 'control-preset', sheet: { mode: 'list', role: imp, text: '', at: 0 } } },
+    delete: { overlay: { kind: 'control-preset', sheet: { mode: 'delete', role: imp } } },
   };
   const frames = {};
   for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) for (const [name, extra] of Object.entries(views))
@@ -239,7 +242,7 @@ export function quickModelFrames(f, control) {
   const nav = { projectCursor: 'project:role:imp', projectFolded: new Set(['usage', 'files']) };
   const frames = {};
   for (const width of [40, 120]) for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
-    const draw = (state, snapshot = data(places)) => f.render(width, lang, state, state.projectInput ? 24 : 28, snapshot);
+    const draw = (state, snapshot = data(places)) => f.render(width, lang, state, modelInput(state.overlay) ? 24 : 28, snapshot);
     const send = (frame, key, text) => handleMonitorInput(frame.state, { type: 'key', key, text }, { frame, tree: TREE, nowMs: NOW });
     const row = draw(onControl(nav, { panelLayout }));
     const picker = draw(send(row, 'place-model').state);
@@ -258,10 +261,10 @@ export function pickerFrames(f, control = richControl(f.data), layout = 'split')
   const frames = {};
   const draw = (lang, snapshot, height, text = '', pick) => {
     const role = snapshot.roles.find((r) => r.role === 'imp');
-    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout: layout, controlChain: { role, at: 0 } });
+    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout: layout, overlay: chainOverlay(role) });
     const frame = f.render(40, lang, state, height, snapshot);
     const opened = handleMonitorInput(frame.state, { type: 'key', key: 'place-model' }, { frame, tree: TREE, nowMs: NOW }).state;
-    return plain(f.render(40, lang, { ...opened, projectInput: { ...opened.projectInput, text, pick } }, height, snapshot));
+    return plain(f.render(40, lang, withChainPicker(opened, { text, pick }), height, snapshot));
   };
   const scenario = (isDefault, current = isDefault ? 'openai/gpt-6.1-sol' : 'xai/grok-4.7', state = 'active', off = []) => ({
     ...control,
@@ -318,7 +321,7 @@ export function modelPickerSample(f) {
     harnessSwitches: [{ id: 'pi:deepseek', name: 'deepseek', group: 'provider', off: true }], radar: undefined };
   const state = (layout = 'split') => onControl({
     projectFolded: new Set(['usage', 'files']), projectCursor: 'project:role:imp',
-  }, { panelLayout: layout, experiments: true, controlChain: { role: roles.find((r) => r.role === 'imp'), at: 0 } });
+  }, { panelLayout: layout, experiments: true, overlay: chainOverlay(roles.find((r) => r.role === 'imp')) });
   const draw = (lang, state, height = 28, snapshot = data) => f.render(40, lang, state, height, snapshot, true, 'unicode', 'none', {
     projectName: 'harbor-api', projects: PROJECTS, projectWaiting: 2,
   });

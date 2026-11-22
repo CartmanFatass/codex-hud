@@ -236,8 +236,8 @@ establish that only `off` is supported; an offline, sessionless Pi metadata prob
 This does not refresh the picker or make a model request. The `harness-switch` action updates only
 `$HUD_HOME/harnesses.json` (`disabled`) via `roles/harness-switches.ts`, by private atomic replacement. Machine switches never rewrite role files. The in-place chain editor
 (`render/chain-input.ts`) works on an in-memory draft of raw places and uses snapshot facts for
-its preview. The field sheet feeds the existing pi picker (`MonitorState.projectInput`,
-`render/model-input.ts`), which returns a model ID to the sheet, not to disk. Save sends one
+its preview. The field sheet embeds the pi picker (`render/model-input.ts`), which returns
+a model ID to the sheet, not to disk. Save sends one
 `preset-edit` with the whole chain and the captured role revision; `tree-page.ts` applies it through
 `editPreset` and the existing atomic role writer. Project-pinned roles are read-only; target changes
 that would lose launch options are refused. `editPlaces` handles preset cycling and immediate quota
@@ -351,13 +351,13 @@ row's sentence its own line when the id is long, and `placeRows` (`control-view.
 on the row, or on a second line before it cuts the name.
 The owner's micro-actions on a HUD job (`render/job-actions.ts`, spec §2.2) are pure input: `g` (on a job's row) becomes
 `focus-job-tab`; `1`–`4` and `d` on an expanded question slab (or in the Inspector) pick an option or the worker's
-default and become `answer-job` (the digits switch no tab, so they mean nothing elsewhere: tabs are ←→, Tab and a click); `X` sets `confirmStop`, whose `y`/Enter becomes
+default and become `answer-job` (the digits switch no tab, so they mean nothing elsewhere: tabs are ←→, Tab and a click); `X` opens the stop-confirmation overlay, whose `y`/Enter becomes
 `stop-job`. Any other input cancels the stop prompt. `tree-page.ts` does the I/O: `focusJobTab` and `stopJob`
 (`cli/panel-pane.ts`: `herdr tab focus`, `pi-role-reap`) and `answerJobQuestion` (`collectors/panel-actions.ts`), which
 writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
 `PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP
 `changes`, as the try log does: only answers made while the reader runs.
-The `/` filter (`render/filter.ts`, `MonitorState.filterQuery`/`filterOpen`, kept across the reload) is pure input plus a pure match: `filterInput`
+The `/` filter (`render/filter.ts`, `MonitorState.filterQuery`/`filterOpen`; the kept query survives reload) is pure input plus a pure match: `filterInput`
 runs first in `handleMonitorInput` and owns the keyboard while the bar is open, and a change of `filterScope` (Home, or Progress/Tickets of one
 project) clears it. The views are filtered, not their rows: `renderWorkboardFrame` hands Home a `visibleWorkboard` of the matching cards and
 Progress/Tickets a `filterProject` snapshot, so Classic, Split, the cursor and `workboardInput` all see only what matches. The bar is a
@@ -376,8 +376,11 @@ All standalone panels decode their own keys and SGR mouse events through
 before writing (erasing after a full-width row would wipe its last cell).
 
 The panel polls its own installed entry signature per collection. A change must be
-quiet for two seconds and pass a bounded child import before reload. Dirty Settings and Control drafts
-delay replacement; a bad generation leaves the old panel running. Restart preserves
+quiet for two seconds and pass a bounded child import before reload. Dirty Settings, an open filter,
+stop confirmation and Control/EXP editors delay replacement. The transient `MonitorState.overlay`
+is never sent to the next process; a clean chain view returns to its role row. `render/monitor-state.ts`
+holds these reload rules and the input rule for unnamed keys (including `/` and `g`). A bad generation
+leaves the old panel running. Restart preserves
 argv/env, view/selection/scroll/expansion, Settings cursor, opening time and width
 override. `process.execve` replaces the process when available; otherwise one
 signal-forwarding supervisor handles restart-exit handoffs without nested parents.

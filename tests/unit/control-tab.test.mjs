@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { projectFixture, onControl, onPage, plain, presetFrames, quickModelFrames, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
+import { chainOverlay, projectFixture, onControl, onPage, plain, presetFrames, quickModelFrames, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
 import { build } from '../../docs/design/control-tab/gen/frames.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
@@ -174,7 +174,8 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     frame = draw(send(frame, click(frame, 'harness-add')).state);
     assert.match(caption(frame), zh ? /添加回/ : /Add back/);
     for (const input of decoder.push(Buffer.from('qjk7'))) frame = draw(send(frame, input).state);
-    assert.equal(frame.state.controlHarnessAdd.text, 'qjk7');
+    assert.equal(frame.state.overlay.kind, 'control-harness-add');
+    assert.equal(frame.state.overlay.text, 'qjk7');
     assert.match(caption(frame), zh ? /没有匹配/ : /No matching switches/);
     assert.equal(send(frame, 'enter').action, undefined);
     // Cancel restores the list. Backspacing and filtering never start discovery or a write.
@@ -182,7 +183,7 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     const cursor = frame.state.controlHarnessNav.projectCursor;
     frame = draw(send(frame, 'place-add').state);
     for (const input of decoder.push(Buffer.from('xaz\x7fi'))) frame = draw(send(frame, input).state);
-    assert.equal(frame.state.controlHarnessAdd.text, 'xai');
+    assert.equal(frame.state.overlay.text, 'xai');
     assert.deepEqual(send(frame, 'enter').action, { type: 'harness-switch', id: 'pi:xai', off: false });
     frame = draw(send(frame, 'escape').state);
     assert.equal(frame.state.controlHarnessNav.projectCursor, cursor);
@@ -251,7 +252,7 @@ test('project role at 40 columns shows source and lock, with open but no preset 
   const f = await fixture(t), data = richControl(f.data);
   for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
     const state = onControl({ projectCursor: 'project:role:frontend' }, { panelLayout,
-      controlChain: { role: data.roles.find((r) => r.role === 'frontend'), at: 0 } });
+      overlay: chainOverlay(data.roles.find((r) => r.role === 'frontend')) });
     const frame = f.render(40, lang, state, 34, data);
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
     const content = plain(frame).join('\n');
@@ -291,7 +292,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
         const done = editPreset(f.hud, f.cwd, f.env, out.action);
         assert.equal(done.ok, true, JSON.stringify(done));
         f.collector.refreshRoles(snap, NOW);
-        state = state.controlChain ? finishChain(state) : { ...state, controlPresetInput: undefined };
+        state = state.overlay?.kind === 'control-chain' ? finishChain(state) : { ...state, overlay: undefined };
       } else assert.equal(out.action, undefined);
       frame = draw(state);
     };
@@ -309,7 +310,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
       assert.equal(del.y, rename.y + 1);
       assert.equal(plain(frame)[del.y], '  删除');
       assert.equal(del.width, visualLength('删除'));
-      assert.equal(send(frame, { type: 'mouse', button: 'left', x: del.x + del.width - 1, y: del.y }).state.controlPresetInput.mode, 'delete');
+      assert.equal(send(frame, { type: 'mouse', button: 'left', x: del.x + del.width - 1, y: del.y }).state.overlay.sheet.mode, 'delete');
     }
     click('preset-list');
     assert.match(text(), zh ? /选择预设/ : /choose preset/);
@@ -318,7 +319,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
     assert.match(text(), /default +→/);
     keys('qjk7\r');
     assert.match(text(), zh ? /没有匹配的预设/ : /No matching presets/);
-    assert.equal(frame.state.controlPresetInput.text, 'qjk7');
+    assert.equal(frame.state.overlay.sheet.text, 'qjk7');
     assert.equal(fs.readFileSync(file, 'utf8'), before);
     keys('\x03');
     assert.equal(frame.state.controlNav.projectCursor, cursor);

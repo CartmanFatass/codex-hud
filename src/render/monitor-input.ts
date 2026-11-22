@@ -8,6 +8,7 @@ import { jobModalInput } from './job-actions.js';
 import { filterInput, filterScope } from './filter.js';
 import { expInput } from './exp-view.js';
 import { expShown } from './main-tabs.js';
+import { hasUnsavedDraft } from './monitor-state.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
@@ -38,7 +39,8 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
         : '';
   if (state.help) {
     // Quitting still needs the chain's discard confirmation, visible after Help closes.
-    if (key === 'close') return state.controlChain ? route({ ...state, help: false }, input, ctx) : { state, close: true };
+    if (key === 'close') return state.overlay?.kind === 'control-chain' && hasUnsavedDraft(state)
+      ? route({ ...state, help: false }, input, ctx) : { state, close: true };
     const next = { ...state };
     const back =
       input.type === 'mouse' &&
@@ -56,12 +58,17 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
     }
     return { state: next, close: false };
   }
-  if (expShown(state) && state.expPage?.edit) return expInput(state, input, ctx)!;
-  if (state.controlPresetInput) return presetInputKey(state, input, ctx);
-  if (state.controlQuickModel) return quickModelKey(state, input, ctx);
-  if (state.controlChain) return chainInputKey(state, input, ctx, route);
-  const add = harnessAddInput(state, input, ctx);
-  if (add) return add;
+  const overlay = state.overlay;
+  switch (overlay?.kind) {
+    case 'exp-edit': if (expShown(state)) return expInput(state, input, ctx)!; break;
+    case 'control-preset': return presetInputKey(state, overlay.sheet, input, ctx);
+    case 'control-quick-model': return quickModelKey(state, overlay, input, ctx);
+    case 'control-chain': return chainInputKey(state, overlay, input, ctx, route);
+    case 'control-harness-add': return harnessAddInput(state, overlay, input, ctx);
+    case 'confirm-stop':
+    case undefined: break;
+    default: overlay satisfies never;
+  }
   // The `/` filter: its typing owns the keyboard, as the model input's does.
   const filter = filterInput(state, input);
   if (filter) return filter;

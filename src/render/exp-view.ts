@@ -24,6 +24,7 @@ import {
   type ExpProxyWindow,
 } from '../exp-proxy.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
+import type { OverlayState } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import { theme, visualLength } from './colors.js';
 import { flowLines, monitorText, pair, squeeze } from './monitor-text.js';
@@ -44,17 +45,11 @@ interface Entry {
   edit?: Editor;
   detail?: Detail;
 }
-interface Draft {
-  text: string;
-  pick: number;
-  clicked?: boolean;
-  preview?: Extract<ExpEdit, { field: 'grant' | 'renewal' | 'calibration' }>;
-}
+type ExpEditor = Extract<OverlayState, { kind: 'exp-edit' }>;
 export interface ExpPage {
   detail?: Detail;
   cursor?: string;
   scroll?: number;
-  edit?: Draft;
   notice?: 'Saved' | 'Could not save EXP setting' | 'Invalid value';
 }
 
@@ -310,6 +305,7 @@ function groups(
 
 export function expRows(
   page: ExpPage,
+  editor: ExpEditor | undefined,
   data: ExpData | undefined,
   width: number,
   nowMs: number,
@@ -325,9 +321,9 @@ export function expRows(
       return [boardRow(pair(`  ${inline ? squeeze(label, maxLabel) : label}`, theme.board.muted(value), width))];
     return [...text(label, theme.board.text, '  '), ...text(value, theme.board.muted, '  ')];
   };
-  const entry = sections.flatMap((g) => g.entries ?? []).find((e) => e.id === page.cursor);
-  if (page.edit && entry?.edit) {
-    const { edit } = page;
+  const entry = editor && sections.flatMap((g) => g.entries ?? []).find((e) => e.id === editor.entryId);
+  if (editor && entry?.edit) {
+    const { draft: edit } = editor;
     const rows = text(entry.label, theme.board.title);
     if (edit.preview) {
       return [
@@ -391,17 +387,18 @@ export function expRows(
   return [...header, ...blocks.flatMap((rows, i) => (i < spare ? [boardRow(''), ...rows] : rows))];
 }
 
-export const expHints = (page: ExpPage): FooterHints => {
+export const expHints = (page: ExpPage, edit: ExpEditor | undefined): FooterHints => {
   if (page.detail === 'proxy-status') return ['Esc back'];
-  if (!page.edit) return page.detail ? ['⏎ edit', 'Esc back'] : ['⏎ edit'];
-  return { modal: [page.cursor === 'calibration' && !page.edit.preview ? '⏎ preview' : '⏎ save', 'Esc cancel'] };
+  if (!edit) return page.detail ? ['⏎ edit', 'Esc back'] : ['⏎ edit'];
+  return { modal: [edit.entryId === 'calibration' && !edit.draft.preview ? '⏎ preview' : '⏎ save', 'Esc cancel'] };
 };
 
 export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
   const page = { ...state.expPage },
     data = ctx.frame?.expData;
+  let overlay = state.overlay;
   const out = (edit?: ExpEdit): MonitorOutcome => ({
-    state: { ...state, expPage: page },
+    state: { ...state, expPage: page, overlay },
     close: false,
     action: edit && { type: 'exp-save', edit },
   });
@@ -410,11 +407,11 @@ export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorC
   const entries = data ? groups(data, page.detail).flatMap((g) => g.entries ?? []) : [];
   const at = entries.findIndex((e) => e.id === page.cursor);
   const current = entries[at];
-  if (page.edit) {
-    const draft = { ...page.edit },
-      editor = current?.edit;
+  if (overlay?.kind === 'exp-edit') {
+    const { entryId } = overlay, draft = { ...overlay.draft },
+      editor = entries.find((entry) => entry.id === entryId)?.edit;
     const leave = () => {
-      page.edit = undefined;
+      overlay = undefined;
       page.scroll = 0;
       page.notice = undefined;
     };
@@ -426,7 +423,7 @@ export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorC
       key.type === 'mouse' && key.button === 'left' && pane ? monitorRowAt(pane, key.x, key.y)?.item : undefined;
     const option = item && 'choices' in editor ? editor.choices.findIndex((_, i) => choiceItem(i) === item) : -1;
     if (key.type !== 'key' && option < 0) return out();
-    page.edit = draft;
+    overlay = { ...overlay, draft };
     page.notice = undefined;
     if (option >= 0 && (option !== draft.pick || !draft.clicked)) {
       draft.pick = option;
@@ -460,7 +457,8 @@ export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorC
     if (entry?.detail) {
       page.detail = entry.detail;
       page.cursor = undefined;
-    } else if (entry?.edit) page.edit = { text: '', pick: 'choices' in entry.edit ? entry.edit.initial : 0 };
+    } else if (entry?.edit) overlay = { kind: 'exp-edit', entryId: entry.id,
+      draft: { text: '', pick: 'choices' in entry.edit ? entry.edit.initial : 0 } };
     if (entry) {
       page.scroll = 0;
       page.notice = undefined;

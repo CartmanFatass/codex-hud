@@ -7,24 +7,25 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
-import { projectFixture, pickerFrames, flatPickerFrames, MAVERICK, plain, onPage, onControl, NOW, TREE, MODEL_LISTS, PROJECTS } from '../fixtures/project-page.mjs';
+import { chainOverlay, projectFixture, pickerFrames, flatPickerFrames, MAVERICK, plain, onPage, onControl, NOW, TREE, MODEL_LISTS, PROJECTS } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { editPlaces, editPreset, placeItem } from '../../dist/roles/role-control.js';
 import { build as controlSample } from '../../docs/design/control-tab/gen/frames.mjs';
 import { finishChain } from '../../dist/render/chain-input.js';
+import { modelInput } from '../../dist/render/model-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { markExhausted, placeKey, roleRegistry } from '../../dist/roles/roster.js';
 
 const saveRun = (s, role, run) => assert.equal(editPreset(s.hud, s.cwd, s.env, { role, op: 'run', run }).ok, true);
 
 function select(state, item) {
-  return { ...state, controlChain: undefined, controlNav: { ...state.controlNav, projectCursor: item } };
+  return { ...state, overlay: undefined, controlNav: { ...state.controlNav, projectCursor: item } };
 }
 function focus(s, name = 'imp', at = 0) {
   const role = s.session.snap.roles.find((r) => r.role === name);
-  s.session.state = { ...select(s.session.state, `project:role:${name}`), controlChain: { role, at } };
+  s.session.state = { ...select(s.session.state, `project:role:${name}`), overlay: chainOverlay(role, at) };
 }
 
 /** The synthetic Project fixture with every CLI and browser tool but `codex` and `jev-flow` on PATH, and the shipped `imp`. */
@@ -54,9 +55,9 @@ async function setup(t, { shippedImp = true, healthyOpen = true } = {}) {
     }
     if (out.action?.type === 'preset-edit') {
       session.done = editPreset(f.hud, f.cwd, f.env, out.action);
-      if (out.action.modelIndex === undefined && session.state.controlChain) {
+      if (out.action.modelIndex === undefined && session.state.overlay?.kind === 'control-chain') {
         if (session.done.ok) session.state = finishChain(session.state);
-        else session.state.controlChain.error = session.done.message;
+        else session.state.overlay.error = session.done.message;
       }
       f.collector.refreshRoles(session.snap, NOW);
     }
@@ -142,7 +143,7 @@ test('Control plane keeps the long model field usable when the role list scrolls
     return draw();
   };
   let frame = draw();
-  assert.equal(frame.state.controlChain.at, 0);
+  assert.equal(frame.state.overlay.at, 0);
   const lines = plain(frame), chain = lines.findIndex((line) => /^› +1 ✗/.test(line));
   assert.ok(chain > lines.findIndex((line) => /✗ reviewer/.test(line)));
   assert.match(lines.join('\n'), /source +yours · reviewer\.json/);
@@ -150,15 +151,15 @@ test('Control plane keeps the long model field usable when the role list scrolls
   assert.equal(field.y, chain + 1, 'the long model field has its own row');
   assert.match(lines[field.y], /\[very-long.*….*preview ▾\]/);
   const picked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: field.x, y: field.y }, { tree: TREE, frame });
-  assert.equal(picked.state.controlChain.sheet, undefined);
-  assert.equal(picked.state.controlQuickModel.index, 0);
-  assert.equal(picked.state.projectInput.place.label, 'claude');
+  assert.equal(picked.state.overlay.mode.kind, 'quick-model');
+  assert.equal(picked.state.overlay.mode.index, 0);
+  assert.equal(picked.state.overlay.mode.picker.place.label, 'claude');
   frame = choose(frame, { type: 'key', key: 'down' });
-  assert.equal(frame.state.controlChain.at, 1);
+  assert.equal(frame.state.overlay.at, 1);
   const y = plain(frame).findIndex((line) => /3 ○ agy/.test(line));
   assert.ok(y > 0);
   frame = choose(frame, { type: 'mouse', button: 'left', x: 4, y });
-  assert.equal(frame.state.controlChain.at, 2);
+  assert.equal(frame.state.overlay.at, 2);
   const zh = s.frame(38, 'zh', 24);
   assert.match(plain(zh).join('\n'), /^› +3 ○ agy +\[synthetic-fallback ▾\]/m);
   for (const line of zh.lines) assert.equal(visualLength(line), 38, stripAnsi(line));
@@ -271,15 +272,15 @@ test('browser fields use the actual adapter: site/effort, AI Studio model/thinki
   assert.equal(s.assignment('pro').runs_on.provider, 'gemini');
   focus(s, 'pro', 2);
   await s.press('m');
-  assert.equal(s.session.state.controlChain.sheet, undefined);
+  assert.equal(s.session.state.overlay.mode.kind, 'quick-model');
   assert.match(s.text(), /^pro #3 ─+ aistudio\n\/ ▌ +1\n› ◉ gemini-4-argon/m);
   await s.keys(DOWN, ENTER);
   assert.equal(s.session.done.ok, true);
   assert.equal(stored(s, 'pro').run[2].model, undefined);
-  assert.equal(s.session.state.controlChain.at, 2);
+  assert.equal(s.session.state.overlay.at, 2);
   s.session.state = select(s.session.state, 'project:role:flow');
   await s.press('m');
-  assert.equal(s.session.state.controlQuickModel, undefined);
+  assert.equal(s.session.state.overlay, undefined);
   assert.doesNotMatch(s.frame().lines.at(-1), /m model/);
   focus(s, 'flow');
   await s.press(ENTER);
@@ -310,7 +311,7 @@ test('Control uses inherited model and thinking when known and a clickable arrow
       assert.equal(plain(view).find((row) => row.trimStart().startsWith(label)).trim().split(/ +/).join(' '), known ? `${label} high` : label);
       const { x, y } = hit(view);
       s.session.state = handleMonitorInput(view.state, { type: 'mouse', button: 'left', x, y }, { tree: TREE, frame: view }).state;
-      assert.ok(s.session.state.projectInput);
+      assert.ok(modelInput(s.session.state.overlay));
       const clear = lang === 'en' ? (known ? "role's model (gpt-6.2-sol)" : 'clear') : (known ? '角色自带模型（gpt-6.2-sol）' : '清除');
       assert.ok(plain(draw()).some((row) => row.startsWith(`› ◉ ${clear}`)));
       const wide = s.render(120, lang, s.session.state, 36, s.session.snap);
@@ -342,13 +343,12 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.match(page, /20261101/);
   assert.doesNotMatch(page, /openai/);
   await s.keys(ESC, 'XAI/GROK-4.7', ENTER);
-  assert.equal(s.session.state.controlChain.at, 0);
-  assert.equal(s.session.state.controlChain.sheet, undefined);
-  assert.equal(s.session.state.controlChain.draft, undefined);
+  assert.equal(s.session.state.overlay.at, 0);
+  assert.equal(s.session.state.overlay.mode.kind, 'places');
+  assert.equal(s.session.state.overlay.draft, undefined);
   assert.equal(s.session.done.ok, true);
   assert.equal(stored(s, 'imp').run[0].model, 'xai/grok-4.7');
   assert.equal(s.assignment('imp').model, 'xai/grok-4.7');
-  assert.equal(s.session.state.projectInput, undefined);
   assert.equal(s.session.state.controlNav.projectCursor, 'project:role:imp');
   assert.deepEqual(JSON.parse(fs.readFileSync(config, 'utf8')), legacy);
   const roleFile = join(s.hud, 'roles/imp.json'), before = fs.readFileSync(roleFile);
@@ -370,7 +370,7 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.match(page, /^  ◉ xai\/grok-4.7\n›   xai\/grok-4.7-fast[\s\S]*^ +arena\/grok-4.7$/m);
   const closed = await s.press('\x03');
   assert.equal(closed.close, false);
-  assert.equal(s.session.state.projectInput, undefined);
+  assert.equal(s.session.state.overlay, undefined);
   assert.deepEqual(fs.readFileSync(roleFile), before);
   assert.deepEqual(fs.readFileSync(cacheFile), cacheBefore);
 });
@@ -386,15 +386,15 @@ test('quick model on a role saves only the model in the active preset and target
     assert.deepEqual(stored(s, 'imp'), expected);
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     assert.equal(s.session.state.controlNav.projectCursor, item);
-    assert.equal(s.session.state.controlChain, undefined);
-    assert.equal(s.session.state.controlQuickModel, undefined);
+    assert.equal(s.session.state.overlay, undefined);
   };
   for (const [panelLayout, model] of [['split', 'xai/grok-4.7-fast'], ['classic', 'xai/grok-4.7-mini']]) {
     s.put(file, original);
     discover(s);
     s.session.state = onControl({ projectCursor: item }, { panelLayout });
     await s.keys('m', model);
-    assert.equal(s.session.state.projectInput.index, 0);
+    assert.equal(s.session.state.overlay.kind, 'control-quick-model');
+    assert.equal(s.session.state.overlay.index, 0);
     assert.deepEqual(stored(s, 'imp'), original);
     const out = await s.press(ENTER);
     assert.deepEqual([out.action.type, out.action.op, out.action.modelIndex], ['preset-edit', 'run', 0]);
@@ -409,7 +409,7 @@ test('quick model on a role saves only the model in the active preset and target
   s.session.state = onControl({ projectCursor: item }, { panelLayout: 'split' });
   assert.match(s.text(), /imp \[daily\] → openai\/gpt-6.1-sol/);
   await s.keys('m', 'openai/gpt-6-astra');
-  assert.equal(s.session.state.projectInput.index, 1);
+  assert.equal(s.session.state.overlay.index, 1);
   const fallback = await s.press(ENTER);
   assert.equal(fallback.action.modelIndex, 1);
   check(1, 'openai/gpt-6-astra', beforeFallback);
@@ -431,9 +431,9 @@ test('quick model on a role saves only the model in the active preset and target
   const beforeDraft = fs.readFileSync(file);
   await s.keys('K', 'm', 'openai/o1', ENTER);
   assert.deepEqual(fs.readFileSync(file), beforeDraft);
-  const draft = s.session.state.controlChain;
+  const draft = s.session.state.overlay;
   assert.equal(draft.at, 0);
-  assert.equal(draft.sheet, undefined);
+  assert.equal(draft.mode.kind, 'places');
   assert.equal(draft.draft.run[0].raw.model, 'openai/o1');
   await s.press('s');
   assert.equal(stored(s, 'imp').presets[0].run[0].model, 'openai/o1');
@@ -442,7 +442,7 @@ test('quick model on a role saves only the model in the active preset and target
   s.collector.refreshRoles(s.session.snap, NOW);
   assert.match(s.text(), /imp \[daily\] → none/);
   await s.press('m');
-  assert.equal(s.session.state.projectInput.index, 0, 'place 1 is editable when none can run');
+  assert.equal(s.session.state.overlay.index, 0, 'place 1 is editable when none can run');
 });
 
 test('pi picker keeps no-match text, owns printable keys, and does not offer an off default', async (t) => {
@@ -455,16 +455,17 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   focus(s);
   await s.keys('m', 'custom/pi-next', ENTER);
   assert.match(lines40(s).join('\n'), /▌ +0\nNo matching models/);
-  assert.equal(s.session.state.projectInput.text, 'custom/pi-next');
+  const picker = () => s.session.state.overlay.mode.picker;
+  assert.equal(picker().text, 'custom/pi-next');
   assert.equal(stored(s, 'imp').run[0].model, long);
   await s.press(BACKSPACE);
-  assert.equal(s.session.state.projectInput.text, 'custom/pi-nex');
+  assert.equal(picker().text, 'custom/pi-nex');
   await s.press(ESC);
-  assert.equal(s.session.state.projectInput.text, '');
-  assert.equal(s.session.state.projectInput.pick, undefined);
+  assert.equal(picker().text, '');
+  assert.equal(picker().pick, undefined);
   assert.equal(stored(s, 'imp').run[0].model, long);
   await s.press(ESC);
-  assert.equal(s.session.state.projectInput, undefined);
+  assert.equal(s.session.state.overlay.mode.kind, 'places');
   assert.equal(stored(s, 'imp').run[0].model, long);
   setHarnessDisabled(s.hud, 'pi:synthetic', true);
   s.collector.refreshRoles(s.session.snap, NOW);
@@ -486,11 +487,11 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
     const out = await s.press(raw);
     assert.deepEqual([out.action, out.close], [undefined, false], raw);
   }
-  assert.equal(s.session.state.projectInput.text, 'qpeirKojw');
+  assert.equal(picker().text, 'qpeirKojw');
   const view = s.frame();
   const tab = view.controls.find((c) => c.kind === 'board-project');
   const click = handleMonitorInput(view.state, { type: 'mouse', button: 'left', x: tab.x, y: tab.y }, { tree: TREE, frame: view, nowMs: NOW, standalone: true });
-  assert.ok(click.state.projectInput, 'the model field owns input until it is cancelled');
+  assert.equal(click.state.overlay.mode.kind, 'quick-model', 'the model field owns input until it is cancelled');
   assert.equal(click.action, undefined);
 });
 test('m on oracle → claude opens the flat picker and Enter saves the active preset', async (t) => {
@@ -503,7 +504,7 @@ test('m on oracle → claude opens the flat picker and Enter saves the active pr
   s.session.state = onControl({ projectCursor: item }, { panelLayout: 'split' });
   assert.match(s.text(), /oracle \[daily\] → claude fable/);
   await s.press('m');
-  assert.equal(s.session.state.controlChain, undefined);
+  assert.equal(s.session.state.overlay.kind, 'control-quick-model');
   const picker = s.frame(120);
   assert.deepEqual(picker.panes.map((pane) => [pane.id, pane.width]), [['agents', 120]]);
   assert.match(plain(picker).join('\n'), /^oracle #1 ─+ \[daily\] · claude\n\/ ▌ +4\n› ◉ fable +\[fable\]\n +clear\n +haiku\n +opus\n +sonnet$/m);
@@ -514,8 +515,7 @@ test('m on oracle → claude opens the flat picker and Enter saves the active pr
   assert.equal(s.session.done.ok, true);
   assert.deepEqual(stored(s, 'oracle'), { ...before, presets: [{ name: 'daily', run: [{ ...claude, model: 'opus' }] }] });
   assert.equal(s.session.state.controlNav.projectCursor, item);
-  assert.equal(s.session.state.projectInput, undefined);
-  assert.equal(s.session.state.controlChain, undefined);
+  assert.equal(s.session.state.overlay, undefined);
 
   const saved = stored(s, 'oracle');
   setHarnessDisabled(s.hud, 'cli:claude', true);
@@ -552,11 +552,12 @@ test('CLI quick picker merges catalog and discovery; Edit place keeps inline Mod
   await s.keys('m', 'MID synthetic', ENTER);
   assert.equal(s.session.done.ok, true);
   assert.equal(stored(s, 'imp').run[0].model, 'gemini-synthetic-mid');
-  assert.equal(s.session.state.controlChain, undefined);
+  assert.equal(s.session.state.overlay, undefined);
   focus(s);
   await s.keys(ENTER, DOWN, ENTER, 'flash', ENTER);
-  assert.equal(s.session.state.projectInput, undefined);
-  assert.equal(s.session.state.controlChain.sheet.place.raw.model, 'gemini-3.8-flash-high');
+  assert.equal(s.session.state.overlay.mode.kind, 'sheet');
+  assert.equal(s.session.state.overlay.mode.input, undefined);
+  assert.equal(s.session.state.overlay.mode.place.raw.model, 'gemini-3.8-flash-high');
   assert.equal(stored(s, 'imp').run[0].model, 'gemini-synthetic-mid');
   await s.keys(DOWN, ENTER, 'xhigh', ENTER, END, ENTER, 's');
   assert.equal(stored(s, 'imp').run[0].thinking, 'xhigh');
@@ -636,7 +637,7 @@ test('pi picker paints live quota, off and unknown facts without offering off or
   await s.keys('m', 'openai/gpt-6.1-sol');
   const refresh = await s.press('\x12');
   assert.deepEqual(refresh.action, { type: 'refresh-models' });
-  assert.equal(s.session.state.projectInput.text, exhausted);
+  assert.equal(s.session.state.overlay.mode.picker.text, exhausted);
   let page = lines40(s).join('\n');
   assert.match(page, /^›   openai\/gpt-6.1-sol +✗ 42m$/m, 'a target not in the chain can be exhausted');
   assert.match(page, /^272K ctx {2}128K out {2}think ✓ {2}img –$/m);
@@ -672,7 +673,7 @@ test('pi picker paints live quota, off and unknown facts without offering off or
     assert.equal(off[0].modelHit, undefined);
     assert.equal((await s.press(ENTER)).action, undefined);
     assert.equal(stored(s, 'imp').run[0].model, id);
-    assert.ok(s.session.state.projectInput, 'Enter on the read-only reference does not close');
+    assert.equal(s.session.state.overlay.mode.kind, 'quick-model', 'Enter on the read-only reference does not close');
     await s.press(ESC);
   }
 });
@@ -710,10 +711,10 @@ test('an empty, stale or invalid run never writes half a chain, and a failed Sav
   const file = join(s.hud, 'roles/imp.json'), original = fs.readFileSync(file, 'utf8');
   await s.keys(DEL, 's');
   assert.match(s.text(), /Not saved · needs a place to save/);
-  assert.deepEqual(s.session.state.controlChain.draft.run, []);
+  assert.deepEqual(s.session.state.overlay.draft.run, []);
   assert.equal(fs.readFileSync(file, 'utf8'), original);
   await s.keys(ESC, ENTER, 'Nnightly', ENTER);
-  const revision = s.session.state.controlChain.role.revision;
+  const revision = s.session.state.overlay.role.revision;
   const invalid = editPreset(s.hud, s.cwd, s.env, { role: 'imp', revision, op: 'create', name: 'nightly', run: [
     { harness: 'pi', pi_role: 'implementer' }, { harness: 'cli', agent: 'not-a-supported-target' },
   ] });
@@ -723,8 +724,8 @@ test('an empty, stale or invalid run never writes half a chain, and a failed Sav
   const changed = fs.readFileSync(file, 'utf8'), inode = fs.statSync(file).ino;
   await s.press('s');
   assert.match(s.text(), /Role changed on disk; reopen the action/);
-  assert.equal(s.session.state.controlChain.draft.name, 'nightly');
-  assert.equal(s.session.state.controlChain.role.revision, revision);
+  assert.equal(s.session.state.overlay.draft.name, 'nightly');
+  assert.equal(s.session.state.overlay.role.revision, revision);
   assert.equal(fs.readFileSync(file, 'utf8'), changed);
   assert.equal(fs.statSync(file).ino, inode);
   assert.deepEqual(fs.readdirSync(join(s.hud, 'roles')).sort(), ['bad.json', 'imp.json']);
@@ -747,15 +748,14 @@ test('a project role file in force is shown apart and never written past', async
   s.session.state = select(s.session.state, 'project:role:imp');
   for (const raw of ['c', 'C', 'p', 'N', 'I', 'R', 'D', 'm']) {
     assert.equal((await s.press(raw)).action, undefined, raw);
-    assert.equal(s.session.state.controlPresetInput, undefined);
-    assert.equal(s.session.state.controlQuickModel, undefined);
+    assert.equal(s.session.state.overlay, undefined);
   }
   assert.doesNotMatch(s.frame().lines.at(-1), /m model/);
   await s.press(ENTER);
   assert.match(s.text(), /pinned +project file · read-only here/);
   for (const raw of [ENTER, 'm', 'i', DEL, 'K', 's']) {
     assert.equal((await s.press(raw)).action, undefined, raw);
-    assert.equal(s.session.state.controlChain.sheet, undefined);
+    assert.equal(s.session.state.overlay.mode.kind, 'places');
   }
   // A mark is not in a role file: clearing one works on a project role too.
   markExhausted(s.hud, placeKey({ harness: 'pi', model: 'project/model' }), 'HTTP 429', NOW);
@@ -879,9 +879,9 @@ test('tab, project switch and quit ask before leaving a dirty chain; Esc resumes
     assert.equal(asking.close, false);
     assert.equal(asking.state.mainTab, 'control');
     assert.equal(asking.state.projectRoot, undefined);
-    assert.equal(send(asking.state, 'escape').state.controlChain.draft.name, 'dirty');
+    assert.equal(send(asking.state, 'escape').state.overlay.draft.name, 'dirty');
     const discarded = send(asking.state, 'enter');
-    assert.equal(discarded.state.controlChain, undefined);
+    assert.equal(discarded.state.overlay, undefined);
     assert.equal(discarded.state.mainTab, expected);
     assert.equal(discarded.close, key === 'close');
     assert.equal(discarded.state.projectRoot, key === 'project-next' ? PROJECTS[1].root : undefined);

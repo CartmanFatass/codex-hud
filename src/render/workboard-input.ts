@@ -1,6 +1,7 @@
 /** Main-tab routing. It mutates nothing: the owner's micro-actions on a job leave as actions (`job-actions.ts`) for the panel to run. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
+import type { OverlayState } from './monitor-state.js';
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
@@ -22,11 +23,9 @@ const clickKind = (input: WorkbenchInput, ctx: MonitorContext) => input.type ===
   ? ctx.frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : undefined;
 
 /** While Add back owns the keyboard, printable shortcuts are filter text. */
-export function harnessAddInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | undefined {
-  const add = state.controlHarnessAdd;
-  if (!add || !state.controlHarnesses || !controlShown(state)) return;
-  const out = (value: MonitorState['controlHarnessAdd'], action?: MonitorOutcome['action']): MonitorOutcome => ({
-    state: { ...state, controlHarnessAdd: value }, close: false, action,
+export function harnessAddInput(state: MonitorState, add: Extract<OverlayState, { kind: 'control-harness-add' }>, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
+  const out = (value: Omit<typeof add, 'kind'> | undefined, action?: MonitorOutcome['action']): MonitorOutcome => ({
+    state: { ...state, overlay: value && { ...value, kind: 'control-harness-add' } }, close: false, action,
   });
   const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
   const items = (pane?.rows ?? []).flatMap((r) => restoreId(r.item) ? [r.item!] : []);
@@ -72,7 +71,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (tab === 'home' || next.trySelection && state.mainTab === 'home') next.trySelection = undefined;
     next.focus = 'agents';
     next.modes.agents = 'open';
-    next.zoom = false;
     next.boardInspect = undefined;
     if (!keepingProject) {
       next.boardRevealed = undefined;
@@ -115,7 +113,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.projectRoot = root;
     next.controlPresetNotice = undefined;
     next.controlNav = undefined;
-    next.projectInput = undefined;
     next.trySelection = undefined;
     // Esc goes back to the list only from a hub opened out of it, not from one stepped to with `[` and `]`.
     next.projectBack = undefined;
@@ -218,7 +215,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.focus = 'changes';
     next.boardInspect = undefined;
     next.modes.changes = 'open';
-    next.zoom = true;
     return result();
   }
   if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
@@ -249,7 +245,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const openChain = (role: RoleFact, at = 0) => {
       next.projectCursor = controlRoleItem(role.role);
       next.splitFocus = undefined;
-      next.controlChain = { role, at };
+      next.overlay = { kind: 'control-chain', role, at, mode: { kind: 'places' } };
       return result();
     };
     if (control && !harnesses) {
@@ -287,16 +283,16 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if ((op === 'preset-list' && fact.presets?.length) || op === 'preset-copy' || op === 'preset-empty' || ((op === 'preset-rename' || op === 'preset-delete') && fact.preset)) {
           next.projectCursor = controlRoleItem(fact.role);
           next.splitFocus = undefined;
-          next.controlPresetInput = op === 'preset-list' ? { mode: 'list', role: fact, text: '', at: 0 }
+          next.overlay = { kind: 'control-preset', sheet: op === 'preset-list' ? { mode: 'list', role: fact, text: '', at: 0 }
             : op === 'preset-delete' ? { mode: 'delete', role: fact }
-              : { mode: op === 'preset-copy' ? 'copy' : op === 'preset-empty' ? 'empty' : 'rename', role: fact, text: '' };
+              : { mode: op === 'preset-copy' ? 'copy' : op === 'preset-empty' ? 'empty' : 'rename', role: fact, text: '' } };
           return result();
         }
       }
     }
     if (harnesses) {
       if (key === 'place-add' || tab === 'harness-add') {
-        next.controlHarnessAdd = { text: '' };
+        next.overlay = { kind: 'control-harness-add', text: '' };
         return result();
       }
       if (key === 'space' || key === 'place-remove' || tab === 'harness-toggle' || tab === 'harness-remove')
@@ -401,13 +397,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
     next.boardInspect = target;
     if (worker?.nodeId) next.tree.selectedId = worker.nodeId;
-    next.preview = 'agent';
     next.focus = 'details';
     next.modes.details = 'open';
     next.scroll.details = 0;
     next.inspectCursor = undefined;
     next.boardRevealed = undefined;
-    next.zoom = false;
   };
   if ((key === 'inspect' || key === 'details' || key === 'detail-toggle' || key === 'space') && main) {
     inspect();
@@ -416,7 +410,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (key === 'escape' && inspector && (next.mainTab || next.boardInspect)) {
     next.focus = 'agents';
     next.modes.details = 'closed';
-    next.zoom = false;
     next.boardInspect = undefined;
     return result();
   }

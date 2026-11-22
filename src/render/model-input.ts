@@ -5,10 +5,22 @@ import { qualifiedPiProvider } from '../roles/roster.js';
 import { placeItem, placeModels, type ModelLists, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
+import type { ModelPickerState, OverlayState } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import { t } from './i18n.js';
 
-export type ModelInput = NonNullable<MonitorState['projectInput']>;
+export type ModelInput = ModelPickerState & { role: string; index: number };
+
+/** View of the picker shared by its three hosts. Role and index belong to the host. */
+export function modelInput(overlay: OverlayState | undefined): ModelInput | undefined {
+  if (overlay?.kind === 'control-quick-model') return { ...overlay.picker, role: overlay.role.role, index: overlay.index };
+  if (overlay?.kind !== 'control-chain') return undefined;
+  const { mode, role } = overlay;
+  if (mode.kind === 'quick-model') return { ...mode.picker, role: role.role, index: mode.index };
+  if (mode.kind === 'sheet' && mode.input?.kind === 'pi-model-picker')
+    return { ...mode.input.picker, role: role.role, index: mode.index };
+}
+
 export interface ModelPick {
   place: PlaceFact;
   lists: ModelLists;
@@ -37,8 +49,9 @@ const previousKey = (role: RoleFact, index: number) => JSON.stringify([role.path
 
 /** Called only after the existing quick-save writer succeeds. Empty remembers a previously unset override. */
 export function rememberModel(state: MonitorState, before: MonitorState, savedRole: RoleFact, model?: string) {
-  const input = before.projectInput, role = before.controlQuickModel?.role, place = input?.place;
-  if (!role || !input || !place) return;
+  const overlay = before.overlay, input = modelInput(overlay);
+  if (!input || (overlay?.kind !== 'control-quick-model' && overlay?.kind !== 'control-chain')) return;
+  const { role } = overlay, { place } = input;
   const old = role.editor?.places[input.index]?.raw.model;
   if (old === model) return;
   // The first write to a shipped chain can change its path, and editing a legacy chain can change its displayed preset.
@@ -189,12 +202,13 @@ export function pickerListWindow(list: MonitorRow[], input: ModelInput, size: nu
 }
 
 /** The picker owns input; only the list and its cancel hint have click targets. */
-export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
-  const open = state.projectInput!, next: MonitorState = { ...state, projectInput: { ...open } };
-  const typed = next.projectInput!, done = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
-  const close = () => { next.projectInput = undefined; return done(); };
+type PickerOutcome = { picker?: ModelPickerState; action?: Extract<MonitorOutcome['action'], { type: 'refresh-models' | 'model-picked' }> };
+export function modelInputEvent(open: ModelInput, input: WorkbenchInput, ctx: MonitorContext): PickerOutcome {
+  const { role, index: placeIndex, ...typed } = open;
+  const done = (action?: PickerOutcome['action']): PickerOutcome => ({ picker: typed, action });
+  const close = (): PickerOutcome => ({});
   const pane = ctx.frame?.panes.find((p) => p.id === 'agents');
-  const query = pane?.rows.find((r) => r.modelPick && r.item === placeItem(open.role, open.index));
+  const query = pane?.rows.find((r) => r.modelPick && r.item === placeItem(role, placeIndex));
   const pick = query?.modelPick, window = query?.modelWindow;
   const filter = (text: string) => Object.assign(typed, { text, pick: undefined, otherOpen: undefined, scroll: undefined });
   if (input.type === 'key') {
@@ -208,15 +222,14 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
       ctx.frame?.controls.some((c) => c.kind === 'model-cancel' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width)) return close();
   if (!pane || !pick || !window?.size) return done();
   const { first, max, size, entries } = window;
-  const view = pickView(pick, typed), index = entries.findIndex(({ id }) => id === view.selected?.id);
-  const set = (entry: PickEntry | undefined) => {
+  const view = pickView(pick, open), index = entries.findIndex(({ id }) => id === view.selected?.id);
+  const set = (entry: PickEntry | undefined): PickerOutcome => {
     if (entry?.id === OTHER_PROVIDERS) {
       Object.assign(typed, { otherOpen: !typed.otherOpen, pick: entry.id, scroll: first });
       return done();
     }
     if (entry?.value === undefined) return window.wide && entry?.current ? close() : done();
-    next.projectInput = undefined;
-    return done({ type: 'model-picked', value: entry.value });
+    return { action: { type: 'model-picked', value: entry.value } };
   };
   if (input.type === 'mouse') {
     if (input.button === 'left') {

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
-import { NOW, TREE, plain, onControl, onPage } from '../fixtures/project-page.mjs';
+import { NOW, TREE, plain, chainOverlay, onControl, onPage } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -143,12 +143,12 @@ test('Help scrolls over a Control draft and closes back to the same place withou
     const d = driver(busy, { state, data: busy.control, height: 24 });
     const press = (raw) => d.run(decode(raw)[0]);
     press('N');
-    assert.equal(press('?').state.controlPresetInput.text, '?');
+    assert.equal(press('?').state.overlay.sheet.text, '?');
     assert.equal(d.state.help, false);
     press('\x1b');
     press('\r');
     press('J');
-    const { controlChain: chain, controlNav: nav } = d.state;
+    const { overlay: chain, controlNav: nav } = d.state;
     const original = d.lines();
     assert.ok(chain.draft);
     assert.equal(chain.at, 1);
@@ -158,22 +158,22 @@ test('Help scrolls over a Control draft and closes back to the same place withou
       const opened = press('?');
       assert.equal(opened.action, undefined);
       assert.equal(d.state.help, true);
-      assert.equal(d.state.controlChain.leave, undefined);
+      assert.equal(d.state.overlay.mode.kind, 'places');
       assert.match(d.lines()[1], /^Control ─/);
       press('\x1b[H');
       assert.match(d.lines()[2], /^Everywhere ─/);
-      assert.equal(d.state.controlChain.at, chain.at);
+      assert.equal(d.state.overlay.at, chain.at);
       const returned = press(back);
       assert.equal(returned.action, undefined);
       assert.equal(d.state.help, false);
-      assert.deepEqual(d.state.controlChain, chain);
+      assert.deepEqual(d.state.overlay, chain);
       assert.deepEqual(d.state.controlNav, nav);
       assert.deepEqual(d.lines(), original);
     }
 
     press('i');
     press('\r');
-    assert.equal(press('?').state.controlChain.sheet.choice.text, '?');
+    assert.equal(press('?').state.overlay.mode.input.text, '?');
     assert.equal(d.state.help, false);
     press('\x1b');
     press('\x1b');
@@ -182,7 +182,8 @@ test('Help scrolls over a Control draft and closes back to the same place withou
       const leaving = press(raw);
       assert.equal(leaving.close, false);
       assert.equal(leaving.action, undefined);
-      assert.equal(leaving.state.controlChain.leave.key, key);
+      assert.equal(leaving.state.overlay.mode.kind, 'confirm-leave');
+      assert.equal(leaving.state.overlay.mode.leave.key, key);
       assert.match(d.lines().join('\n'), /Discard edits\?/);
       press('\x1b');
     }
@@ -262,16 +263,16 @@ test('the Control plane’s place keys are not the Split ratio’s: i and Delete
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control, state: split({ mainTab: 'control' }) });
   d.run('enter');
-  assert.equal(d.state.controlChain.at, 0, 'the keys are on the places');
+  assert.equal(d.state.overlay.at, 0, 'the keys are on the places');
   const ratio = d.state.splitRatio;
   for (const key of ['list-grow', 'list-shrink']) {
     const out = d.run(key);
     assert.equal(out.action, undefined, `${key} edits no place`);
   }
   assert.equal(d.state.splitRatio, ratio, 'and in the preview the ratio keys leave the share alone');
-  assert.equal(d.run('place-add').state.controlChain.sheet.field, 'target');
+  assert.equal(d.run('place-add').state.overlay.mode.field, 'target');
   d.run('escape');
-  assert.equal(d.run('place-remove').state.controlChain.draft.run.length, 2);
+  assert.equal(d.run('place-remove').state.overlay.draft.run.length, 2);
 });
 
 test('g means one thing: a HUD job’s tab; the top of the list is the Home key', async (t) => {
@@ -341,7 +342,7 @@ test('at 40 columns the role row retains the next target without a placeholder t
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
     const state = split({ mainTab: 'control', panelLayout, controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'usage', 'files']) },
-      ...(panelLayout === 'classic' ? { controlChain: { role: control.roles.find((r) => r.role === 'imp'), at: 0 } } : {}) });
+      ...(panelLayout === 'classic' ? { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) } : {}) });
     const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
     assert.match(text, /imp → agy/);
     assert.match(text, /pi\/openai +\[gpt-6\.1-sol ▾\]/);

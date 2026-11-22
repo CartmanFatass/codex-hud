@@ -125,7 +125,7 @@ test('while typing every printable key is the query\'s, and a tab or page switch
   d.press('/');
   d.type(typed);
   assert.equal(d.state.filterQuery, typed);
-  assert.deepEqual([d.state.mainTab, d.state.reply, d.state.confirmStop, d.state.help, d.state.tree.showAll], ['home', undefined, undefined, false, undefined]);
+  assert.deepEqual([d.state.mainTab, d.state.overlay, d.state.help, d.state.tree.showAll], ['home', undefined, false, undefined]);
   for (const bytes of ['\x1b[C', '\x1b[D', '\t', '\x1b[Z']) d.press(bytes);
   assert.deepEqual([d.state.mainTab, d.state.filterQuery], ['home', typed], 'Left, Right and Tab wait for Enter');
   assert.equal(d.press('\x03').close, true, 'Ctrl-C still closes the panel');

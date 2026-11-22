@@ -11,22 +11,14 @@ import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { boardRow, kvRows, mark, section, type FooterHints } from './workboard-rows.js';
-import { modelInputEvent } from './model-input.js';
+import { modelInput, modelInputEvent } from './model-input.js';
+import type { ChainField as Field, ChainSheet as Sheet, OverlayState } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 
-type Field = 'target' | 'model' | 'kind' | 'thinking' | 'effort' | 'done';
-type Choice = { text: string; at: number };
-type Sheet = { index: number; place?: DraftPlace; field: Field; choice?: Choice; error?: string };
-export type QuickModelInput = { role: RoleFact; index: number };
-export interface ChainInput {
-  role: RoleFact;
-  at: number;
-  draft?: { name?: string; run: DraftPlace[] };
-  sheet?: Sheet;
-  leave?: WorkbenchInput;
-  error?: string;
-}
+type ChainInput = Extract<OverlayState, { kind: 'control-chain' }>;
+type QuickModelInput = Extract<OverlayState, { kind: 'control-quick-model' }>;
+const choiceOf = (sheet: Sheet | undefined) => sheet?.input?.kind === 'choice' ? sheet.input : undefined;
 const fields = (sheet: Sheet): Field[] => {
   const p = sheet.place?.raw;
   if (!p) return ['target', 'model', 'thinking', 'done'];
@@ -48,8 +40,9 @@ const ADVANCED = 'launch options are set in the file: o opens it';
 const EMPTY = 'needs a place to save';
 
 export function finishChain(state: MonitorState): MonitorState {
-  const chain = state.controlChain!;
-  return { ...state, controlChain: undefined, projectInput: undefined, controlNav: { ...state.controlNav,
+  const chain = state.overlay;
+  if (chain?.kind !== 'control-chain') return state;
+  return { ...state, overlay: undefined, controlNav: { ...state.controlNav,
     projectCursor: controlRoleItem(chain.role.role), splitFocus: undefined, splitList: undefined, splitSub: undefined, boardRevealed: undefined } };
 }
 
@@ -88,36 +81,43 @@ function choices(role: RoleFact, sheet: Sheet, lists: ModelLists): Option[] {
   return [{ label: t('clear') }, ...[...new Set([...(values ?? []), ...(current ? [current] : [])])].map((value) => ({ label: value, value }))];
 }
 function matching(role: RoleFact, sheet: Sheet, lists: ModelLists) {
-  const needle = sheet.choice?.text.trim().toLowerCase() ?? '';
+  const needle = choiceOf(sheet)?.text.trim().toLowerCase() ?? '';
   return choices(role, sheet, lists).filter((option) => option.label.toLowerCase().includes(needle));
 }
 const modelsOf = (ctx: MonitorContext) => ctx.frame?.controlModels ?? { pi: [], cli: {}, bro: {} };
 const clock = (ctx: MonitorContext) => ctx.nowMs ?? ctx.frame?.controlNow ?? 0;
 export const takesModel = (p: DraftPlace | undefined) => p && (p.fact.harness !== 'bro' || p.fact.label === 'aistudio');
 export const roleModelIndex = (role: RoleFact) => Math.max(0, role.places.findIndex((p) => p.state === 'active'));
-const quickPlace = (state: MonitorState, { role, index }: QuickModelInput) =>
-  (state.controlChain?.draft?.run ?? role.editor?.places)?.[index];
 const choiceText = (text: string, typed?: string) => typed === undefined ? [...text].slice(0, -1).join('')
   : [...text, ...typed].slice(0, MODEL_ID_MAX).join('');
 
 export function openQuickModel(state: MonitorState, role: RoleFact, index: number, ctx: MonitorContext): MonitorState {
-  const quick: QuickModelInput = { role, index }, p = quickPlace(state, quick), models = modelsOf(ctx);
+  const chain = state.overlay?.kind === 'control-chain' ? state.overlay : undefined;
+  const p = (chain?.draft?.run ?? role.editor?.places)?.[index];
   if (role.source === 'project' || !p || !takesModel(p)) return state;
-  const place = state.controlChain?.draft ? previewDraft([p], models, clock(ctx))[0] : role.places[index];
-  return { ...state, controlQuickModel: quick, projectInput: { role: role.role, index, text: '', place } };
+  const place = chain?.draft ? previewDraft([p], modelsOf(ctx), clock(ctx))[0] : role.places[index];
+  if (!place) return state;
+  const picker = { text: '', place };
+  return { ...state, overlay: chain ? { ...chain, mode: { kind: 'quick-model', index, picker } }
+    : { kind: 'control-quick-model', role, index, picker } };
 }
 
-export function quickModelKey(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
-  const { role, index } = state.controlQuickModel!, chain = state.controlChain;
-  const picked = modelInputEvent(state, input, ctx);
-  if (picked.state.projectInput) return picked;
-  const closed = { ...picked.state, controlQuickModel: undefined };
-  if (picked.action?.type !== 'model-picked') return { ...picked, state: closed };
+export function quickModelKey(state: MonitorState, overlay: QuickModelInput | ChainInput, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
+  const open = modelInput(overlay)!, { role } = overlay, { index } = open;
+  const chain = overlay.kind === 'control-chain' ? overlay : undefined;
+  const picked = modelInputEvent(open, input, ctx);
+  const out = (next?: OverlayState, action?: MonitorOutcome['action']): MonitorOutcome => ({ state: { ...state, overlay: next }, close: false, action });
+  if (picked.picker) {
+    const mode = { kind: 'quick-model' as const, index, picker: picked.picker };
+    return out(overlay.kind === 'control-chain' ? { ...overlay, mode } : { ...overlay, picker: picked.picker }, picked.action);
+  }
+  const closed: ChainInput | undefined = chain && { ...chain, mode: { kind: 'places' } };
+  if (picked.action?.type !== 'model-picked') return out(closed);
   const run = [...(chain?.draft?.run ?? role.editor!.places)];
   run[index] = fill(run[index]!, 'model', picked.action.value || undefined);
-  if (chain?.draft) return { close: false, state: { ...closed, controlChain: { ...chain, draft: { ...chain.draft, run }, error: undefined } } };
-  return { close: false, state: closed, action: { type: 'preset-edit', op: 'run', role: role.role, revision: role.revision,
-    modelIndex: index, run: run.map((p) => p.raw) } };
+  if (closed?.draft) return out({ ...closed, draft: { ...closed.draft, run }, error: undefined });
+  return out(closed, { type: 'preset-edit', op: 'run', role: role.role, revision: role.revision,
+    modelIndex: index, run: run.map((p) => p.raw) });
 }
 
 function optionRows(list: Option[], at: number, size: number, width: number): MonitorRow[] {
@@ -127,10 +127,13 @@ function optionRows(list: Option[], at: number, size: number, width: number): Mo
     muted(opt.off ? t('Off') : opt.missing ? t('not installed') : ''), width) }));
 }
 
-export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext,
+export function chainInputKey(state: MonitorState, chain: ChainInput, input: WorkbenchInput, ctx: MonitorContext,
   route: (state: MonitorState, input: WorkbenchInput, ctx: MonitorContext) => MonitorOutcome): MonitorOutcome {
+  const { role, draft, mode } = chain;
+  if (mode.kind === 'quick-model') return quickModelKey(state, chain, input, ctx);
   if (state.controlPresetNotice && 'index' in state.controlPresetNotice) state = { ...state, controlPresetNotice: undefined };
-  const chain = state.controlChain!, { role, draft, sheet } = chain;
+  const sheet = mode.kind === 'sheet' ? mode : undefined;
+  const choice = choiceOf(sheet);
   const run = draft?.run ?? role.editor?.places ?? [];
   const key = input.type === 'key' ? input.key : '', typed = input.type === 'key' ? input.text : undefined;
   const models = modelsOf(ctx);
@@ -142,89 +145,87 @@ export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: M
     : key === 'up' ? -1 : key === 'down' ? 1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 0;
   const select = (at: number, n: number) => Math.max(0, Math.min(n - 1, key === 'home' ? 0 : key === 'end' ? n - 1 : at + move));
   const out = (update: Partial<ChainInput> = {}, action?: MonitorOutcome['action']): MonitorOutcome => ({
-    state: { ...state, controlChain: { ...chain, ...update } }, close: false, action,
+    state: { ...state, overlay: { ...chain, ...update } }, close: false, action,
   });
   const cancelKey = key === 'escape' || (key === 'close' && !typed);
-  if (chain.leave) {
-    if (cancelKey || hit?.kind === 'chain-back') return out({ leave: undefined });
+  if (mode.kind === 'confirm-leave') {
+    if (cancelKey || hit?.kind === 'chain-back') return out({ mode: mode.resume });
     if (key !== 'enter' && hit?.kind !== 'chain-accept') return out();
     const next = finishChain(state);
-    return chain.leave.type === 'key' && chain.leave.key === 'escape' ? { state: next, close: false } : route(next, chain.leave, ctx);
+    return mode.leave.type === 'key' && mode.leave.key === 'escape' ? { state: next, close: false } : route(next, mode.leave, ctx);
   }
-  if (state.projectInput && sheet?.place) {
-    const picked = modelInputEvent(state, input, ctx);
-    if (picked?.action?.type !== 'model-picked') return picked ?? out();
-    const { value } = picked.action;
-    return { ...picked, action: undefined, state: { ...picked.state, controlChain: { ...chain,
-      sheet: { ...sheet, place: fill(sheet.place, 'model', value || undefined), error: undefined } } } };
+  if (sheet?.input?.kind === 'pi-model-picker') {
+    const picked = modelInputEvent(modelInput(chain)!, input, ctx);
+    if (picked.action?.type === 'model-picked' && sheet.place)
+      return out({ mode: { ...sheet, input: undefined, place: fill(sheet.place, 'model', picked.action.value || undefined), error: undefined } });
+    return out({ mode: { ...sheet, input: picked.picker && { kind: 'pi-model-picker', picker: picked.picker } } },
+      picked.action?.type === 'refresh-models' ? picked.action : undefined);
   }
   const openField = (form: Sheet, field: Field): MonitorOutcome => {
     const fieldState = { ...form, field, error: undefined };
     if (field === 'done') {
-      if (!form.place) return out({ sheet: { ...form, error: 'Choose a target first' } });
+      if (!form.place) return out({ mode: { ...form, error: 'Choose a target first' } });
       const existing = run[form.index]?.raw;
-      if (isDeepStrictEqual(existing, form.place.raw)) return out({ sheet: undefined });
+      if (isDeepStrictEqual(existing, form.place.raw)) return out({ mode: { kind: 'places' } });
       if ((!existing || targetKey(existing) !== targetKey(form.place.raw) || existing.model !== form.place.raw.model) &&
         previewDraft([form.place], models, ctx.nowMs ?? ctx.frame?.controlNow ?? 0)[0]?.state === 'off')
-        return out({ sheet: { ...form, error: OFF } });
+        return out({ mode: { ...form, error: OFF } });
       const updated = [...run];
       updated[form.index] = form.place;
-      return out({ draft: { ...draft, run: updated }, sheet: undefined, at: form.index, error: undefined });
+      return out({ draft: { ...draft, run: updated }, mode: { kind: 'places' }, at: form.index, error: undefined });
     }
-    if (!form.place && field !== 'target') return out({ sheet: { ...form, error: 'Choose a target first' } });
+    if (!form.place && field !== 'target') return out({ mode: { ...form, error: 'Choose a target first' } });
     if (field === 'model' && form.place?.raw.harness === 'pi') {
-      const { role: name } = role, index = form.index;
-      const result = out({ sheet: fieldState });
-      result.state.projectInput = { role: name, index, text: '', place: previewDraft([form.place], models, clock(ctx))[0] };
-      return result;
+      const place = previewDraft([form.place], models, clock(ctx))[0]!;
+      return out({ mode: { ...fieldState, input: { kind: 'pi-model-picker', picker: { text: '', place } } } });
     }
     const options = matching(role, fieldState, models);
     const at = Math.max(0, field === 'target' ? options.findIndex((o) => form.place ? targetKey(o.target!.raw) === targetKey(form.place.raw) : !o.off)
       : options.findIndex((o) => o.value === form.place?.raw[field]));
-    return out({ sheet: { ...fieldState, choice: { text: '', at } } });
+    return out({ mode: { ...fieldState, input: { kind: 'choice', text: '', at } } });
   };
-  if (key === 'help' && !sheet?.choice)
+  if (key === 'help' && !choice)
     return draft ? { state: { ...state, help: true }, close: false } : route(finishChain(state), input, ctx);
-  const leave = (!sheet || (!sheet.choice && !cancelKey)) && (
+  const leave = (!sheet || (!choice && !cancelKey)) && (
     ['escape', 'close', 'tab', 'shift-tab', 'left', 'right', 'project-prev', 'project-next', 'settings', 'changes'].includes(key) ||
     hit?.kind.startsWith('board-') || hit?.kind === 'control-harnesses' || (!sheet && hit?.kind === 'chain-back'));
   if (leave) {
     const destination = hit?.kind === 'chain-back' ? { type: 'key' as const, key: 'escape' } : input;
-    if (draft) return out({ leave: destination });
+    if (draft) return out({ mode: { kind: 'confirm-leave', leave: destination, resume: mode } });
     const next = finishChain(state);
     return destination.type === 'key' && destination.key === 'escape' ? { state: next, close: false } : route(next, destination, ctx);
   }
   if (sheet) {
     if (cancelKey || hit?.kind === 'chain-back' || hit?.kind === 'preset-cancel')
-      return out({ sheet: sheet.choice ? { ...sheet, choice: undefined, error: undefined } : undefined });
-    if (((key === 'open-session' && !sheet.choice) || hit?.kind === 'control-open-file') && sheet.error === ADVANCED) return out({}, file(chain, true));
-    if (sheet.choice) {
+      return out({ mode: choice ? { ...sheet, input: undefined, error: undefined } : { kind: 'places' } });
+    if (((key === 'open-session' && !choice) || hit?.kind === 'control-open-file') && sheet.error === ADVANCED) return out({}, file(chain, true));
+    if (choice) {
       const list = matching(role, sheet, models), index = /^chain:option:(\d+)$/.exec(item ?? '')?.[1];
-      const choice = { ...sheet.choice }, update = (error?: string) => out({ sheet: { ...sheet, choice, error } });
+      const selection = { ...choice }, update = (error?: string) => out({ mode: { ...sheet, input: selection, error } });
       if (typed !== undefined || key === 'backspace') {
-        choice.text = choiceText(choice.text, typed);
-        choice.at = 0;
+        selection.text = choiceText(selection.text, typed);
+        selection.at = 0;
         return update();
       }
-      if (move || key === 'home' || key === 'end') { choice.at = select(choice.at, list.length); return update(); }
-      if (index !== undefined && Number(index) !== choice.at) { choice.at = Number(index); return update(); }
+      if (move || key === 'home' || key === 'end') { selection.at = select(selection.at, list.length); return update(); }
+      if (index !== undefined && Number(index) !== selection.at) { selection.at = Number(index); return update(); }
       if (key !== 'enter' && hit?.kind !== 'chain-accept' && index === undefined) return out();
-      const value = list[choice.at];
+      const value = list[selection.at];
       if (!value) return update('No matching choices');
       if (value.off) return update(OFF);
       let place = sheet.place;
       if (value.target) {
         if (place && targetKey(place.raw) !== targetKey(value.target.raw) && !replaceableTarget(place.raw))
-          return out({ sheet: { ...sheet, choice: undefined, error: ADVANCED } });
+          return out({ mode: { ...sheet, input: undefined, error: ADVANCED } });
         if (!place || targetKey(place.raw) !== targetKey(value.target.raw)) place = value.target;
       } else if (place && sheet.field !== 'target' && sheet.field !== 'done') place = fill(place, sheet.field, value.value);
-      return out({ sheet: { ...sheet, place, choice: undefined, error: undefined } });
+      return out({ mode: { ...sheet, place, input: undefined, error: undefined } });
     }
     const all = fields(sheet), selected = all.find((field) => fieldItem(field) === item);
     if (key === 'enter' || hit?.kind === 'chain-edit' || selected === sheet.field) return openField(sheet, sheet.field);
     if ((key === 'place-model' || hit?.kind === 'control-model') && all.includes('model')) return openField(sheet, 'model');
     const field = selected ?? all[select(all.indexOf(sheet.field), all.length)]!;
-    return out({ sheet: { ...sheet, field, error: field !== sheet.field ? undefined : sheet.error } });
+    return out({ mode: { ...sheet, field, error: field !== sheet.field ? undefined : sheet.error } });
   }
   if (key === 'reset') return out({}, { type: 'refresh-models' });
   if (!draft && (key === 'open-session' || hit?.kind === 'control-open-file')) return out({}, file(chain));
@@ -235,13 +236,13 @@ export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: M
   const at = index === undefined ? chain.at : Number(index);
   if (move || key === 'home' || key === 'end') return out({ at: select(at, n) });
   if (role.source === 'project' || !role.editor) return index === undefined ? out() : out({ at });
-  if (key === 'place-add' || hit?.kind === 'chain-add') return out({ sheet: { index: run.length, field: 'target' } });
+  if (key === 'place-add' || hit?.kind === 'chain-add') return out({ mode: { kind: 'sheet', index: run.length, field: 'target' } });
   if (key === 'place-model' || hit?.kind === 'control-model') {
     if (!takesModel(run[at])) return out();
     return { state: openQuickModel(out({ at }).state, role, at, ctx), close: false };
   }
   if (run[at] && (key === 'enter' || hit?.kind === 'chain-edit' || (index !== undefined && at === chain.at)))
-    return out({ at, sheet: { index: at, place: run[at], field: 'target' } });
+    return out({ at, mode: { kind: 'sheet', index: at, place: run[at], field: 'target' } });
   if (draft && (key === 'settings-save' || hit?.kind === 'chain-save')) {
     if (!run.length) return out({ error: EMPTY });
     const change = draft.name === undefined ? { op: 'run' as const } : { op: 'create' as const, name: draft.name };
@@ -264,39 +265,41 @@ export function chainInputKey(state: MonitorState, input: WorkbenchInput, ctx: M
 export function chainSheet(chain: ChainInput, models: ModelLists, width: number, room: number, now: number): {
   rule: { label: string; right: string }; cursor?: string; hints: FooterHints; rows: MonitorRow[];
 } {
-  const { role, draft, sheet } = chain, name = draft?.name ?? role.preset;
+  const { role, draft, mode } = chain, name = draft?.name ?? role.preset;
+  const sheet = mode.kind === 'sheet' ? mode : undefined;
+  const choice = choiceOf(sheet);
   const rule = { label: monitorText(role.role), right: [draft ? presetName(name) : presetTag(name),
     draft ? t('Not saved') : ''].filter(Boolean).join(' · ') };
   const line = (text: string) => boardRow(fit(text, width));
   const error = (word?: string) => word ? flowLines(t(word), width).map((part) => line(theme.board.attention(part))) : [];
-  if (chain.leave) return { rule, cursor: undefined, hints: { modal: ['⏎ discard', 'Esc resume'] }, rows: error('Discard edits?') };
+  if (mode.kind === 'confirm-leave') return { rule, cursor: undefined, hints: { modal: ['⏎ discard', 'Esc resume'] }, rows: error('Discard edits?') };
   if (sheet) {
-    const list = sheet.choice ? matching(role, sheet, models) : [];
-    const at = sheet.choice?.at ?? 0;
+    const list = choice ? matching(role, sheet, models) : [];
+    const at = choice?.at ?? 0;
     const caption = section(t(sheet.index < (draft?.run.length ?? role.places.length) ? 'Edit place' : 'Add place'), width, t('#{n}', { n: sheet.index + 1 }));
     const messages = error(sheet.error);
     const row = (field: Field): MonitorRow => {
       const { place } = sheet, p = place?.raw, fact = place?.fact;
       const val = field === 'target' ? fact?.label : field === 'done' ? '' : field === 'thinking' ? fact?.thinking ?? ''
         : field === 'kind' ? fact?.kind ?? '' : p?.[field] ?? (p ? '' : undefined);
-      const lead = !sheet.choice && field === sheet.field ? `${mark('›', '>')} ` : '  ';
+      const lead = !choice && field === sheet.field ? `${mark('›', '>')} ` : '  ';
       const label = lead + fit(t(fieldLabel[field]), 10) + ' ', x = visualLength(label);
-      const query = sheet.choice && field === sheet.field ? `/ ${textOf(sheet.choice.text)}${mark('▌', '_')}` : undefined;
-      const right = query !== undefined ? String(list.length) : field === 'done' && !p && !sheet.choice ? t('after target and model') : '';
+      const query = choice && field === sheet.field ? `/ ${textOf(choice.text)}${mark('▌', '_')}` : undefined;
+      const right = query !== undefined ? String(list.length) : field === 'done' && !p && !choice ? t('after target and model') : '';
       const item = fieldItem(field);
       if (query === undefined && field === 'model' && fact) {
         const button = modelButton(fact, width - x);
-        return { item, text: fit(label + button, width), ...(!sheet.choice ? { controls: [{ kind: 'control-model', item, x, width: visualLength(button) }] } : {}) };
+        return { item, text: fit(label + button, width), ...(!choice ? { controls: [{ kind: 'control-model', item, x, width: visualLength(button) }] } : {}) };
       }
       const value = squeeze(query ?? (val === undefined ? t('choose…') : textOf(val)), width - x - (right ? visualLength(right) + 1 : 0));
       return { item, text: pair(label + (field === 'thinking' && fact?.inheritedThinking && !query && value ? muted(value) : value), muted(right), width) };
     };
-    const all = fields(sheet), cursor = sheet.choice ? optItem(at) : fieldItem(sheet.field);
+    const all = fields(sheet), cursor = choice ? optItem(at) : fieldItem(sheet.field);
     const size = Math.max(1, room - 1 - all.length - messages.length - Number(sheet.field === 'target'));
     const options = optionRows(list, at, size, width);
-    const rows = sheet.choice ? all.flatMap((f) => [row(f), ...(f === sheet.field ? options.length || sheet.error ? options : error('No matching choices') : [])]) : all.map(row);
-    if (sheet.choice && sheet.field === 'target' && room > rows.length + messages.length + 1) rows.push(line(muted(t('off: not selectable · missing: marked'))));
-    const hints = sheet.choice ? { modal: ['type to filter', '⏎ fill', 'Esc cancel'] }
+    const rows = choice ? all.flatMap((f) => [row(f), ...(f === sheet.field ? options.length || sheet.error ? options : error('No matching choices') : [])]) : all.map(row);
+    if (choice && sheet.field === 'target' && room > rows.length + messages.length + 1) rows.push(line(muted(t('off: not selectable · missing: marked'))));
+    const hints = choice ? { modal: ['type to filter', '⏎ fill', 'Esc cancel'] }
       : [...(sheet.error === ADVANCED ? ['o file'] : []), '⏎ choose', 'Esc cancel'];
     return { rule, cursor, hints, rows: [caption, ...messages, ...rows] };
   }

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, split } from '../fixtures/split-layout.mjs';
-import { NOW, TREE, PROJECTS, onPage, onControl } from '../fixtures/project-page.mjs';
+import { NOW, TREE, PROJECTS, chainOverlay, onPage, onControl } from '../fixtures/project-page.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -80,7 +80,7 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
       [`${panelLayout} Progress`]: draw(page('progress'), f.rich),
       Tickets: draw(page('tickets')), 'Working tree': draw(page('tree')), Docs: draw(page('docs')),
       Roles: draw(onControl({ projectCursor: 'project:role:imp' }, layout), f.control),
-      Chain: draw(onControl({ projectCursor: 'project:role:imp' }, { ...layout, controlChain: { role, at: 0 } }), f.control),
+      Chain: draw(onControl({ projectCursor: 'project:role:imp' }, { ...layout, overlay: chainOverlay(role) }), f.control),
       Harnesses: draw(harnesses, harnessData),
       Inspector: draw({ ...state, focus: 'details', boardInspect: target(running) }),
       Settings: settings(), EXP: draw(exp, f.data, { expData }),
@@ -114,15 +114,15 @@ test('Classic and Split footers keep whole localized hints and pin Help at 40, 5
       assert.deepEqual([control?.x, control?.width], [visualLength(footer.slice(0, footer.indexOf(label))), visualLength(label)]);
       const result = handleMonitorInput(harnessFrame.state, { type: 'mouse', button: 'left', x: control.x, y: control.y }, { tree: TREE, frame: harnessFrame, nowMs: NOW });
       if (kind === 'help') assert.equal(result.state.help, true);
-      else if (kind === 'harness-add') assert.ok(result.state.controlHarnessAdd);
+      else if (kind === 'harness-add') assert.equal(result.state.overlay?.kind, 'control-harness-add');
       else assert.deepEqual(result.action, { type: 'harness-switch', id: 'pi', off: true });
     }
     const read = (frame) => stripAnsi(frame.lines.at(-1)).trim();
     assert.equal(read(draw({ ...state, help: true })), word('Esc back'));
     for (const modal of [draw({ ...state, filterOpen: true }),
-      draw({ ...harnesses, controlHarnessAdd: { text: '' } }, harnessData),
-      draw(onControl(undefined, { ...layout, controlPresetInput: { mode: 'list', role, text: '', at: 0 } }), f.control),
-      draw({ ...exp, expPage: { cursor: 'binding', edit: { text: '', pick: 0 } } }, f.data, { expData })]) {
+      draw({ ...harnesses, overlay: { kind: 'control-harness-add', text: '' } }, harnessData),
+      draw(onControl(undefined, { ...layout, overlay: { kind: 'control-preset', sheet: { mode: 'list', role, text: '', at: 0 } } }), f.control),
+      draw({ ...exp, expPage: { cursor: 'binding' }, overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }, f.data, { expData })]) {
       assert.ok(!read(modal).includes(help), 'keyboard-owning modal');
       assert.doesNotMatch(read(modal), /↑↓|\besc\b/);
     }

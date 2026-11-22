@@ -56,24 +56,24 @@ test('empty draft cancel writes nothing; a reordered two-place draft is the chai
   keys('\x1b');
   assert.match(plain(frame()).join('\n'), /Discard edits\?/);
   keys('\r');
-  assert.equal(state.controlChain, undefined);
+  assert.equal(state.overlay, undefined);
   assert.deepEqual(fs.readFileSync(file), before);
   assert.equal(fs.statSync(file).ino, inode);
 
   const DOWN = '\x1b[B', END = '\x1b[F';
   keys('Inightly\ri\rgrok\r');
   assert.match(plain(frame()).join('\n'), /Off targets cannot be selected/);
-  assert.equal(state.controlChain.sheet.place, undefined);
+  assert.equal(state.overlay.mode.place, undefined);
   keys('\x1b');
   keys(`\rpi\r${DOWN}\r${pi.model}\r${DOWN}\rhigh\r${END}\r`);
   keys(`i\ragy\r${DOWN}\rhydrogen\r${END}\r`);
-  assert.deepEqual(state.controlChain.draft.run.map((p) => p.raw.harness), ['pi', 'cli']);
+  assert.deepEqual(state.overlay.draft.run.map((p) => p.raw.harness), ['pi', 'cli']);
   keys('K');
   assert.match(plain(frame()).join('\n'), /saved +\[daily\] → pi\/xai\ndraft +agy \(unsaved\)/);
   assert.deepEqual(fs.readFileSync(file), before, 'no write before the whole draft is saved');
   assert.deepEqual(f.commands(), [], 'typing and Save preparation launch nothing');
   keys('s');
-  assert.equal(state.controlChain, undefined);
+  assert.equal(state.overlay, undefined);
   const disk = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(disk, { ...saved, active_preset: 'nightly', presets: [saved.presets[0], { name: 'nightly', run: [cli, { ...pi, pi_role: 'implementer', split: false }] }] });
   assert.deepEqual(fs.readdirSync(join(home, 'roles')), ['owner-imp.json']);

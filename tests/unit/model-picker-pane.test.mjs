@@ -10,7 +10,8 @@ import { markExhausted, placeKey } from '../../dist/roles/roster.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { build } from '../../docs/design/model-picker/gen/frames.mjs';
-import { modelPickerSample, onControl, projectFixture, TREE, NOW } from '../fixtures/project-page.mjs';
+import { modelPickerSample, onControl, projectFixture, withChainPicker, TREE, NOW } from '../fixtures/project-page.mjs';
+import { modelInput } from '../../dist/render/model-input.js';
 
 const send = (frame, key) => handleMonitorInput(frame.state, typeof key === 'string' ? { type: 'key', key } : key, { frame, tree: TREE, nowMs: NOW });
 const click = (frame, x, y, button = 'left') => send(frame, { type: 'mouse', x, y, button });
@@ -41,7 +42,7 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
   for (const layout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
     const zh = lang === 'zh', drawing = (state, width = 120, data = sample.data) => f.render(width, lang, state, 36, data);
     const entry = sample.draw(lang, sample.state(layout), 24), opening = send(entry, 'place-model');
-    assert.ok(opening.state.projectInput);
+    assert.equal(opening.state.overlay.mode.kind, 'quick-model');
     const picker = opening.state;
     const draw = (state, data = sample.data) => drawing(state, 120, data);
     const a = draw(picker);
@@ -73,11 +74,11 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
     assert.match(right(b), zh ? /2小时前发现/ : /discovered 2h ago/);
     const detailClick = click(b, 75, yOf(b, /openai\/gpt-6.1-sol/));
     assert.equal(detailClick.action, undefined, 'detail is not a second list');
-    assert.deepEqual(detailClick.state.projectInput, b.state.projectInput);
+    assert.deepEqual(detailClick.state.overlay, b.state.overlay);
     const picked = click(a, 5, yOf(a, /openai\/gpt-6.1-sol/));
     assert.equal(picked.action.type, 'preset-edit');
     assert.equal(picked.action.run[0].model, 'openai/gpt-6.1-sol');
-    assert.equal(picked.state.controlChain.sheet, undefined);
+    assert.equal(picked.state.overlay.mode.kind, 'places');
     const expanded = draw(click(a, 2, yOf(a, /^▸ anthropic /)).state);
     assert.match(left(expanded).join('\n'), /^› ▾ anthropic /m);
     const wheel = draw(click(expanded, 2, 4, 'wheel-down').state);
@@ -95,12 +96,11 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
     const set = send(selected, 'enter');
     assert.equal(set.action.type, 'preset-edit');
     assert.equal(set.action.run[0].model, 'arena/grok-4.7');
-    assert.equal(set.state.controlChain.sheet, undefined);
-    assert.equal(set.state.projectInput, undefined);
+    assert.equal(set.state.overlay.mode.kind, 'places');
     assert.deepEqual(send(selected, 'model-refresh').action, { type: 'refresh-models' });
     const cleared = send(selected, 'escape');
-    assert.equal(cleared.state.projectInput.text, '');
-    assert.equal(send(draw(cleared.state), 'escape').state.projectInput, undefined);
+    assert.equal(modelInput(cleared.state.overlay).text, '');
+    assert.equal(send(draw(cleared.state), 'escape').state.overlay.mode.kind, 'places');
 
     const d = draw(send(draw(type(a, 'maverick').state), 'down').state);
     assert.match(left(d).join('\n'), /^› +arena\/meta-llama\/.*….*-fp8 +1M +16K +– +✓/m);
@@ -108,13 +108,14 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
 
     const pickerOff = send(sample.draw(lang, sample.state(layout), 24, dataOff), 'place-model').state;
     const e = draw(pickerOff, dataOff);
-    for (const frame of [e, draw({ ...pickerOff, projectInput: { ...pickerOff.projectInput, otherOpen: true } }, dataOff)]) {
+    for (const frame of [e, draw(withChainPicker(pickerOff, { otherOpen: true }), dataOff)]) {
       assert.ok(frame.lines.every((line) => visualLength(line) === 120));
       assert.match(left(frame).join('\n'), /› ◉ xai\/grok-4.7 +256K +64K +✓ +✓ +⊘/);
       assert.doesNotMatch(left(frame).join('\n'), /^xai ─/m);
       assert.match(right(frame).replace(/\n\s*/g, ' '), zh ? /这个位置被跳过：imp \[daily\] → agy/ : /this place is skipped: imp \[daily\] → agy/);
       assert.match(right(frame), zh ? /⏎ 保留 xai\/grok-4.7/ : /⏎ keeps xai\/grok-4.7/);
-      assert.deepEqual([send(frame, 'enter').action, send(frame, 'enter').state.projectInput], [undefined, undefined]);
+      const kept = send(frame, 'enter');
+      assert.deepEqual([kept.action, kept.state.overlay.mode.kind], [undefined, 'places']);
     }
     assert.match(left(e).join('\n'), zh ? /^⊘ 已停用：deepseek · xai$/m : /^⊘ off: deepseek · xai$/m);
   }

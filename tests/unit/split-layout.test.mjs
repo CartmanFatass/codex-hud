@@ -220,7 +220,7 @@ test('Project list rows use the same Enter path for two clicks and the keyboard'
     assert.equal(nav().splitFocus, undefined);
     click(item);
     if (p) {
-      assert.equal(d.state.controlChain.at, 0);
+      assert.equal(d.state.overlay.at, 0);
       assert.equal(nav().projectCursor, item);
     } else {
       assert.equal(nav().splitFocus, 'preview');
@@ -328,20 +328,20 @@ test('Control plane: roles on top, the cursor role’s places below; Enter takes
   assert.deepEqual([preset.action.type, preset.action.role, preset.action.op], ['role-edit', 'imp', 'preset']);
   const list = d.run('preset-list');
   assert.equal(list.action, undefined, 'p on the role does not edit a place');
-  assert.equal(list.state.controlPresetInput.mode, 'list');
+  assert.equal(list.state.overlay.sheet.mode, 'list');
   d.run('escape');
   d.run('enter');
-  assert.equal(d.state.controlChain.at, 0);
-  assert.equal(d.state.controlChain.draft, undefined);
+  assert.equal(d.state.overlay.at, 0);
+  assert.equal(d.state.overlay.draft, undefined);
   d.run('down');
-  assert.equal(d.run('enter').state.controlChain.sheet.index, 1);
+  assert.equal(d.run('enter').state.overlay.mode.index, 1);
   d.run('escape');
   assert.equal(d.run('place-remove').action, undefined);
-  assert.equal(d.state.controlChain.draft.run.length, 2);
+  assert.equal(d.state.overlay.draft.run.length, 2);
   d.run('escape');
   assert.match(d.lines().join('\n'), /Discard edits\?/);
   d.run('enter');
-  assert.equal(d.state.controlChain, undefined);
+  assert.equal(d.state.overlay, undefined);
   assert.equal(d.state.controlNav.projectCursor, 'project:role:imp');
 });
 
@@ -470,9 +470,9 @@ test('One meaning per key on the Control plane: = + - size the Split, i and Dele
   assert.ok(d.state.splitRatio);
   const before = d.state.splitRatio;
   d.run('enter');
-  assert.equal(d.run('place-add').state.controlChain.sheet.field, 'target', 'on a place i opens the add sheet');
+  assert.equal(d.run('place-add').state.overlay.mode.field, 'target', 'on a place i opens the add sheet');
   d.run('escape');
-  assert.equal(d.run('place-remove').state.controlChain.draft.run.length, 2, 'Delete removes a place from the draft');
+  assert.equal(d.run('place-remove').state.overlay.draft.run.length, 2, 'Delete removes a place from the draft');
   assert.equal(d.state.splitRatio, before);
 });
 

@@ -53,7 +53,7 @@ function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiment
     if (out.action?.type === 'exp-save') {
       const saved = () => {
         expData = data();
-        frame = draw({ ...out.state, expPage: { ...out.state.expPage, edit: undefined, notice: 'Saved' } }, expData);
+        frame = draw({ ...out.state, overlay: undefined, expPage: { ...out.state.expPage, notice: 'Saved' } }, expData);
         return out.action;
       };
       const pending = saveExpEdit(f.env.HUD_HOME, out.action.edit, NOW, f.env);
@@ -350,7 +350,7 @@ test('EXP options show every profile with a count and separate cursor/current ma
       assert.match(plain(moved), en ? /^  ◉ Unbound$/m : /^  ◉ 未绑定$/m);
       assert.match(plain(moved), /^›   Documentation Account…[^…]+secondary\)$/m);
       assert.deepEqual(send(moved, clicked).action, { type: 'exp-save', edit: { field: 'binding', value: f.other } });
-      assert.equal(send(moved, key('escape')).state.expPage.edit, undefined);
+      assert.equal(send(moved, key('escape')).state.overlay, undefined);
     }
   }
 
