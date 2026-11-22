@@ -524,8 +524,10 @@ syncBuiltinESMExports();`
     dir = join(f.env.HUD_HOME, 'jobs', job);
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
   const receipt = { job, role: 'imp', cwd: f.root, created_at: '2026-01-01', dispatch_exit_code: 0, stderr_tail: '' };
-  const save = () => fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
-  const status = (state) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, exit_reason: null }));
+  // Atomic like the real writers: the polled hud_read must never see a half-written file.
+  const put = (name, value) => { fs.writeFileSync(join(dir, `.${name}.tmp`), JSON.stringify(value)); fs.renameSync(join(dir, `.${name}.tmp`), join(dir, name)); };
+  const save = () => put('job.json', receipt);
+  const status = (state) => put('STATUS.json', { state, exit_reason: null });
   const reads = () =>
     fs.existsSync(join(f.env.HOME, 'reads'))
       ? fs.readFileSync(join(f.env.HOME, 'reads'), 'utf8').trim().split('\n')
