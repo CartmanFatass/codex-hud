@@ -11,3 +11,4 @@
 - [ ] Targeted worker-tools tests pass
 
 ## Comments
+- 2026-11-22: root cause found: the shipped implementer, frontend-implementer and general instructions said "No git commit … leave the changes in the working tree", contradicting `.hud/brief.md` and `hud_land`. Fixed in 5ccd6754 (commit on the managed worktree branch before reporting). This ticket stays as the guard for workers that still miss it.
