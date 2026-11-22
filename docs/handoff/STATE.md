@@ -13,7 +13,7 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Next
 
-- HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01、02、03 已落地；04 PANEL-LOCALE（翻译）待派 → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
+- HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01、02、03 已落地；04 PANEL-LOCALE（翻译）进行中 → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
 - ORCH-LEAN（owner 2026-11-22：A/B/C 全做）：A 已做（本仓库禁用不用的工具、全局去掉 codegraph 提示钩子、STATE 归档、习惯）；B：01 合入交给 sonic + 回收已 cherry-pick 的 worktree（已落地 8cf766b6，首次由 sonic 合入）、02 hud_read 摘要、03 通知等检查并瘦身（均已落地 406fa959）；C：04 面板操作送达任务客户端 + r/m 意图键、05 批量 MCP 调用。
 - MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. Two follow-ups to
   try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
@@ -102,7 +102,7 @@ board counts these; update at every landing or decision. -->
 
 ## Now (2026-11-22)
 
-- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01、03 已落地；02 进行中；04 sonic 批量/轮数上限、05 reviewer 控上下文、06 CLI worker 只载 HUD MCP 待派。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
+- IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01、03 已落地；02 进行中；04+05 sonic 批量与 reviewer 控上下文进行中；06 CLI worker 只载 HUD MCP 等 02。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
 - FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land（HUD 自跑集成门、快进、构建、推送、清理）→ 02 失败交回原 imp（最多 2 轮）、03 记工单与 STATE；04 先派 sonic 收集事实再派；05 面板与文档。等 ORCH-LEAN-02/03、IMP-LEAN-02 落地再开工（同改 thin-main）。工单队列自动推进放第二期。
 - 并行三条线：首页进度（HOME-PROGRESS，owner 已定 5 个问题）、orch 减负（ORCH-LEAN，owner 同意 A/B/C 三批）、MCP 线剩余（JOB-ARCHIVE-01 进行中）。
 - imp 默认已换成 6.2-astra high；所有工单做完后对比单任务时间与成本。
