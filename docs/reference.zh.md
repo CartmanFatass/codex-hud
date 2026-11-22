@@ -116,8 +116,9 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 链接 `node_modules`，并复制该 CLI 对主检出的信任）。浏览器角色和非 Git 目录会被拒绝。对该任务的 `hud_read` 会附带 `worktree`（含检出路径）及 `git_summary`。
 其中 `overlaps` 列出同一检出下也改动了这些文件的其他托管任务及重叠文件，排除其他工作树中已提交且文件版本与主检出 HEAD 一致的改动。
 空列表表示未发现重叠，`null` 表示当前任务的 Git 摘要读取失败，`overlaps_incomplete` 表示结果不完整。
-任务关闭后，只有检出中毫无改动、或其提交已合入主检出时，watcher 才会移除检出和分支，且从不强制；否则保留并在 `job.json` 记录
-`worktree_kept_reason`。Project 把这些检出视为任务自己的，不算未登记的 worktree。
+任务关闭后，只有工作树干净且分支未改动、已合并或每个切片提交在基分支上都有等价补丁时，watcher 才会移除检出和分支。
+若工作树不干净，或仍有未摘取的补丁（包括集成时被修改的补丁），则保留并在 `job.json` 记录 `worktree_kept_reason`。
+基分支 HEAD 变化后，后续扫描可重新检查因补丁未摘取而保留的分支；不会重试脏工作树。Project 把这些检出视为任务自己的，不算未登记的 worktree。
 
 角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、

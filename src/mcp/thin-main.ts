@@ -102,6 +102,7 @@ interface Job extends PiOptions {
   worktree?: ManagedWorktree;
   worktree_removed_at?: string;
   worktree_kept_reason?: string;
+  worktree_checked_head?: string;
   place?: RolePlace;
   place_key?: string;
   exhaustion_marked?: boolean;
@@ -179,8 +180,11 @@ function save(job: Job, newAttempt = false): void {
     const at = existing?.[key];
     if (at && (!job[key] || at > job[key])) job[key] = at;
   }
-  for (const key of ['reaped_at', 'worktree_removed_at', 'worktree_kept_reason'] as const) {
-    if (existing?.[key]) job[key] = existing[key];
+  if (existing?.reaped_at) job.reaped_at = existing.reaped_at;
+  if (existing) {
+    // Watcher-owned: a later integration can clear a previously recorded keep decision.
+    for (const key of ['worktree_removed_at', 'worktree_kept_reason', 'worktree_checked_head'] as const)
+      job[key] = existing[key];
   }
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
   const temp = `${file}.${process.pid}.tmp`;

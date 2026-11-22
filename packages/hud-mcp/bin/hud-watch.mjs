@@ -222,16 +222,15 @@ function writeJsonAtomic(file, value, indent) {
     throw error;
   }
 }
-const pendingWorktree = (job) => job?.worktree && !job.worktree_removed_at && !job.worktree_kept_reason;
 function startWorktree(id, file, job) {
   const root = job.worktree.main_root;
   if (worktreeLocks.has(root)) return; // The owning task reschedules the scan on release.
   worktreeLocks.add(root);
   const promise = Promise.resolve().then(async () => {
-    const reason = await reapWorktree(id, job);
+    const result = await reapWorktree(id, job);
     const latest = jsonFresh(file);
-    if (pendingWorktree(latest) && JSON.stringify(latest.worktree) === JSON.stringify(job.worktree))
-      writeJsonAtomic(file, { ...latest, ...(reason ? { worktree_kept_reason: reason } : { worktree_removed_at: new Date().toISOString() }) }, 2);
+    if (latest && !latest.worktree_removed_at && JSON.stringify(latest.worktree) === JSON.stringify(job.worktree))
+      writeJsonAtomic(file, { ...latest, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }, 2);
     worktreeRetries.delete(id);
   }).catch((error) => {
     if (error.code !== 'ENOENT') {
@@ -323,6 +322,8 @@ function scan(retryWatch = false) {
   clearTimeout(timer);
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   seen.clear();
+  const baseHeads = new Map();
+  let rechecks = 0;
   let open = false,
     safetyCheck = false,
     nearest = Infinity;
@@ -420,16 +421,29 @@ function scan(retryWatch = false) {
           }
         }
       }
+      const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
       // With a tab, wait for successful reap; without a session, only a finished failed launch is safe.
       if ((job?.reaped_at || (!session && job?.dispatch_exit_code > 0)) &&
-          pendingWorktree(job) && fs.lstatSync(jobFile).isFile()) {
-        const at = worktreeRetries.get(id);
-        if (at > Date.now()) nearest = Math.min(nearest, at);
-        else startWorktree(id, jobFile, job);
-        continue; // Never delete a job while it is waiting for or writing a worktree receipt.
+          job.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
+        const root = job.worktree.main_root;
+        let pending = !job.worktree_kept_reason;
+        // Only a clean, unpicked result has a checked HEAD. Don't spawn Git for an unchanged base.
+        if (job.worktree_checked_head && Date.now() - ended < 7 * 86400000) {
+          if (!baseHeads.has(root)) baseHeads.set(root, mainHead(root));
+          const head = baseHeads.get(root);
+          pending = head && head !== job.worktree_checked_head;
+        }
+        if (pending) {
+          const at = worktreeRetries.get(id);
+          if (at > Date.now()) nearest = Math.min(nearest, at);
+          else if (!worktreeLocks.has(root) && (!job.worktree_checked_head || rechecks < 4)) {
+            if (job.worktree_checked_head) rechecks++;
+            startWorktree(id, jobFile, job);
+          }
+          continue; // A completing worktree task schedules the next scan for any backlog.
+        }
       }
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
-      const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
       const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
       if (expires < Date.now() && (!tab || job?.reaped_at)) {
         // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
@@ -508,7 +522,7 @@ function startWatch() {
 const [
   { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
   { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
-  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree }, { runCommand }, { archiveJob },
+  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree, mainHead }, { runCommand }, { archiveJob },
 ] = await withDistLock(async () => {
   // Multiple parents can spawn before the first watcher is ready. Only one publishes under the lock.
   const { watcherReady } = await import('../../../dist/mcp/watch-pid.js');

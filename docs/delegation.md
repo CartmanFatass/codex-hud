@@ -22,8 +22,17 @@ agent proposes.
    必要"). STATE.md's `## Slices` ledger keeps one line per work package either way.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per
    slice. The implementer runs the main-path tests for what it changed, once, at the end.
-4. **Integrate.** The orchestrator reads each diff, tries the slice, and merges it into the milestone branch. No
-   full gate per slice; one full test run at the end of the milestone.
+4. **Integrate.** The orchestrator reads each diff and tries the slice. Send sonic this integration brief:
+
+   > Integrate `<ordered slice commit IDs>` onto `<base branch>`. Run every command through the main checkout's
+   > `tmp/env.sh`. Create a fresh detached worktree at the base tip and link the main checkout's `node_modules`.
+   > From the integration worktree, cherry-pick the commits in order. Run `npm run` for each script in order:
+   > `build`, `build:test`, `test:mjs`, `test:mjs`, `test:unit`, `check:fixtures`. Stop at the first conflict or
+   > failed step; never edit code. Report in at most 10 lines: picked cleanly or conflict files; pass/fail and
+   > counts per step (mark later steps not run); failing test names and first error line; integration commit ID(s).
+
+   The orchestrator decides whether to send a repair to an imp or fast-forward the base to the tested commit and
+   push at the milestone boundary. Remove the integration worktree after that handoff; sonic never lands or pushes.
 5. **Review once, at the milestone.** One reviewer on the whole milestone diff (owner, 2026-11-17: no second
    reviewer and no model-family rule; supersedes 2026-11-11); it reports two axes separately:
    - **spec:** does it do what `docs/spec.md` asks, and does it do things nobody asked for (scope creep);
@@ -72,7 +81,7 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | role `imp` (skill `hud-delegate`) | one slice each |
 | reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
-| sonic | role `sonic` | small chores for any role; never tests, bug hunting or design |
+| sonic | role `sonic` | small chores for any role, including running the step 4 gate; never test authoring, bug hunting or design |
 | oracle | role `oracle` | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |
 | frontend-implementer | role `frontend-imp` | UI design and frontend development |
@@ -88,7 +97,7 @@ Codex tests use `codex2` (the free account), never the main `codex` account.
 - One worktree per code imp (owner, 2026-11-12): the owner's statusline, pi footer and panel run from the main
   checkout's `dist/`, so an imp never builds there. `tmp/wt-new.sh <slice>` makes `../MyHUD-wt/<slice>` on branch
   `wt/<slice>` with `node_modules` symlinked; `hud_create` gets that `cwd`. The orchestrator commits in the worktree,
-  cherry-picks onto `universal-hud`, runs the full suite in the main checkout, then removes the worktree.
+  hands the commit IDs and `universal-hud` to sonic for step 4, then removes the slice worktree after landing.
 - Every test run uses a temporary HOME / HUD_HOME / CODEX_HOME / CLAUDE_CONFIG_DIR: `tmp/env.sh <command>`, run from
   inside the checkout or worktree it should act on.
 - Synthetic data only in the repo (public). Never print or commit keys.

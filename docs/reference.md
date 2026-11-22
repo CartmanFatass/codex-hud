@@ -181,8 +181,10 @@ refused for browser roles and outside Git. `hud_read` of that job adds the `work
 Its `overlaps` lists other managed jobs and paths they also changed, excluding committed paths whose versions already match
 the main checkout's HEAD. An empty list means no overlaps found, `null` means the job's own Git summary failed, and
 `overlaps_incomplete` flags partial coverage. After the job closes, the watcher removes the checkout and branch only
-when nothing in it changed or its commits are already merged into the main checkout, never with force; otherwise
-it keeps them and records `worktree_kept_reason`. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
+if the worktree is clean and its branch is unchanged, merged, or every slice commit has a patch-equivalent commit
+on the base branch. It keeps dirty worktrees and those with unpicked or amended patches, recording
+`worktree_kept_reason`. A later scan can reconsider an unpicked branch if the base HEAD changed; it never retries
+a dirty checkout. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
 
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s`
 (default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`

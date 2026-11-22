@@ -107,8 +107,9 @@ from the main checkout when present, and the CLI's existing trust of the main ch
 browser places and outside Git with `invalid_arguments`; `job.json` records `worktree`. `hud_read(job)` then adds
 `worktree` (including the checkout path) and `git_summary` (`branch`, `base_head`, `head`, `ahead_commits`, `changed_files`, `dirty`). After the job is closed and
 reaped, the watcher removes the checkout and its branch only when it has no changes of any kind and its HEAD is the
-base or already merged into the main checkout, without force; otherwise it keeps both and records
-`worktree_kept_reason` in `job.json`.
+base, already merged, or all slice commits have patch equivalents on the base branch. Otherwise it keeps both and
+records `worktree_kept_reason` in `job.json`. On later scans a changed base HEAD can trigger a recheck of a clean,
+unpicked branch.
 
 Both list views return a newest-first `jobs` snapshot without returning report or question bodies or marking them seen.
 Compact rows show `job`, `role` and `state`, plus `report_unread: true`, `blocked: true`, pending `question_ids`

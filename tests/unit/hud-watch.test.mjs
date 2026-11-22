@@ -51,7 +51,7 @@ async function until(check, timeoutMs = 4000) {
   assert.fail('timed out waiting for expected watcher output');
 }
 
-for (const scenario of ['merged', 'dirty', 'unmerged', 'nested']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
+for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 'unmerged', 'nested']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-worktree-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const main_root = initRepo(home);
@@ -74,11 +74,21 @@ for (const scenario of ['merged', 'dirty', 'unmerged', 'nested']) test(`watcher 
     nestedCommit = git(vendor, 'rev-parse', 'HEAD');
     fs.writeFileSync(join(vendor, 'tracked.txt'), 'parent baseline\n');
     assert.equal(git(root, 'status', '--porcelain'), '', 'the parent status does not see the nested repo');
-  } else if (scenario === 'dirty') fs.writeFileSync(join(root, 'ignored.txt'), 'keep this ignored file');
-  else {
+  } else {
     fs.appendFileSync(join(root, 'tracked.txt'), 'new commit\n');
     git(root, 'commit', '-qam', 'job work');
     if (scenario === 'merged') git(main_root, 'merge', '-q', branch);
+    else if (scenario !== 'unmerged') {
+      fs.appendFileSync(join(root, 'tracked.txt'), 'second commit\n');
+      git(root, 'commit', '-qam', 'more job work');
+      git(main_root, 'commit', '--allow-empty', '-qm', 'advance base before integration');
+      if (scenario !== 'picked later') git(main_root, 'cherry-pick', `${base_head}..${branch}`);
+      if (scenario === 'amended') {
+        fs.appendFileSync(join(main_root, 'tracked.txt'), 'integration adjustment\n');
+        git(main_root, 'commit', '-qa', '--amend', '--no-edit');
+      }
+      if (scenario === 'dirty') fs.writeFileSync(join(root, 'ignored.txt'), 'keep this ignored file');
+    }
   }
   fs.mkdirSync(join(main_root, 'node_modules'));
   fs.symlinkSync(join(main_root, 'node_modules'), join(root, 'node_modules'));
@@ -88,18 +98,35 @@ for (const scenario of ['merged', 'dirty', 'unmerged', 'nested']) test(`watcher 
   const file = join(dir, 'job.json'), job = JSON.parse(fs.readFileSync(file));
   fs.writeFileSync(file, JSON.stringify({ ...job, cwd: root, worktree: { main_root, root, branch, base_head } }));
   fs.writeFileSync(join(dir, 'SESSION.txt'), 'TAB=w4E:t2\n');
-  const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, encoding: 'utf8', timeout: 10000 });
-  assert.equal(watcher.status, 0, watcher.stderr || String(watcher.error));
-  const result = JSON.parse(fs.readFileSync(file));
+  const scan = () => {
+    const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, encoding: 'utf8', timeout: 10000 });
+    assert.equal(watcher.status, 0, watcher.stderr || String(watcher.error));
+    return JSON.parse(fs.readFileSync(file));
+  };
+  let result = scan();
+  if (scenario === 'picked later') {
+    assert.match(result.worktree_kept_reason, /unmerged/);
+    assert.equal(result.worktree_checked_head, git(main_root, 'rev-parse', 'HEAD'));
+    const stub = join(home, 'git');
+    fs.writeFileSync(stub, '#!/bin/sh\ntouch "$HOME/git-called"; exit 1\n', { mode: 0o700 });
+    assert.deepEqual(scan(), result);
+    assert.equal(fs.existsSync(join(home, 'git-called')), false, 'unchanged base does not spawn Git');
+    fs.unlinkSync(stub);
+    git(main_root, 'cherry-pick', `${base_head}..${branch}`);
+    result = scan();
+  }
   assert.ok(result.reaped_at);
-  assert.equal(fs.existsSync(root), scenario !== 'merged');
-  assert.equal(!!git(main_root, 'branch', '--list', branch), scenario !== 'merged');
+  const removed = ['merged', 'picked', 'picked later'].includes(scenario);
+  assert.equal(fs.existsSync(root), !removed);
+  assert.equal(!!git(main_root, 'branch', '--list', branch), !removed);
   assert.ok(fs.statSync(join(main_root, 'node_modules')).isDirectory());
-  if (scenario === 'merged') {
+  if (removed) {
+    assert.equal(result.worktree_checked_head, undefined);
     assert.equal(result.worktree_kept_reason, undefined);
     assert.ok(result.worktree_removed_at);
   } else {
-    assert.match(result.worktree_kept_reason, new RegExp(scenario));
+    assert.match(result.worktree_kept_reason, new RegExp(scenario === 'amended' ? 'unmerged' : scenario));
+    if (scenario === 'dirty') assert.equal(result.worktree_checked_head, undefined);
     assert.equal(fs.readlinkSync(join(root, 'node_modules')), join(main_root, 'node_modules'));
   }
   if (nestedCommit) {

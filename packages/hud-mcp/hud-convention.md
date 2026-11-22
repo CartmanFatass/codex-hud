@@ -15,6 +15,9 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
   otherwise choose the simplest option and note it.
 - Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
+- For integration, send sonic the slice commits, base branch and checks. It cherry-picks and runs the gate in a fresh
+  detached worktree, stops on conflict or failure without editing, and reports results and commit IDs in at most 10
+  lines. The main session decides whether to request a repair or fast-forward and push; then remove the integration worktree.
 - Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
 - Review spec compliance and scope creep separately from simplicity and real defects; findings do not imply new tests.
 - Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.

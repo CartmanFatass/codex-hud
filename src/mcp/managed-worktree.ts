@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { readBytes } from '../statusline-parity/storage.js';
 import { parseWorktreeList, worktreeGit as git, type WorktreeGit } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
 
@@ -149,7 +150,26 @@ function nestedGitReason(root: string): string | undefined {
   }
 }
 
-/** Returns the reason for preserving the checkout (or its branch); null means removed. */
+/** Cheap scan hint only: the reaper verifies the registered checkout and commit IDs with Git. */
+export function mainHead(root: string): string | null {
+  try {
+    let dir = join(root, '.git');
+    if (!fs.lstatSync(dir).isDirectory()) {
+      const pointer = readBytes(dir, 4096)?.toString().trim().match(/^gitdir: (.+)$/)?.[1];
+      if (!pointer) return null;
+      dir = resolve(root, pointer);
+    }
+    const head = readBytes(join(dir, 'HEAD'), 4096)?.toString().trim();
+    if (head && oid(head)) return head;
+    const ref = head?.match(/^ref: (refs\/heads\/.+)$/)?.[1];
+    if (!ref || ref.includes('..')) return null;
+    const sha = readBytes(join(dir, ref), 4096)?.toString().trim() ??
+      readBytes(join(dir, 'packed-refs'))?.toString().split('\n').find((row) => row.endsWith(` ${ref}`))?.split(' ')[0];
+    return sha && oid(sha) ? sha : null;
+  } catch { return null; }
+}
+
+const kept = (reason: string, checkedHead?: string) => ({ worktree_kept_reason: reason, worktree_checked_head: checkedHead });
 export async function reapWorktree(id: string, job: { job: string; cwd: string; worktree: ManagedWorktree }) {
   const wt = job.worktree;
   try {
@@ -157,34 +177,45 @@ export async function reapWorktree(id: string, job: { job: string; cwd: string; 
     if (job.job !== id || job.cwd !== wt.root || wt.branch !== `wt/${name}` || !/^[a-z0-9-]+$/.test(name) ||
         !name.endsWith(`-${id.slice(-6)}`) || !oid(wt.base_head) || wt.root !== pathFor(wt.main_root, name) ||
         fs.realpathSync(wt.main_root) !== wt.main_root || fs.realpathSync(wt.root) !== wt.root)
-      return 'worktree receipt does not match its checkout';
+      return kept('worktree receipt does not match its checkout');
     const [main, ...linked] = await list(wt.main_root);
     const tree = linked.find((t) => t.path === wt.root && t.branch === wt.branch);
-    if (main?.path !== wt.main_root || !tree || tree.locked !== undefined || tree.prunable !== undefined || !oid(tree.head))
-      return 'worktree is not registered at the recorded branch and path, or is locked';
+    if (main?.path !== wt.main_root || !oid(main.head) || !tree || tree.locked !== undefined || tree.prunable !== undefined || !oid(tree.head))
+      return kept('worktree is not registered at the recorded branch and path, or is locked');
     const common = await git(wt.main_root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
     if (await git(wt.root, ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir']) !== `${wt.root}\n${common}`)
-      return 'worktree belongs to a different repository';
-    const head = tree.head!;
-    if (head !== wt.base_head) {
-      try { await git(wt.main_root, ['merge-base', '--is-ancestor', head, 'HEAD']); }
-      catch { return 'worktree has unmerged commits or ancestry could not be verified'; }
-    }
+      return kept('worktree belongs to a different repository');
+    const head = tree.head!, base = main.head!;
     const filters = await neutralizeFilters(git, wt.root);
     const index = await git(wt.root, ['ls-files', '-v', '-z']);
-    if (fields(index).some((row) => /^[a-zS] /.test(row))) return 'worktree has hidden index entries';
+    if (fields(index).some((row) => /^[a-zS] /.test(row))) return kept('worktree has hidden index entries');
     const pending = fields(await status(wt.root, filters, true));
     if (pending.some((row) => !/^(?:\?\?|!!) node_modules$/.test(row) || !dependencyLink(wt)))
-      return 'worktree is dirty (tracked, untracked or ignored files)';
+      return kept('worktree is dirty (tracked, untracked or ignored files)');
     const nested = nestedGitReason(wt.root);
-    if (nested) return nested;
+    if (nested) return kept(nested);
+    let picked = false;
+    if (head !== wt.base_head) {
+      try { await git(wt.main_root, ['merge-base', '--is-ancestor', head, base]); }
+      catch (error) {
+        if ((error as { code?: number }).code !== 1) throw error;
+        // Look for even one slice-only commit without an equivalent patch. Unlike git cherry,
+        // this includes unmerged merge commits, whose conflict resolutions have no patch ID.
+        if (await git(wt.main_root, ['rev-list', '--cherry-pick', '--right-only', '-1', `${base}...${head}`, '--']))
+          return kept('worktree has unmerged commits', base);
+        picked = true;
+      }
+    }
     if (pending.includes('?? node_modules')) fs.unlinkSync(join(wt.root, 'node_modules'));
     await git(wt.main_root, [...filters, 'worktree', 'remove', '--', wt.root]);
     // Don't delete a branch advanced independently during cleanup; Git also checks merge/checkout safety.
     if ((await git(wt.main_root, ['rev-parse', '--verify', `refs/heads/${wt.branch}`])).trim() !== head)
-      return 'worktree removed; branch changed during cleanup';
-    try { await git(wt.main_root, ['branch', '-d', '--', wt.branch]); }
-    catch { return 'worktree removed; Git refused to delete its branch'; }
-    return null;
-  } catch { return 'worktree cleanup could not be verified or completed'; }
+      return kept('worktree removed; branch changed during cleanup');
+    try {
+      // branch -d cannot recognize picks. Delete only the exact tip we proved equivalent.
+      if (picked) await git(wt.main_root, ['update-ref', '--no-deref', '-d', `refs/heads/${wt.branch}`, head]);
+      else await git(wt.main_root, ['branch', '-d', '--', wt.branch]);
+    } catch { return kept('worktree removed; Git refused to delete its branch'); }
+    return { worktree_removed_at: new Date().toISOString() };
+  } catch { return kept('worktree cleanup could not be verified or completed'); }
 }
