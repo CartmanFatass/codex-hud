@@ -9,3 +9,5 @@
 - [x] Control picker, footer prices and bar marks unchanged except the two named fixes
 
 ## Comments
+
+- Landed d5b06d0a6836432e01722b892d558d5c62620704; gate 5/5 passed.
