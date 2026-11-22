@@ -85,3 +85,28 @@ test('Codex refuses the first call with a resumed thread ID and caches the resul
     assert.ok((await main.rpc('tools/list')).result.tools.some(({ name }) => name === 'hud_create'));
   } finally { await main.close(); }
 });
+
+test('Antigravity refuses resumed workers from conversation metadata and a clean main-session miss stays silent', async (t) => {
+  const f = fixture(t, 'agy');
+  const init = { clientInfo: { name: 'antigravity-client', version: 'synthetic' } };
+  const conversation = (id) => ({ 'antigravity.google/conversation_id': id });
+  const worker = f.start();
+  try {
+    await worker.rpc('server/discover');
+    assert.doesNotMatch((await worker.rpc('initialize', init)).result.instructions, recovery);
+    assert.ok((await worker.rpc('tools/list')).result.tools.some(({ name }) => name === 'hud_wait'));
+    refusal(await worker.rpc('tools/call', {
+      name: 'hud_create', arguments: { _meta: conversation(mainSession) }, _meta: conversation(workerSession),
+    }));
+    refusal(await worker.rpc('tools/call', { name: 'hud_send' }));
+    assert.deepEqual((await worker.rpc('tools/list')).result.tools, []);
+  } finally { assert.equal(await worker.close(), ''); }
+
+  const main = f.start();
+  try {
+    await main.rpc('initialize', init);
+    const reply = await main.rpc('tools/call', { name: 'hud_roster', _meta: conversation(mainSession) });
+    assert.notEqual(reply.result.isError, true);
+    assert.ok((await main.rpc('tools/list')).result.tools.some(({ name }) => name === 'hud_create'));
+  } finally { assert.equal(await main.close(), ''); }
+});

@@ -14,7 +14,7 @@ export const WATCH_HELP =
   'Usage: hud watch [--all] [--verbose] [--queue]\n' +
   'Stream pending questions and actionable job events for the caller pane (HERDR_PANE_ID), plus project try records.\n' +
   '--all: every pane; --verbose: every change, as in MCP changes.\n' +
-  '--queue: deliver quietly through the Codex caller queue (typed fallback on failure).\n';
+  '--queue: deliver through the Codex queue (typed fallback on failure) or Antigravity hook/idle prompt.\n';
 
 // Woken by file changes under jobs/; the slow rescan only covers a watch lost or not yet attachable.
 const DEFAULT_RESCAN_MS = 30_000;
@@ -285,16 +285,24 @@ export async function watchCommand(
     inputs.attach();
     let prev = new Map<string, JobRow>();
     let first = true;
+    let queueAgent: 'codex' | 'agy' | undefined;
+    const agyBacklog: string[] = [];
     while (!stopped) {
       if (!first) await wait();
       if (stopped) break;
       dirty = false;
-      if (queue && delivery!.paneInfo(callerPane, io.env)?.agent !== 'codex') break;
+      const pane = queue ? delivery!.paneInfo(callerPane, io.env) : null;
+      if (queue) {
+        const agent = pane?.agent;
+        if ((agent !== 'codex' && agent !== 'agy') || (queueAgent && queueAgent !== agent)) break;
+        queueAgent = agent;
+      }
+      const agyPending = queueAgent === 'agy' && delivery!.hasAgyEvents(callerPane, home);
       const rows = all ? readThinJobRows(home, { pane: null }) : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)))];
       if (queue) {
-        const pending = notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions || row.checks?.state === 'running') ||
+        const pending = agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions || row.checks?.state === 'running') ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -308,6 +316,17 @@ export async function watchCommand(
         : notices.collect(events, tryLines);
       first = false;
       prev = new Map(rows.map((row) => [row.job, row]));
+      if (queueAgent === 'agy') {
+        for (const batch of lines) for (const line of batch.split('\n')) agyBacklog.push(line);
+        // A regular filesystem wake or safety rescan also flushes old events
+        // when the caller returns to its prompt without any new job events.
+        if (!stopped && (agyBacklog.length || agyPending)) {
+          const sent = delivery!.notifyAgy(callerPane, agyBacklog, home, io.env, pane);
+          agyBacklog.splice(0, sent.accepted);
+          if (sent.status !== 0) io.stderr(`${sent.detail || sent.error?.message || 'Antigravity event delivery failed; will retry'}\n`);
+        }
+        continue;
+      }
       for (const line of lines) {
         if (stopped) break;
         try {

@@ -1,9 +1,12 @@
-/** Shared question/event delivery: watch, Codex queue, then typed fallback. */
+/** Shared question/event delivery: watch, Codex queue, Antigravity mailbox, or typing. */
 import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pushAgyEvents } from './agy-events.mjs';
+
+export { hasAgyEvents } from './agy-events.mjs';
 
 function startTime(pid) {
   const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
@@ -64,9 +67,35 @@ export function paneInfo(pane, env = process.env) {
     return got.status === 0 ? JSON.parse(got.stdout).result.pane : null;
   } catch { return null; }
 }
+// `done` is the unfocused, unread version of an idle prompt. Unknown and
+// blocked panes are not safe to type into.
+const agyIdle = (info) => info?.agent === 'agy' && (info.agent_status === 'idle' || info.agent_status === 'done');
+
+export function notifyAgy(pane, messages, home, env, info) {
+  return pushAgyEvents(pane, home, messages, env, agyIdle(info) ? (text) => {
+    // Another prompt may have started while this batch waited for the mailbox.
+    if (!agyIdle(paneInfo(pane, env))) return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
+    const sent = spawnSync('herdr', ['agent', 'prompt', pane, text], { env, encoding: 'utf8', timeout: 20000 });
+    if (sent.status !== 0) {
+      // As with worker launch, retry only failures known to precede input.
+      let code;
+      try { code = JSON.parse(sent.stdout)?.error?.code; } catch { /* May be printed on stderr. */ }
+      code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(sent.stderr?.trim() ?? '')?.[1];
+      sent.retry = !sent.pid || code === 'agent_not_ready' || code === 'agent_not_found';
+    }
+    return sent;
+  } : null);
+}
+
 export function notify(pane, message, home, { queue = false, env = process.env } = {}) {
   if (!queue && watching(pane, home)) return { status: 0, skipped: true };
   const info = paneInfo(pane, env);
+  if (info?.agent === 'agy') {
+    const sent = notifyAgy(pane, [message], home ?? (env.HUD_HOME || join(env.HOME || homedir(), '.hud')), env, info);
+    if (!sent.accepted) return { status: 1, error: sent.error ?? new Error('Antigravity mailbox busy or full') };
+    // Once persisted the event can still be delivered after a rejected prompt.
+    return { status: 0, detail: sent.detail ?? (sent.status === 0 ? 'typed into Antigravity' : 'pending for Antigravity delivery') };
+  }
   let detail = '';
   if (info?.agent === 'codex' && info.agent_session?.value) {
     try {
@@ -92,7 +121,9 @@ export function notify(pane, message, home, { queue = false, env = process.env }
 
 export function ensureQueueWatcher(pane, home) {
   try {
-    if (!pane || watching(pane, home) || paneInfo(pane)?.agent !== 'codex' || watching(pane, home)) return;
+    if (!pane || watching(pane, home)) return;
+    const agent = paneInfo(pane)?.agent;
+    if ((agent !== 'codex' && agent !== 'agy') || watching(pane, home)) return;
     const pidFile = join(home, 'watchers', `${pane}.pid`);
     fs.mkdirSync(join(home, 'watchers'), { recursive: true, mode: 0o700 });
     const hud = fileURLToPath(new URL('../../../bin/hud', import.meta.url));

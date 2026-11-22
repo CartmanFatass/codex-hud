@@ -532,14 +532,15 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
 function queueFixture(t, agent = 'codex', thread = '00000000-0000-4000-8000-000000000001', fail = false) {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-queue-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const bin = join(home, 'bin'), log = join(home, 'deliveries'), agentFile = join(home, 'agent');
+  const bin = join(home, 'bin'), log = join(home, 'deliveries'), agentFile = join(home, 'agent'), statusFile = join(home, 'agent-status');
   fs.mkdirSync(bin);
   fs.writeFileSync(agentFile, agent);
+  fs.writeFileSync(statusFile, 'idle');
   const fake = `#!${process.execPath}
 import fs from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'pane' && args[1] === 'get') {
-  console.log(JSON.stringify({ result: { pane: { agent: fs.readFileSync(${JSON.stringify(agentFile)}, 'utf8'), agent_session: { value: ${JSON.stringify(thread)} } } } }));
+  console.log(JSON.stringify({ result: { pane: { agent: fs.readFileSync(${JSON.stringify(agentFile)}, 'utf8'), agent_status: fs.readFileSync(${JSON.stringify(statusFile)}, 'utf8'), agent_session: { value: ${JSON.stringify(thread)} } } } }));
 } else if (args[0] === 'pane' && args[1] === 'process-info') {
   console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
 } else {
@@ -550,7 +551,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
   for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: home, CODEX_HOME: join(home, 'wrong-account'), HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
   const deliveries = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
-  return { home, env, agentFile, deliveries };
+  return { home, env, agentFile, statusFile, deliveries };
 }
 
 test('a live pi watcher suppresses fallback, but dead, reused and mismatched PIDs do not', async (t) => {
@@ -659,6 +660,92 @@ test('hud watch --queue typed fallback keeps running and exits after injectable 
   assert.equal(f.deliveries()[0].args[4], f.deliveries()[1].args[3]);
   assert.deepEqual(stdout, []);
   assert.match(stderr.join(''), /codex queue failed.*fell back to typing/);
+});
+
+const agyHook = resolve('integrations/agy/pre-invocation.sh');
+const agyPayload = JSON.stringify({ conversationId: 'synthetic-main', cwd: '/synthetic', hookEventName: 'PreInvocation',
+  invocationNum: 3, transcriptPath: '/synthetic/transcript', modelName: 'synthetic-model' });
+const agyPending = (f) => join(f.home, 'watchers', `${f.env.HERDR_PANE_ID}.agy-pending`);
+const agyHookLines = (reply) => {
+  if (!reply.injectSteps) { assert.deepEqual(reply, {}); return []; }
+  assert.equal(reply.injectSteps.length, 1);
+  const [head, ...lines] = reply.injectSteps[0].userMessage.split('\n');
+  assert.equal(head, '[HUD job events]');
+  return lines;
+};
+
+function runAgyHook(env) {
+  const ran = spawnSync(agyHook, [], { env, input: agyPayload, encoding: 'utf8', timeout: 5000 });
+  assert.equal(ran.status, 0, ran.stderr || ran.error?.message);
+  return JSON.parse(ran.stdout);
+}
+
+test('agy watcher types when idle, injects while working, and flushes pending on the idle rescan', async (t) => {
+  const f = queueFixture(t, 'agy'), pane = f.env.HERDR_PANE_ID, file = agyPending(f);
+  const create = (n, name) => writeJob(f.home, `j${String(n).padStart(16, '0')}`, pane, name, { state: 'idle_grace' }, true);
+  const ac = new AbortController(), stderr = [];
+  t.after(() => ac.abort());
+  create(1, 'idle event');
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: (s) => stderr.push(s) },
+    { signal: ac.signal, rescanMs: 80, settlementWindowMs: 30 });
+  await until(() => f.deliveries().length === 1);
+  assert.deepEqual(f.deliveries()[0].args, ['agent', 'prompt', pane, 'j0000000000000001 imp idle event: idle_grace | report']);
+  assert.deepEqual(runAgyHook(f.env), {});
+
+  writeFixtureFile(f.statusFile, 'working');
+  create(2, 'working "事件"');
+  await until(() => fs.existsSync(file));
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(runAgyHook({ ...f.env, HERDR_PANE_ID: '' }), {});
+  assert.deepEqual(runAgyHook({ ...f.env, HUD_HOME: '' }), {});
+  assert.deepEqual(agyHookLines(runAgyHook(f.env)), ['j0000000000000002 imp working "事件": idle_grace | report']);
+  assert.deepEqual(runAgyHook(f.env), {});
+  assert.equal(f.deliveries().length, 1);
+
+  create(3, 'pending until idle');
+  await until(() => fs.existsSync(file));
+  assert.equal(f.deliveries().length, 1);
+  writeFixtureFile(f.statusFile, 'idle'); // Not under jobs/: only the safety rescan notices.
+  await until(() => f.deliveries().length === 2);
+  assert.deepEqual(f.deliveries()[1].args, ['agent', 'prompt', pane, 'j0000000000000003 imp pending until idle: idle_grace | report']);
+  assert.deepEqual(runAgyHook(f.env), {});
+  ac.abort();
+  assert.equal(await running, 0);
+  assert.deepEqual(stderr, []);
+});
+
+test('agy hook processes and the watcher racing an idle flush deliver each event once', async (t) => {
+  const f = queueFixture(t, 'agy'), pane = f.env.HERDR_PANE_ID, file = agyPending(f);
+  const create = (n) => writeJob(f.home, `j${String(n).padStart(16, '0')}`, pane, `race-${n}`, { state: 'idle_grace' }, true);
+  writeFixtureFile(f.statusFile, 'working');
+  create(1);
+  create(2);
+  const watcher = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { watchCommand } from './dist/cli/watch.js';
+    await watchCommand(['--queue'], { env: process.env, stdout: console.log, stderr: console.error },
+      { rescanMs: 50, settlementWindowMs: 30 });
+  `], { env: f.env, stdio: 'ignore' });
+  const exited = once(watcher, 'exit');
+  t.after(async () => { watcher.kill('SIGTERM'); await exited; });
+  await until(() => fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes('race-1') && fs.readFileSync(file, 'utf8').includes('race-2'));
+  const hooks = Array.from({ length: 6 }, async () => {
+    const child = spawn(agyHook, [], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const closed = once(child, 'close');
+    let out = '';
+    child.stdout.setEncoding('utf8').on('data', (s) => { out += s; });
+    assert.deepEqual(await closed, [0, null]);
+    return agyHookLines(JSON.parse(out));
+  });
+  writeFixtureFile(f.statusFile, 'idle');
+  create(3);
+  const injected = (await Promise.all(hooks)).flat();
+  const typed = () => f.deliveries().flatMap(({ args }) => args[3].split('\n'));
+  await until(() => typed().length + injected.length >= 3);
+  watcher.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+  assert.deepEqual([...typed(), ...injected].sort(), [1, 2, 3].map((n) =>
+    `j${String(n).padStart(16, '0')} imp race-${n}: idle_grace | report`));
+  assert.deepEqual(runAgyHook(f.env), {});
 });
 
 test('hud watch without HERDR_PANE_ID or --all prints one error line and exits 1', async (t) => {

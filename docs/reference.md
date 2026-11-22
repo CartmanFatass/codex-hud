@@ -120,8 +120,10 @@ On start the watch catches up pending questions, unread settled reports and unre
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
 without tasks runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
 `codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
-It exits when the pane is gone/no longer Codex, or after 10 minutes with no unsettled job, unread attention/report
-or unanswered question. The pi HUD package delivers actionable notices natively, waking an idle main session
+The watcher exits when the pane disappears or changes agent, or after 10 minutes with no unsettled job, unread attention/report
+or unanswered question.
+Antigravity uses the same detached watcher: events reach a working session through its `PreInvocation` hook and are typed into the prompt when idle.
+The pi HUD package delivers actionable notices natively, waking an idle main session
 or delivering before the next model request after the current tool batch, without touching the editor draft.
 No Monitor or panel is needed; pi workers do not start this watch. A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid`
 while active. `hud_roster` and `hud_create` report `watcher_alive` when the caller has a pane; a live watch

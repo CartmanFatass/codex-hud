@@ -6,7 +6,7 @@ import { isRecord } from './herdr-run.js';
 const MAX_ENTRIES = 512;
 const MAX_STATUS_BYTES = 16 * 1024;
 const JOB_ID = /^j[0-9a-f]{16}$/;
-type Identity = { agent: 'claude' | 'codex'; id: string } | { agent: 'pi'; id: string; file?: string };
+type Identity = { agent: 'agy' | 'claude' | 'codex'; id: string } | { agent: 'pi'; id: string; file?: string };
 
 function matches(status: Record<string, unknown>, identity: Identity): boolean {
   if (identity.agent !== 'pi') return status.agent === identity.agent && status.agent_session_id === identity.id;

@@ -52,7 +52,7 @@ if (isWorker) process.env.HUD_HOME = hudHome; // The watcher and other subproces
 const jobsRoot = join(hudHome, 'jobs');
 let resumeChecked = false;
 let resumeRefusal: string | undefined;
-function checkResume(agent: 'claude' | 'codex', id: unknown) {
+function checkResume(agent: 'agy' | 'claude' | 'codex', id: unknown) {
   if (isWorker || resumeChecked || typeof id !== 'string' || !id) return;
   resumeChecked = true;
   resumeRefusal = resumedWorkerRefusal(hudHome, { agent, id });
@@ -1810,19 +1810,23 @@ async function closeJob(job: Job, stop = false) {
 }
 
 const callerPane = herdrId(process.env.HERDR_PANE_ID) ? process.env.HERDR_PANE_ID! : null;
-let callerHarness: 'claude' | 'codex' | 'pi' | undefined;
+let callerHarness: 'agy' | 'claude' | 'codex' | 'pi' | undefined;
 let sentConventionVersion: string | undefined;
 let sentCreateHint = false;
-let discovered = false, taskClient = false;
+let discovered = false, taskClient = false, agyClient = false;
 function deliveryHint(watcherAlive: boolean): string {
   if (taskClient) return 'Worker-turn events arrive as MCP task completions. Use `hud_read` to collect reports and check jobs without a task.';
   if (!callerHarness && callerPane) {
     const agent = paneInfo(callerPane)?.agent;
-    if (agent === 'claude' || agent === 'codex' || agent === 'pi') callerHarness = agent;
+    if (agent === 'agy' || agent === 'claude' || agent === 'codex' || agent === 'pi') callerHarness = agent;
   }
   const fallback = 'Without live delivery, questions may be typed; use `hud_wait` for settlement or attention.';
   const live = 'Keep working until notified, then collect reports with `hud_read`.';
   switch (callerHarness) {
+    case 'agy':
+      return watcherAlive
+        ? `Antigravity: the PreInvocation hook delivers events while working; herdr types them when idle. ${live}`
+        : 'Antigravity: no live watch. Use `hud_wait` for settlement or attention.';
     case 'claude':
       return `Claude Code: ${watcherAlive ? '`hud watch` is live under Monitor' : 'run `hud watch` under Monitor'}; re-arm after expiry. ${live}`;
     case 'codex':
@@ -2064,7 +2068,10 @@ async function receive(line: string): Promise<void> {
     }
     case 'initialize':
       discovered = taskClient = false;
-      if (request.params?.clientInfo?.name === 'hud-pi') callerHarness = 'pi';
+      const clientName = request.params?.clientInfo?.name;
+      agyClient = clientName === 'antigravity-client';
+      if (agyClient) callerHarness = 'agy';
+      if (clientName === 'hud-pi') callerHarness = 'pi';
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {}, resources: {} },
@@ -2111,9 +2118,10 @@ async function receive(line: string): Promise<void> {
       result = readCodexStatusline(request.params._meta, hudHome, callerPane);
       break;
     case 'tools/call': {
-      // Codex exposes the thread only in call metadata, not in initialize or tools/list.
+      // Antigravity and Codex expose session identity only in tools/call metadata.
       const meta = request.params?._meta, turn = meta?.['x-codex-turn-metadata'];
-      checkResume('codex', meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id);
+      if (agyClient) checkResume('agy', meta?.['antigravity.google/conversation_id']);
+      else checkResume('codex', meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id);
       if (resumeRefusal) {
         result = { ...taskContent(resumeRefusal), isError: true };
         break;
