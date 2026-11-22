@@ -5,7 +5,10 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { longClaudeTranscript, nativeFixture, NOW } from '../fixtures/native-tree.mjs';
+import { withState } from '../fixtures/state-helpers.mjs';
 import { JobSentences } from '../../dist/collectors/job-sentences.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 
 const CHUNK = 1048576;
@@ -68,12 +71,16 @@ test('5 MB Claude parent shows its latest step in the first frame, then fills in
   assert.equal(tree.nodes.length, 1);
   assert.equal(tree.nodes[0].children[0].ref.threadId, 'child');
   assert.equal(tree.nodes[0].children[0].depth, 2);
+  const lead = f.board(first).workers[0];
+  const expanded = withState(initialMonitorState(), {
+    home: { expanded: new Set([targetKey({ kind: 'worker', laneId: lead.laneId, workerId: lead.id })]) },
+  });
   for (const width of [80, 120])
     for (const lang of ['en', 'zh']) {
-      const initial = f.render(width, lang, undefined, first);
+      const initial = f.render(width, lang, expanded, first);
       assert.match(initial.lines.map(stripAnsi).join('\n'), /SYNTH-LATEST/);
       for (const line of initial.lines) assert.equal(visualLength(line), width);
-      const frame = f.render(width, lang, undefined, tree),
+      const frame = f.render(width, lang, expanded, tree),
         lines = frame.lines.map(stripAnsi);
       for (const line of frame.lines) assert.equal(visualLength(line), width);
       assert.match(lines.join('\n'), /SYNTH-NEWER/);
@@ -259,7 +266,11 @@ test('Claude tail window drops the crossing line and does not let a previewed to
   assert.equal(first.nodes[0].lastReport, undefined);
   assert.equal(first.nodes[0].action.name, 'Agent');
   assert.equal(first.nodes[0].children.length, 0);
-  assert.match(f.render(80, 'en', undefined, first).lines.map(stripAnsi).join('\n'), /┃ Agent/);
+  const lead = f.board(first).workers[0];
+  const expanded = withState(initialMonitorState(), {
+    home: { expanded: new Set([targetKey({ kind: 'worker', laneId: lead.laneId, workerId: lead.id })]) },
+  });
+  assert.match(f.render(80, 'en', expanded, first).lines.map(stripAnsi).join('\n'), /┃ Agent/);
   assert.equal(drain(f).nodes[0].children.length, 1, 'a partial preview line is not omitted forward evidence');
 });
 

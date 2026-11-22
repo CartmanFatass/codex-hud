@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { withState } from '../fixtures/state-helpers.mjs';
 import { PanelJobPipeline } from '../../dist/tree-page.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
@@ -111,7 +112,7 @@ test('excluded jobs cost zero artifact reads and zero requests with every model 
   } finally { Object.assign(fs, originals); syncBuiltinESMExports(); }
 });
 
-test('settlement at/after open shows, folds at five minutes, hides at fifteen, and a reveals it', async (t) => {
+test('settlement at/after open shows, hides at five minutes by default (or folds at five and hides at fifteen), and a reveals it', async (t) => {
   const f = fixture(t);
   f.job(1, 'done', OPEN); f.job(2, 'done', OPEN + MIN);
   const board = await f.collect();
@@ -120,8 +121,12 @@ test('settlement at/after open shows, folds at five minutes, hides at fifteen, a
   const key = targetKey({ kind: 'worker', laneId: worker.laneId, workerId: worker.id });
   const rows = (frame) => frame.workboard.rows.filter((r) => r.item === key);
   assert.ok(rows(f.draw(board, worker.settledAt + 5 * MIN - 1)).length > 1);
-  assert.equal(rows(f.draw(board, worker.settledAt + 5 * MIN)).length, 1);
-  const hidden = f.draw(board, worker.settledAt + 15 * MIN);
+  const defaultHidden = f.draw(board, worker.settledAt + 5 * MIN);
+  assert.equal(defaultHidden.workboard.snapshot.workers.length, 0);
+  assert.equal(rows(defaultHidden).length, 0);
+  const longHide = withState(initialMonitorState(), { prefs: { cardFoldMinutes: 5, cardHideMinutes: 15 } });
+  assert.equal(rows(f.draw(board, worker.settledAt + 5 * MIN, longHide)).length, 1);
+  const hidden = f.draw(board, worker.settledAt + 15 * MIN, longHide);
   assert.equal(hidden.workboard.snapshot.workers.length, 0);
   const all = handleMonitorInput(hidden.state, { type: 'key', key: 'show-all' }, { tree, frame: hidden }).state;
   assert.equal(rows(f.draw(board, worker.settledAt + 15 * MIN, all)).length, 1);
