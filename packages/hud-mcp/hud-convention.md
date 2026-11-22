@@ -12,13 +12,18 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - When more than one job needs the same answer (a test source, an interface, who owns a step), put it in the next
   briefs or in a project file they name, not in one `hud_respond` per job.
 - A role defines the work (`instructions`) and an ordered `run` list of places (`pi`, `cli`, or `bro`); `hud_create` picks the first available place (`runs_on`) unless overridden with `on`.
-- `hud_create({ role, task, scout: "<question>" })` runs sonic first and attaches its dossier to the target via `from_jobs`; one notice or MCP task covers both, and a failed scout leaves a note instead.
+- `hud_create({ role, task, scout: "<question>" })` runs sonic first and attaches its dossier to the target via `from_jobs`
+  (any sonic report attached through `from_jobs` is prefixed with one unverified-facts line in the brief's language);
+  one notice or MCP task covers both, and a failed scout leaves a note instead.
 - Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
   otherwise choose the simplest option and note it.
 - Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
-- For integration, send sonic the slice commits, base branch and checks. It cherry-picks and runs the gate in a fresh
-  detached worktree, stops on conflict or failure without editing, and reports results and commit IDs in at most 10
-  lines. The main session decides whether to request a repair or fast-forward and push; then remove the integration worktree.
+- `hud_land({ job })` lands a settled managed worktree (`idle_grace`, `done` or `closed`) through the project's
+  `.hud/project.json` `land` config: takes the `main-checkout` lease, cherry-picks into a detached checkout, runs `gate`
+  (one immediate rerun per red command; up to two source-worker repairs on persistent failure or conflict), writes
+  ticket/STATE landing records, fast-forwards the base, runs `after`, pushes when configured, and removes integration
+  and job worktrees and branch. It returns a flow ID (`hud_read({ job: "<flow>" })` reads its state and step) and
+  delivers one terminal notice or MCP task.
 - Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
 - Review spec compliance and scope creep separately from simplicity and real defects; findings do not imply new tests.
 - Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.

@@ -44,7 +44,21 @@ export interface JobProgress {
   readonly progress: readonly ProgressEntry[];
   readonly latest_progress: ProgressEntry | null;
 }
+export interface WorkFlowStep {
+  readonly key: 'gate' | 'merge' | 'push' | 'scout' | 'run';
+  readonly state: 'pending' | 'active' | 'done' | 'failed' | 'cancelled';
+}
+export interface WorkFlow {
+  readonly kind: 'land' | 'scout';
+  readonly state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  readonly steps: readonly WorkFlowStep[];
+  readonly step?: string;
+  readonly landedSha?: string;
+  readonly error?: string;
+  readonly updatedAt: number | null;
+}
 export interface OwnerWorker extends Partial<JobProgress> {
+  readonly flow?: WorkFlow;
   readonly checks?: Pick<import('../roles/job-checks.js').CheckSummary, 'state' | 'stale' | 'passed' | 'total'>;
   readonly diffStat?: import('./diff-stat.js').DiffStatSummary;
   /** Display-only metadata bound to this settled thin job's current report. */

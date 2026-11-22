@@ -10,7 +10,7 @@ import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
-import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkLane } from './workboard-types.js';
+import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkFlow, WorkFlowStep, WorkLane } from './workboard-types.js';
 
 let complete = false;
 function entries(path: string, missingOK = false): string[] {
@@ -33,7 +33,7 @@ const watchCache = new Map<string, { stamp: string; snap: Snap }>();
 const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
-const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'dispatch_exit_code',
+const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string): void {
   if (cacheHome === home) return;
@@ -47,7 +47,7 @@ function restore(home: string): void {
       if (!/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object'))) throw Error('cache');
-      if (rel.endsWith('/job.json') && snap.factsVersion !== 2) continue; // Older projections lack supersession evidence.
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 3) continue; // Older projections lack supersession/scout evidence.
       cache.set(join(home, 'jobs', rel), { stamp, snap: { ...snap, text: '' } });
     }
     saved = text;
@@ -56,7 +56,7 @@ function restore(home: string): void {
 function persist(home: string): void {
   const root = join(home, 'jobs') + '/';
   const rows = [...cache].filter(([p, { snap }]) => /\/(job|STATUS)\.json$/.test(p) && !snap.json?.checks).map(([p, { stamp, snap }]) =>
-    [p.slice(root.length), stamp, { ...(p.endsWith('/job.json') ? { factsVersion: 2 } : {}), at: snap.at, whole: snap.whole, json: snap.json ?
+    [p.slice(root.length), stamp, { ...(p.endsWith('/job.json') ? { factsVersion: 3 } : {}), at: snap.at, whole: snap.whole, json: snap.json ?
       { ...Object.fromEntries(Object.entries(snap.json).filter(([k]) => factKeys.has(k))),
         project_root: snap.json.project_root ?? (snap.json.worktree as { main_root?: unknown } | null)?.main_root } : null }]);
   const text = JSON.stringify(rows);
@@ -474,6 +474,98 @@ export function runningVerb(role: string, harness: string): string {
   if (harness === 'bro') return /^flow/.test(role) ? 'generating' : 'asking web';
   return 'working';
 }
+const LAND_STATES = new Set<WorkFlow['state']>(['queued', 'running', 'completed', 'failed', 'cancelled']);
+const flowIsActive = (flow: WorkFlow | null | undefined) => flow?.state === 'queued' || flow?.state === 'running';
+function readLandFlow(home: string, id: string, parse: (text: string) => unknown): WorkFlow | null {
+  const file = read(join(home, 'flows', `f${id.slice(1)}.json`));
+  if (!file?.whole) return null;
+  if (file.json === undefined) {
+    try {
+      const parsed = parse(file.text);
+      file.json = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      file.json = null;
+    }
+  }
+  const v = file.json;
+  if (!v) return null;
+  const state = typeof v.state === 'string' && LAND_STATES.has(v.state as WorkFlow['state']) ? (v.state as WorkFlow['state']) : null;
+  const step = word(v.step);
+  if (v.job !== id || !state || !step) return null;
+  const config = v.config && typeof v.config === 'object' ? (v.config as Record<string, unknown>) : null;
+  const push = config?.push === true;
+  const keys: WorkFlowStep['key'][] = push ? ['gate', 'merge', 'push'] : ['gate', 'merge'];
+  const stage = step === 'done'
+    ? keys.length
+    : step === 'push' || (step === 'cleanup' && push)
+      ? keys.length - 1
+      : step === 'records' || step === 'fast-forward' || step.startsWith('after[') || step === 'cleanup'
+        ? 1
+        : 0;
+  const steps: WorkFlowStep[] = keys.map((key, i) => ({
+    key,
+    state:
+      state === 'completed'
+        ? 'done'
+        : i < stage
+          ? 'done'
+          : i === stage
+            ? state === 'failed'
+              ? 'failed'
+              : state === 'cancelled'
+                ? 'cancelled'
+                : 'active'
+            : 'pending',
+  }));
+  const sha = word(v.landed_sha);
+  const error = word(v.error);
+  return {
+    kind: 'land',
+    state,
+    steps,
+    step,
+    ...(sha ? { landedSha: sha.slice(0, 7) } : {}),
+    ...(error ? { error } : {}),
+    updatedAt: when(v.updated_at) ?? file.at,
+  };
+}
+function scoutWorkFlow(
+  scoutState: string,
+  scoutError: string | null,
+  state: JobRow['display_state'],
+  s: Record<string, unknown>,
+  at: number
+): WorkFlow {
+  if (scoutState === 'scouting' || (state === 'stopped' && word(s.exit_reason) === 'scouted dispatch stopped')) {
+    const flowState: WorkFlow['state'] = state === 'stopped' ? 'cancelled' : state === 'failed' ? 'failed' : 'running';
+    const first: WorkFlowStep['state'] = state === 'stopped' ? 'cancelled' : state === 'failed' ? 'failed' : 'active';
+    return {
+      kind: 'scout',
+      state: flowState,
+      steps: [
+        { key: 'scout', state: first },
+        { key: 'run', state: 'pending' },
+      ],
+      updatedAt: at,
+    };
+  }
+  const scoutStep: WorkFlowStep['state'] = scoutState === 'failed' ? 'failed' : 'done';
+  const runStep: WorkFlowStep['state'] =
+    state === 'working' ? 'active' : state === 'done' ? 'done' : state === 'failed' ? 'failed' : 'cancelled';
+  const flowState: WorkFlow['state'] =
+    state === 'working' ? 'running' : state === 'done' ? 'completed' : state === 'failed' ? 'failed' : 'cancelled';
+  return {
+    kind: 'scout',
+    state: flowState,
+    steps: [
+      { key: 'scout', state: scoutStep },
+      { key: 'run', state: runStep },
+    ],
+    ...(scoutState === 'failed' && scoutError ? { error: scoutError } : {}),
+    updatedAt: at,
+  };
+}
+
 export function readThinJobs(
   home: string,
   scope: ThinJobScope,
@@ -490,16 +582,23 @@ export function readThinJobs(
     catch { complete = false; return []; }
   }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id));
   if (candidates.length > 200) complete = false;
+  const landFlows = new Map<string, WorkFlow | null>();
+  const landFor = (id: string) => {
+    if (!landFlows.has(id)) landFlows.set(id, readLandFlow(home, id, parse));
+    return landFlows.get(id)!;
+  };
   const receipts: Receipt[] = [], outsideTimeWindow: string[] = [];
   const jobs = candidates.slice(0, 200)
     .flatMap(({ id }) => {
       // Filter from STATUS facts before reading receipts or artifacts; active/unknown jobs always stay.
       const status = options ? json(join(root, id, 'STATUS.json'), parse) : null;
+      const land = options ? landFor(id) : null;
       if (
         status &&
+        !flowIsActive(land) &&
         ['done', 'closed', 'idle_grace', 'failed', 'stopped'].includes(String(status.v.state)) &&
-        ((when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at) < (options?.settledBefore ?? -Infinity) ||
-          (when(status.v.settled_at) ?? when(status.v.ended_at) ?? status.at) < (options?.openedAt ?? -Infinity))
+        (Math.max(when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.settledBefore ?? -Infinity) ||
+          Math.max(when(status.v.settled_at) ?? when(status.v.ended_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.openedAt ?? -Infinity))
       ) { outsideTimeWindow.push(id); return []; }
       const file = json(join(root, id, 'job.json'), parse),
         job = file?.v;
@@ -526,12 +625,13 @@ export function readThinJobs(
     const directory = join(root, id),
       status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
+    const land = landFor(id);
     const initialRow = jobRow(job, status?.v ?? null);
     const state = initialRow.display_state;
     const at = status?.at ?? jobAt;
     // When the work settled, not when the process later exited: closing an idle job must not reset its age or outcome label.
     const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
-    if (settledAt !== null && settledAt < (options?.openedAt ?? -Infinity)) return [];
+    if (settledAt !== null && !flowIsActive(land) && Math.max(settledAt, land?.updatedAt ?? -Infinity) < (options?.openedAt ?? -Infinity)) return [];
     const briefFile = read(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '',
       task = typeof job.task_length === 'number' ? brief.slice(0, job.task_length) : brief;
@@ -539,8 +639,13 @@ export function readThinJobs(
     const title = briefTitle || stripJobPrefix(first(task) || first(word(job.title) ?? '')) || id.slice(-6);
     const displayId = title.match(/^([\w]+(?:[-/#][\w]+)+|[A-Z][A-Z\d_]+(?=:)|\d+)(?=[:\s]|$)/)?.[1] ?? word(job.slice) ?? word(job.ticket) ?? undefined;
     const label = stripJobPrefix(word(job.package) ?? displayId ?? title.split(':', 1)[0]);
-    return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label }];
+    return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label, land }];
   });
+  const scoutChildren = new Map<string, { state: JobRow['display_state'] }>();
+  for (const card of cards) {
+    const parent = word(card.job.parent_job);
+    if (card.job.scout_only === true && parent) scoutChildren.set(parent, { state: card.state });
+  }
   const titles = new Map(cards.map(({ id, title }) => [id, title]));
   // An attempt on another pane or settled before open can retire a failure, but never becomes a card or model input.
   if (cards.some(({ state }) => state === 'failed' || state === 'stopped')) for (const id of outsideTimeWindow) {
@@ -550,7 +655,7 @@ export function readThinJobs(
   const superseded = supersession(home, receipts, evidenceText(cache), scope.project,
     (j) => taskTarget(titles.get(String(j.job)) ?? ''));
   const labels = new Map(cards.map(({ id, label }) => [id, label]));
-  for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label: ownLabel } of cards) {
+  for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label: ownLabel, land } of cards) {
     const parent = word(job.parent_job);
     const parentLabel = parent && parent !== id ? labels.get(parent) : undefined;
     const label = parentLabel ?? ownLabel;
@@ -654,6 +759,19 @@ export function readThinJobs(
       phaseAt = review.at;
       lastResult = first(review.text);
     }
+    const scoutChild = scoutChildren.get(id);
+    const scoutState =
+      word(job.scout_state) ??
+      (word(s.reason) === 'scouting' || word(s.exit_reason) === 'scouted dispatch stopped'
+        ? 'scouting'
+        : scoutChild
+          ? scoutChild.state === 'working'
+            ? 'scouting'
+            : scoutChild.state === 'done'
+              ? 'done'
+              : 'failed'
+          : null);
+    const flow = land ?? (scoutState ? scoutWorkFlow(scoutState, word(job.scout_error), state, s, at) : undefined);
     const phase =
       state === 'stopped'
         ? 'stopped'
@@ -663,12 +781,14 @@ export function readThinJobs(
             ? 'failed'
             : settledAt !== null
               ? 'done'
-              : reviews.length
-                ? 'fixing'
-                : verb;
+              : flow?.kind === 'scout' && flow.steps[0]?.state === 'active'
+                ? 'scouting'
+                : reviews.length
+                  ? 'fixing'
+                  : verb;
     phases.push(phase);
     const sessionFile = state === 'working' ? latestSession(directory) : undefined;
-    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0);
+    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0, flow?.updatedAt ?? 0);
     const reportMeta = settledReportMeta(directory, report !== null, settledAt !== null);
     const sentence =
       reportMeta?.summary ||
@@ -696,6 +816,7 @@ export function readThinJobs(
         : undefined;
     const worker: OwnerWorker = {
       files,
+      ...(flow ? { flow } : {}),
       ...(reportMeta ? { reportMeta } : {}),
       sessionFile,
       progress: row.progress,

@@ -57,7 +57,10 @@ test('scouted create returns one MCP task, shares the managed cwd and appends th
   await waitLaunch(target);
   assert.equal(receipt(target.task_dir).cwd, scouted.cwd);
   assert.deepEqual(receipt(target.task_dir).from_jobs, [upstream.job, scouted.job]);
-  assert.ok(brief(target.task_dir).includes(`${scouted.job} report: ${JSON.stringify(join(scout, 'report.md'))}`));
+  const targetBrief = brief(target.task_dir);
+  const enPrefix = 'Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.';
+  assert.ok(targetBrief.includes(`${enPrefix}\n- ${scouted.job} report: ${JSON.stringify(join(scout, 'report.md'))}`));
+  assert.ok(!targetBrief.includes(`${enPrefix}\n- ${upstream.job} report:`));
   assert.equal((await get()).status, 'working', 'the scout does not complete the task');
   fs.writeFileSync(join(target.task_dir, 'report.md'), 'Synthetic target result.');
   publishSonic(target.task_dir, { state: 'done' });
@@ -127,4 +130,28 @@ test('a scout that exceeds its time cap is closed and the target still starts', 
   await waitLaunch(target);
   assert.match(brief(target.task_dir), /^Scout failed: timed out$/m);
   assert.ok(f.commands().some(({ command, args }) => command === 'pi-role-reap' && args[0] === scout));
+});
+
+test('sonic reports attached via from_jobs carry the unverified-facts prefix in the brief language (EN/ZH, local and browser)', async (t) => {
+  const f = await fixture(t);
+  const sonic = await f.call('hud_create', { role: 'sonic', task: 'Find the synthetic entry points.' });
+  fs.writeFileSync(join(sonic.task_dir, 'report.md'), 'Synthetic sonic facts.\n');
+  publishSonic(sonic.task_dir, { state: 'done' });
+  const imp = await f.call('hud_create', { role: 'imp', task: 'Synthetic non-sonic upstream.' });
+  fs.writeFileSync(join(imp.task_dir, 'report.md'), 'Synthetic imp report.\n');
+  publishSonic(imp.task_dir, { state: 'done' });
+
+  const enPrefix = 'Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.';
+  const zhPrefix = 'Sonic 事实：带 file:line 的未核实起点；未检查列表是它没有看的地方；凡是据此做决定的代码，请亲自阅读。';
+
+  const enLocal = await f.call('hud_create', { role: 'imp', task: 'Implement the synthetic change.', from_jobs: [imp.job, sonic.job] });
+  const enText = brief(enLocal.task_dir);
+  assert.ok(enText.includes(`${enPrefix}\n- ${sonic.job} report:`));
+  assert.ok(!enText.includes(`${enPrefix}\n- ${imp.job} report:`));
+
+  const zhLocal = await f.call('hud_create', { role: 'imp', task: '实现 parser 模块的合成改动。', from_jobs: [sonic.job] });
+  assert.ok(brief(zhLocal.task_dir).includes(`${zhPrefix}\n- ${sonic.job} report:`));
+
+  const zhBro = await f.call('hud_create', { role: 'pro', task: '请分析合成架构方案。', from_jobs: [sonic.job] });
+  assert.ok(brief(zhBro.task_dir).includes(`${zhPrefix}\n\n### ${sonic.job} report:`));
 });

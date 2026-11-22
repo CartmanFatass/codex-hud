@@ -3,7 +3,7 @@ import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { ageText, renderWorkCard, requestLines, questionOriginalRows, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-card.js';
+import { ageText, flowSummary, renderWorkCard, requestLines, questionOriginalRows, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-card.js';
 import {
   kvRows,
   section,
@@ -88,6 +88,7 @@ export function workInspectorRows(
             : worker.laneId.replace(/^thin-job:package:/, ''),
         ],
         ['state', [t(worker.state), worker.phase ? workPhaseText(worker.phase) : ''].filter(Boolean).join(' · ')],
+        ['flow', worker.flow ? flowSummary(worker.flow) : ''],
         [
           'resources',
           [

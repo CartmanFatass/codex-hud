@@ -24,6 +24,7 @@ import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
 import { taskTarget } from '../collectors/job-supersession.js';
+import { needsTranslation, replyWords } from '../collectors/reply-language.js';
 import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
@@ -108,6 +109,8 @@ interface Job extends PiOptions {
   read_at?: string;
   parent_job?: string;
   scout_only?: true;
+  scout_state?: 'scouting' | 'done' | 'failed';
+  scout_error?: string;
   pi_sent_at?: string;
   observed_at?: string;
   reaped_at?: string;
@@ -1125,6 +1128,21 @@ async function readContextFile(path: string, limit: number | undefined) {
   }
 }
 
+const SONIC_FACTS_EN =
+  'Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.';
+const SONIC_FACTS_ZH =
+  'Sonic 事实：带 file:line 的未核实起点；未检查列表是它没有看的地方；凡是据此做决定的代码，请亲自阅读。';
+function sonicFactsPrefix(task: unknown): string {
+  if (typeof task !== 'string' || !task.trim()) return SONIC_FACTS_EN;
+  const words = replyWords(task).replace(/\b(?:[\w]+[-./#][\w./#-]+|[A-Z\d_]{2,}|[0-9a-f]{7,40})\b/g, ' ');
+  const han = words.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/gu)?.length ?? 0;
+  const other = words.match(/[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/gu)?.length ?? 0;
+  const latin = words.match(/[A-Za-z]/g)?.length ?? 0;
+  return han > 0 && !(other >= 4 && other >= 0.2 * (han + other)) && (han >= 0.25 * (han + latin) || needsTranslation(task, 'en'))
+    ? SONIC_FACTS_ZH
+    : SONIC_FACTS_EN;
+}
+
 async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean }, repairOf?: string) {
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
@@ -1133,7 +1151,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
     const rel = relative(base, path);
     if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
   };
-  const append = async (path: string, label: string) => {
+  const append = async (path: string, label: string, prefix?: string) => {
     const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
     if (!file) return false;
     if (inline) {
@@ -1141,8 +1159,8 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
       let length = 3;
       for (const run of file.content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
       const fence = '`'.repeat(length);
-      sections.push(`### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
-    } else sections.push(`- ${label}`);
+      sections.push(`${prefix ? `${prefix}\n\n` : ''}### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
+    } else sections.push(prefix ? `${prefix}\n- ${label}` : `- ${label}`);
     return true;
   };
   let standing: string | undefined;
@@ -1166,6 +1184,7 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
         return { ok: false, code: 'invalid_arguments', error: `${standingPath} must resolve to a readable text file inside ${project.root}` } as const;
     }
   }
+  const sonicPrefix = sonicFactsPrefix(args.task);
   for (const [key, root, max] of [['context_files', cwd, 32], ['from_jobs', jobsRoot, 16]] as const) {
     const given = args[key];
     const repair = key === 'from_jobs' ? repairOf : undefined;
@@ -1190,9 +1209,13 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
         const path = await fs.promises.realpath(resolve(root, name ? join(value, `${name}.md`) : value));
         inside(base, path);
         const label = `${name ? `${value} ${name}: ` : ''}${JSON.stringify(path)}`;
+        let sonic = false;
+        if (key === 'from_jobs' && name === 'report') {
+          try { sonic = findJob(value)?.role === 'sonic'; } catch { /* Corrupt receipt leaves sonic false. */ }
+        }
         if (path === standing) {
           if (!inline) await readContextFile(path, undefined); // Explicit context still requires UTF-8 text.
-        } else if (!(await append(path, label))) {
+        } else if (!(await append(path, label, sonic ? sonicPrefix : undefined))) {
           return { ok: false, code: 'context_too_large', error: source } as const;
         }
         if (!name || (name === 'report' && (value !== repair || values.includes(value)))) recorded.push(name ? value : path);
@@ -1547,6 +1570,15 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         if ('code' in withScout) scoutFailure = withScout.code === 'context_too_large' ? 'report exceeds the context limit' : 'report is unreadable';
         else briefContext = withScout;
       }
+      if (scoutQuestion) {
+        if (scoutFailure) {
+          job.scout_state = 'failed';
+          job.scout_error = digestLine(scoutFailure.replace(/\s+/g, ' '), 120);
+        } else if (scoutResult?.id) {
+          job.scout_state = 'done';
+          delete job.scout_error;
+        }
+      }
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
         const note = scoutFailure ? `Scout failed: ${digestLine(scoutFailure.replace(/\s+/g, ' '), 300)}\n\n` : '';
@@ -1586,6 +1618,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (!scoutQuestion) return launch();
 
   // The target ID (and task, if negotiated) is stable across both stages.
+  base.scout_state = 'scouting';
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   writeBrief({ ...base, place: initial.place }, dir, task, context.block, true);
   save(base);

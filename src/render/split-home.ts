@@ -11,6 +11,7 @@ import { askSlabRows } from './home-view.js';
 import { homeCursor, homeTarget, type HomeCursor } from './monitor-state.js';
 import { homeKeys } from './job-actions.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
+import { activeFlow } from './work-visibility.js';
 import type { WorkCard } from '../collectors/work-card.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
@@ -28,7 +29,7 @@ function lanePhase(lane: WorkLane, now: number): string {
   if (!lane.id.startsWith('thin-job:')) return lane.phase ?? '';
   const active = lane.workers.filter((w) => w.settledAt === null).sort((a, b) => workerPriority(a, now) - workerPriority(b, now))[0];
   const review = active?.work?.phases.filter((p) => p.startsWith('review')).at(-1);
-  if (!active) return 'done';
+  if (!active) return lane.workers.some((w) => w.flow?.kind === 'land' && activeFlow(w)) ? 'landing' : 'done';
   return review ? (review.includes('accept') ? review : `${review.match(/^review r\d+/)?.[0] ?? review} · fixing`) : (active.phase ?? 'build');
 }
 const CUE_MIN = 6;

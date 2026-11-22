@@ -3,6 +3,7 @@ import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-typ
 import type { MonitorData, MonitorState } from './monitor.js';
 
 const FAILED_HIDE_MS = 30 * 60000;
+export const activeFlow = (w: OwnerWorker) => w.flow?.state === 'queued' || w.flow?.state === 'running';
 export const unattendedFailure = (w: OwnerWorker) => !w.superseded && !w.failureObserved &&
   (w.work?.failed || ['failed', 'error', 'stopped'].includes(w.state));
 export type CardTimes = Pick<MonitorState['prefs'], 'cardFoldMinutes' | 'cardHideMinutes'>;
@@ -11,18 +12,20 @@ function cardTimes(times?: CardTimes) {
   const fold = (times?.cardFoldMinutes ?? 5) * 60000;
   return { fold, hide: Math.max(fold, (times?.cardHideMinutes ?? 15) * 60000) };
 }
+const settledTime = (w: OwnerWorker) => Math.max(w.settledAt ?? 0, w.flow?.updatedAt ?? 0);
 /** A settled card past its fold time, not asking the owner: one row until Enter opens it. */
 export const foldedWorker = (w: OwnerWorker, now: number, times?: CardTimes): boolean =>
-  w.settledAt !== null && !w.homeNeedsHuman && w.homeRank !== 100 && now - w.settledAt >= cardTimes(times).fold;
-const jobTime = (w: OwnerWorker) => w.settledAt ?? w.startedAt ?? 0;
+  !activeFlow(w) && w.settledAt !== null && !w.homeNeedsHuman && w.homeRank !== 100 && now - settledTime(w) >= cardTimes(times).fold;
+const jobTime = (w: OwnerWorker) => (w.settledAt !== null ? settledTime(w) : w.startedAt ?? 0);
 export function currentWorker(w: OwnerWorker, now: number, times?: CardTimes): boolean {
   if (w.superseded) return false;
-  if (w.homeNeedsHuman || w.settledAt === null) return true;
-  if (unattendedFailure(w)) return !!w.work?.request || now - w.settledAt < FAILED_HIDE_MS;
-  if (w.failureObserved) return now - w.settledAt < cardTimes(times).hide;
+  if (w.homeNeedsHuman || w.settledAt === null || activeFlow(w)) return true;
+  const doneAt = settledTime(w);
+  if (unattendedFailure(w) || w.flow?.state === 'failed') return !!w.work?.request || now - doneAt < FAILED_HIDE_MS;
+  if (w.failureObserved) return now - doneAt < cardTimes(times).hide;
   if (w.homeRank === 100) return true;
   if (w.homeFolded) return false;
-  return now - w.settledAt < cardTimes(times).hide;
+  return now - doneAt < cardTimes(times).hide;
 }
 /** With a `/` filter's `match`, the cards that match stay however old they are. */
 export function visibleWorkboard(

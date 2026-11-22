@@ -1,6 +1,6 @@
 /** Stems and tracks: one title band, a two-cell state gutter, whole factual sentences. */
 import type { WorkCard } from '../collectors/work-card.js';
-import { targetKey } from '../collectors/workboard-types.js';
+import { targetKey, type WorkFlow, type WorkFlowStep } from '../collectors/workboard-types.js';
 import type { MonitorState } from './monitor.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
@@ -183,9 +183,72 @@ export function workCardDetail(card: WorkCard, sentence = ''): string {
 }
 export function workPhaseText(phase: string): string {
   return monitorText(phase).replace(
-    /reviewing|researching|working|generating|asking web|build|review|accept|done|fixing|asking|failed|stopped|major|minor/g,
+    /reviewing|researching|working|generating|asking web|scouting|landing|build|review|accept|done|fixing|asking|failed|stopped|major|minor/g,
     (word) => t(word)
   );
+}
+export function flowStepDetail(step: string): string {
+  const safe = monitorText(step);
+  if (safe === 'main-checkout lease') return t('queued');
+  if (safe === 'prepare' || safe === 'cherry-pick' || safe === 'records' || safe === 'fast-forward' || safe === 'cleanup')
+    return t(safe);
+  if (safe === 'push' || safe === 'done') return '';
+  const gate = /^gate\[(\d+)\]:\s*(.*)$/.exec(safe);
+  if (gate) return `${t('gate')}[${gate[1]}]: ${gate[2]}`;
+  const after = /^after\[(\d+)\]:\s*(.*)$/.exec(safe);
+  if (after) return `${t('after')}[${after[1]}]: ${after[2]}`;
+  const repair = /^repair (\d+)$/.exec(safe);
+  if (repair) return `${t('repair')} ${repair[1]}`;
+  return safe;
+}
+function flowOutcome(flow: WorkFlow): string {
+  if (flow.kind === 'land') {
+    if (flow.state === 'completed') return flow.landedSha ? `${t('landed')} ${flow.landedSha}` : t('landed');
+    if (flow.state === 'cancelled') return t('cancelled');
+    if (flow.state === 'failed') {
+      const fail = flow.error ? t('{label}: {value}', { label: t('failed'), value: monitorText(flow.error) }) : t('failed');
+      return flow.landedSha ? `${t('landed')} ${flow.landedSha} · ${fail}` : fail;
+    }
+    return flow.step ? flowStepDetail(flow.step) : '';
+  }
+  if (flow.state === 'completed') return t('done');
+  if (flow.state === 'failed') return t('failed');
+  if (flow.state === 'cancelled') return t('stopped');
+  return flow.steps[0]?.state === 'failed' ? t('scout failed') : '';
+}
+export function flowSummary(flow: WorkFlow): string {
+  const sep = mark(' ▸ ', ' > ');
+  const glyph = (s: WorkFlowStep['state']) =>
+    s === 'active' ? (flow.state === 'queued' ? mark('◷', '~') : mark('◉', '@'))
+      : s === 'done' ? mark('✓', '+')
+      : s === 'failed' ? mark('✗', 'x')
+      : s === 'cancelled' ? mark('−', '-')
+      : '';
+  const chain = flow.steps.map((s) => `${glyph(s.state) ? glyph(s.state) + ' ' : ''}${t(s.key)}`).join(sep);
+  const tail = flowOutcome(flow);
+  return tail ? `${chain} · ${tail}` : chain;
+}
+export function flowLine(flow: WorkFlow, width: number, ink: (s: string) => string): string {
+  const sep = theme.board.muted(mark(' ▸ ', ' > '));
+  const chain = flow.steps.map((s) => {
+    const label = t(s.key);
+    if (s.state === 'active') {
+      return flow.state === 'queued'
+        ? theme.board.muted(`${mark('◷', '~')} ${label}`)
+        : theme.board.active(`${mark('◉', '@')} ${label}`);
+    }
+    if (s.state === 'done') return theme.board.success(`${mark('✓', '+')} ${label}`);
+    if (s.state === 'failed') return theme.board.danger(`${mark('✗', 'x')} ${label}`);
+    if (s.state === 'cancelled') return theme.board.muted(`${mark('−', '-')} ${label}`);
+    return theme.board.muted(label);
+  }).join(sep);
+  const head = `${ink(mark('┃', '|'))} ${chain}`;
+  const tail = flowOutcome(flow);
+  if (!tail) return fit(truncateAnsi(head, width), width);
+  const tailInk = flow.state === 'completed' ? theme.board.success : flow.state === 'failed' ? theme.board.danger : theme.board.muted;
+  const room = width - visualLength(head) - 3;
+  if (room < 4) return fit(truncateAnsi(head, width), width);
+  return fit(`${head}${theme.board.muted(' · ')}${tailInk(truncateAnsi(tail, room))}`, width);
 }
 export function phaseChain(card: WorkCard): string {
   return card.phases
@@ -245,17 +308,22 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
     state,
     targetKey({ kind: 'worker', laneId: card.worker.laneId, workerId: card.worker.id })
   );
+  if (card.worker.flow) rows.push(flowLine(card.worker.flow, width, ink));
+  const bodyMax = open ? Infinity : card.worker.flow ? SENTENCE_ROWS - 1 : SENTENCE_ROWS;
   // Collapsed: the sentence on at most two rows (the prompt keeps it that short). Open: everything.
   if (generated) {
     const lines = jobSentenceRows(generated, width, ink, true);
-    rows.push(...(open || lines.length <= SENTENCE_ROWS ? lines : [lines[0], fit(truncateAnsi(lines[1].trimEnd(), width - 1) + '…', width)]));
+    rows.push(...(open || lines.length <= bodyMax ? lines : [
+      ...lines.slice(0, bodyMax - 1),
+      fit(truncateAnsi(lines[bodyMax - 1].trimEnd(), width - 1) + '…', width),
+    ]));
   }
   // A localized worker summary replaces its original, rather than adding a second result line.
   if (!generated && excerpt) {
     rows.push(fit(`${ink(mark('┃', '|'))} ${excerpt}`, width));
   } else if (!generated || (open && !card.worker.reportMeta?.summary)) {
     const detail = workCardDetail(card, sentence);
-    if (detail) rows.push(...stemLines(detail, width, ink, open ? Infinity : SENTENCE_ROWS));
+    if (detail) rows.push(...stemLines(detail, width, ink, bodyMax));
   }
   // A collapsed card keeps a fixed height, so a sentence arriving or growing does not move the cards below it.
   if (!open && rows.length === 1) rows.push(fit(`${ink(mark('┃', '|'))} ${theme.board.muted('…')}`, width));

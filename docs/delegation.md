@@ -21,18 +21,17 @@ agent proposes.
    finish in one session are one slice with one brief and its acceptance list, no tickets (owner, 2026-11-12: "没有拆的
    必要"). STATE.md's `## Slices` ledger keeps one line per work package either way.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per
-   slice. The implementer runs the main-path tests for what it changed, once, at the end.
-4. **Integrate.** The orchestrator reads each diff and tries the slice. Send sonic this integration brief:
-
-   > Integrate `<ordered slice commit IDs>` onto `<base branch>`. Run every command through the main checkout's
-   > `tmp/env.sh`. Create a fresh detached worktree at the base tip (`node_modules` is tracked; no link).
-   > From the integration worktree, cherry-pick the commits in order. Run `npm run` for each script in order:
-   > `build`, `build:test`, `test:mjs`, `test:mjs`, `test:unit`, `check:fixtures`. Stop at the first conflict or
-   > failed step; never edit code. Report in at most 10 lines: picked cleanly or conflict files; pass/fail and
-   > counts per step (mark later steps not run); failing test names and first error line; integration commit ID(s).
-
-   The orchestrator decides whether to send a repair to an imp or fast-forward the base to the tested commit and
-   push at the milestone boundary. Remove the integration worktree after that handoff; sonic never lands or pushes.
+   slice. The implementer runs the main-path tests for what it changed, once, at the end. When a slice needs a lookup
+   across several files first, pass `scout: "<question>"` on `hud_create` to attach a sonic dossier via `from_jobs`
+   (prefixed with the unverified-facts reminder). Scout is for where/what/how-many questions; why/which/is-it-wrong
+   questions (root cause, design, review) stay with the deciding model.
+4. **Integrate.** The orchestrator reads each diff and tries the slice, then calls `hud_land({ job })` on the settled
+   managed worktree (`isolation: "worktree"`). `hud_land` acquires the `main-checkout` lease, cherry-picks the job's
+   commits into a detached checkout, runs the `.hud/project.json` `land` gate (one immediate rerun per red command; up
+   to two source-worker repairs on conflict or persistent failure), records the landing in the ticket and STATE ledger,
+   fast-forwards the base branch, runs `after`, pushes when configured, and removes the integration and job worktrees
+   and branch. One notice or MCP task reports the landed SHA or the failing step and tail; `hud_read({ job: "<flow>" })`
+   inspects progress. A worker question goes to the main session and stops the flow.
 5. **Review once, at the milestone.** One reviewer on the whole milestone diff (owner, 2026-11-17: no second
    reviewer and no model-family rule; supersedes 2026-11-11); it reports two axes separately:
    - **spec:** does it do what `docs/spec.md` asks, and does it do things nobody asked for (scope creep);
@@ -81,7 +80,7 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | role `imp` (skill `hud-delegate`) | one slice each |
 | reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
-| sonic | role `sonic` | small chores for any role, including running the step 4 gate; never test authoring, bug hunting or design |
+| sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups); never test authoring, bug hunting, design, review or why/which/is-it-wrong questions (those stay with the deciding model) |
 | oracle | role `oracle` | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |
 | frontend-implementer | role `frontend-imp` | UI design and frontend development |
@@ -95,9 +94,9 @@ Codex tests use `codex2` (the free account), never the main `codex` account.
 
 - Task scratch: `tmp/tasks/<slice>/` (git-ignored).
 - One worktree per code imp (owner, 2026-11-12): the owner's statusline, pi footer and panel run from the main
-  checkout's `dist/`, so an imp never builds there. `tmp/wt-new.sh <slice>` makes `../MyHUD-wt/<slice>` on branch
-  `wt/<slice>` (`node_modules` is tracked, so no link); `hud_create` gets that `cwd`. The orchestrator commits in the worktree,
-  hands the commit IDs and `universal-hud` to sonic for step 4, then removes the slice worktree after landing.
+  checkout's `dist/`, so an imp never builds there. Prefer `hud_create({ ..., isolation: "worktree" })`, which creates
+  and tracks the linked checkout so `hud_land({ job })` can gate, record, fast-forward, push and clean it up. Manual
+  `tmp/wt-new.sh <slice>` checkouts are still removed by the orchestrator after landing.
 - Every test run uses a temporary HOME / HUD_HOME / CODEX_HOME / CLAUDE_CONFIG_DIR: `tmp/env.sh <command>`, run from
   inside the checkout or worktree it should act on.
 - Synthetic data only in the repo (public). Never print or commit keys.

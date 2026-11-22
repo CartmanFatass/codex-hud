@@ -7,7 +7,7 @@ import { ageText, cardExpanded, failed, milestoneLine, pulseLine, renderWorkCard
 import { boardRow, mark } from './workboard-rows.js';
 import { pair, monitorText, fit } from './monitor-text.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
-import { currentWorker, foldedWorker, unattendedFailure } from './work-visibility.js';
+import { currentWorker, foldedWorker, unattendedFailure, activeFlow } from './work-visibility.js';
 import { t } from './i18n.js';
 export function workerPriority(w: OwnerWorker, now: number): number {
   if (w.superseded) return 7;
@@ -22,7 +22,7 @@ export function workerPriority(w: OwnerWorker, now: number): number {
         ? 2
         : card.state === 'awaiting-acceptance'
           ? 3
-          : card.state === 'in-progress'
+          : card.state === 'in-progress' || activeFlow(w)
             ? 4
             : 5;
 }
@@ -86,6 +86,7 @@ export function laneRows(
     const active = [...lane.workers]
       .filter((w) => w.settledAt === null)
       .sort((a, b) => workerPriority(a, now) - workerPriority(b, now))[0];
+    const landing = !active && lane.workers.some((w) => w.flow?.kind === 'land' && activeFlow(w));
     const review = active?.work?.phases.filter((p) => p.startsWith('review')).at(-1);
     const phase = active
       ? review
@@ -93,7 +94,9 @@ export function laneRows(
           ? review
           : `${review.match(/^review r\d+/)?.[0] ?? 'review'} · fixing`
         : (active.phase ?? 'build')
-      : 'done';
+      : landing
+        ? 'landing'
+        : 'done';
     lane = { ...lane, phase };
   }
   const label = `${monitorText(lane.identity.kind === 'native' ? lane.label.replace('this session', t('this session')) : lane.label)}${lane.phase ? '  ' + workPhaseText(lane.phase) : ''}`;

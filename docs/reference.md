@@ -182,7 +182,9 @@ Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `fro
 each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
 or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch. Pi and CLI
 workers read the paths listed after the task in their briefs. Browser (`bro`) briefs send the labeled file contents
-to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`). The optional
+to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`). Any `sonic`
+report attached through `from_jobs` (including a scout dossier) is prefixed with a one-line reminder in the brief's
+language that sonic facts are unverified starting points and code behind any decision must be read directly. The optional
 project-root `.hud/brief.md` is included automatically only for registered projects: a reference after the task
 for local workers, or its contents within the same byte limits for browser jobs. Keep it safe to send to the selected
 browser service. Attaching an upstream report does not mark it read or close its worker.
@@ -430,6 +432,11 @@ Question slabs show answer keys beside the expanded options; `o` still opens the
 card, `├─ ⚡ sonic · short title  3m ◉` (the last `└─`, ascii `|-` and `` `- ``), with its elapsed time and state glyph, in
 Classic and in Split's preview. A parent folded to its title row hides the rows and says `⚡ N sonic` (the ones still
 running) on its right. A `/` filter that matches a sonic job keeps its parent with it.
+
+**Flows.** A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows a flow row on its card
+(`gate ▸ merge ▸ push` or `scout ▸ run`, localized in Chinese) with the active step or final outcome (landed SHA, done,
+failed or cancelled) in both Classic and Split's preview, and in the Inspector. A card with a running land stays
+visible and unfolded until the flow settles.
 
 **Panel lifetime.** Jobs settled before the panel opened are excluded, including
 their decisions and model inputs; `a` cannot reveal them. Active/unknown jobs stay

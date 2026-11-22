@@ -42,6 +42,7 @@ export function homeMatcher(board: WorkboardSnapshot, needle: string, now: numbe
     const word = failed(card) ? 'failed' : w.state === 'stopped' ? 'stopped' : card.state === 'needs-you' ? 'asking'
       : card.state === 'stalled' ? 'stalled' : card.state === 'in-progress' ? 'working' : 'done';
     return has(needle, label.get(w.laneId), card.title, card.role, w.harness, word, t(word), w.reportMeta?.summary,
+      w.flow?.kind, w.flow?.state, w.flow?.step, ...(w.flow?.steps.flatMap((s) => [s.key, t(s.key)]) ?? []),
       ...spans.map((s) => plain.slice(s.start, s.end)));
   };
   // A sonic child that matches brings its parent, which it is drawn under.

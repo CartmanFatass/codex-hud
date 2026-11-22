@@ -491,3 +491,87 @@ test('a blocked CLI job asks the owner for input in its pane', async (t) => {
   assert.equal(resumed.homeNeedsHuman, false);
   assert.equal(resumed.ask, undefined);
 });
+
+test('work cards show land and scout flow steps and final outcomes in EN and ZH', async (t) => {
+  const f = fixture(t);
+  const landId = 'j0000000000000081', flowId = 'f0000000000000081';
+  const flowFile = join(f.env.HUD_HOME, 'flows', `${flowId}.json`);
+  // Settled 10 minutes ago (past the 5m fold window): an active land must keep it visible and unfolded.
+  f.job(81, 'FLOW-LAND', 'land synthetic slice', 'closed', 10, 10);
+  f.put(flowFile, {
+    flow: flowId, job: landId, pane: 'w4E:p1', task: false,
+    wt: { main_root: '/synthetic/repo', root: '/synthetic/wt', branch: 'wt/flow', base_head: 'aaaaaaa' },
+    config: { base: 'main', gate: ['npm test'], after: [], push: true },
+    source_sha: 'bbbbbbb', pid: 999999, start: '1',
+    state: 'running', step: 'gate[1]: npm test',
+    created_at: new Date(now - 60000).toISOString(),
+    updated_at: new Date(now - 10000).toISOString(),
+  }, 0);
+  // Scouted job: scouting -> run -> done.
+  const scoutDir = f.job(82, 'FLOW-SCOUT', 'scout synthetic slice', 'working', 0, null, 'w4E:p1', { scout_state: 'scouting' });
+  f.put(join(scoutDir, 'STATUS.json'), { state: 'working', reason: 'scouting', started_at: new Date(now - 60000).toISOString() }, 0);
+
+  await f.pipeline.refresh();
+  let board = f.pipeline.workboard(f.tree);
+  for (const [lang, landStep, scoutStep] of [
+    ['en', '◉ gate ▸ merge ▸ push · gate[1]: npm test', '◉ scout ▸ run'],
+    ['zh', '◉ 门禁 ▸ 合并 ▸ 推送 · 门禁[1]: npm test', '◉ 侦察 ▸ 运行'],
+  ]) {
+    setLanguage(lang);
+    for (const width of [40, 80]) {
+      const lines = plain(f.render(board, 180, width));
+      for (const line of lines) assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
+      const text = lines.join('\n');
+      assert.ok(text.includes(width === 40 ? landStep.slice(0, 22) : landStep), `${lang} ${width}\n${text}`);
+      assert.ok(text.includes(scoutStep), `${lang} ${width}\n${text}`);
+    }
+  }
+
+  // Advance land to completed with SHA, and scouted job to running after scout finished.
+  f.put(flowFile, {
+    flow: flowId, job: landId, pane: 'w4E:p1', task: false,
+    wt: { main_root: '/synthetic/repo', root: '/synthetic/wt', branch: 'wt/flow', base_head: 'aaaaaaa' },
+    config: { base: 'main', gate: ['npm test'], after: [], push: true },
+    source_sha: 'bbbbbbb', landed_sha: '1234567890abcdef', pid: 999999, start: '1',
+    state: 'completed', step: 'done',
+    created_at: new Date(now - 60000).toISOString(),
+    updated_at: new Date(now - 5000).toISOString(),
+  }, 0);
+  f.put(join(scoutDir, 'job.json'), {
+    job: 'j0000000000000082', role: 'imp', cwd: '/synthetic/repo', package: 'FLOW-SCOUT', herdr_pane: 'w4E:p1',
+    created_at: new Date(now - 60000).toISOString(), scout_state: 'done',
+  }, 0);
+  f.put(join(scoutDir, 'STATUS.json'), { state: 'working', started_at: new Date(now - 60000).toISOString() }, 0);
+  await f.pipeline.refresh();
+  board = f.pipeline.workboard(f.tree);
+  for (const [lang, landedText, runText] of [
+    ['en', '✓ gate ▸ ✓ merge ▸ ✓ push · landed 1234567', '✓ scout ▸ ◉ run'],
+    ['zh', '✓ 门禁 ▸ ✓ 合并 ▸ ✓ 推送 · 已落地 1234567', '✓ 侦察 ▸ ◉ 运行'],
+  ]) {
+    setLanguage(lang);
+    const text = plain(f.render(board, 180, 80)).join('\n');
+    assert.ok(text.includes(landedText), `${lang}\n${text}`);
+    assert.ok(text.includes(runText), `${lang}\n${text}`);
+  }
+
+  // Failed land reports the failing stage and error.
+  f.put(flowFile, {
+    flow: flowId, job: landId, pane: 'w4E:p1', task: false,
+    wt: { main_root: '/synthetic/repo', root: '/synthetic/wt', branch: 'wt/flow', base_head: 'aaaaaaa' },
+    config: { base: 'main', gate: ['npm test'], after: [], push: false },
+    source_sha: 'bbbbbbb', pid: 999999, start: '1',
+    state: 'failed', step: 'fast-forward', error: 'base moved',
+    created_at: new Date(now - 60000).toISOString(),
+    updated_at: new Date(now - 2000).toISOString(),
+  }, 0);
+  await f.pipeline.refresh();
+  board = f.pipeline.workboard(f.tree);
+  for (const [lang, failedText] of [
+    ['en', '✓ gate ▸ ✗ merge · failed: base moved'],
+    ['zh', '✓ 门禁 ▸ ✗ 合并 · 失败：base moved'],
+  ]) {
+    setLanguage(lang);
+    const text = plain(f.render(board, 180, 80)).join('\n');
+    assert.ok(text.includes(failedText), `${lang}\n${text}`);
+  }
+});
