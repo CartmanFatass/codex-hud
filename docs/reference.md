@@ -316,6 +316,7 @@ create, not a dedicated expiry timer. Before deleting a legacy pi job it moves r
 JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job. Removing session
 links never removes their targets.
+Before deletion the watcher appends job facts, not the brief or report, to `$HUD_HOME/archive/YYYY-MM.jsonl`; append failures do not delay deletion, and HUD neither reads nor expires the archive.
 
 ## Project workers
 

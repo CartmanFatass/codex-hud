@@ -434,6 +434,7 @@ function scan(retryWatch = false) {
       if (expires < Date.now() && (!tab || job?.reaped_at)) {
         // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
+        archiveJob(home, dir, id, job, status, Date.now(), log);
         fs.rmSync(dir, { recursive: true, force: true });
         log(`delete ${id} state=${status.state}`);
         continue;
@@ -507,7 +508,7 @@ function startWatch() {
 const [
   { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
   { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
-  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree }, { runCommand },
+  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree }, { runCommand }, { archiveJob },
 ] = await withDistLock(async () => {
   // Multiple parents can spawn before the first watcher is ready. Only one publishes under the lock.
   const { watcherReady } = await import('../../../dist/mcp/watch-pid.js');
@@ -516,7 +517,7 @@ const [
     import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),
     import('../../../dist/roles/worker-tree.js'), import('../../../dist/mcp/pi-read-settlement.js'),
     import('../../../dist/roles/job-checks.js'), import('../../../dist/mcp/managed-worktree.js'),
-    import('../../../dist/roles/herdr-run.js'),
+    import('../../../dist/roles/herdr-run.js'), import('../../../dist/roles/job-archive.js'),
   ]);
   const oldLog = read(logFile) ?? '';
   fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });

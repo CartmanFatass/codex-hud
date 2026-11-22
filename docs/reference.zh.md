@@ -198,6 +198,7 @@ pi 的读后自动关闭也按最近一次派发或发送判断。
 `HUD_WATCH_CLI_CHECK_MS`（默认 30000）是该间隔。监督进程已死而工作者仍在时任务为 `waiting_orchestrator`（“supervisor exited; worker still running”），对它 `hud_send` 会启动新的监督进程。已结算目录在**关闭一天后**的
 后续扫描或下次创建时清理，不设专门到期定时器；包括报告及 `hud_read` 访问。删除旧 pi 任务前先将真实 JSONL
 会话移至 pi 存储；CLI 和浏览器会话留在各自存储。cwd 无效、目标冲突或移动失败则保留任务。删除会话链接不删除目标。
+删除任务目录前，watcher 向 `$HUD_HOME/archive/YYYY-MM.jsonl` 追加一行任务事实，不含任务说明或报告正文；写入失败不影响删除，HUD 暂不读取或清理归档。
 
 ## 项目工作者
 

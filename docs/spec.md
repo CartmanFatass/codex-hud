@@ -103,6 +103,7 @@ machine, inside herdr. (10.02, 22.12)
   process/tab cleanup after closure until gone. Pre-input continuation refusal opens no turn. (18.05)
 - `hud_send` to a closed job creates a new repair job referencing the old brief and report. `hud_create`
   and `hud_send` derive omitted idempotency keys. (21.06)
+- Before deleting a closed job directory, the watcher appends one line of the job's facts (no report text) to `$HUD_HOME/archive/YYYY-MM.jsonl`; nothing reads it yet. (22.16)
 
 #### 2.1.6 Events, project scope and the worker surface
 

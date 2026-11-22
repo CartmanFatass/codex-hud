@@ -426,6 +426,7 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | `display/profile.log` | Optional stage timings |
 | `panel-actions.jsonl` | Append-only 0600 log of answers the owner gave from the panel; read by `hud watch` and the MCP `changes` |
 | `watch.pid`, `watch.log` | On-demand watcher PID and diagnostics |
+| `archive/YYYY-MM.jsonl` | Private, append-only job facts written by the watcher before retention deletes a job; no reader or expiry |
 
 An EXP-enabled pi footer draw initiates asynchronous snapshot collection. A per-HUD-home Linux abstract socket excludes concurrent refreshes; the bounded Codex app-server stdio request is only for account rate limits, not inference. The panel reads the snapshot but never starts refreshes. Pi keeps direct subscription windows in memory for the current request only.
 

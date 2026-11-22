@@ -51,6 +51,7 @@ The owner approved the lean spec and resolved the draft questions:
   owner panel actions (answers, try marks, retry/land intents) reach MCP-task clients, batch forms for the
   mutating MCP tools; the watcher may reap worktrees whose commits were cherry-picked onto the base. Settled
   pre-0.2.0 STATE slices moved to docs/handoff/archive/. Behaviour changes approved with their cost and gain.
+- **D-2026-11-22-16** (§2.1.5): Before job deletion, append facts only to a monthly archive; no report or brief text, no reader or archive expiry, and no change to job retention (proposal 14 §6 defaults).
 
 ## 2026-11-21
 

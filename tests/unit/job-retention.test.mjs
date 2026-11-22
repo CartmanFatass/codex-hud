@@ -233,6 +233,8 @@ syncBuiltinESMExports();` : '';
     await exited;
     assert.equal(child.exitCode, 0);
     assert.ok(fs.existsSync(join(dir, 'report.md')), 'the whole job must stay');
+    assert.equal(fs.existsSync(join(dir, '.archived')), false);
+    assert.equal(fs.existsSync(join(f.home, 'archive')), false);
     assert.deepEqual(fs.readFileSync(source), bytes);
     assert.equal(f.log().split('\n').filter((line) => line.includes(`keep ${dir.split('/').at(-1)} `)).length, 1);
     assert.equal(f.log().includes('delete '), false);
@@ -395,7 +397,13 @@ syncBuiltinESMExports();`);
   await until(() => deleted.every((dir) => !fs.existsSync(dir)));
   // appendFileSync creates the file before writing, so wait for the complete line, not just the file.
   await until(() => fs.existsSync(join(f.home, 'reaps')) && fs.readFileSync(join(f.home, 'reaps'), 'utf8').endsWith('\n'));
-  for (const dir of kept) assert.ok(fs.existsSync(dir), dir);
+  for (const dir of kept) {
+    assert.ok(fs.existsSync(dir), dir);
+    assert.equal(fs.existsSync(join(dir, '.archived')), false);
+  }
+  const archive = join(f.home, 'archive');
+  const ids = fs.readdirSync(archive).flatMap(name => fs.readFileSync(join(archive, name), 'utf8').trimEnd().split('\n').map(line => JSON.parse(line).job));
+  assert.deepEqual(ids.sort(), deleted.map(dir => dir.split('/').at(-1)).sort());
   assert.ok(fs.lstatSync(symlink).isSymbolicLink());
   assert.ok(fs.existsSync(join(outside, 'STATUS.json')));
   assert.equal(child.exitCode, null, 'active jobs keep the watcher alive');

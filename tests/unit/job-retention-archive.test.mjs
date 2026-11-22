@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import { basename, join } from 'node:path';
+import test from 'node:test';
+import { fixture } from '../helpers/job-retention-fixture.mjs';
+
+const now = Date.parse('2026-11-04T00:00:00Z');
+const clock = `Date.now = () => ${now};`;
+const ended = '2026-10-31T23:59:00Z', reaped = '2026-11-01T00:01:00Z';
+const state = { state: 'closed', ended_at: ended };
+
+test('retention appends one private facts-only line before removal, even if removal has to retry', async (t) => {
+  const f = fixture(t), archive = join(f.home, 'archive'), file = join(archive, '2026-10.jsonl');
+  const secret = 'Synthetic private body marker.';
+  const longReason = 'é'.repeat(99) + '合'; // Crosses the byte limit inside a character.
+  const dir = f.job({ ...state, exit_reason: longReason, started_at: ended, settled_at: ended }, {
+    role: 'imp', cli: { agent: 'claude' }, model: 'example', thinking: 'high', project_root: '/synthetic/project',
+    preset: 'default', used_place: 'claude example', attempts: [{ index: 0, place: 'pi example', reason: longReason, extra: secret }],
+    checks: [secret], created_at: ended, read_at: ended, reaped_at: reaped, parent_job: 'j000000000000000a',
+    repair_of: 'j000000000000000b', package: 'archive', create_options: { task: secret }, request_key: secret,
+  });
+  const id = basename(dir);
+  fs.mkdirSync(join(dir, 'qa'));
+  for (const name of ['report.md', 'brief.md', 'qa/q1.md']) fs.writeFileSync(join(dir, name), secret);
+  fs.writeFileSync(join(dir, 'checks.json'), JSON.stringify({ state: 'done', turn: 'earlier', report_sig: 'earlier',
+    results: [{ command: secret, exit_code: 1, output_tail: secret }] }));
+  const labels = join(f.home, 'display', 'model-cache', 'decision-labels');
+  fs.mkdirSync(labels, { recursive: true });
+  const key = createHash('sha256').update(`thin-job:${id}:outcome`).digest('hex');
+  fs.writeFileSync(join(labels, key + '.json'), JSON.stringify({ at: now, revision: String(Date.parse(ended)),
+    answers: [{ kind: 'choice', name: 'outcome', choice: 'partial', confidence: 0.9, explanation: secret }] }));
+
+  const first = f.start(clock + `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const rm = fs.rmSync;
+fs.rmSync = (path, options) => {
+  if (path === ${JSON.stringify(dir)}) {
+    if (!fs.existsSync(${JSON.stringify(file)})) throw Error('archive missing at removal');
+    throw Object.assign(Error('synthetic busy directory'), { code: 'EBUSY' });
+  }
+  return rm(path, options);
+};
+syncBuiltinESMExports();`);
+  await first.exited;
+  assert.equal(first.child.exitCode, 0);
+  assert.match(f.log(), /synthetic busy directory/);
+  assert.ok(fs.existsSync(join(dir, '.archived')));
+  assert.equal(fs.statSync(archive).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  const line = fs.readFileSync(file, 'utf8');
+  assert.ok(line.endsWith('\n') && !line.includes(secret));
+  assert.deepEqual(JSON.parse(line), {
+    v: 1, job: id, archived_at: new Date(now).toISOString(), project: '/synthetic/project', role: 'imp',
+    harness: 'claude', model: 'example', thinking: 'high', preset: 'default', used_place: 'claude example',
+    attempts: [{ index: 0, place: 'pi example', reason: 'é'.repeat(99) }], dispatch_exit_code: 0,
+    state: 'closed', exit_reason: 'é'.repeat(99), created_at: ended, started_at: ended, settled_at: ended,
+    ended_at: ended, read_at: ended, reaped_at: reaped, checks: { passed: 0, total: 1, stale: true },
+    repair_of: 'j000000000000000b', parent_job: 'j000000000000000a', package: 'archive', outcome: 'partial',
+  });
+  const second = f.start(clock);
+  await second.exited;
+  assert.equal(second.child.exitCode, 0);
+  assert.equal(fs.existsSync(dir), false);
+  assert.equal(fs.readFileSync(file, 'utf8'), line);
+});
+
+test('retention appends successive jobs without adding absent facts or changing earlier lines', async (t) => {
+  const f = fixture(t), file = join(f.home, 'archive', '2026-11.jsonl');
+  const dir = f.job({ state: 'failed' }, { dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped });
+  const other = f.job({ state: 'stopped' }, { model: null, thinking: null, bro: {} });
+  fs.utimesSync(join(other, 'STATUS.json'), Date.parse(ended) / 1000, Date.parse(ended) / 1000);
+  const run = f.start(clock);
+  await run.exited;
+  assert.equal(run.child.exitCode, 0);
+  assert.ok(!fs.existsSync(dir) && !fs.existsSync(other));
+  const lines = fs.readFileSync(file, 'utf8').trimEnd().split('\n').map(JSON.parse);
+  assert.deepEqual(lines, [
+    { job: basename(dir), v: 1, archived_at: new Date(now).toISOString(), harness: 'pi',
+      dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped, state: 'failed' },
+    { job: basename(other), v: 1, archived_at: new Date(now).toISOString(), harness: 'bro', dispatch_exit_code: 0, state: 'stopped' },
+  ]);
+});
+
+test('failed archive append logs once per error and does not block either deletion', async (t) => {
+  const f = fixture(t), dirs = [f.job(state), f.job(state)];
+  fs.mkdirSync(join(f.home, 'archive', '2026-10.jsonl'), { recursive: true });
+  const run = f.start(clock);
+  await run.exited;
+  assert.equal(run.child.exitCode, 0);
+  assert.ok(dirs.every(dir => !fs.existsSync(dir)));
+  assert.equal(f.log().split('\n').filter(line => /archive j\w+ failed: EISDIR/.test(line)).length, 1);
+});
