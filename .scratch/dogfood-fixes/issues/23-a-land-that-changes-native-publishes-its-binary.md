@@ -13,3 +13,4 @@
 ## Comments
 
 - Landed 9bbb5da2f8e888b82232040b9db09131ac7a0a54; gate 5/5 passed.
+- 2026-11-22 after landing 90cba6ef: the land of this very ticket (run by the pre-fix land runner) again left main without `dist/native/`; a manual `npm run build` restored it from cargo's cache in 0 s. Check on the next land that `dist/native/hud-statusline` survives; if it does not, reopen.
