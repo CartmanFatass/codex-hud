@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
 import { readStateLedger, type parseLedger } from './state-ledger.js';
 
+import { targetKey } from './ticket-evidence.js';
+
 type Slice = ReturnType<typeof parseLedger>[number];
 export type TryAction = 'accept' | 'flag';
 // Mixed batches keep each slice's milestone aligned with its id (and, for flags, its revision).
@@ -39,7 +41,8 @@ export class TryLog {
     const path = join(this.home, TRIES_FILE);
     try {
       const st = fs.lstatSync(path), stamp = `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
-      if (!st.isFile() || stamp === this.stamp) return this.records;
+      if (!st.isFile()) return [];
+      if (stamp === this.stamp) return this.records;
       const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
       try {
         this.records = fs.readFileSync(fd, 'utf8').split('\n').slice(0, -1).flatMap((line) => {
@@ -51,25 +54,21 @@ export class TryLog {
         });
         this.stamp = stamp;
       } finally { fs.closeSync(fd); }
-    } catch { /* No readable log yet. */ }
+    } catch { this.stamp = ''; this.records = []; }
     return this.records;
   }
-  /** Accepted targets remain landed even after their STATE rows have been archived. A later flag wins. */
-  accepted(root: string): string[] {
-    const ids = new Set<string>();
-    for (const r of this.read()) if (r.root === root) for (const id of r.slices) {
-      if (r.action === 'accept') ids.add(id); else ids.delete(id);
-    }
-    return [...ids];
+  /** Keep archived accepts, but never apply an old acceptance to a reopened STATE row. */
+  accepted(root: string, ledger: Slice[] = []): string[] {
+    return [...this.marks(root, ledger, true)].filter(([, action]) => action === 'accept').map(([id]) => id);
   }
-  marks(root: string, ledger: Slice[]): Map<string, TryAction> {
-    const byId = new Map(ledger.map((s) => [s.id, s])), marks = new Map<string, TryAction>();
+  marks(root: string, ledger: Slice[], includeArchived = false): Map<string, TryAction> {
+    const byId = new Map(ledger.map((s) => [targetKey(s.id), s])), marks = new Map<string, [string, TryAction]>();
     for (const r of this.read()) if (r.root === root) r.slices.forEach((id, i) => {
-      const slice = byId.get(id);
-      if (slice && pending(r, slice, i)) marks.set(id, r.action);
-      else marks.delete(id);
+      const key = targetKey(id), slice = byId.get(key);
+      if (slice ? pending(r, slice, i) : includeArchived && r.action === 'accept') marks.set(key, [slice?.id ?? id, r.action]);
+      else marks.delete(key);
     });
-    return marks;
+    return new Map(marks.values());
   }
   changes(root?: string): string[] {
     const catchup = this.delivered === undefined;

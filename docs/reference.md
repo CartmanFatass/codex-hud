@@ -136,7 +136,7 @@ back to typing that line, which can touch a draft or fire prompt hooks. Stale PI
 MCP `changes` stays the fuller, query-only stream; a `report` token always means unread. With live events, keep
 working until notified instead of polling or waiting. A report-ready notice leaves the report unread; collect it explicitly.
 
-`hud_create` takes `role`, `task`, optional `cwd` and display-only `package`. The optional `request_key`
+`hud_create` takes `role`, `task`, optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) and `slice` (STATE ID) to link progress. The optional `request_key`
 defaults to a hash of the caller pane, role, cwd and task. By default it dispatches on the role's first available place (`runs_on`).
 `hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields
 can override them. It selects an available place through the role or preset chain unless you supply `on`.
@@ -270,15 +270,15 @@ working directory; pass the project directory to target another project.
 
 - **`guide`** (or no `op`): returns the slicing method and local ticket template as Markdown.
 - **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?}]`.
-  `blocked_by` lists numbers from existing tickets in the feature or earlier drafts in this call; use `[]` for no blockers.
+  `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing. `acceptance` is a list of checklist item strings.
   The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
-- **`update`**: pass `feature`, `ticket` (number), and `status` and/or `tick` (1-based checklist item numbers).
+- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers).
   Unknown tickets or items are refused; other lines are unchanged.
 - **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
 
 The default status is `ready-for-agent`; other allowed labels are `needs-triage`, `needs-info`, `ready-for-human`,
-and `wontfix`. This is a main-session tool. For GitHub-mirrored `.scratch/`, `add` and `update` refuse:
+`claimed`, `done`, and `wontfix`. This is a main-session tool. For GitHub-mirrored `.scratch/`, `add` and `update` refuse:
 edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
@@ -540,23 +540,19 @@ filter. No extra read: the ledger is the one already parsed.
 Rows wrap onto a second row rather than cut their only line at 40 columns. Enter or `o`
 on a row opens STATE.md; on a fold, Enter folds and `o` folds only where the row has no file.
 
-Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, every feature with open tickets plus the newest finished ones up to 16 features (at most 16×64 files read),
+Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, every feature with open tickets plus the newest finished ones up to 16 features (totals cover up to 64 feature directories and 512 ticket files),
 64 KiB each. Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
 `hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh`
 (open parent issues with sub-issues, plus already-mirrored parents so closed features
 receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files
 with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
-Done means done/closed/complete status or all checkboxes checked (at least one).
-Otherwise unfinished/unresolved dependencies block; no blockers means ready.
-Numbers/titles resolve within that feature; unknown status text stays dim.
-A job with the matching package and ticket number/filename adds role/state/age,
-never completion. The newest-64-directory job lookup is shared with slice blocks.
+An accepted linked slice (including a recorded owner acceptance), a done/closed/complete/resolved status or a fully checked nonempty checklist completes a ticket. Dropped tickets count as resolved in ratios. A linked landed slice or a ticket ID in the latest 64 commit subjects shows **to try**, and releases its dependents. Local numbers/titles and `feature/NN` blockers resolve across the scanned project. Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Blocked**. Working jobs and managed worktrees are linked at read time, never written back to the tracker. The newest-64-directory job lookup is shared with slice blocks.
 **Tickets page**: a done/total meter for every ticket and a short code for each feature (`hp hub-pages 4/7`),
 then the tickets in lanes by state across features, one row each (`◐ hp 06 Projects list  imp 12m  1/3`:
 state mark, the feature's code, number and title; on the right what matters for the lane, then
 checked/total). **For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`,
 `ready-for-human`) with their latest comment under the row, whatever else holds them. **Working** holds
-tickets that are claimed or have a live job; **Ready** the rest that can start; **Blocked** names its
+tickets with active work or a fresh claim; **Ready** holds work that can start; **Blocked** names its
 blockers (`← 03 ●`, the mark that of the blocker); **Done** starts folded (Enter opens it).
 Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
 `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.

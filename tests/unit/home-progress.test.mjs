@@ -40,8 +40,8 @@ test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary
     const text = plain(tall).join('\n');
     assert.match(text, /Synthetic milestone closing/);
     assert.match(text, /M3b/);
-    assert.match(text, /native-tree.*1\/12/);
-    assert.match(text, /09 Vocabulary claimed[\s\S]*02 Home lanes/, 'working before ready');
+    assert.match(text, /native-tree.*2\/12/);
+    assert.match(text, /02 Home lanes[\s\S]*09 Vocabulary claimed[\s\S]*03 Inspector/, 'working before ready');
     assert.match(text, lang === 'en' ? /\+5 more/ : /另 5 个/, 'a short list: five tickets and the rest counted');
     assert.doesNotMatch(text, /Settings cleanup|Vocabulary ready-for-agent/);
     assert.match(text, lang === 'en' ? /landed, to try 1/ : /已落地待试用 1/, 'the legend is the current milestone\'s');
@@ -94,7 +94,7 @@ test('Home progress layout: separator row, milestone on the rule, bar as wide as
     assert.deepEqual(glyphs(whole.legend[0]), glyphs(whole.legend[1]), 'legend columns align');
     const tickets = bar + 1 + legend.length;
     assert.match(lines[tickets], /^(Tickets|工单) · native-tree ─/);
-    assert.match(lines[tickets], lang === 'en' ? /1\/12 done$/ : /1\/12 完成$/);
+    assert.match(lines[tickets], lang === 'en' ? /2\/12 done$/ : /2\/12 完成$/);
     const sparse = at({ ...f.data, counts: { ...f.data.counts, todo: 0, dropped: 0 }, ledger: f.data.ledger.filter((r) => r.state !== 'todo' && r.state !== 'dropped'), ladder: { ids: [] } }).join('\n');
     assert.doesNotMatch(sparse, lang === 'en' ? /todo|dropped/ : /待办|已放弃/, 'zero counts add no legend entry');
     const few = at({ ...f.data, tickets: [{ ...f.data.tickets[0], tickets: f.data.tickets[0].tickets.slice(0, 7) }] }).join('\n');
@@ -155,7 +155,7 @@ test('real Home input: Up/Down/End select the block, Enter/click opens the Progr
     }
   }
 });
-test('Home-only collection: only STATE/issues cached reads; no git, control-plane, agents or job scans; changed file refreshes', async (t) => {
+test('Home joins cached STATE, spec, tickets, HEAD and jobs; no control or agents; only changed bodies refresh', async (t) => {
   const f = await fixture(t), opened = [], listed = [], spawned = [];
   const original = { openSync: fs.openSync, opendirSync: fs.opendirSync, execFile: childProcess.execFile };
   fs.openSync = (path, ...args) => { opened.push(String(path)); return original.openSync(path, ...args); };
@@ -166,13 +166,13 @@ test('Home-only collection: only STATE/issues cached reads; no git, control-plan
   const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
   let data = await collector.collect('home', f.board, NOW);
   assert.ok(opened.length > 0);
-  assert.ok(opened.every((p) => p.endsWith('/STATE.md') || /\/\.scratch\/[^/]+\/issues\/[^/]+\.md$/.test(p)), opened.join('\n'));
-  assert.ok(listed.every((p) => p.endsWith('/.scratch') || /\/\.scratch\/[^/]+\/issues$/.test(p)));
-  assert.deepEqual(spawned, []);
+  assert.ok(opened.every((p) => /\/(STATE|spec)\.md$|\/\.git\/|\/jobs\/j[0-9a-f]+\/(job\.json|STATUS\.json|brief\.md)$|\/\.scratch\/[^/]+\/issues\/[^/]+\.md$/.test(p)), opened.join('\n'));
+  assert.ok(listed.every((p) => /\/(\.scratch|jobs|worktrees)$|\/\.scratch\/[^/]+\/issues$/.test(p)));
+  assert.deepEqual(spawned, ['git']);
   assert.equal(data.git, undefined);
   assert.deepEqual(data.control, []);
   assert.deepEqual(data.agents, []);
-  assert.ok(data.tickets.every((feature) => feature.tickets.every((ticket) => !ticket.job)));
+  assert.equal(data.tickets[0].tickets[0].state, 'working');
   opened.length = 0; listed.length = 0;
   await collector.collect('home', f.board, NOW + 60000);
   assert.deepEqual(opened, [], 'unchanged files cost no body reread');
@@ -182,12 +182,12 @@ test('Home-only collection: only STATE/issues cached reads; no git, control-plan
   data = await collector.collect('home', f.board, NOW + 60001);
   assert.equal(data.tickets[0].tickets[0].state, 'done');
   assert.deepEqual(opened, [f.paths.working]);
-  assert.deepEqual(spawned, [], 'Home never calls git, even past the five-second Project gate');
+  assert.deepEqual(spawned, ['git'], 'no git call without a HEAD change, even past the Project gate');
   assert.equal(await collector.collect(false, f.board, NOW + 60002), undefined);
 });
-test('live panel stays Home-only at slice detail: actual collection gate never spawns git', async (t) => {
+test('live panel stays Home-only at slice detail: only the HEAD-keyed subject scan invokes git', async (t) => {
   const f = await fixture(t), runner = join(f.root, 'home-only.mjs'), log = join(f.root, 'git-spawns');
-  f.put(join(f.root, 'bin/git'), `#!${process.execPath}\nimport fs from 'node:fs'; fs.appendFileSync(process.env.GIT_TEST_LOG, 'git\\n'); process.exit(1);\n`);
+  f.put(join(f.root, 'bin/git'), `#!${process.execPath}\nimport fs from 'node:fs'; fs.appendFileSync(${JSON.stringify(log)}, 'git\\n'); process.exit(1);\n`);
   fs.chmodSync(join(f.root, 'bin/git'), 0o700);
   f.put(runner, `
 import { ProjectCollector } from ${JSON.stringify(pathToFileURL(resolve('dist/collectors/project-board.js')).href)};
@@ -206,7 +206,7 @@ await runLivePage();
   f.put(settings, { modelEnabled: false, refreshMs: 100, acceptance: 'slice' });
   const child = childProcess.spawn(process.execPath, [runner], { env: { ...process.env, ...f.env,
     PATH: `${join(f.root, 'bin')}:${process.env.PATH}`, CODEX_HUD_CWD: f.cwd, HUD_SETTINGS_PATH: settings,
-    GIT_TEST_LOG: log, CODEX_HUD_STANDALONE_PANEL: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    CODEX_HUD_STANDALONE_PANEL: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
   child.stdout.on('data', (b) => { stdout += b; });
   child.stderr.on('data', (b) => { stderr += b; });
@@ -216,5 +216,5 @@ await runLivePage();
   clearTimeout(timeout);
   assert.equal(code, 0, stderr);
   assert.match(stdout, /HOME_ONLY/);
-  assert.equal(fs.existsSync(log), false, 'no git executable invoked while Home alone is shown');
+  assert.equal(fs.readFileSync(log, 'utf8'), 'git\n', 'one cold subject scan for two collections');
 });

@@ -141,7 +141,8 @@ machine, inside herdr. (10.02, 22.12)
   Main drafts the slices. (20.03)
 - `add`: feature slug and drafted tickets (title, blocked-by numbers, deliverables, acceptance items) in
   numbered Project-format files in `.scratch/<feature>/issues/`; reject unknown blocker numbers.
-  `update`: set status or tick acceptance items. `sync`: run `hud tickets sync`. `add` and `update` write
+  `update`: set status (including `claimed` and `done`), tick acceptance items or set blockers; blockers may
+  name `<feature>/<NN>`. `sync`: run `hud tickets sync`. `add` and `update` write
   local trackers only; refuse GitHub mirrors and give the `gh` plus sync route. (20.03)
 - `hud_roster` returns roles and effective convention. Ship a short default, replaced whole by a project or
   owner file. Only dispatch mechanics; methods (grilling, specs, tickets, design vocabulary, build recipes)
@@ -199,8 +200,9 @@ Reference: `docs/design/project-ux/` (A: Timeline; B and C: Board and Inbox),
 - Project can switch among the panel's project and `hud setup` projects. Home stays local. Progress,
   Tickets, Working tree and Docs each have a hub summary row and their own page. (12.04, 14.04, 22.02)
 - Working tree: branch, changes, editing job, last commit. Docs: spec milestone, STATE waiting items, newest
-  review. STATE carries `## Waiting for the owner` and `Milestone:`. Tickets (`to-tickets`): status,
-  blocked-by,
+  review. STATE carries `## Waiting for the owner` and `Milestone:`. Tickets (`to-tickets`): derive status at
+  read time from linked jobs, STATE slices, commits naming the ticket and accepted tries, else the file's own
+  status; a ticket waiting only on unfinished predecessors shows as queued, not blocked, alongside its blockers,
   package lane links, checklist and latest comment. (12.04, 14.04)
 - Progress reads project files: STATE `## Now` summary, one stacked bar and legend from `## Slices` (working,
   blocked, landed to try, accepted, todo, dropped), §5 chips with current from `Milestone:`, in-flight slice

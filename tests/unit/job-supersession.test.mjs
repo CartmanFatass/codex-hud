@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fixture, waitFixtureJob, paneList, ownerOf } from '../helpers/thin-mcp-harness.mjs';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { appendTry } from '../../dist/collectors/try-records.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
 import { laneTop } from '../../dist/render/split-home.js';
@@ -73,6 +75,26 @@ test('landed STATE slice, ticket or project-specific accepted trial supersedes w
   fs.writeFileSync(join(home, 'tries.jsonl'), JSON.stringify({ root: f.root, action: 'accept', milestone: 'M1', slices: ['SYNTHETIC-03'] }) + '\n');
   assert.deepEqual(jobs.map(({ job }) => workers()[job].superseded), [true, true, true, false]);
   assert.deepEqual(await compact(), [jobs[3].job]);
+});
+
+test('failures and ticket rollup agree on tracker, slice aliases, reopened rows and archived decisions', async (t) => {
+  const { f, home, seed, workers, compact } = await setup(t);
+  const issues = join(f.root, '.scratch/demo/issues'); fs.mkdirSync(issues, { recursive: true });
+  const ids = ['01', '02', '03', '04', '05', '06', '07', '08'];
+  const jobs = ids.map((n, i) => {
+    const status = ['try', 'accepted'][i] ?? 'ready-for-agent';
+    fs.writeFileSync(join(issues, `${n}-item.md`), `# ${n}: Item\n**Status:** ${status}\n**Blocked by:** none\n## Comments\n- [x] not a deliverable\n`);
+    return seed(i + 1, 'failed', { project_root: f.root, package: 'demo', ticket: i + 1, ...(i === 2 ? { slice: 'ALIAS' } : {}) });
+  });
+  fs.writeFileSync(join(f.root, 'STATE.md'), '## Slices\n- try · M · ALIAS · shipped\n- working · M · demo/4 · reopened\n- done · M · DEMO-08 · complete\n');
+  const mark = (root, action, id) => appendTry(home, root, action, { milestone: 'M', slices: [{ id, text: 'prior work' }] });
+  mark(f.root, 'accept', 'DEMO-04'); mark(f.root, 'accept', 'DEMO-05'); mark(f.root, 'accept', 'DEMO-06');
+  mark(f.root, 'flag', 'demo/6'); mark(join(f.root, 'other'), 'accept', 'DEMO-07');
+  const flags = workers(), board = { workers: Object.values(flags), lanes: [] };
+  const snapshot = await new ProjectCollector(f.root, home).collect('home', board, Date.now());
+  assert.deepEqual(snapshot.tickets[0].tickets.map(t => t.state), ['try', 'done', 'try', 'blocked', 'done', 'blocked', 'blocked', 'done']);
+  assert.deepEqual(jobs.map(({ job }) => flags[job].superseded), [true, true, true, false, true, false, false, true]);
+  assert.deepEqual(await compact(), [jobs[6].job, jobs[5].job, jobs[3].job]);
 });
 
 test('unhandled failure expires only on Home; observing it demotes and folds the card', async (t) => {

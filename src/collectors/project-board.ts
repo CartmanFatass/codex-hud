@@ -10,6 +10,9 @@ import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
+import { ticketFileEvidence } from './ticket-evidence.js';
+import { TryLog } from './try-records.js';
+import { TicketRollup, ticketIds } from './ticket-rollup.js';
 import { readActiveLeases, type LeaseRecord } from './thin-jobs.js';
 export interface ProjectItem {
   label: string;
@@ -24,7 +27,7 @@ export type SliceState = typeof SLICE_STATES[number];
 /** What a to-try slice's model brief says (spec §2.2): what changed in plain words, and how to try it. Display only. */
 export interface TryBrief { brief: string; steps: string[] }
 export interface LedgerSlice {
-  id: string; state: SliceState; milestone: string; text: string; commit?: string; at?: number;
+  id: string; state: SliceState; milestone: string; release?: string; text: string; commit?: string; at?: number;
   /** Laid on by the panel from its stored briefs (`TryBriefs.apply`), never collected. */
   brief?: TryBrief;
   diff?: DiffStatSummary;
@@ -38,12 +41,13 @@ export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
   number: string; title: string; path: string; at: number; status: string;
   checked: number; total: number; items: TicketItem[]; comment?: string;
-  blockers: string[]; state: 'done' | 'dropped' | 'working' | 'blocked' | 'ready';
+  blockers: string[]; state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { role: string; state: string; at?: number; created: number };
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
 export interface ProjectSnapshot {
   tickets: TicketFeature[];
+  ticketTotals?: { doneTickets: number; totalTickets: number; doneFeatures: number; totalFeatures: number };
   waiting: ProjectItem[];
   docs: ProjectItem[];
   control: ProjectItem[];
@@ -85,7 +89,7 @@ export const SETTLED_JOB_STATES: ReadonlySet<string> = new Set(['done', 'closed'
  * `accepted` or `dropped`, a ticket done or dropped. Unknown references keep the item; so does an item naming none.
  */
 export function waitSettled(text: string, ledger: ReadonlyMap<string, { state: string }>, tickets: readonly TicketFeature[]): boolean {
-  const refs = [...text.matchAll(/\(waits on ([^()]+)\)/gi)].at(-1)?.[1].split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
+  const refs = [...text.matchAll(/[（(]waits on ([^()（）]+)[）)]/gi)].at(-1)?.[1].split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
   return refs.length > 0 && refs.every((ref) => {
     const ticket = ref.match(/^([\w.-]+)[/#](\d+)$/);
     if (ticket) {
@@ -118,10 +122,15 @@ export class ProjectCollector {
   private homeTryDates = new Map<string, number>();
   private homePendingHashes = '';
   private diffs = new DiffStatCollector();
-  constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {}
+  private tries: TryLog;
+  private head = '';
+  private packedHead?: { key: string; sha: string };
+  private landed = new Set<string>();
+  constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) { this.tries = new TryLog(hudHome); }
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
     try {
-      const st = fs.lstatSync(path);
+      const st = fs.lstatSync(path, { throwIfNoEntry: false });
+      if (!st) { this.cache.delete(path); return null; }
       this.seen.add(path);
       if (!st.isFile() && !st.isDirectory()) return null;
       const stamp = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
@@ -181,9 +190,9 @@ export class ProjectCollector {
   }
   private tickets(): TicketFeature[] {
     const root = join(this.cwd, '.scratch'), features: TicketFeature[] = [];
-    // At most 16 × 64 ticket files are read, last-changed features first.
-    let budget = 16 * 64;
-    for (const slug of this.recentFeatures(root, 256)) {
+    // Bound the scan, not the totals to the subset of features displayed.
+    let budget = 512;
+    for (const slug of this.recentFeatures(root, 64)) {
       if (budget <= 0) break;
       const issues = join(root, slug, 'issues'), tickets: ProjectTicket[] = [];
       const names = this.orderedNames(issues, 64, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name)).slice(0, budget);
@@ -193,47 +202,24 @@ export class ProjectCollector {
         const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
           if (truncated) return null;
           const text = buffer.toString('utf8'), heading = text.match(/^# (\d+):[ \t]*(\S[^\r\n]*)/m);
-          // A field starts a line or follows ` · ` on a shared line (`**Who:** … · **Blocked by:** 02 · **Status:** resolved`).
-          const field = (key: string) => text.match(new RegExp(`(?:^|·)[ \\t]*\\*\\*${key}:\\*\\*[ \\t]*([^·\\r\\n]*)`, 'mi'))?.[1]?.trim();
-          const status = field('Status'), blocked = field('Blocked by');
+          const { status, blocked, items, checked, landed } = ticketFileEvidence(text);
           if (!heading || !heading[2].trim() || Number(heading[1]) !== Number(name.split('-')[0]) || !status || blocked === undefined) return null;
-          const boxes = [...text.matchAll(/^[ \t]*[-*] \[([ xX])\][ \t]*([^\r\n]*)/gm)];
-          const items = boxes.map((b) => ({ done: b[1].toLowerCase() === 'x', text: b[2].replace(/\s+/g, ' ').trim() }));
-          const checked = items.filter((i) => i.done).length;
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
           const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
           return { number: heading[1], title: heading[2].trim(), path, at: fs.lstatSync(path).mtimeMs, status,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
-            // The first word decides; a note after it (`resolved (follow-up in …)`) does not.
-            state: /^wontfix\b/i.test(status) ? 'dropped'
-              : /^(done|closed|complete|resolved)\b/i.test(status) || (items.length > 0 && checked === items.length) ? 'done'
-              : /^claimed\b/i.test(status) ? 'working' : 'ready' };
+            state: landed ?? (/^claimed\b/i.test(status) ? 'working' : 'ready') };
         });
         // Clone: dependency/job overlays must not mutate the signature-cached parse.
-        if (ticket) tickets.push({ ...ticket, blockers: [...ticket.blockers], items: ticket.items.map((i) => ({ ...i })) });
+        if (ticket) tickets.push({ ...ticket, blockers: [...ticket.blockers] });
       }
       tickets.sort((a, b) => Number(a.number) - Number(b.number) || a.path.localeCompare(b.path));
-      for (const ticket of tickets) {
-        const references = ticket.blockers[0] ?? '';
-        const title = (value: string) => value.trim().toLowerCase();
-        const refs = tickets.some((t) => title(t.title) === title(references)) ? [references] : references.split(/[,;]|\s+and\s+/i);
-        ticket.blockers = refs.filter((ref) => ref.trim()).flatMap((ref) => {
-          const number = ref.trim().match(/^#?(\d+)\b/)?.[1];
-          const target = (number ? tickets.find((t) => Number(t.number) === Number(number)) : undefined)
-            ?? tickets.find((t) => title(t.title) === title(ref));
-          return target && ['done', 'dropped'].includes(target.state) ? [] : [target?.number ?? ref.trim()];
-        });
-        if (ticket.state === 'ready' && ticket.blockers.length) ticket.state = 'blocked';
-      }
       if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets });
     }
     features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
-    // Every feature with open work stays; finished ones fill the rest of sixteen, newest first.
-    const open = (f: TicketFeature) => f.tickets.some((r) => r.state !== 'done' && r.state !== 'dropped');
-    let room = 16 - features.filter(open).length;
-    return features.filter((f) => open(f) || room-- > 0);
+    return features;
   }
   /** The newest 64 job directories: the one lookup behind Project's Now section and the Projects list. */
   private recentJobs() {
@@ -253,10 +239,9 @@ export class ProjectCollector {
     const title = line.replace(/^#{1,6}\s+/, '').replace(/\s+/g, ' ').trim();
     return title ? (title.length > 120 ? title.slice(0, 119) + '…' : title) : undefined;
   }
-  private json = (path: string) => {
-    const file = this.read(path);
-    try { return file && !file.truncated ? JSON.parse(file.text) : null; } catch { return null; }
-  };
+  private json = (path: string) => this.body(path, (b, truncated) => {
+    try { return truncated ? null : JSON.parse(b.toString('utf8')); } catch { return null; }
+  });
   private readJson = (path: string) => {
     const file = this.read(path);
     if (!file) throw Object.assign(new Error('unreadable'), { code: 'EACCES' });
@@ -360,7 +345,46 @@ export class ProjectCollector {
     return dates;
   }
 
-  async collect(shown: boolean | 'home' | 'home-tasks' | 'export' | 'control', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
+  /** Read the loose/detached HEAD or the shared ref of a linked checkout without starting Git. */
+  private async landedTickets(rollup: TicketRollup) {
+    const dot = join(this.cwd, '.git');
+    const pointer = fs.lstatSync(dot, { throwIfNoEntry: false })?.isFile() && this.read(dot)?.text.match(/^gitdir: (.+)\s*$/)?.[1];
+    const dir = pointer ? resolve(this.cwd, pointer.trim()) : dot;
+    const common = pointer ? resolve(dir, this.read(join(dir, 'commondir'))?.text.trim() ?? '.') : dir;
+    const trees = join(common, 'worktrees');
+    for (const name of this.names(trees, 64)) {
+      const branch = this.read(join(trees, name, 'HEAD'))?.text.trim().match(/^ref: refs\/heads\/wt\/(.+)$/)?.[1];
+      if (!branch || !ticketIds(branch).length) continue;
+      const back = this.read(join(trees, name, 'gitdir'))?.text.trim();
+      if (back && basename(back) === '.git' && fs.lstatSync(back, { throwIfNoEntry: false })?.isFile()) rollup.worktree(branch);
+    }
+    let sha = this.read(join(dir, 'HEAD'))?.text.trim() ?? '';
+    if (sha.startsWith('ref: refs/') && !sha.includes('..')) {
+      const ref = sha.slice(5);
+      sha = this.read(join(common, ref))?.text.trim() ?? '';
+      if (!sha) {
+        const path = join(common, 'packed-refs'), packed = this.read(path);
+        sha = packed?.text.split('\n').find(l => l.endsWith(' ' + ref))?.split(' ')[0] ?? '';
+        if (!sha && packed?.truncated) {
+          // A ref beyond our bounded file read: ask Git once for this ref/file signature, not on each tick.
+          const key = `${ref}:${this.cache.get(path)?.stamp}`;
+          if (this.packedHead?.key !== key) this.packedHead = { key, sha: (await worktreeGit(this.cwd, ['rev-parse', '--verify', 'HEAD']).catch(() => '')).trim() };
+          sha = this.packedHead.sha;
+        }
+      }
+    }
+    if (sha !== this.head) {
+      this.head = sha;
+      this.landed.clear();
+      if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) try {
+        const subjects = await worktreeGit(this.cwd, ['log', '-n', '64', '--no-show-signature', '--format=%s', sha, '--']);
+        this.landed = new Set(ticketIds(subjects));
+      } catch { /* Git unavailable: rely on the ledger. */ }
+    }
+    return this.landed;
+  }
+
+  async collect(shown: boolean | 'home' | 'home-tasks' | 'export' | 'control' | 'overview', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
@@ -384,12 +408,16 @@ export class ProjectCollector {
     const bullets = (heading: string, whole = false) => stateBullets(state, heading).map((text) => ({
       label: '', value: text.replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: text.replace(/\r/g, '') } : {}),
     }));
-    out.waiting = bullets('Waiting for the owner', true);
+    out.waiting = bullets('Waiting for the owner', true).filter(item => !/^Owner 20\d\d-\d\d-\d\d\b/i.test(item.value));
     out.next = bullets('Next');
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
-    out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim() ?? '';
+    out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim()
+      ?? state.match(/^## Now(?: \([^\r\n]+\))?[ \t]*\r?\n\s*[-*] ([^\r\n]+)/m)?.[1]?.trim() ?? '';
     const ledger = new Map<string, { state: string; text: string }>();
-    for (const { state: status, milestone, id, text } of parseLedger(state)) {
+    const parsed = parseLedger(state), marks = this.tries.marks(this.cwd, parsed, true);
+    for (const { state: raw, milestone, id, text } of parsed) {
+      const status = raw === 'done' || marks.get(id) === 'accept' ? 'accepted' : raw;
+      if (marks.get(id) === 'flag') out.waiting.push({ label: id, value: `⚑ ${id} · ${text}`, path: statePath });
       ledger.set(id, { state: status, text });
       if (!SLICE_STATES.includes(status as SliceState)) continue;
       const state = status as SliceState;
@@ -400,32 +428,63 @@ export class ProjectCollector {
         label: id, value: text, path: statePath, ledgerState: state,
       });
     }
-    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
+    // Accepted tries still settle their named waits and tickets after their STATE rows are archived.
+    for (const [id, action] of marks) if (action === 'accept' && !ledger.has(id)) ledger.set(id, { state: 'accepted', text: '' });
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
     out.ladder.current = milestone?.split(/\s+/)[0];
-    if (shown === 'home' || shown === 'home-tasks') {
-      if (shown === 'home-tasks') {
-        const tries = out.ledger.filter((r) => r.state === 'try');
-        const hashes = [...new Set(tries.flatMap((r) => r.commit ? [r.commit.toLowerCase()] : []))]
-          .filter((hash) => !this.homeTryDates.has(hash)).sort();
-        const key = hashes.join(' ');
-        if (key !== this.homePendingHashes) {
-          // Unknown commits stay undated; don't retry an unchanged set of misses on the clock.
-          for (const [hash, at] of await this.commitDates(hashes)) this.homeTryDates.set(hash, at);
-          this.homePendingHashes = hashes.filter((hash) => !this.homeTryDates.has(hash)).join(' ');
-        }
-        for (const row of tries) {
-          const at = row.commit ? this.homeTryDates.get(row.commit.toLowerCase()) : undefined;
-          if (at !== undefined) row.at = at;
-        }
-      }
-      for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
-      return out;
-    }
-    const specPath = join(this.cwd, 'docs/spec.md'), specFile = this.read(specPath);
+    const specPath = join(this.cwd, 'docs/spec.md'), specFile = shown === 'overview' ? null : this.read(specPath);
     if (specFile?.truncated) out.specTruncated = true;
     const spec = specFile?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
-    out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+|0\.\d+\.\d+),/gm)].map((m) => m[1]);
+    out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M\d+[a-z]?|\d+\.\d+\.\d+),/gm)].map((m) => m[1]);
+    // Keep the raw scope for task grouping and TryLog identity, separately attribute the release bar.
+    let activeBlock = true;
+    for (const r of out.ledger) {
+      const prefix = r.milestone.split('/')[0];
+      if (out.ladder.ids.includes(prefix) || /^(?:M\d+[a-z]?|\d+\.\d+\.(?:\d+|x))$/i.test(prefix)) {
+        if (prefix !== r.milestone) r.release = prefix;
+        if (out.ladder.current && out.ladder.ids.includes(prefix)) activeBlock = out.ladder.ids.indexOf(prefix) >= out.ladder.ids.indexOf(out.ladder.current);
+      } else if (activeBlock && out.ladder.current) r.release = out.ladder.current;
+    }
+    const home = shown === 'home' || shown === 'home-tasks' || shown === 'overview';
+    if (!home) await this.fullDetails(out, board, now, shown === 'export', specPath, milestone);
+    const rollup = new TicketRollup(out.tickets);
+    const liveSlices = shown === 'overview' ? [] : this.joinJobs(out, board, home, shown === 'export', rollup, ledger);
+    const { totals, visible, running } = rollup.derive(out.ledger, shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup) : new Set(), now, SETTLED_JOB_STATES, marks);
+    for (const row of [...running, ...liveSlices]) {
+      const old = out.ledger.find(r => r.id === row.id);
+      if (old) {
+        if (old.state === row.state || !['todo', 'working'].includes(old.state)) continue;
+        out.counts[old.state]--;
+        old.state = row.state;
+      } else out.ledger.push({ ...row, release: out.ladder.current });
+      out.counts[row.state]++;
+      const entry = out.slices.find(s => s.label === row.id);
+      if (entry) entry.ledgerState = row.state;
+      else out.slices.push({ label: row.id, value: row.text, ledgerState: row.state });
+    }
+    out.ticketTotals = totals;
+    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
+    out.tickets = visible;
+    if (shown === 'home-tasks') {
+      const tries = out.ledger.filter((r) => r.state === 'try');
+      const hashes = [...new Set(tries.flatMap((r) => r.commit ? [r.commit.toLowerCase()] : []))]
+        .filter((hash) => !this.homeTryDates.has(hash)).sort();
+      const key = hashes.join(' ');
+      if (key !== this.homePendingHashes) {
+        // Unknown commits stay undated; don't retry an unchanged set of misses on the clock.
+        for (const [hash, at] of await this.commitDates(hashes)) this.homeTryDates.set(hash, at);
+        this.homePendingHashes = hashes.filter((hash) => !this.homeTryDates.has(hash)).join(' ');
+      }
+      for (const row of tries) {
+        const at = row.commit ? this.homeTryDates.get(row.commit.toLowerCase()) : undefined;
+        if (at !== undefined) row.at = at;
+      }
+    }
+    for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
+    return out;
+  }
+
+  private async fullDetails(out: ProjectSnapshot, board: WorkboardSnapshot, now: number, exporting: boolean, specPath: string, milestone?: string) {
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: specPath });
     const reviews = join(this.cwd, 'docs/reviews');
     const review = this.orderedNames(reviews, 12, (entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(entry.name), true)
@@ -441,9 +500,8 @@ export class ProjectCollector {
     for (const w of board.workers.filter((w) => w.state === 'working')) {
       const id = w.evidence[0]?.sourceId;
       if (!id || !/^j[0-9a-f]{16}$/.test(id)) continue;
-      const job = this.read(join(this.hudHome, 'jobs', id, 'job.json'));
       try {
-        const record = job && !job.truncated ? JSON.parse(job.text) : null;
+        const record = this.json(join(this.hudHome, 'jobs', id, 'job.json'));
         if (record && resolve(record.worktree?.main_root ?? record.cwd) === resolve(this.cwd)) {
           const label = board.lanes.find((l) => l.id === w.laneId)?.label ?? '';
           out.editing.push({
@@ -477,7 +535,6 @@ export class ProjectCollector {
       if (at !== undefined) row.at = at;
     }
     out.git = this.git;
-    const exporting = shown === 'export';
     const toTry = out.ledger.filter((r) => r.state === 'try').reverse()
       .sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
     const attachDiff = async (row: LedgerSlice) => {
@@ -497,6 +554,10 @@ export class ProjectCollector {
     }
     out.worktreeCount = this.git ? this.worktrees.length : undefined;
     out.last = this.last;
+  }
+
+  private joinJobs(out: ProjectSnapshot, board: WorkboardSnapshot, home: boolean, exporting: boolean, rollup: TicketRollup, ledger: Map<string, {state: string; text: string}>) {
+    const statePath = out.statePath;
     const canonical = canonicalPath, root = canonical(this.cwd);
     const inRoot = (path: string) => insideRoot(root, path);
     const jobsRoot = join(this.hudHome, 'jobs');
@@ -506,6 +567,7 @@ export class ProjectCollector {
     const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
     const managed = new Map<string, string>();
     const active: { created: number; entry: ActiveJob }[] = [];
+    const liveSlices = new Map<string, LedgerSlice>();
     const json = this.json;
     for (const { id } of jobs) {
       const dir = join(jobsRoot, id), job = json(join(dir, 'job.json'));
@@ -515,10 +577,9 @@ export class ProjectCollector {
       const isolated = wt?.root === cwd && typeof wt.branch === 'string' && typeof wt.main_root === 'string';
       if (isolated) managed.set(cwd, wt.branch);
       const inside = inRoot(cwd) || (isolated && inRoot(wt.main_root));
-      if (exporting && !inside) continue;
+      if (!inside && (home || exporting)) continue;
       const created = Date.parse(job.created_at) || 0;
-      const feature = out.tickets.find((f) => f.slug === job.package);
-      if (!inside && !feature && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
+      if (!inside && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const s = json(join(dir, 'STATUS.json')) ?? {};
       const state = jobState(job, s);
       const worker = workersByJob.get(id);
@@ -529,8 +590,12 @@ export class ProjectCollector {
           worker?.task && worker.task !== id.slice(-6) ? worker.task : undefined,
           job.title, job.task,
         ].find((v): v is string => typeof v === 'string' && v.trim().length > 0)?.replace(/\s+/g, ' ').trim()
-          ?? this.briefTitle(join(dir, 'brief.md'), job.task_length);
-        const file = firstFile(join(dir, 'report.md'), join(dir, 'brief.md'));
+          ?? (home ? undefined : this.briefTitle(join(dir, 'brief.md'), job.task_length));
+        const file = home ? undefined : firstFile(join(dir, 'report.md'), join(dir, 'brief.md'));
+        if (typeof job.slice === 'string' && job.slice && !job.ticket && !rollup.hasTicket(job.slice)) {
+          liveSlices.set(job.slice, { id: job.slice, state: ['waiting_orchestrator', 'blocked'].includes(state) ? 'blocked' : 'working',
+            milestone: job.package ?? '—', text: title || job.slice });
+        }
         active.push({
           created,
           entry: {
@@ -542,17 +607,14 @@ export class ProjectCollector {
         });
       }
       const report = join(dir, 'report.md'), brief = join(dir, 'brief.md');
-      if (feature) {
-        const material = [job.task, job.brief_path, worker?.task, this.read(brief)?.text].filter((v) => typeof v === 'string').join('\n');
-        for (const ticket of feature.tickets) {
-          if ((ticket.job?.created ?? -Infinity) >= created) continue;
-          const mentions = material.includes(basename(ticket.path)) || new RegExp(`(^|[^\\w])${ticket.number}(?![\\w])`).test(material);
-          if (!mentions) continue;
-          const at = Date.parse(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at);
-          ticket.job = { role: typeof job.role === 'string' ? job.role : '', state: typeof s.state === 'string' ? s.state : 'working',
-            created, ...(Number.isFinite(at) ? { at } : {}) };
-        }
+      if (inside && out.tickets.length) {
+        const material = job.ticket || job.slice ? '' : job.task ?? job.brief_path ?? this.read(brief, 4096)?.text.slice(0, job.task_length ?? 4096) ?? worker?.task ?? '';
+        const at = Date.parse(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at);
+        rollup.link(job, String(material), { role: typeof job.role === 'string' ? job.role : '',
+          state: job.reaped_at && !SETTLED_JOB_STATES.has(state) ? 'closed' : state,
+          created, ...(Number.isFinite(at) ? { at } : {}) });
       }
+      if (home) continue;
       if ((byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const path = firstFile(report, brief);
       const at = Date.parse(s.started_at ?? job.created_at);
@@ -560,6 +622,7 @@ export class ProjectCollector {
         asking: s.state === 'waiting_orchestrator', path, ...(Number.isFinite(at) ? { at } : {}) });
     }
     out.active = active.sort((a, b) => b.created - a.created || a.entry.jobId.localeCompare(b.entry.jobId)).map((a) => a.entry);
+    if (home) return liveSlices.values();
     for (const slice of out.slices) if (ledger.get(slice.label)?.state === 'working' &&
       !this.worktrees.some((tree) => basename(tree.path) === slice.label)) slice.drift = 'no worktree';
     for (const tree of this.worktrees) {
@@ -572,7 +635,6 @@ export class ProjectCollector {
       }
       if (job) Object.assign(slice, job, { path: job.path ?? statePath });
     }
-    for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
-    return out;
+    return liveSlices.values();
   }
 }

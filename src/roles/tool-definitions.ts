@@ -11,9 +11,10 @@ const tool = (name: string, description: string, properties: Record<string, unkn
   inputSchema: { type: 'object', properties, required, additionalProperties: false },
 });
 
-export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix'] as const;
+export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix', 'claimed', 'done'] as const;
 const ticketStatus = { ...text, enum: TICKET_STATUSES };
 const ticketNumber = { type: 'integer', minimum: 1 };
+const blockers = { type: 'array', items: { anyOf: [ticketNumber, { type: 'string', pattern: '^[a-z0-9-]+/[0-9]+$' }] } };
 
 export const ROLE_TOOLS = [
   tool('hud_roster', 'Get role availability, effective assignments, and the project dispatch convention when new or changed.', {
@@ -31,6 +32,8 @@ export const ROLE_TOOLS = [
       retry_of: { ...text, description: 'Failed or stopped job ID. Reuses its brief and options and selects an available place.' },
       cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
       package: { ...text, description: 'Display label.' },
+      ticket: { ...text, description: 'Linked ticket: feature/NN.' },
+      slice: { ...text, description: 'Linked STATE slice ID.' },
       context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths within cwd.' },
       checks: { type: 'array', maxItems: MAX_CHECKS, items: { ...text, minLength: 1, maxLength: MAX_CHECK_COMMAND },
         description: 'Commands the HUD runs in the job cwd after a declared pi or CLI settlement.' },
@@ -133,7 +136,7 @@ export const ROLE_TOOLS = [
           type: 'object',
           properties: {
             title: text,
-            blocked_by: { type: 'array', items: ticketNumber },
+            blocked_by: blockers,
             what: text,
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
@@ -144,6 +147,7 @@ export const ROLE_TOOLS = [
       },
       ticket: { ...ticketNumber, description: 'Ticket number for update.' },
       status: { ...ticketStatus, description: 'New status for update.' },
+      blocked_by: { ...blockers, description: 'For update: replace blockers (local numbers or feature/NN).' },
       tick: { type: 'array', items: ticketNumber, description: 'For update: 1-based acceptance items to check.' },
     }
   ),

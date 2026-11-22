@@ -43,16 +43,29 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   scanScratch(scratch, true);
   const featureDir = join(scratch, feature),
     issues = join(featureDir, 'issues');
-  const existing =
-    directoryExists(featureDir) && directoryExists(issues)
-      ? fs.readdirSync(issues, { withFileTypes: true }).flatMap((entry) => {
+  const list = (dir: string) =>
+    directoryExists(dir) && directoryExists(join(dir, 'issues'))
+      ? fs.readdirSync(join(dir, 'issues'), { withFileTypes: true }).flatMap((entry) => {
           const match = /^(\d+)-.+\.md$/.exec(entry.name);
-          return match && entry.isFile() ? [{ number: Number(match[1]), path: join(issues, entry.name) }] : [];
+          return match && entry.isFile() ? [{ number: Number(match[1]), path: join(dir, 'issues', entry.name) }] : [];
         })
       : [];
+  const existing = list(featureDir);
+  const known = new Set(existing.map(t => t.number));
+  const blockers = (value: unknown) => {
+    if (!Array.isArray(value)) return invalid('blocked_by');
+    const refs = value.map(ref => {
+      const match = typeof ref === 'string' && /^([a-z0-9-]+)\/(\d+)$/.exec(ref);
+      const n = match ? Number(match[2]) : ref;
+      if (!number(n)) return invalid('blocked_by');
+      const exists = match && match[1] !== feature ? list(join(scratch, match[1])).some(t => t.number === n) : known.has(n);
+      if (!exists) throw new Error(`unknown blocked_by ticket: ${ref}`);
+      return match ? `${match[1]}/${nn(n)}` : nn(n);
+    });
+    return refs.join(', ') || 'none';
+  };
   if (op === 'add') {
     if (!Array.isArray(args.tickets) || !args.tickets.length) return invalid('tickets');
-    const known = new Set(existing.map((ticket) => ticket.number));
     let next = existing.reduce((max, ticket) => Math.max(max, ticket.number), 0);
     // Plan the entire batch before making directories or writing any ticket.
     const plans = args.tickets.map((ticket: Record<string, unknown>) => {
@@ -61,15 +74,14 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
       const title = line(ticket.title, 'title'),
         what = line(ticket.what, 'what');
       const label = ticket.status === undefined ? 'ready-for-agent' : status(ticket.status);
-      const blockers = numbers(ticket.blocked_by, 'blocked_by');
-      for (const blocker of blockers) if (!known.has(blocker)) throw new Error(`unknown blocked_by ticket: ${blocker}`);
+      const blocked = blockers(ticket.blocked_by);
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
       const body = [
         `# ${nn(next)}: ${title}`,
         '',
         `**Status:** ${label}`,
-        `**Blocked by:** ${blockers.length ? blockers.map(nn).join(', ') : 'none'}`,
+        `**Blocked by:** ${blocked}`,
         '',
         `**What to build:** ${what}`,
         '',
@@ -90,7 +102,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   }
 
   if (!number(args.ticket)) return invalid('ticket');
-  if (args.status === undefined && args.tick === undefined) return invalid('status or tick');
+  if (args.status === undefined && args.tick === undefined && args.blocked_by === undefined) return invalid('status, tick or blocked_by');
   const matches = existing.filter(({ number }) => number === args.ticket);
   if (!matches.length) throw new Error(`unknown ticket: ${args.ticket}`);
   if (matches.length > 1) throw new Error(`ambiguous ticket: ${args.ticket}`);
@@ -103,6 +115,12 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
     const label = status(args.status);
     if (!field.test(body)) throw new Error(`missing Status field in ticket: ${args.ticket}`);
     body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${label}${suffix}`);
+  }
+  if (args.blocked_by !== undefined) {
+    const field = /((?:^|·)[ \t]*\*\*Blocked by:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+    if (!field.test(body)) throw new Error(`missing Blocked by field in ticket: ${args.ticket}`);
+    const refs = blockers(args.blocked_by);
+    body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${refs}${suffix}`);
   }
   if (args.tick !== undefined) {
     const tick = new Set(numbers(args.tick, 'tick'));

@@ -67,7 +67,7 @@ function panel(t, f, { layout = 'classic', columns = 80, prelude = '', acceptanc
   return { key, frame, painted, recorded, close };
 }
 
-test('the live panel records y/n on milestone and slice rows and paints the latest marks until the ledger agrees', async (t) => {
+test('the live panel flags a milestone, accepts one slice and immediately removes it from Only to try', async (t) => {
   const f = fixture(t);
   const { key, frame, painted, recorded, close } = panel(t, f);
 
@@ -80,28 +80,15 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   assert.match(frame(), /y accept  n flag/);
   key('yn'); // The filter's header is not a milestone.
   assert.deepEqual(f.records(), []);
-  key('jy');
+  key('jn');
   await recorded(1);
-  await painted(/▾ 0\.1\.4 +✓ 2 accepted/);
-  await painted(/✓ ONE/);
-  await painted(/✓ TWO/);
-  key('n');
-  await recorded(2);
   await painted(/▾ 0\.1\.4 +⚑ 2 flagged/);
   key('jy'); // TWO is the later ledger entry and therefore first in this group.
-  await recorded(3);
-  await painted(/▾ 0\.1\.4 +✓ 1 accepted  ⚑ 1 flagged/);
-  await painted(/✓ TWO/);
-  key('n');
-  await recorded(4);
-  await painted(/⚑ TWO/);
-  key('y');
-  await recorded(5);
+  await recorded(2);
+  await painted(/^Only to try ─+ 2$/m);
+  assert.doesNotMatch(frame(), /TWO/);
   assert.deepEqual(f.records().map(({ root, action, milestone, slices }) => ({ root, action, milestone, slices })), [
-    { root: f.cwd, action: 'accept', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
     { root: f.cwd, action: 'flag', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
-    { root: f.cwd, action: 'accept', milestone: '0.1.4', slices: ['TWO'] },
-    { root: f.cwd, action: 'flag', milestone: '0.1.4', slices: ['TWO'] },
     { root: f.cwd, action: 'accept', milestone: '0.1.4', slices: ['TWO'] },
   ]);
   assert.ok(f.records().every(({ at }) => Number.isFinite(Date.parse(at))));
@@ -127,15 +114,15 @@ test('task acceptance writes each pending slice of the milestone in one record',
   await painted(/◇ 0\.1\.4 +2 slices/);
   key(' ');
   await painted(/▣ ◇ 0\.1\.4/);
-  key('y');
-  await recorded(1);
-  await painted(/✓ 0\.1\.4 +2 slices/);
   key('n');
-  await recorded(2);
+  await recorded(1);
   await painted(/⚑ 0\.1\.4 +2 slices/);
+  key('y');
+  await recorded(2);
+  await painted(/^Only to try ─+ 1$/m);
   assert.deepEqual(f.records().map(({ action, milestone, slices }) => ({ action, milestone, slices })), [
-    { action: 'accept', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
     { action: 'flag', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
+    { action: 'accept', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
   ]);
   assert.equal(fs.readFileSync(f.state, 'utf8'), f.body);
   await close();
@@ -179,7 +166,7 @@ test('Space marks two rows, then y writes one try record and one watch line in C
     assert.deepEqual(f.records(), []);
     key('y');
     await recorded(1);
-    await painted(new RegExp(`✓ ${slices[1]}`));
+    await until(() => !slices.some(s => frame().includes(`◇ ${s}`)) && !frame().includes('▣'), frame);
     assert.doesNotMatch(frame(), /▣/);
     assert.equal(f.records()[0].action, 'accept');
     assert.deepEqual(f.records()[0].slices, slices);

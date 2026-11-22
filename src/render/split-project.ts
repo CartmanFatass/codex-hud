@@ -130,7 +130,7 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
   const label = cur.whole || !data.ladder.current ? '' : ` ${monitorText(data.ladder.current)} `, frac = acceptedText(cur.counts, cur.rows.length);
   if (cur.rows.length) list.push(plain(`  ${label ? theme.board.title(label) + ' ' : ''}${barText({ counts: cur.counts }, Math.max(6, Math.min(24, width - 3 - visualLength(label) - visualLength(frac) - 2)))} ${muted(frac)}`, width), boardRow(''));
   else if (!path) list.push(plain('  ' + muted(t('no STATE.md')), width));
-  const slices = cur.whole || state.project.filter?.query ? data.ledger : [...cur.rows, ...data.ledger.filter((r) => r.state === 'try' && r.milestone !== data.ladder.current)];
+  const slices = cur.whole || state.project.filter?.query ? data.ledger : [...cur.rows, ...data.ledger.filter((r) => r.state === 'try' && (r.release ?? r.milestone) !== data.ladder.current)];
   const ids = slices.map((r) => visualLength(monitorText(r.id))), col = Math.max(8, Math.min(14, Math.max(0, ...ids)));
   const info = (r: LedgerSlice) => data.slices.find((s) => s.label === r.id), workerOf = (r: LedgerSlice) => board.workers.find((w) => w.evidence[0]?.sourceId === info(r)?.jobId);
   for (const st of ['working', 'blocked', 'try', 'todo'] as const) {

@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { parseLedger, statePaths } from './state-ledger.js';
+import { targetKey, ticketFileEvidence } from './ticket-evidence.js';
 import { TryLog } from './try-records.js';
 import { sharedRoot } from '../roles/projects.js';
 
@@ -14,8 +15,7 @@ const text = (s: unknown) => typeof s === 'string' ? s.trim() : '';
 // A ticket and its slice are two spellings of the same target. Keep the number, not just the feature lane.
 function identifier(s: string): string {
   const token = s.replace(/^(?:slice|ticket|task|package)\s+/i, '').split(/[\s:(]/, 1)[0];
-  const id = /^([a-z0-9]+(?:-[a-z0-9]+)*)[/#-](\d+)$/i.exec(token);
-  if (id) return `${id[1].toLowerCase()}/${Number(id[2])}`;
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)*[/#-]\d+$/i.test(token)) return targetKey(token);
   return /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$/.test(token) ? token.toLowerCase() : '';
 }
 export function taskTarget(brief: string): string {
@@ -53,13 +53,15 @@ export function supersession(home: string, jobs: Receipt[], read: (path: string)
   function landedIds(root: string) {
     if (!landed.has(root)) {
       if (!log || logHome !== home) { log = new TryLog(home); logHome = home; }
-      const ids = new Set(log.accepted(root).map((id) => identifier(id) || id.toLowerCase()));
+      let rows: ReturnType<typeof parseLedger> = [];
       for (const path of statePaths(root)) {
         const body = read(path);
         if (body === undefined) continue;
-        for (const row of parseLedger(body)) if (['try', 'accepted', 'done', 'dropped'].includes(row.state)) ids.add(identifier(row.id) || row.id.toLowerCase());
+        rows = parseLedger(body);
         break;
       }
+      const ids = new Set(log.accepted(root, rows).map(targetKey));
+      for (const row of rows) if (['try', 'accepted', 'done', 'dropped'].includes(row.state)) ids.add(targetKey(row.id));
       landed.set(root, ids);
     }
     return landed.get(root)!;
@@ -94,7 +96,8 @@ export function supersession(home: string, jobs: Receipt[], read: (path: string)
     if ((byTarget.get(key(j.role, id)) ?? -Infinity) > created) return true;
     const root = rootOf(j) || fallbackRoot;
     if (!root || !id) return false;
-    if (landedIds(root).has(id)) return true;
+    const ids = landedIds(root);
+    if (ids.has(id) || (text(j.slice) && ids.has(targetKey(text(j.slice))))) return true;
     const ticket = /^([a-z0-9]+(?:-[a-z0-9]+)*)\/(\d+)$/.exec(id);
     if (!ticket) return false;
     // Look at just this ticket, even in a finished feature outside Project's visible window.
@@ -102,11 +105,8 @@ export function supersession(home: string, jobs: Receipt[], read: (path: string)
     try {
       if (fs.realpathSync(dir) !== dir) return false;
       const files = fs.readdirSync(dir).filter((name) => /^\d+-.+\.md$/.test(name) && Number(name.split('-')[0]) === Number(ticket[2]));
-      const body = files.length === 1 && read(join(dir, files[0]))?.split(/^## Comments\s*$/m)[0];
-      if (!body) return false;
-      const boxes = [...body.matchAll(/^[ \t]*[-*] \[([ xX])\]/gm)];
-      return /(?:^|·)[ \t]*\*\*Status:\*\*[ \t]*(?:try|accepted|done|closed|complete|resolved|dropped|wontfix)\b/im.test(body) ||
-        (boxes.length > 0 && boxes.every((b) => b[1] !== ' '));
+      const body = files.length === 1 && read(join(dir, files[0]));
+      return !!body && !!ticketFileEvidence(body).landed;
     } catch { return false; }
   };
 }

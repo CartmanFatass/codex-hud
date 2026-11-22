@@ -299,6 +299,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   missing: '缺',
   // The Timeline layout: Now and Latest on the hub, History on Progress, ticket lanes, the Control plane's attention.
   'to try': '待试用',
+  'Queued': '待前序',
   'Only to try': '仅待试用',
   'Nothing to try': '没有待试用的',
   't all': 't 全部',

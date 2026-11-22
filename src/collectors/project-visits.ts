@@ -74,7 +74,7 @@ export class ProjectOverviews {
     for (const root of roots) {
       const collector = this.pool.get(root) ?? this.make(root);
       this.pool.set(root, collector);
-      const data = await collector.collect('home', board, now);
+      const data = await collector.collect('overview', board, now);
       if (data) out.set(root, overviewOf(data, cwds.filter((cwd) => insideRoot(root, cwd)).length));
     }
     return out;

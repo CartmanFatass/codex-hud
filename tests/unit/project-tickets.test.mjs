@@ -33,8 +33,8 @@ test('local to-tickets derives done by status/boxes, ready, number/title blocker
   const f = await fixture(t);
   assert.deepEqual(f.data.tickets.map((x) => x.slug), ['native-tree', 'retired-tools']);
   assert.deepEqual(tickets(f.data).map((r) => [r.number, r.state, r.checked, r.total, r.blockers]), [
-    ['02', 'ready', 1, 4, []], ['03', 'ready', 0, 3, []], ['04', 'blocked', 0, 2, ['02', '03']],
-    ['05', 'blocked', 0, 1, ['03']], ['06', 'ready', 0, 0, []],
+    ['02', 'working', 1, 4, []], ['03', 'ready', 0, 3, []], ['04', 'queued', 0, 2, ['02', '03']],
+    ['05', 'queued', 0, 1, ['03']], ['06', 'ready', 0, 0, []],
     ...ticketVocabulary.map(([number, , state, boxes]) => [number, state, boxes.filter((x) => x === 'x').length, boxes.length, []]),
   ]);
   assert.equal(tickets(f.data)[4].status, 'triaging');
@@ -79,7 +79,7 @@ for (const [number, word, expectedState] of ticketVocabulary) test(`local tracke
       : expectedState === 'dropped' ? (lang === 'en' ? 'dropped' : '已放弃') : undefined;
     if (status) assert.match(row.text, new RegExp(`\\x1b\\[[0-9;]+m${status}\\x1b\\[0m`));
     if (word === 'wontfix') assert.match(row.text, /\x1b\[[0-9;]+m08 Vocabulary wontfix\x1b\[0m/);
-    assert.match(plain(frame).join('\n'), /nt native-tree 1\/12/, 'wontfix is not counted as done even with all boxes checked');
+    assert.match(plain(frame).join('\n'), /nt native-tree 2\/12/, 'dropped work is resolved in feature ratios');
   }
 });
 test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim and no empty section', async (t) => {
@@ -89,11 +89,11 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
     const frame = f.render(width, lang, 'tickets'), hub = f.render(width, lang), text = plain(frame).join('\n');
     for (const line of [...frame.lines, ...hub.lines]) assert.equal(visualLength(line), width, stripAnsi(line));
     assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +\d+\/14 done/ : /工单 +\d+\/14 完成/, 'the done count is the last fact to go');
-    if (width >= 56) assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +3\/14 done · 2 working · 2 blocked/ : /工单 +3\/14 完成 · 2 工作中 · 2 受阻/);
+    if (width >= 56) assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +4\/14 done · 2 working · 2 blocked/ : /工单 +4\/14 完成 · 2 工作中 · 2 受阻/);
     if (width >= 80) {
       assert.match(text, lang === 'en' ? /2 features · 14 tickets/ : /2 个功能 · 14 个工单/);
       assert.match(text, lang === 'en' ? /imp 12m/ : /imp 12分/);
-      assert.match(text, /◆ nt 04 Settings cleanup +← 02, 03/);
+      assert.match(text, /· nt 04 Settings cleanup +← 02, 03/);
       assert.match(text, /triaging/);
       assert.match(text, lang === 'en' ? /^▸ Done ─+ 4$/m : /^▸ 已完成 ─+ 4$/m);
       assert.match(text, /rt retired-tools 2\/2/);
@@ -113,21 +113,21 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
   assert.doesNotMatch(plain(f.render(80, 'en', undefined, data)).join('\n'), /Tickets|native-tree|retired-tools/, 'no Tickets entry on the hub');
   assert.match(plain(f.render(80, 'en', 'tickets', data)).join('\n'), /Project › Tickets\n\n  none/);
 });
-test('tickets are lanes by state: For you first, then Working, Ready, Blocked; Done starts folded and Enter/o toggle it without mutating state on render', async (t) => {
+test('tickets are lanes by state: For you first, then Working, Ready, Queued; Done starts folded and Enter/o toggle it without mutating state on render', async (t) => {
   const f = await fixture(t), state = withState(sliceState(), { activeTab: 'project', project: { view: { kind: 'tickets' } } });
   let frame = f.render(120, 'en', state);
   assert.deepEqual(state.project.folded, new Set());
   const lines = plain(frame), at = (re) => lines.findIndex((l) => re.test(l));
   // The lanes in order, each with its count; the meter counts the done tickets of every feature, the codes name the features.
-  assert.ok(at(/^For you ─+ 3$/) < at(/^Working ─+ 2$/) && at(/^Working ─+ 2$/) < at(/^Ready ─+ 3$/) && at(/^Ready ─+ 3$/) < at(/^Blocked ─+ 2$/) && at(/^Blocked ─+ 2$/) < at(/^▸ Done ─+ 4$/));
-  assert.match(lines.join('\n'), /^ {2}━{3}─{13} 3\/14 done$/m);
-  assert.match(lines.join('\n'), /^ {2}nt native-tree 1\/12 {2}rt retired-tools 2\/2$/m);
+  assert.ok(at(/^For you ─+ 3$/) < at(/^Working ─+ 2$/) && at(/^Working ─+ 2$/) < at(/^Ready ─+ 3$/) && at(/^Ready ─+ 3$/) < at(/^Queued ─+ 2$/) && at(/^Queued ─+ 2$/) < at(/^▸ Done ─+ 4$/));
+  assert.match(lines.join('\n'), /^ {2}━{5}─{11} 4\/14 done$/m);
+  assert.match(lines.join('\n'), /^ {2}nt native-tree 2\/12 {2}rt retired-tools 2\/2$/m);
   // For you holds what waits on a person, ahead of anything its blockers say; a blocked ticket names its blockers.
   const lane = (name) => lines.slice(at(new RegExp(`^${name} ─`)) + 1).slice(0, 6).filter((l) => /^ {2}\S/.test(l)).join('\n');
   assert.match(lane('For you'), /\? nt 10 Vocabulary needs-triage +needs-triage +0\/1/);
   assert.match(lane('For you'), /\? nt 12 Vocabulary ready-for-human +ready-for-human +0\/1/);
   assert.match(lane('Working'), /◐ nt 02 Home lanes +imp 12m +1\/4/);
-  assert.match(lane('Blocked'), /◆ nt 05 Shortcuts +← 03 ● +0\/1/);
+  assert.match(lane('Queued'), /· nt 05 Shortcuts +← 03 ● +0\/1/);
   assert.doesNotMatch(lines.join('\n'), /Claude collector/);
   frame.state.project.nav.cursor = 'project:fold:lane:done';
   frame = f.render(120, 'en', press(frame, 'enter').state);
@@ -182,10 +182,10 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   // A ticket with no checklist says so; a long title keeps its row and the status moves under it at 40 columns.
   const bare = f.render(40, 'en', onPage('tickets', { project: { folded: new Set(['agents', 'ticket:native-tree:06-polish.md']) } }));
   assert.match(plain(bare).join('\n'), /● nt 06 Polish +triaging +0\/0\n +no checklist/);
-  assert.match(plain(bare).join('\n'), /◆ nt 04 Settings cleanup +← 02, 03 +0\/2\n/, 'the blockers share the row at 40 columns');
+  assert.match(plain(bare).join('\n'), /· nt 04 Settings cleanup +← 02, 03 +0\/2\n/, 'the blockers share the row at 40 columns');
   // One meter for every ticket: thin, as full as the done share (a started one never empty, an unfinished one never full).
-  assert.match(plain(f.render(120, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14 done$/m);
-  assert.match(plain(f.render(40, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14 done$/m, 'the same at 40 columns');
+  assert.match(plain(f.render(120, 'en', 'tickets')).join('\n'), /^ {2}━{5}─{11} 4\/14 done$/m);
+  assert.match(plain(f.render(40, 'en', 'tickets')).join('\n'), /^ {2}━{5}─{11} 4\/14 done$/m, 'the same at 40 columns');
 });
 test('Home collects no tickets; warm signatures read/parse nothing, changes unblock and reorder without cached overlays', async (t) => {
   const f = await fixture(t), calls = observe(t);
@@ -203,8 +203,8 @@ test('Home collects no tickets; warm signatures read/parse nothing, changes unbl
   f.issue('native-tree', '03', 'inspector', 'Inspector');
   f.issue('retired-tools', '01', 'collector', 'Claude collector', 'done', 'None', [], 0);
   data = await f.collector.collect(true, f.board, NOW + 4);
-  assert.equal(tickets(data).find((r) => r.number === '04').state, 'blocked');
-  assert.equal(tickets(data).find((r) => r.number === '05').state, 'blocked');
+  assert.equal(tickets(data).find((r) => r.number === '04').state, 'queued');
+  assert.equal(tickets(data).find((r) => r.number === '05').state, 'queued');
   assert.equal(data.tickets[0].slug, 'retired-tools');
   f.put(join(f.ticketJob, 'job.json'), { cwd: f.cwd, role: 'imp', package: 'other-feature', created_at: new Date(NOW).toISOString() });
   data = await f.collector.collect(true, f.board, NOW + 4);
@@ -227,7 +227,7 @@ test('job matching uses package plus filename or bounded number in task/brief pa
   data = await f.collector.collect(true, f.board, NOW + 4);
   assert.ok(tickets(data).every((r) => !r.job));
 });
-test('ticket reads cap at 64 KiB and discovery at the 16 last-changed features × 64 files; oversized/malformed files skip', async (t) => {
+test('ticket reads cap at 64 KiB and discovery at 512 files, last-changed features first; oversized/malformed files skip', async (t) => {
   const f = await fixture(t);
   fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
   for (let feature = 0; feature < 17; feature++) for (let n = 1; n <= 65; n++)
@@ -240,12 +240,12 @@ test('ticket reads cap at 64 KiB and discovery at the 16 last-changed features �
   const oversized = join(f.cwd, '.scratch/feature-00/issues/01-ticket.md');
   fs.appendFileSync(oversized, 'x'.repeat(65536));
   const calls = observe(t), data = await f.collector.collect(true, f.board, NOW + 2);
-  assert.equal(data.tickets.length, 16);
-  assert.ok(data.tickets.some((f) => f.slug === 'feature-16') && !data.tickets.some((f) => f.slug === 'feature-05'));
+  assert.equal(data.tickets.length, 8);
+  assert.ok(data.tickets.some((f) => f.slug === 'feature-08') && !data.tickets.some((f) => f.slug === 'feature-05'));
   assert.ok(data.tickets.every((f) => f.tickets.length <= 64));
   assert.equal(data.tickets.find((f) => f.slug === 'feature-00').tickets.length, 63);
   const opened = calls.openSync.map((args) => String(args[0])).filter((p) => p.includes('/.scratch/'));
-  assert.equal(opened.length, 16 * 64);
+  assert.equal(opened.length, 512);
   assert.ok(opened.every((p) => !p.includes('/feature-05/') && !p.endsWith('/65-ticket.md')));
   assert.ok(calls.readSync.every((args) => args[3] <= 65536));
 });
@@ -263,6 +263,7 @@ test('features with open tickets always show; finished ones fill the rest of six
   }
   const data = await f.collector.collect(true, f.board, NOW + 2);
   const shown = data.tickets.map((x) => x.slug);
+  assert.deepEqual(data.ticketTotals, { doneTickets: 18, totalTickets: 20, doneFeatures: 18, totalFeatures: 20 });
   assert.equal(shown.length, 16);
   assert.ok(shown.includes(slug(0)) && shown.includes(slug(1)), shown.join(' '));
   for (const n of [2, 3, 4, 5]) assert.ok(!shown.includes(slug(n)), `oldest finished ${slug(n)} drops out`);

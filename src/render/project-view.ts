@@ -78,17 +78,17 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
     ...(bar ? [row('  ' + barText({ counts }, Math.max(0, Math.min(width - 2, Math.max(24, legend.width)))))] : []),
     ...legendRows.map((line) => row('  ' + line))];
   if (bar && !legendRows.length) return rows;
-  const rank = { working: 0, ready: 1, blocked: 2 } as Record<string, number>;
+  const rank = { working: 0, try: 1, ready: 2, queued: 3, blocked: 4 } as Record<string, number>;
   for (const feature of data.tickets) {
     const open = feature.tickets.filter((r) => r.state in rank).sort((a, b) => rank[a.state] - rank[b.state]);
     const slots = Math.min(HOME_TICKETS, spare - rows.length - 1);
     if (!open.length || slots < 1) continue;
-    const id = `tickets:${feature.slug}`, done = feature.tickets.filter((r) => r.state === 'done').length;
+    const id = `tickets:${feature.slug}`, done = feature.tickets.filter(ticketResolved).length;
     rows.push({ ...section(`${t('Tickets')} · ${monitorText(feature.slug)}`, width,
       t('{done}/{total} done', { done, total: feature.tickets.length })), item: `home-progress:${id}` });
     const cut = open.length > slots && slots > 2, shown = open.slice(0, cut ? slots - 1 : slots);
     for (const ticket of shown) {
-      const right = theme.board.muted(t(ticket.state)), lead = `  ${monitorText(ticket.number)} `;
+      const right = theme.board.muted(ticketStateWord(ticket)), lead = `  ${monitorText(ticket.number)} `;
       const room = width - visualLength(lead) - visualLength(right) - 1;
       rows.push(row(pair(`${lead}${cutTicketTitle(ticket.title, room)}`, right, width), id));
     }
@@ -137,8 +137,9 @@ export const PAGE_WORD: Record<ProjectPage, string> = {
 };
 /** The open page; none, or a name this build does not know, is the hub. */
 export const projectPageOf = (state: MonitorState) => projectPage(state.project.view);
-export const ticketWorking = (r: ProjectTicket) => !['done', 'dropped', 'blocked'].includes(r.state)
-  && (r.state === 'working' || (!!r.job && !SETTLED_JOB_STATES.has(r.job.state)));
+const ticketResolved = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped';
+export const ticketWorking = (r: ProjectTicket) => r.state === 'working';
+export const ticketStateWord = (r: ProjectTicket) => t(r.state === 'try' ? 'to try' : r.state === 'queued' ? 'Queued' : r.state);
 const parts = (...p: (string | number | false | null | undefined)[]) =>
   p.filter((s): s is string => typeof s === 'string' && s !== '');
 function updatedText(data: ProjectSnapshot, now: number): string {
@@ -153,9 +154,9 @@ function pageMeta(page: ProjectPage, data: ProjectSnapshot, now: number, accepta
     const drift = inFlight(data).filter((r) => r.drift).length, bang = drift ? theme.board.attention(`! ${drift}`) : '';
     return [parts(updatedText(data, now), bang).join(' · '), bang];
   }
-  if (page === 'tickets' && acceptance !== 'slice') return data.tickets?.length ? [featureCountText(data.tickets.length)] : [];
+  if (page === 'tickets' && acceptance !== 'slice') return data.tickets?.length ? [featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length)] : [];
   if (page === 'tickets') return data.tickets?.length ? [t('{features} features · {tickets} tickets', {
-    features: data.tickets.length, tickets: data.tickets.reduce((n, f) => n + f.tickets.length, 0) })] : [];
+    features: data.ticketTotals?.totalFeatures ?? data.tickets.length, tickets: data.ticketTotals?.totalTickets ?? data.tickets.reduce((n, f) => n + f.tickets.length, 0) })] : [];
   return [];
 }
 /** `Project › Page` for the sub-page title row (the project's name instead of `Project` when there is a switch), with the page's own facts on the right when there is room. */
@@ -179,10 +180,10 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
       working && `${working} ${t('working')}`, !data.statePath && t('no STATE.md'));
   }
   if (page === 'tickets') {
-    if (acceptance !== 'slice') return data.tickets.length ? [featureCountText(data.tickets.length)] : [];
+    if (acceptance !== 'slice') return data.tickets.length ? [featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length)] : [];
     const tickets = data.tickets.flatMap((f) => f.tickets);
     const working = tickets.filter(ticketWorking).length, blocked = tickets.filter((r) => r.state === 'blocked').length;
-    return tickets.length ? parts(t('{done}/{total} done', { done: tickets.filter((r) => r.state === 'done').length, total: tickets.length }),
+    return tickets.length ? parts(t('{done}/{total} done', { done: data.ticketTotals?.doneTickets ?? tickets.filter((r) => r.state === 'done').length, total: data.ticketTotals?.totalTickets ?? tickets.length }),
       working && `${working} ${t('working')}`, blocked && `${blocked} ${t('blocked')}`) : [];
   }
   // Unlisted worktrees first: a short row keeps them and drops the facts after.
@@ -216,7 +217,7 @@ export const roleInk = (role: string) => (theme.board.roleInk as Record<string, 
 const DAY = 864e5;
 /** STATE's current milestone's ledger rows with their counts; a ledger that has none of them (or no current milestone) is counted whole. */
 export function currentRows(data: ProjectSnapshot) {
-  const mine = data.ledger.filter((r) => r.milestone === data.ladder.current), rows = mine.length ? mine : data.ledger;
+  const mine = data.ledger.filter((r) => (r.release ?? r.milestone) === data.ladder.current), rows = mine.length ? mine : data.ledger;
   const counts = Object.fromEntries(SLICE_STATES.map((s) => [s, rows.filter((r) => r.state === s).length])) as ProjectSnapshot['counts'];
   return { rows, counts, whole: !mine.length };
 }
@@ -401,7 +402,7 @@ function listRows(projects: ProjectChoice[], width: number, now: number, accepta
 export const NO_MILESTONE = /^[—–-]*$/;
 /** Milestones in ledger order, oldest first; STATE's current one is always among them. A ledger naming none falls back to spec §5. */
 export function milestoneOrder(data: ProjectSnapshot): string[] {
-  const seen = new Set(data.ledger.map((r) => r.milestone).filter((m) => !NO_MILESTONE.test(m)));
+  const seen = new Set(data.ledger.map((r) => r.release ?? r.milestone).filter((m) => !NO_MILESTONE.test(m)));
   if (!seen.size) data.ladder.ids.forEach((id) => seen.add(id));
   if (data.ladder.current) seen.add(data.ladder.current);
   return [...seen];
@@ -546,10 +547,11 @@ export function meter(done: number, total: number, cells: number): string {
 }
 const ASKS = /^(needs-triage|needs-info|ready-for-human)$/i;
 /** A ticket that asks for the owner: it waits on an answer or a human, whatever else holds it. */
-export const asksYou = (r: ProjectTicket) => r.state !== 'done' && r.state !== 'dropped' && ASKS.test(r.status);
+export const asksYou = (r: ProjectTicket) => (r.state === 'ready' || r.state === 'blocked') && ASKS.test(r.status);
 const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped' ? 'done' : asksYou(r) ? 'you' : ticketWorking(r) ? 'working'
-  : r.state === 'blocked' ? 'blocked' : 'ready';
+  : r.state;
 const ticketGlyph = (r: ProjectTicket) => r.state === 'done' ? theme.board.success(mark('✓', '+')) : r.state === 'dropped' ? theme.board.muted(mark('–', '-'))
+  : r.state === 'queued' ? theme.board.muted(mark('·', '.')) : r.state === 'try' ? sliceInk('try')(mark('◇', '*'))
   : r.state === 'blocked' ? theme.board.attention(mark('◆', '!')) : theme.board.active(ticketWorking(r) ? mark('◐', '@') : mark('●', '*'));
 /** Two to four letters naming a feature on its tickets' rows: its words' initials, else the first letters of its slug, never the same for two. */
 export function featureCodes(features: TicketFeature[]): Map<string, string> {
@@ -571,10 +573,11 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
   const rows: MonitorRow[] = [], features = feature ? [feature] : data.tickets ?? [], codes = featureCodes(features);
   const all = features.flatMap((f) => f.tickets.map((ticket) => ({ ticket, feature: f })));
   if (!all.length) return rows;
-  const column = Math.max(...[...codes.values()].map(visualLength)), done = all.filter(({ ticket }) => ticket.state === 'done').length;
+  const column = Math.max(...[...codes.values()].map(visualLength)), done = data.ticketTotals?.doneTickets ?? all.filter(({ ticket }) => ticket.state === 'done').length;
+  const total = data.ticketTotals?.totalTickets ?? all.length;
   if (!feature) {
-    rows.push(boardRow(fit(`  ${meter(done, all.length, 16)} ${theme.board.muted(t('{done}/{total} done', { done, total: all.length }))}`, width)));
-    for (const line of pack(features.map((f) => `${theme.board.muted(codes.get(f.slug)!)} ${monitorText(f.slug)} ${theme.board.muted(`${f.tickets.filter((r) => r.state === 'done').length}/${f.tickets.length}`)}`), width))
+    rows.push(boardRow(fit(`  ${meter(done, total, 16)} ${theme.board.muted(t('{done}/{total} done', { done, total }))}`, width)));
+    for (const line of pack(features.map((f) => `${theme.board.muted(codes.get(f.slug)!)} ${monitorText(f.slug)} ${theme.board.muted(`${f.tickets.filter(ticketResolved).length}/${f.tickets.length}`)}`), width))
       rows.push(boardRow(fit(line, width)));
   }
   const lane = (id: string, title: string, items: typeof all, right: string, open = true) => {
@@ -588,7 +591,7 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
     const target = ticket.blockers.length === 1 ? feature.tickets.find((r) => /^\d+$/.test(ticket.blockers[0]) && Number(r.number) === Number(ticket.blockers[0])) : undefined;
     const right = [
       lane === 'you' ? theme.board.attention(monitorText(ticket.status)) : '',
-      lane === 'blocked' ? theme.board.muted(`${mark('←', '<')} ${monitorText(ticket.blockers.join(', '))}`) + (target ? ' ' + ticketGlyph(target) : '') : '',
+      ticket.blockers.length && (lane === 'blocked' || lane === 'queued') ? theme.board.muted(`${mark('←', '<')} ${monitorText(ticket.blockers.join(', '))}`) + (target ? ' ' + ticketGlyph(target) : '') : '',
       job && (live || width >= 64) ? [roleInk(job.role)(monitorText(job.role)), live ? '' : theme.board.muted(t(job.state)), theme.board.muted(minuteAge(job.at ?? null, now))].filter(Boolean).join(' ') : '',
       lane === 'working' && !live ? theme.board.active(t('working')) : '', dropped ? theme.board.muted(t('dropped')) : '',
       !known && lane !== 'you' ? theme.board.muted(monitorText(ticket.status)) : '',
@@ -613,7 +616,9 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
   const by = (id: string) => all.filter(({ ticket }) => ticketLane(ticket) === id);
   lane('you', 'For you', by('you'), theme.board.attention(String(by('you').length)));
   lane('working', 'Working', by('working').sort((a, b) => Number(!!b.ticket.job) - Number(!!a.ticket.job)), String(by('working').length));
+  lane('try', 'to try', by('try'), String(by('try').length));
   lane('ready', 'Ready', by('ready'), String(by('ready').length));
+  lane('queued', 'Queued', by('queued'), String(by('queued').length));
   lane('blocked', 'Blocked', by('blocked'), String(by('blocked').length));
   // Membership opens it: Done starts folded.
   lane('done', 'Done', by('done'), String(by('done').length), !!feature || folded.has('lane:done'));
@@ -624,7 +629,7 @@ export function featureRow(feature: TicketFeature, width: number, open = false):
   const openTickets = feature.tickets.filter((r) => r.state !== 'done' && r.state !== 'dropped');
   // Ticket numbers are ordered by creation, unlike the file mtime (last edit or mirror sync).
   const oldest = openTickets.reduce<ProjectTicket | undefined>((first, r) => !first || Number(r.number) < Number(first.number) ? r : first, undefined);
-  const status = oldest?.status.trim().split(/\s+/)[0];
+  const status = oldest && (oldest.state === 'ready' || asksYou(oldest) ? oldest.status.trim().split(/\s+/)[0] : ticketStateWord(oldest));
   const ratio = `${feature.tickets.length - openTickets.length}/${feature.tickets.length}`;
   const word = status && monitorText(t(status));
   const right = word && visualLength(word) + visualLength(ratio) + 8 <= width ? `${ratio}  ${word}` : ratio;

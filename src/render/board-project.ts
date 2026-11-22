@@ -50,7 +50,7 @@ export function boardMilestones(data: ProjectSnapshot): BoardMilestone[] {
   const buckets = new Map<string, LedgerSlice[]>();
   for (const r of data.ledger) {
     if (r.state === 'dropped') continue;
-    const key = NO_MILESTONE.test(r.milestone) ? '' : r.milestone;
+    const release = r.release ?? r.milestone, key = NO_MILESTONE.test(release) ? '' : release;
     buckets.set(key, [...(buckets.get(key) ?? []), r]);
   }
   const named = [...milestoneOrder(data)].reverse();
@@ -135,9 +135,9 @@ function gaugeRow(page: ProjectPage, data: ProjectSnapshot, width: number, now: 
     return { item, text: fit(`${head}${cellStrip(ms.slices.map((r) => sliceCell(r, tryMarks)), Math.max(0, space - visualLength(frac) - 1))} ${frac}`, width) };
   }
   if (page === 'tickets') {
-    const all = data.tickets.flatMap((f) => f.tickets), done = all.filter((r) => r.state === 'done').length;
+    const all = data.tickets.flatMap((f) => f.tickets), done = data.ticketTotals?.doneTickets ?? all.filter((r) => r.state === 'done').length, total = data.ticketTotals?.totalTickets ?? all.length;
     const working = all.filter(ticketWorking).length, blocked = all.filter((r) => r.state === 'blocked').length;
-    const tail = [`${meter(done, all.length, space < 26 ? 6 : 8)} ${done}/${all.length}`, working ? `${working} ${t('working')}` : '', blocked ? `${blocked} ${t('blocked')}` : ''].filter(Boolean);
+    const tail = [`${meter(done, total, space < 26 ? 6 : 8)} ${done}/${total}`, working ? `${working} ${t('working')}` : '', blocked ? `${blocked} ${t('blocked')}` : ''].filter(Boolean);
     while (tail.length > 1 && visualLength(tail.join(' · ')) > space) tail.pop();
     return { item, text: fit(head + tail.join(' · '), width) };
   }

@@ -65,6 +65,7 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
             try {
               appendTry(home, root, action.action, action.target);
               host.notice('');
+              host.collect();
             } catch { host.notice(t('Could not record try')); }
           }
           break;

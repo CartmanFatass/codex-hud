@@ -208,12 +208,7 @@ and explicit choices win. All states and lifetimes are presentation, not accepta
 
 `ProjectCollector` reads STATE, spec milestone, reviews, roles/convention/instructions,
 key-presence booleans, local tickets, current jobs and Git/worktree facts. Full reads
-run only while Project is shown without a modal. Home reuses only cached STATE and
-ticket facts for its spare-row progress block; cards always get space first.
-Tickets come from `.scratch/<feature>/issues/<NN>-<slug>.md`, at most 16 features ×
-64 files, 64 KiB each; dependencies and checked criteria determine display state.
-Jobs enrich ticket rows but cannot complete tickets. Project's job join reads
-job/STATUS bodies in the newest 64 directories; only matching tickets need brief bodies.
+run only while Project is shown without a modal. Home reads the same progress facts, not the control plane or working-tree diff. STATE, spec, try records, tickets and the newest 64 job directories are signature-cached; the last 64 commit subjects are cached by checkout HEAD SHA. Tickets come from `.scratch/<feature>/issues/<NN>-<slug>.md` (64 feature directories, 512 files total, 64 KiB each). Derive ticket states and resolve local and cross-feature dependencies before limiting detail to open features plus the newest finished ones up to 16. No collector writes project files.
 
 The panel owns one `ProjectCollector` per project the Project tab has shown
 (`ProjectVisits`: at most four, its own never dropped, the oldest other one first) and

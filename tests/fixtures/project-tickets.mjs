@@ -7,8 +7,8 @@ export const ticketVocabulary = [
   ['07', 'resolved', 'done', [' '], 'None'],
   ['08', 'wontfix', 'dropped', ['x'], 'None'],
   ['09', 'claimed', 'working', [' '], 'None'],
-  ['10', 'needs-triage', 'ready', [' '], '07'],
-  ['11', 'needs-info', 'ready', [' '], 'Vocabulary wontfix'],
+  ['10', 'needs-triage', 'blocked', [' '], '07'],
+  ['11', 'needs-info', 'blocked', [' '], 'Vocabulary wontfix'],
   ['12', 'ready-for-human', 'ready', [' '], 'None'],
   ['13', 'ready-for-agent', 'ready', [' '], '08'],
 ];

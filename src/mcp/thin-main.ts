@@ -84,6 +84,8 @@ interface Job extends PiOptions {
   herdr_pane: string;
   created_at: string;
   package?: string;
+  ticket?: string;
+  slice?: string;
   preset?: string;
   context_files?: string[];
   from_jobs?: string[];
@@ -1169,7 +1171,7 @@ const piOptionKeys = [...piSwitches, 'pi_args'] as const;
 const replayOptions = ['on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
 function jobOptions(job: Job): Args {
   return {
-    role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, preset: job.preset,
+    role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, ticket: job.ticket, slice: job.slice, preset: job.preset,
     context_files: job.context_files, from_jobs: job.from_jobs, checks: job.checks,
     ...(job.create_options ?? {
       isolation: job.worktree ? 'worktree' : undefined,
@@ -1240,6 +1242,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     throw new Error('invalid_arguments: checks');
   }
   if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
+  for (const key of ['ticket', 'slice']) if (args[key] !== undefined) required(args, key);
   if (args.preset !== undefined && args.on !== undefined) {
     return { ok: false, code: 'invalid_arguments', error: 'preset and on are mutually exclusive' };
   }
@@ -1323,6 +1326,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
     ...(parentJob ? { parent_job: parentJob } : {}),
     ...(args.package === undefined ? {} : { package: args.package as string }),
+    ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
+    ...(args.slice === undefined ? {} : { slice: args.slice as string }),
     ...(presetName === undefined ? {} : { preset: presetName }),
     attempts,
     dispatch_exit_code: null,

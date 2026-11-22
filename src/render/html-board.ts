@@ -100,7 +100,7 @@ function diffBlock(diff: DiffStatSummary | undefined): string {
 }
 
 function ticketRow(ticket: ProjectTicket): string {
-  const head = `<span class="num">${e(ticket.number)}</span>${e(ticket.title)} ${chip(ticket.state, t(ticket.state))}${ticket.total ? ` <span class="plain">${ticket.checked}/${ticket.total}</span>` : ''}`;
+  const head = `<span class="num">${e(ticket.number)}</span>${e(ticket.title)} ${chip(ticket.state, t(ticket.state === 'try' ? 'to try' : ticket.state === 'queued' ? 'Queued' : ticket.state))}${ticket.total ? ` <span class="plain">${ticket.checked}/${ticket.total}</span>` : ''}`;
   const blockers = ticket.blockers.length ? `<p class="plain">${e(t('blocked by {ids}', { ids: ticket.blockers.join(', ') }))}</p>` : '';
   if (!ticket.items.length && !blockers) return `<div class="t">${head}</div>`;
   const items = ticket.items.slice(0, 12).map((i) => `<li class="${i.done ? 'd' : ''}">${e(i.text)}</li>`).join('');

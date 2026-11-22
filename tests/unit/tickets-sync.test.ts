@@ -241,7 +241,7 @@ test('hud tickets sync mirrors parent/sub-issues, updates closed parents and rou
       ['11', 'resolved', 'done', 1, 1, []],
       ['12', 'wontfix', 'dropped', 1, 1, []],
       ['13', 'claimed', 'working', 1, 2, []],
-      ['14', 'ready-for-agent', 'blocked', 0, 1, ['13']],
+      ['14', 'ready-for-agent', 'queued', 0, 1, ['13']],
       ['15', 'needs-triage', 'blocked', 0, 1, ['13']],
     ]
   );
@@ -286,7 +286,7 @@ test('hud tickets sync mirrors parent/sub-issues, updates closed parents and rou
       ['11', 'resolved', 'done', []],
       ['13', 'resolved', 'done', []],
       ['14', 'ready-for-agent', 'ready', []],
-      ['15', 'needs-triage', 'ready', []],
+      ['15', 'needs-triage', 'blocked', []],
     ]
   );
 });

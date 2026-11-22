@@ -7,6 +7,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { appendTry } from '../../dist/collectors/try-records.js';
+import { currentRows } from '../../dist/render/project-view.js';
 import { projectList } from '../../dist/roles/projects.js';
 
 const NOW = Date.parse('2026-11-14T10:00:00Z');
@@ -183,6 +185,81 @@ test('ticket items and latest ## Comments bullet parsed; absent comments omitted
   assert.equal(tickets[2].comment.length, 600);
 });
 
+test('Home and Project derive ledger, commit, job, and cross-feature dependency states without tracker writes', async (t) => {
+  const f = makeTemp(t);
+  initRepo(f.cwd, [{ file: 'a', msg: 'deliver base/02; not OTHER-BASE-03', date: '2026-11-10T08:00:00Z' }]);
+  const issue = (slug, n, blocked = 'none', state = 'ready-for-agent') => {
+    const file = join(f.cwd, `.scratch/${slug}/issues/${n}-item.md`);
+    f.put(file, `# ${n}: Item ${n}\n**Status:** ${state}\n**Blocked by:** ${blocked}\n`);
+    return file;
+  };
+  const file = issue('base', '01');
+  issue('base', '02'); issue('base', '03'); issue('next', '01', 'base/01, base/02');
+  issue('next', '02', 'base/03'); issue('next', '03', '02'); issue('next', '04', 'absent/01');
+  const receipt = (id, cwd, state) => {
+    const dir = join(f.hud, `jobs/j${id.padStart(16, '0')}`);
+    f.put(join(dir, 'job.json'), { cwd, role: 'imp', ticket: 'base/03', slice: 'BUILD-MODE', created_at: new Date(NOW + Number(id)).toISOString() });
+    f.put(join(dir, 'STATUS.json'), { state });
+    return dir;
+  };
+  const job = receipt('1', f.cwd, 'working'); receipt('2', f.root, 'failed');
+  f.put(join(f.cwd, 'docs/spec.md'), '## 5. Milestones\n- **M1, old**\n- **M2, current**\n');
+  f.put(join(f.cwd, 'STATE.md'), 'Milestone: M2\n## Waiting for the owner\n- Try it (waits on BASE-01, base/01)\n- Owner 2026-11-22: decided\n## Slices\n- try · STREAM · BASE-01 · delivered\n- accepted · M1/sub · OLD · shipped\n');
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home), get = mode => collector.collect(mode, EMPTY_BOARD, NOW);
+  const states = (d, slug) => d.tickets.find(f => f.slug === slug).tickets.map(t => t.state);
+  for (const mode of ['home', true]) {
+    const d = await get(mode);
+    assert.deepEqual(states(d, 'base'), ['try', 'try', 'working']);
+    assert.deepEqual(states(d, 'next'), ['ready', 'queued', 'queued', 'blocked']);
+    assert.deepEqual(d.ladder.ids, ['M1', 'M2']);
+    assert.deepEqual(currentRows(d).rows.map(r => [r.id, r.milestone]), [['BASE-01', 'STREAM'], ['BUILD-MODE', 'base']]);
+    assert.equal(d.waiting.length, 1);
+  }
+  const original = fs.readFileSync(file, 'utf8');
+  appendTry(f.hud, f.cwd, 'flag', { milestone: 'STREAM', slices: [{ id: 'BASE-01', text: 'delivered' }] });
+  assert.ok((await get('home')).waiting.some(w => w.value.includes('⚑ BASE-01')));
+  appendTry(f.hud, f.cwd, 'accept', { milestone: 'STREAM', slices: [{ id: 'BASE-01', text: 'delivered' }] });
+  f.put(join(job, 'STATUS.json'), { state: 'waiting_orchestrator' });
+  const accepted = await get('home');
+  assert.equal(accepted.waiting.length, 0); assert.equal(accepted.counts.try, 0); assert.equal(accepted.counts.accepted, 2);
+  assert.deepEqual(states(accepted, 'base'), ['done', 'try', 'blocked']);
+  assert.deepEqual(states(accepted, 'next'), ['ready', 'blocked', 'blocked', 'blocked']);
+  assert.equal(fs.readFileSync(file, 'utf8'), original);
+});
+
+test('a managed worktree without a job starts a ticket; stale claims, unknown edges and cycles stall', async (t) => {
+  const f = makeTemp(t);
+  initRepo(f.cwd, [{ file: 'a', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
+  const dir = join(f.cwd, '.scratch/demo/issues');
+  for (const [n, blocked, status] of [['01', 'none', 'ready-for-agent'], ['02', '03', 'ready-for-agent'],
+    ['03', '02', 'ready-for-agent'], ['04', 'none', 'claimed']]) f.put(join(dir, `${n}-item.md`), `# ${n}: Item ${n}\n**Status:** ${status}\n**Blocked by:** ${blocked}`);
+  fs.utimesSync(join(dir, '04-item.md'), new Date(NOW - 7200001), new Date(NOW - 7200001));
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home), tick = () => collector.collect('home', EMPTY_BOARD, NOW);
+  const tree = join(f.root, 'separate');
+  execFileSync('git', ['worktree', 'add', '-b', 'wt/DEMO-01', tree], { cwd: f.cwd, stdio: 'pipe' });
+  const start = await tick();
+  assert.deepEqual(start.tickets[0].tickets.map(t => t.state), ['working', 'blocked', 'blocked', 'blocked']);
+  assert.deepEqual(start.ledger.map(r => [r.id, r.state]), [['DEMO-01', 'working']]);
+  execFileSync('git', ['worktree', 'remove', tree], { cwd: f.cwd, stdio: 'pipe' });
+  assert.equal((await tick()).tickets[0].tickets[0].state, 'ready');
+});
+
+test('subject cache follows the resolved SHA of a linked checkout (packed and loose refs)', async (t) => {
+  const f = makeTemp(t), tree = join(f.root, 'linked');
+  initRepo(f.cwd, [{ file: 'a', msg: 'OTHER-DEMO-01 and DEMO-010 are not DEMO/01a', date: '2026-11-10T08:00:00Z' }]);
+  const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], { cwd, stdio: 'pipe' });
+  git(f.cwd, 'worktree', 'add', '-b', 'side', tree); git(tree, 'pack-refs', '--all');
+  f.put(join(tree, '.scratch/demo/issues/01-item.md'), '# 01: Item\n**Status:** ready-for-agent\n**Blocked by:** none\n');
+  const collector = new ProjectCollector(tree, f.hud, f.env, f.home), calls = [], orig = childProcess.execFile;
+  childProcess.execFile = (file, args, ...rest) => { calls.push(args); return orig(file, args, ...rest); }; syncBuiltinESMExports();
+  t.after(() => { childProcess.execFile = orig; syncBuiltinESMExports(); });
+  const tick = async () => (await collector.collect('home', EMPTY_BOARD, NOW)).tickets[0].tickets[0].state;
+  assert.equal(await tick(), 'ready'); assert.equal(await tick(), 'ready'); assert.equal(calls.length, 1);
+  git(tree, 'commit', '--allow-empty', '-m', 'deliver DEMO-01');
+  assert.equal(await tick(), 'try'); assert.equal(await tick(), 'try'); assert.equal(calls.length, 2);
+  git(tree, 'checkout', '--detach'); assert.equal(await tick(), 'try'); assert.equal(calls.length, 2);
+});
+
 test('projectList orders panel root first, deduplicates by realpath, drops missing dirs, caps at 16, tolerates bad files', async (t) => {
   const f = makeTemp(t);
   const panelLink = join(f.root, 'panel-link');
@@ -224,7 +301,7 @@ test('projectList orders panel root first, deduplicates by realpath, drops missi
   assert.deepEqual(listedSnap.active, []);
 });
 
-test('home-mode collection spawns no git or job reads; full collection gates git to 5 seconds', async (t) => {
+test('Home shares the subject scan and project job facts; full working-tree probes retain their five-second gate', async (t) => {
   const f = makeTemp(t);
   const [h1] = initRepo(f.cwd, [{ file: 'a.txt', msg: 'init', date: '2026-11-12T10:00:00Z' }]);
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), `# State\n\n## Slices\n- try · M4 · SLICE · landed (${h1})\n`);
@@ -242,11 +319,11 @@ test('home-mode collection spawns no git or job reads; full collection gates git
 
   const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
   const homeSnap = await collector.collect('home', EMPTY_BOARD, NOW);
-  assert.deepEqual(spawned, []);
-  assert.ok(opened.every((p) => p.endsWith('/STATE.md') || /\/issues\/01-item\.md$/.test(p)));
+  assert.deepEqual(spawned, ['git']);
+  assert.ok(opened.every((p) => /\/STATE\.md$|\/issues\/01-item\.md$|\/\.git\/|\/jobs\/j\w+\/(job|STATUS)\.json$/.test(p)));
   assert.equal(homeSnap.ledger[0].commit, h1);
   assert.equal('at' in homeSnap.ledger[0], false);
-  assert.deepEqual(homeSnap.active, []);
+  assert.deepEqual(homeSnap.active.map(a => a.jobId), ['j0000000000000001']);
   assert.equal(homeSnap.tickets[0].tickets[0].comment, 'note');
 
   const first = await collector.collect(true, EMPTY_BOARD, NOW);

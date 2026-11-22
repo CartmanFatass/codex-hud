@@ -224,12 +224,12 @@ await runLivePage();
     assert.fail(`${what}: ${stderr}`);
   };
   const pause = (ms) => new Promise((r) => setTimeout(r, ms));
-  await until(() => others.every((root) => collects().some((c) => c.cwd === root && c.shown === 'home')), 'an overview of every other listed project');
-  assert.ok(collects().some((c) => c.cwd === own && c.shown === 'home'), 'the panel own project is listed too');
+  await until(() => others.every((root) => collects().some((c) => c.cwd === root && c.shown === 'overview')), 'an overview of every other listed project');
+  assert.ok(collects().some((c) => c.cwd === own && c.shown === 'overview'), 'the panel own project is listed too');
   assert.ok(collects().every((c) => c.shown !== true), 'with the list open no project is fully collected (no Git)');
   // Open for a while at a 100 ms refresh, the overviews are still read once, not on every refresh.
   await pause(150);
-  const overviewReads = () => collects().filter((c) => c.shown === 'home' && c.cwd === others[0]).length;
+  const overviewReads = () => collects().filter((c) => c.shown === 'overview' && c.cwd === others[0]).length;
   const settled = overviewReads();
   await pause(700);
   assert.equal(overviewReads(), settled, 'no re-read inside five seconds');
@@ -245,7 +245,7 @@ await runLivePage();
   await pause(150);
   const reopen = collects().length;
   child.stdin.write('\r');
-  await until(() => collects().slice(reopen).some((c) => c.cwd !== own && c.shown === 'home'), 'the list again');
+  await until(() => collects().slice(reopen).some((c) => c.cwd !== own && c.shown === 'overview'), 'the list again');
   // Home: the overviews stop and Home reads only its own project.
   child.stdin.write('\x1b[D');
   await until(() => collects().slice(-1)[0].cwd === own && collects().slice(-1)[0].shown === 'home', 'Home');
