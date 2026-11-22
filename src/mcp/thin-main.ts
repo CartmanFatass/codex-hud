@@ -1486,24 +1486,28 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     return { ok: false, code: 'invalid_arguments', error: 'task and brief_file are mutually exclusive' };
   }
   const retryOf = input.retry_of === undefined ? undefined : required(input, 'retry_of');
+  const source = retryOf ? findJob(retryOf) : null;
+  if (retryOf && !source) return { ok: false, code: 'job_not_found' };
+  const role = input.role === undefined && source ? source.role : required(input, 'role');
+  // Check caller input, not inherited retry options or internal repair placement.
+  if (!parent && !repair && role !== 'general' && ['preset', 'on', 'model', 'thinking'].some(key => input[key] !== undefined)) {
+    return { ok: false, code: 'invalid_arguments', error: `Role ${JSON.stringify(role)} runs as configured in its role file and Control; use general to choose a model for one job.` };
+  }
   let args = input;
   let repairOf = repair?.job;
   let worktreeSource = repair?.job ? continuationWorktreeSource(repair.job) : undefined;
-  if (retryOf) {
-    const source = findJob(retryOf);
-    if (!source) return { ok: false, code: 'job_not_found' };
+  if (source) {
     const { row } = readRow(source);
     if (row.state !== 'failed' && row.state !== 'stopped') return { ok: false, code: 'not_retryable' };
     const inherited = jobOptions(source);
     delete inherited.on; // Retry through the role's chain instead of pinning the previous harness.
     if (input.on !== undefined) delete inherited.preset;
-    args = { ...inherited, ...(input.task === undefined && input.brief_file === undefined ? { task: originalTask(source) } : {}), ...input };
+    args = { ...inherited, ...(input.task === undefined && input.brief_file === undefined ? { task: originalTask(source) } : {}), ...input, role };
     repairOf = input.from_jobs === undefined ? source.repair_of : undefined;
     if (input.cwd === undefined && input.isolation !== 'none') {
       worktreeSource = continuationWorktreeSource(source.repair_of, source);
     }
   }
-  const role = required(args, 'role');
   const cwd = jobCwd(args);
   if (args.brief_file !== undefined) {
     const loaded = await readBriefFile(args.brief_file, cwd);
@@ -1590,9 +1594,10 @@ export function canOverflowImpJob(job: Job): boolean {
   if (job.role !== 'imp') return false;
   const cwd = roleCwd(job);
   const found = registry(cwd);
-  const generalDef = found.roles().get('general');
-  if (!generalDef || (job.headless && !generalDef.can_continue)) return false;
-  if (job.preset !== undefined && !generalDef.presets?.some((p) => p.name === job.preset)) return false;
+  const roles = found.roles();
+  const definition = roles.get('imp');
+  if (!definition || !roles.has('general') || (job.headless && !definition.can_continue)) return false;
+  if (job.preset !== undefined && !definition.presets?.some((p) => p.name === job.preset)) return false;
   let routing;
   try { routing = found.routing(Date.now()); } catch { return false; }
   const onName = typeof job.create_options?.on === 'string' ? job.create_options.on : null;
@@ -1601,9 +1606,9 @@ export function canOverflowImpJob(job: Job): boolean {
   if (onName && !onEntry) return false;
   const modelOverride = typeof job.create_options?.model === 'string' ? job.create_options.model : undefined;
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return false;
-  const choice = onEntry ? { run: [{ ...generalDef.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
+  const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
     : job.preset !== undefined ? { preset: job.preset } : undefined;
-  const effective = found.assignment(generalDef, Date.now(), modelOverride, routing, choice, !!job.retry_of && job.create_options?.model === undefined);
+  const effective = found.assignment(definition, Date.now(), modelOverride, routing, choice, !!job.retry_of && job.create_options?.model === undefined);
   const active = effective.places.find((p) => p.state === 'active');
   if (!active) return false;
   const opts = jobOptions(job);
@@ -1628,7 +1633,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     return { ok: false, code: 'invalid_arguments', error: 'scouted dispatch reserves one of the 16 from_jobs entries' };
   }
   let role = requestedRole;
-  let definition = configured.get(role);
+  const definition = configured.get(role);
   if (definition?.optionalEnabled === false) return { ok: false, code: 'role_unavailable',
     reason: `Optional role ${role} is off. Turn it on in Control → Roles (Space), or configure it in $HUD_HOME/role-switches.json.` };
   if (!definition) {
@@ -1659,7 +1664,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     return { ok: false, code: 'invalid_arguments', error: 'preset and on are mutually exclusive' };
   }
   const presetName = args.preset === undefined ? undefined : required(args, 'preset');
-  let preset = definition.presets?.find((p) => p.name === presetName);
+  const preset = definition.presets?.find((p) => p.name === presetName);
   if (presetName !== undefined && !preset) {
     return { ok: false, code: 'invalid_arguments', error: `unknown preset: ${presetName}` };
   }
@@ -1680,12 +1685,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
-  const choiceFor = (def: Role) =>
-    onEntry ? { run: [{ ...def.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
-      : presetName !== undefined ? { preset: presetName } : undefined;
-  let effective = found.assignment(definition, now, modelOverride, routing, choiceFor(definition), !!retryInput && retryInput.model === undefined);
-  let places = effective.places.filter(p => !landCwd || p.place.harness !== 'bro');
-  let details = places.find((p) => p.state === 'active' || (landCwd && p.state === 'standby'));
+  const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
+    : presetName !== undefined ? { preset: presetName } : undefined;
+  const effective = found.assignment(definition, now, modelOverride, routing, choice, !!retryInput && retryInput.model === undefined);
+  const places = effective.places.filter(p => !landCwd || p.place.harness !== 'bro');
+  const details = places.find((p) => p.state === 'active' || (landCwd && p.state === 'standby'));
   const argsFor = (place: RolePlace) => argsForPlace(args, place, retryInput);
   if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
 
@@ -1720,31 +1724,13 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const cap = capForRole(concurrency, role);
       const workingByRole = countWorkingByRole();
       if (cap > 0 && (workingByRole.get(role) ?? 0) >= cap) {
-        let overflowed = false;
-        if (role === 'imp' && concurrency.impOverflow) {
-          const generalDef = found.roles().get('general');
-          const generalCap = capForRole(concurrency, 'general');
-          const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
-          const presetOk = presetName === undefined || !!generalDef?.presets?.some((p) => p.name === presetName);
-          if (generalDef && generalHasRoom && presetOk && (args.mode !== 'headless' || generalDef.can_continue)) {
-            const genEffective = found.assignment(generalDef, now, modelOverride, routing, choiceFor(generalDef), !!retryInput && retryInput.model === undefined);
-            const genPlaces = genEffective.places;
-            const genDetails = genPlaces.find((p) => p.state === 'active');
-            const genInitial = genDetails ? placeOptions(argsFor(genDetails.place), genDetails.place) : null;
-            if (genDetails && genInitial && !('code' in genInitial)) {
-              overflowFrom = 'imp';
-              role = 'general';
-              definition = generalDef;
-              preset = generalDef.presets?.find((p) => p.name === presetName);
-              effective = genEffective;
-              places = genPlaces;
-              details = genDetails;
-              initial = genInitial;
-              overflowed = true;
-            }
-          }
-        }
-        if (!overflowed) shouldQueue = true;
+        const generalCap = capForRole(concurrency, 'general');
+        const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
+        if (role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
+          // Overflow borrows a concurrency slot, not the general role's launch chain or mode.
+          overflowFrom = 'imp';
+          role = 'general';
+        } else shouldQueue = true;
       }
     }
 
@@ -2074,10 +2060,10 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const args: Args = { ...jobOptions(existing), cwd, role, task };
     const retryInput: Args | undefined = existing.retry_of ? { retry_of: existing.retry_of, ...(existing.create_options ?? {}) } : undefined;
     const found = registry(cwd);
-    const definition = found.roles(true).get(role);
-    if (definition?.optionalEnabled === false) return failQueued(`Optional role ${role} is off`);
-    if (args.mode === 'headless' && !definition?.can_continue) return failQueued('headless mode requires a continuable role', 'invalid_arguments');
-    if (!definition) return failQueued(`Role ${role} is not configured or is hidden in this project`);
+    const definition = found.roles(true).get(existing.role);
+    if (definition?.optionalEnabled === false) return failQueued(`Optional role ${existing.role} is off`);
+    if (!definition) return failQueued(`Role ${existing.role} is not configured or is hidden in this project`);
+    if (args.mode === 'headless' && !definition.can_continue) return failQueued('headless mode requires a continuable role', 'invalid_arguments');
     const now = Date.now();
     let routing;
     try { routing = found.routing(now); }

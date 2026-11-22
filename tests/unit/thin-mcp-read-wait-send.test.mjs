@@ -140,7 +140,7 @@ try {
 test('only a one-job read includes a bounded summary of committed and pending worktree changes', async (t) => {
   const f = await fixture(t), cwd = initRepo(f.root);
   fs.mkdirSync(join(cwd, 'node_modules'));
-  const job = await f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', request_key: 'summary', task: 'Synthetic task.' });
+  const job = await f.call('hud_create', { role: 'imp', cwd, isolation: 'worktree', request_key: 'summary', task: 'Synthetic task.' });
   const { worktree: { root, branch, base_head } } = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
   fs.writeFileSync(join(root, 'tracked.txt'), 'changed\n');
   git(root, 'commit', '-qam', 'tracked change');
@@ -167,7 +167,7 @@ test('one-job reads show managed sibling overlaps until the sibling file version
   write(cwd, 'swap.txt', 'base');
   git(cwd, 'add', '--all');
   git(cwd, 'commit', '-qm', 'literal file');
-  const create = (request_key) => f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', request_key, task: `Synthetic ${request_key}.` });
+  const create = (request_key) => f.call('hud_create', { role: 'imp', cwd, isolation: 'worktree', request_key, task: `Synthetic ${request_key}.` });
   const a = await create('overlap-a'), b = await create('overlap-b');
   assert.equal(a.git_summary, undefined);
   assert.equal(b.git_summary, undefined);
@@ -379,7 +379,7 @@ test('hud_read lists only the caller project, including its linked worktrees', a
   git(f.root, 'worktree', 'add', '-qb', 'linked', linked);
   const foreign = waitFixtureJob(f, 1, 'working', 'w4E:p1', initRepo(f.root));
   const legacy = waitFixtureJob(f, 2, 'working', 'w4E:p8', linked);
-  const created = await f.call('hud_create', { role: 'imp', on: 'pi', cwd: linked, task: 'Synthetic worktree job.' });
+  const created = await f.call('hud_create', { role: 'imp', cwd: linked, task: 'Synthetic worktree job.' });
   assert.equal(JSON.parse(fs.readFileSync(join(created.task_dir, 'job.json'))).project_root, fs.realpathSync(f.root));
   assert.equal(created.changes, undefined, 'foreign project changes do not ride on this pane’s response');
   for (const args of [{}, { view: 'recent' }]) {
@@ -966,7 +966,7 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const created = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'wait-seed',
     task: 'Seed session cursor without self-reporting create.',

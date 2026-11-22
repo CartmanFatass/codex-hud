@@ -139,12 +139,12 @@ test('MCP tasks: launch fall-through and effective effort stay in the dispatch a
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
-  fallbackRole(f, 'fallback-task');
+  fallbackRole(f, 'general');
   fs.writeFileSync(join(f.env.HOME, 'fail-start-grok'), 'Synthetic start failure');
   fs.writeFileSync(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
     'synthetic/second': { provider: 'synthetic', id: 'second', reasoning: false },
   }));
-  const task = await taskCall(rpc, 'hud_create', { role: 'fallback-task', task: 'Synthetic fallback.', thinking: 'high' });
+  const task = await taskCall(rpc, 'hud_create', { role: 'general', task: 'Synthetic fallback.', thinking: 'high' });
   const job = taskJob(f, task);
   const launch = /used_place: pi \(synthetic\/second\); thinking: off; attempts: cli\/grok \(synthetic-first\) \(Synthetic start failure\) → pi \(synthetic\/second\)/;
   assert.match(task.statusMessage, launch);
@@ -372,7 +372,7 @@ test('MCP tasks: a fresh server can poll but cannot cancel old tasks; legacy and
   assert.equal(retry.resultType, 'complete');
   assert.equal(resultValue(retry).job, old.job);
   fs.writeFileSync(join(f.env.HOME, 'fail-start'), 'Synthetic startup failure.');
-  const failure = await taskCall(next, 'hud_create', { role: 'imp', on: 'pi', task: 'Synthetic failure.' });
+  const failure = await taskCall(next, 'hud_create', { role: 'general', on: 'pi', task: 'Synthetic failure.' });
   assert.equal(failure.resultType, 'complete');
   assert.equal(resultValue(failure).ok, false);
 });

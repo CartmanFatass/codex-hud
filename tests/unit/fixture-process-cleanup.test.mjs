@@ -90,7 +90,7 @@ test('forced fail after cli hud_create', async (t) => {
   const f = await fixture(t);
   record(f.env.HUD_HOME);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'fail-cli', task: 'Synthetic.' });
+  const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'fail-cli', task: 'Synthetic.' });
   await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
   assert.fail('forced failure with live hud-watch and hud-cli');
 });
@@ -111,7 +111,7 @@ test('forced timeout while hud_read wait_ms blocks hud-mcp', { timeout: 1200 }, 
   const f = await fixture(t);
   record(f.env.HUD_HOME);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'timeout-cli', task: 'Synthetic.' });
+  const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'timeout-cli', task: 'Synthetic.' });
   await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
   await f.call('hud_read', { job: job.job, wait_ms: 120000 });
 });

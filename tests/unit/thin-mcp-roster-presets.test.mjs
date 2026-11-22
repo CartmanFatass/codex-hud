@@ -52,7 +52,7 @@ test('CLI state trust defaults, owner overrides, roster facts and dispatch snaps
   // Dispatch through the normal MCP path, rejecting the fake launch before any worker is started.
   fs.writeFileSync(join(f.env.HOME, 'fail-start'), '');
   const agy = await f.call('hud_create', { role: 'agy-check', request_key: 'trust-agy', task: 'Synthetic task.' });
-  const grok = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'trust-grok', task: 'Synthetic task.' });
+  const grok = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'trust-grok', task: 'Synthetic task.' });
   const record = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
   assert.equal(record(agy).cli.state_trust, 'turn');
   assert.equal(record(grok).cli.state_trust, 'advisory');
@@ -406,7 +406,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
         model: { value: 'synthetic/override', source: join(f.env.HUD_HOME, 'roles', 'writer.json') },
         thinking: { value: 'high', source: join(f.env.HUD_HOME, 'roles', 'writer.json') } }],
       exhausted: [],
-      accepts_options: ['on', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
+      accepts_options: ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
       available: true,
       source_file: join(f.env.HUD_HOME, 'roles', 'writer.json'),
       model_source: join(f.env.HUD_HOME, 'roles', 'writer.json'),
@@ -422,7 +422,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   assert.equal(roster.roles.some((r) => r.role === 'architect'), false);
   const oracle = roster.roles.find((r) => r.role === 'oracle');
   assert.equal(oracle.preset, 'fable');
-  assert.deepEqual(oracle.accepts_options, ['on', 'preset', 'model', 'thinking']);
+  assert.deepEqual(oracle.accepts_options, []);
   assert.deepEqual(oracle.presets, [
     { name: 'fable', run: oracle.run },
     { name: 'architect', run: [{ harness: 'pi', pi_role: 'architect', split: false }] },
@@ -462,12 +462,12 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   assert.equal(Object.hasOwn(await f.call('hud_read', { job: job.job }), 'preset'), false);
 });
 
-test('hud_create uses a merged preset for one job and falls back within it without editing roles', { timeout: 10000 }, async (t) => {
+test('general uses a named preset for one job and falls back within it without editing roles', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const roles = join(f.env.HUD_HOME, 'roles');
-  const file = join(roles, 'imp.json');
+  const file = join(roles, 'general.json');
   const role = {
-    role: 'imp', instructions: 'implementer', can_continue: true,
+    role: 'general', instructions: 'implementer', can_continue: true,
     run: [{ harness: 'pi', model: 'synthetic/normal', skills: ['normal-only'] }],
     presets: [{ name: 'default', run: [
       { harness: 'pi', model: 'synthetic/primary', thinking: 'low' },
@@ -477,12 +477,12 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   const original = JSON.stringify(role, null, 2) + '\n';
   fs.mkdirSync(roles);
   fs.writeFileSync(file, original);
-  const roster = async () => (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'imp');
+  const roster = async () => (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'general');
   const before = await roster();
   assert.equal(before.runs_on.model, 'synthetic/normal');
-  assert.ok(before.accepts_options.includes('preset'));
+  assert.deepEqual(before.accepts_options, ['on', 'preset', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args']);
 
-  const args = { role: 'imp', preset: 'default', task: 'Synthetic task.' };
+  const args = { role: 'general', preset: 'default', task: 'Synthetic task.' };
   const receipt = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
   const piArgv = () => f.commands().filter((c) => c.command === 'pi-role').at(-1).args;
   const first = await f.call('hud_create', { ...args, request_key: 'preset-primary' });
@@ -510,7 +510,7 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   assert.equal(receipt(override).place_key, 'pi:synthetic/override');
   assert.equal(receipt(override).model_source, 'hud_create');
   assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/override', '--thinking', 'low']);
-  assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'hydrogen' })).job, fallback.job);
+  assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'ignored-on-duplicate' })).job, fallback.job);
 
   markExhausted(f.env.HUD_HOME, 'pi:synthetic/backup', 'rate limit');
   const unavailable = await f.call('hud_create', { ...args, request_key: 'preset-unavailable' });
@@ -519,11 +519,11 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   assert.deepEqual(unavailable.exhausted.map((p) => p.key), ['pi:synthetic/primary', 'pi:synthetic/backup']);
   assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 3);
   assert.deepEqual(await roster(), before);
-  assert.deepEqual(fs.readdirSync(roles), ['imp.json']);
+  assert.deepEqual(fs.readdirSync(roles), ['general.json']);
   assert.equal(fs.readFileSync(file, 'utf8'), original);
 });
 
-test('roster and default create route the active selector, while explicit preset is read-only and one-job', async (t) => {
+test('roster and create use the active imp preset without advertising caller placement options', async (t) => {
   const f = await fixture(t);
   const roles = join(f.env.HUD_HOME, 'roles'), file = join(roles, 'imp.json');
   const run = [{ harness: 'pi', model: 'synthetic/file' }];
@@ -542,19 +542,19 @@ test('roster and default create route the active selector, while explicit preset
   assert.equal(selected.run[0].model, 'synthetic/named');
   assert.equal(selected.runs_on.model, 'synthetic/named');
   assert.equal(selected.presets.some((p) => p.name === 'hydrogen'), false);
-  const create = async (key, preset) => {
-    const job = await f.call('hud_create', { role: 'imp', request_key: key, preset, task: 'Synthetic task.' });
+  assert.deepEqual(selected.accepts_options, ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args']);
+  const create = async (key) => {
+    const job = await f.call('hud_create', { role: 'imp', request_key: key, task: 'Synthetic task.' });
     return JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
   };
   assert.equal((await create('selector')).model, 'synthetic/named');
-  assert.equal((await create('named-override', 'file-copy')).model, 'synthetic/file');
   assert.deepEqual(await roster(true), selected);
   assert.equal(fs.readFileSync(file, 'utf8'), start);
 });
 
 test('hud_create rejects unknown, conflicting and malformed preset arguments before dispatch', async (t) => {
   const f = await fixture(t);
-  const args = { role: 'imp', request_key: 'invalid-preset', task: 'Synthetic task.' };
+  const args = { role: 'general', request_key: 'invalid-preset', task: 'Synthetic task.' };
   assert.deepEqual(withoutHint(await f.call('hud_create', { ...args, preset: 'missing' })), {
     ok: false, code: 'invalid_arguments', error: 'unknown preset: missing',
   });
@@ -622,7 +622,7 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
   assert.equal(role.model, 'grok-4.7');
   assert.equal(role.thinking, 'high');
   assert.equal(role.can_continue, true);
-  assert.deepEqual(role.accepts_options, ['on', 'model', 'thinking']);
+  assert.deepEqual(role.accepts_options, []);
   assert.equal(role.pi_role_file, null);
   const imp = roster.find((entry) => entry.role === 'imp');
   assert.deepEqual(imp.run.map((place) => place.harness), ['pi']);
@@ -790,10 +790,11 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
     role: 'local-cli', instructions: 'implementer', available: true, can_continue: true, runs_on: cli,
     places: [{ index: 0, state: 'active' }, { index: 1, state: 'standby', provider: 'synthetic', provider_source: 'pi_role' }],
   });
-  const untrusted = await f.call('hud_create', {
-    role: 'local-cli', on: 'grok', request_key: 'project-cli-untrusted', task: 'Synthetic CLI task.', cwd: proj,
+  const local = await f.call('hud_create', {
+    role: 'local-cli', request_key: 'project-cli-untrusted', task: 'Synthetic CLI task.', cwd: proj,
   });
-  assert.equal(untrusted.code, 'untrusted_cwd');
+  assert.equal(local.attempts[0].reason, `grok has not trusted ${proj}; run hud trust ${proj}`);
+  assert.equal(local.used_place, 'pi (synthetic/default)');
   assert.equal(roster.convention.path, join(root, '.hud/hud-convention.md'));
   assert.equal(roster.convention.text, 'Project convention only.');
   const server = await f.call('hud_roster');
@@ -1039,7 +1040,7 @@ test('unregistered skill names are skipped and a CLI role is not given skill fla
   assert.equal(read.worker_prompt, null);
 
   const cli = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'cli-untouched',
     task: 'Synthetic cli task.',

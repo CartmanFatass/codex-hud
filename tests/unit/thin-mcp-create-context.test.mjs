@@ -27,7 +27,7 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 test('launch thinking facts map CLI efforts before opening the worker; unknown models pass through', async (t) => {
   const f = await fixture(t);
   // The probes leave their workers running; this test is about launch arguments, not admission.
-  writeFixtureFile(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { imp: 0 } }));
+  writeFixtureFile(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { general: 0 } }));
   fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
   for (const [on, model, thinking, expected] of [
     ['claude', 'opus', 'ultra', 'max'], ['agy', 'gemini-4-hydrogen-high', 'minimal', 'low'],
@@ -37,7 +37,7 @@ test('launch thinking facts map CLI efforts before opening the worker; unknown m
     ['codex', 'gpt-5.5', 'max', 'xhigh'], ['codex', 'gpt-6.1-sol', 'ultra', 'ultra'],
     ['claude', 'hud-unknown', 'ultra', 'ultra'], ['grok', 'grok-4.7', 'minimal', 'minimal'],
   ]) {
-    const job = await f.call('hud_create', { role: 'imp', task: `Synthetic ${on} ${model}.`, on, model, thinking });
+    const job = await f.call('hud_create', { role: 'general', task: `Synthetic ${on} ${model}.`, on, model, thinking });
     assert.equal(job.thinking, expected, JSON.stringify(job));
     const { args } = f.commands().find(({ args }) => args[1] === 'start' && args[2] === job.agent);
     if (on === 'codex') assert.ok(args.includes(`model_reasoning_effort=${expected}`));
@@ -58,7 +58,7 @@ test('a cwd that is not an existing directory is refused before dispatch instead
 test('worktree isolation validates before dispatch, links dependencies and carries only the selected CLI grant', async (t) => {
   const f = await fixture(t), cwd = initRepo(f.root);
   fs.chmodSync(f.env.HUD_HOME, 0o700); // Trust backups require a private HUD home.
-  const args = { role: 'imp', task: 'Synthetic task.', request_key: 'isolated', isolation: 'worktree', package: 'Demo Slice' };
+  const args = { role: 'general', task: 'Synthetic task.', request_key: 'isolated', isolation: 'worktree', package: 'Demo Slice' };
   assert.equal((await f.call('hud_create', { ...args, on: 'pi', cwd: f.root })).code, 'invalid_arguments');
   assert.equal((await f.call('hud_create', { ...args, on: 'chatgpt', cwd })).code, 'invalid_arguments');
   assert.deepEqual(withoutCallerLookups(f.commands()), []);
@@ -127,17 +127,25 @@ test('hud_create closes a pre-input failure and starts the next place in the sam
 test('hud_create retry_of reuses a failed job brief and options on an available place', async (t) => {
   const f = await fixture(t);
   const places = ['synthetic/primary', 'synthetic/fallback'].map((model) => ({ harness: 'pi', pi_role: 'implementer', model }));
-  fallbackRole(f, 'retry-check', places, [{ name: 'two', run: places }]);
+  fallbackRole(f, 'retry-check', [places[0]], [{ name: 'two', run: places }]);
   const cwd = join(f.root, 'retry-project');
   fs.mkdirSync(cwd);
   fs.writeFileSync(join(cwd, 'notes.md'), 'Synthetic notes.');
   const original = await f.call('hud_create', {
-    role: 'retry-check', preset: 'two', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false, checks: ['true'],
+    role: 'retry-check', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false, checks: ['true'],
   });
+  const originalReceipt = join(original.task_dir, 'job.json');
+  const legacy = JSON.parse(fs.readFileSync(originalReceipt));
+  writeFixtureFile(originalReceipt, JSON.stringify({ ...legacy, preset: 'two', create_options: { ...legacy.create_options, thinking: 'high' } }));
   const statusFile = join(original.task_dir, 'STATUS.json');
   writeFixtureFile(statusFile, JSON.stringify({ state: 'failed', exit_reason: 'rate limit reached; retry after 5m' }));
   const retry = { retry_of: original.job };
+  const rejected = await f.call('hud_create', { ...retry, thinking: 'low' });
+  assert.equal(rejected.code, 'invalid_arguments');
+  assert.match(rejected.error, /retry-check.*role file and Control.*general/);
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [original.job]);
   const next = await f.call('hud_create', retry);
+  assert.equal(next.thinking, 'high');
   assert.notEqual(next.job, original.job);
   assert.equal(next.used_place, 'pi (synthetic/fallback)');
   assert.equal(next.role, original.role);
@@ -154,12 +162,12 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
 
 test('hud_create retains every pre-input cause on one failed job and stays within the requested preset', async (t) => {
   const f = await fixture(t);
-  fallbackRole(f, 'fallback-check', [{ harness: 'cli', agent: 'codex' }], [{ name: 'two', run: fallbackPlaces }]);
+  fallbackRole(f, 'general', [{ harness: 'cli', agent: 'codex' }], [{ name: 'two', run: fallbackPlaces }]);
   const cwd = join(f.root, 'untrusted');
   fs.mkdirSync(cwd);
   const trust = `grok has not trusted ${cwd}; run hud trust ${cwd}`;
   fs.writeFileSync(join(f.env.HOME, 'fail-start-pi'), 'synthetic Pi launcher failure');
-  const args = { role: 'fallback-check', preset: 'two', request_key: 'all-fail', task: 'Synthetic fallback.', cwd };
+  const args = { role: 'general', preset: 'two', request_key: 'all-fail', task: 'Synthetic fallback.', cwd };
   const job = await f.call('hud_create', args);
   assert.equal(job.ok, false);
   assert.equal(job.state, 'failed');
@@ -540,7 +548,7 @@ test('a slow CLI launch blocks only retries with the same request key, not other
   const f = await fixture(t);
   const old = await f.call('hud_create', { role: 'imp', request_key: 'already-working', task: 'Synthetic task.' });
   fs.writeFileSync(join(f.env.HOME, 'hold-grok-start'), '');
-  const args = { role: 'imp', on: 'grok', request_key: 'slow-launch', task: 'Slow synthetic launch.' };
+  const args = { role: 'general', on: 'grok', request_key: 'slow-launch', task: 'Slow synthetic launch.' };
   let launchFinished = false;
   let retryFinished = false;
   const launch = f.call('hud_create', args).finally(() => { launchFinished = true; });
@@ -575,18 +583,18 @@ test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses inv
   const f = await fixture(t);
   enableOptionalRoles(f, 'pro');
   for (const value of [59, 3601, 60.5, '60']) {
-    const result = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: `bad-${value}`, task: 'Synthetic.', idle_grace_s: value });
+    const result = await f.call('hud_create', { role: 'general', on: 'grok', request_key: `bad-${value}`, task: 'Synthetic.', idle_grace_s: value });
     assert.equal(result.code, 'invalid_arguments');
     assert.match(result.error, /integer from 60 to 3600/);
   }
   const pi = await f.call('hud_create', { role: 'imp', request_key: 'pi-grace', task: 'Synthetic.', idle_grace_s: 60 });
   assert.equal(pi.code, 'invalid_arguments');
   assert.match(pi.error, /pi grace follows the model's cache lifetime/);
-  const bro = await f.call('hud_create', { role: 'pro', on: 'chatgpt', request_key: 'bro-grace', task: 'Synthetic.', idle_grace_s: 60 });
+  const bro = await f.call('hud_create', { role: 'pro', request_key: 'bro-grace', task: 'Synthetic.', idle_grace_s: 60 });
   assert.equal(bro.code, 'invalid_arguments');
   assert.match(bro.error, /browser jobs have no idle grace/);
   for (const value of [60, 3600]) {
-    const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: `grace-${value}`, task: 'Synthetic.', idle_grace_s: value });
+    const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: `grace-${value}`, task: 'Synthetic.', idle_grace_s: value });
     assert.ok(job.job, JSON.stringify(job));
     assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).cli.idle_grace_s, value);
     assert.equal((await f.call('hud_read', { job: job.job, detail: true })).idle_grace_s, value);
@@ -602,8 +610,9 @@ test(
   { timeout: 10000 },
   async (t) => {
     const f = await fixture(t);
+    fallbackRole(f, 'general', [{ harness: 'pi', pi_role: 'implementer' }]);
     const args = {
-      role: 'imp',
+      role: 'general',
       request_key: 'model-override',
       task: 'Synthetic task.',
       model: 'synthetic/any-model',
@@ -635,7 +644,7 @@ test(
     assert.equal(original.thinking, 'low');
     assert.equal(launches(), 2);
     const thinkingOnly = await f.call('hud_create', {
-      role: 'imp',
+      role: 'general',
       request_key: 'thinking-only',
       task: 'Synthetic task.',
       thinking: 'max',
@@ -865,7 +874,7 @@ test('thin launch options reject Jev roles and invalid pi values before dispatch
   const f = await fixture(t);
   enableOptionalRoles(f, 'pro');
   const keys = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'];
-  assert.deepEqual((await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'pro').accepts_options, ['on']);
+  assert.deepEqual((await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'pro').accepts_options, []);
   for (const key of keys) {
     const value = key === 'pi_args' ? ['--tools', 'read'] : false;
     assert.deepEqual(
@@ -899,6 +908,7 @@ test('thin create rejects model or thinking overrides for Jev roles', { timeout:
       {
         ok: false,
         code: 'invalid_arguments',
+        error: 'Role "pro" runs as configured in its role file and Control; use general to choose a model for one job.',
       }
     );
   }
@@ -946,8 +956,8 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   assert.equal((await f.call('hud_close', { job: job.job })).exit_code, 0);
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
   for (const args of [
-    { role: 'pro', on: 'gemini', request_key: 'gemini', task: 'Synthetic request.' },
-    { role: 'pro', on: 'argon', request_key: 'argon', task: 'Synthetic request.' },
+    { role: 'general', on: 'gemini', request_key: 'gemini', task: 'Synthetic request.' },
+    { role: 'general', on: 'argon', request_key: 'argon', task: 'Synthetic request.' },
     { role: 'flow', request_key: 'flow', task: 'Synthetic request.' },
   ]) {
     const other = await f.call('hud_create', args);

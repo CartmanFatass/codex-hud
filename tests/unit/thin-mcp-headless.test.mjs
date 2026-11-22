@@ -138,11 +138,35 @@ test('the panel Answer action resumes the paused session and records who answere
   assert.ok(noTab(f));
 });
 
+test('queued headless imp can overflow without borrowing the general role definition', async t => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  write(join(roles, 'general.json'), JSON.stringify({ role: 'general', instructions: 'general', can_continue: false,
+    run: [{ harness: 'pi', model: 'synthetic/general' }] }));
+  const settings = { roleCaps: { imp: 1, general: 1 }, impOverflow: false };
+  write(f.env.HUD_SETTINGS_PATH, JSON.stringify(settings));
+  assert.equal((await f.call('hud_create', { role: 'imp', task: 'Fill the imp slot.' })).state, 'working');
+  f.overrideBin('pi', fakePi);
+  const queued = await create(f);
+  assert.equal(queued.state, 'queued');
+  write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ ...settings, impOverflow: true }));
+  await closed(queued);
+  const receipt = read(join(queued.task_dir, 'job.json'));
+  assert.equal(receipt.role, 'general');
+  assert.equal(receipt.overflow_from, 'imp');
+  assert.equal(receipt.headless, true);
+  assert.equal(receipt.model, 'synthetic/default');
+});
+
 test('old report cannot settle a resumed turn and noncontinuable or non-pi launches refuse the mode', async t => {
   const f = await fixture(t);
-  for (const options of [{ role: 'reviewer' }, { role: 'imp', on: 'codex' }, { role: 'imp', pi_args: ['--no-session'] }]) {
+  for (const options of [{ role: 'reviewer' }, { role: 'imp', pi_args: ['--no-session'] }]) {
     assert.equal((await f.call('hud_create', { ...options, mode: 'headless', task: 'Synthetic rejection.' })).code, 'invalid_arguments');
   }
+  const cli = await f.call('hud_create', { role: 'general', on: 'codex', mode: 'headless', task: 'Synthetic rejection.' });
+  assert.equal(cli.code, 'invalid_arguments');
+  assert.equal(cli.error, 'headless mode requires pi');
   f.overrideBin('pi', fakePi);
   const job = await create(f);
   await closed(job);

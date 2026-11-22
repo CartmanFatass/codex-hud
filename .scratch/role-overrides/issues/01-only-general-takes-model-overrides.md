@@ -1,6 +1,6 @@
 # 01: Only `general` takes model overrides on create
 
-**Status:** ready-for-agent
+**Status:** done
 **Blocked by:** none
 **Owner try:** no
 
@@ -8,10 +8,12 @@
 
 Update the `hud_create` tool description in `src/roles/tool-definitions.ts` ("Omit preset, on, model and thinking unless the user requests them") to say only `general` accepts them, and the matching lines in `hud_roster` detail text if it advertises per-job overrides for other roles. Document it in docs/reference.md and docs/reference.zh.md. Owner-side choices in the panel (Control preset switch, role files) are unchanged.
 
-- [ ] `hud_create({role:"imp", preset:"astra"})` and `{role:"reviewer", model:...}` fail with the one-line error and create no job; batch items fail per item
-- [ ] `hud_create({role:"general", model:..., thinking:...})` works as today
-- [ ] Imp routing, land repair and overflow paths still apply their own place; targeted create/roster tests pass
+- [x] `hud_create({role:"imp", preset:"astra"})` and `{role:"reviewer", model:...}` fail with the one-line error and create no job; batch items fail per item
+- [x] `hud_create({role:"general", model:..., thinking:...})` works as today
+- [x] Imp routing, land repair and overflow paths still apply their own place; targeted create/roster tests pass
 
 ## Comments
 
 - 2026-11-22 addendum: an `imp` create that overflows to `general` runs the run chain `imp` would have used (its active preset), not general's default; the job stays `general` for caps and says `overflow_from: imp`. Spec §2.1.4 caps bullet.
+
+- Landed ce79c9c3efcd44ea1f685fe911ac0ec9a73af16c; gate 5/5 passed.

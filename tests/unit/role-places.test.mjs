@@ -92,6 +92,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
     run: [{ harness: 'pi', model: 'synthetic/file-chain' }], active_preset: 'daily', presets: [{ name: 'daily', run }] }, null, 2) + '\n';
   fs.mkdirSync(join(home, 'roles'));
   fs.writeFileSync(roleFile, roleBytes);
+  fs.writeFileSync(join(home, 'roles', 'general.json'), JSON.stringify({ ...JSON.parse(roleBytes), role: 'general' }));
   const other = { grok: { state_trust: 'advisory' }, catalog: { pi: { include: {} } }, unknown: { keep: true } };
   fs.writeFileSync(switches, JSON.stringify(other), { mode: 0o644 });
   const roster = async (detail = true) => (await f.call('hud_roster', { detail })).roles.find((r) => r.role === 'imp');
@@ -121,7 +122,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   assert.match(panel.join('\n'), /1 ⊘ pi\/xai +\[grok-4.7 ▾\][\s\S]*off · pi:xai/);
   for (const [key, options] of [['on-off', { on: 'pi' }], ['model-off', { model: 'xai/other' }],
     ['preset-model-off', { preset: 'daily', model: 'xai/other' }], ['cli-off', { on: 'grok' }]]) {
-    const res = await create(key, options);
+    const res = await create(key, { role: 'general', ...options });
     assert.equal(res.code, 'no_available_place');
     assert.equal(res.places[0].state, 'off');
     assert.ok(!fs.existsSync(jobs) || fs.readdirSync(jobs).length === 0, 'no job created for a refused override');
@@ -131,7 +132,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   [], 'roster and refusals only look up the caller; no launch or discovery');
   const fallback = await create('daily');
   assert.equal(JSON.parse(fs.readFileSync(join(fallback.task_dir, 'job.json'), 'utf8')).place.agent, 'agy');
-  const enabledOverride = await create('model-on', { model: 'other/new-model' });
+  const enabledOverride = await create('model-on', { role: 'general', model: 'other/new-model' });
   const job = JSON.parse(fs.readFileSync(join(enabledOverride.task_dir, 'job.json'), 'utf8'));
   assert.equal(job.place_key, 'pi:other/new-model');
   assert.equal(job.lens, false);
@@ -148,7 +149,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   setHarnessDisabled(home, 'pi:xai', false);
   assert.deepEqual(fs.readFileSync(quotaFile), quotaBytes);
   assert.equal((await roster()).places[0].state, 'exhausted');
-  assert.equal((await create('on-quota', { on: 'pi' })).code, 'no_available_place');
+  assert.equal((await create('on-quota', { role: 'general', on: 'pi' })).code, 'no_available_place');
   clearExhausted(home, key);
   assert.equal((await roster()).places[0].state, 'active');
   const restored = await create('restored');
@@ -183,13 +184,13 @@ test('provider attribution uses local settings or the unfiltered cache; unknown 
   assert.equal((await roster('imp')).off_by, 'pi:xai');
   put(cache, { version: 1, fetchedAt: Date.now(), pi: ['xai/gpt-6.1-sol', 'other/gpt-6.1-sol'] });
   assert.equal((await roster('imp')).provider, null, 'off providers still count toward ambiguity');
-  assert.ok((await create('imp', 'ambiguous-cache', { model: 'gpt-6.1-sol' })).task_dir);
+  assert.ok((await create('general', 'ambiguous-cache', { model: 'gpt-6.1-sol' })).task_dir);
   setHarnessDisabled(home, 'pi', true);
   assert.equal((await roster('imp')).off_by, 'pi');
   assert.equal((await create('imp', 'runner-off')).code, 'no_available_place');
   enableOptionalRoles(f, 'pro');
   setHarnessDisabled(home, 'bro:jev-ask', true);
-  for (const on of ['chatgpt', 'gemini']) assert.equal((await create('pro', `alias-${on}`, { on })).places[0].off_by, 'bro:jev-ask');
+  for (const on of ['chatgpt', 'gemini']) assert.equal((await create('general', `alias-${on}`, { on })).places[0].off_by, 'bro:jev-ask');
   const bad = join(home, 'harnesses.json');
   fs.writeFileSync(bad, '{"disabled":null}');
   assert.throws(() => setHarnessDisabled(home, 'pi', false), { code: 'invalid_harness_switches' });
@@ -332,7 +333,7 @@ test('hud_roster drops expired exhausted marks when queried through hud-mcp', { 
 // Three launches share a test hang guard, not a 10 s product budget.
 test('hud_create on uses harnesses.json (and HUD_HOME override), and model still wins', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
-  const job1 = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'on-agy-default', task: 'Task 1.' });
+  const job1 = await f.call('hud_create', { role: 'general', on: 'agy', request_key: 'on-agy-default', task: 'Task 1.' });
   const rec1 = JSON.parse(fs.readFileSync(join(job1.task_dir, 'job.json'), 'utf8'));
   assert.equal(rec1.model, 'gemini-4-argon-high');
   assert.equal(rec1.model_source, join(bundled, 'harnesses.json'));
@@ -341,13 +342,13 @@ test('hud_create on uses harnesses.json (and HUD_HOME override), and model still
     join(f.env.HUD_HOME, 'harnesses.json'),
     JSON.stringify({ agy: { model: 'home-agy-model' } })
   );
-  const job2 = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'on-agy-home', task: 'Task 2.' });
+  const job2 = await f.call('hud_create', { role: 'general', on: 'agy', request_key: 'on-agy-home', task: 'Task 2.' });
   const rec2 = JSON.parse(fs.readFileSync(join(job2.task_dir, 'job.json'), 'utf8'));
   assert.equal(rec2.model, 'home-agy-model');
   assert.equal(rec2.model_source, join(f.env.HUD_HOME, 'harnesses.json'));
 
   const job3 = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'agy',
     model: 'explicit-model',
     request_key: 'on-agy-model',
@@ -462,8 +463,11 @@ test('reviewer uses its CLI instructions; sonic refuses interactive overrides; m
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
   const sonic = await f.call('hud_create', { role: 'sonic', on: 'claude', task: 'Task.' });
   assert.equal(sonic.code, 'invalid_arguments');
-  assert.match(sonic.error, /headless on pi only/);
-  const job = await f.call('hud_create', { role: 'reviewer', on: 'claude', request_key: 'reviewer-cli', task: 'Task.' });
+  assert.match(sonic.error, /role file and Control.*general/);
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  const run = [{ harness: 'cli', agent: 'claude' }];
+  fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'reviewer.json'), JSON.stringify({ role: 'reviewer', instructions: 'reviewer', can_continue: true, run }));
+  const job = await f.call('hud_create', { role: 'reviewer', request_key: 'reviewer-cli', task: 'Task.' });
   const promptOf = () => f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job));
   await until(promptOf);
   const { args } = f.commands().find((c) => c.args[1] === 'start' && c.args[2] === `${job.job}-primary`);
@@ -471,11 +475,10 @@ test('reviewer uses its CLI instructions; sonic refuses interactive overrides; m
   assert.match(promptOf().args[3], /^Carry out this brief:\n\nTask\./);
 
   // One role, one text on every harness (WORKER-UNIFY): a role whose instruction file is missing has no CLI place.
-  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'textless.json'), JSON.stringify({
-    role: 'textless', instructions: 'textless', can_continue: true, run: [{ harness: 'pi', pi_role: 'implementer' }],
+    role: 'textless', instructions: 'textless', can_continue: true, run,
   }));
-  const res = await f.call('hud_create', { role: 'textless', on: 'claude', request_key: 'unsup-textless', task: 'Task.' });
+  const res = await f.call('hud_create', { role: 'textless', request_key: 'unsup-textless', task: 'Task.' });
   assert.equal(res.ok, false);
   assert.equal(res.code, 'unsupported_harness');
   assert.match(res.path, /instructions\/textless\.md$/);

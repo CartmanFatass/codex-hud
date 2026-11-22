@@ -40,6 +40,15 @@ function writeStatus(dir, status) {
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(status, null, 2) + '\n');
 }
 
+function selectImpPreset(f) {
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  fs.writeFileSync(join(roles, 'imp.json'), JSON.stringify({
+    role: 'imp', instructions: 'implementer', can_continue: true, run: [{ harness: 'pi', model: 'synthetic/file-chain' }],
+    active_preset: 'test-active', presets: [{ name: 'test-active', run: [{ harness: 'pi', model: 'synthetic/active' }] }],
+  }));
+}
+
 test('settings defaults, validation, Settings UI rows, dirty tracking and group reset for roleCaps and impOverflow', (t) => {
   const saved = { ...process.env };
   const dir = fs.mkdtempSync(join(process.env.HOME || '/tmp', 'hud-cap-settings-'));
@@ -105,6 +114,7 @@ test('settings defaults, validation, Settings UI rows, dirty tracking and group 
 
 test('three working imps overflow fourth imp to general and queue once both caps are full', { timeout: 25000 }, async (t) => {
   const f = await fixture(t);
+  selectImpPreset(f);
   const imps = [];
   for (let i = 1; i <= 3; i++) {
     const job = await f.call('hud_create', { role: 'imp', task: `Synthetic imp ${i}.`, request_key: `imp-${i}` });
@@ -120,6 +130,7 @@ test('three working imps overflow fourth imp to general and queue once both caps
   assert.equal(overflow1.overflowed, true);
   assert.equal(overflow1.overflow_from, 'imp');
   assert.equal(overflow1.state, 'working');
+  assert.equal(overflow1.used_place, 'pi (synthetic/active)');
 
   const overflow2 = await f.call('hud_create', { role: 'imp', task: 'Synthetic overflow 2.', request_key: 'ovf-2' });
   const overflow3 = await f.call('hud_create', { role: 'imp', task: 'Synthetic overflow 3.', request_key: 'ovf-3' });
@@ -258,6 +269,7 @@ test('queued imp starts automatically when a working imp settles, picking the fi
 
 test('raising a cap or enabling overflow in Settings starts queued jobs at once', { timeout: 25000 }, async (t) => {
   const f = await fixture(t);
+  selectImpPreset(f);
   writeHudSettings(f, { roleCaps: { imp: 1, general: 2 }, impOverflow: false });
 
   const w1 = await f.call('hud_create', { role: 'imp', task: 'First imp.', request_key: 'cap-w1' });
@@ -285,6 +297,8 @@ test('raising a cap or enabling overflow in Settings starts queued jobs at once'
   assert.equal(r2.overflow_from, 'imp');
   assert.equal(r3.role, 'general');
   assert.equal(r3.overflow_from, 'imp');
+  assert.equal(r2.model, 'synthetic/active');
+  assert.equal(r3.model, 'synthetic/active');
 });
 
 test('batch hud_create overflows and queues items past the cap in input order', { timeout: 25000 }, async (t) => {

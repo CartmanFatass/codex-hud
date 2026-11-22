@@ -200,7 +200,7 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
 test('hud_sonic inherits the parent managed worktree cwd, not the worker MCP server cwd', async (t) => {
   const f = await fixture(t), cwd = initRepo(f.root);
   sonicTask(f);
-  const parent = await f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', task: 'Synthetic parent.' });
+  const parent = await f.call('hud_create', { role: 'imp', cwd, isolation: 'worktree', task: 'Synthetic parent.' });
   const parentJob = JSON.parse(fs.readFileSync(join(parent.task_dir, 'job.json')));
   const worktree = parentJob.worktree.root;
   assert.notEqual(worktree, f.root); // workerClient launches MCP from f.root.
@@ -219,7 +219,7 @@ test('hud_sonic inherits the parent managed worktree cwd, not the worker MCP ser
 test('hud_sonic accepts a project cwd relative to the parent and refuses paths outside the project', async (t) => {
   const f = await fixture(t), cwd = initRepo(f.root);
   sonicTask(f);
-  const parent = await f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', task: 'Synthetic parent.' });
+  const parent = await f.call('hud_create', { role: 'imp', cwd, isolation: 'worktree', task: 'Synthetic parent.' });
   const { worktree } = JSON.parse(fs.readFileSync(join(parent.task_dir, 'job.json')));
   const subdir = join(worktree.root, 'subdir');
   fs.mkdirSync(subdir);
@@ -280,7 +280,7 @@ test('a working pi parent gets native sonic checkpoint and ready notices without
   assert.equal(native.status, 0, native.stderr);
 });
 
-test('sonic tooling offers no per-task choice, but hud_create keeps explicit overrides', { timeout: 15000 }, async (t) => {
+test('sonic tooling uses the role settings for main jobs and children', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   const compact = await f.call('hud_roster');
   const shipped = compact.roles.find(({ role }) => role === 'sonic');
@@ -291,12 +291,12 @@ test('sonic tooling offers no per-task choice, but hud_create keeps explicit ove
   assert.match(detail.roles.find(({ role }) => role === 'sonic').thinking_choices.max, /tracing a cause/);
   const { tools } = (await f.rpc('tools/list')).result;
   const create = tools.find(({ name }) => name === 'hud_create');
-  assert.match(create.description, /Omit preset, on, model and thinking unless the user requests them\./);
-  assert.equal(create.inputSchema.properties.thinking.description, 'Pi or CLI effort.');
+  assert.match(create.description, /Only general accepts preset, on, model and thinking for one job\./);
+  assert.equal(create.inputSchema.properties.thinking.description, 'General thinking effort on pi or CLI.');
   assert.doesNotMatch(tools.find(({ name }) => name === 'hud_roster').description, /per-task|thinking choices/);
-  const main = await f.call('hud_create', { role: 'sonic', task: 'Synthetic task.', thinking: 'off' });
-  assert.equal(main.thinking, 'off');
-  assert.equal(main.thinking_source, 'explicit');
+  const main = await f.call('hud_create', { role: 'sonic', task: 'Synthetic task.' });
+  assert.equal(main.thinking, 'high');
+  assert.equal(main.thinking_source, 'default');
   const child = workerClient(t, f, main.task_dir);
   assert.deepEqual((await child.rpc('tools/list')).result.tools.map(({ name }) => name),
     ['hud_report', 'hud_progress', 'hud_lease']);
@@ -350,8 +350,9 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
   check(await create(), 'high', 'default');
   assert.equal(fs.existsSync(inputs), false, 'off by default even with a key');
   settings(true);
-  check(await create({ thinking: 'off' }), 'off', 'explicit');
-  assert.equal(fs.existsSync(inputs), false, 'explicit overrides do not call the API');
+  const rejected = await create({ thinking: 'off' });
+  assert.equal(rejected.code, 'invalid_arguments');
+  assert.equal(fs.existsSync(inputs), false, 'rejected overrides do not call the API');
   fs.unlinkSync(creds);
   check(await create(), 'high', 'default');
   assert.equal(fs.existsSync(inputs), false, 'no key also means no fetch');
@@ -367,8 +368,12 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
     [model]: { provider: 'mistral', id: 'deepseek-v4-1-flash-1017', reasoning: true,
       thinkingLevelMap: { off: 'none', minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' } },
   }));
+  const sonicRoleFile = join(f.env.HUD_HOME, 'roles', 'sonic.json');
+  const sonicRole = JSON.parse(fs.readFileSync(sonicRoleFile));
+  writeFixtureFile(sonicRoleFile, JSON.stringify({ ...sonicRole, run: [{ ...sonicRole.run[0], model }] }));
   mode('command');
-  check(await create({ task: commandBrief, model }), 'off', 'decision');
+  check(await create({ task: commandBrief }), 'off', 'decision');
+  writeFixtureFile(sonicRoleFile, JSON.stringify(sonicRole));
   // The worker process has not yet probed its model. max must map down to high there.
   mode('picked');
   const call = workerClient(t, f, parent.task_dir);

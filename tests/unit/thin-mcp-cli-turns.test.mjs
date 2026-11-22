@@ -102,7 +102,7 @@ test("a cli continuation in grace is judged against the report at that turn's st
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
   const job = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'grok-cont',
     task: 'Synthetic continuation.',
@@ -211,7 +211,7 @@ test('quiet past grace turns waiting_orchestrator without pane notices and self-
 test('hud_send queues into a working cli job', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-queue', task: 'Synthetic queue.' });
+  const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-queue', task: 'Synthetic queue.' });
   await until(() => cliState(job.task_dir)?.state === 'working');
   const sent = await f.call('hud_send', { job: job.job, message_key: 'q', text: 'Synthetic addendum.' });
   assert.equal(sent.queued, true);
@@ -229,7 +229,7 @@ test('hud_send queues into a working cli job', { timeout: 15000 }, async (t) => 
 test('hud_close stops a working cli job and closes an idle-grace one', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const working = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-stop', task: 'Synthetic stop.' });
+  const working = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-stop', task: 'Synthetic stop.' });
   await until(() => cliState(working.task_dir)?.state === 'working');
   assert.equal(typeof cliState(working.task_dir).pid, 'number');
   assert.match(cliState(working.task_dir).pid_start_time, /^\d+$/);
@@ -241,7 +241,7 @@ test('hud_close stops a working cli job and closes an idle-grace one', { timeout
   assert.equal(fs.existsSync(join(working.task_dir, 'STATUS.json.stop-requested')), true);
   fs.unlinkSync(join(f.env.HOME, 'hold-turn'));
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
-  const grace = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-close', task: 'Synthetic close.' });
+  const grace = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-close', task: 'Synthetic close.' });
   await until(() => cliState(grace.task_dir)?.state === 'idle_grace');
   await f.call('hud_close', { job: grace.job });
   await until(() => cliState(grace.task_dir)?.state === 'closed');
@@ -253,7 +253,7 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-blocked'), '');
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-blocked', task: 'Synthetic blocked.' });
+  const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-blocked', task: 'Synthetic blocked.' });
   assert.match(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     /node ".*\/hud-ask\.mjs" --dir ".*" --question/
@@ -286,7 +286,7 @@ test('idle and unknown with a live agent settle only a stable new report', { tim
   for (const status of ['idle', 'unknown']) {
     writeFixtureFile(join(f.env.HOME, 'quiet-hold'), status);
     const job = await f.call('hud_create', {
-      role: 'imp',
+      role: 'general',
       on: 'grok',
       request_key: 'quiet-' + status,
       task: 'Synthetic quiet.',
@@ -301,7 +301,7 @@ test('idle and unknown with a live agent settle only a stable new report', { tim
 test('unknown while the agent is gone settles the job', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-unknown'), '');
-  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'unknown-gone', task: 'Synthetic unknown.' });
+  const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'unknown-gone', task: 'Synthetic unknown.' });
   await until(() => cliState(job.task_dir)?.state === 'failed');
   assert.equal(cliState(job.task_dir).error, 'worker exited');
 });
@@ -312,7 +312,7 @@ test(
   async (t) => {
     const f = await fixture(t);
     writeFixtureFile(join(f.env.HOME, 'grace-quiet'), 'idle');
-    const held = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grace-idle', task: 'Synthetic grace.' });
+    const held = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grace-idle', task: 'Synthetic grace.' });
     await until(() => cliState(held.task_dir)?.state === 'closed', 8000);
     assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
     assert.equal(cliState(held.task_dir).exit_reason, 'settled');
@@ -323,7 +323,7 @@ test(
     writeFixtureFile(join(f.env.HOME, 'grace-quiet'), 'unknown');
     fs.writeFileSync(join(f.env.HOME, 'grace-quiet-gone'), '');
     const gone = await f.call('hud_create', {
-      role: 'imp',
+      role: 'general',
       on: 'grok',
       request_key: 'grace-gone',
       task: 'Synthetic grace gone.',
@@ -339,7 +339,7 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
   fs.writeFileSync(join(f.env.HOME, 'cli-blocked'), '');
   writeFixtureFile(join(f.env.HOME, 'blocked-quiet'), 'idle');
   const held = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'blocked-idle',
     task: 'Synthetic blocked quiet.',
@@ -354,7 +354,7 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
   writeFixtureFile(join(f.env.HOME, 'blocked-quiet'), 'unknown');
   fs.writeFileSync(join(f.env.HOME, 'blocked-quiet-gone'), '');
   const gone = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'blocked-gone',
     task: 'Synthetic blocked gone.',

@@ -12,6 +12,7 @@ import {
   taskRpc,
   until,
   waitFixtureJob,
+  withoutHint,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
@@ -59,24 +60,36 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
   assert.deepEqual(createTool.inputSchema.properties.jobs.items, { type: 'object' });
   assert.ok(Buffer.byteLength(JSON.stringify(createTool), 'utf8') < 3300, 'hud_create schema stays compact');
 
+  const rejected = (role) => ({ ok: false, code: 'invalid_arguments',
+    error: `Role "${role}" runs as configured in its role file and Control; use general to choose a model for one job.` });
+  for (const [role, fields] of [['imp', { preset: 'astra' }], ['reviewer', { model: 'synthetic/one' }]]) {
+    const result = await f.call('hud_create', { role, task: 'No launch.', ...fields });
+    if (role === 'imp') assert.ok(result.hint, 'first create supplies the delivery hint once');
+    assert.deepEqual(withoutHint(result), rejected(role));
+  }
+  assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
+
   writeFixtureFile(join(f.root, 'b2.md'), 'Synthetic brief two from file.');
   const batch = await f.call('hud_create', {
     jobs: [
       { role: 'imp', task: 'Synthetic task one.', request_key: 'b-1' },
       { role: 'imp', brief_file: 'b2.md', request_key: 'b-2' },
       { role: 'no-such-role', task: 'Should fail only this entry.', request_key: 'b-bad' },
+      { role: 'imp', task: 'Reject a caller harness.', on: 'pi' },
+      { role: 'reviewer', task: 'Reject a caller effort.', thinking: 'low' },
       { role: 'imp', task: 'Synthetic task three.', request_key: 'b-3' },
     ],
   });
-  assert.ok(batch.hint, 'first create still supplies delivery hint once');
-  assert.equal(batch.jobs.length, 4);
-  const [j1, j2, bad, j3] = batch.jobs;
+  assert.equal(batch.jobs.length, 6);
+  const [j1, j2, bad, badOn, badThinking, j3] = batch.jobs;
+  assert.deepEqual(badOn, rejected('imp'));
+  assert.deepEqual(badThinking, rejected('reviewer'));
   assert.match(j1.job, /^j[0-9a-f]{16}$/);
   assert.match(j2.job, /^j[0-9a-f]{16}$/);
   assert.equal(bad.ok, false);
   assert.equal(bad.code, 'role_unavailable');
   assert.match(j3.job, /^j[0-9a-f]{16}$/);
-  assert.equal(new Set([j1.job, j2.job, j3.job]).size, 3);
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [j1.job, j2.job, j3.job].sort());
   assert.match(fs.readFileSync(join(j2.task_dir, 'brief.md'), 'utf8'), /^Synthetic brief two from file\./);
   assert.equal(j1.hint, undefined, 'items do not duplicate hint');
 

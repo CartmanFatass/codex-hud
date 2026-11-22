@@ -708,15 +708,12 @@ export function roleRegistry(
       agent: active.harness === 'cli' ? active.agent : undefined,
       ...(active.harness === 'cli' ? { state_trust: activeEntry.state_trust } : {}),
       accepts_options: [
-        'on',
-        ...((role.presets?.length ?? 0) > 0 ? ['preset'] : []),
-        ...(active.harness === 'pi'
-          ? ['model', 'thinking', ...piSwitches, 'pi_args']
-          : active.harness === 'cli'
-            ? ['model', 'thinking']
-            : active.tool === 'jev-flow'
-              ? ['kind']
-              : []),
+        ...(role.role === 'general' ? [
+          'on',
+          ...((role.presets?.length ?? 0) > 0 ? ['preset'] : []),
+          ...(active.harness === 'bro' ? [] : ['model', 'thinking']),
+        ] : []),
+        ...(active.harness === 'pi' ? [...piSwitches, 'pi_args'] : active.harness === 'bro' && active.tool === 'jev-flow' ? ['kind'] : []),
       ],
       available: chosen !== null,
       ...(chosen ? {} : {

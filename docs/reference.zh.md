@@ -88,12 +88,14 @@ MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud
 
 `hud_create` 接收 `role`、`task`（或 `brief_file`：位于 `cwd` 内的可读 UTF-8 文本路径，上限 256 KiB，与 `task` 互斥），可选 `cwd` 和仅用于显示的 `package`；还可用 `ticket`（`feature/NN`）和 `slice`（STATE 条目 ID）关联进度。传入 `jobs: [...]` 可在一次调用中批量派发多个任务：每项接受与单次创建相同的字段，按输入顺序返回逐项结果，单项失败不阻塞其余项，每个创建成功的任务仍保留自己的通知。
 省略 `request_key` 时，根据调用窗格、角色、cwd 和任务正文生成去重键。默认在角色的首个可用位置（`runs_on`）启动。
-`hud_create({retry_of: job})` 使用失败或停止任务的简报和选项开启新任务，显式传入的字段优先。
-若未传入 `on`，则从角色或预设的执行链选择可用位置。传入 `preset` 可使用指定预设中首个可用且未耗尽的位置，
-仅对本次任务生效，不修改角色文件。也可用 `on` 覆盖执行环境或浏览器服务商（默认值见内置
-`harnesses.json` 与 `$HUD_HOME/harnesses.json`）。`preset` 和 `on` 不能同时传入。
-重复使用显式键会返回原任务；派生键仅复用最近 10 分钟内创建的任务。只在用户要求时覆盖预设、执行环境、模型或推理强度；带 `detail: true` 的任务读取或查看会显示所选 `preset`。
-`model` 和 `thinking` 可覆盖所选 `pi` 或 `cli` 位置的模型和推理强度；`kind` 为 `flow` 选择 `image`（默认）或 `video`。
+`hud_create({retry_of: job})` 使用失败或停止任务的简报和选项开启新任务，显式传入的字段优先，但仍须遵守新建任务的规则。
+未提供新的运行位置选项时，重试沿用原任务的相关选项，从角色或预设的执行链选择可用位置，而不锁定原执行环境。
+各角色在哪里运行由角色文件和「控制」决定。只有 `general` 接受 `preset`、`on`、`model` 或 `thinking`，且只在用户要求时对单次任务生效。
+对 `general`，`preset` 选取指定预设中首个可用且未耗尽的位置，不保存设置；也可用 `on` 覆盖执行环境或浏览器服务商
+（默认值见内置 `harnesses.json` 与 `$HUD_HOME/harnesses.json`）。`preset` 和 `on` 互斥。
+`model` 和 `thinking` 覆盖所选 `pi` 或 `cli` 位置的模型和推理强度。其他角色在启动前拒绝这四个字段，批量派发和重试也一样。
+带 `detail: true` 的任务读取或查看会显示所选 `preset`。重复使用显式键会返回原任务；派生键仅复用最近 10 分钟内创建的任务。
+`kind` 为 `flow` 选择 `image`（默认）或 `video`。
 仅 `pi` 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
 （最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；
 split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 加载个人技能；
@@ -153,9 +155,9 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
 Sonic 以非交互方式运行一次 pi 查询，不打开工作标签页或窗格。主会话通过 `hud_create` 发起，工作任务通过 `hud_sonic` 发起并收取结果。两者都保留普通任务目录：`stdout.jsonl` 和 `stderr.log` 记录 pi 的输出，`report.md` 是已声明的报告。Sonic 可以发布进度和获取租约，但不能提问或接收后续消息，也没有空闲宽限期。sonic 角色文件可设置 `check_s`（默认 600）、`stall_s`（180）和 `max_s`（1800），均为正整数秒；`hud_roster({detail:true})` 显示生效值。HUD 在每个检查点停止陷入循环的查询（`looping`），否则发布一条进度并让同一个 pi 进程继续运行。若 `stall_s` 内标准输出未增长且没有工作任务进度，则以 `stalled` 停止；达到硬上限则以 `timeout` 停止。这些失败会保留已有的标准输出和最新进度。用 `hud_create({role:"sonic", retry_of:job})` 重试已停止的查询。新任务以一条说明停止原因的简短消息，从原任务 `sonic-session.jsonl` 的私有副本继续。如果会话不可用或 pi 在接收输入前拒绝打开它，pi 将收到原简报，以及未完成报告末尾最多 8 KiB 的内容（没有报告时取标准输出）。
 
-Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。主人通过 `hud_create` 指定 `thinking` 时跳过选择。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。
+Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。用 `hud_create` 派发 sonic 或用 `hud_sonic` 启动子任务时，都不能覆盖思考级别。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。
 
-按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位且有兼容可用位置，则改以 `general` 启动并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
+按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位，则占用 `general` 的名额，但仍使用 `imp` 的执行链（包括当前预设），并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
 
 `hud trust <dir>` 把该目录加入 grok、agy 和 claude 的信任文件（先在 `$HUD_HOME` 下备份）。
 文件不存在则不创建。codex 跳过。
@@ -421,13 +423,13 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 
 只有显式操作开关才会写入 `$HUD_HOME/harnesses.json` 的 `disabled` 属性（原子写入，0600），保留其他键，所有角色文件内容不变。ID 为 `pi`、`pi:<提供方>`、`cli:<代理>` 和 `bro:<工具>`；不在列表中就启用，新发现或未列出的项也一样。`cli:grok` 与 `pi:xai` 独立。开关配置无效或无法读取时会报错，不会按全部启用处理。
 
-角色视图、`hud_roster` 与 `hud_create` 共用同一套选择规则：按顺序跳过停用、额度未恢复或缺少可执行文件的位置。例如停用 `pi:xai` 后，`imp [daily]` 可转到 `agy`，预设和原来的 pi 位置都不变。恢复 xai 后，它按原顺序参与选择，但真实的额度标记仍须清除或过期。pi 提供方来自显式模型或 pi 角色中的完整模型 ID；若只有模型名，则在未经筛选的缓存中精确匹配唯一提供方；未设置模型才看 pi 的设置。无法确定时显示「提供方未知」，不阻止派发，也不解析 `pi_args` 来判断提供方。一次性的 `preset`、`on` 和 `model` 覆盖值也遵循这套规则；显式指定的停用目标会被拒绝，而不是改派。没有可用位置时，`hud_create` 在创建任务之前返回 `no_available_place`。
+角色视图、`hud_roster` 与 `hud_create` 共用同一套选择规则：按顺序跳过停用、额度未恢复或缺少可执行文件的位置。例如停用 `pi:xai` 后，`imp [daily]` 可转到 `agy`，预设和原来的 pi 位置都不变。恢复 xai 后，它按原顺序参与选择，但真实的额度标记仍须清除或过期。pi 提供方来自显式模型或 pi 角色中的完整模型 ID；若只有模型名，则在未经筛选的缓存中精确匹配唯一提供方；未设置模型才看 pi 的设置。无法确定时显示「提供方未知」，不阻止派发，也不解析 `pi_args` 来判断提供方。`general` 的单次 `preset`、`on` 和 `model` 覆盖值也遵循这套规则；显式指定的停用目标会被拒绝，而不是改派。没有可用位置时，`hud_create` 在创建任务之前返回 `no_available_place`。
 
 角色文件可为 Claude 和 Codex CLI 工作者指定额外的 MCP 服务器，例如 `"mcp_servers": ["chrome-devtools"]`。省略此字段或设为 `[]` 时，只加载 HUD 工作者 MCP。Claude 从用户 `.claude.json`（设置了 `CLAUDE_CONFIG_DIR` 时为 `$CLAUDE_CONFIG_DIR/.claude.json`）的 `mcpServers` 中按名称读取条目，以该任务的私有配置严格启动。若 Claude 配置中没有所指定的名称，本次启动尝试会失败。Codex 仅在本次启动时禁用未列出的服务器；列出的服务器保持其配置状态。如果 HUD 无法读取某层 Codex 配置，就保留原有 MCP 设置，并在启动诊断中记录 `mcp scope not applied`。HUD 不会为限制 MCP 而修改宿主配置。
 
 Claude 将角色指令文件追加到系统提示，Codex 使用开发者指令。角色文本不含控制字符时，Grok 将其追加为规则；否则在首条消息前附上指令，无法内联时则指向角色文件。Claude 的角色文件路径含控制字符时也使用这一回退方式。Herdr 无法在 CLI 启动参数中编码控制字符（包括换行和制表符）；其他启动参数含控制字符时，HUD 会跳过该运行位置，而不是修改参数。Agy 的交互模式没有对应的系统提示参数，也不能按次严格选择 MCP 服务器，因此沿用原有 MCP 配置，并在首条消息前附上角色指令以及已注册项目的 `.hud/brief.md`。首条消息只内联小于 16 KiB 且不含 NUL 的文本，否则指向对应文件；四种 CLI 的组装简报 `brief.md` 也遵循这条规则。
 
-角色文件可带 `presets`：`[{ "name": "short-token", "run": [...] }]`，每项是完整有序位置列表，按 `run` 的规则校验。名称在同一文件内唯一，1–32 个 `[A-Za-z0-9._-]` 字符。预设按内置 → 用户 → 已登记项目合并，每一层先用 `hidden_presets` 隐藏继承的名称，再以本层定义替换同名项或追加新名称。由生效角色文件的 `active_preset` 选择名称，`null` 选择文件自身的 `run`。没有此字段时仍运行文件链，以首个规范化后完全匹配的名称作为预设名。指定的名称不存在时使用文件链，控制标签和名册会显示缺失的名称。`hud_roster` 的详情返回生效的 `run`、`preset` 和合并后的 `presets`。`hud_create(preset: …)` 只在本次任务中使用该预设，不保存。
+角色文件可带 `presets`：`[{ "name": "short-token", "run": [...] }]`，每项是完整有序位置列表，按 `run` 的规则校验。名称在同一文件内唯一，1–32 个 `[A-Za-z0-9._-]` 字符。预设按内置 → 用户 → 已登记项目合并，每一层先用 `hidden_presets` 隐藏继承的名称，再以本层定义替换同名项或追加新名称。由生效角色文件的 `active_preset` 选择名称，`null` 选择文件自身的 `run`。没有此字段时仍运行文件链，以首个规范化后完全匹配的名称作为预设名。指定的名称不存在时使用文件链，控制标签和名册会显示缺失的名称。`hud_roster` 的详情返回生效的 `run`、`preset` 和合并后的 `presets`。只有 `general` 能用 `hud_create(preset: …)` 为单次任务选取预设，不保存。
 
 在**控制 → 角色**中，停用的可选角色列在**可选角色**下。选中 `pro` 或 `flow` 后按空格（或点击页脚的 **Space 开关**），即可为所有项目切换该角色。此操作原子写入 `$HUD_HOME/role-switches.json`（权限 0600），不改动角色文件。手动设置可使用 `{ "pro": true, "flow": false }` 这样的 JSON 对象；移除某个键后，是否启用取决于是否有用户角色文件定义该角色。项目角色白名单仍然生效，不能启用已全局停用的角色。
 

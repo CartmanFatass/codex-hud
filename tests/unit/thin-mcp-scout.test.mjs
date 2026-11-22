@@ -31,7 +31,7 @@ test('scouted create returns one MCP task, shares the managed cwd and appends th
   publishSonic(upstream.task_dir, { state: 'done' });
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
-  const args = { role: 'imp', task: 'Implement the synthetic parser.', thinking: 'low',
+  const args = { role: 'imp', task: 'Implement the synthetic parser.',
     cwd, isolation: 'worktree', context_files: ['input.md'], from_jobs: [upstream.job], scout: scoutQuestion };
   const task = await taskCall(rpc, 'hud_create', args);
   const target = taskJob(f, task);

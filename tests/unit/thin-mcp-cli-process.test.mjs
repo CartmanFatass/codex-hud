@@ -221,7 +221,7 @@ test('supervisor edges: stalled submission stays supervised; pre-input rejection
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   fs.writeFileSync(join(f.env.HOME, 'stalled-prompt'), '');
-  const live = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'stalled', task: 'Synthetic stall.' });
+  const live = await f.call('hud_create', { role: 'general', on: 'agy', request_key: 'stalled', task: 'Synthetic stall.' });
   assert.notEqual(live.ok, false);
   await until(() => cliState(live.task_dir)?.state === 'working');
   assert.equal(JSON.parse(fs.readFileSync(join(live.task_dir, 'turn.json'))).seq, 1);
@@ -229,7 +229,7 @@ test('supervisor edges: stalled submission stays supervised; pre-input rejection
   assert.equal(f.commands().some((c) => c.args[0] === 'tab' && c.args[1] === 'close'), false);
   fs.unlinkSync(join(f.env.HOME, 'stalled-prompt'));
   fs.writeFileSync(join(f.env.HOME, 'rejected-prompt'), '');
-  const rejected = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'rejected', task: 'Synthetic rejection.' });
+  const rejected = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'rejected', task: 'Synthetic rejection.' });
   assert.equal(rejected.ok, false);
   assert.equal(rejected.code, 'dispatch_failed');
   assert.equal(fs.existsSync(join(rejected.task_dir, 'supervisor.pid')), false);
@@ -270,12 +270,12 @@ test('supervisor edges: outage with a report settles at 60s, PID death closes wi
 test('a cli that exits fails, and a closed tab fails', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-exit'), '');
-  const exited = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-exit', task: 'Synthetic exit.' });
+  const exited = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-exit', task: 'Synthetic exit.' });
   await until(() => cliState(exited.task_dir)?.state === 'failed');
   assert.equal(cliState(exited.task_dir).error, 'worker exited');
   fs.unlinkSync(join(f.env.HOME, 'cli-exit'));
   fs.writeFileSync(join(f.env.HOME, 'cli-gone'), '');
-  const missing = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-gone', task: 'Synthetic gone.' });
+  const missing = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-gone', task: 'Synthetic gone.' });
   await until(() => cliState(missing.task_dir)?.state === 'failed');
   assert.equal(cliState(missing.task_dir).error, 'worker exited');
 });
@@ -367,7 +367,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
   writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(liveProc.pid));
   fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
   const keepAlive = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'herdr-errors-alive',
     task: 'Keep working when herdr errors while pid lives.',
@@ -388,7 +388,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const failJob = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'pid-gone-fail',
     task: 'Pid dies without report.',
@@ -405,7 +405,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
   const procWithReport = spawnDummy();
   writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(procWithReport.pid));
   const closeJob = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'pid-gone-report',
     task: 'Pid dies after writing report.',
@@ -423,7 +423,7 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
   fs.unlinkSync(join(f.env.HOME, 'cli-pid'));
   fs.writeFileSync(join(f.env.HOME, 'no-pid'), '');
   const nullPidJob = await f.call('hud_create', {
-    role: 'imp',
+    role: 'general',
     on: 'grok',
     request_key: 'null-pid-3-misses',
     task: 'Null pid requires 3 consecutive misses.',

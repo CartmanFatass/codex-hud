@@ -258,10 +258,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
       let role;
       try { role = JSON.parse(fs.readFileSync(roleFile)); } catch {}
       if (['grok', 'agy', 'claude', 'codex'].includes(args.on) || role?.harness === 'cli' || role?.run?.some((place) => place.harness === 'cli')) {
-        if (args.role === 'imp' && !role) {
+        if (['imp', 'general'].includes(args.role) && !role) {
           fs.mkdirSync(join(env.HUD_HOME, 'roles'), { recursive: true });
-          const imp = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles/imp.json')));
-          writeFixtureFile(roleFile, JSON.stringify({ ...imp, idle_grace_s: 15 }));
+          const defaults = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles', `${args.role}.json`)));
+          writeFixtureFile(roleFile, JSON.stringify({ ...defaults, idle_grace_s: 15 }));
         }
         await startCliSocket();
       }

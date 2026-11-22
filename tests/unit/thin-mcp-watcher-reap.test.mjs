@@ -428,7 +428,7 @@ test('startup failure closes the tab, reports the pi-roles cause instead of the 
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-start'), 'timed out waiting for agent startup');
   fs.writeFileSync(join(f.env.HOME, 'pane-read'), '[roles] synthetic start failed: unsupported thinking\n');
-  const job = await f.call('hud_create', { role: 'imp', on: 'pi', request_key: 'failed-launch', task: 'Synthetic task.' });
+  const job = await f.call('hud_create', { role: 'general', on: 'pi', request_key: 'failed-launch', task: 'Synthetic task.' });
   assert.equal(job.ok, false);
   assert.equal(job.code, 'dispatch_failed');
   assert.match(job.reason, /synthetic start failed/);
@@ -620,7 +620,7 @@ test('hud watch catch-up does not replay reportless failures after hud_read or h
   fs.mkdirSync(cwd);
   const jobs = [];
   for (const method of ['hud_read', 'hud_close', 'unhandled']) {
-    const job = await f.call('hud_create', { role: 'imp', on: 'claude', request_key: method, task: 'Synthetic attempt.', cwd });
+    const job = await f.call('hud_create', { role: 'general', on: 'claude', request_key: method, task: 'Synthetic attempt.', cwd });
     assert.equal(job.code, 'untrusted_cwd');
     jobs.push(job);
     if (method === 'hud_read') {
