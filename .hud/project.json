@@ -18,7 +18,8 @@
     "disposable": [
       "dist/**",
       "dist-test/**",
-      "tmp/**"
+      "tmp/**",
+      "hud-*.tar.gz"
     ]
   },
   "land": {
