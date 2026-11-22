@@ -1,6 +1,6 @@
 # 01: Home shows what matters and folds the rest into marks
 
-**Status:** in-progress
+**Status:** ready-for-human
 **Blocked by:** none
 **Owner try:** yes
 
@@ -11,6 +11,10 @@ Owner addenda the same day (sent to the job 2026-11-22):
 - A finished card hides from Home 5 minutes after it settles: the default `cardHideMinutes` goes from 15 to 5 (`cardFoldMinutes` stays 5; Settings still changes both). Asking, failed and flow rules in `src/render/work-visibility.ts` stay.
 
 - [x] Sample opened in the owner's browser and settled (owner 2026-11-22: "这个方案很满意")
-- [ ] Sonic shows only as icon + running count on its parent worker
-- [ ] Finished cards hide after 5 minutes by default
-- [ ] Panel width rules (§8) hold; references updated in both languages
+- [x] Sonic shows only as icon + running count on its parent worker
+- [x] Finished cards hide after 5 minutes by default
+- [x] Panel width rules (§8) hold; references updated in both languages
+
+## Comments
+
+- Landed b4ee58e8 (2026-11-22); owner tries the real panel.
