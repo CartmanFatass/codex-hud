@@ -10,13 +10,20 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 - neon proposal 05 Q1: an optional `$HUD_HOME/models.json` overriding the built-in model catalog (new user file), or
   built-in catalog only? (waits on PRIMITIVES-04, primitives/04)
 
+- Proposals 10–16 in docs/neon-proposal/ (the rest of neon's report, reduced; one slice each): 10 Settings Advanced
+  fold (M5), 11 Claude transcript tail-first (M5), 12 i18n cross-dictionary check (7 keys show a different word today),
+  13 read-only `hud doctor <jobId>`, 14 job archive ledger before deletion, 15 worktree overlaps in hud_read
+  git_summary, 16 per-place health in Control's Dispatch today. 14–16 each propose one spec sentence. Owner picks
+  which become tickets. Not written (spec or owner decision rules them out, owner may ask): spec restructure, structured
+  hud_report summary, HUD-driven resume, `after` chaining, web board server, panel merge.
+
 ## Next
 
 - MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. Two follow-ups to
   try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
-  woken at its report) and SONIC-THINKING (`hud_roster` shows sonic's low/high/max with purposes; `hud_create` refuses
-  other levels). Then the milestone's done check: a real project day compared with the 2026-11-21 study counts.
-- CODE-HEALTH (owner 2026-11-21: run the docs/neon-proposal plans through imp): wave 1 PRUNE-OBS-01 + BUILD-DEDUP-01.
+  woken at its report) and SONIC-AUTO-THINKING (a sonic job shows `thinking_source: default` at high; with the
+  Settings toggle on, `decision`). Then the milestone's done check: a real project day compared with the 2026-11-21 study counts.
+- CODE-HEALTH (owner 2026-11-21: run the docs/neon-proposal plans through imp): PRUNE-OBS-01, BUILD-DEDUP-01..02 landed; next PRUNE-OBS-02 (plan A) and BUILD-DEDUP-03. Proposals 10–16 (the rest of neon's report, reduced) wait for the owner to pick before tickets.
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
 ## Slices
@@ -25,11 +32,12 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
-- working · CODE-HEALTH · PRUNE-OBS-01 · neon proposal 01 Slice 1: stop dead legacy observers, delete ~3,300 lines (imp, wt/PRUNE-OBS-01; prune-obs/01)
+- try · CODE-HEALTH · PRUNE-OBS-01 · neon proposal 01 Slice 1: panel stops dead legacy observers (no herdr agent list), 15 files deleted, net −3,567 lines; retained assoc/native-relations records no longer show Home cards (owner-approved) (16892187)
+- try · CODE-HEALTH · BUILD-DEDUP-02 · staged build: tsc output staged under a lock and published file by file, panel entry last; orphans pruned; `npm run clean` removes old packages/hud-mcp/dist (cba53a66)
 - try · CODE-HEALTH · BUILD-DEDUP-01 · hud-mcp sources under src/mcp, one tsc build, ./install builds once; old packages/hud-mcp/dist only warned about (f9de5b72, 78df68dd); release archive drops .hud/ (c13ea5f2); live: fresh hud-mcp lists 11 tools, a sonic settled through the new worker paths
-- todo · CODE-HEALTH · rest of the six neon proposals in two lanes. Panel lane: PRUNE-OBS-02..04 → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: BUILD-DEDUP-02..03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
+- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Panel lane: PRUNE-OBS-02..04 → MONITOR-STATE-01..04 → MCP-SPLIT-04. MCP/bin lane: TEST-SPLIT-01..04 (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
-- working · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job, fallback default (imp, wt/SONIC-AUTO-THINKING)
+- try · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job (Settings row), fallback default; thinking_source recorded (f0baa540)
 - dropped · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9) [superseded the same day by SONIC-AUTO-THINKING: callers do not pick]
 - accepted · MCP-ORCH · RESTART-RECOVERY · CLI effort facts for haiku, claude-*-5-x ids and gemini-3.8-flash-high; legacy tmp/tasks admitted newest first; restart recovery itself not built (herdr resume strips HUD bindings; owner decision under Waiting) (bca6e312) [tried by the main session for the owner 2026-11-21: tests only; restart recovery itself stays an owner decision]
 - accepted · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions (c1572b5d; Fishpref d5e2a98 cherry-picked) [tried by the main session for the owner 2026-11-21: live run on the fixed build]
@@ -221,7 +229,7 @@ board counts these; update at every landing or decision. -->
   small slice delivers non-job events (try accepted/flagged) to task clients with the next tool reply.
 - MyHUD is registered (`.hud/project.json`, all shipped roles inherited) with a standing brief `.hud/brief.md`; briefs
   here no longer need to repeat tmp/env.sh, the full-suite timeout, worktrees or the public-repo rule.
-- Sonic's default is `thinking: high` (owner role file `~/.hud/roles/sonic.json`, changed from max 2026-11-21); callers pick low/high/max per task; watch its durations
+- Sonic's default is `thinking: high` (owner role file `~/.hud/roles/sonic.json`, changed from max 2026-11-21); callers do not pick (an optional Settings toggle lets the Decision API pick per job); watch its durations
   (2–8 min at high). Sonic briefs ask for facts, not recommendations; split wide surveys (convention, role texts).
 - Noted 2026-11-21: a sonic ran `agy models` despite offline instructions (network access, writes to Antigravity's local
   CLI state; job under RESTART-RECOVERY jed235679bed45e93). Not reverted.
