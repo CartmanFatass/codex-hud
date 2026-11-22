@@ -15,6 +15,7 @@ import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
+import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
 import type { Job, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
 import { jobFiles, BUNDLED_ROOT, binScript } from '../mcp/paths.js';
 import { capForRole, isWorkingForCap, loadConcurrencySettings, queueOrderCompare, queuedTimestamp } from '../roles/concurrency.js';
@@ -56,6 +57,7 @@ let nextHomeRetention = 0;
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
 const jobCache = getJobIndexCache(home);
 const jobChanges = jobChangePublisher(home);
+const workSummary = createWorkSummaryPublisher(home, 'hud-watch', jobCache);
 type SessionEntry = { fields: SessionFields; stamp: string };
 function readJsonEntry<T>(file: string): { value: T | null; at: number | null } {
   const res = jobCache.readJson<T>(file);
@@ -129,7 +131,7 @@ type ActiveReap = { tab: string; ownership: string; readClose: boolean; busy: st
 const closedTabs = new Set<string>();
 let reapRetries = new Map<string, Retry>(), preflightHold = new Map<string, { ownership: string; token: string; until: number }>();
 let worktreeRetries = new Map<string, number>();
-type Handoff = { version: 1; reapRetries: typeof reapRetries; preflightHold: typeof preflightHold; worktreeRetries: typeof worktreeRetries };
+type Handoff = { version: 1; reapRetries: typeof reapRetries; preflightHold: typeof preflightHold; worktreeRetries: typeof worktreeRetries; summaryGeneration?: number };
 const inFlightReaps = new Map<string, ActiveReap>();
 const inFlightWorktrees = new Map<string, Promise<void>>();
 const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
@@ -144,7 +146,7 @@ let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
   if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size) return;
   stopScheduling();
-  pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries });
+  pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries, summaryGeneration: workSummary.generation });
   pauseReady = undefined;
 }
 function checkDeadline(id: string, dir: string, job: Job | null, status: Partial<JobStatus>): number | undefined {
@@ -778,7 +780,9 @@ function scan(retryWatch = false) {
   if (!queued && !open && !hasInFlight && nearest === Infinity) {
     stopScheduling();
     notify('idle');
+    return;
   }
+  workSummary.publish({ watching: Boolean(watcher) });
 }
 function schedule() {
   if (queued || stopped) return;
@@ -814,6 +818,7 @@ function startWatch() {
       warn('watch error', `watch error: ${error.message}`);
       watcher?.close(); watcher = undefined;
       jobChanges.stop();
+      workSummary.publish({ watching: false });
       clearTimeout(timer);
       timer = setTimeout(() => scan(true), degradedMs);
     });
@@ -838,6 +843,7 @@ export function openRuntime(emit: typeof notify) {
     start(state: Handoff | null, tabs: Set<string>) {
       if (state && state.version !== 1) throw new Error('incompatible watcher handoff');
       if (state) ({ reapRetries, preflightHold, worktreeRetries } = state);
+      if (state?.summaryGeneration) workSummary.setGeneration(state.summaryGeneration);
       for (const id of tabs) rememberClosedTab(closedTabs, id);
       worktreeSweepDone = readWorktreeSweepDone();
       sweptWorktrees.clear();

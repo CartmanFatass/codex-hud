@@ -34,6 +34,7 @@ import { addWorktree, gitSummary, planWorktree, populateWorktree, reusableWorktr
 import { taskTarget } from '../collectors/job-supersession.js';
 import { needsTranslation, replyWords } from '../collectors/reply-language.js';
 import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
+import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
@@ -75,6 +76,8 @@ const hudHome = isWorker ? dirname(dirname(fs.realpathSync(jobDir))) : resolve(p
 if (isWorker) process.env.HUD_HOME = hudHome; // The watcher and other subprocesses inherit the worker's HUD home.
 const jobsRoot = join(hudHome, 'jobs');
 const jobCache = new JobIndexCache(hudHome);
+const workSummary = createWorkSummaryPublisher(hudHome, 'hud-mcp', jobCache);
+const publishWorkSummary = () => { try { workSummary.publish(); } catch { /* Best-effort display snapshot. */ } };
 let resumeChecked = false;
 let resumeRefusal: string | undefined;
 function checkResume(agent: 'agy' | 'claude' | 'codex', id: unknown) {
@@ -1938,6 +1941,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       }
       // Persist before dispatch: an interrupted launch must not dispatch again on retry.
       save(job, attempts.length > 0);
+      if (attempts.length === 0) publishWorkSummary();
       if (attempts.length === 0) {
         if (job.retry_of) {
           const source = findJob(job.retry_of);
@@ -2297,6 +2301,7 @@ function launchReason(result: DispatchResult) {
 
 function writeCreateStatus(dir: string, status: JobStatus) {
   jobCache.writeJsonAtomic(join(dir, jobFiles.status), status as unknown as Record<string, unknown>, { mkdir: false });
+  publishWorkSummary();
 }
 
 function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string, advanceCursor = true): JobRow | undefined {
@@ -2321,6 +2326,7 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
     });
   }
   save(job);
+  publishWorkSummary();
   if (!advanceCursor) return undefined;
   const { row } = readRow(job);
   if (!job.parent_job) cursor.set(job.job, row);
@@ -2928,6 +2934,7 @@ async function respondJob(args: Args, batch: boolean) {
   try {
     writePrivateFile(join(dir, jobFiles.qa, `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
     jobCache.invalidateQa(job.job);
+    publishWorkSummary();
     if (canCarry) {
       oldTask.seenQuestions.add(`${request}.md`);
       if (row && needsAttention(row)) oldTask.attentionBefore = polled?.statusAt ?? undefined;
@@ -2994,6 +3001,7 @@ async function closeJob(job: Job, stop = false) {
   }
   if (job.headless) {
     const closed = await stopSonic(dir);
+    publishWorkSummary();
     if (closed && !isWorker && readRow(job).row.display_state === 'failed')
       save({ ...(findJob(job.job) ?? job), observed_at: new Date().toISOString() });
     return { exit_code: closed ? 0 : 1, last_line: `${job.role} ${closed ? 'closed' : 'cleanup pending'}` };
@@ -3016,6 +3024,7 @@ async function closeJob(job: Job, stop = false) {
     settleStoppedPi(statusFile, readCachedStatus(job.job).status);
     jobCache.invalidateFile(statusFile);
   }
+  publishWorkSummary();
   if (issue || stoppingPi) ensureWatcher();
   if (!isWorker && complete && row.display_state === 'failed') {
     const latest = findJob(job.job) ?? job;
@@ -3670,6 +3679,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         } else {
           try {
             const value = await worker.callWorkerTool(name, args);
+            if (name === 'hud_ask' || name === 'hud_report' || name === 'hud_sonic') publishWorkSummary();
             result = { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] };
           } catch (error) {
             const code = error instanceof Error && 'code' in error && error.code === 'invalid_arguments'

@@ -1,5 +1,6 @@
 /** Statusline/footer Work counts from the same passive jobs as the panel. */
 import type { OwnerWorker, WorkLane } from '../collectors/workboard-types.js';
+import type { WorkSummaryScope } from '../collectors/work-summary-snapshot.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { truncateAnsi } from './colors.js';
 import type { BarWorker } from './layout/bar-fields.js';
@@ -40,5 +41,22 @@ export function renderWorkSummary(lanes: readonly WorkLane[], width: number, now
   const parts = ['needs you', 'stalled', 'failed', 'report ready', 'running'].flatMap((word) =>
     counts.has(word) ? [`${counts.get(word)} ${word}`] : []
   );
+  return parts.length ? truncateAnsi('Work: ' + parts.join(' · '), width) : '';
+}
+export function workSignalsFromSummary(scope: WorkSummaryScope): WorkSignals {
+  const workers: BarWorker[] = [];
+  for (const [role, counts] of Object.entries(scope.roles)) {
+    const asking = Math.min(counts.asking, counts.running);
+    for (let i = 0; i < asking; i++) workers.push({ role, state: 'asking' });
+    for (let i = 0; i < counts.running - asking; i++) workers.push({ role, state: 'working' });
+  }
+  return { workers };
+}
+export function renderWorkSummaryFromCounts(scope: WorkSummaryScope, width: number): string {
+  const running = Math.max(0, scope.running - scope.asking);
+  const parts = [
+    ...(scope.asking > 0 ? [`${scope.asking} needs you`] : []),
+    ...(running > 0 ? [`${running} running`] : []),
+  ];
   return parts.length ? truncateAnsi('Work: ' + parts.join(' · '), width) : '';
 }
