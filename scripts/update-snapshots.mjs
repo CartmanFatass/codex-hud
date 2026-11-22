@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Rewrites every frame snapshot under tests/fixtures from the current build, then prints which files changed.
- * Run as `npm run snapshots:update` (it builds dist and dist-test first). Review the diff before committing:
+ * Run as `npm run snapshots:update` (it builds the app and TypeScript fixtures first). Review the diff before committing:
  * a snapshot that changed without a deliberate UI change is a regression, not a refresh.
  */
 import fs from 'node:fs';
@@ -54,7 +54,7 @@ const writers = {
     return withHome(async (h) => ticketFrames({ root: h, ...(await ticketFixture(h)) }));
   },
   'bar-themes.json': async () => {
-    const bars = await import(join(root, 'dist-test/tests/fixtures/bar-themes.js'));
+    const bars = await import(join(root, 'dist-test/fixtures/bar-themes.js'));
     const now = Date.now;
     process.env.COLORTERM = 'truecolor';
     Date.now = () => bars.THEME_NOW;
@@ -69,7 +69,7 @@ const writers = {
     }
   },
   'bar-widths.json': async () => {
-    const { widthFrames } = await import(join(root, 'dist-test/tests/fixtures/bar-widths.js'));
+    const { widthFrames } = await import(join(root, 'dist-test/fixtures/bar-widths.js'));
     return widthFrames();
   },
 };

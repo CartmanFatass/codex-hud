@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
-import { SETTING_ROWS, renderSettingsPage } from '../../src/render/settings-page.js';
-import { stripAnsi } from '../../src/render/colors.js';
+import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
+import { SETTING_ROWS, renderSettingsPage } from '../../dist/render/settings-page.js';
+import { stripAnsi } from '../../dist/render/colors.js';
 
 test('Models exposes the master, provider, separate budgets, sonic opt-in and summary interval', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-thin-'));

@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parityFixture } from '../fixtures/pi-footer.js';
 import { PI_QUOTA_WIDTHS } from '../fixtures/bar-widths.js';
-import { HUD_STATUS_KEY } from '../../src/harness/pi/segment.js';
-import { stripAnsi, visualWidth } from '../../src/render/colors.js';
-import { expProxyPath, readExpConfig, saveExpEdit } from '../../src/collectors/exp-store.js';
+import { HUD_STATUS_KEY } from '../../dist/harness/pi/segment.js';
+import { stripAnsi, visualWidth } from '../../dist/render/colors.js';
+import { expProxyPath, readExpConfig, saveExpEdit } from '../../dist/collectors/exp-store.js';
 
 function fixture(t: test.TestContext, settings?: unknown, env?: Record<string, string>) {
   const f = parityFixture({ name: 'ribbon', width: 160, settings, env });

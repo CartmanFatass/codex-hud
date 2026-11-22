@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { stripAnsi } from '../../dist-test/src/render/colors.js';
-import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
-import { SETTING_ROWS } from '../../dist-test/src/render/settings-page.js';
-import { loadSettings } from '../../dist-test/src/settings.js';
+import { stripAnsi } from '../../dist/render/colors.js';
+import { initialMonitorState } from '../../dist/render/monitor.js';
+import { SETTING_ROWS } from '../../dist/render/settings-page.js';
+import { loadSettings } from '../../dist/settings.js';
 import { delay, until, live, encode, QUIET_MS } from '../helpers/panel-reload-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 

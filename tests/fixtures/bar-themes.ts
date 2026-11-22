@@ -2,12 +2,12 @@
 import { parityFixture, FOOTER_NOW } from './pi-footer.js';
 import { makeHudData, makeContextUsage } from './hud-data.js';
 import { OWNER_CONFIG } from './claude-hud-parity/fixture.js';
-import { paritySettings } from '../../src/statusline-parity/settings.js';
-import { renderParity } from '../../src/statusline-parity/render.js';
-import { fitStatusBar } from '../../src/render/header.js';
-import { DEFAULT_LAYOUT } from '../../src/types.js';
-import { setDisplayConfig, BAR_FIELDS, type BarStyle } from '../../src/render/hud-config.js';
-import { agentEvent } from '../../src/render/layout/bar-fields.js';
+import { paritySettings } from '../../dist/statusline-parity/settings.js';
+import { renderParity } from '../../dist/statusline-parity/render.js';
+import { fitStatusBar } from '../../dist/render/header.js';
+import { DEFAULT_LAYOUT } from '../../dist/types.js';
+import { setDisplayConfig, BAR_FIELDS, type BarStyle } from '../../dist/render/hud-config.js';
+import { agentEvent } from '../../dist/render/layout/bar-fields.js';
 
 export const THEME_NOW = FOOTER_NOW;
 export function barThemeScene() {

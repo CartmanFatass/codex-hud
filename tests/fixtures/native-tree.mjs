@@ -1,12 +1,12 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { ClaudeNativeTree } from '../../dist-test/src/collectors/claude-native-tree.js';
-import { buildSubagentTree } from '../../dist-test/src/collectors/subagent-tree.js';
-import { buildWorkboard } from '../../dist-test/src/collectors/workboard.js';
-import { renderMonitor, initialMonitorState } from '../../dist-test/src/render/monitor.js';
-import { setLanguage } from '../../dist-test/src/render/i18n.js';
-import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
-import { stripAnsi } from '../../dist-test/src/render/colors.js';
+import { ClaudeNativeTree } from '../../dist/collectors/claude-native-tree.js';
+import { buildSubagentTree } from '../../dist/collectors/subagent-tree.js';
+import { buildWorkboard } from '../../dist/collectors/workboard.js';
+import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
+import { setLanguage } from '../../dist/render/i18n.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { stripAnsi } from '../../dist/render/colors.js';
 export const NOW = Date.parse('2026-11-12T12:00:00Z');
 export function longClaudeTranscript() {
   const line = (content, timestamp = NOW - 60000, message = {}) => JSON.stringify({

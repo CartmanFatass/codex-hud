@@ -483,8 +483,9 @@ npm run check:fixtures
 npm run snapshots:update
 ```
 
-`npm test` builds the shared `dist/` and the test-only `dist-test/`, then runs the
-default unit runner and the `.mjs` suites. Snapshot updates are explicit: inspect their diff; normal tests do not
+Both test suites import the app from `dist/`. `build:test` needs the declarations from `npm run build`
+and emits only TypeScript tests and fixtures under `dist-test/`. `npm test` runs both builds in that order,
+then the default unit runner and the `.mjs` suites. Snapshot updates are explicit: inspect their diff; normal tests do not
 rewrite frames. Tests use temporary homes, fixed clocks and synthetic data;
 render checks compare terminal cells, not font pixels. Restore display/language
 state in `finally`. A real client/browser check remains separate from fixtures.

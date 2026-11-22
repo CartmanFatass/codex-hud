@@ -5,8 +5,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { longClaudeTranscript, nativeFixture, NOW } from '../fixtures/native-tree.mjs';
-import { JobSentences } from '../../dist-test/src/collectors/job-sentences.js';
-import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
+import { JobSentences } from '../../dist/collectors/job-sentences.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 
 const CHUNK = 1048576;
 const TAIL = 65536;
@@ -294,7 +294,7 @@ test('Claude read-to-end fallback does not hide an orphan indefinitely, includin
 });
 
 test('a running Claude agent whose transcript still grows is in progress, not stalled, while replay lags', async (t) => {
-  const { nativeWorker, projectWorkCard } = await import('../../dist-test/src/collectors/work-card.js');
+  const { nativeWorker, projectWorkCard } = await import('../../dist/collectors/work-card.js');
   const f = fixture(t);
   const old = (text) =>
     JSON.stringify({ type: 'assistant', timestamp: new Date(NOW - 20 * 60000).toISOString(), message: { content: [{ type: 'text', text }] } }) + '\n';

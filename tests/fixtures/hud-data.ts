@@ -17,7 +17,7 @@ import type {
   ToolActivity,
   ToolCall,
   TokenUsageInfo,
-} from '../../src/types.js';
+} from '../../dist/types.js';
 
 export const FIXED_NOW = new Date('2026-03-01T12:00:00.000Z');
 

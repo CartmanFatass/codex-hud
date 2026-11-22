@@ -7,14 +7,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { choose } from '../../src/jev/decide.js';
-import { buildDecisionRequest } from '../../src/jev/model.js';
-import { OPENAI_DECISION_MODEL, OpenAIDecisionProvider, buildOpenAIBody } from '../../src/jev/providers/openai.js';
-import { TypeSafeDecisionProvider, buildTypeSafeBody } from '../../src/jev/providers/typesafe.js';
+import { choose } from '../../dist/jev/decide.js';
+import { buildDecisionRequest } from '../../dist/jev/model.js';
+import { OPENAI_DECISION_MODEL, OpenAIDecisionProvider, buildOpenAIBody } from '../../dist/jev/providers/openai.js';
+import { TypeSafeDecisionProvider, buildTypeSafeBody } from '../../dist/jev/providers/typesafe.js';
 import { FIXTURE_CACHE_KEY, FIXTURE_GOAL, FIXTURE_MODEL, searchPage } from './jev-page.js';
 
 function repoRoot(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), '../../..');
+  return join(dirname(fileURLToPath(import.meta.url)), '../..');
 }
 
 function readJson(relative: string): unknown {

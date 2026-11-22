@@ -2,10 +2,10 @@
  * The default look's bars at the widths a main pane has beside the open panel (BAR-NARROW): 184 columns less the
  * 40-column panel is 144, then smaller windows 120, 100 and 80. Plain text, synthetic facts only.
  */
-import { renderBar, agentEvent, type BarFacts, type BarQuotaWindow } from '../../src/render/layout/bar-fields.js';
-import { renderPiBar } from '../../src/harness/pi/p10k-footer.js';
-import { setDisplayConfig, BAR_FIELDS } from '../../src/render/hud-config.js';
-import { stripAnsi } from '../../src/render/colors.js';
+import { renderBar, agentEvent, type BarFacts, type BarQuotaWindow } from '../../dist/render/layout/bar-fields.js';
+import { renderPiBar } from '../../dist/harness/pi/p10k-footer.js';
+import { setDisplayConfig, BAR_FIELDS } from '../../dist/render/hud-config.js';
+import { stripAnsi } from '../../dist/render/colors.js';
 import { barThemeScene, THEME_NOW } from './bar-themes.js';
 
 export const BAR_WIDTHS = [144, 120, 100, 80] as const;

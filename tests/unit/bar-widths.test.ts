@@ -9,8 +9,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { BAR_WIDTHS, PI_QUOTA_WIDTHS, widthFrames } from '../fixtures/bar-widths.js';
-import { visualWidth } from '../../src/render/colors.js';
-import { setLanguage } from '../../src/render/i18n.js';
+import { visualWidth } from '../../dist/render/colors.js';
+import { setLanguage } from '../../dist/render/i18n.js';
 
 const golden = JSON.parse(readFileSync(join(process.cwd(), 'tests/fixtures/bar-widths.json'), 'utf8'));
 

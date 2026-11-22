@@ -1,11 +1,11 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { nativeFixture, NOW } from './native-tree.mjs';
-import { readThinJobs } from '../../dist-test/src/collectors/thin-jobs.js';
-import { renderMonitor, initialMonitorState } from '../../dist-test/src/render/monitor.js';
-import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
-import { setLanguage } from '../../dist-test/src/render/i18n.js';
-import { stripAnsi } from '../../dist-test/src/render/colors.js';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { setLanguage } from '../../dist/render/i18n.js';
+import { stripAnsi } from '../../dist/render/colors.js';
 export { NOW };
 export function cardFixture(home) {
   const f = nativeFixture(home), tree = f.combined();

@@ -1,5 +1,5 @@
 import { beforeEach, afterEach } from 'node:test';
-import { resolveDisplayConfig, setDisplayConfig, type HudDisplayConfig } from '../../src/render/hud-config.js';
+import { resolveDisplayConfig, setDisplayConfig, type HudDisplayConfig } from '../../dist/render/hud-config.js';
 
 /** Rendering expectations choose their own display, independent of the caller's terminal. */
 export function useDisplayFixture(config: Partial<HudDisplayConfig> = {}): void {

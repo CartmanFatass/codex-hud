@@ -5,8 +5,8 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { main } from '../../src/cli/hud.js';
-import { readCredentialsEnv } from '../../src/jev/ask/config.js';
+import { main } from '../../dist/cli/hud.js';
+import { readCredentialsEnv } from '../../dist/jev/ask/config.js';
 function fixture(t: TestContext) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-import-')),
     home = join(root, 'home'),

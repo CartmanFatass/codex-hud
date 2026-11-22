@@ -1,7 +1,7 @@
 // Synthetic page shared by the Jev port tests. No secrets.
 
-import type { Answer } from '../../src/jev/decide.js';
-import type { PageState } from '../../src/jev/model.js';
+import type { Answer } from '../../dist/jev/decide.js';
+import type { PageState } from '../../dist/jev/model.js';
 
 export const FIXTURE_GOAL = 'Find a book';
 export const FIXTURE_CACHE_KEY = 'hud-jev:fixture';

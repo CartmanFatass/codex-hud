@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { rmSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { encodePanelPlace, PanelReload, readPanelPlace } from '../../dist-test/src/utils/panel-reload.js';
-import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
-import { DEFAULT_PANEL_VIEW } from '../../dist-test/src/settings.js';
+import { encodePanelPlace, PanelReload, readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { initialMonitorState } from '../../dist/render/monitor.js';
+import { DEFAULT_PANEL_VIEW } from '../../dist/settings.js';
 import { delay, until, fixture, launch, encode, live, QUIET_MS } from '../helpers/panel-reload-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-const moduleUrl = pathToFileURL(resolve('dist-test/src/utils/panel-reload.js')).href;
+const moduleUrl = pathToFileURL(resolve('dist/utils/panel-reload.js')).href;
 
 test('reload place retains opening time; legacy handoffs use their consumption time', () => {
   const previous = process.env.HUD_PANEL_RELOAD_PLACE;
@@ -311,7 +311,7 @@ else process.exitCode=17;
 test('the older-Node supervisor forwards signals and returns the child status', async (t) => {
   const f = fixture(t), runner = join(f.root, 'signal.mjs');
   writeFixtureFile(runner, `import {PanelReload,readPanelPlace} from ${JSON.stringify(moduleUrl)};
-import {initialMonitorState} from ${JSON.stringify(pathToFileURL(resolve('dist-test/src/render/monitor.js')).href)};
+import {initialMonitorState} from ${JSON.stringify(pathToFileURL(resolve('dist/render/monitor.js')).href)};
 process.execve=undefined;const reload=new PanelReload();
 if(readPanelPlace()){process.on('SIGTERM',()=>process.exit(23));console.log('ready');setInterval(()=>{},1000);}
 else await reload.restart({state:initialMonitorState(),settings:null},()=>{});`);

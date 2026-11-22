@@ -3,11 +3,11 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, copyFileSync, readdirSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
-import { encodePanelPlace } from '../../dist-test/src/utils/panel-reload.js';
-import { readThinJobs } from '../../dist-test/src/collectors/thin-jobs.js';
-import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
-import { makeSourceId } from '../../dist-test/src/core/identity.js';
+import { initialMonitorState } from '../../dist/render/monitor.js';
+import { encodePanelPlace } from '../../dist/utils/panel-reload.js';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { makeSourceId } from '../../dist/core/identity.js';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 
 const atomicWriter = new URL('./thin-mcp-files.mjs', import.meta.url).href;
@@ -90,7 +90,7 @@ console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
     Object.assign(f.env, { PATH: `${bin}:${f.env.PATH}`, HERDR_PANE_ID: 'w4E:p2', HUD_PANEL_WIDTH: '56' });
   }
   // Keep the entry and its reload probe local: the probe finds the entry relative to import.meta.url.
-  stagePanel(resolve('dist-test/src'), join(f.root, 'dist'), 'tree-page.js', true);
+  stagePanel(resolve('dist'), join(f.root, 'dist'), 'tree-page.js', true);
   for (const file of ['bin/hud', 'bin/hud-dist.mjs', 'scripts/dist-lock.mjs']) {
     mkdirSync(join(f.root, file.split('/')[0]), { recursive: true });
     copyFileSync(resolve(file), join(f.root, file));

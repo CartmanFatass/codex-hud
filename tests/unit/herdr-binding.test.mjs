@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { herdrId, tabIds, listedTabs, tabInfo, listedPanes, listedAgents } from '../../dist-test/src/roles/herdr-run.js';
-import { validPane, validStamp } from '../../dist-test/src/integrations/panel/receipt.js';
+import { herdrId, tabIds, listedTabs, tabInfo, listedPanes, listedAgents } from '../../dist/roles/herdr-run.js';
+import { validPane, validStamp } from '../../dist/integrations/panel/receipt.js';
 import { readHerdrConfig } from '../../bin/codex-hud-herdr.mjs';
 
 for (const id of ['w4E:p1', 'workspace / unicode 窗:tab?', ' '.repeat(300)])

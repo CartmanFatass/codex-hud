@@ -14,11 +14,11 @@ import {
   setDisplayConfig,
   resolveDisplayConfig,
   barStyleOf,
-} from '../../src/render/hud-config.js';
-import { renderBar, agentEvent, type BarFacts } from '../../src/render/layout/bar-fields.js';
-import { colors, stripAnsi, theme, visualWidth } from '../../src/render/colors.js';
-import { applyBarSettings } from '../../src/bar-settings.js';
-import { loadSettings } from '../../src/settings.js';
+} from '../../dist/render/hud-config.js';
+import { renderBar, agentEvent, type BarFacts } from '../../dist/render/layout/bar-fields.js';
+import { colors, stripAnsi, theme, visualWidth } from '../../dist/render/colors.js';
+import { applyBarSettings } from '../../dist/bar-settings.js';
+import { loadSettings } from '../../dist/settings.js';
 
 const golden = JSON.parse(readFileSync(join(process.cwd(), 'tests/fixtures/bar-themes.json'), 'utf8'));
 function scene(t: test.TestContext) {

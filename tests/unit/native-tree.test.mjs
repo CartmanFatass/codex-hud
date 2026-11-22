@@ -9,16 +9,16 @@ import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { nativeFixture, nativeFrames, NOW } from '../fixtures/native-tree.mjs';
-import { JobSentences } from '../../dist-test/src/collectors/job-sentences.js';
-import { SmallModel, modelHttpRequest } from '../../dist-test/src/collectors/small-model.js';
-import { renderMonitor, initialMonitorState, handleMonitorInput } from '../../dist-test/src/render/monitor.js';
-import { stripAnsi, visualLength, theme } from '../../dist-test/src/render/colors.js';
-import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
-import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
-import { collectionObservation, jobPanelObservation } from '../../dist-test/src/utils/collection-observation.js';
-import { recordAdaptivePoll, createAdaptivePollState } from '../../dist-test/src/collectors/adaptive-poll.js';
-import { callerSession, claudeCallerSession } from '../../dist-test/src/collectors/claude-caller-session.js';
-import { panelCommand, panelSelection } from '../../dist-test/src/cli/panel.js';
+import { JobSentences } from '../../dist/collectors/job-sentences.js';
+import { SmallModel, modelHttpRequest } from '../../dist/collectors/small-model.js';
+import { renderMonitor, initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { collectionObservation, jobPanelObservation } from '../../dist/utils/collection-observation.js';
+import { recordAdaptivePoll, createAdaptivePollState } from '../../dist/collectors/adaptive-poll.js';
+import { callerSession, claudeCallerSession } from '../../dist/collectors/claude-caller-session.js';
+import { panelCommand, panelSelection } from '../../dist/cli/panel.js';
 const tick = async () => {
   for (let i = 0; i < 15; i++) await new Promise(setImmediate);
 };
@@ -561,7 +561,7 @@ if (args[1] === 'current') {
 }
 async function foregroundCaller(t, f, args = ['--here'], ready = 'Nothing needs you') {
   const runner = join(f.home, 'runner.mjs');
-  fs.writeFileSync(runner, `import {panelCommand} from ${JSON.stringify(pathToFileURL(resolve('dist-test/src/cli/panel.js')).href)};process.exitCode=await panelCommand({env:process.env,stdout:s=>process.stdout.write(s),stderr:s=>process.stderr.write(s)},${JSON.stringify(args)});`);
+  fs.writeFileSync(runner, `import {panelCommand} from ${JSON.stringify(pathToFileURL(resolve('dist/cli/panel.js')).href)};process.exitCode=await panelCommand({env:process.env,stdout:s=>process.stdout.write(s),stderr:s=>process.stderr.write(s)},${JSON.stringify(args)});`);
   const child = spawn(process.execPath, [runner], { cwd: f.home, env: f.env, stdio: ['pipe', 'pipe', 'pipe'] });
   let output = '', errors = '';
   child.stdout.on('data', b => output += b);

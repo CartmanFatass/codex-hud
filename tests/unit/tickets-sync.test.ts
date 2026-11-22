@@ -4,8 +4,8 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { main } from '../../src/cli/hud.js';
-import { ProjectCollector } from '../../src/collectors/project-board.js';
+import { main } from '../../dist/cli/hud.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
 
 const NOW = Date.UTC(2026, 10, 17, 12, 0, 0);
 

@@ -3,10 +3,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { visualWidth, truncateAnsi } from '../../src/render/colors.js';
-import { createP10kFooter } from '../../src/harness/pi/p10k-footer.js';
-import type { FooterContext, FooterHost, FooterComponent } from '../../src/harness/pi/footer-host.js';
-import { createPiSegment } from '../../src/harness/pi/segment.js';
+import { visualWidth, truncateAnsi } from '../../dist/render/colors.js';
+import { createP10kFooter } from '../../dist/harness/pi/p10k-footer.js';
+import type { FooterContext, FooterHost, FooterComponent } from '../../dist/harness/pi/footer-host.js';
+import { createPiSegment } from '../../dist/harness/pi/segment.js';
 const { createFooterHost } = await import(pathToFileURL(join(process.cwd(), 'tests/fakes/pi.mjs')).href);
 // Native pi-tui closes even plain truncated fragments with SGR resets. All fixture
 // fragments are plain text; ANSI is added later by the real port's painters.

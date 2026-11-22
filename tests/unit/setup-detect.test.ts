@@ -5,8 +5,8 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { main } from '../../src/cli/hud.js';
-import { roleRegistry } from '../../src/roles/roster.js';
+import { main } from '../../dist/cli/hud.js';
+import { roleRegistry } from '../../dist/roles/roster.js';
 
 const bundled = join(process.cwd(), 'packages/hud-mcp');
 const bundledSkills = fs.realpathSync(join(process.cwd(), 'integrations/skills'));

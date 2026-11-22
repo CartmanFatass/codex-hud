@@ -7,14 +7,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { syncBuiltinESMExports } from 'node:module';
-import { ModelRuntimeStore, callsByFeature } from '../../dist-test/src/collectors/model-runtime-store.js';
-import { SmallModel, requestDigest } from '../../dist-test/src/collectors/small-model.js';
-import { DecisionLabels } from '../../dist-test/src/collectors/decision-labels.js';
-import { ModelProbe } from '../../dist-test/src/collectors/model-probe.js';
-import { defaultSettings } from '../../dist-test/src/settings.js';
-import { renderSettingsPage, SETTING_ROWS } from '../../dist-test/src/render/settings-page.js';
-import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
-import { setLanguage } from '../../dist-test/src/render/i18n.js';
+import { ModelRuntimeStore, callsByFeature } from '../../dist/collectors/model-runtime-store.js';
+import { SmallModel, requestDigest } from '../../dist/collectors/small-model.js';
+import { DecisionLabels } from '../../dist/collectors/decision-labels.js';
+import { ModelProbe } from '../../dist/collectors/model-probe.js';
+import { defaultSettings } from '../../dist/settings.js';
+import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { setLanguage } from '../../dist/render/i18n.js';
 const NOW = Date.parse('2030-01-15T12:00:00Z');
 const HOUR = 3600000;
 function fixture(t) {
@@ -76,7 +76,7 @@ test('real API probe reserves three probe calls without changing tier routing', 
 });
 
 test('concurrent panel processes share one labelled ledger and cap', async (t) => {
-  const dir = fixture(t), module = new URL('../../dist-test/src/collectors/model-runtime-store.js', import.meta.url).href;
+  const dir = fixture(t), module = new URL('../../dist/collectors/model-runtime-store.js', import.meta.url).href;
   const code = `import { ModelRuntimeStore } from ${JSON.stringify(module)};
     import { randomUUID } from 'node:crypto';
     const store = new ModelRuntimeStore(process.argv[1]);

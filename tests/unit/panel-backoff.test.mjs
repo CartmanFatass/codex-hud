@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { PanelJobPipeline } from '../../dist-test/src/tree-page.js';
+import { PanelJobPipeline } from '../../dist/tree-page.js';
 import {
   createAdaptivePollState,
   recordAdaptivePoll,
   adaptivePollDue,
   forceAdaptivePoll,
-} from '../../dist-test/src/collectors/adaptive-poll.js';
+} from '../../dist/collectors/adaptive-poll.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 const LIVE_BASE_MS = 200;

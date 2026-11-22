@@ -1,11 +1,11 @@
 /** Two finished HUD jobs (real thin-job reader) and one finished native agent, settled at NOW, for CARD-FOLD. */
 import { mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
-import { readThinJobs } from '../../dist-test/src/collectors/thin-jobs.js';
-import { renderMonitor } from '../../dist-test/src/render/monitor.js';
-import { setLanguage } from '../../dist-test/src/render/i18n.js';
-import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
-import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { renderMonitor } from '../../dist/render/monitor.js';
+import { setLanguage } from '../../dist/render/i18n.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { nativeFixture } from './native-tree.mjs';
 export { NOW } from './native-tree.mjs';
 import { NOW } from './native-tree.mjs';

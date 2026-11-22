@@ -4,10 +4,10 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { visualWidth } from '../../src/render/colors.js';
-import { collectTranscript, TRANSCRIPT_CHUNK } from '../../src/statusline-parity/transcript.js';
-import { collectParityGit } from '../../src/statusline-parity/git.js';
-import { paritySettings } from '../../src/statusline-parity/settings.js';
+import { visualWidth } from '../../dist/render/colors.js';
+import { collectTranscript, TRANSCRIPT_CHUNK } from '../../dist/statusline-parity/transcript.js';
+import { collectParityGit } from '../../dist/statusline-parity/git.js';
+import { paritySettings } from '../../dist/statusline-parity/settings.js';
 import { NOW, parityFixture } from '../fixtures/claude-hud-parity/fixture.js';
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 function fixture(t: test.TestContext, scenario: Parameters<typeof parityFixture>[1] = 'idle') {

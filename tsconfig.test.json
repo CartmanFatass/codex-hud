@@ -1,12 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": ".",
+    "rootDir": "./tests",
     "outDir": "./dist-test",
     "declaration": false,
     "declarationMap": false,
     "noEmitOnError": true
   },
-  "include": ["src/**/*", "tests/unit/**/*", "tests/fixtures/**/*"],
+  "include": ["tests/unit/**/*.ts", "tests/fixtures/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist-test"]
 }

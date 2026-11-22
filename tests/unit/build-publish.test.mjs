@@ -38,7 +38,8 @@ function fixture(t) {
     compilerOptions: { target: 'ES2022', module: 'NodeNext', rootDir: 'src', types: [], declaration: true, sourceMap: true, removeComments: true },
     include: ['src/**/*.ts'],
   }));
-  put('tsconfig.test.json', '{"extends":"./tsconfig.json","compilerOptions":{"rootDir":"."}}');
+  put('tsconfig.test.json', '{"extends":"./tsconfig.json","compilerOptions":{"rootDir":"tests"},"include":["tests/**/*.ts"]}');
+  put('tests/unit/sub.test.ts', 'export const fixture = true;\n');
   put('src/index.ts', 'export const index = true;\n');
   put('src/tree-page.ts', 'export { generation } from "./render/sub.js";\n');
   put('src/render/sub.ts', 'export const generation = 1;\n');
@@ -48,12 +49,11 @@ function fixture(t) {
 
 test('both targets prune orphan JS, maps, declarations and empty directories', async (t) => {
   const f = fixture(t);
-  for (const [dist, args] of [['dist', []], ['dist-test', ['--target', 'test']]]) {
-    const prefix = dist === 'dist' ? dist : `${dist}/src`;
-    for (const suffix of ['js', 'js.map', 'd.ts']) f.put(`${prefix}/render/orphan.${suffix}`, 'obsolete');
+  for (const [dist, dir, stem, args] of [['dist', 'render', 'sub', []], ['dist-test', 'unit', 'sub.test', ['--target', 'test']]]) {
+    for (const suffix of ['js', 'js.map', 'd.ts']) f.put(`${dist}/${dir}/orphan.${suffix}`, 'obsolete');
     f.put(`${dist}/obsolete/dead.js`, 'obsolete');
     await f.run(args);
-    assert.deepEqual(fs.readdirSync(f.file(`${prefix}/render`)).sort(), ['sub.d.ts', 'sub.js', 'sub.js.map']);
+    assert.deepEqual(fs.readdirSync(f.file(`${dist}/${dir}`)).sort(), [`${stem}.d.ts`, `${stem}.js`, `${stem}.js.map`]);
     assert.equal(fs.existsSync(f.file(`${dist}/obsolete`)), false);
   }
 });
@@ -206,7 +206,7 @@ cp.spawnSync = (...args) => {
   const results = await Promise.allSettled([[], ['--target', 'test']].map((args) => f.run(args, 'exclusive.mjs')));
   for (const result of results) if (result.status === 'rejected') throw result.reason;
   assert.ok(fs.existsSync(f.file('dist/tree-page.js')));
-  assert.ok(fs.existsSync(f.file('dist-test/src/tree-page.js')));
+  assert.ok(fs.existsSync(f.file('dist-test/unit/sub.test.js')));
   assert.deepEqual(f.stages(), [`.dist-test-stage-${process.pid}`]);
 });
 
@@ -219,7 +219,7 @@ test('the nested MCP package builds the root output; only explicit clean removes
   assert.match(stderr, /packages\/hud-mcp\/dist is obsolete/);
   assert.ok(fs.existsSync(f.file('dist/mcp/thin-main.js')));
   assert.equal(fs.readFileSync(f.file(legacy), 'utf8'), 'kept for old workers');
-  f.put('dist-test/src/orphan.js', 'test output');
+  f.put('dist-test/unit/orphan.js', 'test output');
   const { stdout } = await f.run(['--clean']);
   assert.match(stdout, /^Removing packages\/hud-mcp\/dist$/m);
   for (const output of ['dist', 'dist-test', 'packages/hud-mcp/dist']) assert.equal(fs.existsSync(f.file(output)), false);

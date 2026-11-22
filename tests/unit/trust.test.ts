@@ -4,8 +4,8 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { main } from '../../src/cli/hud.js';
-import { isCliDirTrusted } from '../../src/cli/trust.js';
+import { main } from '../../dist/cli/hud.js';
+import { isCliDirTrusted } from '../../dist/cli/trust.js';
 
 function fixture(t: TestContext) {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-trust-')));

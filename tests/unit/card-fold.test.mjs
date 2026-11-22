@@ -5,12 +5,12 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jobBoard, nativeBoard, drawAt, rowsOf, MIN, NOW } from '../fixtures/card-fold.mjs';
-import { initialMonitorState, handleMonitorInput } from '../../dist-test/src/render/monitor.js';
-import { SETTING_ROWS, handleSettingsInput, renderSettingsPage, resetSettingsGroup } from '../../dist-test/src/render/settings-page.js';
-import { defaultSettings, loadSettings, saveSettings } from '../../dist-test/src/settings.js';
-import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
-import { currentWorker, foldedWorker } from '../../dist-test/src/render/work-visibility.js';
-import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
+import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { SETTING_ROWS, handleSettingsInput, renderSettingsPage, resetSettingsGroup } from '../../dist/render/settings-page.js';
+import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { currentWorker, foldedWorker } from '../../dist/render/work-visibility.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
 
 const temp = (t) => {
   const dir = fs.mkdtempSync(join(tmpdir(), 'card-fold-'));
