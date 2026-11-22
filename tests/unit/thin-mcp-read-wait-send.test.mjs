@@ -519,13 +519,15 @@ test('hud_peek returns a bounded pane tail and does not acknowledge, exhaust or 
   })));
 });
 
-test('hud_wait any wakes on a settlement among the caller’s initially unsettled jobs', { timeout: 4000 }, async (t) => {
+// The reply must be event-driven (`timed_out: false`); MCP startup and ping are
+// outside the product wait, so the aggregate test watchdog is only a hang guard.
+test('hud_wait any wakes on a settlement among the caller’s initially unsettled jobs', { timeout: 25000 }, async (t) => {
   const f = await fixture(t);
   const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
   waitFixtureJob(f, 3, 'done');
   const foreign = waitFixtureJob(f, 4, 'working', 'w4E:p9');
   await f.call('hud_roster'); // Advance the cursor before writing the settlement.
-  const waiting = f.call('hud_wait', { wait_ms: 5000 });
+  const waiting = f.call('hud_wait', { wait_ms: 15000 });
   await f.rpc('ping'); // The wait is active and does not hold up another call.
   foreign.status('done');
   writeFixtureFile(join(second.dir, 'report.md'), 'Synthetic report.');

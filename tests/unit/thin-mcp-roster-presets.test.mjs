@@ -1050,41 +1050,55 @@ test('unregistered skill names are skipped and a CLI role is not given skill fla
   assert.equal(Object.hasOwn(cliRead, 'worker_prompt'), false);
 });
 
-test('hud_create and hud_send do not wait for a slow queue-watcher lookup', async (t) => {
+test('hud_create and hud_send do not wait for a slow queue-watcher lookup', { timeout: 25000 }, async (t) => {
+  let release;
+  t.after(() => { if (release) fs.writeFileSync(release, ''); });
   const f = await fixture(t, true, `
     import cp from 'node:child_process';
+    import timers from 'node:timers';
     import { syncBuiltinESMExports } from 'node:module';
+    let held = false;
     for (const method of ['spawn', 'spawnSync']) {
       const start = cp[method];
       cp[method] = (bin, args, options) => {
         // The delivery helper supplies an explicit env; tab placement uses the inherited env.
         if (options?.env && bin === 'herdr' && args.join(' ') === 'pane get w4E:p1') {
+          held = method === 'spawn';
           options = { ...options, env: { ...options.env, SLOW_DELIVERY_LOOKUP: '1' } };
         }
         return start(bin, args, options);
       };
     }
+    const schedule = timers.setTimeout;
+    timers.setTimeout = (fn, ms, ...args) => {
+      // Only the held lookup gets headroom. Test reply ordering, not its real 2 s timeout.
+      const budget = held && ms === 2000 ? 30000 : ms;
+      held = false;
+      return schedule(fn, budget, ...args);
+    };
     syncBuiltinESMExports();
   `);
+  release = join(f.env.HOME, 'release-delivery-lookups');
+  const started = join(f.env.HOME, 'started-delivery-lookups');
   f.overrideBin('herdr', `#!${process.execPath}
+import fs from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 if (process.env.SLOW_DELIVERY_LOOKUP === '1') {
-  await new Promise((resolve) => setTimeout(resolve, 5000));
+  fs.appendFileSync(${JSON.stringify(started)}, 'lookup\\n');
+  while (!fs.existsSync(${JSON.stringify(release)})) await delay(20);
 } else {
   process.argv.splice(1, 1, process.env.FAKE_BIN, 'herdr');
   await import(process.env.FAKE_BIN);
 }
 `);
-  await f.rpc('ping');
-  let start = performance.now();
+  const lookups = () => fs.existsSync(started) ? fs.readFileSync(started, 'utf8').trim().split('\n').length : 0;
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic async dispatch.' });
-  const createMs = performance.now() - start;
   assert.match(job.job, /^j[0-9a-f]{16}$/);
-  start = performance.now();
+  await until(() => lookups() === 1);
   const reply = await f.call('hud_send', { job: job.job, text: 'Synthetic addendum.' });
-  const sendMs = performance.now() - start;
-  t.diagnostic(`hud_create ${createMs.toFixed(0)} ms, hud_send ${sendMs.toFixed(0)} ms`);
   assert.equal(reply.sent, true);
-  assert.ok(createMs < 1500 && sendMs < 1500, 'both calls should finish before the 2 s lookup budget');
+  await until(() => lookups() === 2);
+  fs.writeFileSync(release, '');
 });
 
 for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one queue watcher only for Codex (${agent})`, async (t) => {

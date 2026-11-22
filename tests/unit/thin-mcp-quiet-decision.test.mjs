@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -30,7 +31,9 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-test('an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt', { timeout: 12000 }, async (t) => {
+// The hold windows below exercise lifecycle behavior; this outer guard also covers
+// starting two real sonic subprocesses, collecting them and settling the parent.
+test('an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -67,7 +70,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.equal(prompts().length, 0);
 
   publishSonic(dir, { state: 'closed', output_written: true });
-  await until(() => prompts().length === 1, 5000);
+  await until(() => prompts().length === 1);
   assert.ok(prompts()[0].args[3].includes(id));
   assert.ok(!prompts()[0].args[3].includes(collectedId));
   assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'working');
@@ -78,7 +81,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.match(superseded.statusMessage, /no longer current/);
   assert.equal(reapAttempts(f, parent), 0);
   writeFixtureFile(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
-  await until(() => cliState(parent.task_dir)?.state === 'closed', 5000);
+  await until(() => cliState(parent.task_dir)?.state === 'closed');
   assert.equal((await rpc('tasks/get', { taskId: next.taskId })).status, 'completed');
   assert.equal(prompts().length, 1, 'the same report is not prompted for again');
   assert.equal(server.requests.length, 0);
@@ -109,26 +112,27 @@ test('quiet without a report and an in-turn child makes no Decision API call and
   assert.equal(server.requests.length, 1, 'the real quiet-decision path runs once the child is gone');
 });
 
-test('quiet decision discards a stale reply after working/done pushes during the API call', { timeout: 10000 }, async (t) => {
+test('quiet decision discards a stale reply after working/done pushes during the API call', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'decision-race', 0.25);
   let job;
-  const server = await fakeDecisionServer(t, async (_body, count) => {
+  const server = await fakeDecisionServer(t, async (_body, count, req) => {
     if (count === 1) {
+      const cancelled = once(req.socket, 'close');
       f.push(job.job, 'working');
-      await new Promise((r) => setTimeout(r, 50));
+      // Start the second quiet period only after the supervisor cancels the first request.
+      await cancelled;
       f.push(job.job, 'done');
-      await new Promise((r) => setTimeout(r, 50));
       return decisionAnswer('finished-no-report', 0.95);
     }
     return decisionAnswer('needs-human', 0.95);
   });
   configureFakeDecision(f, server.baseUrl);
   job = await f.call('hud_create', { role: 'decision-race', request_key: 'decision-race', task: 'Synthetic decision race.' });
-  await until(() => cliState(job.task_dir)?.pid);
+  await until(() => cliState(job.task_dir)?.agent_session_id);
   f.push(job.job, 'done');
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator');
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 25000);
   assert.equal(server.requests.length, 2);
   assert.equal(f.commands().some((c) => String(c.args[3]).startsWith('Write your report to ')), false);
 });

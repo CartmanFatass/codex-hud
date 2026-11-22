@@ -145,7 +145,8 @@ function agyCaller(t, shim, env) {
       console.log(JSON.stringify({ status: child.status, stdout: child.stdout, stderr: child.stderr }));
     }
   `], { env, stdio: ['pipe', 'pipe', 'inherit'] });
-  t.after(() => caller.kill());
+  const exited = new Promise((done) => caller.once('exit', done));
+  t.after(async () => { caller.stdin.end(); await exited; });
   const replies = createInterface({ input: caller.stdout })[Symbol.asyncIterator]();
   return async (value, cwd) => {
     caller.stdin.write(JSON.stringify({ input: typeof value === 'string' ? value : JSON.stringify(value), cwd }) + '\n');
@@ -159,10 +160,21 @@ function agyCaller(t, shim, env) {
   };
 }
 
-test('Antigravity cache revalidates by age, isolates callers and recovers from corruption or a dead worker', { timeout: 20000 }, async (t) => {
-  if (spawnSync('bash', ['-c', 'for c in flock setsid timeout sha256sum; do command -v "$c" || exit 1; done']).status !== 0)
+test('Antigravity cache revalidates by age, isolates callers and recovers from corruption or a dead worker', { timeout: 60000 }, async (t) => {
+  const helpers = spawnSync('bash', ['-c', 'for c in flock setsid sha256sum; do command -v "$c" >/dev/null || exit 1; done; command -v timeout'], { encoding: 'utf8' });
+  if (helpers.status !== 0)
     return t.skip('Linux cache helpers unavailable');
   const { home, hud, env } = fixture(t);
+  // Drive cache age from the fixture, not from the time it takes to schedule three processes.
+  const now = 1795000000000;
+  env.BASH_ENV = join(home, 'cache-clock');
+  fs.writeFileSync(env.BASH_ENV, `unset EPOCHREALTIME\nEPOCHREALTIME=${now / 1000}.000000\n`);
+  // This scenario tests caching, not the production 2 s cold-render cutoff. Keep a watchdog
+  // but allow Node to start under load; the installed launcher and timeout are unchanged.
+  const helpersDir = join(home, 'bin');
+  fs.mkdirSync(helpersDir);
+  fs.writeFileSync(join(helpersDir, 'timeout'), `#!/bin/sh\nif [ "$1" = -k ] && [ "$2" = .2s ] && [ "$3" = 2s ]; then\n  shift 3\n  set -- -k .2s 8s "$@"\nfi\nexec "${helpers.stdout.trim()}" "$@"\n`, { mode: 0o700 });
+  env.PATH = `${helpersDir}:${env.PATH}`;
   const shim = join(home, 'hud-statusline');
   fs.symlinkSync(bin, shim);
   const fromAgy = agyCaller(t, shim, env);
@@ -180,13 +192,13 @@ test('Antigravity cache revalidates by age, isolates callers and recovers from c
   const next = `${plain} │ 5h 25% left`;
   assert.equal(await fromAgy(changed), wide, 'returns the previous line within the fresh interval');
   const makeStale = () => fs.writeFileSync(cache, fs.readFileSync(cache, 'utf8').replace(
-    /^([a-f0-9]+ [a-f0-9]+) \d+ /, `$1 ${Date.now() - 1500} `));
+    /^([a-f0-9]+ [a-f0-9]+) \d+ /, `$1 ${now - 1500} `));
   makeStale();
   const seen = await fromAgy(changed);
   assert.ok(seen === wide || seen === next, `got ${seen}`);
-  for (let i = 0; i < 300 && !fs.readFileSync(cache, 'utf8').includes('25% left'); i++) await delay(10);
+  while (!fs.readFileSync(cache, 'utf8').includes('25% left') || fs.existsSync(marker))
+    await delay(20, null, { signal: t.signal });
   assert.match(fs.readFileSync(cache, 'utf8'), /25% left/);
-  for (let i = 0; i < 300 && fs.existsSync(marker); i++) await delay(10);
 
   fs.writeFileSync(marker, '', { mode: 0o600 }); // no live holder of the slot lock
   assert.equal(await fromAgy(payload), wide, 'an orphaned refresh synchronously restores the new frame');
@@ -195,7 +207,7 @@ test('Antigravity cache revalidates by age, isolates callers and recovers from c
   assert.equal(await fromAgy(payload), wide, 'corrupt content is never displayed');
   makeStale();
   await fromAgy('{broken');
-  for (let i = 0; i < 300 && fs.existsSync(cache); i++) await delay(10);
+  while (fs.existsSync(cache) || fs.existsSync(marker)) await delay(20, null, { signal: t.signal });
   assert.ok(!fs.existsSync(cache), 'a failed renderer discards the stale frame');
   assert.equal(await fromAgy('{broken'), 'HUD unavailable', 'the next frame falls back to a synchronous render');
   assert.equal(await fromAgy(payload), wide);

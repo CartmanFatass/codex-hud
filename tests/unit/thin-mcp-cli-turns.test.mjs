@@ -64,7 +64,8 @@ test('supervisor events: a report with a missed status push settles on the safet
   assert.equal(cliState(job.task_dir).output_written, true);
 });
 
-test('done without report keeps the job open and a later report settles it', { timeout: 15000 }, async (t) => {
+// Two independent turns each settle through the configured grace and real /quit subprocess.
+test('done without report keeps the job open and a later report settles it', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'short-cli', 4, true);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
@@ -78,7 +79,7 @@ test('done without report keeps the job open and a later report settles it', { t
   // done -> working -> done + report
   fs.unlinkSync(join(f.env.HOME, 'missing-report'));
   fs.writeFileSync(join(f.env.HOME, 'wake-turn'), '');
-  await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 20000);
   const closed = cliState(job.task_dir);
   assert.equal(closed.exit_reason, 'settled');
   assert.equal(closed.output_written, true);
@@ -89,7 +90,7 @@ test('done without report keeps the job open and a later report settles it', { t
   const job2 = await f.call('hud_create', { role: 'short-cli', request_key: 'grok-late-report', task: 'Synthetic late report.' });
   await until(() => cliState(job2.task_dir)?.state === 'working' && cliState(job2.task_dir)?.pid);
   writeFixtureFile(join(job2.task_dir, 'report.md'), 'Synthetic direct report.\n');
-  await until(() => cliState(job2.task_dir)?.state === 'closed', 8000);
+  await until(() => cliState(job2.task_dir)?.state === 'closed', 20000);
   assert.equal(cliState(job2.task_dir).output_written, true);
 });
 

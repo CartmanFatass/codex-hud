@@ -14,16 +14,15 @@ import { procStat } from '../../dist/roles/worker-tree.js';
 import { configureFakeDecision, decisionAnswer } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
+// Leave room for subprocess startup, but never let the supervisor's own
+// 20 s Herdr timeout stand in for cancellation of a held effect.
+const watchdog = { timeout: 20000 };
 const tab = 'synthetic-tab';
 const read = (file) => fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
 const save = (dir, file, data) => writeFixtureFile(join(dir, file), JSON.stringify(data));
 const status = (dir) => JSON.parse(read(join(dir, 'STATUS.json')) || 'null');
-async function until(ready, label, limit = 5000) {
-  const start = performance.now();
-  while (!ready() && performance.now() - start < limit) await delay(5);
-  const ms = performance.now() - start;
-  assert.ok(ready() && ms < limit, `${label} did not settle within ${limit} ms (observed ${Math.round(ms)} ms)`);
-  return Math.round(ms);
+async function until(t, ready) {
+  while (!ready()) await delay(10, null, { signal: t.signal });
 }
 
 async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload } = {}) {
@@ -73,7 +72,8 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
     save(dir, 'done.json', { ...turn, report_sig: reportSignature(dir), at: new Date().toISOString() });
   }
   if (report || sonic) finishReport();
-  if (report) record.read_at = new Date().toISOString();
+  // The read receipt has millisecond precision, but the file mtime can be fractional.
+  if (report) record.read_at = new Date(Math.ceil(fs.statSync(join(dir, 'report.md')).mtimeMs)).toISOString();
   if (sonic) {
     const id = 'j0000000000000002', child = join(jobs, id);
     fs.mkdirSync(join(dir, '.sonic'));
@@ -93,8 +93,12 @@ const kind = area === 'pane' && command === 'read' ? 'read' : text === '/quit' ?
 if (kind === ${JSON.stringify(hang ?? null)}) {
   if (${resistant}) process.on('SIGTERM', () => {});
   fs.writeFileSync(process.env.HUD_HOME + '/herdr-pid', String(process.pid));
-  await delay(${fail ? 200 : 5000});
-  if (${fail}) process.exit(1);
+  if (${fail}) {
+    while (!fs.existsSync(${JSON.stringify(join(dir, 'STATUS.json.stop-requested'))})) await delay(10);
+    process.exit(1);
+  }
+  setInterval(() => {}, 1000);
+  await new Promise(() => {});
 }
 console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } } }));
 `, { mode: 0o700 });
@@ -102,8 +106,8 @@ console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } }
   http.listen(0, '127.0.0.1'); socket.listen(herdrPath);
   await Promise.all([once(http, 'listening'), once(socket, 'listening')]);
   configureFakeDecision({ env }, `http://127.0.0.1:${http.address().port}`);
-  function start(script, args = []) {
-    const imports = preload ? ['--import', 'data:text/javascript,' + encodeURIComponent(preload)] : [];
+  function start(script, args = [], probe = preload) {
+    const imports = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
     const child = spawn(process.execPath, [...imports, resolve('packages/hud-mcp/bin', script), ...args], { env, stdio: ['ignore', 'ignore', 'pipe'] });
     const exited = once(child, 'exit');
     let stderr = '';
@@ -122,15 +126,14 @@ console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } }
 }
 
 async function expectState(t, f, state, reason) {
-  const ms = await until(() => status(f.dir)?.state === state, state, 500);
-  t.diagnostic(`${state} in ${ms} ms`);
+  await until(t, () => status(f.dir)?.state === state);
   assert.equal(status(f.dir).exit_reason, reason);
 }
 
 for (const stop of [true, false]) {
-  test(`a hanging pane read is cancelled by ${stop ? 'stop intent' : 'tab close'} before any Decision API call`, { timeout: 10000 }, async (t) => {
+  test(`a hanging pane read is cancelled by ${stop ? 'stop intent' : 'tab close'} before any Decision API call`, watchdog, async (t) => {
     const f = await fixture(t, { hang: 'read', resistant: stop });
-    await until(f.herdrPid, 'synthetic herdr starts');
+    await until(t, f.herdrPid);
     if (stop) f.stop();
     else f.closeTab();
     await expectState(t, f, stop ? 'stopped' : 'failed', stop ? 'stop requested' : 'tab closed');
@@ -140,7 +143,7 @@ for (const stop of [true, false]) {
   });
 }
 
-test('stop published at cap reservation prevents a paid request with no directory watch', { timeout: 10000 }, async (t) => {
+test('stop published at cap reservation prevents a paid request with no directory watch', watchdog, async (t) => {
   const f = await fixture(t, { model: 'still-working', preload: `
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
@@ -151,25 +154,25 @@ fs.renameSync = (from, to) => {
   if (to.endsWith('/calls.json')) fs.writeFileSync(process.argv[2] + '/STATUS.json.stop-requested', '');
 };
 syncBuiltinESMExports();` });
-  await until(() => status(f.dir)?.state === 'stopped', 'stop after reservation');
+  await until(t, () => status(f.dir)?.state === 'stopped');
   assert.deepEqual(await f.cli.exited, [0, null]);
   assert.equal(f.calls(), 0);
 });
 
-test('a new report and done receipt cancel an in-flight Decision API request', { timeout: 10000 }, async (t) => {
+test('a new report and done receipt cancel an in-flight Decision API request', watchdog, async (t) => {
   const f = await fixture(t);
-  await until(f.calls, 'Decision API starts');
+  await until(t, f.calls);
   f.finishReport();
   await expectState(t, f, 'idle_grace', null);
-  await until(f.disconnected, 'Decision API socket closes', 500);
+  await until(t, f.disconnected);
   assert.equal(f.calls(), 1);
   assert.equal(status(f.dir).quiet_decision, undefined);
 });
 
 for (const [hang, interrupt] of [['prompt', 'SIGTERM'], ['prompt', 'stop'], ['sonic', 'SIGTERM'], ['sonic', 'stop']]) {
-  test(`${interrupt} during ${hang} does not report a delivery or supervisor failure`, { timeout: 10000 }, async (t) => {
+  test(`${interrupt} during ${hang} does not report a delivery or supervisor failure`, watchdog, async (t) => {
     const f = await fixture(t, { hang, sonic: hang === 'sonic', model: 'finished-no-report', fail: hang === 'prompt' && interrupt === 'stop' });
-    await until(f.herdrPid, 'synthetic prompt starts');
+    await until(t, f.herdrPid);
     if (interrupt === 'stop') {
       f.stop();
       await expectState(t, f, 'stopped', 'stop requested');
@@ -182,27 +185,39 @@ for (const [hang, interrupt] of [['prompt', 'SIGTERM'], ['prompt', 'stop'], ['so
   });
 }
 
-test('stop intent wins while /quit is pending', { timeout: 10000 }, async (t) => {
+test('stop intent wins while /quit is pending', watchdog, async (t) => {
   const f = await fixture(t, { hang: 'quit', report: true });
-  await until(f.herdrPid, 'synthetic /quit starts');
+  await until(t, f.herdrPid);
   f.stop();
   await expectState(t, f, 'stopped', 'stop requested');
   assert.deepEqual(await f.cli.exited, [0, null]);
   assert.equal(procStat(f.herdrPid()), null);
 });
 
-test('tab close during /quit records closed even when the global watcher sees it first', { timeout: 10000 }, async (t) => {
+test('tab close during /quit records closed even when the global watcher sees it first', watchdog, async (t) => {
   const f = await fixture(t, { hang: 'quit', report: true });
   const other = join(f.jobs, 'j0000000000000002');
   fs.mkdirSync(other);
   save(other, 'job.json', { job: 'j0000000000000002', cli: { agent: 'grok' } });
   save(other, 'STATUS.json', { state: 'working' });
   fs.writeFileSync(join(other, 'SESSION.txt'), 'TAB=control-tab\n');
-  f.start('hud-watch.mjs');
-  await until(() => f.herdrPid() && f.subscribed('hud-watch'), 'pending /quit and a watcher subscription');
+  const guard = join(f.dir, 'watcher-saw-quit');
+  f.start('hud-watch.mjs', [], `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const exists = fs.existsSync;
+fs.existsSync = (file) => {
+  const found = exists(file);
+  if (found && typeof file === 'string' && file.startsWith(${JSON.stringify(join(f.dir, 'STATUS.json.quit-'))}))
+    fs.writeFileSync(${JSON.stringify(guard)}, '');
+  return found;
+};
+syncBuiltinESMExports();`);
+  await until(t, () => f.herdrPid() && f.subscribed('hud-watch'));
   f.closeTab('hud-watch');
   f.closeTab('hud-watch', 'control-tab');
-  await until(() => status(other).state === 'failed', 'watcher processed the tab closes', 500);
+  // The control job can be visited first; wait for the watcher to check this job too.
+  await until(t, () => status(other).state === 'failed' && fs.existsSync(guard));
   assert.equal(status(f.dir).state, 'working', 'watcher did not preempt the live supervisor');
   f.closeTab();
   await expectState(t, f, 'closed', 'closed after report read');

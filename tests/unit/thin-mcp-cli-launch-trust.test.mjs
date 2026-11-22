@@ -101,7 +101,8 @@ test(
   }
 );
 
-test('cli launch accepts model and thinking overrides and refuses pi-only switches', { timeout: 10000 }, async (t) => {
+// This scenario launches and settles two CLI jobs; the timeout is a hang guard, not a launch SLA.
+test('cli launch accepts model and thinking overrides and refuses pi-only switches', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   for (const [key, value] of [
     ['pi_args', ['--tools', 'read']],
@@ -144,10 +145,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
   assert.equal(receipt.model, 'grok-4.7-build-fast');
   assert.equal(receipt.thinking, 'low');
   assert.equal(receipt.model_source, 'hud_create');
-  await until(() => {
-    const file = join(job.task_dir, 'STATUS.json');
-    return fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).state === 'closed';
-  });
+  await until(() => cliState(job.task_dir)?.state === 'closed', 15000);
   const plain = await f.call('hud_create', { role: 'plain-grok', request_key: 'plain', task: 'Synthetic plain.' });
   const plainStart = f
     .commands()
@@ -159,10 +157,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     '--extra',
     'literal space', '--rules', roleText,
   ]);
-  await until(() => {
-    const file = join(plain.task_dir, 'STATUS.json');
-    return fs.existsSync(file) && ['closed', 'failed'].includes(JSON.parse(fs.readFileSync(file, 'utf8')).state);
-  });
+  await until(() => ['closed', 'failed'].includes(cliState(plain.task_dir)?.state), 15000);
 });
 
 test('local CLI trust refuses missing grants without creating a tab', async (t) => {

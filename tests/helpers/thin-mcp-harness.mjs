@@ -262,14 +262,13 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     drop: () => { for (const client of subscribers) client.socket.destroy(); },
     dropWorker: (id) => { for (const client of subscribers) if (client.id === id) client.socket.destroy(); },
     closeTab: () => { for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id: 'w4E:t2', workspace_id: 'w4E' } }) + '\n'); },
-    commands: () =>
-      fs.existsSync(log)
-        ? fs
-            .readFileSync(log, 'utf8')
-            .trim()
-            .split('\n')
-            .map((line) => JSON.parse(line))
-        : [],
+    commands: () => {
+      if (!fs.existsSync(log)) return [];
+      const text = fs.readFileSync(log, 'utf8');
+      const end = text.lastIndexOf('\n');
+      // A fake command may have created the log or started appending its next row.
+      return end < 0 ? [] : text.slice(0, end).split('\n').map((line) => JSON.parse(line));
+    },
   };
 }
 

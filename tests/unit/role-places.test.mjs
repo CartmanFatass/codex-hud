@@ -12,16 +12,8 @@ import { finishChain } from '../../dist/render/chain-input.js';
 import { editPreset } from '../../dist/roles/role-control.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { plain, onControl, TREE } from '../fixtures/project-page.mjs';
-import { rolePlacesFixture as fixture } from '../helpers/thin-mcp-harness.mjs';
+import { rolePlacesFixture as fixture, until } from '../helpers/thin-mcp-harness.mjs';
 const bundled = resolve('packages/hud-mcp');
-
-async function until(check, timeout = 3000) {
-  const end = Date.now() + timeout;
-  while (!check()) {
-    assert.ok(Date.now() < end, 'condition did not settle');
-    await new Promise((done) => setTimeout(done, 20));
-  }
-}
 
 test('empty draft cancel writes nothing; a reordered two-place draft is the chain used by roster and create', { timeout: 15000 }, async (t) => {
   const f = await fixture(t), home = f.env.HUD_HOME, file = join(home, 'roles/owner-imp.json');
@@ -335,7 +327,8 @@ test('hud_roster drops expired exhausted marks when queried through hud-mcp', { 
   assert.deepEqual(imp.exhausted, []);
 });
 
-test('hud_create on uses harnesses.json (and HUD_HOME override), and model still wins', { timeout: 10000 }, async (t) => {
+// Three launches share a test hang guard, not a 10 s product budget.
+test('hud_create on uses harnesses.json (and HUD_HOME override), and model still wins', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const job1 = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'on-agy-default', task: 'Task 1.' });
   const rec1 = JSON.parse(fs.readFileSync(join(job1.task_dir, 'job.json'), 'utf8'));
@@ -363,31 +356,33 @@ test('hud_create on uses harnesses.json (and HUD_HOME override), and model still
   assert.equal(rec3.model_source, 'hud_create');
 });
 
-test('pro falls back across chatgpt -> gemini -> argon and flow passes kind', { timeout: 10000 }, async (t) => {
+test('pro falls back across chatgpt -> gemini -> argon and flow passes kind', { timeout: 45000 }, async (t) => {
+  // Four independent dispatches: await their results within a test-only hang guard.
+  const wait_ms = 30000;
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'bro-quota-fail'), '');
   const fail1 = await f.call('hud_create', { role: 'pro', request_key: 'pro-1', task: 'Ask 1.' });
-  const read1 = await f.call('hud_read', { job: fail1.job, wait_ms: 5000 });
+  const read1 = await f.call('hud_read', { job: fail1.job, wait_ms });
   assert.equal(read1.state, 'failed');
   assert.match(read1.exit_reason, /quota exceeded/);
   assert.match(read1.exit_reason, /next dispatch will use bro\/gemini/);
 
   fs.unlinkSync(join(f.env.HOME, 'bro-quota-fail'));
   const ok2 = await f.call('hud_create', { role: 'pro', request_key: 'pro-2', task: 'Ask 2.' });
-  const read2 = await f.call('hud_read', { job: ok2.job, wait_ms: 5000 });
+  const read2 = await f.call('hud_read', { job: ok2.job, wait_ms });
   assert.equal(read2.state, 'closed');
   const gemCmd = f.commands().find((c) => c.command === 'jev-ask' && c.args.includes(ok2.job));
   assert.ok(gemCmd.args.includes('gemini'));
 
   markExhausted(f.env.HUD_HOME, placeKey({ harness: 'bro', tool: 'jev-ask', provider: 'gemini' }), '429');
   const ok3 = await f.call('hud_create', { role: 'pro', request_key: 'pro-3', task: 'Ask 3.' });
-  const read3 = await f.call('hud_read', { job: ok3.job, wait_ms: 5000 });
+  const read3 = await f.call('hud_read', { job: ok3.job, wait_ms });
   assert.equal(read3.state, 'closed');
   const argonCmd = f.commands().find((c) => c.command === 'jev-aistudio' && c.args.includes(ok3.job));
   assert.ok(argonCmd.args.includes('gemini-4-argon'));
 
   const flowVid = await f.call('hud_create', { role: 'flow', kind: 'video', request_key: 'flow-vid', task: 'Video; cost: 10 credits' });
-  const readVid = await f.call('hud_read', { job: flowVid.job, wait_ms: 5000 });
+  const readVid = await f.call('hud_read', { job: flowVid.job, wait_ms });
   assert.equal(readVid.state, 'closed');
   const flowCmd = f.commands().find((c) => c.command === 'jev-flow' && c.args.includes(flowVid.job));
   assert.equal(flowCmd.args[flowCmd.args.indexOf('--kind') + 1], 'video');

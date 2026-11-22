@@ -11,6 +11,7 @@ import {
   statusQueries,
   readCloseQuit,
   readCloseReaped,
+  withoutCallerLookups,
   declareDone,
   writeCliRole,
   cliState,
@@ -172,34 +173,36 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   const clockScale = 40;
   const f = await fixture(t, { clockScale });
   writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
-  const observeRest = () => new Promise((r) => setTimeout(r, 62_000 / clockScale));
   writeCliRole(f, 'rest-events', 10);
   const job = await f.call('hud_create', { role: 'rest-events', request_key: 'rest-events', task: 'Synthetic rest.' });
   await until(() => cliState(job.task_dir)?.agent_session_id);
-  await new Promise((r) => setTimeout(r, 100));
   const writes = fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8');
-  const commands = f.commands().length, requests = f.socketRequests.length;
+  // The MCP can still be doing its asynchronous caller-pane delivery lookup.
+  const supervisorCommands = () => withoutCallerLookups(f.commands());
+  const commands = supervisorCommands(), requests = f.socketRequests.length;
   for (let i = 0; i < 6; i++) {
     f.push(job.job, i % 2 ? 'working' : 'done');
     await new Promise((r) => setTimeout(r, 50));
   }
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes, 'no-report status flaps do not write STATUS');
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'flaps never sample descendants');
-  await observeRest(); // >60 virtual seconds, two safety ticks
-  assert.equal(f.commands().length, commands);
-  // Each safety tick re-reads the status once, so a missed push cannot hold a job; nothing else is asked at rest.
+  // Observe two actual 30 s safety ticks rather than assuming the test timer
+  // and the supervisor's accelerated clock get the same scheduling time.
+  const beforeRest = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= beforeRest + 2);
+  assert.deepEqual(supervisorCommands(), commands);
   const extra = f.socketRequests.slice(requests);
-  assert.ok(extra.length >= 1 && extra.length <= 3, JSON.stringify(extra));
   assert.ok(extra.every((r) => r.method === 'agent.get'), JSON.stringify(extra));
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'working ticks never sample descendants');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes);
   assert.equal(cliState(job.task_dir).state, 'working');
   writeFixtureFile(join(f.env.HOME, 'herdr-errors'), '');
+  const beforeDrop = statusQueries(f, job);
   f.drop();
-  await observeRest();
+  await until(() => statusQueries(f, job) >= beforeDrop + 3); // Reconnect seed plus two safety ticks.
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).error, null);
-  assert.equal(f.commands().length, commands);
+  assert.deepEqual(supervisorCommands(), commands);
 });
 
 test('supervisor edges: stalled submission stays supervised; pre-input rejection closes its tab', { timeout: 10000 }, async (t) => {
@@ -481,14 +484,14 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
   await until(() => dead(goneSupPid) && dead(dyingWorker.pid));
   const sentGone = await f.call('hud_send', { job: goneJob.job, message_key: 'gone-before-watch', text: 'Worker already dead.' });
   assert.equal(sentGone.sent, true);
-  await new Promise((r) => setTimeout(r, 200));
+  // hud_send publishes any replacement supervisor PID before it returns.
   assert.equal(fs.readFileSync(join(goneJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(goneSupPid));
   fs.utimesSync(join(goneJob.task_dir, 'STATUS.json'), new Date(Date.now() + 2000), new Date(Date.now() + 2000));
   await until(() => cliState(goneJob.task_dir)?.state === 'failed', 5000);
-  assert.deepEqual(
-    await f.call('hud_send', { job: goneJob.job, message_key: 'gone-after-watch', text: 'Still dead.' }),
-    { ok: false, code: 'not_continuable' }
-  );
+  // The watcher may have settled before or after the previous reply advanced the change cursor.
+  const { changes, ...rejected } = await f.call('hud_send', { job: goneJob.job, message_key: 'gone-after-watch', text: 'Still dead.' });
+  assert.deepEqual(rejected, { ok: false, code: 'not_continuable' });
+  if (changes) assert.deepEqual(changes, [`${goneJob.job} respawn-cli: failed | worker exited`]);
   assert.equal(fs.readFileSync(join(goneJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(goneSupPid));
 
   // 3. Dead supervisor + unknown worker liveness -> keeps today's hud_send behaviour without respawning.
@@ -503,6 +506,5 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
   await until(() => dead(unknownSupPid));
   const sentUnknown = await f.call('hud_send', { job: unknownJob.job, message_key: 'unknown-worker', text: 'Worker liveness unknown.' });
   assert.equal(sentUnknown.sent, true);
-  await new Promise((r) => setTimeout(r, 200));
   assert.equal(fs.readFileSync(join(unknownJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(unknownSupPid));
 });

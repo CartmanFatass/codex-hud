@@ -74,7 +74,7 @@ async function herdrSocket(t, f, answer) {
   };
 }
 
-test('watcher settles other jobs, starts checks and handles failures during a 5 s reap', { timeout: 15000 }, async (t) => {
+test('watcher settles other jobs, starts checks and handles failures during a pending reap', { timeout: 30000 }, async (t) => {
   const f = fixture(t), herdr = await herdrSocket(t, f);
   const slow = f.job(closed(), {}, true), fast = f.job({ state: 'working' }, {}, true);
   const { created, state, reportTime } = settled();
@@ -84,11 +84,13 @@ test('watcher settles other jobs, starts checks and handles failures during a 5 
   tab(failed, 'external');
   const supervisor = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   await once(supervisor, 'exit');
-  reapStub(f, `if (dir === ${JSON.stringify(slow)}) await delay(5000);`);
+  const release = join(slow, 'release');
+  reapStub(f, `if (dir === ${JSON.stringify(slow)}) {
+    while (!fs.existsSync(${JSON.stringify(release)})) await delay(10);
+  }`);
   const { child, exited } = f.start(herdr.preload + "process.env.HUD_WATCH_FAILED_RETENTION_MS = '0';");
   await until(() => attempts(f, slow) && herdr.ready());
 
-  const start = performance.now();
   save(fast, 'STATUS.json', closed());
   save(checked, 'STATUS.json', { ...state, state: 'closed' });
   save(cli, 'STATUS.json', { state: 'working', supervisor_pid: supervisor.pid });
@@ -100,20 +102,16 @@ test('watcher settles other jobs, starts checks and handles failures during a 5 
       await delay(10);
     }
   })();
-  await Promise.all(Object.entries({ settlement: () => reaped(fast),
-    checks: () => json(checked, 'checks.json')?.state === 'done',
-    'tab failure': () => status(failed).exit_reason === 'tab closed',
-    'supervisor failure': () => status(cli).state === 'waiting_orchestrator',
-  }).map(async ([name, ready]) => {
-    while (!ready() && performance.now() - start < 500) await delay(5);
-    const elapsed = Math.round(performance.now() - start);
-    t.diagnostic(`${name}: ${elapsed} ms`);
-    assert.ok(ready() && elapsed < 500, `${name} must finish within 500 ms (observed ${elapsed} ms)`);
-  }));
+  // The contract is progress while another reap is blocked, not a 500 ms
+  // allowance for spawning a check and scheduling the test observer.
+  while (!reaped(fast) || json(checked, 'checks.json')?.state !== 'done' ||
+         status(failed).exit_reason !== 'tab closed' || status(cli).state !== 'waiting_orchestrator')
+    await delay(20, null, { signal: t.signal });
   await storm;
   assert.equal(json(checked, 'checks.json').results[0].exit_code, 0);
   assert.equal(reaped(slow), undefined, 'slow reap is still running');
   save(cli, 'STATUS.json', closed());
+  fs.writeFileSync(release, '');
   const [code, signal] = await exited;
   assert.deepEqual([code, signal], [0, null]);
   assert.ok(reaped(slow));

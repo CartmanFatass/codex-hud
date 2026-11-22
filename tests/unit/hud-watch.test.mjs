@@ -878,17 +878,34 @@ test('idle hud watch reads nothing between safety rescans', async (t) => {
   assert.equal(await running, 0);
 });
 
-test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM', { timeout: 10000 }, async (t) => {
+test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM', { timeout: 30000 }, async (t) => {
   const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-bin-'));
-  t.after(() => fs.rmSync(hudHome, { recursive: true, force: true }));
-  writeJob(hudHome, 'j00000000000000e5', 'w4E:p1', 'baseline', { state: 'working' });
-
-  const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], {
+  const baseline = writeJob(hudHome, 'j00000000000000e5', 'w4E:p1', 'baseline', { state: 'working' });
+  // The marker is written before the CLI attaches its watches. Observe the first
+  // baseline read instead, so the failed job is a new arrival, not catch-up.
+  const probe = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const stat = fs.lstatSync;
+fs.lstatSync = (file, ...args) => {
+  if (file === ${JSON.stringify(join(baseline, 'STATUS.json'))}) {
+    fs.lstatSync = stat;
+    syncBuiltinESMExports();
+    setImmediate(() => process.send('baseline', () => process.disconnect()));
+  }
+  return stat(file, ...args);
+};
+syncBuiltinESMExports();`;
+  const child = spawn(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(probe), resolve('bin/hud'), 'watch'], {
     env: { ...process.env, HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
-  t.after(() => {
-    if (child.exitCode === null) child.kill('SIGKILL');
+  const closed = once(child, 'close');
+  const baselineRead = once(child, 'message');
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await closed;
+    fs.rmSync(hudHome, { recursive: true, force: true });
   });
 
   let stdout = '';
@@ -900,14 +917,15 @@ test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM
     stderr += chunk;
   });
 
-  await wait(300);
+  const [ready] = await baselineRead;
+  assert.equal(ready, 'baseline');
   assert.equal(stdout, '');
 
   writeJob(hudHome, 'j00000000000000f6', 'w4E:p1', 'tab-gone', { state: 'failed', exit_reason: 'tab closed' });
-  await until(() => stdout.includes('j00000000000000f6 imp tab-gone: failed | tab closed\n'), 6000);
+  await until(() => stdout.includes('j00000000000000f6 imp tab-gone: failed | tab closed\n'), 15000);
 
   child.kill('SIGTERM');
-  const [code, signal] = await new Promise((resolveExit) => child.once('exit', (c, s) => resolveExit([c, s])));
+  const [code, signal] = await closed;
   assert.equal(signal, null);
   assert.equal(code, 0);
   assert.equal(stderr, '');

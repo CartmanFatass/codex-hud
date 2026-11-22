@@ -433,14 +433,17 @@ test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeou
   const f = await fixture(t, { failedRetentionMs });
   for (const ended_at of [undefined, 'not-a-date']) {
     const job = await f.call('hud_create', { role: 'imp', request_key: String(ended_at), task: 'Synthetic task.' });
+    const pidFile = join(f.env.HUD_HOME, 'watch.pid');
+    await until(() => fs.existsSync(pidFile));
     const file = join(job.task_dir, 'STATUS.json');
     writeFixtureFile(file, JSON.stringify({ state: 'failed', ended_at }));
     const mtime = fs.statSync(file).mtimeMs;
-    await new Promise((done) => setTimeout(done, 50));
-    assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, undefined);
-    assert.ok(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
-    await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
-    assert.ok(Date.parse(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at) >= mtime + failedRetentionMs - 1);
+    const reapedAt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at;
+    await until(reapedAt);
+    // Retention is a product deadline: compare the reaper's receipt to the actual
+    // file mtime, not to a sleep that can overshoot when the observer is descheduled.
+    assert.ok(Date.parse(reapedAt()) >= mtime + failedRetentionMs - 1);
+    await until(() => !fs.existsSync(pidFile));
   }
 });
 
