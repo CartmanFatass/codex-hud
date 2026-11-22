@@ -408,7 +408,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return;
     }
     if (/^wait:\d+$/.test(id)) return readWait(Number(id.slice(5)));
-    if (id === 'progress' || id === 'latest') return goProject('progress');
+    if (id === 'progress' || id === 'latest' || id.startsWith('latest:')) return goProject('progress');
     // A ticket row opens the Tickets page where it was left: its lanes cross features, so no feature row is there to rest on.
     goProject('tickets');
   };

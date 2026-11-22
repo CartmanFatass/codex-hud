@@ -218,13 +218,14 @@ function ticketsPart(data: ProjectSnapshot, state: MonitorState, width: number, 
     };
     return { list, preview, start: list[0]?.item, hints: ['⏎ details', 'Esc back'], focusHints: ['⏎ details', 'Esc back', 'o file'] };
   }
-  const list = [...ticketRows(data, folded, width, now).filter((r) => !r.item || (!seen.has(r.item) && seen.add(r.item)))
+  const filtering = !!state.project.filter?.query;
+  const list = [...ticketRows(data, folded, width, now, undefined, filtering).filter((r) => !r.item || (!seen.has(r.item) && seen.add(r.item)))
     .map((r) => (r.item?.startsWith(prefix) ? { ...r, item: `project:tk:${r.item.slice(prefix.length)}` } : r))];
   const preview = (cursor?: string): Shown => {
     const key = /^project:tk:(.+)$/.exec(cursor ?? '')?.[1];
     const ticket = data.tickets.flatMap((f) => f.tickets.map((x) => ({ x, key: `${f.slug}:${basename(x.path)}` }))).find((o) => o.key === key)?.x;
     if (!key || !ticket) return { label: '', rows: [] };
-    const rows = ticketRows(data, new Set([...folded, `ticket:${key}`]), width, now).filter((r) => r.item === prefix + key).slice(1);
+    const rows = ticketRows(data, new Set([...folded, `ticket:${key}`]), width, now, undefined, filtering).filter((r) => r.item === prefix + key).slice(1);
     const number = monitorText(ticket.number), right = monitorText(ticket.status);
     const room = width - visualLength(number) - 1 - (right ? visualLength(right) + 2 : 1);
     return { label: `${number} ${cutTicketTitle(ticket.title, room)}`, right, rows: bare(rows) };

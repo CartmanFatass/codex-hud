@@ -190,7 +190,7 @@ Reference: `docs/design/panel-v8/` (option 2) and `docs/design/panel-v8/notes.md
   beside package lanes; one card per subagent with same hide rules. Indent nested agents one level; deeper
   use flat `↳ parent`. External current-work summaries follow the master switch. No agent log, card label
   or card summary settings. (12.03)
-- Spare rows: compact board and open tickets; cards win. Top line counts STATE waiting items with questions.
+- Spare rows: compact board and the milestone and ticket rollup (started features, unstarted folded into one row); cards win. (22.14) Top line counts STATE waiting items with questions.
   Idle Home lists waiting items and newest landed slices above progress. (12.04, 17.10)
 
 #### 2.2.4 Project hub, progress, layouts and export

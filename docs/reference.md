@@ -451,10 +451,13 @@ Waiting block. The footer shows `✓ N done today` from 56 columns, `✓ N` belo
 **Spare rows.** Cards get space first. Remaining rows show, top to bottom: STATE's
 waiting items (a row each, up to five, then `+N more`), the newest landed work (three rows at 38–55
 columns, five wider; at `slice` Home uses ledger order), then at the
-bottom the progress block: STATE's Now summary (up to three wrapped rows), a six-state progress
-bar/legend and up to six open tickets per feature. The block counts the current milestone's
-slices exactly as the Project hub does; with no current milestone it counts the whole ledger and
-is titled `All slices`. The block takes its rows before the two lists, which take what is left.
+bottom the progress block: STATE's Now summary (up to three wrapped rows), a stacked milestone bar
+and count legend (accepted, to try, working, stalled, planned; dropped slices excluded). With no matching
+milestone it counts the whole ledger and is titled `All slices`. A project ticket meter includes finished
+features. Started features get one row each; unstarted features share one planned row with ready and queued
+counts. At slice detail, started features also show up to six open tickets, with queued tickets counted rather
+than listed. In Split Home the Progress row names the milestone, how many items are to try and how many slices
+are working, or the accepted fraction when idle. The Waiting row separates decisions from pending trials. The block takes its rows before the two lists, which take what is left.
 As height falls the latest list shrinks first, then waiting, tickets, the summary's extra
 rows, legend, summary, bar and the block. Enter or a click on a waiting item opens its page (Esc
 returns to its row on the hub), on the Waiting header the hub's Waiting block, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
@@ -554,14 +557,15 @@ Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, every feature with open 
 (open parent issues with sub-issues, plus already-mirrored parents so closed features
 receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files
 with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
-An accepted linked slice (including a recorded owner acceptance), a done/closed/complete/resolved status or a fully checked nonempty checklist completes a ticket. Dropped tickets count as resolved in ratios. A linked landed slice or a ticket ID in the latest 64 commit subjects shows **to try**, and releases its dependents. Local numbers/titles and `feature/NN` blockers resolve across the scanned project. Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Blocked**. Working jobs and managed worktrees are linked at read time, never written back to the tracker. The newest-64-directory job lookup is shared with slice blocks.
+An accepted linked slice (including a recorded owner acceptance), a done/closed/complete/resolved status or a fully checked nonempty checklist completes a ticket. Dropped tickets count as resolved in ratios. A linked landed slice or a ticket ID in the latest 64 commit subjects shows **to try**, and releases its dependents. Local numbers/titles and `feature/NN` blockers resolve across the scanned project. Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Stalled**. Working jobs and managed worktrees are linked at read time, never written back to the tracker. The newest-64-directory job lookup is shared with slice blocks.
 **Tickets page**: a done/total meter for every ticket and a short code for each feature (`hp hub-pages 4/7`),
 then the tickets in lanes by state across features, one row each (`◐ hp 06 Projects list  imp 12m  1/3`:
 state mark, the feature's code, number and title; on the right what matters for the lane, then
 checked/total). **For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`,
 `ready-for-human`) with their latest comment under the row, whatever else holds them. **Working** holds
-tickets with active work or a fresh claim; **Ready** holds work that can start; **Blocked** names its
-blockers (`← 03 ●`, the mark that of the blocker); **Done** starts folded (Enter opens it).
+tickets with active work or a fresh claim; landed tickets have a **to try** lane. **Ready** holds work that can
+start; **Queued** starts folded and holds tickets waiting on ordinary predecessors. **Stalled** is for genuine
+blockers. Dependency rows name their blockers (`← 03 ●`, the mark that of the blocker); **Done** also starts folded.
 Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
 `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
 
@@ -852,7 +856,7 @@ Home, Project and Control become **a list above and a preview of the cursor row 
   of the lane's most important job. A question or a failure keeps a reason row, so what
   needs you is always on screen; the cursor starts on the first such row. Below the
   list the preview shows that row: the question's slab and the lane's cards, the
-  waiting items with the newest landed work, or the progress block.
+  waiting items with the newest pending trials, or the milestone and ticket rollup.
   On a short panel blank rows go first, then the preview from its bottom; the list
   never gives way (a very short panel scrolls it with its cursor). A lane at work that
   the cursor is not on shows, in the row's free cells, the marked keywords of its

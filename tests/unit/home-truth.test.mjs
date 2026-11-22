@@ -20,7 +20,7 @@ async function fixture(t) {
   return { ...f, idle, quiet: (width, lang, height, state, data = f.data) => f.render(width, lang, height, state, data, { workboard: idle }) };
 }
 const press = (frame, input) => handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW, standalone: true });
-const legend = (lines) => lines.filter((l) => /●/.test(l)).join(' ');
+const legend = (lines) => lines[lines.findIndex(l => /^  [█▒░]/.test(l)) + 1];
 
 test('Home top line counts STATE waiting items with job questions, ✓ only when both are zero, and opens the hub\'s Waiting block', async (t) => {
   const f = await fixture(t);
@@ -81,15 +81,15 @@ test('Home counts the current milestone\'s slices as the hub does; without one t
     // The name row already shows the milestone, so both facts fit on the Progress row.
     assert.match(hub.find((l) => l.startsWith('Project ─')), / M3b$/);
     assert.match(progress, /^Progress +1 to try · 1 working$/);
-    assert.match(legend(home), /working 1/);
-    assert.match(legend(home), /landed, to try 1/);
+    assert.match(legend(home), /◐ 1 working/);
+    assert.match(legend(home), /◇ 1 to try/);
     assert.doesNotMatch(legend(home), /blocked|todo|accepted|dropped/);
     assert.match(home.find((l) => /^Progress ─/.test(l)), /Milestone M3b$/);
   }
   for (const ladder of [{ ids: [] }, { ids: [], current: 'M99' }]) {
     const lines = plain(f.quiet(80, 'zh', 46, undefined, { ...f.data, ladder })), text = legend(lines);
     assert.match(lines.find((l) => /^进度 ─/.test(l)), /全部切片$/);
-    for (const word of ['工作中 2', '受阻 1', '待办 1', '已验收 1', '已放弃 1']) assert.ok(text.includes(word), word);
+    for (const word of ['◐ 2 工作中', '◆ 1 受阻', '○ 1 已规划', '✓ 1 已验收']) assert.ok(text.includes(word), word);
   }
 });
 
@@ -110,8 +110,8 @@ test('an idle Home at 38×46 shows waiting items and the newest landed slices ab
     // The summary is cut after three rows, not one; the bar follows it.
     assert.match(lines[progress + 1], /^  Synthetic milestone closing/);
     assert.match(lines[progress + 2], /^  building in worktrees$/);
-    assert.match(lines[progress + 3], /^  █/);
-    assert.equal(lines.findIndex((l) => /^(Tickets|工单) · /.test(l)), progress + 5, 'summary (2 rows), bar, legend (1 row), then the tickets');
+    assert.match(lines[progress + 3], /^  ▒/);
+    assert.equal(lines.findIndex((l) => /^  (Tickets|工单) [━─]/.test(l)), progress + 5, 'summary (2 rows), bar, legend (1 row), then the tickets');
   }
 });
 
@@ -124,11 +124,11 @@ test('cards keep their rows, then the progress block, before Home\'s waiting and
     const frame = f.render(38, 'en', base + 2 + spare), lines = plain(frame), rows = frame.workboard.rows.length - base;
     assert.ok(rows <= spare, `spare ${spare}: ${rows} rows`);
     assert.deepEqual(plain(frame).slice(1, base + 1), plain(cards).slice(1, base + 1), 'no card row cut or displaced');
-    const summary = lines.some((l) => /^  Synthetic milestone/.test(l)), bar = lines.some((l) => /^  █/.test(l));
+    const summary = lines.some((l) => /^  Synthetic milestone/.test(l)), bar = lines.some((l) => /^  [█▒░]/.test(l));
     if (summary) assert.ok(bar, `spare ${spare}: the summary never outlives the bar`);
     if (spare === 3) assert.ok(bar && summary, 'the cards end in a blank, leaving room for both the bar and the summary');
     // Below three spare rows the progress block cannot fit. Otherwise the lists only use what it leaves.
-    if (spare >= 3 && lines.some((l) => /^(Waiting for you|Latest) ─/.test(l))) assert.ok(lines.some((l) => /^Tickets · native-tree ─/.test(l)), `spare ${spare}`);
+    if (spare >= 3 && lines.some((l) => /^(Waiting for you|Latest) ─/.test(l))) assert.ok(lines.some((l) => /^  Tickets [━─]/.test(l)), `spare ${spare}`);
   }
   const roomy = plain(f.render(38, 'en', base + 2 + 40));
   assert.ok(roomy.some((l) => /^Waiting for you ─/.test(l)) && roomy.some((l) => /^Latest ─/.test(l)), 'with room, both lists come');

@@ -66,9 +66,9 @@ test('Home: the list has a row per lane and block, a question and a failure keep
   assert.equal(d.state.home.split.listCursor, d.frame.workboard.rows[0].item);
   // Idle: nothing runs, the first row that needs the owner is Waiting for you, whose preview lists the items and the latest slices.
   const calm = driver(idle), quiet = calm.lines();
-  assert.match(quiet[2], /^\? Waiting for you +2 · 1 to try$/);
-  assert.match(rule(calm), /^Waiting for you ─+ 2 · 1 to try$/);
-  assert.ok(quiet.some((l) => /^Latest ─+$/.test(l)) && quiet.some((l) => /◇ LANDING/.test(l)));
+  assert.match(quiet[2], /^\? Waiting for you +2 asks · 1 to try$/);
+  assert.match(rule(calm), /^Waiting for you ─+ 2 asks · 1 to try$/);
+  assert.ok(quiet.some((l) => /^To try ─+ 1$/.test(l)) && quiet.some((l) => /◇ LANDING/.test(l)));
 });
 
 test('Home: the list keeps its height whatever the preview does, and gives way last (24 rows)', async (t) => {

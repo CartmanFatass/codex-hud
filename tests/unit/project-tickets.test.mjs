@@ -93,7 +93,8 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
     if (width >= 80) {
       assert.match(text, lang === 'en' ? /2 features · 14 tickets/ : /2 个功能 · 14 个工单/);
       assert.match(text, lang === 'en' ? /imp 12m/ : /imp 12分/);
-      assert.match(text, /· nt 04 Settings cleanup +← 02, 03/);
+      assert.match(text, lang === 'en' ? /▸ Queued ─+ 2/ : /▸ 待前序 ─+ 2/);
+      assert.doesNotMatch(text, /04 Settings cleanup/);
       assert.match(text, /triaging/);
       assert.match(text, lang === 'en' ? /^▸ Done ─+ 4$/m : /^▸ 已完成 ─+ 4$/m);
       assert.match(text, /rt retired-tools 2\/2/);
@@ -119,7 +120,7 @@ test('tickets are lanes by state: For you first, then Working, Ready, Queued; Do
   assert.deepEqual(state.project.folded, new Set());
   const lines = plain(frame), at = (re) => lines.findIndex((l) => re.test(l));
   // The lanes in order, each with its count; the meter counts the done tickets of every feature, the codes name the features.
-  assert.ok(at(/^For you ─+ 3$/) < at(/^Working ─+ 2$/) && at(/^Working ─+ 2$/) < at(/^Ready ─+ 3$/) && at(/^Ready ─+ 3$/) < at(/^Queued ─+ 2$/) && at(/^Queued ─+ 2$/) < at(/^▸ Done ─+ 4$/));
+  assert.ok(at(/^For you ─+ 3$/) < at(/^Working ─+ 2$/) && at(/^Working ─+ 2$/) < at(/^Ready ─+ 3$/) && at(/^Ready ─+ 3$/) < at(/^▸ Queued ─+ 2$/) && at(/^▸ Queued ─+ 2$/) < at(/^▸ Done ─+ 4$/));
   assert.match(lines.join('\n'), /^ {2}━{5}─{11} 4\/14 done$/m);
   assert.match(lines.join('\n'), /^ {2}nt native-tree 2\/12 {2}rt retired-tools 2\/2$/m);
   // For you holds what waits on a person, ahead of anything its blockers say; a blocked ticket names its blockers.
@@ -127,7 +128,10 @@ test('tickets are lanes by state: For you first, then Working, Ready, Queued; Do
   assert.match(lane('For you'), /\? nt 10 Vocabulary needs-triage +needs-triage +0\/1/);
   assert.match(lane('For you'), /\? nt 12 Vocabulary ready-for-human +ready-for-human +0\/1/);
   assert.match(lane('Working'), /◐ nt 02 Home lanes +imp 12m +1\/4/);
-  assert.match(lane('Queued'), /· nt 05 Shortcuts +← 03 ● +0\/1/);
+  assert.doesNotMatch(lines.join('\n'), /05 Shortcuts/);
+  frame.state.project.nav.cursor = 'project:fold:lane:queued';
+  frame = f.render(120, 'en', press(frame, 'enter').state);
+  assert.match(plain(frame).join('\n'), /· nt 05 Shortcuts +← 03 ● +0\/1/);
   assert.doesNotMatch(lines.join('\n'), /Claude collector/);
   frame.state.project.nav.cursor = 'project:fold:lane:done';
   frame = f.render(120, 'en', press(frame, 'enter').state);
@@ -137,6 +141,18 @@ test('tickets are lanes by state: For you first, then Working, Ready, Queued; Do
   frame = f.render(120, 'en', press(frame, 'open-session').state);
   assert.doesNotMatch(plain(frame).join('\n'), /Claude collector/);
   assert.match(plain(frame).join('\n'), /^▸ Done ─+ 4$/m);
+});
+test('stalled evidence stays visible while ordinary predecessors stay folded', async (t) => {
+  const f = await fixture(t);
+  f.issue('native-tree', '14', 'needs-upstream', 'Missing upstream', 'ready-for-agent', 'unknown/01');
+  const data = await f.collector.collect(true, f.board, NOW + 2);
+  for (const lang of ['en', 'zh']) {
+    const lines = plain(f.render(80, lang, 'tickets', data)).join('\n');
+    assert.match(lines, lang === 'en' ? /^▸ Queued ─+ 2$/m : /^▸ 待前序 ─+ 2$/m);
+    assert.match(lines, lang === 'en' ? /^Stalled ─+ 1$/m : /^受阻 ─+ 1$/m);
+    assert.match(lines, /◆ nt 14 Missing upstream +← unknown\/01/);
+    assert.doesNotMatch(lines, /05 Shortcuts/);
+  }
 });
 test('Enter on a ticket shows its checklist and latest comment in the panel, a second Enter folds it; raw o opens the file in a fake herdr tab', async (t) => {
   const f = await fixture(t), log = join(f.root, 'open.jsonl'), bin = join(f.root, 'bin');
@@ -180,7 +196,7 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   ]);
   assert.deepEqual(calls.slice(3), calls.slice(0, 3));
   // A ticket with no checklist says so; a long title keeps its row and the status moves under it at 40 columns.
-  const bare = f.render(40, 'en', onPage('tickets', { project: { folded: new Set(['agents', 'ticket:native-tree:06-polish.md']) } }));
+  const bare = f.render(40, 'en', onPage('tickets', { project: { folded: new Set(['agents', 'lane:queued', 'ticket:native-tree:06-polish.md']) } }));
   assert.match(plain(bare).join('\n'), /● nt 06 Polish +triaging +0\/0\n +no checklist/);
   assert.match(plain(bare).join('\n'), /· nt 04 Settings cleanup +← 02, 03 +0\/2\n/, 'the blockers share the row at 40 columns');
   // One meter for every ticket: thin, as full as the done share (a started one never empty, an unfinished one never full).
@@ -330,7 +346,7 @@ test('40-column Tickets frame (EN and ZH) cuts titles at whole words or CJK char
     assert.match(previewed, /^12 Vocabulary… ─+ ready-for-human$/m);
   }
   // Home's open-tickets rows cut at a word boundary when narrow, and fall back to cell cut when the first word cannot fit.
-  const homeLines = homeProgressRows(data, 28, 30, false).map((r) => stripAnsi(r.text));
+  const homeLines = homeProgressRows(data, 28, 30, false, 'slice').map((r) => stripAnsi(r.text));
   for (const line of homeLines) {
     assert.equal(visualLength(line), 28, line);
     const num = /^  (\d+) /.exec(line)?.[1];

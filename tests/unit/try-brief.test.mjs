@@ -177,7 +177,7 @@ test('the preview of a briefed slice: whole brief, numbered steps, then the orig
   assert.equal(press(plainPreview, 'enter').action?.type, 'open-files');
 });
 
-test('one count, one form: Waiting, the Progress row and the hub page row say the same number of slices to try, in both layouts and languages', async (t) => {
+test('Waiting and the hub report all pending trials; Home Progress counts only its milestone in both languages', async (t) => {
   const { f, data } = await fixture(t);
   const tries = data.ledger.filter((r) => r.state === 'try').length;
   assert.ok(tries >= 3, 'the fixture has slices to try in more than one milestone');
@@ -188,7 +188,7 @@ test('one count, one form: Waiting, the Progress row and the hub page row say th
       split: f.render(60, lang, 40, split({ activeTab: 'project' }), data),
       home: f.render(60, lang, 40, split(), data),
     };
-    for (const [name, frame] of Object.entries(frames)) {
+    for (const [name, frame] of Object.entries({ hub: frames.hub, split: frames.split })) {
       const found = numbers(frame).filter((n) => n !== 0);
       assert.ok(found.length > 0, `${lang} ${name}: says a number to try`);
       assert.deepEqual([...new Set(found)], [tries], `${lang} ${name}: ${found}`);
@@ -197,7 +197,9 @@ test('one count, one form: Waiting, the Progress row and the hub page row say th
     const homeRow = plain(frames.home).find((l) => /^[◐@] (Progress|进度)/.test(l));
     assert.ok(homeRow, `${lang}: Home's Progress row`);
     assert.doesNotMatch(homeRow, /\d+\/\d+|[█▒░]/, `${lang}: ${homeRow}`);
-    assert.match(homeRow, new RegExp(`${tries} ${word}`));
+    const current = data.ledger.filter(r => r.state === 'try' && (r.release ?? r.milestone) === data.ladder.current).length;
+    assert.match(homeRow, new RegExp(`${current} ${word}`));
+    assert.match(plain(frames.home).find(l => /^\? (Waiting for you|等你处理)/.test(l)), new RegExp(`${tries} ${word}`));
   }
   // A bar's fraction says what it counts.
   assert.match(text(f.render(60, 'en', 40, progress(), data)), /\d+\/\d+ accepted/);

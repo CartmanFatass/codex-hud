@@ -1,4 +1,4 @@
-import { sliceState } from './state-helpers.mjs';
+import { sliceState, withState } from './state-helpers.mjs';
 /** Home's spare-row progress: synthetic questions, decisions, HUD and native cards. */
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
@@ -27,11 +27,26 @@ export async function homeFixture(root) {
   return { ...f, board, collector, data, render };
 }
 export function homeFrames(f) {
-  return Object.fromEntries([52, 80, 120].flatMap((width) => ['en', 'zh'].flatMap((lang) => {
+  const frames = Object.fromEntries([52, 80, 120].flatMap((width) => ['en', 'zh'].flatMap((lang) => {
     // The cards and the top line (two rows) STATE's waiting items add.
     const base = f.render(width, lang, 100, undefined, null).workboard.rows.length + 2;
     // Spare rows after the cards: everything, tickets cut, legend only, bar only, block gone.
     return [['tall', 14], ['tickets-short', 9], ['legend-short', 6], ['bar-short', 4], ['gone', 2]]
       .map(([size, spare]) => [`home-${width}-${lang}-${size}`, plain(f.render(width, lang, base + 2 + spare))]);
   })));
+  // At default task detail, show the project's totals (including finished features no longer retained),
+  // a started feature, and one folded row for the two plans. No individual ticket titles on Home.
+  const plan = f.data.tickets[0].tickets.filter(t => t.number === '03' || t.number === '04');
+  const milestone = '0.4.0';
+  const ledger = [['accepted', 14], ['try', 4], ['working', 2], ['todo', 6]].flatMap(([state, n]) => Array.from({ length: n }, (_, i) => ({
+    state, id: `SYNC-${state}-${i}`, milestone: `batch-${i % 2}`, release: milestone, text: 'Synthetic release slice',
+  })));
+  const data = { ...f.data, summary: '', ladder: { current: milestone, ids: [milestone] }, ledger,
+    tickets: [...f.data.tickets, ...['plan-a', 'plan-b'].map(slug => ({ slug, tickets: plan }))],
+    ticketTotals: { doneFeatures: 31, totalFeatures: 34, doneTickets: 124, totalTickets: 138 } };
+  for (const lang of ['en', 'zh']) {
+    const state = withState(sliceState(), { prefs: { panelLayout: 'split', acceptance: 'task' }, home: { split: { listCursor: 'home-progress:progress' } } });
+    frames[`rollup-40-${lang}`] = plain(f.render(40, lang, 36, state, data));
+  }
+  return frames;
 }

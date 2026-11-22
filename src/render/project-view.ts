@@ -18,10 +18,10 @@ import { t } from './i18n.js';
 export const sliceInk = (state: SliceState) => ({ working: theme.board.active, blocked: theme.board.attention,
   try: theme.board.identifier, accepted: theme.board.success, todo: theme.board.muted, dropped: theme.board.frame })[state];
 /** Cumulative rounding keeps the stacked bar cell-exact, including small nonzero segments. */
-export function progressSegments(counts: ProjectSnapshot['counts'], width: number) {
-  const total = SLICE_STATES.reduce((n, state) => n + counts[state], 0);
+export function progressSegments(counts: ProjectSnapshot['counts'], width: number, order: readonly SliceState[] = SLICE_STATES) {
+  const total = order.reduce((n, state) => n + counts[state], 0);
   let count = 0, edge = 0;
-  return SLICE_STATES.map((state) => {
+  return order.map((state) => {
     count += counts[state];
     const end = total ? Math.round(count / total * width) : 0;
     const segment = { state, width: end - edge };
@@ -29,26 +29,57 @@ export function progressSegments(counts: ProjectSnapshot['counts'], width: numbe
     return segment;
   });
 }
-const legendItem = (counts: ProjectSnapshot['counts'], s: SliceState) =>
-  sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${counts[s]}`);
+const HOME_STATES = ['accepted', 'try', 'working', 'blocked', 'todo'] as const;
+const HOME_WORD = { accepted: 'accepted', try: 'to try', working: 'working', blocked: 'Stalled', todo: 'planned' };
+const HOME_SHORT = { accepted: 'done', try: 'try', working: 'now', blocked: 'Stalled', todo: 'plan' };
 // To try is a medium shade (▒), a step from both the full block of what is accepted and the light one of what is still to do; the
 // ascii glyphs differ too, so a bar with no colour (the `none` theme) still reads.
 const BAR_GLYPH: Record<SliceState, [string, string]> = { working: ['█', '#'], blocked: ['█', '#'], try: ['▒', '='], accepted: ['█', '#'], todo: ['░', '.'], dropped: ['░', '.'] };
-export const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number) => progressSegments(data.counts, width).map(({ state, width: cells }) =>
+export const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number, order?: readonly SliceState[]) => progressSegments(data.counts, width, order).map(({ state, width: cells }) =>
   sliceInk(state)(mark(...BAR_GLYPH[state]).repeat(cells))).join('');
 export const HOME_BLOCK = 60;
 const HOME_TICKETS = 6, HOME_WAITING = 5;
-/** Legend entries as a grid of aligned columns, in the fewest rows that fit `room`: a split never leaves one entry alone. */
-function legendGrid(entries: string[], room: number): { lines: string[]; width: number } {
-  const widths = entries.map(visualLength);
-  for (let rows = 1; entries.length; rows++) {
-    const cols = Math.ceil(entries.length / rows);
-    const wide = Array.from({ length: cols }, (_, c) => Math.max(...widths.filter((_, i) => i % cols === c)));
-    const total = wide.reduce((a, b) => a + b, 0) + 3 * (cols - 1);
-    if (total <= room || cols === 1) return { width: total, lines: Array.from({ length: Math.ceil(entries.length / cols) }, (_, r) =>
-      entries.slice(r * cols, (r + 1) * cols).map((e, c) => e + ' '.repeat(wide[c] - widths[r * cols + c])).join('   ')) };
+/** Group the collector's derived states for display; never infer activity from tracker files or jobs here. */
+function homeTicketRows(data: ProjectSnapshot, width: number, slices: boolean): MonitorRow[] {
+  const totals = data.ticketTotals;
+  if (!totals?.totalTickets) return [];
+  const row = (text: string, key: string): MonitorRow => ({ text: fit(text, width), item: `home-progress:tickets:${key}` });
+  const { doneTickets, totalTickets, doneFeatures, totalFeatures } = totals;
+  const closed = t('{done}/{total} closed', { done: doneFeatures, total: totalFeatures });
+  const label = `  ${t('Tickets')}`, ratio = `${doneTickets}/${totalTickets}`;
+  const cells = Math.min(8, width - visualLength(`${label}  ${ratio} ${closed}`));
+  const rows = [row(pair(`${label}${cells > 0 ? ' ' + meter(doneTickets, totalTickets, cells) : ''} ${ratio}`, closed, width), 'all')];
+  let planned = 0, ready = 0, queued = 0;
+  const started: MonitorRow[] = [];
+  let startedFeatures = 0;
+  const lanes = ['working', 'try', 'you', 'blocked', 'ready', 'queued'];
+  for (const { slug, tickets } of data.tickets) {
+    const open = tickets.filter(r => !ticketResolved(r)), done = tickets.length - open.length;
+    if (!open.length) continue;
+    open.sort((a, b) => lanes.indexOf(ticketLane(a)) - lanes.indexOf(ticketLane(b)));
+    const ticket = open[0], lane = ticketLane(ticket), waiting = open.filter(r => r.state === 'queued').length;
+    if (!done && (lane === 'ready' || lane === 'queued')) {
+      planned++; ready += open.length - waiting; queued += waiting;
+      continue;
+    }
+    startedFeatures++;
+    const you = lane === 'you', word = you ? t('For you') : ticketStateWord(ticket);
+    const head = `  ${you ? theme.board.attention('?') : ticketGlyph(ticket)} ${monitorText(slug)}`;
+    const right = `${done}/${tickets.length} · ${open.filter(r => ticketLane(r) === lane).length} ${word}`;
+    const bar = visualLength(head + right) + 6 <= width ? ' ' + meter(done, tickets.length, 4) : '';
+    started.push(row(pair(head + bar, theme.board.muted(right), width), slug));
+    if (!slices) continue;
+    const show = open.filter(r => r.state !== 'queued').slice(0, HOME_TICKETS);
+    for (const r of show) {
+      const lead = `  ${monitorText(r.number)} `, state = asksYou(r) ? t('For you') : ticketStateWord(r);
+      started.push(row(pair(lead + cutTicketTitle(r.title, width - visualLength(lead + state) - 1), theme.board.muted(state), width), slug));
+    }
+    if (waiting) started.push(row('  ' + theme.board.muted(t('+{n} queued', { n: waiting })), slug));
   }
-  return { lines: [], width: 0 };
+  if (started.length) rows.push({ ...section(t('Active & ready'), width, featureCountText(startedFeatures)), item: 'home-progress:tickets:all' }, ...started);
+  if (planned) rows.push(row(pair(`  ${mark('▸', '>')} ${t('{n} planned', { n: planned })}`,
+    theme.board.muted(`${ready} ${t('ready')} · ${t('{n} queued', { n: queued })}`), width), 'planned'));
+  return rows;
 }
 /**
  * Only whole spare rows; cards have already claimed their space. The counts are the current milestone's, as on the hub
@@ -56,45 +87,28 @@ function legendGrid(entries: string[], room: number): { lines: string[]; width: 
  * legend, summary, then the bar, then the block.
  */
 export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true, acceptance?: MonitorState['prefs']['acceptance']): MonitorRow[] {
-  if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.tickets.length)) return [];
+  if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.ledger.length && !data.tickets.length)) return [];
   const row = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
-  const cur = currentRows(data), counts = cur.counts, states = SLICE_STATES.filter((s) => counts[s]);
-  const pending = acceptance === 'slice' ? 0 : tryCount(data, acceptance);
-  const legend = legendGrid(SLICE_STATES.flatMap((s) => s === 'try' && acceptance !== 'slice'
-    ? pending ? [sliceInk(s)(`${mark('●', '*')} ${t('{n} to try', { n: pending })}`)] : []
-    : counts[s] ? [legendItem(counts, s)] : []), Math.min(width - 2, HOME_BLOCK));
+  const cur = currentRows(data), counts = cur.counts, states = HOME_STATES.filter(s => counts[s]);
+  const legend = (words?: typeof HOME_WORD) => states.map(s => sliceInk(s)(`${mark(...PROGRESS_MARK[s])} ${counts[s]}${words ? ' ' + t(words[s]) : ''}`)).join(words === HOME_SHORT ? ' ' : '  ');
+  const legendLine = [legend(HOME_WORD), legend(HOME_SHORT)].find(line => visualLength(line) <= width - 2) ?? legend();
+  const fraction = `${counts.accepted}/${cur.rows.length - counts.dropped}`;
   const summary = data.summary ? clampLines(data.summary, width - 2, 3).lines : [];
   const milestone = data.ladder.current && (cur.whole && cur.rows.length ? '' : data.ladder.current);
   const head = section(t('Progress'), width, milestone ? `${t('Milestone')} ${monitorText(milestone)}` : cur.rows.length ? t('All slices') : '');
   // What the block keeps as it shrinks: the bar and the first summary row, then the legend, then the summary's other rows.
   let room = spare - (gap ? 1 : 0) - 1;
   const bar = states.length && room > 0 ? (room--, 1) : 0, first = summary.length && room > 0 ? (room--, 1) : 0;
-  const legendRows = bar && legend.lines.length <= room ? legend.lines : [];
+  const legendRows = bar && room > 0 ? [legendLine] : [];
   room -= legendRows.length;
   const more = first ? Math.min(summary.length - 1, room) : 0;
   room -= more;
   const rows = [...(gap ? [boardRow('')] : []), { ...head, item: 'home-progress:progress' },
     ...summary.slice(0, first + more).map((line) => row('  ' + line)),
-    ...(bar ? [row('  ' + barText({ counts }, Math.max(0, Math.min(width - 2, Math.max(24, legend.width)))))] : []),
+    ...(bar ? [row(`  ${barText({ counts }, Math.max(0, Math.min(24, width - 3 - visualLength(fraction))), HOME_STATES)} ${theme.board.muted(fraction)}`)] : []),
     ...legendRows.map((line) => row('  ' + line))];
   if (bar && !legendRows.length) return rows;
-  const rank = { working: 0, try: 1, ready: 2, queued: 3, blocked: 4 } as Record<string, number>;
-  for (const feature of data.tickets) {
-    const open = feature.tickets.filter((r) => r.state in rank).sort((a, b) => rank[a.state] - rank[b.state]);
-    const slots = Math.min(HOME_TICKETS, spare - rows.length - 1);
-    if (!open.length || slots < 1) continue;
-    const id = `tickets:${feature.slug}`, done = feature.tickets.filter(ticketResolved).length;
-    rows.push({ ...section(`${t('Tickets')} · ${monitorText(feature.slug)}`, width,
-      t('{done}/{total} done', { done, total: feature.tickets.length })), item: `home-progress:${id}` });
-    const cut = open.length > slots && slots > 2, shown = open.slice(0, cut ? slots - 1 : slots);
-    for (const ticket of shown) {
-      const right = theme.board.muted(ticketStateWord(ticket)), lead = `  ${monitorText(ticket.number)} `;
-      const room = width - visualLength(lead) - visualLength(right) - 1;
-      rows.push(row(pair(`${lead}${cutTicketTitle(ticket.title, room)}`, right, width), id));
-    }
-    if (cut) rows.push(row('  ' + theme.board.muted(t('+{n} more', { n: open.length - shown.length })), id));
-  }
-  return rows;
+  return room > 0 ? [...rows, ...homeTicketRows(data, width, acceptance === 'slice').slice(0, room)] : rows;
 }
 /**
  * Home's spare rows, top to bottom: STATE's waiting items (a row each) and the newest landed slices under the cards, the progress block
@@ -139,7 +153,7 @@ export const PAGE_WORD: Record<ProjectPage, string> = {
 export const projectPageOf = (state: MonitorState) => projectPage(state.project.view);
 const ticketResolved = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped';
 export const ticketWorking = (r: ProjectTicket) => r.state === 'working';
-export const ticketStateWord = (r: ProjectTicket) => t(r.state === 'try' ? 'to try' : r.state === 'queued' ? 'Queued' : r.state);
+export const ticketStateWord = (r: ProjectTicket) => t(r.state === 'try' ? 'to try' : r.state === 'queued' ? 'Queued' : r.state === 'blocked' ? 'Stalled' : r.state);
 const parts = (...p: (string | number | false | null | undefined)[]) =>
   p.filter((s): s is string => typeof s === 'string' && s !== '');
 function updatedText(data: ProjectSnapshot, now: number): string {
@@ -566,10 +580,10 @@ export function featureCodes(features: TicketFeature[]): Map<string, string> {
   return codes;
 }
 /**
- * The Tickets page: lanes by state across features (For you, Working, Ready, Blocked, Done folded), one row a ticket under the
+ * The Tickets page: lanes by derived state (queued and done start folded), one row a ticket under the
  * code of its feature; the codes are listed once at the top. Enter on a ticket shows its checklist and latest comment here.
  */
-export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: number, now: number, feature?: TicketFeature): MonitorRow[] {
+export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: number, now: number, feature?: TicketFeature, filtering = false): MonitorRow[] {
   const rows: MonitorRow[] = [], features = feature ? [feature] : data.tickets ?? [], codes = featureCodes(features);
   const all = features.flatMap((f) => f.tickets.map((ticket) => ({ ticket, feature: f })));
   if (!all.length) return rows;
@@ -580,9 +594,10 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
     for (const line of pack(features.map((f) => `${theme.board.muted(codes.get(f.slug)!)} ${monitorText(f.slug)} ${theme.board.muted(`${f.tickets.filter(ticketResolved).length}/${f.tickets.length}`)}`), width))
       rows.push(boardRow(fit(line, width)));
   }
-  const lane = (id: string, title: string, items: typeof all, right: string, open = true) => {
+  const lane = (title: string, items: typeof all, fold?: string) => {
     if (!items.length) return;
-    rows.push(boardRow(''), id === 'done' && !feature ? { ...section(`${open ? '' : mark('▸', '>') + ' '}${t(title)}`, width, right), item: 'project:fold:lane:done' } : section(t(title), width, right));
+    const open = !fold || folded.has(fold);
+    rows.push(boardRow(''), { ...section(`${open ? '' : mark('▸', '>') + ' '}${t(title)}`, width, String(items.length)), ...(fold ? { item: `project:fold:${fold}` } : {}) });
     if (open) items.forEach((x) => ticketRow(x));
   };
   const ticketRow = ({ ticket, feature }: (typeof all)[number]) => {
@@ -614,14 +629,13 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
     }
   };
   const by = (id: string) => all.filter(({ ticket }) => ticketLane(ticket) === id);
-  lane('you', 'For you', by('you'), theme.board.attention(String(by('you').length)));
-  lane('working', 'Working', by('working').sort((a, b) => Number(!!b.ticket.job) - Number(!!a.ticket.job)), String(by('working').length));
-  lane('try', 'to try', by('try'), String(by('try').length));
-  lane('ready', 'Ready', by('ready'), String(by('ready').length));
-  lane('queued', 'Queued', by('queued'), String(by('queued').length));
-  lane('blocked', 'Blocked', by('blocked'), String(by('blocked').length));
-  // Membership opens it: Done starts folded.
-  lane('done', 'Done', by('done'), String(by('done').length), !!feature || folded.has('lane:done'));
+  lane('For you', by('you'));
+  lane('Working', by('working').sort((a, b) => Number(!!b.ticket.job) - Number(!!a.ticket.job)));
+  lane('to try', by('try'));
+  lane('Ready', by('ready'));
+  lane('Queued', by('queued'), filtering ? undefined : feature ? `lane:queued:${feature.slug}` : 'lane:queued');
+  lane('Stalled', by('blocked'));
+  lane('Done', by('done'), feature ? undefined : 'lane:done');
   return rows;
 }
 export const featureItem = (feature: TicketFeature) => `project:fold:feature:${feature.slug}`;
@@ -805,7 +819,7 @@ export function pageRows(
         item: `project:wait:${index}:${rows.length - 1}`, ...(r.path ? { files: [r.path] } : {}) }));
     }
   } else if (page === 'tickets') {
-    if (state.prefs.acceptance === 'slice') rows.push(...ticketRows(data, folded, width, now));
+    if (state.prefs.acceptance === 'slice') rows.push(...ticketRows(data, folded, width, now, undefined, !!state.project.filter?.query));
     else for (const feature of data.tickets) {
       const open = folded.has(featureItem(feature).slice('project:fold:'.length));
       rows.push(featureRow(feature, width, open));
