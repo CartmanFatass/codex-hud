@@ -7,7 +7,8 @@ Applies to every worker job in this repository, after its own task.
 - Run every build and test through `/home/fires/projects/MyHUD/tmp/env.sh <command>` (temporary HOME, HUD_HOME,
   CODEX_HOME). Never run tests against the real home.
 - Build with `npm run build && npm run build:test`, then run the tests for the code you touched. The full suite
-  (`npm run test:mjs`, about 70 s) is the land gate's job; run it only when the brief asks.
+  (`npm test`, `npm run test:mjs`, `check:fixtures`; about 70 s) is the land gate's job, including a ticket's
+  "npm test … pass" line; do not run it even once unless the brief says so. Other jobs share this machine.
 - Code jobs run in their HUD-managed worktree: commit there, never push or land, and leave ticket files alone; the
   main session lands with `hud_land`, which records the ticket. Jobs without a worktree
   (docs, design samples, studies) commit with a pathspec (`git commit -m ... -- <paths>`) in the main checkout.
