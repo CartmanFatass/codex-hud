@@ -220,6 +220,8 @@ export async function watchCommand(
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
+  if (options.signal?.aborted) return 0;
+  const controller = new AbortController(), { signal } = controller;
   let idleSince: number | null = null;
   const notices = settlementNotices(options.settlementWindowMs ?? settlementWindow(io.env));
   const inputs = watchInputs(home, () => {
@@ -230,7 +232,7 @@ export async function watchCommand(
     timer = setTimeout(fire, Math.min(DEBOUNCE_MS, notices.delay));
   });
 
-  let stopped = Boolean(options.signal?.aborted);
+  let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let wakeWait: (() => void) | undefined;
   let dirty = false;
@@ -242,6 +244,7 @@ export async function watchCommand(
   };
   const stop = () => {
     stopped = true;
+    controller.abort();
     inputs.close();
     if (timer !== undefined) {
       clearTimeout(timer);
@@ -291,7 +294,8 @@ export async function watchCommand(
       if (!first) await wait();
       if (stopped) break;
       dirty = false;
-      const pane = queue ? delivery!.paneInfo(callerPane, io.env) : null;
+      const pane = queue ? await delivery!.paneInfo(callerPane, io.env, { signal }) : null;
+      if (stopped) break;
       if (queue) {
         const agent = pane?.agent;
         if ((agent !== 'codex' && agent !== 'agy') || (queueAgent && queueAgent !== agent)) break;
@@ -299,6 +303,7 @@ export async function watchCommand(
       }
       const agyPending = queueAgent === 'agy' && delivery!.hasAgyEvents(callerPane, home);
       const rows = all ? readThinJobRows(home, { pane: null }) : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
+      if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)))];
       if (queue) {
@@ -321,7 +326,8 @@ export async function watchCommand(
         // A regular filesystem wake or safety rescan also flushes old events
         // when the caller returns to its prompt without any new job events.
         if (!stopped && (agyBacklog.length || agyPending)) {
-          const sent = delivery!.notifyAgy(callerPane, agyBacklog, home, io.env, pane);
+          const sent = await delivery!.notifyAgy(callerPane, agyBacklog, home, io.env, pane, { signal });
+          if (stopped) break;
           agyBacklog.splice(0, sent.accepted);
           if (sent.status !== 0) io.stderr(`${sent.detail || sent.error?.message || 'Antigravity event delivery failed; will retry'}\n`);
         }
@@ -331,7 +337,8 @@ export async function watchCommand(
         if (stopped) break;
         try {
           if (queue) {
-            const sent = delivery!.notify(callerPane, line, home, { queue: true, env: io.env });
+            const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
+            if (stopped) break;
             if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
           } else await io.stdout(`${line}\n`);
         } catch (error) {

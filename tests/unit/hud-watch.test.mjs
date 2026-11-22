@@ -570,7 +570,7 @@ test('a live pi watcher suppresses fallback, but dead, reused and mismatched PID
   const marker = fs.readFileSync(pidFile, 'utf8'), pi = JSON.parse(marker);
   assert.equal(pi.pid, child.pid);
   assert.equal(watching(pane, f.home), true);
-  assert.deepEqual(notify(pane, 'Synthetic question', f.home, { env: f.env }), { status: 0, skipped: true });
+  assert.deepEqual(await notify(pane, 'Synthetic question', f.home, { env: f.env }), { status: 0, skipped: true });
   assert.deepEqual(f.deliveries(), []);
 
   const otherPane = 'w4E:p9';
@@ -586,7 +586,7 @@ test('a live pi watcher suppresses fallback, but dead, reused and mismatched PID
   child.kill('SIGKILL');
   await exited;
   assert.equal(watching(pane, f.home), false);
-  assert.equal(notify(pane, 'Synthetic question', f.home, { env: f.env }).status, 0);
+  assert.equal((await notify(pane, 'Synthetic question', f.home, { env: f.env })).status, 0);
   assert.deepEqual(f.deliveries().map((d) => d.args), [['agent', 'prompt', pane, 'Synthetic question']]);
 });
 
@@ -633,15 +633,47 @@ test('hud watch --queue queues catch-up and settlement silently and exits on age
   writeFixtureFile(join(dir, 'report.md'), 'Done.');
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   await until(() => f.deliveries().length > 0, 6000);
-  assert.deepEqual(f.deliveries().map((d) => d.args), [
-    ['queue', '--thread', '00000000-0000-4000-8000-000000000001', '--message',
-      'j0000000000000001 imp catchup: idle_grace | report\nj0000000000000002 imp settlement: idle_grace | report'],
+  const deliveries = f.deliveries();
+  assert.equal(deliveries.length, 1);
+  assert.deepEqual(deliveries[0].args.slice(0, 4), ['queue', '--thread', '00000000-0000-4000-8000-000000000001', '--message']);
+  // The update can land before or during the async catch-up scan.
+  assert.deepEqual(deliveries[0].args[4].split('\n').sort(), [
+    'j0000000000000001 imp catchup: idle_grace | report',
+    'j0000000000000002 imp settlement: idle_grace | report',
   ]);
   writeFixtureFile(f.agentFile, 'claude');
   assert.equal(await running, 0);
   assert.deepEqual(stdout, []);
   assert.deepEqual(stderr, []);
   assert.equal(fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), false);
+});
+
+test('hud watch --queue exits within 500 ms on SIGTERM during a hung Codex queue', async (t) => {
+  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID;
+  const started = join(f.home, 'queue-start');
+  fs.writeFileSync(join(f.home, 'bin/codex'), `#!${process.execPath}
+import fs from 'node:fs';
+import { setTimeout } from 'node:timers/promises';
+process.on('SIGTERM', () => {});
+fs.writeFileSync(${JSON.stringify(started)}, String(process.pid));
+await setTimeout(3000);
+`, { mode: 0o700 });
+  const dir = writeJob(f.home, 'j0000000000000001', pane, 'question', { state: 'working' });
+  fs.mkdirSync(join(dir, 'qa'));
+  fs.writeFileSync(join(dir, 'qa/q1.md'), 'Synthetic question.');
+  const watcher = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--queue'], { env: f.env, stdio: 'ignore' });
+  const exited = once(watcher, 'exit');
+  t.after(async () => { watcher.kill('SIGTERM'); await exited; });
+  await until(() => fs.existsSync(started));
+  const start = performance.now();
+  watcher.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+  const elapsed = performance.now() - start;
+  t.diagnostic(`queue watcher SIGTERM: ${elapsed.toFixed(0)} ms`);
+  assert.ok(elapsed < 500);
+  assert.equal(fs.existsSync(join(f.home, 'watchers', `${pane}.pid`)), false);
+  assert.equal(fs.existsSync(`/proc/${fs.readFileSync(started, 'utf8')}`), false, 'queue child exited');
+  assert.deepEqual(f.deliveries(), [], 'cancellation does not fall back to typing');
 });
 
 test('hud watch --queue typed fallback keeps running and exits after injectable empty idle interval', async (t) => {

@@ -1049,6 +1049,43 @@ test('unregistered skill names are skipped and a CLI role is not given skill fla
   assert.equal(Object.hasOwn(cliRead, 'worker_prompt'), false);
 });
 
+test('hud_create and hud_send do not wait for a slow queue-watcher lookup', async (t) => {
+  const f = await fixture(t, true, `
+    import cp from 'node:child_process';
+    import { syncBuiltinESMExports } from 'node:module';
+    for (const method of ['spawn', 'spawnSync']) {
+      const start = cp[method];
+      cp[method] = (bin, args, options) => {
+        // The delivery helper supplies an explicit env; tab placement uses the inherited env.
+        if (options?.env && bin === 'herdr' && args.join(' ') === 'pane get w4E:p1') {
+          options = { ...options, env: { ...options.env, SLOW_DELIVERY_LOOKUP: '1' } };
+        }
+        return start(bin, args, options);
+      };
+    }
+    syncBuiltinESMExports();
+  `);
+  f.overrideBin('herdr', `#!${process.execPath}
+if (process.env.SLOW_DELIVERY_LOOKUP === '1') {
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+} else {
+  process.argv.splice(1, 1, process.env.FAKE_BIN, 'herdr');
+  await import(process.env.FAKE_BIN);
+}
+`);
+  await f.rpc('ping');
+  let start = performance.now();
+  const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic async dispatch.' });
+  const createMs = performance.now() - start;
+  assert.match(job.job, /^j[0-9a-f]{16}$/);
+  start = performance.now();
+  const reply = await f.call('hud_send', { job: job.job, text: 'Synthetic addendum.' });
+  const sendMs = performance.now() - start;
+  t.diagnostic(`hud_create ${createMs.toFixed(0)} ms, hud_send ${sendMs.toFixed(0)} ms`);
+  assert.equal(reply.sent, true);
+  assert.ok(createMs < 1500 && sendMs < 1500, 'both calls should finish before the 2 s lookup budget');
+});
+
 for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one queue watcher only for Codex (${agent})`, async (t) => {
   const f = await fixture(t, true, `
     import fs from 'node:fs';
@@ -1067,7 +1104,9 @@ for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one que
   const job = await f.call('hud_create', args);
   await f.call('hud_create', args);
   await f.call('hud_create', { ...args, request_key: 'queue-second' });
-  const starts = f.commands().filter((c) => c.command === 'queue-watch');
+  const queueStarts = () => f.commands().filter((c) => c.command === 'queue-watch');
+  if (agent === 'codex') await until(() => queueStarts().length > 0);
+  const starts = queueStarts();
   assert.equal(starts.length, agent === 'codex' ? 1 : 0);
   if (agent === 'codex') {
     assert.deepEqual(starts[0].args, [resolve('bin/hud'), 'watch', '--queue']);

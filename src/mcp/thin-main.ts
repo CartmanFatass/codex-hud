@@ -265,8 +265,9 @@ async function workspaceArgs(job: Job): Promise<string[]> {
   const result = await run('herdr', ['pane', 'get', job.herdr_pane]);
   if (result.exit_code !== 0) return [];
   try {
-    const workspace = JSON.parse(result.stdout).result.pane.workspace_id;
-    return herdrId(workspace) ? ['--workspace', workspace] : [];
+    const pane = JSON.parse(result.stdout).result.pane;
+    if (job.herdr_pane === callerPane) rememberCallerHarness(pane.agent);
+    return herdrId(pane.workspace_id) ? ['--workspace', pane.workspace_id] : [];
   } catch {
     return [];
   } // An unavailable caller lookup keeps herdr's default workspace.
@@ -1223,7 +1224,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     job.request_key === request_key && (!windowedKey || withinRetryWindow(job.created_at, now)));
   if (existing) {
     ensureWatcher();
-    if (!taskClient) ensureQueueWatcher(pane, hudHome);
+    if (!taskClient) void ensureQueueWatcher(pane, hudHome);
     return created(existing);
   }
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
@@ -1387,7 +1388,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         } else createdJobs.add(id);
         ensureWatcher();
         if (taskClient && !parentJob) taskEntry = beginTask(job);
-        else ensureQueueWatcher(pane, hudHome);
+        else void ensureQueueWatcher(pane, hudHome);
       }
       const launchRole = preset || selected ? { ...definition, skills: place.skills } : definition;
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
@@ -1545,7 +1546,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     : sendHistory(current).find((attempt) => attempt.key === explicitKey);
   if (duplicate) {
     const outcome = 'legacy' in duplicate ? undefined : duplicate;
-    if (outcome?.exit_code === 0 && !taskClient) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+    if (outcome?.exit_code === 0 && !taskClient) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
     return outcome?.exit_code === 0
       ? { ok: true, sent: false }
       : { ok: false, sent: false, code: 'send_failed',
@@ -1598,7 +1599,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   attempted.exit_code = result.exit_code;
   attempted.stderr_tail = result.stderr;
   save(latest);
-  if (!taskClient && result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+  if (!taskClient && result.exit_code === 0) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
   if (result.exit_code === 0 && current.cli) {
     const supPid = supervisorPid(dir, status);
     if (
@@ -1681,6 +1682,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       const assignment = found.assignment(role, now, undefined, routing);
       return detail ? assignment : compactAssignment(assignment);
     });
+    if (!taskClient && !callerHarness && callerPane) rememberCallerHarness((await paneInfo(callerPane))?.agent);
     const watcherAlive = !taskClient && !!callerPane && watching(callerPane, hudHome);
     const unchanged = (args.convention_version ?? sentConventionVersion) === convention_version;
     if (!unchanged) sentConventionVersion = convention_version;
@@ -1701,6 +1703,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     sentCreateHint = true;
     if (isTaskReply(result)) return { ...result, statusMessage: `${result.statusMessage} — ${deliveryHint(false)}` };
     const watcherAlive = !taskClient && ('watcher_alive' in result ? result.watcher_alive === true : !!callerPane && watching(callerPane, hudHome));
+    // Tab placement or roster discovery may already know the harness; do not probe on the dispatch reply path.
     return { ...result, hint: deliveryHint(watcherAlive) };
   }
   if (name === 'hud_send') return sendJobs(args);
@@ -1825,12 +1828,11 @@ let callerHarness: 'agy' | 'claude' | 'codex' | 'pi' | undefined;
 let sentConventionVersion: string | undefined;
 let sentCreateHint = false;
 let discovered = false, taskClient = false, agyClient = false;
+function rememberCallerHarness(agent: unknown): void {
+  if (!callerHarness && (agent === 'agy' || agent === 'claude' || agent === 'codex' || agent === 'pi')) callerHarness = agent;
+}
 function deliveryHint(watcherAlive: boolean): string {
   if (taskClient) return 'Worker-turn events arrive as MCP task completions. Use `hud_read` to collect reports and check jobs without a task.';
-  if (!callerHarness && callerPane) {
-    const agent = paneInfo(callerPane)?.agent;
-    if (agent === 'agy' || agent === 'claude' || agent === 'codex' || agent === 'pi') callerHarness = agent;
-  }
   const fallback = 'Without live delivery, questions may be typed; use `hud_wait` for settlement or attention.';
   const live = 'Keep working until notified, then collect reports with `hud_read`.';
   switch (callerHarness) {
@@ -1853,7 +1855,7 @@ function deliveryHint(watcherAlive: boolean): string {
 const createdJobs = new Set<string>();
 async function adoptSessionJobs() {
   if (!callerPane || !await adoptProjectJobs(hudHome, callerPane, process.cwd(), jobs(), process.env, jobOwesCaller)) return false;
-  if (!taskClient) ensureQueueWatcher(callerPane, hudHome);
+  if (!taskClient) void ensureQueueWatcher(callerPane, hudHome);
   return true;
 }
 function sessionJobs() {

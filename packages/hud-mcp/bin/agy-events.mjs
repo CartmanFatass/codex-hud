@@ -17,7 +17,7 @@ export function hasAgyEvents(pane, home) {
 
 // Use the same open-file-description flock as hud_lease. Do not lock the pending
 // inode itself: publishing or claiming replaces it. The hook never waits for a lock.
-function locked(file, env, hook, run) {
+async function locked(file, env, hook, run) {
   const fd = fs.openSync(`${file}.lock`, O_CREAT | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0o600);
   try {
     const lock = spawnSync('flock', hook ? ['-nx', '3'] : ['-x', '-w', '0.25', '3'], {
@@ -25,7 +25,8 @@ function locked(file, env, hook, run) {
     });
     if (lock.status === 1) return;
     if (lock.status !== 0) throw lock.error ?? new Error(`Antigravity mailbox lock failed (${lock.status})`);
-    return run();
+    // Keep the same lock until the async prompt's claim has been resolved.
+    return await run();
   } finally {
     fs.closeSync(fd);
   }
@@ -44,13 +45,13 @@ function read(file) {
 
 // Both consumers must own this rename before reading for delivery. Writers and
 // readers cooperate under the same lock, so no append can land in a claimed file.
-function consume(file, deliver) {
+async function consume(file, deliver) {
   const claim = `${file}.${randomUUID()}.claim`;
   try { fs.renameSync(file, claim); }
   catch (error) { if (error.code === 'ENOENT') return; throw error; }
   try {
     const text = read(claim).replace(/\n$/, ''); // Strip only the mailbox's trailing newline.
-    const delivered = !text || deliver(text, claim);
+    const delivered = !text || await deliver(text, claim);
     if (delivered === null) return; // Unknown external outcome: retain the claim without replaying it.
     if (delivered) {
       try { fs.unlinkSync(claim); } catch { /* Already delivered; do not replay. */ }
@@ -73,13 +74,13 @@ function eventLine(message) {
 
 // Return how many notices were persisted. A live watcher retains overflow and
 // retries on its next regular wake rather than dropping older pending events.
-export function pushAgyEvents(pane, home, messages, env, type) {
+export async function pushAgyEvents(pane, home, messages, env, type) {
   const file = pendingFile(pane, home);
   let accepted = 0;
   try {
     if (!file) throw new Error('Missing Antigravity mailbox pane or home');
     fs.mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-    return locked(file, env, false, () => {
+    return await locked(file, env, false, async () => {
       if (messages.length) {
         let text = read(file), bytes = Buffer.byteLength(text), count = 0;
         for (const message of messages) {
@@ -102,8 +103,8 @@ export function pushAgyEvents(pane, home, messages, env, type) {
         }
       }
       let sent = { status: 0, detail: 'pending for Antigravity delivery' };
-      if (type) consume(file, (text, claim) => {
-        sent = type(text);
+      if (type) await consume(file, async (text, claim) => {
+        sent = await type(text);
         if (sent.retry) return false;
         if (sent.status === 0) return true;
         sent.detail = `Antigravity prompt outcome unknown; retained ${claim} without retrying`;
@@ -120,7 +121,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const file = pendingFile(process.env.HERDR_PANE_ID, process.env.HUD_HOME);
   let injected = false;
   try {
-    if (file) locked(file, process.env, true, () => consume(file, (text) => {
+    if (file) await locked(file, process.env, true, () => consume(file, (text) => {
       fs.writeFileSync(1, JSON.stringify({ injectSteps: [{ userMessage: `[HUD job events]\n${text}` }] }) + '\n');
       injected = true;
       return true;

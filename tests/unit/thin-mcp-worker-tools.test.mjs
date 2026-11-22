@@ -27,6 +27,58 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
+test('hud_ask does not block other worker MCP calls while Codex queue is slow', async (t) => {
+  const f = await fixture(t);
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic worker question.' });
+  f.overrideBin('herdr', `#!${process.execPath}
+const [, action] = process.argv.slice(2);
+const result = action === 'get'
+  ? { pane: { agent: 'codex', agent_session: { value: 'synthetic-thread' } } }
+  : { process_info: { foreground_processes: [{ name: 'codex', pid: process.ppid }] } };
+console.log(JSON.stringify({ result }));
+`);
+  const queued = join(f.root, 'queue-start');
+  f.overrideBin('codex', `#!${process.execPath}
+import fs from 'node:fs';
+import { setTimeout } from 'node:timers/promises';
+fs.writeFileSync(${JSON.stringify(queued)}, String(process.pid));
+await setTimeout(2000);
+`);
+  const call = workerClient(t, f, parent.task_dir, '0');
+  const pending = call('hud_ask', { question: 'Which layout?', default: 'rows' });
+  await until(() => fs.existsSync(queued));
+  const start = performance.now();
+  assert.deepEqual((await call.rpc('ping')).result, {});
+  const pingMs = performance.now() - start;
+  const reply = await pending;
+  t.diagnostic(`worker ping during hud_ask: ${pingMs.toFixed(0)} ms`);
+  assert.match(reply.content[0].text, /pushed via codex queue/);
+  assert.ok(pingMs < 500, 'worker MCP should answer while delivery is still in progress');
+
+  // Native callers supply an AbortSignal directly to the same worker tool.
+  fs.unlinkSync(queued);
+  const workerTools = resolve('packages/hud-mcp/bin/worker-tools.mjs');
+  const cancellable = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { pathToFileURL } from 'node:url';
+    const { callWorkerTool } = await import(pathToFileURL(${JSON.stringify(workerTools)}).href);
+    const ac = new AbortController();
+    process.on('SIGTERM', () => ac.abort());
+    try { await callWorkerTool('hud_ask', { question: 'Which color?', default: 'blue' }, ac.signal); }
+    catch (error) { if (error.name === 'AbortError') process.exitCode = 0; else throw error; }
+    process.exitCode ??= 1;
+  `], { env: { ...f.env, HUD_JOB_DIR: parent.task_dir, HUD_ASK_TIMEOUT: '0' }, stdio: 'inherit' });
+  const exited = once(cancellable, 'exit');
+  t.after(async () => { cancellable.kill('SIGTERM'); await exited; });
+  await until(() => fs.existsSync(queued));
+  const cancelStart = performance.now();
+  cancellable.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+  const cancelMs = performance.now() - cancelStart;
+  t.diagnostic(`worker hud_ask abort: ${cancelMs.toFixed(0)} ms`);
+  assert.ok(cancelMs < 500);
+  assert.equal(fs.existsSync(`/proc/${fs.readFileSync(queued, 'utf8')}`), false, 'queue child exited');
+});
+
 test('hud_sonic starts two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);

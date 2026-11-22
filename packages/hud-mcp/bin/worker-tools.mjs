@@ -266,6 +266,7 @@ function orchestrator(dir) {
 }
 
 export async function ask({ dir, job }, input, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal) {
+  signal?.throwIfAborted();
   const tag = `${typeof job.role === 'string' ? job.role : 'cli'}@${basename(job.cwd || dir)}`;
   const qa = join(dir, 'qa');
   fs.mkdirSync(qa, { recursive: true, mode: 0o700 });
@@ -275,7 +276,8 @@ export async function ask({ dir, job }, input, timeoutRaw = process.env.HUD_ASK_
   const orch = readJob(dir).herdr_pane || orchestrator(dir);
   if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
   else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
-    const ran = notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))));
+    const ran = await notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))), { signal });
+    signal?.throwIfAborted();
     const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
     pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
   }

@@ -320,8 +320,9 @@ esac
   assert.equal(job.agent, `${job.job}-primary`);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).herdr_pane, 'w4E:p1');
   assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), `${args.task}\n\nFinish with \`hud_report\`.\n`);
-  assert.deepEqual(f.commands()[0].args, ['pane', 'get', 'w4E:p1']);
-  const commands = f.commands().filter((c) => c.args[1] !== 'get');
+  const logged = f.commands();
+  assert.ok(logged.some(({ command, args }) => command === 'herdr' && args.join(' ') === 'pane get w4E:p1'));
+  const commands = logged.filter((c) => c.args[1] !== 'get');
   assert.deepEqual(
     commands.map((c) => [c.command, ...c.args.slice(0, 2)]),
     [

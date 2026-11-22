@@ -1,9 +1,10 @@
 /** Shared question/event delivery: watch, Codex queue, Antigravity mailbox, or typing. */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withDistLock } from '../../../scripts/dist-lock.mjs';
 import { pushAgyEvents } from './agy-events.mjs';
 
 export { hasAgyEvents } from './agy-events.mjs';
@@ -61,69 +62,87 @@ export function taskDelivery(dir, pane) {
       typeof task.start === 'string' && startTime(task.pid) === task.start;
   } catch { return false; }
 }
-export function paneInfo(pane, env = process.env) {
+let runner;
+const loadRunner = () => runner ??= withDistLock(() => import('../../../dist/roles/herdr-run.js'));
+
+function deliveryResult(outcome) {
+  const { exitCode: status, stdout, stderr, reason } = outcome;
+  return { status, stdout, stderr, ...(status === null ? { error: new Error(stderr || reason) } : {}) };
+}
+
+export async function paneInfo(pane, env = process.env, { signal } = {}) {
   try {
-    const got = spawnSync('herdr', ['pane', 'get', pane], { env, encoding: 'utf8', timeout: 2000 });
-    return got.status === 0 ? JSON.parse(got.stdout).result.pane : null;
+    const { runHerdr } = await loadRunner();
+    const got = await runHerdr(['pane', 'get', pane], env, { budgetMs: 2000, signal });
+    return got.ok ? JSON.parse(got.stdout).result.pane : null;
   } catch { return null; }
 }
 // `done` is the unfocused, unread version of an idle prompt. Unknown and
 // blocked panes are not safe to type into.
 const agyIdle = (info) => info?.agent === 'agy' && (info.agent_status === 'idle' || info.agent_status === 'done');
 
-export function notifyAgy(pane, messages, home, env, info) {
-  return pushAgyEvents(pane, home, messages, env, agyIdle(info) ? (text) => {
+export function notifyAgy(pane, messages, home, env, info, { signal } = {}) {
+  return pushAgyEvents(pane, home, messages, env, agyIdle(info) ? async (text) => {
     // Another prompt may have started while this batch waited for the mailbox.
-    if (!agyIdle(paneInfo(pane, env))) return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
-    const sent = spawnSync('herdr', ['agent', 'prompt', pane, text], { env, encoding: 'utf8', timeout: 20000 });
+    if (!agyIdle(await paneInfo(pane, env, { signal })) || signal?.aborted) {
+      return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
+    }
+    const { runHerdr } = await loadRunner();
+    const outcome = await runHerdr(['agent', 'prompt', pane, text], env, { budgetMs: 20_000, killGraceMs: 500, signal });
+    const sent = deliveryResult(outcome);
     if (sent.status !== 0) {
       // As with worker launch, retry only failures known to precede input.
       let code;
       try { code = JSON.parse(sent.stdout)?.error?.code; } catch { /* May be printed on stderr. */ }
       code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(sent.stderr?.trim() ?? '')?.[1];
-      sent.retry = !sent.pid || code === 'agent_not_ready' || code === 'agent_not_found';
+      sent.retry = outcome.reason === 'unavailable' || code === 'agent_not_ready' || code === 'agent_not_found';
     }
     return sent;
   } : null);
 }
 
-export function notify(pane, message, home, { queue = false, env = process.env } = {}) {
+export async function notify(pane, message, home, { queue = false, env = process.env, signal } = {}) {
   if (!queue && watching(pane, home)) return { status: 0, skipped: true };
-  const info = paneInfo(pane, env);
+  const info = await paneInfo(pane, env, { signal });
+  const aborted = () => ({ status: null, stdout: '', stderr: '', error: new Error('aborted') });
+  if (signal?.aborted) return aborted();
   if (info?.agent === 'agy') {
-    const sent = notifyAgy(pane, [message], home ?? (env.HUD_HOME || join(env.HOME || homedir(), '.hud')), env, info);
+    const sent = await notifyAgy(pane, [message], home ?? (env.HUD_HOME || join(env.HOME || homedir(), '.hud')), env, info, { signal });
     if (!sent.accepted) return { status: 1, error: sent.error ?? new Error('Antigravity mailbox busy or full') };
     // Once persisted the event can still be delivered after a rejected prompt.
     return { status: 0, detail: sent.detail ?? (sent.status === 0 ? 'typed into Antigravity' : 'pending for Antigravity delivery') };
   }
+  const { runCommand, runHerdr } = await loadRunner();
   let detail = '';
   if (info?.agent === 'codex' && info.agent_session?.value) {
     try {
-      const got = spawnSync('herdr', ['pane', 'process-info', '--pane', pane], { env, encoding: 'utf8', timeout: 2000 });
-      if (got.status !== 0) throw new Error(got.error?.message || got.stderr || 'process-info failed');
+      const got = await runHerdr(['pane', 'process-info', '--pane', pane], env, { budgetMs: 2000, killGraceMs: 500, signal });
+      if (!got.ok) throw new Error(got.stderr || `process-info failed (${got.reason})`);
       const proc = JSON.parse(got.stdout).result.process_info.foreground_processes.find((p) => p.name === 'codex');
       if (!proc) throw new Error('Codex process not found');
       const entries = fs.readFileSync(`/proc/${proc.pid}/environ`, 'utf8').split('\0');
       const value = (key) => entries.find((s) => s.startsWith(`${key}=`))?.slice(key.length + 1);
       const CODEX_HOME = value('CODEX_HOME') || join(value('HOME') || homedir(), '.codex');
-      const sent = spawnSync('codex', ['queue', '--thread', info.agent_session.value, '--message', message], {
-        env: { ...env, CODEX_HOME }, encoding: 'utf8', timeout: 20000,
-      });
-      if (sent.status === 0) return { ...sent, detail: 'pushed via codex queue' };
+      // Leave headroom for the queue watcher to exit in 500 ms even if Codex ignores TERM.
+      const outcome = await runCommand('codex', ['queue', '--thread', info.agent_session.value, '--message', message],
+        { ...env, CODEX_HOME }, { budgetMs: 20_000, killGraceMs: 250, signal });
+      const sent = deliveryResult(outcome);
+      if (outcome.ok) return { ...sent, detail: 'pushed via codex queue' };
       throw new Error(sent.error?.message || sent.stderr || `exit ${sent.status}`);
     } catch (error) {
+      if (signal?.aborted) return aborted();
       detail = `codex queue failed (${String(error.message).trim().slice(0, 200)}); fell back to typing`;
     }
   }
-  const typed = spawnSync('herdr', ['agent', 'prompt', pane, message], { env, encoding: 'utf8', timeout: 20000 });
-  return { ...typed, ...(detail ? { detail } : {}) };
+  const typed = await runHerdr(['agent', 'prompt', pane, message], env, { budgetMs: 20_000, killGraceMs: 500, signal });
+  return { ...deliveryResult(typed), ...(detail ? { detail } : {}) };
 }
 
-export function ensureQueueWatcher(pane, home) {
+export async function ensureQueueWatcher(pane, home, { signal } = {}) {
   try {
     if (!pane || watching(pane, home)) return;
-    const agent = paneInfo(pane)?.agent;
-    if ((agent !== 'codex' && agent !== 'agy') || watching(pane, home)) return;
+    const agent = (await paneInfo(pane, process.env, { signal }))?.agent;
+    if (signal?.aborted || (agent !== 'codex' && agent !== 'agy') || watching(pane, home)) return;
     const pidFile = join(home, 'watchers', `${pane}.pid`);
     fs.mkdirSync(join(home, 'watchers'), { recursive: true, mode: 0o700 });
     const hud = fileURLToPath(new URL('../../../bin/hud', import.meta.url));
@@ -153,7 +172,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   // pi-roles builds a file-write reply; the HUD main session answers through its MCP.
   const line = message.replace(/ \| reply: write .*$/, ` | reply: hud_respond job=${job} request_id=${message.match(/QUESTION (q\d+):/)?.[1] ?? ''}`);
-  const result = notify(pane, line);
+  const result = await notify(pane, line);
   if (result.error) process.stderr.write(`${result.error.message}\n`);
   process.exitCode = result.status ?? 1;
 }
