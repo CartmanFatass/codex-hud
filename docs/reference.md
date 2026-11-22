@@ -27,7 +27,7 @@ Use **Node ≥24.0.0** (Node 24 is the tested supported line; see
 ./install --with claude,pi,codex,browser,herdr
 ```
 
-Choose any of **claude**, **pi**, **codex**, **browser**, **herdr**; core is always
+Choose any of **claude**, **pi**, **codex**, **agy**, **browser**, **herdr**; core is always
 included. The installer checks Node before extension hooks/builds/changes, builds
 the HUD and MCP, and links commands into `~/.local/bin`. `--skip-build` uses existing
 build output. Keep the checkout/extraction directory: installed commands and client
@@ -55,6 +55,11 @@ limits extension removal. HUD data and unrelated owner settings remain. Claude
 settings follow symlinks with a one-time plain backup; Codex backs up resolved
 `config.toml` before official MCP commands and warns if comments are dropped.
 Pi registers delegation and display packages and excludes the old p10k-footer.
+
+For Antigravity, put `agy` on `PATH`, then run `./install --with agy`.
+It registers the HUD MCP, permission and hook, and leaves an existing non-HUD statusline alone.
+Remove the integration with `./install --uninstall --with agy`.
+
 See [installer extensions](../install.d/README.md) for backups and multiple Codex homes.
 
 ## Universal CLI and MCP

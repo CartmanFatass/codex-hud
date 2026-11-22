@@ -8,8 +8,8 @@ Decision refs use `DD.NN` for `D-2026-11-DD-NN` in `docs/decisions-log.md`.
 
 ## 1. What it is
 
-One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Linux/WSL machine, inside herdr.
-(10.02)
+One HUD for Claude Code, Codex, pi and Antigravity (`agy`), used by one person (the owner) on one Linux/WSL
+machine, inside herdr. (10.02, 22.12)
 
 ## 2. What it must do
 
@@ -17,7 +17,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 
 #### 2.1.1 Tool surface and thin layer
 
-- Start and use roles through one MCP from any of the three main sessions. Add tools when clearer; no cap.
+- Start and use roles through one MCP from any supported main session. Add tools when clearer; no cap.
   (17.02)
 - Main-session tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`, `hud_close`,
   `hud_wait` (hidden from MCP-task clients), `hud_peek`, `hud_tickets`, `hud_lease`, `hud_statusline`.
@@ -51,10 +51,12 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 
 - Support Grok Build, Antigravity, Claude Code and Codex. Check local CLI trust files before opening a tab;
   refuse untrusted directories. Launch in the job's herdr tab with only model, effort and permission-bypass
-  flags. Never edit CLI config or session stores. Use herdr status for report, idle grace, continuation,
-  questions, stop and reap as with pi. Launch per job without blocking other jobs or answers. (13.01, 18.02)
-- Sole write exception: `hud trust <dir>` backs up files under `$HUD_HOME`, then directly adds the owner's
-  chosen project directory `<dir>` to Grok Build, Antigravity and Claude Code trust lists. (13.01)
+  flags, without editing CLI config or session stores at launch. Use herdr status for report, idle grace,
+  continuation, questions, stop and reap as with pi. Launch per job without blocking other jobs or answers.
+  (13.01, 18.02)
+- Antigravity workers get the worker MCP like Claude and Codex, with the shell done-command fallback. (22.12)
+- `hud trust <dir>` backs up files under `$HUD_HOME`, then directly adds the owner's chosen project directory
+  `<dir>` to Grok Build, Antigravity and Claude Code trust lists. Installer config is separate (§2.4). (13.01, 22.12)
 
 #### 2.1.4 Dispatch inputs, isolation and launch guards
 
@@ -113,6 +115,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   declare MCP tasks get task completions instead. (14.03, 18.03, 20.09, 22.09)
 - Codex queues silently; pi uses its HUD extension's native session message queue. No main-pane typing with
   native or watched delivery. The panel and MCP share a state reader. (14.03, 18.06)
+- A working Antigravity session gets job events through its `PreInvocation` hook. An idle session has them
+  typed into its prompt. (22.12)
 - Neutral workers do only their job, with one role text across harnesses. On any harness a worker may
   choose to start sonic for a useful, simple, fully specified sub-task. If it does, it collects the report.
   HUD refuses worker requests to start other roles. (17.06)
@@ -120,7 +124,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   Worker MCP lists only `hud_report` (report, optional one-line summary and file list, done receipt in one
   step), `hud_ask`, `hud_sonic` (start one or more without blocking, then collect reports), `hud_progress`
   and `hud_lease` once leases exist. Pi gets the same worker tools natively. Scripts only for harnesses
-  without MCP. (21.03, 21.07, 22.01, 22.08)
+  without MCP or the Antigravity fallback (§2.1.3). (21.03, 21.07, 22.01, 22.08, 22.12)
 - Worker or main takes a named `hud_lease` before using a shared resource named in the brief (real install,
   paid or live runs, shared browser). One holder; free on holder end. No resident process. (21.07)
 - `hud_create` may name check commands. HUD runs them once the worker declares completion, records them
@@ -148,7 +152,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 - Every status line shows output tokens/s. Each client keeps one always-on bottom line: Claude replaces
   claude-hud (same owner fields), pi absorbs p10k-footer, `codexH` keeps its tmux bar. Pi ribbon stays at the
   right end of the editor's top border; other extensions' statuses stay visible. (11.04, 12.01, 17.09)
-- BAR-THEMES for all three bars and pi ribbon: Gauge Plates, Tide, Micro Glyphs, Stacked, Headline, Triptych.
+- Antigravity shows the HUD statusline through its `statusLine` command. (22.12)
+- BAR-THEMES for the Claude, Codex and pi bars and pi ribbon: Gauge Plates, Tide, Micro Glyphs, Stacked, Headline, Triptych.
   Keep default look. Stacked is the sole opt-in two-row theme. (12.01)
 
 #### 2.2.2 Side panel, tabs and layouts
@@ -340,8 +345,9 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
 
 ### 2.4 Installation and uninstallation
 
-One command each: `./install` with core and chosen extensions (Claude, pi, Codex, browser, herdr);
-`hud uninstall` removes them. Register via official client commands where available. (13.04)
+One command each: `./install` with core and chosen extensions (Claude, pi, Codex, `agy`, browser, herdr);
+`hud uninstall` removes them. Register via official client commands where available. The `agy` extension
+reversibly configures Antigravity's MCP, permission, statusline and `PreInvocation` hook. (13.04, 22.12)
 
 ## 3. What it does not do
 

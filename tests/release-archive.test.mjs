@@ -137,7 +137,8 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
     assert.doesNotMatch(name, /^\.dist(?:-test)?-stage-/, member);
     assert.ok(!member.endsWith('/CLAUDE.md'), member);
   }
-  for (const required of ['install', 'install.d/pi.sh', 'bin/hud', 'src/mcp/thin-main.ts', 'scripts/build.mjs',
+  for (const required of ['install', 'install.d/pi.sh', 'install.d/agy.sh', 'install.d/agy-config.mjs',
+    'integrations/agy/pre-invocation.sh', 'bin/hud', 'src/mcp/thin-main.ts', 'scripts/build.mjs',
     'packages/hud-mcp/bin/hud-watch.mjs', 'packages/hud-mcp/bin/hud-jev.mjs', 'packages/hud-mcp/hud-convention.md',
     'packages/hud-mcp/roles/imp.json', 'integrations/skills/hud/SKILL.md', 'integrations/skills/hud-delegate/SKILL.md', 'integrations/skills/hud-setup/SKILL.md',
     'integrations/tickets/method.md', 'integrations/skills-optional/grill-with-docs/SKILL.md',
@@ -191,6 +192,8 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
   assert.equal(fs.existsSync(path.join(tree, 'packages/hud-mcp/dist')), false);
   assert.match(run('hud', ['--help']), /Usage: hud/);
   for (const name of ['claude', 'pi', 'codex']) fs.writeFileSync(path.join(tools, name), client, { mode: 0o755 });
+  fs.copyFileSync(path.join(root, 'tests/fakes/agy'), path.join(tools, 'agy'));
+  fs.chmodSync(path.join(tools, 'agy'), 0o755);
   fs.writeFileSync(path.join(tools, 'herdr'), `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -201,10 +204,18 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
   for (const name of ['google-chrome', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
     fs.writeFileSync(path.join(tools, name), '#!/bin/bash\necho "Prerequisite stand-in must not be executed" >&2\nexit 99\n', { mode: 0o755 });
   }
-  const extensions = 'claude,pi,codex,browser,herdr';
-  // The README's --with command selecting every extension, again without --skip-build.
+  const extensions = 'claude,pi,codex,agy,browser,herdr';
+  // Select every extension, again without --skip-build.
   run('./install', ['--with', extensions]);
   const mcpCommand = path.join(bin, 'hud-mcp');
+  const agySettings = path.join(home, '.gemini/antigravity-cli/settings.json');
+  const agyMcp = path.join(home, '.gemini/config/mcp_config.json');
+  const agyHooks = path.join(home, '.gemini/config/hooks.json');
+  const agyHook = path.join(hud, 'integrations/agy/pre-invocation.sh');
+  assert.equal(json(agyMcp).mcpServers.hud.command, mcpCommand);
+  assert.equal(json(agySettings).statusLine.command, path.join(bin, 'hud-statusline'));
+  assert.deepEqual(json(agySettings).permissions.allow, ['mcp(hud/*)']);
+  assert.equal(run('sh', ['-c', json(agyHooks).hud.PreInvocation[0].command]), '{}\n');
   assert.equal(json(claudeRegistrations).hud, mcpCommand);
   assert.equal(json(claudeSettings).statusLine.command, path.join(bin, 'hud-statusline'));
   assert.match(fs.readFileSync(codexConfig, 'utf8'), /\[mcp_servers\.hud\]/);
@@ -249,7 +260,7 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
     assert.deepEqual(json(claudeSettings), { unrelated: true });
     assert.equal(fs.readFileSync(codexConfig, 'utf8'), codexOriginal);
     assert.deepEqual(json(piSettings), { packages: ['npm:synthetic'], extensions: ['private.ts'], theme: 'synthetic' });
-    for (const file of [...packages,
+    for (const file of [...packages, agySettings, agyMcp, agyHooks, agyHook,
       ...['hud-delegate', 'hud-setup', 'to-tickets'].flatMap(name => [
         path.join(env.CLAUDE_CONFIG_DIR, 'skills', name),
         path.join(env.CODEX_HOME, 'skills', name),

@@ -34,6 +34,10 @@ The owner approved the lean spec and resolved the draft questions:
   and on-demand watcher are allowed (clarifies D-2026-11-10-03).
 - **D-2026-11-22-11** (§2.2.3, §5): D-2026-11-20-04 wins: collect worker decisions without showing them.
   Drops the earlier display and title rules in D-2026-11-11-04 and D-2026-11-11-05.
+- **D-2026-11-22-12** (§1, §2.1.3, §2.1.6, §2.2.1, §2.4): Antigravity joins the HUD's supported main
+  sessions. Workers get the worker MCP with a shell done-command fallback. Deliver events through
+  `PreInvocation` when working and type them into the prompt when idle. Use Antigravity's `statusLine`
+  command. The `agy` extension may edit its client config reversibly (Antigravity adapter proposal 25).
 
 ## 2026-11-21
 

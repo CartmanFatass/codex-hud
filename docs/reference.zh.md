@@ -24,7 +24,7 @@ Claude Code、Codex 与 pi 的当前操作说明。[English](./reference.md) ·
 ./install --with claude,pi,codex,browser,herdr
 ```
 
-可任选 **claude**、**pi**、**codex**、**browser**、**herdr**；核心始终安装。
+可任选 **claude**、**pi**、**codex**、**agy**、**browser**、**herdr**；核心始终安装。
 安装器先检查 Node，再运行扩展检查、构建或修改文件，构建 HUD 与 MCP，将命令链接到 `~/.local/bin`。
 `--skip-build` 使用已有构建。保留检出／解压目录：已安装命令和客户端绑定均指向它。不修改 shell rc。
 
@@ -45,6 +45,11 @@ codexH
 `./install --uninstall` 卸载；`--with names` 限定扩展。保留 HUD 数据和无关设置。
 Claude 设置跟随符号链接并保留一次性普通备份；Codex 在官方 MCP 命令前备份解析后的 `config.toml`，
 丢失注释时警告。pi 注册委派与显示两个包，并排除旧 p10k-footer。
+
+安装 Antigravity 集成前，确保 `PATH` 上有 `agy`，再运行 `./install --with agy`。
+安装器注册 HUD MCP、权限规则和钩子，保留已有的非 HUD 状态行。
+用 `./install --uninstall --with agy` 移除该集成。
+
 备份和多个 Codex home 的操作见[安装器扩展](../install.d/README.md)。
 
 ## 通用 CLI 与 MCP

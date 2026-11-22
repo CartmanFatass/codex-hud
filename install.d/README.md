@@ -1,6 +1,6 @@
 # Installer extensions
 
-`./install --with claude,pi,codex,browser,herdr` sources each selected `install.d/<name>.sh` and calls
+`./install --with claude,pi,codex,agy,browser,herdr` sources each selected `install.d/<name>.sh` and calls
 `hud_ext_install`. Extensions define both `hud_ext_install` and `hud_ext_uninstall`.
 An optional `hud_ext_check` runs after name validation, before builds or filesystem changes
 (install only); herdr and browser use it to refuse missing requirements without changing anything.
@@ -20,7 +20,8 @@ repository's `./install` (not `hud uninstall`) for subsequent homes and the full
 ## Status lines are always on; only the panel is opt-in
 
 After installing the selected extensions, ordinary `claude` and `pi` launches load
-Claude's statusline and pi's footer. Codex's tmux bar comes with `codexH`.
+Claude's statusline and pi's footer. The `agy` extension configures Antigravity's statusline.
+Codex's tmux bar comes with `codexH`.
 The installer never edits shell rc files; with the Codex extension selected it prints
 only this function to paste into your shell rc:
 
@@ -63,6 +64,15 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   The official Codex commands may drop comments; a warning names that retained
   backup if the number of comment lines falls. No comments are reinserted.
   `hud codex` is the HUD launch (tmux bar); `/hud` opens the standalone panel.
+- **agy**: requires `agy` on PATH. Stages the official `agy mcp remove/add` commands in an
+  isolated home and copies only `mcpServers.hud` into `~/.gemini/config/mcp_config.json`,
+  without rewriting foreign entries. Adds `mcp(hud/*)` to `permissions.allow` in
+  `~/.gemini/antigravity-cli/settings.json` and configures the HUD `statusLine` unless
+  an owner's non-HUD command is already set. Adds a named `hud` `PreInvocation` hook to
+  `~/.gemini/config/hooks.json`, beside (not inside) herdr's hook. The hook runs
+  `$HUD_HOME/integrations/agy/pre-invocation.sh`, currently a no-op. Edited files retain
+  their modes and have one-time `.hud-agy-backup` copies. Uninstall reverses those
+  HUD entries without requiring `agy`; it preserves owner edits made since install.
 - **herdr**: checks PATH for `herdr`, `pi-role`, `pi-role-reap`, `pi-dispatch` and `pi`,
   printing their locations and sources. Only missing `herdr` fails installation.
   No external tool or herdr registration is installed; uninstall is a stated no-op.

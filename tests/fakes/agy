@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+const dir = path.join(process.env.HOME, '.gemini/config');
+const file = path.join(dir, 'mcp_config.json');
+if (process.env.AGY_ARGV_LOG) {
+  fs.appendFileSync(process.env.AGY_ARGV_LOG, JSON.stringify({ home: process.env.HOME, args }) + '\n');
+}
+const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : { mcpServers: {} };
+if (args.length === 3 && args.join(' ') === 'mcp remove hud') {
+  if (!Object.hasOwn(config.mcpServers, 'hud')) process.exit(1);
+  delete config.mcpServers.hud;
+} else if (args.length === 6 && args.slice(0, 5).join(' ') === 'mcp add --env HUD_MCP_SURFACE=roles hud') {
+  config.mcpServers.hud = process.env.AGY_BAD_REGISTRATION
+    ? { command: 'unexpected' }
+    : { command: args[5], disabled: false, env: { HUD_MCP_SURFACE: 'roles' } };
+} else process.exit(99);
+fs.mkdirSync(dir, { recursive: true });
+fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n', { mode: 0o644 });
