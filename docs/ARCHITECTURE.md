@@ -207,6 +207,8 @@ The thin-job signature cache is shared disposable display state, never job autho
 Job directory enumeration/stat/ranking still grows with retained history; the body
 limits are not a claim of constant total scan cost.
 
+`hud_land` runs in a detached helper. The watcher uses the job's latest land attempt to protect its worktree and receipt while queued or running. A retry before fast-forward keeps the old attempt readable under its own flow ID and removes its scratch worktree under the `main-checkout` lease. Integration tests the source commit directly when possible, otherwise picking only commits not on the current base. A red gate gets one immediate rerun of the reported Node.js test files (or of the whole command when no files are reported); recovery is stored in the flow and reported with the flaky test names when available.
+
 Home has package lanes plus one lane per native main session. Direct native children
 are cards, their children indent one level, deeper descendants say `↳ parent`.
 `work-visibility.ts` owns shared lifetimes: settled cards fold after 5 minutes and

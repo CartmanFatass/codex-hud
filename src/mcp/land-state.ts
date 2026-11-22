@@ -12,10 +12,11 @@ export interface LandFlow {
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string;
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; error?: string; tail?: string[];
-  repairs?: { step: string; job?: string; outcome: string }[]; reruns?: string[];
+  repairs?: { step: string; job?: string; outcome: string }[];
+  reruns?: (string | { step: string; tests: string[] })[];
 }
-export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}$/.test(id);
-export const flowId = (job: string) => `f${job.slice(1)}`;
+export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}(?:-[1-9]\d*)?$/.test(id);
+export const retryableLand = (f: LandFlow) => !f.landed_sha && (f.state === 'failed' || f.state === 'cancelled');
 export const activeLand = (f: LandFlow) => f.state === 'queued' || f.state === 'running';
 export const landFile = (home: string, id: string) => join(home, 'flows', `${id}.json`);
 export function writeLand(home: string, f: LandFlow, create = false) {
@@ -41,6 +42,20 @@ export function readLand(home: string, id: string): LandFlow | null {
   }
   return f;
 }
+/** Keep previous receipts (and their task/notice IDs) intact. Concurrent callers pick the same next ID. */
+export function landAttempt(home: string, job: string) {
+  const base = `f${job.slice(1)}`, cleanup: string[] = [];
+  let attempt = 1, flow = base, prior = readLand(home, flow);
+  while (prior && retryableLand(prior)) {
+    // A run that got past prepare may have registered its disposable checkout.
+    if (prior.base_sha && prior.step !== 'prepare') cleanup.push(flow);
+    flow = `${base}-${++attempt}`;
+    const next = readLand(home, flow);
+    if (!next) break;
+    prior = next;
+  }
+  return { flow, prior, cleanup };
+}
 export function landView(f: LandFlow) {
   const { flow, job, state, step, landed_sha, records_sha, repairs, reruns, error, tail } = f;
   return { flow, job, state, step, landed_sha, records_sha, repairs, reruns, error, tail };
@@ -49,7 +64,8 @@ export function landNotice(f: LandFlow) {
   const one = (text: string) => text.replace(/\s+/g, ' ').trim();
   return [`${f.flow} (land ${f.job}) — ${f.state}: ${f.step}${f.landed_sha ? ` ${f.landed_sha}` : ''}${f.error ? `: ${f.error}` : ''}`,
     ...(f.repairs ?? []).map((r, i) => `Repair ${i + 1}: ${one(r.step)} → ${r.job ?? 'dispatch'}: ${one(r.outcome)}`),
-    ...(f.reruns ?? []).map(step => `${one(step)} passed on immediate rerun`), ...(f.tail ?? [])].join('\n');
+    ...(f.reruns ?? []).map(r => typeof r === 'string' ? `${one(r)} passed on immediate rerun` :
+      `${one(r.step)} passed on immediate rerun; flaky tests: ${r.tests.map(one).join(', ')}`), ...(f.tail ?? [])].join('\n');
 }
 /** Native/watch and MCP changes share one terminal notice claim for the calling pane. */
 export function landEvents(home: string, pane: string | null, all = false, cwd = process.cwd()) {

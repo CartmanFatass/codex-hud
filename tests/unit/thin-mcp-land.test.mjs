@@ -32,7 +32,7 @@ async function checkout(t, gate) {
   fs.mkdirSync(join(main, '.hud'));
   fs.writeFileSync(join(main, '.hud/project.json'), JSON.stringify({ worktree: { disposable: ['dist/**'] },
     land: { base: 'base', gate, after: ['test "$WRAPPED" = yes && pwd > after-ran'], push: true, wrapper: 'wrap' } }));
-  fs.writeFileSync(join(main, 'wrap'), '#!/bin/sh\nexport WRAPPED=yes\nexec "$@"\n', { mode: 0o700 });
+  fs.writeFileSync(join(main, 'wrap'), '#!/bin/sh\nunset NODE_TEST_CONTEXT\nexport WRAPPED=yes\nexec "$@"\n', { mode: 0o700 });
   fs.writeFileSync(join(home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: main }] }));
   fs.writeFileSync(join(main, '.gitignore'), 'dist/\n');
   fs.writeFileSync(join(main, 'tracked'), 'start\n');
@@ -58,6 +58,7 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   const { flow, state } = await f.call('hud_land', { job });
   assert.equal(state, 'queued');
   assert.equal((await f.call('hud_read', { job: flow })).step, 'main-checkout lease');
+  assert.equal((await f.call('hud_land', { job })).flow, flow);
   assert.equal((await f.call('hud_lease', { name: 'main-checkout', release: true })).released, true);
   await until(() => f.flowState(flow).step.startsWith('gate[2]'), 10000);
   // Run a fresh watcher against the same receipt while the helper owns the gate.
@@ -71,7 +72,9 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   const done = await f.call('hud_read', { job: flow });
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.equal(done.changes.filter(s => s.includes(flow)).length, 1);
-  assert.equal((await f.call('hud_land', { job })).changes?.some(s => s.includes(flow)) ?? false, false);
+  const again = await f.call('hud_land', { job });
+  assert.equal(again.flow, flow); assert.equal(again.state, 'completed');
+  assert.equal(again.changes?.some(s => s.includes(flow)) ?? false, false);
   assert.equal(f.git(f.remote, 'rev-parse', 'refs/heads/base'), done.landed_sha);
   assert.equal(f.git(f.main, 'rev-parse', 'base'), done.landed_sha);
   assert.equal(fs.readFileSync(join(f.main, 'after-ran'), 'utf8').trim(), f.main);
@@ -99,7 +102,68 @@ for (const scenario of ['dirty touched path', 'moved base']) test(`land refuses 
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
   assert.equal(fs.existsSync(join(f.main, 'after-ran')), false);
   assert.equal(fs.existsSync(f.worktree), true);
-  if (scenario === 'dirty touched path') assert.equal(fs.readFileSync(join(f.main, 'tracked'), 'utf8'), 'owner edit\n');
+  if (scenario === 'dirty touched path') {
+    assert.equal(fs.readFileSync(join(f.main, 'tracked'), 'utf8'), 'owner edit\n');
+    f.git(f.main, 'restore', 'tracked');
+    const old = f.flowState(task.taskId), scratch = join(`${f.main}-wt`, `land-${task.taskId}`);
+    fs.writeFileSync(join(scratch, 'test-output'), 'disposable');
+    const launches = await Promise.all([taskCall(rpc, 'hud_land', { job }), taskCall(rpc, 'hud_land', { job })]);
+    const flow = launches[0].taskId;
+    assert.notEqual(flow, task.taskId);
+    assert.equal(launches[1].taskId, flow);
+    await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+    assert.equal(f.flowState(flow).state, 'completed', JSON.stringify(f.flowState(flow)));
+    assert.equal((await rpc('tasks/get', { taskId: task.taskId })).status, 'failed');
+    assert.deepEqual(f.flowState(task.taskId), old);
+    assert.equal(fs.existsSync(scratch), false);
+  }
+});
+
+test('a cancelled attempt can be retried with a new task and no stale cancel marker or scratch worktree', async t => {
+  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done']);
+  const rpc = taskRpc(f.rpc); await rpc('server/discover');
+  const { taskId: old } = await taskCall(rpc, 'hud_land', { job });
+  await until(() => f.flowState(old).step.startsWith('gate[1]'), 10000);
+  await rpc('tasks/cancel', { taskId: old });
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  await until(() => f.flowState(old).state === 'cancelled', 10000);
+  const scratch = join(`${f.main}-wt`, `land-${old}`);
+  assert.equal(fs.existsSync(scratch), true);
+  const { taskId: flow } = await taskCall(rpc, 'hud_land', { job });
+  assert.notEqual(flow, old);
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  assert.equal(f.flowState(flow).state, 'completed', JSON.stringify(f.flowState(flow)));
+  assert.equal((await rpc('tasks/get', { taskId: old })).status, 'cancelled');
+  assert.equal(fs.existsSync(scratch), false);
+});
+
+test('a failed after command does not retry an already landed flow', async t => {
+  const f = await checkout(t, ['true']);
+  const configFile = join(f.main, '.hud/project.json'), config = JSON.parse(fs.readFileSync(configFile));
+  config.land.after = ['exit 7'];
+  fs.writeFileSync(configFile, JSON.stringify(config));
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).state === 'failed', 15000);
+  const landed = f.git(f.main, 'rev-parse', 'base');
+  assert.notEqual(landed, f.base_head);
+  const again = await f.call('hud_land', { job });
+  assert.equal(again.flow, flow); assert.equal(again.landed_sha, landed);
+});
+
+test('land fast-forwards a rebased worker branch with only its own commits beyond the base tip', async t => {
+  const f = await checkout(t, ['true']);
+  fs.writeFileSync(join(f.main, 'upstream'), 'new base\n');
+  f.git(f.main, 'add', 'upstream'); f.git(f.main, 'commit', '-qm', 'advance base');
+  const base = f.git(f.main, 'rev-parse', 'base');
+  f.git(f.worktree, 'rebase', 'base');
+  const source = f.git(f.worktree, 'rev-parse', 'HEAD');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.landed_sha, source);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), source);
+  assert.equal(f.git(f.main, 'log', '--reverse', '--format=%s', `${base}..base`), 'first\nsecond');
 });
 
 test('red gate continues the source in grace; its rebased fix passes on a fresh checkout', async t => {
@@ -172,13 +236,49 @@ test('gate reruns only the failing step once and reports its recovery without di
   assert.equal(fs.readFileSync(join(f.env.HOME, 'count'), 'utf8'), 'first\nflaky\nflaky\n');
 });
 
-for (const stale of [false, true]) test(`land pushes scoped records (${stale ? 'stale' : 'bound'} summary)`, async t => {
+test('gate reruns only the node:test files that failed and reports the flaky test names', async t => {
+  const f = await checkout(t, ['npm run test:sample']);
+  fs.writeFileSync(join(f.worktree, 'package.json'), JSON.stringify({ scripts: { 'test:sample': 'node --test -- sample/*.test.mjs' } }));
+  fs.mkdirSync(join(f.worktree, 'sample'));
+  for (const [file, names] of [['alpha.test.mjs', ['alpha recovers', 'another alpha recovers']], ["beta's test.test.mjs", ['beta recovers']], ['green.test.mjs', []]]) {
+    fs.writeFileSync(join(f.worktree, 'sample', file), `
+import assert from 'node:assert/strict';
+import { appendFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+const marker = join(process.env.HOME, ${JSON.stringify(file)});
+const seen = existsSync(marker);
+appendFileSync(marker, 'run\\n');
+for (const name of ${JSON.stringify(names)}) test(name, () => assert.ok(seen));
+`);
+  }
+  f.git(f.worktree, 'add', 'sample', 'package.json'); f.git(f.worktree, 'commit', '-qm', 'add tests');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.repairs, undefined);
+  assert.deepEqual(done.reruns[0].tests, [
+    'alpha recovers (sample/alpha.test.mjs)', 'another alpha recovers (sample/alpha.test.mjs)', "beta recovers (sample/beta's test.test.mjs)",
+  ]);
+  assert.match(done.changes.join('\n'), /flaky tests: alpha recovers .*another alpha recovers .*beta recovers/);
+  assert.equal(fs.readFileSync(join(f.env.HOME, 'green.test.mjs'), 'utf8'), 'run\n');
+  for (const file of ['alpha.test.mjs', "beta's test.test.mjs"])
+    assert.equal(fs.readFileSync(join(f.env.HOME, file), 'utf8'), 'run\nrun\n');
+});
+
+for (const [heading, stale, description] of [
+  ['# 01: Example ticket', false, 'Example ticket'],
+  ['# 01: Example ticket', true, 'Example ticket'],
+  ['# Unnumbered', false, 'Synthetic change.'],
+  ['# Unnumbered', true, undefined],
+]) test(`land pushes scoped records (${heading}, ${stale ? 'stale' : 'bound'} summary)`, async t => {
   const f = await checkout(t, ['true']), dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
   fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), ticket: 'feature/01', slice: 'FEATURE-01' }));
   fs.writeFileSync(join(dir, 'report.md'), 'Report'); writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
   if (stale) fs.appendFileSync(join(dir, 'report.md'), ' superseded');
   fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, ticket), '# Example\n**Status:** claimed\n- [ ] first\n- [ ] second\n\n## Comments\n- [ ] preserve me\n');
+  fs.writeFileSync(join(f.main, ticket), `${heading}\n**Status:** claimed\n- [ ] first\n- [ ] second\n\n## Comments\n- [ ] preserve me\n`);
   fs.writeFileSync(join(f.main, 'STATE.md'), '## Slices\n\n<!-- Row format -->\n\n- try · SAMPLE · SAMPLE-01 · Existing\n');
   f.git(f.main, 'add', ticket, 'STATE.md'); f.git(f.main, 'commit', '-qm', 'ledger');
   fs.writeFileSync(join(f.main, 'owner'), 'unrelated staged edit'); f.git(f.main, 'add', 'owner');
@@ -188,8 +288,10 @@ for (const stale of [false, true]) test(`land pushes scoped records (${stale ? '
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.records_sha);
   assert.equal(f.git(f.remote, 'rev-parse', 'base^'), done.landed_sha);
   assert.equal(f.git(f.main, 'diff', '--cached', '--name-only'), 'owner');
-  assert.deepEqual(f.git(f.remote, 'diff', '--name-only', 'base^', 'base').split('\n'), stale ? [ticket] : [ticket, 'STATE.md']);
+  assert.deepEqual(f.git(f.remote, 'diff', '--name-only', 'base^', 'base').split('\n'), description ? [ticket, 'STATE.md'] : [ticket]);
   assert.match(f.git(f.remote, 'show', `base:${ticket}`), /ready-for-human\n- \[x\] first\n- \[x\] second[\s\S]*- \[ \] preserve me/);
   assert.ok(f.git(f.remote, 'show', `base:${ticket}`).includes(`Landed ${done.landed_sha}; gate 1/1`));
-  assert.equal(f.git(f.remote, 'show', 'base:STATE.md').includes(`- try · FEATURE · FEATURE-01 · Synthetic change. (${done.landed_sha})\n- try · SAMPLE`), !stale);
+  const ledger = f.git(f.remote, 'show', 'base:STATE.md');
+  if (description) assert.ok(ledger.includes(`- try · FEATURE · FEATURE-01 · ${description} (${done.landed_sha.slice(0, 8)})\n- try · SAMPLE`));
+  else assert.doesNotMatch(ledger, /FEATURE-01/);
 });

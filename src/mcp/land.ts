@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { procStat } from '../roles/worker-tree.js';
-import { activeLand, flowId, landFile, landNotice, readLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
+import { activeLand, landAttempt, landFile, landNotice, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
 import { managedReceiptMatches, type ManagedWorktree } from './managed-worktree.js';
 
 type Job = { job: string; cwd: string; worktree?: ManagedWorktree };
@@ -22,8 +22,8 @@ export async function startLand(home: string, id: string, job: Job | null, state
   const wt = job?.worktree;
   if (!job || job.job !== id || !wt || wt.root !== job.cwd || wt.main_root !== sharedRoot(process.cwd()))
     throw Error('hud_land requires a managed worktree job in the caller project');
-  const flow = flowId(id), prior = readLand(home, flow);
-  if (prior) return prior;
+  const { flow, prior, cleanup } = landAttempt(home, id);
+  if (prior && !retryableLand(prior)) return prior;
   if (!['idle_grace', 'closed', 'done'].includes(state ?? '')) throw Error(`Cannot land ${id}: job state is ${state ?? 'unknown'} (expected idle_grace, done or closed)`);
   const c = config(home, wt.main_root);
   await git(wt.main_root, ['check-ref-format', `refs/heads/${c.base}`]);
@@ -44,7 +44,7 @@ export async function startLand(home: string, id: string, job: Job | null, state
       state: 'queued', step: 'main-checkout lease', created_at: now, updated_at: now };
     try { writeLand(home, f, true); }
     catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') return readLand(home, flow)!; throw e; }
-    child.send({ home, flow });
+    child.send({ home, flow, cleanup });
     return f;
   } finally { if (child.connected) child.disconnect(); child.unref(); }
 }

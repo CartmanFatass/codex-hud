@@ -394,7 +394,7 @@ function scan(retryWatch = false) {
       }
       const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
       // A land helper owns its checkout and receipt through push and cleanup, across watcher restarts.
-      const land = job?.worktree && readLand(home, flowId(id));
+      const land = job?.worktree && landAttempt(home, id).prior;
       const landing = land && activeLand(land);
       if (landing) open = safetyCheck = true;
       // With a tab, wait for successful reap; without a session, only a finished failed launch is safe.
@@ -497,7 +497,7 @@ function startWatch() {
 const [
   { isQuotaFailure, recordFailureExhaustion }, { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT },
   { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone }, { piReadSettlement },
-  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree, mainHead }, { runCommand }, { archiveJob }, { readLand, flowId, activeLand },
+  { checkBinding, readCheckReceipt, sameChecks }, { reapWorktree, mainHead }, { runCommand }, { archiveJob }, { landAttempt, activeLand },
   { settleStoppedPi },
 ] = await Promise.all([
     import('../../../dist/roles/roster.js'), import('../../../dist/mcp/cli-judge.js'),

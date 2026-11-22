@@ -1,8 +1,12 @@
 /** Runs in its own process so rebuilding HUD or restarting a watcher cannot replay the landing. */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { worktreeGit as git } from '../collectors/worktrees.js';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { createInterface } from 'node:readline';
+import type { Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
+import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
 import { landFile, readLand, writeLand, type LandFlow } from './land-state.js';
@@ -13,20 +17,45 @@ import { repairLand } from './land-repair.js';
 class CommandError extends Error {
   constructor(message: string, readonly tail: string[]) { super(message); }
 }
-function command(cwd: string, bin: string, argv: string[]) {
+type TestFailure = { file: string; name?: string };
+function collectTestFailures(cwd: string, stream: Readable, failures: TestFailure[]) {
+  let previous: TestFailure | undefined;
+  createInterface({ input: stream }).on('line', (raw) => {
+    const line = stripVTControlCharacters(raw);
+    if (previous) {
+      previous.name = /^\s*✖ (.+?)(?: \([\d.]+ms\))?\s*$/.exec(line)?.[1];
+      previous = undefined;
+    }
+    const location = /^test at (.+?):\d+(?::\d+)?\s*$/.exec(line)?.[1];
+    if (!location) return;
+    let path: string;
+    try { path = location.startsWith('file://') ? fileURLToPath(location) : resolve(cwd, location); }
+    catch { return; }
+    const file = relative(cwd, path);
+    if (!file || file === '..' || file.startsWith(`..${sep}`) || isAbsolute(file)) return;
+    failures.push(previous = { file });
+  });
+}
+const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
+function command(cwd: string, bin: string, argv: string[], failures?: TestFailure[]) {
   return new Promise<void>((ok, fail) => {
     const child = spawn(bin, argv, { cwd, env: safeGitEnv(process.env), stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const append = (chunk: string) => { output = (output + chunk).slice(-65536); };
-    for (const stream of [child.stdout, child.stderr]) stream.setEncoding('utf8').on('data', append);
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.setEncoding('utf8').on('data', append);
+      if (failures) collectTestFailures(cwd, stream, failures);
+    }
     child.once('error', fail);
     child.once('close', (code, signal) => code === 0 ? ok() : fail(new CommandError(`exit ${code ?? signal}`,
       output.trimEnd().split(/\r?\n/).slice(-40))));
   });
 }
 const fields = (out: string) => out.split('\0').filter(Boolean);
-async function execute(home: string, f: LandFlow) {
-  const { wt, config: c } = f, main = wt.main_root, integration = join(dirname(wt.root), `land-${f.flow}`);
+async function execute(home: string, f: LandFlow, cleanup: string[]) {
+  const { wt, config: c } = f, main = wt.main_root;
+  const scratch = (id: string) => join(dirname(wt.root), `land-${id}`);
+  const integration = scratch(f.flow);
   const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: f.flow };
   const cancelled = () => fs.existsSync(`${landFile(home, f.flow)}.cancel`);
   const step = (name: string) => { f.step = name; writeLand(home, f); };
@@ -49,13 +78,19 @@ async function execute(home: string, f: LandFlow) {
     for (const [i, cmd] of c[kind].entries()) {
       if (kind === 'gate') checkCancel();
       step(`${kind}[${i + 1}]: ${cmd}`);
-      const shell = ['sh', '-c', cmd];
-      const bin = c.wrapper ? resolve(main, c.wrapper) : shell.shift()!;
-      try { await command(cwd, bin, shell); }
+      const invoke = (script: string, failures?: TestFailure[]) => c.wrapper
+        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], failures)
+        : command(cwd, 'sh', ['-c', script], failures);
+      const failures = kind === 'gate' ? [] as TestFailure[] : undefined;
+      try { await invoke(cmd, failures); }
       catch (e) {
-        if (kind !== 'gate' || !(e instanceof CommandError)) throw e;
-        checkCancel(); await command(cwd, bin, shell);
-        (f.reruns ??= []).push(f.step); writeLand(home, f);
+        if (!failures || !(e instanceof CommandError)) throw e;
+        checkCancel();
+        const files = [...new Set(failures.map(({ file }) => file))];
+        await invoke(files.length ? [process.execPath, '--test', '--', ...files].map(quote).join(' ') : cmd);
+        const tests = [...new Set(failures.map(({ file, name }) => name ? `${name} (${file})` : file))];
+        (f.reruns ??= []).push(tests.length ? { step: f.step, tests } : f.step);
+        writeLand(home, f);
       }
     }
   }
@@ -70,18 +105,32 @@ async function execute(home: string, f: LandFlow) {
   async function prepare() {
     f.state = 'running'; step('prepare');
     await checkSource();
+    if (cleanup.length) {
+      const trees = parseWorktreeList(await git(main, ['worktree', 'list', '--porcelain', '-z']));
+      for (const id of cleanup) {
+        const old = trees.find(t => t.path === scratch(id));
+        if (!old) continue;
+        if (!old.detached || old.locked !== undefined) throw Error('Previous integration worktree is not disposable');
+        await git(main, ['worktree', 'remove', '--force', '--', old.path], 120000);
+      }
+      cleanup.length = 0;
+    }
     f.base_sha = (await git(main, ['rev-parse', '--verify', `${ref}^{commit}`])).trim();
     await checkMain(f.base_sha);
-    await git(main, ['merge-base', '--is-ancestor', wt.base_head, f.source_sha]);
-    const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${wt.base_head}..${f.source_sha}`, `^${f.base_sha}`, '--'])).trim().split(/\s+/);
-    if (!picks[0]) throw Error('Source has no commits to land');
-    await git(main, ['worktree', 'add', '--detach', '--', integration, f.base_sha], 120000);
+    const ff = (await git(main, ['merge-base', f.base_sha, f.source_sha])).trim() === f.base_sha;
+    const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${f.base_sha}..${f.source_sha}`, '--'])).trim();
+    if (!picks) throw Error('Source has no commits to land');
+    if (fs.lstatSync(integration, { throwIfNoEntry: false })) throw Error('Integration destination already exists');
+    step('create integration');
+    await git(main, ['worktree', 'add', '--detach', '--', integration, ff ? f.source_sha : f.base_sha], 120000);
     // includeIf and a wrapper's temporary HOME can give the detached checkout a different identity.
     const identity = (await git(main, ['var', 'GIT_COMMITTER_IDENT'])).match(/^(.*) <([^<>]+)> \d+ [+-]\d+$/m);
     if (!identity) throw Error('Missing checkout committer identity');
     const who = ['-c', `user.name=${identity[1]}`, '-c', `user.email=${identity[2]}`];
-    step('cherry-pick');
-    for (const sha of picks) await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
+    if (!ff) {
+      step('cherry-pick');
+      for (const sha of picks.split(/\s+/)) await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
+    }
     f.tested_sha = await head(integration);
     await commands('gate', integration);
     if (await head(integration) !== f.tested_sha) throw Error('Gate changed integration HEAD');
@@ -127,8 +176,8 @@ async function execute(home: string, f: LandFlow) {
     }
     checkCancel(); await checkSource(); await checkMain(base);
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', tip], 120000);
-    await checkMain(tip);
     f.landed_sha = tested; writeLand(home, f);
+    await checkMain(tip);
     await commands('after', main);
     if (c.push) {
       step('push'); await checkMain(tip);
@@ -152,7 +201,7 @@ async function execute(home: string, f: LandFlow) {
     writeLand(home, f);
   } finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
 }
-process.once('message', async ({ home, flow }: { home: string; flow: string }) => {
+process.once('message', async ({ home, flow, cleanup }: { home: string; flow: string; cleanup: string[] }) => {
   const f = readLand(home, flow);
-  if (f?.state === 'queued' && f.pid === process.pid) await execute(home, f);
+  if (f?.state === 'queued' && f.pid === process.pid) await execute(home, f, cleanup);
 });
