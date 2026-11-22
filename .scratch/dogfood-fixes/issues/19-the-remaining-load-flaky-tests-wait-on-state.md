@@ -24,3 +24,4 @@ Apply 15's pattern: wait on the asserted state with a deadline, using its shared
 ## Comments
 
 - Landed 355a5575ebab467286cd2bb7dbfe3ef2b4b147b4; gate 5/5 passed.
+- 2026-11-22 after landing (f4854555): new load-flaky tests seen in gates, not covered here: thin-mcp-headless "question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair" and "old report cannot settle a resumed turn…"; thin-mcp-read-wait-send "hud_read wait_ms and hud_wait wake within 100 ms…"; concurrency-cap "a headless sonic starts even when a legacy sonic fills the role cap"; fixture-process-cleanup; hud-watch "preserves a shared worktree while a continuation job is active". Next flaky batch.
