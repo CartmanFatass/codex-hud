@@ -9,20 +9,12 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 ## Waiting for the owner
 
-- neon proposal 05 Q1: an optional `$HUD_HOME/models.json` overriding the built-in model catalog (new user file), or
-  built-in catalog only? (waits on PRIMITIVES-04, primitives/04)
-
 - Owner 2026-11-22 on agy's proposals 17–24: 17 do it (lean spec + archive old docs; spec-docs/01–03, spec lands
   only after the owner approves the draft and errata); 18 drop the self-graded outcome/verdict, do the rest: HUD-side
   summary fixes and an optional worker summary + file list (report-summary/01–03; spec updated; behaviour change approved); 19 restart recovery stays manual plus a guard so a resumed worker cannot use main-session tools
   (resume-guard/01); 20 at most proposal 13's single-job form; 21 `after` chaining dropped; 22 waits for 14; 23 web
   board server dropped; 24 deferred (at most worktree cleanup).
-- Proposals 10–16 in docs/neon-proposal/ (the rest of neon's report, reduced; one slice each): 10 Settings Advanced
-  fold (M5), 11 Claude transcript tail-first (M5), 12 i18n cross-dictionary check (7 keys show a different word today),
-  13 read-only `hud doctor <jobId>`, 14 job archive ledger before deletion, 15 worktree overlaps in hud_read
-  git_summary, 16 per-place health in Control's Dispatch today. 14–16 each propose one spec sentence. 12 ticketed (i18n-check/01, defaults). Owner picks which
-  of the others become tickets. Not written (spec or owner decision rules them out, owner may ask): spec restructure, structured
-  hud_report summary, HUD-driven resume, `after` chaining, web board server, panel merge.
+- Owner 2026-11-22 ("do as your recommendation"): lean spec draft approved with F-1..F-10 resolved as recommended (spec-docs/03); proposals 10, 11, 14, 15, 16 ticketed with their §6 defaults (settings-advanced/01, claude-tail-first/01, job-archive/01, worktree-overlap/01, place-health/01; 14–16 spec sentences approved, each lands with its slice); 13 `hud doctor` not now; 05 Q1 no models.json (primitives/04).
 
 ## Next
 
@@ -59,7 +51,7 @@ board counts these; update at every landing or decision. -->
 - try · CODE-HEALTH · MONITOR-STATE-02 · neon 04 S2: Control and EXP own their tab state (Roles/Harnesses navigation, folds, notices); control-navigation.ts swap deleted; reload reads old and new handoffs; no frame change (acb85ffc)
 - try · CODE-HEALTH · TEST-SPLIT-03 · neon 09 S3: test-only timing overrides (HUD_WATCH_SETTLEMENT_MS, HUD_PANEL_RELOAD_QUIET_MS, HUD_WATCH_DEGRADED_MS, HUD_PANEL_ADAPTIVE_MAX_MS, HUD_PANEL_CALLER_POLL_MS; defaults unchanged and tested); panel-reload and job-retention split; flaky caps raised to 30 s (3cab4219)
 - try · CODE-HEALTH · I18N-CHECK-01 · neon 12: AST test fails on keys repeated across the three Chinese dictionaries, untranslated literal t() calls and placeholder mismatches; 19 overridden duplicates removed, words on screen unchanged (6cf14d7b)
-- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Docs lane: SPEC-DOCS-02 (re-audit fixes applied a15deee7 on wt/SPEC-DOCS-02; spec 39.8→31.2 KB; waiting for the owner on draft + F-1..F-10) → owner approval → SPEC-DOCS-03. Panel lane: MONITOR-STATE-03 (landed ee611bfe) → MONITOR-STATE-04 (working) → MCP-SPLIT-04. MCP/bin lane: RESUME-GUARD-01 (landed 66401d79) → BUILD-DEDUP-04 (landed 03da36da) → TEST-SPLIT-04 (working) (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
+- todo · CODE-HEALTH · rest of neon proposals 01–09 in two lanes. Docs lane: SPEC-DOCS-02 approved (a15deee7) → SPEC-DOCS-03 (working). Panel lane: MONITOR-STATE-03 (landed ee611bfe) → MONITOR-STATE-04 (working) → CLAUDE-TAIL-FIRST-01 → SETTINGS-ADVANCED-01 (after PRIMITIVES-04) → MCP-SPLIT-04. MCP/bin lane: RESUME-GUARD-01 (landed 66401d79) → BUILD-DEDUP-04 (landed 03da36da) → TEST-SPLIT-04 (working) (neon 09; first, since every later slice edits thin-mcp tests and pays the suite time) → BUILD-DEDUP-03 → ASYNC-WATCH-01..03 + focused review → JOB-ARCHIVE-01 → EVENT-WAITS-01..04 → PRIMITIVES-01..03 → PLACE-HEALTH-01 → MCP-SPLIT-01..03 → JOB-INDEX-01..04 (neon 08) → PRIMITIVES-04 (catalog). One milestone review at the end (install touched)
 - try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
 - try · MCP-ORCH · SONIC-AUTO-THINKING · owner 2026-11-21: callers never pick sonic thinking (role default high); optional off-by-default Decision API pick per sonic job (Settings row), fallback default; thinking_source recorded (f0baa540)
 - dropped · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9) [superseded the same day by SONIC-AUTO-THINKING: callers do not pick]
