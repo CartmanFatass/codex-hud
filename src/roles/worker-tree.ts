@@ -10,13 +10,14 @@ import {
   readBootId,
   readProcStat as readStat,
 } from '../utils/proc.js';
+import { jobFiles } from '../mcp/paths.js';
+import type { WorkerTreeSnapshot as Snapshot } from '../mcp/job-contracts.js';
 
 export { procStat };
 
 const readProcStat = (pid: number) => readStat(pid, { strict: true });
 
-type Stamp = { pid: number; start: string };
-type Snapshot = { version: 2; bootId: string; pid: number; start: string; members: Stamp[] };
+type Stamp = Snapshot['members'][number];
 type Capture = { snapshot?: Snapshot; issue?: string; missingAfterExit?: boolean };
 const validStart = (start: unknown): start is string => typeof start === 'string' && /^\d+$/.test(start);
 const boot = () => readBootId({ strict: true }) ?? '';
@@ -42,10 +43,10 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
     const { pid, pid_start_time: start, slot, task_dir } = status as Record<string, unknown>;
     if (slot !== 'primary' || !validPid(pid) || !validStart(start) ||
         (task_dir !== dir && task_dir !== fs.realpathSync(dir))) return {};
-    const session = fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8');
+    const session = fs.readFileSync(join(dir, jobFiles.session), 'utf8');
     const pane = /^LEFT=([^\r\n]+)$/m.exec(session)?.[1];
     if (!pane || pane === /^ORCH=([^\r\n]+)$/m.exec(session)?.[1]) return {};
-    const bootId = boot(), file = join(dir, 'worker-tree.json');
+    const bootId = boot(), file = join(dir, jobFiles.workerTree);
     if (!bootId) throw Error('boot identity unavailable');
     // Version 1 included group/tag guesses; none of that evidence is eligible for signalling.
     const matches = (value: Snapshot | undefined): value is Snapshot => value?.version === 2 && value.bootId === bootId &&

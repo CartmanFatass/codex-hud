@@ -6,9 +6,9 @@ import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.j
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { procStat } from '../utils/proc.js';
 import { activeLand, landAttempt, landFile, landNotice, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
-import { managedReceiptMatches, type ManagedWorktree } from './managed-worktree.js';
+import { managedReceiptMatches } from './managed-worktree.js';
+import type { Job } from './job-contracts.js';
 
-type Job = { job: string; cwd: string; worktree?: ManagedWorktree };
 function config(home: string, root: string): LandConfig {
   if (!registeredProject(home, root).registered) throw Error('hud_land requires a registered project');
   const c = JSON.parse(fs.readFileSync(join(root, '.hud/project.json'), 'utf8')).land;
@@ -18,7 +18,7 @@ function config(home: string, root: string): LandConfig {
     throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper');
   return c;
 }
-export async function startLand(home: string, id: string, job: Job | null, state: string | null, pane: string | null, task: boolean) {
+export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean) {
   const wt = job?.worktree;
   if (!job || job.job !== id || !wt || wt.root !== job.cwd || wt.main_root !== sharedRoot(process.cwd()))
     throw Error('hud_land requires a managed worktree job in the caller project');

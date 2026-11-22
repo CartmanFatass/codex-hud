@@ -1,6 +1,8 @@
 /** Runs in its own process so rebuilding HUD or restarting a watcher cannot replay the landing. */
 import { spawn } from 'node:child_process';
-import { writePrivateFile } from '../utils/atomic-fs.js';
+import type { Job, JobStatus } from './job-contracts.js';
+import { jobFiles } from './paths.js';
+import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -78,7 +80,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
   };
   const checkSource = async () => {
     for (const id of new Set([f.job, f.repairs?.at(-1)?.job ?? f.job])) {
-      const status = JSON.parse(fs.readFileSync(join(home, 'jobs', id, 'STATUS.json'), 'utf8'));
+      const status = readJsonFile(join(home, 'jobs', id, jobFiles.status)) as JobStatus;
       if (!['closed', 'idle_grace', 'done'].includes(status.state)) throw Error(`Cannot land ${id}: job state is ${status.state ?? 'unknown'}`);
     }
     if (await head(wt.root) !== f.source_sha ||
@@ -256,10 +258,10 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     try { await git(main, ['worktree', 'remove', '--', integration], 120000); }
     catch (e) { note(e); }
     try {
-      const receiptPath = join(home, 'jobs', f.job, 'job.json');
+      const receiptPath = join(home, 'jobs', f.job, jobFiles.job);
       const result = await reapWorktree(f.job, { job: f.job, cwd: wt.root, worktree: wt }, home,
         { source_sha: f.source_sha, landed_sha: landed });
-      const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+      const receipt = readJsonFile(receiptPath) as Job;
       writePrivateFile(receiptPath, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mkdir: false });
       if ('worktree_kept_reason' in result) notes.push(result.worktree_kept_reason);
     } catch (e) { note(e); }

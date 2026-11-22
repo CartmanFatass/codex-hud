@@ -2,32 +2,29 @@ import { readJsonBounded } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
 import { readDone, readTurn, receiptForTurn, turnToken } from './cli-turn.js';
 import { cachedReportSignature } from './report-meta.js';
+import { jobFiles } from '../mcp/paths.js';
+import type { CheckBinding, CheckReceipt, Job, JobStatus } from '../mcp/job-contracts.js';
+export type { CheckBinding, CheckReceipt, CheckResult } from '../mcp/job-contracts.js';
 
 export const MAX_CHECKS = 5;
 export const MAX_CHECK_COMMAND = 4096;
-export const CHECKS_FILE = 'checks.json';
+export const CHECKS_FILE = jobFiles.checks;
 export const CHECK_TIMEOUT_MS = 600_000; // Per command; checks run in order.
-export type CheckBinding = { turn: string; report_sig: string };
-type Receipt = CheckBinding & {
-  state: 'running' | 'done';
-  pid?: number;
-  start?: string;
-  results: { command: string; exit_code: number | null; duration_ms: number; output_tail: string; timed_out?: boolean }[];
-};
+type CheckJob = Partial<Pick<Job, 'checks' | 'cli' | 'bro' | 'jev' | 'pi_sent_at' | 'created_at'>>;
 export type CheckSummary = CheckBinding & {
-  state: Receipt['state']; stale: boolean; passed: number; total: number;
+  state: CheckReceipt['state']; stale: boolean; passed: number; total: number;
   results: { command: string; passed: boolean; output_tail?: string }[];
 };
 export const sameChecks = (a: CheckBinding | null | undefined, b: CheckBinding | null | undefined) =>
   !!a && !!b && a.turn === b.turn && a.report_sig === b.report_sig;
 
-function jobTurn(dir: string, job: Record<string, unknown>) {
+function jobTurn(dir: string, job: CheckJob) {
   const cli = job.cli ? readTurn(dir) : null;
   const sent = cli?.sent_at ?? job.pi_sent_at ?? job.created_at;
   return { cli, sent: typeof sent === 'string' ? Date.parse(sent) : NaN,
     turn: job.cli ? (cli ? turnToken(cli) : null) : typeof sent === 'string' ? sent : null };
 }
-export function checkBinding(dir: string, job: Record<string, unknown>, status: Record<string, unknown> | null): CheckBinding | null {
+export function checkBinding(dir: string, job: CheckJob, status: Partial<JobStatus> | null): CheckBinding | null {
   if (!Array.isArray(job.checks) || !job.checks.length || job.bro || job.jev ||
       !status || status.output_written !== true || !['idle_grace', 'closed', 'done'].includes(String(status.state))) return null;
   const { cli, turn, sent } = jobTurn(dir, job), settled = Date.parse(String(status.settled_at));
@@ -43,14 +40,14 @@ export function checkBinding(dir: string, job: Record<string, unknown>, status: 
   }
   return { turn, report_sig: sig };
 }
-export function readCheckReceipt(dir: string): Receipt | null {
+export function readCheckReceipt(dir: string): CheckReceipt | null {
   try {
-    const r = readJsonBounded(join(dir, CHECKS_FILE), 192 * 1024) as Receipt;
+    const r = readJsonBounded(join(dir, CHECKS_FILE), 192 * 1024) as CheckReceipt;
     return typeof r.turn === 'string' && typeof r.report_sig === 'string' &&
       (r.state === 'running' || r.state === 'done') && Array.isArray(r.results) ? r : null;
   } catch { return null; }
 }
-export function jobChecks(dir: string, job: Record<string, unknown>): CheckSummary | undefined {
+export function jobChecks(dir: string, job: CheckJob): CheckSummary | undefined {
   if (!Array.isArray(job.checks) || !job.checks.length) return;
   const r = readCheckReceipt(dir);
   if (!r) return;

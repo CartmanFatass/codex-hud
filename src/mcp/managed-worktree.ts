@@ -4,14 +4,9 @@ import { registeredProject } from '../roles/projects.js';
 import { readBytes } from '../statusline-parity/storage.js';
 import { parseWorktreeList, worktreeGit as git, type WorktreeGit } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
+import type { ManagedWorktree } from './job-contracts.js';
+export type { ManagedWorktree } from './job-contracts.js';
 
-export interface ManagedWorktree {
-  main_root: string;
-  root: string;
-  branch: string;
-  base_head: string;
-  owner?: string;
-}
 const oid = (value: unknown) => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
 const list = async (cwd: string) => parseWorktreeList(await git(cwd, ['worktree', 'list', '--porcelain', '-z']));
 const pathFor = (main: string, name: string) => join(dirname(main), `${basename(main)}-wt`, name);

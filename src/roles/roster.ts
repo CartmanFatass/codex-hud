@@ -1,6 +1,8 @@
 /** Shared role resolution and owner role-file writes, without starting the MCP. */
 import { createHash } from 'node:crypto';
 import { readJsonFile as json, readDirSafe as entries, readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
+import type { Job } from '../mcp/job-contracts.js';
+import { jobFiles } from '../mcp/paths.js';
 import { isDeepStrictEqual } from 'node:util';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -793,22 +795,15 @@ export function recordFailureExhaustion(
   hudHome: string,
   bundled: string,
   dir: string,
-  job: {
-    role: string;
-    cwd?: string;
-    place?: RolePlace;
-    place_key?: string;
-    model?: string | null;
-    exhaustion_marked?: boolean;
-  },
+  job: Pick<Job, 'role'> & Partial<Pick<Job, 'cwd' | 'place' | 'place_key' | 'model' | 'exhaustion_marked'>>,
   reason: string,
   env: NodeJS.ProcessEnv = process.env,
   nowMs = Date.now()
 ): { marked: boolean; reason: string } {
-  const jobFile = join(dir, 'job.json');
-  let diskJob: Record<string, unknown> | null = null;
+  const jobFile = join(dir, jobFiles.job);
+  let diskJob: Partial<Job> | null = null;
   try {
-    diskJob = JSON.parse(fs.readFileSync(jobFile, 'utf8')) as Record<string, unknown>;
+    diskJob = json(jobFile) as Partial<Job>;
   } catch {
     /* Job may not exist in synthetic calls. */
   }

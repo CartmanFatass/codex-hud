@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
+import { jobFiles } from '../mcp/paths.js';
 import { jobChecks } from './job-checks.js';
 
 const text = (value: unknown) => typeof value === 'string' ? value : undefined;
@@ -35,7 +36,7 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Recor
   status: Record<string, unknown>, now: number, log: (message: string) => void): void {
   try {
     // Claim first: if removal fails, a later scan must not append the same job again.
-    try { fs.closeSync(fs.openSync(join(dir, '.archived'), 'wx', 0o600)); }
+    try { fs.closeSync(fs.openSync(join(dir, jobFiles.archived), 'wx', 0o600)); }
     catch (err) { if ((err as NodeJS.ErrnoException).code === 'EEXIST') return; throw err; }
     const job = receipt ?? {};
     const cli = job.cli as { agent?: unknown } | undefined;

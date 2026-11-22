@@ -1,12 +1,15 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import type { Job, JobStatus } from './job-contracts.js';
+import { jobFiles } from './paths.js';
+import { readJsonFile } from '../utils/atomic-fs.js';
 import { jobRow } from '../collectors/thin-jobs.js';
 import { cachedReportSignature } from '../roles/report-meta.js';
 import { writeLand, type LandFlow } from './land-state.js';
 
 function questions(dir: string) {
-  try { return fs.readdirSync(join(dir, 'qa')).filter(file => /^q\d+\.md$/.test(file)); }
+  try { return fs.readdirSync(join(dir, jobFiles.qa)).filter(file => /^q\d+\.md$/.test(file)); }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e; }
 }
 export async function repairLand(home: string, f: LandFlow, checkCancel: () => void) {
@@ -26,9 +29,9 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
     attempt.job = id; attempt.outcome = 'waiting for worker'; writeLand(home, f);
     for (;;) {
       checkCancel();
-      const root = dir(id), receipt = JSON.parse(fs.readFileSync(join(root, 'job.json'), 'utf8'));
-      const statusFile = join(root, 'STATUS.json');
-      const status = fs.existsSync(statusFile) ? JSON.parse(fs.readFileSync(statusFile, 'utf8')) : null;
+      const root = dir(id), receipt = readJsonFile(join(root, jobFiles.job)) as Job;
+      const statusFile = join(root, jobFiles.status);
+      const status = fs.existsSync(statusFile) ? readJsonFile(statusFile) as JobStatus : null;
       const row = jobRow(receipt, status, { dir: root });
       const question = questions(root).find(file => source !== id || !seen.includes(file));
       if (question || row.open_questions || row.blocked || row.state === 'waiting_orchestrator')
@@ -38,7 +41,7 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
       if (row.display_state === 'failed' || row.display_state === 'stopped') throw Error(`${id}: ${row.reason ?? row.state}`);
       if (row.display_state === 'done') {
         const sig = cachedReportSignature(root);
-        const settled = status.settled_at ? Date.parse(status.settled_at) : fs.statSync(statusFile).mtimeMs;
+        const settled = status!.settled_at ? Date.parse(status!.settled_at) : fs.statSync(statusFile).mtimeMs;
         if (sig && (source !== id || sig !== before) && Math.ceil(settled) >= started) break;
         if (row.state !== 'idle_grace') throw Error(`${id} closed without a fresh repair report`);
       }

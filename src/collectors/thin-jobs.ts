@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
+import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
@@ -198,13 +199,13 @@ function openQuestionIds(dir: string): string[] {
  * Shared by the panel collector (`readThinJobs`) and the MCP server so both agree on state, reason and attention.
  */
 export function jobRow(
-  job: object,
-  status: object | null | undefined,
+  job: Partial<Job>,
+  status: Partial<JobStatus> | null | undefined,
   extras?: JobRowExtras
 ): JobRow {
-  const j = (job && typeof job === 'object' ? job : {}) as Record<string, unknown>;
+  const j = job && typeof job === 'object' ? job : {};
   const hasStatus = status !== null && status !== undefined && typeof status === 'object';
-  const s = (hasStatus ? status : {}) as Record<string, unknown>;
+  const s = hasStatus ? status : {};
   const rawState =
     word(s.state) ??
     (!hasStatus && typeof j.dispatch_exit_code === 'number' && j.dispatch_exit_code !== 0 ? 'failed' : null);
@@ -220,7 +221,7 @@ export function jobRow(
           ? 'done'
           : 'working';
   const blocked = displayState === 'working' && s.blocked === true;
-  const cliInfo = j.cli !== null && typeof j.cli === 'object' ? (j.cli as { agent?: unknown }) : null;
+  const cliInfo = j.cli !== null && typeof j.cli === 'object' ? j.cli : null;
   const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
   const cliAgent = word(s.agent) ?? word(cliInfo?.agent) ?? 'CLI';
   const stderrFirstLine = word(j.stderr_tail)?.split(/\r?\n/)[0]?.trim() || null;

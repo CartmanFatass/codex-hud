@@ -2,20 +2,13 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile, readJsonBounded } from '../utils/atomic-fs.js';
-
-export interface Turn {
-  seq: number;
-  sent_at: string;
-  report_sig: string | null;
-  report_prompt_sent?: boolean;
-  first_sent_at?: string;
-  caller_token?: string; // HUD follow-ups keep the caller task but advance the report token.
-  send?: { key: string; pid: number; start: string | null };
-}
+import { jobFiles } from '../mcp/paths.js';
+import type { Turn, DoneReceipt } from '../mcp/job-contracts.js';
+export type { Turn, DoneReceipt } from '../mcp/job-contracts.js';
 
 export function reportSignature(dir: string): string | null {
   try {
-    const file = join(dir, 'report.md');
+    const file = join(dir, jobFiles.report);
     const body = fs.readFileSync(file);
     if (!body.toString('utf8').trim()) return null;
     return `${fs.statSync(file).mtimeMs}:${body.length}:${createHash('sha256').update(body).digest('hex')}`;
@@ -27,15 +20,14 @@ export function reportSignature(dir: string): string | null {
 
 export function readTurn(dir: string): Turn | null {
   try {
-    return readJsonFile(join(dir, 'turn.json')) as Turn;
+    return readJsonFile(join(dir, jobFiles.turn)) as Turn;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
 }
 
-export const DONE_FILE = 'done.json';
-export type DoneReceipt = Pick<Turn, 'seq' | 'sent_at'> & { report_sig: string; at: string };
+export const DONE_FILE = jobFiles.done;
 export const receiptForTurn = (turn: Turn, done: DoneReceipt | null | undefined): done is DoneReceipt =>
   done?.seq === turn.seq && done.sent_at === turn.sent_at && typeof done.report_sig === 'string' &&
   done.report_sig !== turn.report_sig && Number.isFinite(Date.parse(done.at));

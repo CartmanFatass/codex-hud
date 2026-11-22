@@ -18,12 +18,14 @@ import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
 import { cliWorkerStartup } from './cli-worker-startup.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
-import { piReadSettlement, sendHistory, type SendOutcome } from './pi-read-settlement.js';
+import { jobFiles } from './paths.js';
+import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
+import { piReadSettlement, sendHistory } from './pi-read-settlement.js';
 import { settleStoppedPi } from './pi-stop-settlement.js';
 import { watcherReady } from './watch-pid.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
-import { addWorktree, gitSummary, planWorktree, populateWorktree, reusableWorktree, type ManagedWorktree } from './managed-worktree.js';
+import { addWorktree, gitSummary, planWorktree, populateWorktree, reusableWorktree } from './managed-worktree.js';
 import { taskTarget } from '../collectors/job-supersession.js';
 import { needsTranslation, replyWords } from '../collectors/reply-language.js';
 import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
@@ -83,63 +85,6 @@ function jobCwd(args: Args): string {
   if (!fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) throw new Error('invalid_arguments: cwd is not an existing directory');
   return cwd;
 }
-type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
-type LaunchAttempt = { index: number; place: string; reason?: string };
-interface Job extends PiOptions {
-  job: string;
-  role: string;
-  request_key: string;
-  cwd: string;
-  project_root?: string;
-  herdr_pane: string;
-  created_at: string;
-  package?: string;
-  ticket?: string;
-  slice?: string;
-  preset?: string;
-  context_files?: string[];
-  from_jobs?: string[];
-  checks?: string[];
-  repair_of?: string;
-  retry_of?: string;
-  land_turn?: string; // Only this repair turn's ordinary notices belong to the enclosing flow.
-  target_hint?: string | null;
-  task_length?: number;
-  create_options?: Args;
-  model?: string | null;
-  thinking?: string | null;
-  thinking_source?: 'decision' | 'default' | 'explicit';
-  model_source?: string | null;
-  read_at?: string;
-  parent_job?: string;
-  scout_only?: true;
-  scout_state?: 'scouting' | 'done' | 'failed';
-  scout_error?: string;
-  pi_sent_at?: string;
-  observed_at?: string;
-  reaped_at?: string;
-  worktree?: ManagedWorktree;
-  worktree_removed_at?: string;
-  worktree_kept_reason?: string;
-  worktree_checked_head?: string;
-  place?: RolePlace;
-  place_key?: string;
-  exhaustion_marked?: boolean;
-  bro?: RolePlace;
-  jev?: Role;
-  cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory'; mcp_scope_warning?: string };
-  attempts?: LaunchAttempt[];
-  used_place?: string;
-  dispatch_exit_code: number | null;
-  dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments';
-  dispatch_path?: string;
-  stderr_tail: string;
-  message_keys?: string[]; // Legacy receipts only.
-  send_outcomes?: SendOutcome[];
-  role_skills?: { name: string; path: string }[];
-  skipped_skills?: { name: string; reason: string }[];
-  worker_prompt?: string | null;
-}
 type Args = Record<string, unknown>;
 function required(args: Args, key: string): string {
   if (typeof args[key] !== 'string' || !args[key]) throw new Error(`invalid_arguments: ${key}`);
@@ -174,7 +119,7 @@ function directory(job: string): string {
   return join(jobsRoot, job);
 }
 function save(job: Job, newAttempt = false): void {
-  const file = join(directory(job.job), 'job.json');
+  const file = join(directory(job.job), jobFiles.job);
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
   const receipt = json<Job>(file);
   // A session watch can adopt the receipt while this process awaits a launch or send.
@@ -196,15 +141,15 @@ function save(job: Job, newAttempt = false): void {
 function jobs(): Job[] {
   return entries(jobsRoot)
     .filter((id) => /^j[0-9a-f]{16}$/.test(id))
-    .map((id) => json<Job>(join(directory(id), 'job.json')))
+    .map((id) => json<Job>(join(directory(id), jobFiles.job)))
     .filter((job): job is Job => job !== null);
 }
 function findJob(id: string): Job | null {
-  return /^j[0-9a-f]{16}$/.test(id) ? json<Job>(join(directory(id), 'job.json')) : null;
+  return /^j[0-9a-f]{16}$/.test(id) ? json<Job>(join(directory(id), jobFiles.job)) : null;
 }
 function primary(dir: string): string | null {
   return (
-    slice(join(dir, 'SESSION.txt'), 16384)
+    slice(join(dir, jobFiles.session), 16384)
       ?.text.match(/^PRIMARY=(.*)$/m)?.[1]
       ?.trim() || null
   );
@@ -332,7 +277,7 @@ function tabLabel(job: Job, task: string): string {
   const taken = jobs().flatMap((other) =>
     other.job === job.job || other.reaped_at
       ? []
-      : [slice(join(directory(other.job), 'SESSION.txt'), 4096)?.text.match(/^TAB_NAME=(.*)$/m)?.[1]]
+      : [slice(join(directory(other.job), jobFiles.session), 4096)?.text.match(/^TAB_NAME=(.*)$/m)?.[1]]
   );
   return taken.includes(label) ? `${cut(label, 23)} ${job.job.slice(-4)}` : label;
 }
@@ -407,8 +352,8 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     const launcher = executable('pi-role');
     if (!launcher) throw new Error('pi-role not found on PATH');
     const dir = directory(job.job),
-      output = join(dir, 'report.md');
-    const prompt = briefPrompt(join(dir, 'brief.md'));
+      output = join(dir, jobFiles.report);
+    const prompt = briefPrompt(join(dir, jobFiles.brief));
     const piRole = place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
     const argv: string[] = [
@@ -425,7 +370,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
       '--allow-write',
       output,
       '--qa-dir',
-      join(dir, 'qa'),
+      join(dir, jobFiles.qa),
     ];
     if (job.herdr_pane) {
       const notify = binScript('hud-notify.mjs');
@@ -450,7 +395,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
     const built = await run(launcher, argv, job.cwd);
     if (built.exit_code !== 0) return reject(built);
     const piArgs: string[] = JSON.parse(built.stdout);
-    fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+    fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
@@ -479,7 +424,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
       if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
       let right = '';
       const record = () => {
-        const fields = {
+        const fields: SessionReceipt = {
           TASK: job.job,
           TAB: tab.tab_id,
           TAB_NAME: tabName,
@@ -491,7 +436,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
         };
         if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
         writePrivateFile(
-          join(dir, 'SESSION.txt'),
+          join(dir, jobFiles.session),
           Object.entries(fields)
             .map(([k, v]) => `${k}=${v}\n`)
             .join(''),
@@ -537,9 +482,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string):
       '--timeout',
       '30000',
     ]);
-    const status = json<{ task_dir?: string; slot?: string; state?: string; output_written?: boolean }>(
-      join(dir, 'STATUS.json')
-    );
+    const status = json<JobStatus>(join(dir, jobFiles.status));
     const completed = status?.task_dir === dir && status.slot === 'primary' && status.state === 'closed' && status.output_written;
     if (submitted.exit_code !== 0 && !completed) {
       if (refusedBeforeInput(submitted)) return reject(submitted);
@@ -580,7 +523,7 @@ async function dispatchBro(job: Job, task: string): Promise<DispatchResult> {
   const { tab, root_pane } = created;
   if (!herdrId(tab?.tab_id) || !herdrId(root_pane?.pane_id)) throw new Error('tab create missing ids');
   writePrivateFile(
-    join(dir, 'SESSION.txt'),
+    join(dir, jobFiles.session),
     `TASK=${job.job}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
     { mkdir: false }
   );
@@ -634,9 +577,9 @@ async function settlePhantomWorking(name: string) {
   ]);
   return waited.exit_code === 0 ? null : waited;
 }
-function supervisorPid(dir: string, status: Record<string, unknown> | null): number | null {
+function supervisorPid(dir: string, status: JobStatus | null): number | null {
   try {
-    const fromFile = Number(fs.readFileSync(join(dir, 'supervisor.pid'), 'utf8').trim());
+    const fromFile = Number(fs.readFileSync(join(dir, jobFiles.supervisorPid), 'utf8').trim());
     if (Number.isInteger(fromFile) && fromFile > 1) return fromFile;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -651,14 +594,14 @@ function spawnCliSupervisor(dir: string): number | null {
   const script = binScript('hud-cli.mjs');
   const child = spawn(process.execPath, [script, dir], { detached: true, stdio: 'ignore' });
   child.on('error', (error) => console.error(`hud-cli: ${error.message}`));
-  if (child.pid) writePrivateFile(join(dir, 'supervisor.pid'), `${child.pid}\n`, { mkdir: false });
+  if (child.pid) writePrivateFile(join(dir, jobFiles.supervisorPid), `${child.pid}\n`, { mkdir: false });
   child.unref();
   return child.pid ?? null;
 }
 /** Trust refusals use the same STATUS keys as hud-cli.mjs if this is the last attempt. */
 function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
   const now = new Date().toISOString();
-  const status = {
+  const status: JobStatus = {
     version: 1,
     task_dir: fs.realpathSync(dir),
     slot: 'primary',
@@ -668,7 +611,7 @@ function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
     model: job.model ?? null,
     thinking: job.thinking ?? null,
     state: 'failed',
-    output_path: join(dir, 'report.md'),
+    output_path: join(dir, jobFiles.report),
     output_written: false,
     pid: null,
     pid_start_time: null,
@@ -685,7 +628,7 @@ function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
 }
 type DispatchResult = {
   exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
-  preInput?: boolean; cleanupFailed?: boolean; status?: object; path?: string;
+  preInput?: boolean; cleanupFailed?: boolean; status?: JobStatus; path?: string;
 };
 const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });
 async function rejectLaunch(result: DispatchResult, tab?: string): Promise<DispatchResult> {
@@ -732,7 +675,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
       left = root_pane?.pane_id;
       if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-      const fields = {
+      const fields: SessionReceipt = {
         TASK: job.job,
         TAB: tab.tab_id,
         TAB_NAME: tabName,
@@ -744,7 +687,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       };
       if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
       writePrivateFile(
-        join(dir, 'SESSION.txt'),
+        join(dir, jobFiles.session),
         Object.entries(fields)
           .map(([k, v]) => `${k}=${v}\n`)
           .join(''),
@@ -807,8 +750,8 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
 }
 function readRow(job: Job, markExhaustion = true) {
   const dir = directory(job.job);
-  const file = join(dir, 'STATUS.json');
-  let status = json<Record<string, unknown> & { state?: string; output_written?: boolean; settled_at?: string; exit_reason?: string | null; error?: string | null }>(file);
+  const file = join(dir, jobFiles.status);
+  let status = json<JobStatus>(file);
   let row = jobRow(job, status, { dir });
   if (markExhaustion && row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, row.reason);
@@ -856,7 +799,7 @@ async function peekJob(job: Job, { lines, detail }: Args) {
     throw new Error('invalid_arguments: lines');
   let pane: string | undefined;
   try {
-    const session = slice(join(dir, 'SESSION.txt'), 16384);
+    const session = slice(join(dir, jobFiles.session), 16384);
     if (!session?.truncated) pane = session?.text.split(/\r?\n/).find((line) => line.startsWith('LEFT='))?.slice(5);
   } catch { /* No readable pane receipt. */ }
   if (!herdrId(pane) || pane.startsWith('-')) return { ...summary, pane_lines: null, pane_reason: 'no pane' };
@@ -929,11 +872,11 @@ function listJobs(recent: boolean) {
 }
 
 const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
-const JOB_WATCH_FILES = new Set(['STATUS.json', 'job.json', 'report.md', 'qa', CHECKS_FILE]);
+const JOB_WATCH_FILES = new Set<string>([jobFiles.status, jobFiles.job, jobFiles.report, jobFiles.qa, CHECKS_FILE]);
 const WAIT_JOB_DIRECT_WATCH_LIMIT = 16;
 
 function jobWatchTargets(dir: string): WatchTarget[] {
-  const qaDir = join(dir, 'qa');
+  const qaDir = join(dir, jobFiles.qa);
   const list: WatchTarget[] = [
     {
       dir,
@@ -954,7 +897,7 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
   if (typeof wait_ms !== 'number' || !Number.isInteger(wait_ms) || wait_ms < 0 || wait_ms > 120000)
     throw new Error('invalid_arguments: wait_ms');
   const deadline = performance.now() + wait_ms;
-  const readJob = (id: string) => json<Job>(join(directory(id), 'job.json'));
+  const readJob = (id: string) => json<Job>(join(directory(id), jobFiles.job));
   let initial: JobRow[];
   if (ids === undefined) {
     // Existing session jobs may settle while herdr is listing panes; keep the call-start targets.
@@ -1014,7 +957,7 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
 }
 
 function openQuestions(dir: string): string[] {
-  const qa = join(dir, 'qa');
+  const qa = join(dir, jobFiles.qa);
   return entries(qa)
     .filter((name) => /^q\d+\.md$/.test(name))
     .filter((name) => !fs.existsSync(join(qa, name.replace('.md', '.answer.md'))))
@@ -1086,11 +1029,11 @@ function reportDigest(report: NonNullable<ReturnType<typeof slice>>, job: string
 function observation(job: Job, full: boolean, detail: boolean, git: GitSummary | undefined) {
   const dir = directory(job.job);
   const { row, status } = readRow(job, !isWorker);
-  const report = row.report_unread || full ? slice(join(dir, 'report.md'), 65536) : null;
+  const report = row.report_unread || full ? slice(join(dir, jobFiles.report), 65536) : null;
   const reportMeta = jobRowReportMeta(row, dir);
   const questions = openQuestions(dir).map((name) => ({
     id: name.slice(0, -3),
-    text: slice(join(dir, 'qa', name), 2048)?.text ?? '',
+    text: slice(join(dir, jobFiles.qa, name), 2048)?.text ?? '',
   }));
   const progress = readJobProgress(dir);
   const checks = jobChecks(dir, { ...job });
@@ -1118,7 +1061,7 @@ function observation(job: Job, full: boolean, detail: boolean, git: GitSummary |
     ...(row.report_present && !report ? { report_unchanged: true } : report && !full ? {
       digest: reportDigest(report, job.job, row.state ?? row.display_state, reportMeta?.summary, git),
     } : {
-      ...(full && report ? { report_path: join(dir, 'report.md') } : {}),
+      ...(full && report ? { report_path: join(dir, jobFiles.report) } : {}),
       ...(detail || report ? { report: report?.text ?? null } : {}),
       ...(detail || report?.truncated ? { report_truncated: report?.truncated ?? false } : {}),
     }),
@@ -1241,14 +1184,14 @@ async function assembleContext(args: Args, cwd: string, inline: boolean, project
     let source: string = key;
     try {
       const base = await fs.promises.realpath(root);
-      const files = values.map((value) => ({ value, name: key === 'from_jobs' ? 'report' : '' }));
+      const files: { value: string; name: 'report' | 'brief' | '' }[] = values.map((value) => ({ value, name: key === 'from_jobs' ? 'report' : '' }));
       if (repair) {
         if (!values.includes(repair)) files.push({ value: repair, name: 'report' });
         files.push({ value: repair, name: 'brief' });
       }
       for (const { value, name } of files) {
         source = `${key}: ${JSON.stringify(value)}`;
-        const path = await fs.promises.realpath(resolve(root, name ? join(value, `${name}.md`) : value));
+        const path = await fs.promises.realpath(resolve(root, name ? join(value, jobFiles[name]) : value));
         inside(base, path);
         const label = `${name ? `${value} ${name}: ` : ''}${JSON.stringify(path)}`;
         let sonic = false;
@@ -1326,7 +1269,7 @@ function jobOptions(job: Job): Args {
   };
 }
 function originalTask(job: Job): string {
-  const brief = fs.readFileSync(join(directory(job.job), 'brief.md'), 'utf8');
+  const brief = fs.readFileSync(join(directory(job.job), jobFiles.brief), 'utf8');
   if (job.task_length !== undefined) return brief.slice(0, job.task_length);
   // Old receipts only have the assembled brief. Strip HUD-generated context and instructions.
   return brief.split(/\n## Context References\n\nRead these files for task context:\n|\n## Context\n\n### |\nFinish with `hud_report`\.\n$|\nThis harness uses the commands below instead of the worker tools named in your role\./, 1)[0].trimEnd();
@@ -1604,7 +1547,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         if ((quota && candidate.key === job.place_key) || exhausted.has(candidate.key)) continue;
         if (quota && !exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
         // The previous tab is closed. Keep the job, but do not carry its launch/turn state into a new worker.
-        for (const file of ['SESSION.txt', 'STATUS.json', 'turn.json']) fs.rmSync(join(dir, file), { force: true });
+        for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
       } else fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
       const { place, options } = prepared;
@@ -1665,7 +1608,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           if (source) save({ ...source, observed_at: new Date().toISOString() });
         }
         if (parentJob && !job.scout_only) {
-          const children = join(directory(parentJob), '.sonic');
+          const children = join(directory(parentJob), jobFiles.sonic);
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
         } else if (!parentJob) createdJobs.add(id);
@@ -1674,13 +1617,13 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         else if (!scoutTask && !job.scout_only) void ensureQueueWatcher(pane, hudHome);
       }
       const launchRole = preset || selected ? { ...definition, skills: place.skills } : definition;
-      if (scoutQuestion && attempts.length === 0) fs.rmSync(join(dir, 'STATUS.json'), { force: true });
+      if (scoutQuestion && attempts.length === 0) fs.rmSync(join(dir, jobFiles.status), { force: true });
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
       else result = await launchPlace(job, launchRole, place, dir, task, worktree);
       reason = result.exit_code === 0 ? '' : launchReason(result);
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
-      if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, 'STATUS.json')))) job.used_place = attempt.place;
+      if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
       if (!result.preInput || result.cleanupFailed) break;
       save(job);
     }
@@ -1750,7 +1693,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
     const command = (bin: string) => `node ${JSON.stringify(join(bundled, 'bin', `${bin}.mjs`))}`;
     const own = `--dir ${JSON.stringify(dir)}`;
     brief += 'This harness uses the commands below instead of the worker tools named in your role.\n' +
-      `Write your report to ${join(dir, 'report.md')}; then run the --done command from the prompt you are answering.\n` +
+      `Write your report to ${join(dir, jobFiles.report)}; then run the --done command from the prompt you are answering.\n` +
       `Ask the orchestrator with: ${command('hud-ask')} ${own} --question "..." --default "..."\n`;
     if (job.role !== 'sonic') brief +=
       `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file>\n` +
@@ -1758,7 +1701,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
     brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
   // Standing brief and context references follow the task; labels read the brief's opening lines.
-  writePrivateFile(join(dir, 'brief.md'), brief, { exclusive: first, mkdir: false });
+  writePrivateFile(join(dir, jobFiles.brief), brief, { exclusive: first, mkdir: false });
 }
 
 async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
@@ -1815,8 +1758,8 @@ function launchReason(result: DispatchResult) {
   return (detail || result.stdout.trim().split(/\r?\n/, 1)[0] || `launch exited ${result.exit_code}`).slice(0, 500);
 }
 
-function writeCreateStatus(dir: string, status: object) {
-  writeJsonPrivate(join(dir, 'STATUS.json'), status, { mkdir: false });
+function writeCreateStatus(dir: string, status: JobStatus) {
+  writeJsonPrivate(join(dir, jobFiles.status), status, { mkdir: false });
 }
 
 function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string, advanceCursor = true) {
@@ -1824,7 +1767,7 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
   if (result.code) job.dispatch_code = result.code;
   if (result.path) job.dispatch_path = result.path;
   job.stderr_tail = result.stderr;
-  const statusFile = join(dir, 'STATUS.json');
+  const statusFile = join(dir, jobFiles.status);
   if (result.exit_code !== 0 && (result.preInput || !fs.existsSync(statusFile))) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reason);
     if (outcome.marked) job.exhaustion_marked = true;
@@ -1930,10 +1873,10 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     const active = readTurn(dir);
     if (active?.seq === turn.seq && active.send?.key === key && active.send.pid === process.pid) {
       if (prior) saveTurn(dir, prior);
-      else fs.unlinkSync(join(dir, 'turn.json'));
+      else fs.unlinkSync(join(dir, jobFiles.turn));
     }
   }
-  const latest = json<Job>(join(dir, 'job.json')) ?? current;
+  const latest = json<Job>(join(dir, jobFiles.job)) ?? current;
   const attempted = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
   attempted.exit_code = result.exit_code;
   attempted.stderr_tail = result.stderr;
@@ -2212,7 +2155,7 @@ async function callJob(name: string, args: Args, detail: boolean) {
         const { row } = readRow(job, !isWorker);
         initial ??= row;
         if (!timedOut && !isReady(row)) return { done: false };
-        const receipt = json<Job>(join(dir, 'job.json')) ?? job;
+        const receipt = json<Job>(join(dir, jobFiles.job)) ?? job;
         const wt = receipt.worktree;
         // Only probe once per read, even if a concurrent answer or continuation resumes the wait.
         if (wt) summary ??= await gitSummary(wt, () => jobs()
@@ -2220,9 +2163,9 @@ async function callJob(name: string, args: Args, detail: boolean) {
             other.worktree.root !== wt.root && !other.worktree_removed_at
             ? [{ job: other.job, worktree: other.worktree, created_at: other.created_at }] : [])
           .sort((a, b) => b.created_at.localeCompare(a.created_at)));
-        const result = observation(json<Job>(join(dir, 'job.json')) ?? receipt, full, detail, summary);
+        const result = observation(json<Job>(join(dir, jobFiles.job)) ?? receipt, full, detail, summary);
         // A question may have been answered or a settled job continued since the lightweight poll.
-        const currentRow = jobRow(job, json<Record<string, unknown>>(join(dir, 'STATUS.json')), {
+        const currentRow = jobRow(job, json<JobStatus>(join(dir, jobFiles.status)), {
           dir,
           openQuestions: result.questions?.length ?? 0,
           reportPresent: result.report_exists,
@@ -2234,7 +2177,7 @@ async function callJob(name: string, args: Args, detail: boolean) {
         const collected = ('report' in result || 'digest' in result) && result.report_exists;
         const observed = result.blocked || failedAttempt(currentRow);
         if (!isWorker && (collected || observed)) {
-          const latest = json<Job>(join(dir, 'job.json'))!;
+          const latest = json<Job>(join(dir, jobFiles.job))!;
           const at = new Date().toISOString();
           if (collected) latest.read_at = at;
           if (observed) latest.observed_at = at;
@@ -2257,13 +2200,13 @@ function respondJob(args: Args, batch: boolean) {
   if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
   const answer = required(args, 'answer');
   ensureWatcher();
-  fs.mkdirSync(join(dir, 'qa'), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
   const oldTask = activeTasks.get(id);
   if (oldTask) sampleTask(oldTask);
   const row = taskClient ? readRow(job, false).row : undefined;
   const task = row?.question_ids.includes(request) ? beginTask(job, oldTask?.reportBefore, request, row) : undefined;
   try {
-    writePrivateFile(join(dir, 'qa', `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
+    writePrivateFile(join(dir, jobFiles.qa, `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
     if (batch) {
       registerBatchTask(task, job, true);
       return { ok: true, written: true };
@@ -2288,20 +2231,20 @@ async function closeJob(job: Job, stop = false) {
     // Idle grace already finished: reap quits and the supervisor closes. A working job is stopped.
     if (row.state === 'idle_grace' && (stop || job.cli)) {
       try {
-        fs.writeFileSync(join(dir, `STATUS.json.${stop ? 'stop' : 'close'}-requested`), '', { flag: 'wx', mode: 0o600 });
+        fs.writeFileSync(join(dir, stop ? jobFiles.stopRequested : jobFiles.closeRequested), '', { flag: 'wx', mode: 0o600 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
     }
     return runCommand('pi-role-reap', [dir], process.env, { budgetMs: 135_000 });
   }, (run) => run.ok);
-  const statusFile = join(dir, 'STATUS.json');
-  const stoppingPi = !job.cli && !job.bro && !job.jev && fs.existsSync(`${statusFile}.stop-requested`);
+  const statusFile = join(dir, jobFiles.status);
+  const stoppingPi = !job.cli && !job.bro && !job.jev && fs.existsSync(join(dir, jobFiles.stopRequested));
   // Reaping can succeed even when Pi exited before its shutdown hook wrote STATUS.
-  if (stoppingPi) settleStoppedPi(statusFile, json<Record<string, unknown>>(statusFile));
+  if (stoppingPi) settleStoppedPi(statusFile, json<JobStatus>(statusFile));
   if (issue || stoppingPi) ensureWatcher();
   if (!isWorker && complete && row.display_state === 'failed') {
-    const latest = json<Job>(join(dir, 'job.json')) ?? job;
+    const latest = json<Job>(join(dir, jobFiles.job)) ?? job;
     save({ ...latest, observed_at: new Date().toISOString() });
   }
   return {
@@ -2425,7 +2368,7 @@ const TASK_TTL = 3 * 60 * 60_000;
 const TASK_POLL_MS = 5000;
 const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
 const taskContent = (text: string) => ({ content: [{ type: 'text', text }] });
-type TaskStatus = 'working' | 'completed' | 'failed' | 'cancelled';
+type TaskStatus = BatchNotice['status'];
 type TaskView = { status: TaskStatus; statusMessage: string; lastUpdatedAt: string; result?: ReturnType<typeof taskContent> };
 type HudTask = {
   id: string; job: string; role: string; pane: string; createdAt: string; fence?: string;
@@ -2446,31 +2389,31 @@ function armExpiry(task: HudTask) {
   }, Math.max(0, task.expiresAt! - Date.now())).unref();
   expiry.add(timer);
 }
-const markerFile = (task: HudTask) => join(directory(task.job), 'mcp-task.json');
+const markerFile = (task: HudTask) => join(directory(task.job), jobFiles.task);
 function claimTask(task: HudTask, job: Job) {
   if (!callerPane || job.herdr_pane !== callerPane) return;
   try {
     writePrivateFile(markerFile(task), JSON.stringify({ id: task.id, pane: callerPane, pid: process.pid,
-      start: procStat(process.pid)?.start, expires: Date.parse(task.createdAt) + TASK_TTL }), { mkdir: false });
+      start: procStat(process.pid)?.start, expires: Date.parse(task.createdAt) + TASK_TTL } satisfies McpTaskMarker), { mkdir: false });
   } catch { /* If not recorded, question delivery keeps its ordinary fallback. */ }
 }
 function releaseTask(task: HudTask) {
   if (activeTasks.get(task.job) === task) activeTasks.delete(task.job);
   try {
-    if (json<{ id: string }>(markerFile(task))?.id === task.id) fs.unlinkSync(markerFile(task));
+    if (json<McpTaskMarker>(markerFile(task))?.id === task.id) fs.unlinkSync(markerFile(task));
   } catch { /* Stale delivery markers expire and cannot authorize cancellation. */ }
 }
-const questionFiles = (dir: string) => entries(join(dir, 'qa')).filter((name) => /^q\d+\.md$/.test(name)).sort();
+const questionFiles = (dir: string) => entries(join(dir, jobFiles.qa)).filter((name) => /^q\d+\.md$/.test(name)).sort();
 const taskLabel = (task: HudTask, state: string) => `${task.job} (${task.role}) — ${state}`;
 const needsAttention = (row: JobRow) => row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator';
-const statusMtime = (dir: string) => fs.statSync(join(dir, 'STATUS.json'), { throwIfNoEntry: false })?.mtimeMs;
+const statusMtime = (dir: string) => fs.statSync(join(dir, jobFiles.status), { throwIfNoEntry: false })?.mtimeMs;
 function beginTask(job: Job, reportBefore: number | null = null, answer?: string, prior?: JobRow): HudTask {
   const createdAt = new Date().toISOString(), dir = directory(job.job);
   const task: HudTask = {
     id: `${job.job}:${randomBytes(8).toString('hex')}`, job: job.job, role: job.role, pane: job.herdr_pane, createdAt,
     reportBefore, attentionBefore: prior && needsAttention(prior) ? statusMtime(dir) : undefined,
     seenQuestions: new Set(questionFiles(dir).filter((name) =>
-      !answer || name === `${answer}.md` || fs.existsSync(join(dir, 'qa', name.replace('.md', '.answer.md'))))),
+      !answer || name === `${answer}.md` || fs.existsSync(join(dir, jobFiles.qa, name.replace('.md', '.answer.md'))))),
     view: { status: 'working', statusMessage: `${job.job} (${job.role}) — working`, lastUpdatedAt: createdAt },
   };
   claimTask(task, job);
@@ -2529,9 +2472,9 @@ function ensureBatchTimer() {
 }
 function recordBatchNotice(item: PendingBatchNotice, taskId: string, via: 'push' | 'changes') {
   try {
-    writePrivateFile(join(directory(item.job), 'batch-notice.json'), JSON.stringify({
+    writePrivateFile(join(directory(item.job), jobFiles.batchNotice), JSON.stringify({
       task_id: taskId, fence: item.fence, status: item.status, delivered_at: new Date().toISOString(), via,
-    }, null, 2) + '\n');
+    } satisfies BatchNotice, null, 2) + '\n');
   } catch { /* Job directory gone or unreadable. */ }
 }
 function sampleBatchTasks() {
@@ -2640,7 +2583,7 @@ function sampleTask(task: HudTask): TaskView {
   const dir = directory(job.job), { row, status } = readRow(job, false);
   const state = row.state ?? row.display_state;
   const label = taskLabel(task, state);
-  if (state === 'failed' || state === 'stopped' || fs.existsSync(join(dir, 'STATUS.json.stop-requested'))) {
+  if (state === 'failed' || state === 'stopped' || fs.existsSync(join(dir, jobFiles.stopRequested))) {
     const stopped = state !== 'failed';
     const message = `${taskLabel(task, stopped ? 'stopped' : state)} — ${row.reason ?? (stopped ? 'stop requested' : 'worker failed')}`;
     return updateTask(task, stopped ? 'cancelled' : 'failed', message, message);
@@ -2648,7 +2591,7 @@ function sampleTask(task: HudTask): TaskView {
   // An answer can arrive between polls (for example from the panel). That question still ended this task.
   const question = questionFiles(dir).find((name) => !task.seenQuestions.has(name));
   if (question) {
-    const id = question.slice(0, -3), fields = questionFields(slice(join(dir, 'qa', question), 2048)?.text ?? '');
+    const id = question.slice(0, -3), fields = questionFields(slice(join(dir, jobFiles.qa, question), 2048)?.text ?? '');
     const message = taskLabel(task, 'waiting_orchestrator');
     const choices = [...fields.options, ...(fields.suggested ? [`Default: ${fields.suggested}`] : [])];
     return updateTask(task, 'completed', `${message} — ${id}`, `${message}\nQuestion ${id}: ${fields.question}${choices.length ? `\n${choices.join(' | ')}` : ''}`);
@@ -2659,7 +2602,7 @@ function sampleTask(task: HudTask): TaskView {
     const message = `${taskLabel(task, row.blocked ? 'blocked' : state)} — ${row.reason ?? 'worker needs attention'}`;
     return updateTask(task, 'completed', message, `${message}. Use hud_read/hud_peek for details.`);
   }
-  const report = join(dir, 'report.md');
+  const report = join(dir, jobFiles.report);
   const currentSettlement = typeof status?.settled_at !== 'string' || status.settled_at >= task.createdAt;
   if (settled(state) && currentSettlement && row.report_mtime !== null && row.report_mtime !== task.reportBefore) {
     const outcome = taskCheckOutcome(dir, job, status);

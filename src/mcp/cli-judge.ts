@@ -9,6 +9,7 @@ import {
   readProcChildren,
   readProcCmdline,
 } from '../utils/proc.js';
+import { jobFiles } from './paths.js';
 import type { QuietDecision } from './quiet-decision.js';
 import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 export { procStat };
@@ -24,7 +25,7 @@ export function withDonePrompt(text: string, bundled: string, dir: string, turn:
   }
   const finish = `Finish with hud_report. Use the token in the prompt you are answering, not a newer turn. turn: ${token}`;
   const fallback = agent === 'agy'
-    ? `\nOnly if hud_report is unavailable, write your report to ${JSON.stringify(join(dir, 'report.md'))} and run:\n${command} [--summary "…"] [--file path]`
+    ? `\nOnly if hud_report is unavailable, write your report to ${JSON.stringify(join(dir, jobFiles.report))} and run:\n${command} [--summary "…"] [--file path]`
     : '';
   return `${text}\n\n${finish}${fallback}\n`;
 }
@@ -47,7 +48,7 @@ export function writeTurn(dir: string, options: { by?: 'hud'; reportPromptSent?:
 }
 
 export function saveTurn(dir: string, turn: Turn): void {
-  writeJsonPrivate(join(dir, 'turn.json'), turn, { mkdir: false });
+  writeJsonPrivate(join(dir, jobFiles.turn), turn, { mkdir: false });
 }
 
 export function workerAlive(pid: number | null, start: string | null): boolean | null {

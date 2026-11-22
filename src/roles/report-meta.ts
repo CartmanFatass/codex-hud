@@ -2,14 +2,14 @@ import { writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { reportSignature } from './cli-turn.js';
+import { jobFiles } from '../mcp/paths.js';
 
-const META_FILE = 'report-meta.json';
 const MAX_META_BYTES = 16 * 1024;
 const signatures = new Map<string, { stamp: string; sig: string | null }>();
 
 /** The existing mtime:size:sha256 signature, shared with report-bound checks. */
 export function cachedReportSignature(dir: string): string | null {
-  const st = fs.lstatSync(join(dir, 'report.md'), { throwIfNoEntry: false });
+  const st = fs.lstatSync(join(dir, jobFiles.report), { throwIfNoEntry: false });
   if (!st?.isFile()) return null;
   const stamp = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
   const entry = signatures.get(dir);
@@ -67,8 +67,8 @@ export function writeReportMeta(
   { summary, files }: ReportMetaFields,
   at = new Date().toISOString()
 ): void {
-  const file = join(dir, META_FILE);
-  const meta = { v: 1, report_sig: reportSig, at, ...(summary ? { summary } : {}) };
+  const file = join(dir, jobFiles.reportMeta);
+  const meta: ReportMeta = { v: 1, report_sig: reportSig, at, ...(summary ? { summary } : {}) };
   // Valid paths can still exceed the read cap when JSON-escaped or encoded as UTF-8.
   const paths: string[] = [];
   let remaining = MAX_META_BYTES - Buffer.byteLength(JSON.stringify(meta)) - ',"files":[]'.length;
@@ -88,7 +88,7 @@ export function writeReportMeta(
 
 /** If supplied, expectedSig is a signature the caller has already read for the current report. */
 export function readReportMeta(dir: string, expectedSig?: string | null): ReportMeta | null {
-  const file = join(dir, META_FILE);
+  const file = join(dir, jobFiles.reportMeta);
   try {
     const before = fs.lstatSync(file, { throwIfNoEntry: false });
     if (!before?.isFile() || before.size > MAX_META_BYTES) return null;

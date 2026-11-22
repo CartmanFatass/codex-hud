@@ -1,6 +1,7 @@
 /** Simple local herdr pane operations shared by the CLI and pi package. */
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
+import { jobFiles } from '../mcp/paths.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
 import { loadSettings } from '../settings.js';
 import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
@@ -59,7 +60,7 @@ export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{
   try {
     const { result, complete, issue } = await reapWorkerTree(jobDir, status, () => {
       if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {
-        try { fs.writeFileSync(join(jobDir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 }); }
+        try { fs.writeFileSync(join(jobDir, jobFiles.closeRequested), '', { flag: 'wx', mode: 0o600 }); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
       }
       return runCommand('pi-role-reap', [jobDir], env, { budgetMs: 60_000 });

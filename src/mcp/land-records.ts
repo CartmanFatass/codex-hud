@@ -6,6 +6,9 @@ import { parseLedger, statePaths } from '../collectors/state-ledger.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 import { readReportMeta } from '../roles/report-meta.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
+import { readJsonFile } from '../utils/atomic-fs.js';
+import type { Job } from './job-contracts.js';
+import { jobFiles } from './paths.js';
 import { landedTicket } from './local-tickets.js';
 
 function ledgerField(value: unknown): string | undefined {
@@ -13,7 +16,7 @@ function ledgerField(value: unknown): string | undefined {
 }
 
 export async function recordLanding(root: string, dir: string, sha: string, gates: number, identity: string[]) {
-  const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  const job = readJsonFile(join(dir, jobFiles.job)) as Job;
   const ticket = typeof job.ticket === 'string' && /^([a-z0-9-]+)\/(\d+)$/.exec(job.ticket);
   const id = ledgerField(job.slice) ?? ledgerField(job.package);
   let description = id && readReportMeta(dir)?.summary;

@@ -1,12 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { writePrivateFile } from '../utils/atomic-fs.js';
+import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId, listedPanes, runHerdr } from './herdr-run.js';
 import { sharedRoot } from './projects.js';
+import { jobFiles } from '../mcp/paths.js';
+import type { Job } from '../mcp/job-contracts.js';
 
-interface JobProject { cwd?: unknown; project_root?: unknown; worktree?: { main_root?: unknown } | null }
-interface JobOwner extends JobProject { job?: unknown; herdr_pane?: unknown }
+type JobProject = Partial<Pick<Job, 'cwd' | 'project_root' | 'worktree'>>;
+type JobOwner = JobProject & Partial<Pick<Job, 'job' | 'herdr_pane'>>;
 
 /** Older receipts resolve their cwd once per scan per directory. */
 export function projectJobFilter(cwd: string) {
@@ -48,9 +50,9 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
     if (lock.status !== 0) return false;
     for (const job of orphans) {
       if (typeof job.job !== 'string' || !/^j[0-9a-f]{16}$/.test(job.job)) continue;
-      const dir = join(root, job.job), file = join(dir, 'job.json');
+      const dir = join(root, job.job), file = join(dir, jobFiles.job);
       try {
-        const latest = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const latest = readJsonFile(file) as Partial<Job>;
         if (latest?.job !== job.job || latest.herdr_pane !== job.herdr_pane || !matches(latest) || !owesCaller(dir, latest)) continue;
         writePrivateFile(file, JSON.stringify({ ...latest, herdr_pane: pane }, null, 2) + '\n', { mkdir: false });
         adopted = true;
