@@ -29,6 +29,8 @@ try (landed, the owner has not tried it), accepted (the owner tried it), todo, d
 board counts these; update at every landing or decision. -->
 
 
+- try · FLOWS · FLOWS-04 · scouted dispatch: hud_create can send a sonic first to collect a fact dossier, then starts the real job with the dossier as context (f1de3c93; second live hud_land after a retry)
+- try · DOGFOOD-FIXES · DOGFOOD-FIXES-07 · timing tests wait on events instead of wall-clock budgets; two full runs with every core busy pass 1,137/1,137 (12ae99ee; first live hud_land)
 - try · CODE-HEALTH · PRUNE-OBS-01 · neon proposal 01 Slice 1: panel stops dead legacy observers (no herdr agent list), 15 files deleted, net −3,567 lines; retained assoc/native-relations records no longer show Home cards (owner-approved) (16892187)
 - try · CODE-HEALTH · BUILD-DEDUP-02 · staged build: tsc output staged under a lock and published file by file, panel entry last; orphans pruned; `npm run clean` removes old packages/hud-mcp/dist (cba53a66)
 - try · CODE-HEALTH · BUILD-DEDUP-01 · hud-mcp sources under src/mcp, one tsc build, ./install builds once; old packages/hud-mcp/dist only warned about (f9de5b72, 78df68dd); release archive drops .hud/ (c13ea5f2); live: fresh hud-mcp lists 11 tools, a sonic settled through the new worker paths
@@ -42,7 +44,7 @@ board counts these; update at every landing or decision. -->
 - try · REPORT-SUMMARY · REPORT-SUMMARY-01 · neon 18 layer A: wake summary is the report's first prose line; sentence and outcome models see its head plus not-done/blocked/test sections (≤4 KiB); a settled card drops the running sentence and asks for its result at once; signature-bound report-meta helper (13899568)
 - try · REPORT-SUMMARY · REPORT-SUMMARY-02 · hud_report (Claude, Codex, pi; hud-progress --done) takes an optional one-line summary and file list, asked for in the tool's own text (no role-text change); saved to report-meta.json bound to the report, before the done receipt; nothing reads it until 03 (9b888e4d)
 - try · CODE-HEALTH · MONITOR-STATE-01 · neon 04 S1: one overlay state replaces seven modal flags; `/` filter, `g`, Control's Add back draft and stop confirmation survive (or delay) an automatic panel reload; dead MonitorState fields removed; frames unchanged (bfc8677d)
-- todo · MCP-ORCH · IMP-MODEL-COST · owner 2026-11-22: imp's default is now openai/gpt-6.2-astra high (preset astra, from 11:43Z; before: 6.2-sol high, then 6.2-sol-fast); once every open ticket has landed, compare average time and cost per imp task across the three (pi session usage.cost)
+- accepted · MCP-ORCH · IMP-MODEL-COST · docs/llm/imp-model-cost-2026-11-22.md: astra ~3.7× cost per job vs sol-fast, slower tok/s; imp default sol-fast, astra preset for hard slices (D-2026-11-22-20) (99ac1425)
 - accepted · MCP-ORCH · ORCH-LOAD · read docs/llm/orch-load-2026-11-22.md: ~73% of orch turns are chores (search 32%, land/test/poll 25%, STATE/tickets 6%, full reports 6%) and 30% of context is fixed schema/skill overhead; 10 ranked cuts (~80% fewer Opus tokens if ranks 1–8 land) and 5 questions (d61876c7)
 - accepted · PANEL · DESIGN-HOME-PROGRESS · open docs/design/home-progress/sample.html: the proposed Home in zh and en (milestone bar, one ticket meter, planned features folded into one row, failed jobs leave once retried); README has the diagnosis, 4 slices and 5 questions; pick before any build (3cf299cc)
 - try · DOGFOOD-FIXES · DOGFOOD-FIXES-03 · the hud MCP server checks the build stamp per call and switches to a rebuilt HUD on the same connection, handing over live MCP tasks; the watcher switches within ~30 s when idle; a broken build keeps the old code serving (d8b1f67b)
@@ -111,6 +113,5 @@ board counts these; update at every landing or decision. -->
 ## Now (2026-11-22)
 
 - IMP-LEAN（owner 2026-11-22 接受 imp 负载分析推荐，D-2026-11-22-17；codegraph 已从各 harness 去除）：01–06 全部落地。imp 默认 sol-fast，难切片 astra（D-2026-11-22-20）。imp 模型：本批用 astra 跑完后对比，差距仍大则改 sol-fast 默认、复杂切片由我选 astra（届时改 §2.1.4 那句，先告诉 owner）。
-- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land 已落地并可用 → 02 失败交回原 imp（最多 2 轮）、03 记工单与 STATE；04 先派 sonic 收集事实再派；05 面板与文档。等 ORCH-LEAN-02/03、IMP-LEAN-02 落地再开工（同改 thin-main）。工单队列自动推进放第二期。
+- FLOWS（owner 2026-11-22 同意，D-2026-11-22-19，§5 已改）：01 hud_land、04 先派 sonic 收集事实已落地；02/03（失败交回原 imp、记工单与 STATE）做完，正 rebase 到 04 之上；dogfood-fixes/09（失败的 land 可重试、验证失败先重跑失败文件）等 02 落地；05 面板与文档。工单队列自动推进放第二期。
 - 并行三条线：首页进度（HOME-PROGRESS，owner 已定 5 个问题）、orch 减负（ORCH-LEAN，owner 同意 A/B/C 三批）、MCP 线剩余（JOB-ARCHIVE-01 进行中）。
-- imp 默认已换成 6.2-astra high；所有工单做完后对比单任务时间与成本。
