@@ -7,11 +7,6 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
-- Sonic's default thinking: change the owner role file from max to high? Option: when a caller omits thinking, the
-  Decision API lowers to low at >= 0.85 confidence, else high, never max (38 briefs x 2 rounds: stable 38/38, ~0.4 s,
-  ~390 tokens; the 11-21 audit at high: 17/19 qualified, 0 quality failures).
-- prune-obs decision 1 (docs/neon-proposal/01 :534-545): legacy tmp/tasks tasks started by old scripts leave Home (A)
-  or keep a <=130-line adapter (B)? (waits on PRUNE-OBS-01, prune-obs/02)
 
 ## Next
 
@@ -223,7 +218,7 @@ board counts these; update at every landing or decision. -->
   small slice delivers non-job events (try accepted/flagged) to task clients with the next tool reply.
 - MyHUD is registered (`.hud/project.json`, all shipped roles inherited) with a standing brief `.hud/brief.md`; briefs
   here no longer need to repeat tmp/env.sh, the full-suite timeout, worktrees or the public-repo rule.
-- Sonic runs at `thinking: max` (owner role file `~/.hud/roles/sonic.json`, 2026-11-21); watch its durations
+- Sonic's default is `thinking: high` (owner role file `~/.hud/roles/sonic.json`, changed from max 2026-11-21); callers pick low/high/max per task; watch its durations
   (2–8 min at high). Sonic briefs ask for facts, not recommendations; split wide surveys (convention, role texts).
 - Noted 2026-11-21: a sonic ran `agy models` despite offline instructions (network access, writes to Antigravity's local
   CLI state; job under RESTART-RECOVERY jed235679bed45e93). Not reverted.
