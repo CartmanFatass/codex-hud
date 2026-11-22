@@ -1,38 +1,26 @@
+import { lookupModelEntry, SHIPPED_MODELS_CATALOG, type ModelFamilyId } from '../models/catalog.js';
 import { colors, theme, visualLength } from './colors.js';
 import { displayConfig, type GlyphMode } from './hud-config.js';
 
-export const MODEL_GLYPHS = {
-  astra: '☀',
-  sol: '★',
-  terra: '≡',
-  luna: '☽',
-  spark: '*',
-} as const;
+export const MODEL_GLYPHS: Readonly<Record<ModelFamilyId, string>> = Object.fromEntries(
+  Object.entries(SHIPPED_MODELS_CATALOG.families).map(([id, meta]) => [id, meta.glyph])
+) as Record<ModelFamilyId, string>;
 
-export const MODEL_LABELS = {
-  astra: 'Astra',
-  sol: 'Sol',
-  terra: 'Terra',
-  luna: 'Luna',
-  spark: 'Spark',
-} as const;
+export const MODEL_LABELS: Readonly<Record<ModelFamilyId, string>> = Object.fromEntries(
+  Object.entries(SHIPPED_MODELS_CATALOG.families).map(([id, meta]) => [id, meta.label])
+) as Record<ModelFamilyId, string>;
 
-export const EFFORT_GLYPHS: Record<string, string> = {
-  low: '○',
-  medium: '◐',
-  high: '◕',
-  xhigh: '●',
-  max: '◆',
-  ultra: '✦',
-};
+export const EFFORT_GLYPHS: Record<string, string> = { ...SHIPPED_MODELS_CATALOG.effortGlyphs };
 
-export type ModelFamily = keyof typeof MODEL_GLYPHS;
+export type ModelFamily = ModelFamilyId;
 
 export function classifyModelFamily(model?: string | null): ModelFamily | null {
   const slug = (model ?? '').trim().toLowerCase();
   if (!slug) {
     return null;
   }
+  const entry = lookupModelEntry(slug);
+  if (entry?.family) return entry.family;
   if (slug.includes('astra')) return 'astra';
   if (slug.includes('spark')) return 'spark';
   if (slug.includes('terra')) return 'terra';

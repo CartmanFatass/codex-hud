@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { cliAgents, type CliAgent } from './cli-kinds.js';
 import {
   clearExhausted,
@@ -882,9 +883,9 @@ export interface PlaceCatalog {
   };
 }
 
-export const BRO_TOOLS = ['jev-ask', 'jev-aistudio', 'jev-flow'] as const;
-const BRO_PROVIDERS = ['chatgpt', 'gemini'] as const;
-const BRO_KINDS = ['image', 'video'] as const;
+export const BRO_TOOLS = SHIPPED_MODELS_CATALOG.harnesses.bro.tools;
+const BRO_PROVIDERS = SHIPPED_MODELS_CATALOG.harnesses.bro.providers;
+const BRO_KINDS = SHIPPED_MODELS_CATALOG.harnesses.bro.kinds;
 const LEGACY_PLACE_KEYS = [
   'harness', 'pi_role', 'split', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'pi_args', 'agent', 'args', 'tool', 'provider',
   'effort', 'kind', 'model', 'thinking',
@@ -963,7 +964,17 @@ export function placeCatalog(
       return {};
     }
   };
-  const shipped = safe(join(bundled, 'catalog.json'));
+  const fromBundled = safe(join(bundled, 'catalog.json'));
+  const shipped: Record<string, unknown> = Object.keys(fromBundled).length
+    ? fromBundled
+    : {
+        pi: {
+          models: SHIPPED_MODELS_CATALOG.harnesses.pi.offlineModels,
+          thinking: SHIPPED_MODELS_CATALOG.harnesses.pi.thinking,
+        },
+        cli: SHIPPED_MODELS_CATALOG.harnesses.cli,
+        bro: SHIPPED_MODELS_CATALOG.harnesses.bro,
+      };
   const extra = asRecord(safe(join(hudHome, 'harnesses.json')).catalog);
   const typed = typedRoleModels(hudHome, safe, list);
   const sPi = asRecord(shipped.pi),

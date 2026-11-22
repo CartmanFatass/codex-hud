@@ -1,5 +1,6 @@
 /** Control's chain editor and quick model choice. Forms and drafts stay in memory until Save. */
 import { isDeepStrictEqual } from 'node:util';
+import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { placeDestination, placeItem, placeModels, placeSwitch, previewDraft, replaceableTarget, targetKey,
   type DraftPlace, type ModelLists, type RoleFact } from '../roles/role-control.js';
@@ -77,7 +78,8 @@ function choices(role: RoleFact, sheet: Sheet, lists: ModelLists): Option[] {
   if (!p || !sheet.place) return [];
   const { field } = sheet;
   const values = field === 'kind' ? catalog?.flowKinds : field === 'model' || field === 'effort' ? placeModels(sheet.place.fact, lists)
-    : p.harness === 'pi' ? catalog?.piThinking : p.harness === 'cli' ? catalog?.cliThinking : ['Low', 'High'];
+    : p.harness === 'pi' ? catalog?.piThinking : p.harness === 'cli' ? catalog?.cliThinking
+    : (catalog?.broThinking ?? SHIPPED_MODELS_CATALOG.harnesses.bro.thinking);
   const current = field === 'done' ? undefined : p[field];
   return [{ label: t('clear') }, ...[...new Set([...(values ?? []), ...(current ? [current] : [])])].map((value) => ({ label: value, value }))];
 }

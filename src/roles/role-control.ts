@@ -7,6 +7,7 @@
 import * as fs from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { cliAgents } from './cli-kinds.js';
 import { isModelToken, modelSourceStatus, type ModelListCache } from './model-discovery.js';
 import { placeKey } from './exhausted.js';
@@ -112,6 +113,7 @@ export interface ModelLists {
     quota: Record<string, number>;
     piThinking: string[];
     cliThinking: string[];
+    broThinking?: string[];
     flowKinds: NonNullable<RolePlace['kind']>[];
   };
 }
@@ -281,7 +283,7 @@ export function controlFacts(
       cliStatus: { agy: modelSourceStatus(modelLists, 'agy'), grok: modelSourceStatus(modelLists, 'grok') },
       cli: catalog.cli.models, bro: catalog.bro.models,
       editor: { off: [...disabled], quota: Object.fromEntries([...context.exhausted].map(([id, mark]) => [id, Date.parse(mark.until)])),
-        piThinking: catalog.pi.thinking, cliThinking: catalog.cli.thinking, flowKinds: catalog.bro.kinds },
+        piThinking: catalog.pi.thinking, cliThinking: catalog.cli.thinking, broThinking: [...SHIPPED_MODELS_CATALOG.harnesses.bro.thinking], flowKinds: catalog.bro.kinds },
     },
     piRoleFiles: [...piRoleFiles],
     harnessSwitches,

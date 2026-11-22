@@ -1,41 +1,36 @@
+import { lookupModelEntry, SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
+
 /** Vendor marks shared by the panel and the pi footer. Recognisable model vendors win over gateways. */
 export interface ProviderMark {
   glyph: string;
   ascii: string;
   color?: number;
 }
-export const PROVIDERS: Record<string, ProviderMark> = {
-  openai: { glyph: '◎', ascii: 'OAI', color: 79 },
-  anthropic: { glyph: '✻', ascii: 'Ant', color: 173 },
-  copilot: { glyph: '\uec1e', ascii: 'GH', color: 110 },
-  mistral: { glyph: 'M', ascii: 'Mis', color: 208 },
-  deepseek: { glyph: '≋', ascii: 'DS', color: 69 },
-  'huawei-maas': { glyph: '❀', ascii: 'HW', color: 160 },
-  xai: { glyph: '⊘', ascii: 'xAI', color: 245 },
-  'google-vertex': { glyph: '▲', ascii: 'Gem', color: 111 },
-  gemini: { glyph: '▲', ascii: 'Gem', color: 111 },
-  zai: { glyph: 'ℤ', ascii: 'GLM' },
-  litellm: { glyph: '\ueb2d', ascii: 'LLM', color: 141 },
-};
+export const PROVIDERS: Record<string, ProviderMark> = Object.fromEntries(
+  Object.entries(SHIPPED_MODELS_CATALOG.vendors).map(([id, meta]) => [
+    id,
+    meta.color === undefined
+      ? { glyph: meta.glyph, ascii: meta.ascii }
+      : { glyph: meta.glyph, ascii: meta.ascii, color: meta.color },
+  ])
+);
+const VENDOR_MATCHERS: ReadonlyArray<{ id: string; pattern: RegExp }> = Object.entries(
+  SHIPPED_MODELS_CATALOG.vendors
+).flatMap(([id, meta]) => {
+  const parts: string[] = [];
+  if (meta.matchPattern) parts.push(meta.matchPattern);
+  if (meta.matchTokens?.length) {
+    parts.push(...meta.matchTokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  return parts.length ? [{ id, pattern: new RegExp(parts.join('|')) }] : [];
+});
 export function providerMark(
   model: { provider?: string | null; id?: string; name?: string; baseUrl?: string } | undefined,
   ascii = false
 ): ProviderMark | null {
   if (!model) return null;
   const name = (model.id ?? model.name ?? '').toLowerCase();
-  const vendor = /gpt|o[134](?:-|$)/.test(name)
-    ? 'openai'
-    : /claude|sonnet|haiku|opus/.test(name)
-      ? 'anthropic'
-      : /deepseek/.test(name)
-        ? 'deepseek'
-        : /glm/.test(name)
-          ? 'zai'
-          : /gemini/.test(name)
-            ? 'gemini'
-            : /grok/.test(name)
-              ? 'xai'
-              : null;
+  const vendor = VENDOR_MATCHERS.find(({ pattern }) => pattern.test(name))?.id ?? null;
   const id = (model.provider ?? '').toLowerCase();
   const mark =
     PROVIDERS[vendor ?? id] ??
@@ -51,6 +46,8 @@ const VENDOR_WORDS = /^(?:(?:claude|gpt|zai|glm|gemini|deepseek|openai|anthropic
  */
 export function shortModel(id: string | null | undefined): string {
   const whole = (id ?? '').trim();
+  const explicit = lookupModelEntry(whole)?.shortLabel;
+  if (explicit) return explicit;
   const slug = whole
     .replace(/\[[^\]]*\]$/, '')
     .replace(/^.*\//, '')

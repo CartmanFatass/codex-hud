@@ -12,6 +12,7 @@ import {
   type IconMode,
 } from './render/hud-config.js';
 import { getHudHome } from './hud-home.js';
+import { SHIPPED_MODELS_CATALOG } from './models/catalog.js';
 import { DEFAULT_WIDTH } from './utils/pane-width.js';
 
 export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'> {
@@ -85,8 +86,8 @@ export function defaultSettings(): HudSettings {
     homeMode: 'default',
     ...DEFAULT_PANEL_VIEW,
     language: 'auto',
-    briefingApiBase: 'https://api.mistral.ai/v1',
-    model: 'deepseek-v4-1-flash-1017',
+    briefingApiBase: SHIPPED_MODELS_CATALOG.defaults.summary.apiBase,
+    model: SHIPPED_MODELS_CATALOG.defaults.summary.model,
     decisionApi: 'openai',
     sonicAutoThinking: false,
     modelCallsPerHour: 60,

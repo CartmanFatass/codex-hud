@@ -1,4 +1,5 @@
 // Gemini Decisions shares TypeSafe's keyed questions/answers, not its state or instruction encoding.
+import { SHIPPED_MODELS_CATALOG } from '../../models/catalog.js';
 import type { DecisionProvider, DecisionResult } from '../decide.js';
 import { JUDGE_NO, JUDGE_YES, JUDGE_RULES, type JudgmentRequest } from '../judge.js';
 import { DecisionProviderError, OPENAI_NONE_CHOICE, OPENAI_NONE_DESCRIPTION, postJson } from '../model.js';
@@ -7,7 +8,7 @@ import { buildTypeSafeBody, buildTypeSafeJudgmentBody, parseTypeSafeAnswers } fr
 
 export class GeminiDecisionProvider implements DecisionProvider {
   readonly id = 'gemini' as const;
-  readonly model = 'gemini-decision-1';
+  readonly model = SHIPPED_MODELS_CATALOG.defaults.decisions.gemini;
   readonly #options: { apiKey: string; fetcher?: typeof fetch; timeoutMs?: number };
   constructor(options: { apiKey: string; fetcher?: typeof fetch; timeoutMs?: number }) {
     this.#options = options;

@@ -242,3 +242,25 @@ test('stopping the footer restores both native components', (t) => {
   f.controller.start(f.ctx);
   assert.match(stripAnsi(f.top()), /cache/);
 });
+
+test('pi footer prices provider-prefixed gateway model ids from the built-in catalog', (t) => {
+  const f = fixture(t);
+  // 1M input ($0.30) + 1M output ($1.20) + 1M cacheRead ($0.007) = $1.507 -> ≈$1.51
+  const entries = [
+    {
+      type: 'message' as const,
+      message: {
+        role: 'assistant',
+        model: 'mistral/deepseek-v4-1-flash-1017',
+        usage: { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 0, cost: { total: 0 } },
+      },
+    },
+  ];
+  f.ctx.model!.id = 'mistral/deepseek-v4-1-flash-1017';
+  f.ctx.model!.provider = 'mistral';
+  f.ctx.sessionManager.getLeafId = () => 'prefixed-leaf';
+  f.ctx.sessionManager.getEntries = () => entries;
+  f.ctx.sessionManager.getBranch = () => entries;
+  f.controller.update();
+  assert.match(stripAnsi(f.top(160)), /~\$1\.51\b/);
+});

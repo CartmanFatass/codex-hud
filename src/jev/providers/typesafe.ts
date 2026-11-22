@@ -1,5 +1,6 @@
 // TypeSafe wire format, verbatim from Jev Ultrafast model.py choose() (github.com/browser-use/jev-ultrafast @ 1231850a).
 
+import { SHIPPED_MODELS_CATALOG } from '../../models/catalog.js';
 import type { Answer, DecisionProvider, DecisionResult } from '../decide.js';
 import { JUDGE_NO, JUDGE_RULES, JUDGE_YES, type JudgmentRequest } from '../judge.js';
 import { postJson, type DecisionQuestion, type DecisionRequest } from '../model.js';
@@ -89,7 +90,7 @@ export class TypeSafeDecisionProvider implements DecisionProvider {
   readonly #timeoutMs?: number;
 
   constructor(options: { apiKey: string; model?: string; fetcher?: typeof fetch; url?: string; timeoutMs?: number }) {
-    this.model = options.model || 'jev-latest';
+    this.model = options.model || SHIPPED_MODELS_CATALOG.defaults.decisions.typesafe;
     this.#apiKey = options.apiKey;
     this.#fetcher = options.fetcher;
     this.#url = options.url;

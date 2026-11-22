@@ -7,6 +7,7 @@ import type { MonitorRow } from './monitor.js';
 import { pickerListWindow, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { boardRow, section, mark, kvRows, minuteAge } from './workboard-rows.js';
 import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
+import { stripModelSnapshotDate } from '../models/catalog.js';
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
@@ -23,7 +24,7 @@ export const needsAttention = (role: RoleFact) =>
   role.places.some((p) => p.state === 'exhausted') || !role.places.some((p) => p.state === 'active');
 export const roleName = (role: RoleFact) => monitorText(role.role);
 /** A model as it reads: no snapshot date (`-20261101`, `-2026-11-01`, `-1017`), which the picker and the selected place still show whole. */
-export const shortModel = (model: string) => monitorText(model).replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2}|\d{4})$/, '');
+export const shortModel = (model: string) => stripModelSnapshotDate(monitorText(model));
 export const presetName = (name?: string | null) => name && name !== 'default' ? monitorText(name) : '';
 export const presetTag = (name?: string | null) => {
   const shown = presetName(name);

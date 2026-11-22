@@ -12,6 +12,7 @@
 import { execFile } from 'node:child_process';
 import { safeGitEnv, SAFE_GIT_ARGS, neutralizeFilters } from '../../utils/git-safety.js';
 import * as bar from '../../render/layout/bar-fields.js';
+import { lookupModelPrice } from '../../models/catalog.js';
 import { shortModel } from '../../render/providers.js';
 import { stripAnsi } from '../../render/colors.js';
 import { activeBarStyle, displayConfig, type BarStyle } from '../../render/hud-config.js';
@@ -135,63 +136,18 @@ export function createP10kFooter(
 
   // ─── Prices ─────────────────────────────────────────────────────────────────
 
-  /**
-   * List prices in USD per 1M tokens, so the band can price a session whose
-   * provider reports no cost (pi leaves `usage.cost` at 0 for gateway models).
-   *
-   * Mistral AI, from https://docs.mistral.ai/inference/pricing (2026-11-02).
-   * Mistral bills input, cached input and output only — there is no separate
-   * cache-write charge, so `cacheWrite` falls back to the input rate.
-   * The same table lives in the source cost tracker for the cost tracker.
-   */
-  interface Price {
-    input: number;
-    cacheRead?: number;
-    output: number;
-  }
-
-  const PRICES_PER_M: Record<string, Price> = {
-    'deepseek-v4-1-flash-1017': { input: 0.3, cacheRead: 0.007, output: 1.2 },
-    'zai-glm-5-3-flash': { input: 0.15, cacheRead: 0.03, output: 0.5 },
-    'zai-glm-5-3': { input: 1.4, cacheRead: 0.14, output: 4.4 },
-    'mistral-large-4': { input: 0.7, cacheRead: 0.07, output: 2.1 },
-    'mistral-small-4': { input: 0.15, cacheRead: 0.015, output: 0.6 },
-    'ministral-3-14b': { input: 0.2, cacheRead: 0.02, output: 0.2 },
-    'ministral-3-8b': { input: 0.15, cacheRead: 0.015, output: 0.15 },
-    'ministral-3-3b': { input: 0.1, cacheRead: 0.01, output: 0.1 },
-    codestral: { input: 0.3, cacheRead: 0.03, output: 0.9 },
-    'codestral-embed': { input: 0.15, cacheRead: 0.015, output: 0 },
-    'mistral-embed': { input: 0.1, cacheRead: 0.01, output: 0 },
-  };
-
-  /** `gpt-5.2-pro` and `gpt-5-2-pro` name one row, as do dated ids and their base. */
-  function priceFor(modelId: string | undefined): Price | null {
-    if (!modelId) return null;
-    const key = modelId.toLowerCase().replace(/\./g, '-');
-    const direct = PRICES_PER_M[key];
-    if (direct) return direct;
-    const base = key.replace(/-\d{4,8}$/, '');
-    const undated = PRICES_PER_M[base];
-    if (undated) return undated;
-    let match: string | null = null;
-    for (const candidate of Object.keys(PRICES_PER_M)) {
-      if (key.startsWith(candidate) && (match === null || candidate.length > match.length)) match = candidate;
-    }
-    return match === null ? null : PRICES_PER_M[match]!;
-  }
-
-  /** Provider-reported cost when there is one, else our own list price (`estimated`). */
+  /** Provider-reported cost when there is one, else our built-in catalog list price (`estimated`). */
   function entryCost(usage: EntryUsage, modelId: string | undefined): { cost: number; estimated: boolean } | null {
     const reported = usage.cost?.total;
     if (typeof reported === 'number' && reported > 0) return { cost: reported, estimated: false };
-    const price = priceFor(modelId);
+    const price = lookupModelPrice(modelId);
     if (!price) return null;
     const rate = (value: number | undefined) => (value ?? 0) / 1_000_000;
     const cost =
       usage.input * rate(price.input) +
       usage.output * rate(price.output) +
       usage.cacheRead * rate(price.cacheRead ?? price.input) +
-      usage.cacheWrite * rate(price.input);
+      usage.cacheWrite * rate(price.cacheWrite ?? price.input);
     return { cost, estimated: true };
   }
 

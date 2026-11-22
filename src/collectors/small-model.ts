@@ -18,6 +18,7 @@
  *
  */
 import { readHudCredentials } from '../jev/ask/config.js';
+import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { t, type Language } from '../render/i18n.js';
@@ -148,13 +149,9 @@ const WAITING_FOR_PEER = Symbol('waiting-for-peer');
 export const DEFAULT_HOURLY_CAP = 60;
 /** Cached answers kept; the oldest go first. */
 const CACHE_LIMIT = 200;
-const DEFAULT_API_BASE = 'https://api.mistral.ai/v1';
+const DEFAULT_API_BASE = SHIPPED_MODELS_CATALOG.defaults.summary.apiBase;
 export type ApiModelTier = 'lite' | 'low' | 'medium';
-export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = {
-  lite: 'deepseek-v4-1-flash-1017',
-  low: 'deepseek-v4-1-flash-1017',
-  medium: 'deepseek-v4-1-flash-1017',
-};
+export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = SHIPPED_MODELS_CATALOG.defaults.summary.tiers;
 
 export function apiModelTier(feature: string): ApiModelTier {
   if (['labels', 'title', 'approval'].includes(feature)) return 'lite';

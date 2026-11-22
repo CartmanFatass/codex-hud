@@ -1,3 +1,4 @@
+import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { defaultSettings, type HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { HudHealthState } from '../types.js';
@@ -131,7 +132,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     key: 'model',
     group: 'Models',
     label: 'Model',
-    values: ['deepseek-v4-1-flash-1017'],
+    values: SHIPPED_MODELS_CATALOG.defaults.summary.settingsChoices,
     help: 'Chat-completions model; edit model in hud-settings.json for another ID',
     literal: true,
   },

@@ -1,30 +1,19 @@
 import { spawn } from 'node:child_process';
+import { resolveCliThinking, SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { isModelToken, readModelListCache } from '../roles/model-discovery.js';
 import type { RolePlace } from '../roles/roster.js';
 
-const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const piLevels = SHIPPED_MODELS_CATALOG.harnesses.pi.thinking;
+const thinkingOrder = SHIPPED_MODELS_CATALOG.thinkingOrder;
 type Model = { provider: string; id: string; reasoning: boolean; thinkingLevelMap?: Record<string, string | null> };
 const probes = new Map<string, Promise<string[] | undefined>>();
 
-// Claude Code 2.1.330 and Antigravity CLI 1.5.14 --help list these --effort values.
-// Only map known models; the help advertises the flag, not per-model overrides.
-const cliLevels = ['low', 'medium', 'high', 'xhigh', 'max'];
-const cliModels: Record<string, { models: string[]; thinking: string[] }[]> = {
-  claude: [{ models: ['fable', 'opus', 'sonnet', 'haiku', 'claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5'], thinking: cliLevels }],
-  agy: [{ models: ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high'], thinking: cliLevels }],
-  // Codex 0.171.0's bundled model catalog documents the levels accepted by
-  // model_reasoning_effort per model (the config schema itself accepts strings).
-  codex: [
-    { models: ['gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-sol',
-      'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-daybreak-blue-latest', 'gpt-daybreak-red-latest'], thinking: [...cliLevels, 'ultra'] },
-    { models: ['gpt-6-luna', 'gpt-5.6-luna', 'codex-auto-review'], thinking: cliLevels },
-    { models: ['gpt-5.5'], thinking: cliLevels.slice(0, 4) },
-  ],
-};
-
 export function launchThinking(hudHome: string, place: Pick<RolePlace, 'harness' | 'agent'>, model: string | null) {
   if (!model || !isModelToken(model)) return;
-  if (place.harness === 'cli' && place.agent) return cliModels[place.agent]?.find((fact) => fact.models.includes(model))?.thinking;
+  if (place.harness === 'cli' && place.agent) {
+    const supported = resolveCliThinking(SHIPPED_MODELS_CATALOG, place.agent, model);
+    return supported ? [...supported] : undefined;
+  }
   if (place.harness !== 'pi') return;
   // The picker's fact can prove a model only supports off. For exact levels,
   // ask pi for the selected model's metadata, offline and without a session.
@@ -63,7 +52,7 @@ function probe(model: string): Promise<string[] | undefined> {
           if (reply.id !== 'hud-thinking') continue;
           const m: Model | undefined = reply.data?.model;
           if (m && (model === `${m.provider}/${m.id}` || model === m.id) && typeof m.reasoning === 'boolean') {
-            result = m.reasoning ? levels.filter((level, i) => {
+            result = m.reasoning ? piLevels.filter((level, i) => {
               const mapped = m.thinkingLevelMap?.[level];
               return mapped !== null && (i < 5 || mapped !== undefined);
             }) : ['off'];
@@ -76,8 +65,8 @@ function probe(model: string): Promise<string[] | undefined> {
   });
 }
 
-export function nearestThinking(wanted: string, supported: string[]) {
-  const rank = (level: string) => level === 'ultra' ? levels.length : levels.indexOf(level);
+export function nearestThinking(wanted: string, supported: readonly string[]) {
+  const rank = (level: string) => thinkingOrder.indexOf(level as (typeof thinkingOrder)[number]);
   const index = rank(wanted);
   if (index < 0) return supported[0];
   return supported.reduce<string | undefined>((best, candidate) =>
