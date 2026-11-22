@@ -12,22 +12,22 @@ const label = (value: unknown) =>
 
 export function renderAntigravity(input: unknown, width: number, options: StatuslineSessionOptions): string {
   const value = record(input), model = record(value.model), context = record(value.context_window);
-  const name = label(model.display_name) || label(model.id);
+  const id = label(model.id), displayName = label(model.display_name);
+  const name = displayName || id;
   const left = percent(context.remaining_percentage);
   const used = percent(context.used_percentage) ?? (left === undefined ? undefined : 100 - left);
   if (!name && used === undefined) throw new Error('unrecognized_antigravity_payload');
   const size = context.context_window_size;
   const window = typeof size === 'number' && Number.isSafeInteger(size) && size > 0 ? size : 0;
-  // The probe established "quota buckets", not their fields. Until verified live, accept keyed buckets
-  // with duration in minutes and remaining percentage; ignore unknown shapes rather than guessing values.
+  const family = /^gemini/i.test(id) || /^gemini/i.test(displayName) ? 'gemini' : '3p';
+  const quota = record(value.quota), now = Date.now();
   const windows: BarQuotaWindow[] = [];
-  for (const bucket of Object.values(record(value.quota))) {
-    const { window_minutes: minutes, remaining_percentage } = record(bucket);
-    const remaining = percent(remaining_percentage);
-    if (remaining === undefined || typeof minutes !== 'number' || !Number.isSafeInteger(minutes) || minutes <= 0)
-      continue;
+  for (const [suffix, minutes] of [['5h', 300], ['weekly', 10080]] as const) {
+    const { remaining_fraction, reset_time } = record(quota[`${family}-${suffix}`]);
+    if (typeof remaining_fraction !== 'number' || !Number.isFinite(remaining_fraction)) continue;
+    if (typeof reset_time !== 'string' || !(Date.parse(reset_time) > now)) continue;
+    const remaining = Math.max(0, Math.min(100, Math.round(remaining_fraction * 100)));
     windows.push({ label: formatWindowLabel(minutes), percent: 100 - remaining, shown: `${remaining}% left`, meter: false });
-    if (windows.length === 8) break;
   }
   const modelName = name || 'Antigravity';
   const workspace = record(value.workspace);
@@ -48,7 +48,7 @@ export function renderAntigravity(input: unknown, width: number, options: Status
   const cwd = label(workspace.project_dir) || label(value.cwd);
   const project = cwd.split(/[/\\]/).filter(Boolean).at(-1) || (cwd.startsWith('/') ? '/' : '');
   return '\x1b[0m' + renderBar({
-    model: { name: modelName, id: label(model.id) || undefined },
+    model: { name: modelName, id: id || undefined },
     context: used === undefined ? undefined : { percent: used, shown: `${used}%`, window },
     project: project ? { name: project, branch: null } : undefined,
     quota: windows.length ? { windows, trailing: true } : undefined,
