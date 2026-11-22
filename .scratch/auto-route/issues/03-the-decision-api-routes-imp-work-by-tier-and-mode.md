@@ -7,7 +7,7 @@
 **What to build:** Spec §2.1.2 "Imp routing" (22.22). Settings toggle "Imp routing" (off by default), which needs the Decision API like Sonic auto-thinking and reuses its client, budget and fallback code. When on, an `imp` create with no `preset`, `on`, `model` or `thinking` asks the Decision API for `{tier: light|standard|hard, mode: headless|tab, reason}`. The input is the brief, ticket text and context-file names and sizes. The guidance is tier and mode purposes written in the imp role file:
 - light (`hydrogen` preset, high): mechanical work that follows an existing pattern — text or doc edits, one or two files, a single test fix, a small bug. Hydrogen high scores 51 against sol high's 55 on the Artificial Analysis index, and it runs on the Gemini quota, so this tier mainly offloads GPT work;
 - standard: an ordinary end-to-end slice;
-- hard (`sol` at thinking `xhigh`, AA 56; owner 2026-11-22: no astra for imp): cross-module, concurrency or process lifecycle, repeated conflicts;
+- hard (`astra`; owner 2026-11-22 kept astra for the hard tier): cross-module, concurrency or process lifecycle, repeated conflicts;
 - headless: likely one shot with no owner watching;
 - tab: likely questions, long runs, or the owner wants to watch.
 
