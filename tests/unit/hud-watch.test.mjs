@@ -14,6 +14,8 @@ import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
+const readHint = (job) => `hud_read job=${job} (mode: "full" for the whole report)`;
+
 function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
   const dir = join(hudHome, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
@@ -241,8 +243,8 @@ test('hud watch --verbose retains the existing MCP change lines', async (t) => {
   assert.deepEqual(lines, [
     'j00000000000000a1 imp pkg-a: waiting_orchestrator | quiet',
     'j00000000000000a1 imp pkg-a: waiting_orchestrator | quiet | QUESTION',
-    'j00000000000000a1 imp pkg-a: waiting_orchestrator | quiet | report',
-    'j00000000000000a1 imp pkg-a: done | report',
+    `j00000000000000a1 imp pkg-a: waiting_orchestrator | quiet | report | ${readHint('j00000000000000a1')}`,
+    `j00000000000000a1 imp pkg-a: done | report | ${readHint('j00000000000000a1')}`,
     'j00000000000000c3 imp pkg-c: failed | tab closed',
   ]);
   assert.equal(fs.existsSync(join(hudHome, 'display')), false);
@@ -281,12 +283,12 @@ test('hud watch shows the signed settlement summary and ignores metadata-only wr
     assert.deepEqual(lines, []);
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
     await until(() => lines.length > 0);
-    assert.deepEqual(lines, [`${id} imp summary: idle_grace | report | Synthetic work completed.`]);
+    assert.deepEqual(lines, [`${id} imp summary: idle_grace | report | Synthetic work completed. | ${readHint(id)}`]);
     writeReportMeta(stale, cachedReportSignature(stale), { summary: 'Stale synthetic metadata.' });
     writeFixtureFile(join(stale, 'report.md'), 'Rewritten synthetic report.');
     writeFixtureFile(join(stale, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
     await until(() => lines.length > 1);
-    assert.deepEqual(lines.slice(1), [`${staleId} imp stale: idle_grace | report`]);
+    assert.deepEqual(lines.slice(1), [`${staleId} imp stale: idle_grace | report | ${readHint(staleId)}`]);
   } finally {
     ac.abort();
     assert.equal(await running, 0);
@@ -354,13 +356,14 @@ for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbo
   if (!verbose) await until(() => lines.length > 1, 6000);
   ac.abort();
   assert.equal(await running, 0);
+  const report = `${head} idle_grace | report | ${readHint(id)}`;
   assert.deepEqual(lines, verbose ? [
     `${head} working`, `${head} waiting_orchestrator | question | QUESTION`,
-    `${head} waiting_orchestrator | question`, `${head} working`, `${head} idle_grace | report`,
-    `${head} working`, `${head} idle_grace | report`, `${head} working`, `${head} idle_grace`, `${head} closed`,
+    `${head} waiting_orchestrator | question`, `${head} working`, report,
+    `${head} working`, report, `${head} working`, `${head} idle_grace`, `${head} closed`,
   ] : [
     `[imp@demo] QUESTION q1: Which layout? | options: rows / columns | default: rows | full text: ${qfile} | reply: hud_respond job=${id} request_id=q1`,
-    `${head} idle_grace | report\n${head} idle_grace | report\n${head} idle_grace`,
+    `${report}\n${report}\n${head} idle_grace`,
   ]);
 });
 
@@ -383,7 +386,7 @@ test('hud watch holds unconfigured settlements for exactly 3000ms', async (t) =>
   now = 3000;
   t.mock.timers.tick(1);
   await Promise.resolve();
-  assert.deepEqual(writes, [`${id} imp default: done | report\n`]);
+  assert.deepEqual(writes, [`${id} imp default: done | report | ${readHint(id)}\n`]);
   ac.abort();
   assert.equal(await running, 0);
 });
@@ -675,8 +678,8 @@ test('hud watch --queue queues catch-up and settlement silently and exits on age
   assert.deepEqual(deliveries[0].args.slice(0, 4), ['queue', '--thread', '00000000-0000-4000-8000-000000000001', '--message']);
   // The update can land before or during the async catch-up scan.
   assert.deepEqual(deliveries[0].args[4].split('\n').sort(), [
-    'j0000000000000001 imp catchup: idle_grace | report',
-    'j0000000000000002 imp settlement: idle_grace | report',
+    `j0000000000000001 imp catchup: idle_grace | report | ${readHint('j0000000000000001')}`,
+    `j0000000000000002 imp settlement: idle_grace | report | ${readHint('j0000000000000002')}`,
   ]);
   writeFixtureFile(f.agentFile, 'claude');
   assert.equal(await running, 0);
@@ -758,7 +761,7 @@ test('agy watcher types when idle, injects while working, and flushes pending on
   const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: (s) => stderr.push(s) },
     { signal: ac.signal, rescanMs: 80, settlementWindowMs: 30 });
   await until(() => f.deliveries().length === 1);
-  assert.deepEqual(f.deliveries()[0].args, ['agent', 'prompt', pane, 'j0000000000000001 imp idle event: idle_grace | report']);
+  assert.deepEqual(f.deliveries()[0].args, ['agent', 'prompt', pane, `j0000000000000001 imp idle event: idle_grace | report | ${readHint('j0000000000000001')}`]);
   assert.deepEqual(runAgyHook(f.env), {});
 
   writeFixtureFile(f.statusFile, 'working');
@@ -767,7 +770,7 @@ test('agy watcher types when idle, injects while working, and flushes pending on
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.deepEqual(runAgyHook({ ...f.env, HERDR_PANE_ID: '' }), {});
   assert.deepEqual(runAgyHook({ ...f.env, HUD_HOME: '' }), {});
-  assert.deepEqual(agyHookLines(runAgyHook(f.env)), ['j0000000000000002 imp working "事件": idle_grace | report']);
+  assert.deepEqual(agyHookLines(runAgyHook(f.env)), [`j0000000000000002 imp working "事件": idle_grace | report | ${readHint('j0000000000000002')}`]);
   assert.deepEqual(runAgyHook(f.env), {});
   assert.equal(f.deliveries().length, 1);
 
@@ -776,7 +779,7 @@ test('agy watcher types when idle, injects while working, and flushes pending on
   assert.equal(f.deliveries().length, 1);
   writeFixtureFile(f.statusFile, 'idle'); // Not under jobs/: only the safety rescan notices.
   await until(() => f.deliveries().length === 2);
-  assert.deepEqual(f.deliveries()[1].args, ['agent', 'prompt', pane, 'j0000000000000003 imp pending until idle: idle_grace | report']);
+  assert.deepEqual(f.deliveries()[1].args, ['agent', 'prompt', pane, `j0000000000000003 imp pending until idle: idle_grace | report | ${readHint('j0000000000000003')}`]);
   assert.deepEqual(runAgyHook(f.env), {});
   ac.abort();
   assert.equal(await running, 0);
@@ -812,8 +815,10 @@ test('agy hook processes and the watcher racing an idle flush deliver each event
   await until(() => typed().length + injected.length >= 3);
   watcher.kill('SIGTERM');
   assert.deepEqual(await exited, [0, null]);
-  assert.deepEqual([...typed(), ...injected].sort(), [1, 2, 3].map((n) =>
-    `j${String(n).padStart(16, '0')} imp race-${n}: idle_grace | report`));
+  assert.deepEqual([...typed(), ...injected].sort(), [1, 2, 3].map((n) => {
+    const id = `j${String(n).padStart(16, '0')}`;
+    return `${id} imp race-${n}: idle_grace | report | ${readHint(id)}`;
+  }));
   assert.deepEqual(runAgyHook(f.env), {});
 });
 

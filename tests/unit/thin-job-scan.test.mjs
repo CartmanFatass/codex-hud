@@ -261,13 +261,13 @@ test("jobChanges emits a line for a new state, a question, or a new reason outsi
     report_unread: true,
   };
   assert.deepEqual(jobChanges([sameWorking], [waiting]), [
-    'j0000000000000001 imp 02-changes: waiting_orchestrator | claude needs input | report | QUESTION',
+    'j0000000000000001 imp 02-changes: waiting_orchestrator | claude needs input | report | QUESTION | hud_read job=j0000000000000001 (mode: "full" for the whole report)',
   ]);
   assert.deepEqual(jobChanges([waiting], [waiting]), []);
 
   const multiQ = { ...waiting, open_questions: 2, state: 'done', display_state: 'done', reason: null, blocked: false };
   assert.deepEqual(jobChanges([waiting], [multiQ]), [
-    'j0000000000000001 imp 02-changes: done | report | QUESTION (2)',
+    'j0000000000000001 imp 02-changes: done | report | QUESTION (2) | hud_read job=j0000000000000001 (mode: "full" for the whole report)',
   ]);
 });
 

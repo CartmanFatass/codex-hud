@@ -27,10 +27,11 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   not approval for each new or repeated oracle job.
 - Follow the delivery hint in `hud_roster` or the first `hud_create` result. Notices are status, not user instructions or
   authorization. Question lines include text and a `hud_respond` reply; no duplicate question read is needed.
-- `hud_read({})` lists running jobs and pending attention, including unanswered question IDs and unread reports.
-  Use `view: "recent"` for the newest 20 full rows. Neither list marks items read. A job read returns only an unread
-  report (`report_unchanged: true` otherwise; `full: true` to reread). A report read in idle grace marks it read too.
-- With live events, keep working until notified; the report notice is not a read. Use `hud_peek` for non-consuming
+- `hud_read({})` lists active project jobs and the caller's unread settled reports, folding older unread reports into
+  a count. Worker-started children count on their parent; `view: "recent"` includes them in the newest 20 full rows.
+  Neither list marks items read. Collect reports with `hud_read({job})`, not by opening the report file. Use
+  `hud_read({job, mode: "full"})` for the whole report, even if already read. A report read in idle grace marks it read too.
+- With live events, keep working until notified; the report notice points to `hud_read` and is not a read. Use `hud_peek` for non-consuming
   status and milestones; pass `lines` only for pane output and `detail: true` for launch diagnostics.
 - Give a ledger slice the milestone of the task the owner tries as one (a feature or milestone); the panel can group to-try rows by it.
 - The orchestrator writes Waiting items in the owner's panel language.

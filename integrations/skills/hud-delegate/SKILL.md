@@ -17,11 +17,12 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    If neither task nor live delivery is available, use `hud_wait` (`mode: "any"` or `"all"`).
    Answer questions within 20 minutes using the line's `hud_respond` reply.
    To inspect without collecting, use `hud_peek` for status and milestones; request `lines` only when you need pane output.
-6. A report-ready notice leaves the report unread. Collect it explicitly with `hud_read({job})`, check it (for code: the diff and named checks), then decide: accept,
-   repair, review or stop. `hud_read({})` lists running jobs and pending attention, with question IDs and unread
-   report flags when applicable; use `view: "recent"` (without `job`) for the newest 20 full rows. A `report` token
-   in `changes` means unread. A job read omits an already-read report (`report_unchanged: true`; use `full: true`
-   to reread). Reading a settled pi or CLI report closes the worker; an unread report keeps its idle deadline.
+6. A report-ready notice leaves the report unread. Collect it with `hud_read({job})`, not by opening the report file.
+   For the whole report or to reread, use `hud_read({job, mode: "full"})`. Check it (for code: the diff and named checks),
+   then decide: accept, repair, review or stop. `hud_read({})` lists active project jobs and the caller's unread settled
+   reports, folding older unread reports into a count. Worker-started children count on their parent; `view: "recent"`
+   (without `job`) includes them in the newest 20 full rows. A `report` token in `changes` means unread.
+   Reading a settled pi or CLI report closes the worker; an unread report keeps its idle deadline.
    Workers publish with `hud_report` (or the provided fallback); no final chat marker is needed. Settled means finished, not accepted.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.

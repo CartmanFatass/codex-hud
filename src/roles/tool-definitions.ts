@@ -71,7 +71,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_read',
-    'List the caller project’s active jobs, or collect by job or jobs. Default: report digest, changed paths, open questions, check outcomes and latest progress. Full mode includes report text and diagnostics. Reading a settled report closes the worker; use hud_peek to inspect.',
+    'List the project’s active jobs and the caller’s unread settled reports, or collect by job or jobs. Default: report digest, changed paths, open questions, check outcomes and latest progress. Full mode includes report text, path and diagnostics. Reading a settled report closes the worker; use hud_peek to inspect.',
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1, description: 'Read each job in order of input; errors are per item.' },
@@ -82,7 +82,7 @@ export const ROLE_TOOLS = [
       view: {
         type: 'string',
         enum: ['compact', 'recent'],
-        description: 'List only (no job); recent gives the newest 20 full rows.',
+        description: 'List only (no job). Compact counts child jobs and folds older unread reports; recent gives the newest 20 full rows, including children.',
       },
     }
   ),

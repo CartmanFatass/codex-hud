@@ -5,6 +5,7 @@ import { herdrId } from '../roles/herdr-run.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
+import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
@@ -358,13 +359,15 @@ export function formatJobChange(row: JobRow): string {
   const head = [row.job, row.role, row.package].filter(Boolean).join(' ');
   const reason = row.reason ? row.reason.replace(/\s+/g, ' ').trim() : null;
   const summary = row.report_meta?.summary;
+  const unread = !row.parent_job && row.report_unread;
   const parts = [
     rowState(row),
     ...(reason ? [reason] : []),
-    ...(!row.parent_job && row.report_unread ? ['report'] : []),
+    ...(unread ? ['report'] : []),
     ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
     ...(readyChecks(row) ? [`checks ${row.checks!.passed}/${row.checks!.total}`] : []),
     ...(summary ? [[...summary].slice(0, 140).join('')] : []),
+    ...(unread ? [reportReadHint(row.job)] : []),
   ];
   return `${head}: ${parts.join(' | ')}`;
 }

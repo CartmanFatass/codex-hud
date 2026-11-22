@@ -101,8 +101,8 @@ See [Project workers](#project-workers).
 
 Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
 `hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
-question, failure or stop without Monitor. A report notice gives the job ID, role, state, report path and one-line
-summary (the worker's summary or, failing that, report prose). If the job has HUD-run checks, the notice waits
+question, failure or stop without Monitor. A report notice gives the job ID, role, state, the `hud_read` call and a
+one-line summary (the worker's summary or, failing that, report prose). If the job has HUD-run checks, the notice waits
 for them and includes the number passed. Questions do not wait: their notices give the question ID and text.
 MCP delivers one result per task; only the client can combine those notices into a single wake. The notice does
 not mark a report read; collect it with `hud_read({job})`. Launch details remain in `hud_read({job, detail:true})`.
@@ -118,6 +118,7 @@ state through one shared `jobRow`, so they agree. `hud watch` defaults to action
 (with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker
 reasons. It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps
 all MCP change lines. Both `hud watch` and `changes` append a current worker summary, clipped to 140 characters.
+Unread report notices point to `hud_read job=<id>` (`mode: "full"` for the whole report), not to a file.
 The watch groups settlements arriving within three seconds into one notice; questions are delivered immediately.
 On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
@@ -220,12 +221,13 @@ herdr starts the CLI through the interactive shell, so that shell's functions ap
 `hud trust <dir>` adds that directory to the trust files of grok, agy and claude
 after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is skipped.
 
-`hud_read({})` (or `view: "compact"`) lists running jobs and jobs that still need attention, newest first. It shows
-`job`, `role`, `state` and, when applicable, `report_unread: true`, `blocked: true`, pending `question_ids` and a
-block, wait or failure `reason`. A closed job with an unread report still appears. Use `view: "recent"` for the
-newest 20 full rows, including handled history. Both list views include a settled job's current `summary` when
-available (up to 120 characters; no file list). Neither list marks anything read; `changes` still includes events
-for jobs hidden from the snapshot. `view` cannot be combined with `job` or `jobs`.
+`hud_read({})` (or `view: "compact"`) lists active project jobs and the caller's settled jobs with unread reports,
+newest first. It shows `job`, `role`, `state` and, when applicable, `report_unread: true`, `blocked: true`, pending
+`question_ids` and a block, wait or failure `reason`. To keep the snapshot near 2 KiB, older unread reports fold into
+`older_unread_reports`; active jobs stay visible. Worker-started children appear as `child_count` on their parent.
+Use `view: "recent"` for the newest 20 full rows, including child jobs and handled history. Both views can include a
+settled job's current `summary` (up to 120 characters; no file list). Neither marks anything read; `changes` still
+includes events for jobs hidden from the snapshot. `view` cannot be combined with `job` or `jobs`.
 
 `hud_wait({ jobs?, mode?, wait_ms? })` watches several jobs at once. Omit `jobs` to take the caller session's
 unsettled jobs at the start of the call. `mode: "any"` (default) returns when one settles or needs attention;
@@ -250,12 +252,12 @@ ordinary reads omit empty progress, and list/wait rows omit all progress. Milest
 
 `hud_read({ job })` returns state and a `digest` for an unread report. Its `result` is the signature-bound worker summary
 when current and settled. Otherwise it uses the same fallback as the task notice: the first prose line in the first
-2 KiB, skipping headings and blank lines, or `Report ready` if there is none. The digest gives the report path, byte size, Git changed-file
-count for a managed worktree, and explicit `Verdict:` and `Blockers:` lines when present in the first 64 KiB.
+2 KiB, skipping headings and blank lines, or `Report ready` if there is none. The digest gives the `hud_read` hint,
+byte size, Git changed-file count for a managed worktree, and explicit `Verdict:` and `Blockers:` lines when present in the first 64 KiB.
 The response keeps open questions, one line per completed check and the latest milestone. For worktrees it lists up to
 20 changed paths, then `+N more`, and warns about overlaps. Already-read reports return `report_unchanged: true` without
-reopening the body. `mode: "full"` (or `full: true`) returns the report even if already read, up to 64 KiB, with the usual
-metadata, progress, checks and worktree diagnostics. Use `jobs: [id, …]` instead of `job` to get a `jobs` array of
+reopening the body. `mode: "full"` (or `full: true`) returns the report even if already read (up to 64 KiB), its
+`report_path`, and the usual metadata, progress, checks and worktree diagnostics. Use `jobs: [id, …]` instead of `job` to get a `jobs` array of
 results in input order; all use the same mode, and an unknown ID returns an error only for that entry.
 `detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
 use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
@@ -326,13 +328,12 @@ Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; 
 `hud_roster({detail:true})` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
 The supervisor wakes on herdr pushes, file changes and its own deadlines,
 plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes. The on-demand watcher starts on
-create, reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
+`hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed. It reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
 and exits with no open job or pending failed-job deadline. While a CLI job is open
 it also checks the supervisor; `HUD_WATCH_CLI_CHECK_MS` (default 30000) is that
 interval. A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
 worker still running"); `hud_send` to it starts a new supervisor. Settled directories, including reports and
-`hud_read` access, expire **one day after closure** on a later watcher scan or next
-create, not a dedicated expiry timer. Before deleting a legacy pi job it moves real
+`hud_read` access, expire **one day after closure** on a later watcher scan, not a dedicated expiry timer. Before deleting a legacy pi job it moves real
 JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job. Removing session
 links never removes their targets.
@@ -428,8 +429,8 @@ hide after 15 by default (adjust both in Settings → Panel). A hide time below 
 time counts as fold time. A failed or stopped job leaves Home immediately when a retry,
 repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
 `a` shows it muted as `superseded`. An observed failure follows the ordinary fold/hide times.
-An unhandled failure leaves Home after 30 minutes in either mode; `hud_read({})` still
-lists it until it is observed or superseded. Running/asking cards stay. `a` reveals hidden cards in place as muted one-row titles; Enter
+An unhandled failure leaves Home after 30 minutes in either mode; use `hud_read({job})` to inspect it by job ID.
+Running/asking cards stay. `a` reveals hidden cards in place as muted one-row titles; Enter
 expands them. The job scan considers the newest 200 directories.
 
 Answered questions are still collected but have no Home block or dedicated panel view.

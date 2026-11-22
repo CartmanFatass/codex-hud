@@ -146,7 +146,9 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
     id, path: `${dir(id)}/report.md`, body: 'Synthetic implementation report.',
   })) });
   assert.deepEqual(resultValue(await call('hud_sonic', { timeout_s: 0 })), { reports: [], working: [], failed: [] });
-  assert.equal((await f.call('hud_read')).jobs.find((job) => job.job === first).report_unread, true);
+  const compact = (await f.call('hud_read')).jobs;
+  assert.deepEqual(compact.map(({ job, child_count }) => [job, child_count]), [[parent.job, 2]]);
+  assert.equal((await f.call('hud_read', { view: 'recent' })).jobs.find((job) => job.job === first).report_unread, true);
   assert.match((await f.call('hud_read', { job: first, full: true })).report, /Synthetic implementation report/);
 
   const other = await f.call('hud_create', { role: 'imp', request_key: 'not-the-parent', task: 'Synthetic other job.' });

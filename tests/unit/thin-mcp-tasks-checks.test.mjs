@@ -72,18 +72,21 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   assert.equal(done.resultType, 'complete');
   assert.equal(done.status, 'completed');
   const text = done.result.content[0].text;
-  assert.deepEqual(text.split('\n'), [`${job.job} (imp) — idle_grace`, `Report: ${join(job.task_dir, 'report.md')}`, `Summary: ${summaryText}`]);
+  assert.deepEqual(text.split('\n'), [`${job.job} (imp) — idle_grace`,
+    `Report: hud_read job=${job.job} (mode: "full" for the whole report)`, `Summary: ${summaryText}`]);
   assert.ok(text.length < 600);
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), done);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
   assert.equal(f.commands().some(({ command }) => command === 'pi-role-reap'), false);
   const compact = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
   assert.deepEqual(text.split('\n'), [`${compact.job} (${compact.role}) — ${compact.state}`,
-    `Report: ${compact.digest.report_path}`, `Summary: ${compact.digest.result}`]);
+    `Report: ${compact.digest.read_hint}`, `Summary: ${compact.digest.result}`]);
+  assert.doesNotMatch(JSON.stringify(compact), /report\.md/);
   assert.equal(compact.report_meta, undefined);
   assert.equal(compact.report, undefined);
   const report = resultValue(await taskCall(rpc, 'hud_read', { job: job.job, mode: 'full' }));
   assert.ok(report.report.includes(migrationProse));
+  assert.equal(report.report_path, join(job.task_dir, 'report.md'));
   assert.deepEqual(report.report_meta, { summary: summaryText, files });
   assert.equal(report.changes, undefined);
   const repeat = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
@@ -172,7 +175,8 @@ test('MCP tasks: fan-out sends keep the create task through report settlement', 
   await publishPiGrace(job, undefined, false);
   const done = await get();
   assert.equal(done.status, 'completed');
-  assert.ok(done.result.content[0].text.includes(`Report: ${join(job.task_dir, 'report.md')}`));
+  assert.ok(done.result.content[0].text.includes(`Report: hud_read job=${job.job}`));
+  assert.doesNotMatch(done.result.content[0].text, /report\.md/);
   assert.equal(done.result.content[0].text.split('\n')[2], `Summary: ${parserProse}`);
   assert.doesNotMatch(done.result.content[0].text, /Stale synthetic summary|stale\.ts/);
   const read = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));

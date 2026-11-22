@@ -23,9 +23,9 @@ import { reapWorkerTree } from '../roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
 import { taskTarget } from '../collectors/job-supersession.js';
-import { failureUnobserved, failedAttempt, jobChanges, jobSupersession, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
+import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta, readJobProgress, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
-import { firstReportProse } from '../utils/report-summary.js';
+import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
 import { TryLog } from '../collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
@@ -849,14 +849,20 @@ function listReportSummary(row: JobRow) {
 }
 
 function listJobs(recent: boolean) {
-  const receipts = jobs();
-  const newest = receipts.filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const newest = jobs().filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const children = new Map<string, number>();
+  for (const { parent_job } of newest) {
+    if (parent_job) children.set(parent_job, (children.get(parent_job) ?? 0) + 1);
+  }
+  const childCount = (id: string) => children.has(id) ? { child_count: children.get(id) } : {};
   const recentLimit = 20;
   if (recent) {
-    return newest.slice(0, recentLimit).map((job) => {
+    const rows = newest.slice(0, recentLimit).map((job) => {
       const { row } = readRow(job, !isWorker);
       return {
         job: row.job,
+        ...(row.parent_job ? { parent_job: row.parent_job } : {}),
+        ...childCount(row.job),
         role: row.role,
         state: row.state,
         display_state: row.display_state,
@@ -869,22 +875,34 @@ function listJobs(recent: boolean) {
         ...listReportSummary(row),
       };
     });
+    return { jobs: rows };
   }
-  const superseded = jobSupersession(hudHome, receipts, process.cwd());
-  return newest.flatMap((job, index) => {
+  const candidates = newest.flatMap((job, index) => {
+    if (job.parent_job) return [];
     // Scanning beyond recent history must not widen the list's quota side effects.
     const { row } = readRow(job, !isWorker && index < recentLimit);
-    const failed = failedAttempt(row);
-    if (failed && superseded(job)) return [];
-    if (
-      row.display_state !== 'working' &&
-      !row.blocked &&
-      !row.report_unread &&
-      !row.question_ids.length &&
-      !(failed && failureUnobserved(directory(job.job), job.observed_at))
-    ) return [];
-    return [{ ...compactRow(row), ...listReportSummary(row) }];
+    const active = row.display_state === 'working';
+    if (!active && !(ownsJob(job) && row.report_unread)) return [];
+    return [{ row, active, compact: { ...compactRow(row), ...childCount(row.job) } }];
   });
+  // Keep active work visible. Spend the remaining space on the newest unread reports,
+  // reserving room for the single count of those that didn't fit.
+  let budget = 2048 - Buffer.byteLength(JSON.stringify({
+    jobs: candidates.filter(({ active }) => active).map(({ compact }) => compact),
+    older_unread_reports: candidates.length,
+  }));
+  let older_unread_reports = 0;
+  const rows = candidates.flatMap(({ row, active, compact }) => {
+    if (active) return [compact];
+    if (!older_unread_reports) {
+      const preview = { ...compact, ...listReportSummary(row) };
+      budget -= 1 + Buffer.byteLength(JSON.stringify(preview));
+      if (budget >= 0) return [preview];
+    }
+    older_unread_reports++;
+    return [];
+  });
+  return { jobs: rows, ...(older_unread_reports ? { older_unread_reports } : {}) };
 }
 
 const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
@@ -1019,11 +1037,11 @@ function fallbackResultLine(text: string) {
   const head = Buffer.from(text.slice(0, RESULT_HEAD_BYTES)).subarray(0, RESULT_HEAD_BYTES).toString('utf8');
   return (firstReportProse(head) ?? 'Report ready').slice(0, 240);
 }
-function reportDigest(report: NonNullable<ReturnType<typeof slice>>, path: string, state: string | null,
+function reportDigest(report: NonNullable<ReturnType<typeof slice>>, job: string, state: string | null,
   summary: string | undefined, git: GitSummary | undefined) {
   const verdict = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?verdict(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
   const blockers = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?blockers?(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
-  const facts = { state, report_path: path, report_bytes: report.bytes,
+  const facts = { state, read_hint: reportReadHint(job), report_bytes: report.bytes,
     ...(git ? { changed_files: git.changed_files } : {}),
     ...(verdict ? { verdict: digestLine(verdict, 100) } : {}),
     ...(blockers ? { blockers: digestLine(blockers, 160) } : {}) };
@@ -1063,8 +1081,9 @@ function observation(job: Job, full: boolean, detail: boolean, git: GitSummary |
     ...(checks ? { checks: full ? checks : { state: checks.state, stale: checks.stale,
       results: checks.results.map(({ command, passed }) => `${passed ? 'pass' : 'fail'}: ${digestLine(command.replace(/\s+/g, ' '), 120)}`) } } : {}),
     ...(row.report_present && !report ? { report_unchanged: true } : report && !full ? {
-      digest: reportDigest(report, join(dir, 'report.md'), row.state ?? row.display_state, reportMeta?.summary, git),
+      digest: reportDigest(report, job.job, row.state ?? row.display_state, reportMeta?.summary, git),
     } : {
+      ...(full && report ? { report_path: join(dir, 'report.md') } : {}),
       ...(detail || report ? { report: report?.text ?? null } : {}),
       ...(detail || report?.truncated ? { report_truncated: report?.truncated ?? false } : {}),
     }),
@@ -1801,7 +1820,10 @@ async function call(name: string, args: Args): Promise<unknown> {
     // Tab placement or roster discovery may already know the harness; do not probe on the dispatch reply path.
     return { ...result, hint: deliveryHint(watcherAlive) };
   }
-  if (name === 'hud_send') return sendJobs(args);
+  if (name === 'hud_send') {
+    ensureWatcher();
+    return sendJobs(args);
+  }
   if (name === 'hud_wait') return waitJobs(args);
   if (name === 'hud_read') {
     const { view } = args;
@@ -1813,6 +1835,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
+    ensureWatcher();
     if (args.jobs !== undefined) {
       if (args.job !== undefined || !Array.isArray(args.jobs) || !args.jobs.length) throw new Error('invalid_arguments: jobs');
       return { jobs: await Promise.all(args.jobs.map(async (job) => {
@@ -1823,7 +1846,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (args.job === undefined) {
       if (args.mode !== undefined) throw new Error('invalid_arguments: mode requires job or jobs');
       if (args.detail !== undefined) throw new Error('invalid_arguments: detail requires job');
-      return { jobs: listJobs(view === 'recent') };
+      return listJobs(view === 'recent');
     }
   }
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
@@ -1893,6 +1916,7 @@ async function callJob(name: string, args: Args, detail: boolean) {
     const request = required(args, 'request_id');
     if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
     const answer = required(args, 'answer');
+    ensureWatcher();
     fs.mkdirSync(join(dir, 'qa'), { recursive: true, mode: 0o700 });
     const oldTask = activeTasks.get(id);
     if (oldTask) sampleTask(oldTask);
@@ -1973,8 +1997,11 @@ async function adoptSessionJobs() {
   if (!taskClient) void ensureQueueWatcher(callerPane, hudHome);
   return true;
 }
+function ownsJob(job: Job) {
+  return callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job);
+}
 function sessionJobs() {
-  const own = jobs().filter((job) => callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
+  const own = jobs().filter(ownsJob);
   return own.length ? own.filter(projectJobFilter(process.cwd())) : own;
 }
 function sessionRows(markExhaustion: boolean): JobRow[] {
@@ -2154,7 +2181,7 @@ function sampleTask(task: HudTask): TaskView {
     if (outcome === null) return updateTask(task, 'working', `${label} — awaiting checks`);
     const meta = jobRowReportMeta(row, dir);
     const summary = meta?.summary ?? fallbackResultLine(slice(report, RESULT_HEAD_BYTES)?.text ?? '');
-    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${report}\nSummary: ${summary}${outcome}`);
+    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${reportReadHint(task.job)}\nSummary: ${summary}${outcome}`);
   }
   if (state === 'closed' || state === 'done') {
     const message = `${label} — no report for this turn`;

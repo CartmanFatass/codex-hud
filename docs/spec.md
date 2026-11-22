@@ -414,7 +414,7 @@ reversibly configures Antigravity's MCP, permission, statusline and `PreInvocati
   (21.11, 21.12, 22.06)
   - MCP tasks for declaring clients (today Claude Code): first verify wake, cancel and `/tasks`. One task
     per worker turn (`hud_create`, `hud_send`, `hud_respond`) until report or question. Result: state,
-    report path, one-line summary and check outcome, sent after HUD-run checks finish; not a read. Cancel closes the job. (20.09, 21.12, 22.06, 22.15)
+    the hud_read call, one-line summary and check outcome, sent after HUD-run checks finish; not a read. Cancel closes the job. (20.09, 21.12, 22.06, 22.15, 22.21)
   - Excludes general plan execution. Fixed HUD flows (land, scouted dispatch, ticket queue) chain their
     listed steps, stop at the first judgement point or after two failed repairs, and hand back to the main
     session in one notice (22.19). Also excludes a resident server

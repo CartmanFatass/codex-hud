@@ -53,6 +53,8 @@ export function firstReportProse(text: string): string | undefined {
   }
 }
 
+export const reportReadHint = (job: string) => `hud_read job=${job} (mode: "full" for the whole report)`;
+
 export const REPORT_EVIDENCE_BYTES = 4096;
 const HEAD_BYTES = 512;
 const SECTION_BYTES = 896;
