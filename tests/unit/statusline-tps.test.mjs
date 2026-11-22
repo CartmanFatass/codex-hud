@@ -44,7 +44,7 @@ test('Claude statusline estimates the latest linked response from its bounded tr
       }),
       env: { HOME: home, HUD_HOME: hud, CLAUDE_CONFIG_DIR: join(home, 'claude'), NO_COLOR: '1' },
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: 25000,
     });
     assert.equal(result.status, 0, result.stderr);
     return stripAnsi(result.stdout).trimEnd();

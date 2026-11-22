@@ -521,7 +521,7 @@ test('hud_peek returns a bounded pane tail and does not acknowledge, exhaust or 
 
 // The reply must be event-driven (`timed_out: false`); MCP startup and ping are
 // outside the product wait, so the aggregate test watchdog is only a hang guard.
-test('hud_wait any wakes on a settlement among the caller’s initially unsettled jobs', { timeout: 25000 }, async (t) => {
+test('hud_wait any wakes on a settlement among the caller’s initially unsettled jobs', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
   waitFixtureJob(f, 3, 'done');

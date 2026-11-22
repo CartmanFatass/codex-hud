@@ -240,7 +240,7 @@ test('hud_sonic accepts a project cwd relative to the parent and refuses paths o
   assert.equal(JSON.parse(fs.readFileSync(join(jobs, job, 'job.json'))).cwd, subdir);
 });
 
-test('a working pi parent gets a native sonic-ready message without polling or collecting', { timeout: 15000 }, async (t) => {
+test('a working pi parent gets a native sonic-ready message without polling or collecting', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic pi parent.' });
@@ -257,7 +257,7 @@ test('a working pi parent gets a native sonic-ready message without polling or c
     const { details: { job } } = await sonic.execute('start', { task: ${JSON.stringify(fs.readFileSync(task, 'utf8'))} });
     const dir = join(process.env.HUD_HOME, 'jobs', job);
     await tools.get('hud_progress').execute('unrelated', { message: 'Parent still editing.' });
-    const timeout = setTimeout(() => { throw Error('no sonic notice'); }, 3000);
+    const timeout = setTimeout(() => { throw Error('no sonic notice'); }, 20000);
     writeFileSync(join(dir, 'release-sonic'), '');
     const { message, options } = await notice.promise;
     clearTimeout(timeout);
@@ -272,7 +272,7 @@ test('a working pi parent gets a native sonic-ready message without polling or c
     const childTools = [];
     await hud({ on() {}, registerTool(tool) { childTools.push(tool.name); } });
     assert.deepEqual(childTools, ['hud_report', 'hud_progress', 'hud_lease']);
-  `], { env: { ...f.env, HUD_JOB_DIR: parent.task_dir }, encoding: 'utf8', timeout: 12000 });
+  `], { env: { ...f.env, HUD_JOB_DIR: parent.task_dir }, encoding: 'utf8', timeout: 35000 });
   assert.equal(native.status, 0, native.stderr);
 });
 

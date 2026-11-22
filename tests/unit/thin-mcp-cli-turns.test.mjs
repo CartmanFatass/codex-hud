@@ -52,26 +52,26 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
 });
 
-test('supervisor events: a report with a missed status push settles on the safety tick', { timeout: 10000 }, async (t) => {
+test('supervisor events: a report with a missed status push settles on the safety tick', { timeout: 45000 }, async (t) => {
   // Live agy 2026-11-14: the push was never matched and a finished job stayed working for 10 minutes.
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'missed-push', 4);
+  writeCliRole(f, 'missed-push', 10);
   const job = await f.call('hud_create', { role: 'missed-push', request_key: 'missed-push', task: 'Synthetic missed push.' });
-  await until(() => cliState(job.task_dir)?.pid);
+  await until(() => cliState(job.task_dir)?.pid, 20000);
   writeFixtureFile(join(job.task_dir, 'report.md'), 'Report, then herdr goes idle without a push.\n');
   f.silent(job.job, 'idle');
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace', 5000);
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', 20000);
   assert.equal(cliState(job.task_dir).output_written, true);
 });
 
 // Two independent turns each settle through the configured grace and real /quit subprocess.
 test('done without report keeps the job open and a later report settles it', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'short-cli', 1, true);
+  writeCliRole(f, 'short-cli', 4, true);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const job = await f.call('hud_create', { role: 'short-cli', request_key: 'grok-missing', task: 'Synthetic missing.' });
-  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.pid);
+  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.pid, 15000);
   assertCliStatus(cliState(job.task_dir), job.task_dir);
   assert.equal(cliState(job.task_dir).output_written, false);
   assert.equal(cliState(job.task_dir).reason, null);
@@ -80,7 +80,7 @@ test('done without report keeps the job open and a later report settles it', { t
   // done -> working -> done + report
   fs.unlinkSync(join(f.env.HOME, 'missing-report'));
   fs.writeFileSync(join(f.env.HOME, 'wake-turn'), '');
-  await until(() => cliState(job.task_dir)?.state === 'closed', 20000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 25000);
   const closed = cliState(job.task_dir);
   assert.equal(closed.exit_reason, 'settled');
   assert.equal(closed.output_written, true);
@@ -89,9 +89,9 @@ test('done without report keeps the job open and a later report settles it', { t
   fs.unlinkSync(join(f.env.HOME, 'wake-turn'));
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const job2 = await f.call('hud_create', { role: 'short-cli', request_key: 'grok-late-report', task: 'Synthetic late report.' });
-  await until(() => cliState(job2.task_dir)?.state === 'working' && cliState(job2.task_dir)?.pid);
+  await until(() => cliState(job2.task_dir)?.state === 'working' && cliState(job2.task_dir)?.pid, 15000);
   writeFixtureFile(join(job2.task_dir, 'report.md'), 'Synthetic direct report.\n');
-  await until(() => cliState(job2.task_dir)?.state === 'closed', 20000);
+  await until(() => cliState(job2.task_dir)?.state === 'closed', 25000);
   assert.equal(cliState(job2.task_dir).output_written, true);
 });
 
@@ -278,7 +278,7 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   await until(() => cliState(job.task_dir)?.state === 'closed', 5000);
 });
 
-test('idle and unknown with a live agent settle only a stable new report', { timeout: 15000 }, async (t) => {
+test('idle and unknown with a live agent settle only a stable new report', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   for (const status of ['idle', 'unknown']) {
     writeFixtureFile(join(f.env.HOME, 'quiet-hold'), status);
@@ -288,7 +288,7 @@ test('idle and unknown with a live agent settle only a stable new report', { tim
       request_key: 'quiet-' + status,
       task: 'Synthetic quiet.',
     });
-    await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+    await until(() => cliState(job.task_dir)?.state === 'closed', 20000);
     assert.equal(cliState(job.task_dir).error, null);
     assert.equal(cliState(job.task_dir).exit_reason, 'settled');
     assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);

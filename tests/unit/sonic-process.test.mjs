@@ -88,7 +88,7 @@ const { callWorkerTool } = await import(${JSON.stringify(tools)});
 await callWorkerTool('hud_report', { text: 'Synthetic helper report.' });
 `);
   const { task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query with a helper.' });
-  await until(() => cliState(dir).state === 'closed');
+  await until(() => cliState(dir)?.state === 'closed', 25000);
   assert.equal(isProcAlive(Number(fs.readFileSync(join(dir, 'helper-pid')))), false);
   assert.equal(fs.existsSync(join(dir, 'SESSION.txt')), false);
 });

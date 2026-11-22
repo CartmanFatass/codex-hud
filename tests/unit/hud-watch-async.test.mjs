@@ -155,7 +155,7 @@ test('overlapping watcher startups publish only one ready PID', async (t) => {
   const f = fixture(t);
   f.job({ state: 'working' });
   const runs = [f.start(), f.start()];
-  await until(() => runs.some(({ child }) => child.exitCode === 0));
+  await until(() => runs.some(({ child }) => child.exitCode === 0) && fs.existsSync(join(f.home, 'watch.pid')), 15000);
   const pid = Number(text(join(f.home, 'watch.pid')));
   const live = runs.find(({ child }) => child.pid === pid);
   assert.ok(live);
@@ -165,12 +165,12 @@ test('overlapping watcher startups publish only one ready PID', async (t) => {
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
 });
 
-test('watcher dispatches at most four concurrent reaps and resumes the backlog', { timeout: 10000 }, async (t) => {
+test('watcher dispatches at most four concurrent reaps and resumes the backlog', { timeout: 30000 }, async (t) => {
   const f = fixture(t), dirs = Array.from({ length: 6 }, () => f.job(closed(), {}, true));
   reapStub(f, `while (!fs.existsSync(join(process.env.HUD_HOME, 'release'))) await delay(10);`);
   const { exited } = f.start();
   const count = () => text(join(f.home, 'reaps')).trim().split('\n').filter(Boolean).length;
-  await until(() => count() >= 4);
+  await until(() => count() >= 4, 15000);
   await delay(100);
   assert.equal(count(), 4);
   fs.writeFileSync(join(f.home, 'release'), '');

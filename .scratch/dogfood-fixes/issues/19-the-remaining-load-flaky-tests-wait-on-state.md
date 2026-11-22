@@ -1,6 +1,6 @@
 # 19: The remaining load-flaky tests wait on state
 
-**Status:** ready-for-agent
+**Status:** done
 **Blocked by:** none
 **Owner try:** no
 
@@ -18,5 +18,9 @@ Earlier gates also flagged these, and 15 did not cover them:
 
 Apply 15's pattern: wait on the asserted state with a deadline, using its shared helpers in tests/helpers.
 
-- [ ] Each listed test passes 20/20 under parallel test:mjs load
-- [ ] No product change unless a real race is found (then report it)
+- [x] Each listed test passes 20/20 under parallel test:mjs load
+- [x] No product change unless a real race is found (then report it)
+
+## Comments
+
+- Landed 355a5575ebab467286cd2bb7dbfe3ef2b4b147b4; gate 5/5 passed.

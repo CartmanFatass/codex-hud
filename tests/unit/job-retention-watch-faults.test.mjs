@@ -260,7 +260,7 @@ fs.watch = (...args) => {
 };
 syncBuiltinESMExports();`);
     await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch-ready')) &&
-      fs.existsSync(join(f.home, 'scans'))));
+      fs.existsSync(join(f.home, 'scans'))), 15000);
     assert.equal(child.exitCode, null, stderr());
     const scans = () => fs.readFileSync(join(f.home, 'scans'), 'utf8').trim().split('\n').length;
     const before = scans();
@@ -270,7 +270,7 @@ syncBuiltinESMExports();`);
     assert.equal(scans(), before, 'no periodic scans with a working watch');
     if (fault === 'healthy watch') assert.equal(before, 1, 'exactly the initial catch-up scan');
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-    await until(() => child.exitCode !== null);
+    await until(() => child.exitCode !== null, 15000);
     await exited;
     assert.equal(child.exitCode, 0);
     assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');

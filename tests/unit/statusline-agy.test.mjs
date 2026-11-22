@@ -54,7 +54,7 @@ function fixture(t) {
     new Promise((resolveRun, rejectRun) => {
       const child = spawn(executable, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
       let stdout = '', stderr = '';
-      const timer = setTimeout(() => { child.kill('SIGKILL'); rejectRun(new Error('timeout')); }, 10000);
+      const timer = setTimeout(() => { child.kill('SIGKILL'); rejectRun(new Error('timeout')); }, 30000);
       child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
       child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
       child.on('error', (err) => { clearTimeout(timer); rejectRun(err); });

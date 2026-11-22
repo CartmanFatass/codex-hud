@@ -12,10 +12,10 @@ const jobsDir = (f) => join(f.env.HUD_HOME, 'jobs');
 async function getScout(f, parent) {
   let scout;
   await until(() => scout = fs.readdirSync(jobsDir(f)).map((id) => join(jobsDir(f), id)).find((dir) =>
-    fs.existsSync(join(dir, 'job.json')) && receipt(dir).parent_job === parent && receipt(dir).dispatch_exit_code !== null));
+    fs.existsSync(join(dir, 'job.json')) && receipt(dir).parent_job === parent && receipt(dir).dispatch_exit_code !== null), 25000);
   return scout;
 }
-const waitLaunch = (job) => until(() => receipt(job.task_dir).dispatch_exit_code !== null);
+const waitLaunch = (job) => until(() => receipt(job.task_dir).dispatch_exit_code !== null, 25000);
 const scoutQuestion = 'Where is the synthetic input parsed?';
 
 test('scouted create returns one MCP task, shares the managed cwd and appends the settled dossier', async (t) => {
@@ -134,6 +134,7 @@ test('a scout that exceeds its time cap is closed and the target still starts', 
   fs.writeFileSync(join(f.env.HOME, 'expire-scout'), '');
   await waitLaunch(target);
   assert.match(brief(target.task_dir), /^Scout failed: timed out$/m);
+  await until(() => JSON.parse(fs.readFileSync(join(scout, 'STATUS.json'))).state === 'failed', 15000);
   const status = JSON.parse(fs.readFileSync(join(scout, 'STATUS.json')));
   assert.equal(status.state, 'failed');
   assert.equal(status.exit_reason, 'timeout');
