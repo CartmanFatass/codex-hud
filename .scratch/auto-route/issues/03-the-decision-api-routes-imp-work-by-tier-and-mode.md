@@ -17,3 +17,7 @@ Apply the choice to the create. Record `route: {tier, mode, reason, source: "dec
 - [ ] API error or timeout falls back to default+tab and says so
 - [ ] A light job's land repair runs one tier up
 - [ ] job.json and hud_read carry the route; targeted tests pass
+
+## Comments
+
+- Owner 2026-11-22: once this lands, the main session turns Imp routing on in the owner's own Settings (`~/.hud/hud-settings.json`); the shipped default stays off.
