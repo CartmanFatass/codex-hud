@@ -14,7 +14,7 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 ## Next
 
 - HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01 HOME-SUPERSEDE 与 02 ROLLUP-TRUTH 并行（进行中） → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
-- ORCH-LEAN（owner 2026-11-22：A/B/C 全做）：A 已做（工具精简、codegraph 钩子、STATE 归档、习惯）；B：01 合入交给 sonic + 回收已 cherry-pick 的 worktree、02 hud_read 摘要、03 通知等检查并瘦身；C：04 面板操作送达任务客户端 + r/m 意图键、05 批量 MCP 调用。
+- ORCH-LEAN（owner 2026-11-22：A/B/C 全做）：A 已做（本仓库禁用不用的工具、全局去掉 codegraph 提示钩子、STATE 归档、习惯）；B：01 合入交给 sonic + 回收已 cherry-pick 的 worktree（进行中）、02 hud_read 摘要、03 通知等检查并瘦身；C：04 面板操作送达任务客户端 + r/m 意图键、05 批量 MCP 调用。
 - MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. Two follow-ups to
   try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
   woken at its report) and SONIC-AUTO-THINKING (a sonic job shows `thinking_source: default` at high; with the
