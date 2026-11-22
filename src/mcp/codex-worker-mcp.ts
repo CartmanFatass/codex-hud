@@ -64,5 +64,8 @@ export function codexWorkerMcp(cwd: string, args: string[], allowed: Set<string>
   const scoped = { ...Object.fromEntries(disabled), [key]: { ...hud, env_vars: [
     'HERDR_PANE_ID', 'HERDR_SOCKET_PATH', 'HERDR_ENV', 'HERDR_BIN_PATH', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID',
   ] } };
-  return ['-c', 'features.apps=false', '-c', 'features.plugins=false', '-c', `mcp_servers=${TOML.stringify.value(scoped)}`];
+  // The inline serializer escapes newlines inside strings but wraps long arrays
+  // across lines. Herdr's shell encoder cannot pass those formatting newlines.
+  const settings = TOML.stringify.value(scoped).replaceAll('\n', ' ');
+  return ['-c', 'features.apps=false', '-c', 'features.plugins=false', '-c', `mcp_servers=${settings}`];
 }

@@ -46,13 +46,14 @@ test(
       '--reasoning-effort',
       'high',
       '--permission-mode',
-      'bypassPermissions', '--rules', roleText,
+      'bypassPermissions',
     ]);
     assert.equal(
       start.some((arg) => /^--(home|session|config|profile|worktree)/.test(arg)),
       false
     );
     const prompt = f.commands().find((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit').args[3];
+    assert.ok(prompt.startsWith(`${roleText.trimEnd()}\n\nCarry out this brief:`));
     assert.ok(prompt.includes(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8')));
     assert.match(prompt, /Synthetic grok task/);
     const session = Object.fromEntries(
@@ -139,7 +140,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     '--reasoning-effort',
     'low',
     '--permission-mode',
-    'bypassPermissions', '--rules', roleText,
+    'bypassPermissions',
   ]);
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
   assert.equal(receipt.model, 'grok-4.7-build-fast');
@@ -155,9 +156,26 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     '--permission-mode',
     'bypassPermissions',
     '--extra',
-    'literal space', '--rules', roleText,
+    'literal space',
   ]);
   await until(() => ['closed', 'failed'].includes(cliState(plain.task_dir)?.state), 15000);
+});
+
+test('unsafe configured CLI arguments skip the place before opening a tab', async (t) => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles);
+  fs.writeFileSync(join(roles, 'unsafe-args.json'), JSON.stringify({ role: 'unsafe-args', instructions: 'implementer',
+    can_continue: false, run: [
+      { harness: 'cli', agent: 'claude', args: ['--extra', 'synthetic\u0085value'] },
+      { harness: 'cli', agent: 'grok' },
+    ] }));
+  const job = await f.call('hud_create', { role: 'unsafe-args', task: 'Synthetic fallback.' });
+  assert.ok(job.job);
+  const commands = f.commands();
+  assert.equal(commands.filter(({ args }) => args[0] === 'tab' && args[1] === 'create').length, 1);
+  const starts = commands.filter(({ args }) => args[0] === 'agent' && args[1] === 'start');
+  assert.deepEqual(starts.map(({ args }) => args[args.indexOf('--kind') + 1]), ['grok']);
 });
 
 test('local CLI trust refuses missing grants without creating a tab', async (t) => {
@@ -374,8 +392,11 @@ test('a claude role launches with its flags and settles through idle grace', { t
     'w4E:p2',
   ]);
   const config = join(job.task_dir, 'worker-mcp.json');
+  const roleFile = start.at(-1);
   assert.deepEqual(start.slice(dash + 1), ['--model', 'opus', '--effort', 'high', '--dangerously-skip-permissions',
-    '--strict-mcp-config', '--mcp-config', config, '--append-system-prompt', roleText]);
+    '--strict-mcp-config', '--mcp-config', config, '--append-system-prompt-file', roleFile]);
+  assert.ok(start.slice(dash + 1).every((arg) => !/\p{Cc}/u.test(arg)));
+  assert.equal(fs.readFileSync(roleFile, 'utf8'), roleText);
   const { mcpServers } = JSON.parse(fs.readFileSync(config));
   assert.deepEqual(Object.keys(mcpServers), ['hud']);
   assert.equal(mcpServers.hud.env.HUD_JOB_DIR, job.task_dir);

@@ -82,6 +82,38 @@ test('cliWorkerStartup for agy inlines role and standing brief under 16 KiB and 
   );
 });
 
+test('CLI role startup keeps system instructions when possible and keeps controls out of agent argv', t => {
+  const root = temp(t);
+  const dir = join(root, 'job');
+  const instructions = join(root, 'role.md');
+  const brief = 'Carry out this brief:\n\nSynthetic task.';
+  const run = (agent, file = instructions) =>
+    cliWorkerStartup({ harness: 'cli', agent }, root, dir, file, 'entry.mjs', []);
+  put(join(dir, 'brief.md'), 'Synthetic task.');
+
+  const oneLine = `Synthetic rôle: say 'hello'!`;
+  put(instructions, oneLine);
+  assert.deepEqual(run('grok'), { args: ['--rules', oneLine], prompt: brief });
+
+  for (const char of ['\n', '\r', '\t', '\u007f', '\u0085']) {
+    const role = `Synthetic role${char}Follow rules.`;
+    put(instructions, role);
+    assert.deepEqual(run('grok'), { args: [], prompt: `${role}\n\n${brief}` });
+    const codex = run('codex');
+    assert.equal(codex.warning, undefined);
+    assert.ok(codex.args.every((arg) => !/\p{Cc}/u.test(arg)));
+    assert.equal(JSON.parse(codex.args[1].slice('developer_instructions='.length)), role);
+  }
+
+  const role = '# Synthetic role\nFollow rules.\n';
+  put(instructions, role);
+  const mcp = ['--strict-mcp-config', '--mcp-config', join(dir, 'worker-mcp.json')];
+  assert.deepEqual(run('claude'), { args: [...mcp, '--append-system-prompt-file', instructions], prompt: brief });
+  const unsafePath = join(root, 'role\nname.md');
+  put(unsafePath, role);
+  assert.deepEqual(run('claude', unsafePath), { args: mcp, prompt: `${role.trimEnd()}\n\n${brief}` });
+});
+
 test('adapter emptiness checks user and cwd configs, not other projects or cached server names', t => {
   const root = temp(t), home = join(root, 'home'), project = join(root, 'project');
   for (const [key, value] of Object.entries({ HOME: home, PI_CODING_AGENT_DIR: '~/custom-agent', PI_PACKAGE_DIR: '', PI_MCP_CONFIG_MODE: '' })) {

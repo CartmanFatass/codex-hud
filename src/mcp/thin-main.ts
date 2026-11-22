@@ -16,7 +16,7 @@ import { isFlowId, landEvents, landView, readLand } from './land-state.js';
 import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
-import { cliWorkerStartup, type StandingBriefRef } from './cli-worker-startup.js';
+import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from './cli-worker-startup.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
 import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
@@ -680,6 +680,16 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       return reject({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
     }
     const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers, standingBrief);
+    const agentArgs = [
+      ...(place.model ? kind.model(place.model) : []),
+      ...(place.thinking ? kind.effort(place.thinking) : []),
+      ...kind.bypass,
+      ...(place.args ?? []),
+      ...startup.args,
+    ];
+    // An arbitrary CLI option has no equivalent prompt fallback. Let the next
+    // configured place run instead of dropping or changing the option.
+    if (!agentArgs.every(isHerdrAgentArg)) return reject(launchError('CLI startup arguments contain control characters'));
     if (job.cli && startup.warning) job.cli.mcp_scope_warning = startup.warning;
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
@@ -730,14 +740,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       jobCache.invalidateFile(sessionFile);
       const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
       if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
-      argv.push(
-        '--',
-        ...(place.model ? kind.model(place.model) : []),
-        ...(place.thinking ? kind.effort(place.thinking) : []),
-        ...kind.bypass,
-        ...(place.args ?? []),
-        ...startup.args
-      );
+      argv.push('--', ...agentArgs);
       started = await startAgentWithBusyWait(argv);
       if (!isAgentPaneBusy(started) || tabAttempt === 1) break;
       await runHerdr(['tab', 'close', openedTab], process.env, { budgetMs: 3000 });

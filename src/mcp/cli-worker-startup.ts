@@ -12,12 +12,23 @@ export interface StandingBriefRef {
   label: string;
 }
 
+// Herdr's agent.start shell encoder rejects U+0000–001F and U+007F–009F
+// (Unicode Cc). agent.prompt uses a separate transport.
+export function isHerdrAgentArg(value: string): boolean {
+  return !/\p{Cc}/u.test(value);
+}
+
+/** Encode controls that JSON.stringify leaves literal, e.g. DEL and C1. */
+function escapeArgControls(value: string): string {
+  return value.replace(/\p{Cc}/gu, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 function stripLast(text: string, needle: string): string {
   const at = text.lastIndexOf(needle);
   return at < 0 ? text : text.slice(0, at) + text.slice(at + needle.length);
 }
 
-function agyFirstPrompt(briefPath: string, instructions: string, standingBrief?: StandingBriefRef): string {
+function firstPromptWithRole(briefPath: string, instructions: string, standingBrief?: StandingBriefRef): string {
   const role = readInlineText(instructions);
   const standing = standingBrief ? readInlineText(standingBrief.path) : null;
   const standingRef = standingBrief ? `Read the project standing brief: ${JSON.stringify(standingBrief.label)}.` : '';
@@ -59,11 +70,15 @@ function claudeServers(names: Set<string>): [string, unknown][] {
 export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, instructions: string,
   entry: string, allowed: readonly string[], standingBrief?: StandingBriefRef): { args: string[]; prompt: string; warning?: string } {
   const briefPath = join(dir, jobFiles.brief);
-  if (place.agent === 'agy') return { args: [], prompt: agyFirstPrompt(briefPath, instructions, standingBrief) };
-  const prompt = briefPrompt(briefPath);
-  const role = readFileSync(instructions, 'utf8');
-  if (place.agent === 'grok') return { args: ['--rules', role], prompt };
+  if (place.agent === 'agy') return { args: [], prompt: firstPromptWithRole(briefPath, instructions, standingBrief) };
+  if (place.agent === 'grok') {
+    const role = readFileSync(instructions, 'utf8');
+    return isHerdrAgentArg(role)
+      ? { args: ['--rules', role], prompt: briefPrompt(briefPath) }
+      : { args: [], prompt: firstPromptWithRole(briefPath, instructions) };
+  }
 
+  const prompt = briefPrompt(briefPath);
   const names = new Set(allowed);
   names.delete('hud'); // Always bind the bundled server to this job, never a configured namesake.
   const hud = { command: process.execPath, args: [entry], env: { HUD_JOB_DIR: dir, HUD_MCP_SURFACE: 'roles' } };
@@ -72,10 +87,14 @@ export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, ins
       throw new Error('use the role mcp_servers field instead of --mcp-config');
     const file = join(dir, jobFiles.workerMcp);
     writePrivateFile(file, JSON.stringify({ mcpServers: Object.fromEntries([['hud', hud], ...claudeServers(names)]) }));
-    return { args: ['--strict-mcp-config', '--mcp-config', file, '--append-system-prompt', role], prompt };
+    const args = ['--strict-mcp-config', '--mcp-config', file];
+    return isHerdrAgentArg(instructions)
+      ? { args: [...args, '--append-system-prompt-file', instructions], prompt }
+      : { args, prompt: firstPromptWithRole(briefPath, instructions) };
   }
 
-  const args = ['-c', `developer_instructions=${JSON.stringify(role)}`];
+  const role = readFileSync(instructions, 'utf8');
+  const args = ['-c', `developer_instructions=${escapeArgControls(JSON.stringify(role))}`];
   try { return { args: [...args, ...codexWorkerMcp(cwd, place.args ?? [], names, hud)], prompt }; }
   catch (error) { return { args, prompt, warning: `mcp scope not applied: ${(error as Error).message}` }; }
 }
