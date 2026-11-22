@@ -4,8 +4,17 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fixture, cliState, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { SONIC_TIMEOUT_MS } from '../../dist/mcp/sonic-process.js';
 import { isProcAlive } from '../../dist/utils/proc.js';
+import { startSessionWatch } from '../../dist/cli/watch.js';
+import { monitorSonic, sonicLimitDefaults } from '../../dist/mcp/sonic-policy.js';
+
+const workerTools = new URL('../../packages/hud-mcp/bin/worker-tools.mjs', import.meta.url).href;
+function setLimits(f, limits) {
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  writeFixtureFile(join(f.env.HUD_HOME, 'roles', 'sonic.json'), JSON.stringify({
+    role: 'sonic', instructions: 'sonic', can_continue: false, run: [{ harness: 'pi', pi_role: 'sonic' }], ...limits,
+  }));
+}
 
 test('a quiet sonic causes no watcher ticks; killing its runner triggers a scan without an exit file', async (t) => {
   const probe = `import fs from 'node:fs'; import net from 'node:net'; import { syncBuiltinESMExports } from 'node:module';
@@ -43,6 +52,8 @@ if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
 test('the headless deadline fails the query, preserves partial output and reaps verified descendants', async (t) => {
   // Backdating STATUS below must be noticed within the test window even if its rename event is missed.
   const f = await fixture(t, { watcherTickMs: 250 });
+  const max_s = 60;
+  setLimits(f, { check_s: 120, stall_s: 120, max_s });
   f.overrideBin('pi', `#!${process.execPath}
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -63,7 +74,7 @@ renameSync(processes + '.tmp', processes);
   await until(() => fs.existsSync(processes));
   const working = cliState(dir), pids = [working.pid, ...JSON.parse(fs.readFileSync(processes))];
   assert.ok(pids.every(pid => isProcAlive(pid)));
-  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...working, started_at: new Date(Date.now() - SONIC_TIMEOUT_MS - 1).toISOString() }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...working, started_at: new Date(Date.now() - max_s * 1000 - 1).toISOString() }));
   await until(() => cliState(dir).state === 'failed');
   const status = cliState(dir);
   assert.equal(status.exit_reason, 'timeout');
@@ -75,7 +86,6 @@ renameSync(processes + '.tmp', processes);
 
 test('hud_report captures a detached helper before pi exits; settlement reaps it without a tab', async (t) => {
   const f = await fixture(t);
-  const tools = new URL('../../packages/hud-mcp/bin/worker-tools.mjs', import.meta.url).href;
   f.overrideBin('pi', `#!${process.execPath}
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -84,7 +94,7 @@ if (!process.argv.includes('--print')) process.exit(1);
 const helper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
 helper.unref();
 writeFileSync(join(process.env.HUD_JOB_DIR, 'helper-pid'), String(helper.pid));
-const { callWorkerTool } = await import(${JSON.stringify(tools)});
+const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
 await callWorkerTool('hud_report', { text: 'Synthetic helper report.' });
 `);
   const { task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query with a helper.' });
@@ -92,6 +102,88 @@ await callWorkerTool('hud_report', { text: 'Synthetic helper report.' });
   assert.equal(isProcAlive(Number(fs.readFileSync(join(dir, 'helper-pid')))), false);
   assert.equal(fs.existsSync(join(dir, 'SESSION.txt')), false);
 });
+
+test('sonic checkpoints reach the caller and keep the original pi process running', async (t) => {
+  const f = await fixture(t);
+  const defaults = (await f.call('hud_roster', { detail: true })).roles.find(r => r.role === 'sonic');
+  assert.deepEqual([defaults.check_s, defaults.stall_s, defaults.max_s], [600, 180, 1800]);
+  setLimits(f, { check_s: 2, stall_s: 5, max_s: 12 });
+  const role = (await f.call('hud_roster', { detail: true })).roles.find(r => r.role === 'sonic');
+  assert.deepEqual([role.check_s, role.stall_s, role.max_s], [2, 5, 12]);
+  const lines = [];
+  t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, batch => lines.push(...batch), 10));
+  f.overrideBin('pi', `#!${process.execPath}
+import { writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+const dir = process.env.HUD_JOB_DIR;
+writeFileSync(join(dir, 'pi-pid'), String(process.pid));
+for (let i = 0; !existsSync(join(dir, 'release')); i++) {
+  console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'read', args: { path: 'synthetic-' + i } }));
+  await delay(50);
+}
+const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
+await callWorkerTool('hud_report', { text: 'Finished in Pi PID ' + process.pid });
+`);
+  const { job, task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic ongoing query.' });
+  const pidFile = join(dir, 'pi-pid');
+  await until(() => fs.existsSync(pidFile));
+  const pid = Number(fs.readFileSync(pidFile));
+  await until(() => lines.some(line => line.startsWith(`[sonic ${job}] still working at `) && line.endsWith(': tool read')));
+  assert.equal(cliState(dir).state, 'working');
+  assert.ok(isProcAlive(pid));
+  writeFixtureFile(join(dir, 'release'), '');
+  await until(() => cliState(dir).state === 'closed');
+  assert.equal(fs.readFileSync(join(dir, 'report.md'), 'utf8'), `Finished in Pi PID ${pid}`);
+  assert.match((await f.call('hud_read', { job })).latest_progress.text, /^still working at \d+ s: tool read$/);
+});
+
+test('a default checkpoint counts worker milestones but not its own progress or a reread of an old target', async (t) => {
+  const f = await fixture(t);
+  const started = Date.now();
+  const output = join(f.root, 'stdout.jsonl'), progress = join(f.root, 'progress.jsonl');
+  const call = offset => JSON.stringify({ type: 'tool_execution_start', toolName: 'read', args: { path: 'synthetic.md', offset } }) + '\n';
+  const milestone = (s, text, source) => JSON.stringify({ at: new Date(started + s * 1000).toISOString(), text, source }) + '\n';
+  const check = monitorSonic(f.root, sonicLimitDefaults, started);
+  fs.writeFileSync(output, call(1));
+  fs.utimesSync(output, new Date(started), new Date(started + 550000));
+  assert.deepEqual(check(started + 599999), {});
+  const first = check(started + 600000);
+  assert.deepEqual(first, { progress: 'still working at 10 min: tool read' });
+  fs.writeFileSync(progress, milestone(600, first.progress, 'checkpoint') + milestone(1175, 'Synthetic new finding.'));
+  const second = check(started + 1200000);
+  assert.deepEqual(second, { progress: 'still working at 20 min: Synthetic new finding.' });
+  fs.appendFileSync(progress, milestone(1200, second.progress, 'checkpoint'));
+  assert.deepEqual(check(started + 1355000), { stop: 'stalled' });
+  // A shorter window shows why stdout growth alone can't get a query past checkpoints.
+  fs.writeFileSync(output, call(5));
+  fs.utimesSync(output, new Date(started), new Date(started + 1500000));
+  const loop = monitorSonic(f.root, { check_s: 3, stall_s: 5, max_s: 20 }, started + 1500000);
+  assert.ok(loop(started + 1503000).progress);
+  fs.appendFileSync(output, call(9));
+  fs.utimesSync(output, new Date(started), new Date(started + 1505000));
+  assert.deepEqual(loop(started + 1506000), { stop: 'looping' });
+});
+
+for (const reason of ['looping', 'stalled']) {
+  test(`sonic stops as ${reason} and preserves its last progress in the digest`, async (t) => {
+    const f = await fixture(t);
+    setLimits(f, reason === 'looping' ? { check_s: 2, stall_s: 5, max_s: 10 } : { check_s: 8, stall_s: 2, max_s: 10 });
+    f.overrideBin('pi', `#!${process.execPath}
+const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
+await callWorkerTool('hud_progress', { message: 'Synthetic partial milestone.' });
+const log = () => console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'read', args: { path: 'synthetic.md' } }));
+log();
+setInterval(${reason === 'looping' ? 'log' : '() => {}'}, 50);
+`);
+    const { job, task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic interrupted query.' });
+    await until(() => cliState(dir).state === 'failed');
+    const status = cliState(dir);
+    assert.equal(status.exit_reason, reason);
+    assert.ok(status.stdout_bytes > 0);
+    assert.equal((await f.call('hud_read', { job })).latest_progress.text, 'Synthetic partial milestone.');
+  });
+}
 
 test('exit zero without hud_report is a final failure, not an idle or continuable worker', async (t) => {
   const f = await fixture(t);

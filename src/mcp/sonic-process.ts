@@ -12,9 +12,10 @@ import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/at
 import { rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
 import { readDone, reportSignature } from '../roles/cli-turn.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
+import { progress } from '../worker/tools.js';
+import { monitorSonic, sonicLimitDefaults, type SonicLimits, type SonicStop } from './sonic-policy.js';
 
-export const SONIC_TIMEOUT_MS = 10 * 60_000;
-export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file: string; id?: string }) {
+export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file: string; id?: string }, limits?: SonicLimits) {
   const env: NodeJS.ProcessEnv = { ...process.env, HUD_HOME: dirname(dirname(dir)), HUD_JOB_DIR: dir };
   if (session?.id) env.HUD_RESUME_SESSION_ID = session.id;
   else delete env.HUD_RESUME_SESSION_ID;
@@ -38,7 +39,7 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
       if (!pid || !start || !boot) throw Error('cannot identify sonic runner');
       if (session?.id) for (const name of [jobFiles.sonicExit, jobFiles.done]) fs.rmSync(join(dir, name), { force: true });
       const status: JobStatus = { state: 'working', slot: session ? 'headless' : 'sonic', task_dir: dir, harness: 'pi', role: job.role,
-        ...(session && { session_file: session.file, session_id: session.id }),
+        ...(session && { session_file: session.file, session_id: session.id }), ...(limits && { sonic_limits: limits }),
         pid, pid_start_time: start, boot_id: boot, started_at: new Date().toISOString() };
       writeJsonPrivate(join(dir, jobFiles.status), status, { mkdir: false });
       const capture = rememberWorkerTree(dir, status);
@@ -71,22 +72,36 @@ export async function runSonicPi(dir: string, argv: string[]) {
   // Wake a replacement watcher if the original died while pi was running. The watcher is
   // the sole terminal writer, even when the dispatcher's MCP connection is already gone.
   const wake = () => ensureJobWatcher(dirname(dirname(dir)));
-  const deadline = headlessDeadline(status);
-  const timer = Number.isFinite(deadline) ? setTimeout(wake, Math.max(1, deadline - Date.now())) : undefined;
+  const inspect = status.slot === 'sonic' && monitorSonic(dir, status.sonic_limits ?? sonicLimitDefaults, Date.parse(status.started_at!));
+  const timer = inspect ? setInterval(() => {
+    const result = inspect(Date.now());
+    if (result.stop) {
+      writeJsonPrivate(join(dir, jobFiles.sonicStop), result.stop, { mkdir: false });
+      clearInterval(timer);
+      wake();
+    } else if (result.progress) {
+      progress({ dir }, result.progress, 'checkpoint');
+      wake();
+    }
+  }, 1000) : undefined;
   try {
     const result = await exit;
     writeJsonPrivate(join(dir, jobFiles.sonicExit), { ...result, at: Date.now() }, { mkdir: false });
     wake();
-  } finally { clearTimeout(timer); }
+  } finally { clearInterval(timer); }
 }
 
-export const headlessDeadline = (status: Partial<JobStatus>) => status.slot === 'headless' ? Infinity : Date.parse(status.started_at!) + SONIC_TIMEOUT_MS;
+export const headlessDeadline = (status: Partial<JobStatus>) => status.slot === 'headless' ? Infinity : Date.parse(status.started_at!) + (status.sonic_limits ?? sonicLimitDefaults).max_s * 1000;
 
 export function sonicExit(dir: string, status: Partial<JobStatus>, asking = false): Pick<JobStatus, 'state' | 'exit_reason'> | null {
   if (fs.existsSync(join(dir, jobFiles.stopRequested))) return { state: 'stopped', exit_reason: 'stopped' };
   const deadline = headlessDeadline(status);
   const timeout = { state: 'failed', exit_reason: 'timeout' } as const;
   if (fs.existsSync(join(dir, jobFiles.sonicTimeout))) return timeout;
+  try {
+    const reason = readJsonBounded(join(dir, jobFiles.sonicStop), 1024) as SonicStop;
+    return { state: 'failed', exit_reason: reason };
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   // Check the exit receipt after observing liveness (the runner publishes it before exiting).
   const root = sonicRoot(dir, status.pid!, status.pid_start_time!, status.boot_id);
   let exit;
@@ -113,12 +128,12 @@ export async function killSonicRoot(dir: string, status: Partial<JobStatus>) {
   return !owned();
 }
 
-export async function stopSonic(dir: string, timeout = false) {
+export async function stopSonic(dir: string) {
   const read = () => (readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus).state;
   const terminal = (state: string) => ['closed', 'failed', 'stopped'].includes(state);
   if (!fs.existsSync(join(dir, jobFiles.status)) || !terminal(read())) {
     const request = () => {
-      writePrivateFile(join(dir, timeout ? jobFiles.sonicTimeout : jobFiles.stopRequested), '', { mkdir: false });
+      writePrivateFile(join(dir, jobFiles.stopRequested), '', { mkdir: false });
       ensureJobWatcher(dirname(dirname(dir)));
     };
     request();

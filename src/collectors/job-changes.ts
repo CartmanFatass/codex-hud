@@ -11,7 +11,7 @@ const REVISION = 'jobs-revision.json';
 const WATCH_PID = 'watch.pid';
 const RECHECK_MS = 30_000;
 export const jobNoticeFile = (path: string) =>
-  !path.endsWith('.tmp') && !path.endsWith('supervisor.pid') && !path.endsWith(`/${RUNNER_READY}`) && !path.endsWith('/progress.jsonl') &&
+  !path.endsWith('.tmp') && !path.endsWith('supervisor.pid') && !path.endsWith(`/${RUNNER_READY}`) && !path.endsWith('/stdout.jsonl') && !path.endsWith('/stderr.log') &&
   !path.endsWith('/report-meta.json') && !path.includes('/sessions/');
 
 type Revision = { owner: number; epoch: number; notice: number; change: number; through: number; jobs: Record<string, number> };

@@ -35,13 +35,13 @@ export default async function hud(pi) {
       if (name === 'hud_ask' && nativeAsk) continue; // pi-roles supplies the native asynchronous ask.
       pi.registerTool({
         name, label: name, description, parameters: inputSchema, promptSnippet: description,
-        async execute(_id, args, signal) {
+        async execute(_id, args, signal, _onUpdate, ctx) {
           const value = await callWorkerTool(name, args, signal);
           if (name === 'hud_sonic' && args.task !== undefined) {
             watchSonicReady(value.job, notices.signal, (state) => pi.sendMessage({
               customType: 'hud-sonic-ready', display: true,
               content: `Sonic ${value.job} ${state}. Collect its result with hud_sonic (wait: ["${value.job}"]).`,
-            }, { triggerTurn: true, deliverAs: 'steer' }));
+            }, { triggerTurn: true, deliverAs: 'steer' }), (text) => ctx.ui.notify(`Sonic ${value.job}: ${text}`, 'info'));
           }
           return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
             details: value, ...(name === 'hud_report' ? { terminate: true } : {}) };

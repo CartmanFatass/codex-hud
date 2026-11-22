@@ -14,6 +14,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { dispatchJob } from '../mcp/thin-main.js'; // Cyclic binding, called only after startup.
 import { notify, taskDelivery } from '../roles/notify.js';
+import { readJobProgress } from '../collectors/thin-jobs.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
 type Worker = ReturnType<typeof workerJob>;
@@ -76,11 +77,11 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
   return { path };
 }
 
-export async function progress({ dir }: Pick<Worker, 'dir'>, message: string) {
+export function progress({ dir }: Pick<Worker, 'dir'>, message: string, source?: 'checkpoint') {
   const text = [...message.replace(/[\r\n\u2028\u2029]+/gu, ' ').replace(/\p{Cc}/gu, '').trim()]
     .slice(0, 240).join('').trimEnd();
   if (!text) throw new Error('usage: hud-progress [--dir <job-dir>] <message>');
-  const record = JSON.stringify({ at: new Date().toISOString(), text }) + '\n';
+  const record = JSON.stringify({ at: new Date().toISOString(), text, source }) + '\n';
   const file = join(dir, jobFiles.progress);
   const { O_RDWR, O_CREAT, O_APPEND, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
   const fd = fs.openSync(file, O_RDWR | O_CREAT | O_APPEND | O_NOFOLLOW | O_NONBLOCK, 0o600);
@@ -119,21 +120,31 @@ export async function startSonic({ job: parent }: Pick<Worker, 'job'>, task: str
 }
 
 // A native pi start watches only its own launch receipt. This notice never collects the report.
-export function watchSonicReady(id: string, signal: AbortSignal, ready: (state: 'settled' | 'failed') => void) {
+export function watchSonicReady(id: string, signal: AbortSignal, ready: (state: 'settled' | 'failed') => void,
+  onCheckpoint?: (text: string) => void) {
   if (signal.aborted) return;
   const child = join(workerJob().root, id);
-  let watcher: fs.FSWatcher;
-  function check() {
+  let watcher: fs.FSWatcher, lastCheckpoint: string | undefined;
+  function check(file?: string) {
     if (signal.aborted) return;
     const { state } = sonicState(child);
-    if (state === 'open') return;
+    if (state === 'open') {
+      if (onCheckpoint && (!file || file === jobFiles.progress)) {
+        const checkpoint = readJobProgress(child).progress.filter(p => p.source === 'checkpoint').at(-1);
+        if (checkpoint && (!lastCheckpoint || checkpoint.at > lastCheckpoint)) {
+          lastCheckpoint = checkpoint.at;
+          onCheckpoint(checkpoint.text);
+        }
+      }
+      return;
+    }
     watcher.close();
     if (!fs.existsSync(join(child, 'sonic-collected'))) ready(state);
   }
   try {
     watcher = fs.watch(child, { persistent: false, signal }, (_event, file) => {
-      if (file && file !== jobFiles.status) return;
-      try { check(); } catch { /* Retry on the next status write. */ }
+      if (file && file !== jobFiles.status && file !== jobFiles.progress) return;
+      try { check(file ?? undefined); } catch { /* Retry on the next write. */ }
     });
     watcher.on('error', () => watcher.close());
     check(); // Subscribe before reading: the child may already have settled during launch.

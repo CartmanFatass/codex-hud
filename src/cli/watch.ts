@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
-import { checksJustFinished, failureUnobserved, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { checksJustFinished, failureUnobserved, formatJobChange, jobChanges, readJobProgress, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
@@ -80,6 +80,24 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
   });
 }
 
+function sonicCheckpointNotices(home: string) {
+  let seen = new Map<string, string>();
+  return (rows: JobRow[]): string[] => {
+    const next = new Map<string, string>();
+    const lines = rows.flatMap(row => {
+      if (row.role !== 'sonic' || row.state !== 'working') return [];
+      const checkpoint = readJobProgress(join(home, 'jobs', row.job), true).progress.filter(p => p.source === 'checkpoint').at(-1);
+      const before = seen.get(row.job);
+      const at = checkpoint?.at ?? before;
+      if (at) next.set(row.job, at);
+      return checkpoint && (!before || checkpoint.at > before)
+        ? [`[sonic ${row.job}] ${checkpoint.text}`] : [];
+    });
+    seen = next;
+    return lines;
+  };
+}
+
 // A fixed window from the first settlement, not a debounce that slides with each arrival.
 function settlementNotices(windowMs: number) {
   let held: string[] = [], deadline = Infinity;
@@ -150,7 +168,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
   let prev = new Map<string, JobRow>();
   let first = true, stopped = false, scanning = false, dirty = false;
   let timer: ReturnType<typeof setTimeout>;
-  const notices = settlementNotices(settlementWindowMs);
+  const notices = settlementNotices(settlementWindowMs), checkpoints = sonicCheckpointNotices(home);
   const inputs = watchInputs(home, () => {
     if (scanning) dirty = true;
     else schedule(DEBOUNCE_MS);
@@ -169,7 +187,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     catch { if (!stopped) schedule(DEFAULT_RESCAN_MS); return; }
     finally { scanning = false; }
     if (stopped) return;
-    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines]);
+    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines, ...checkpoints(rows)]);
     first = false;
     prev = new Map(rows.map((row) => [row.job, row]));
     schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
@@ -222,7 +240,7 @@ export async function watchCommand(
   if (options.signal?.aborted) return 0;
   const controller = new AbortController(), { signal } = controller;
   let idleSince: number | null = null;
-  const notices = settlementNotices(options.settlementWindowMs ?? settlementWindow(io.env));
+  const notices = settlementNotices(options.settlementWindowMs ?? settlementWindow(io.env)), checkpoints = sonicCheckpointNotices(home);
   const inputs = watchInputs(home, () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;
@@ -304,7 +322,7 @@ export async function watchCommand(
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const flows = landEvents(home, callerPane, all);
-      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines];
+      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...checkpoints(rows)];
       if (queue) {
         const pending = flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
           actionable(home, new Map(), rows, true).length > 0;

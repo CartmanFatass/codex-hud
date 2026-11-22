@@ -3,6 +3,7 @@
 import type { CliAgent } from '../roles/cli-kinds.js';
 import type { Role, RolePlace, piSwitches } from '../roles/roster.js';
 import type { QuietDecision } from './quiet-decision.js';
+import type { SonicLimits } from './sonic-policy.js';
 
 export type { ProgressEntry } from '../collectors/workboard-types.js';
 export type { ReportMeta } from '../roles/report-meta.js';
@@ -100,6 +101,7 @@ export type JobStatus = {
   boot_id?: string;
   stdout_bytes?: number;
   stderr_bytes?: number;
+  sonic_limits?: SonicLimits;
   supervisor_pid?: number | null;
   agent_session_id?: string | null;
   session_id?: string | null;

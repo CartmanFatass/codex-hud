@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readJsonFile as json, readDirSafe as entries, readFileBounded, readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import type { Job } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
+import { sonicLimitKeys, sonicLimits, type SonicLimits } from '../mcp/sonic-policy.js';
 import { isDeepStrictEqual } from 'node:util';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -46,7 +47,7 @@ export function currentPreset(role: Pick<Role, 'run' | 'presets' | 'preset'>): s
 }
 export const validPresetName = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(value);
-export interface Role {
+export interface Role extends Partial<SonicLimits> {
   role: string;
   /** Defined only for shipped optional roles, independently of the winning definition. */
   optionalEnabled?: boolean;
@@ -189,6 +190,12 @@ function roleReason(value: unknown): string | null {
     return 'bad cli fields';
   if (raw.resume_s !== undefined && (!Number.isSafeInteger(raw.resume_s) || (raw.resume_s as number) < 0))
     return 'bad resume_s';
+  for (const key of sonicLimitKeys) {
+    const seconds = raw[key];
+    if (seconds !== undefined && (raw.role !== 'sonic' || typeof seconds !== 'number' ||
+        !Number.isInteger(seconds) || seconds <= 0 || !Number.isSafeInteger(seconds * 1000)))
+      return `bad sonic ${key}`;
+  }
   if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
   const servers = raw.mcp_servers;
   if (servers !== undefined && (!Array.isArray(servers) || servers.some((name) =>
@@ -294,6 +301,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     can_continue,
     ...(idle_grace_s !== undefined ? { idle_grace_s } : {}),
     ...(typeof parsed.resume_s === 'number' ? { resume_s: parsed.resume_s } : {}),
+    ...(parsed.role === 'sonic' ? sonicLimits(parsed as Partial<SonicLimits>) : {}),
     source_file: path,
   };
 }
@@ -587,7 +595,7 @@ export function roleRegistry(
         const { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file } = file;
         role = { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file, presets, run: selected.run,
           can_continue: selected.run.some((p) => p.harness !== 'bro') && Boolean(raw.can_continue),
-          ...primaryFields(selected.run[0]!) };
+          ...primaryFields(selected.run[0]!), ...(name === 'sonic' ? sonicLimits(file) : {}) };
       }
       const choices = stack.reduce<Role['thinking_choices']>((inherited, layer) => layer.file.thinking_choices ?? inherited, undefined);
       if (choices) role.thinking_choices = choices;

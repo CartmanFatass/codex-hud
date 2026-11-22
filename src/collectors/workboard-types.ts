@@ -39,7 +39,7 @@ export interface DecisionRecord {
   readonly stale: boolean;
   readonly evidence: readonly EvidenceRef[];
 }
-export interface ProgressEntry { at: string; text: string }
+export interface ProgressEntry { at: string; text: string; source?: 'checkpoint' }
 export interface JobProgress {
   readonly progress: readonly ProgressEntry[];
   readonly latest_progress: ProgressEntry | null;

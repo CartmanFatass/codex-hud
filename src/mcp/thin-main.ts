@@ -19,7 +19,8 @@ import { launchThinking, nearestThinking } from './launch-thinking.js';
 import { pickSonicThinking } from './sonic-thinking.js';
 import { briefPrompt } from './brief-prompt.js';
 import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from './cli-worker-startup.js';
-import { SONIC_TIMEOUT_MS, startHeadlessProcess, stopSonic } from './sonic-process.js';
+import { startHeadlessProcess, stopSonic } from './sonic-process.js';
+import { sonicLimits } from './sonic-policy.js';
 import { piMcpConfigEmpty } from './pi-mcp-config.js';
 import { jobFiles } from './paths.js';
 import type { BatchNotice, Job, JobStatus, LaunchAttempt, ManagedWorktree, McpTaskMarker, PiOptions, SessionReceipt } from './job-contracts.js';
@@ -431,7 +432,8 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
         job.pi_sent_at = new Date().toISOString();
         save(job);
       }
-      startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined);
+      startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined,
+        job.role === 'sonic' ? sonicLimits(role) : undefined);
       return { exit_code: 0, stdout: '', stderr: '' };
     }
     fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
@@ -1509,8 +1511,6 @@ const scoutedCreates = new Set<Promise<void>>();
 async function runCreateScout(target: Job, question: string, contextCwd: string, contextFiles: unknown, signal: AbortSignal): Promise<{ id?: string; failure?: string }> {
   let scout: Job | null = null;
   let discard = false;
-  let timedOut = false;
-  const deadline = performance.now() + SONIC_TIMEOUT_MS;
   try {
     const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
       target.herdr_pane, `scout:${target.job}`, false, target.job, undefined, undefined, { scoutContextCwd: contextCwd });
@@ -1527,21 +1527,18 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
         save({ ...scout, read_at: new Date().toISOString() });
         return { id };
       }
-      const attention = row.open_questions || row.blocked || row.state === 'waiting_orchestrator';
-      const left = deadline - performance.now();
-      if (attention || left <= 0) {
+      if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
         discard = true;
-        timedOut = !attention;
-        return { failure: attention ? (row.open_questions ? 'asked a question' : row.reason ?? 'needed attention') : 'timed out' };
+        return { failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention' };
       }
-      await sleep(Math.min(500, left), undefined, { signal });
+      await sleep(500, undefined, { signal });
     }
     return { failure: 'scout receipt disappeared' };
   } catch (error) {
     discard = !!scout;
     return { failure: error instanceof Error ? error.message : String(error) };
   } finally {
-    if (discard && scout) await stopSonic(directory(scout.job), timedOut).catch(() => ensureWatcher());
+    if (discard && scout) await stopSonic(directory(scout.job)).catch(() => ensureWatcher());
   }
 }
 

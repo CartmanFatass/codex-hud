@@ -210,7 +210,8 @@ export function readJobProgress(dir: string, cached = false, store?: ArtifactSto
     const progress = file.text.split('\n').flatMap((line) => {
       try {
         const entry = JSON.parse(line);
-        if (when(entry?.at) !== null && word(entry?.text)) return [{ at: entry.at as string, text: entry.text as string }];
+        if (when(entry?.at) !== null && word(entry?.text)) return [{ at: entry.at as string, text: entry.text as string,
+        ...(entry.source === 'checkpoint' ? { source: 'checkpoint' as const } : {}) }];
       } catch { /* Ignore a partial or malformed record. */ }
       return [];
     }).slice(-10);

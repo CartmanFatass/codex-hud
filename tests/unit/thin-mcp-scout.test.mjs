@@ -120,21 +120,15 @@ test('an unavailable scout leaves a failure note, but sonic cannot request a sco
 });
 
 test('a scout that exceeds its time cap is closed and the target still starts', async (t) => {
-  const f = await fixture(t, { probe: `
-    import fs from 'node:fs';
-    import { join } from 'node:path';
-    const now = performance.now.bind(performance);
-    Object.defineProperty(performance, 'now', { value: () => now() +
-      (fs.existsSync(join(process.env.HOME, 'expire-scout')) ? 600001 : 0) });
-  ` });
+  const f = await fixture(t);
   sonicTask(f);
+  const role = join(f.env.HUD_HOME, 'roles', 'sonic.json');
+  fs.writeFileSync(role, JSON.stringify({ ...JSON.parse(fs.readFileSync(role, 'utf8')), max_s: 2 }));
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
   const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic time cap.', scout: scoutQuestion });
   const scout = await getScout(f, target.job);
-  fs.writeFileSync(join(f.env.HOME, 'expire-scout'), '');
   await waitLaunch(target);
-  assert.match(brief(target.task_dir), /^Scout failed: timed out$/m);
-  await until(() => JSON.parse(fs.readFileSync(join(scout, 'STATUS.json'))).state === 'failed', 15000);
+  assert.match(brief(target.task_dir), /^Scout failed: timeout$/m);
   const status = JSON.parse(fs.readFileSync(join(scout, 'STATUS.json')));
   assert.equal(status.state, 'failed');
   assert.equal(status.exit_reason, 'timeout');
