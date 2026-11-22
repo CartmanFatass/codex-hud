@@ -12,10 +12,11 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Next
 
-- MCP-ORCH (`.scratch/mcp-orch/`): every ticket landed; milestone review fixes integrated (MCPORCH-FIX). Owner tries it,
-  first a live Claude Code task (ticket 07): after `/mcp`, dispatch from Claude Code and see the session wake at the
-  report without `hud watch`. If task mode works, a small slice delivers non-job events (try accepted/flagged) to task
-  clients with the next tool reply.
+- MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. Two follow-ups to
+  try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
+  woken at its report) and SONIC-THINKING (`hud_roster` shows sonic's low/high/max with purposes; `hud_create` refuses
+  other levels). Then the milestone's done check: a real project day compared with the 2026-11-21 study counts.
+- Other try groups waiting in the ledger: UX-PASS (12), OWNER-VIEW (2), PROJECT-CLI-P…, NO-DEFAULT-LA….
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
 ## Slices
@@ -24,20 +25,20 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
 board counts these; update at every landing or decision. -->
 
-- working · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (imp, wt/FANOUT-TASK)
-- working · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (imp, wt/SONIC-THINKING)
-- try · MCP-ORCH · RESTART-RECOVERY · CLI effort facts for haiku, claude-*-5-x ids and gemini-3.8-flash-high; legacy tmp/tasks admitted newest first; restart recovery itself not built (herdr resume strips HUD bindings; owner decision under Waiting) (bca6e312)
-- try · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions (c1572b5d; Fishpref d5e2a98 cherry-picked)
-- try · MCP-ORCH · MCPORCH-07b · Claude Code main sessions get one MCP task per worker turn (2026-07-28 tasks extension, verified on 2.1.330): woken at report, question or failure without hud watch; /tasks cancel stops the worker (69da49a1)
-- try · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (6f1bef38)
-- try · MCP-ORCH · MCPORCH-05 · hud_read({}) scoped to the project (linked worktrees included); a new session adopts jobs whose pane is gone, and their questions follow; restart recovery deferred (ticket 05 comment) (7accf14c)
-- try · MCP-ORCH · MCPORCH-03 · project .hud/brief.md referenced after the task in every brief; per-harness delivery text moves from the convention into tool results; convention sent once per session; panel titles come from the task part of the brief (4fa7b531)
-- try · MCP-ORCH · MCPORCH-04 · hud_lease: named lease per project in both modes, waits inside the caller's turn, reclaims ended holders; Control lease row; leases shared by a checkout and its linked worktrees (45933319, ea9c4a19)
-- try · MCP-ORCH · MCPORCH-02 · keys derived when omitted; hud_send to a read-closed job creates the repair job (continued_as); jobs:[...] fan-out; hud_create retry_of; a keyless identical call counts as a retry only within 10 minutes (623905b4, 80f1906b)
-- try · MCP-ORCH · MCPORCH-01 · a launch that fails before input falls through to the next place in one call; worker HUD home from the job directory (48809c12)
-- try · MCP-ORCH · MCPORCH-08 · settlement and report notices within 3 s arrive as one (hud watch, Codex queue, pi native); questions immediate (eca47d87)
-- try · MCP-ORCH · WORKER-MCP · workers get hud_report, hud_ask, hud_sonic, hud_progress (MCP and native pi); briefs and role texts carry no protocol paths; per-role sonic timing; unsupported thinking maps to the nearest level; failed pre-start launches close their tab and name the cause (64534c2c; Fishpref 66e24dc)
-- try · — · HUD-TICKETS · to-tickets becomes the hud_tickets MCP tool (method, add, update, sync); skill links removed on ./install (48c9589d, 19d3fbd1)
+- try · MCP-ORCH · FANOUT-TASK · found in the live try: hud_send({jobs}) to a working job ends its MCP task ("no longer current") with no successor, so the main session is not woken at that report (88645374, test fix ee1bbf1e)
+- try · MCP-ORCH · SONIC-THINKING · owner 2026-11-21: sonic's thinking chosen per sub-task from low/high/max by main session and workers; role file says what each is for; roster, hud_create, hud_sonic show it (7e9ef0b9)
+- accepted · MCP-ORCH · RESTART-RECOVERY · CLI effort facts for haiku, claude-*-5-x ids and gemini-3.8-flash-high; legacy tmp/tasks admitted newest first; restart recovery itself not built (herdr resume strips HUD bindings; owner decision under Waiting) (bca6e312) [tried by the main session for the owner 2026-11-21: tests only; restart recovery itself stays an owner decision]
+- accepted · MCP-ORCH · MCPORCH-FIX · milestone review findings (docs/reviews/2026-11-21-mcp-orch-milestone.md): pi hud_lease, registered-only standing brief, CLI effort facts, task-mode launch outcome and attention, repair during a check hold, deletions (c1572b5d; Fishpref d5e2a98 cherry-picked) [tried by the main session for the owner 2026-11-21: live run on the fixed build]
+- accepted · MCP-ORCH · MCPORCH-07b · Claude Code main sessions get one MCP task per worker turn (2026-07-28 tasks extension, verified on 2.1.330): woken at report, question or failure without hud watch; /tasks cancel stops the worker (69da49a1) [tried by the main session for the owner 2026-11-21: live: dispatch, /tasks entry, wake at report]
+- accepted · MCP-ORCH · MCPORCH-06 · hud_create checks: commands the HUD runs after the worker declared done, bound to that report's signature, stale on a new turn; shown in hud_read, hud watch and a panel chip (6f1bef38) [tried by the main session for the owner 2026-11-21: live: checks.json bound to the report signature, pass/fail in hud_read and hud watch]
+- accepted · MCP-ORCH · MCPORCH-05 · hud_read({}) scoped to the project (linked worktrees included); a new session adopts jobs whose pane is gone, and their questions follow; restart recovery deferred (ticket 05 comment) (7accf14c) [tried by the main session for the owner 2026-11-21: live: hud_read({}) lists only MyHUD jobs; pane adoption by tests]
+- accepted · MCP-ORCH · MCPORCH-03 · project .hud/brief.md referenced after the task in every brief; per-harness delivery text moves from the convention into tool results; convention sent once per session; panel titles come from the task part of the brief (4fa7b531) [tried by the main session for the owner 2026-11-21: live: standing brief after the task, delivery hint, convention_unchanged on the second roster]
+- accepted · MCP-ORCH · MCPORCH-04 · hud_lease: named lease per project in both modes, waits inside the caller's turn, reclaims ended holders; Control lease row; leases shared by a checkout and its linked worktrees (45933319, ea9c4a19) [tried by the main session for the owner 2026-11-21: live: held_by, granted after release (36 s wait), Control lease row]
+- accepted · MCP-ORCH · MCPORCH-02 · keys derived when omitted; hud_send to a read-closed job creates the repair job (continued_as); jobs:[...] fan-out; hud_create retry_of; a keyless identical call counts as a retry only within 10 minutes (623905b4, 80f1906b) [tried by the main session for the owner 2026-11-21: live: keyless retry same job, continued_as with brief+report refs, jobs fan-out sent/skipped]
+- accepted · MCP-ORCH · MCPORCH-01 · a launch that fails before input falls through to the next place in one call; worker HUD home from the job directory (48809c12) [tried by the main session for the owner 2026-11-21: live: xhigh mapped to high and named; fall-through by tests]
+- accepted · MCP-ORCH · MCPORCH-08 · settlement and report notices within 3 s arrive as one (hud watch, Codex queue, pi native); questions immediate (eca47d87) [tried by the main session for the owner 2026-11-21: live: three settlements in the same second printed together; framing by tests]
+- accepted · MCP-ORCH · WORKER-MCP · workers get hud_report, hud_ask, hud_sonic, hud_progress (MCP and native pi); briefs and role texts carry no protocol paths; per-role sonic timing; unsupported thinking maps to the nearest level; failed pre-start launches close their tab and name the cause (64534c2c; Fishpref 66e24dc) [tried by the main session for the owner 2026-11-21: live: sonic workers used hud_report and hud_lease]
+- accepted · — · HUD-TICKETS · to-tickets becomes the hud_tickets MCP tool (method, add, update, sync); skill links removed on ./install (48c9589d, 19d3fbd1) [tried by the main session for the owner 2026-11-21: live: hud_tickets guide returns the method]
 - accepted · M3 · BAR-UNIFY · one-line bars on all three clients (d8945e22, 6f641d82)
 - accepted · M3 · PANEL-POLISH · Enter opens a report, whole key hints, readable tab labels (e60d5bb7)
 - accepted · M3b · AI-CORE-THIN · one master switch, one model, the call cap; consent layer gone (76bbf4c0)
