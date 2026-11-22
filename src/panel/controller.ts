@@ -233,7 +233,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const inspector = () => !settingsFlow.open && !state.help && state.subpage?.kind === 'inspector' ? state.subpage : undefined;
   const collectStep = async () => {
     state = framePlace(state);
-    let session: ReturnType<typeof finder.check> = null;
+    let session: Awaited<ReturnType<typeof finder.check>> = null;
     let stale = false;
     // Where a failure happened, for the health row.
     let stage: HealthSource = 'session';
@@ -243,7 +243,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         session = findSessionByThreadId(sid, selectedSource);
         boundJobRoot = `${makeSourceId('codex', fs.realpathSync(selectedSource))}/${sid}`;
       } else {
-        session = finder.check();
+        session = await finder.check();
         boundJobRoot = session ? `${makeSourceId('codex', fs.realpathSync(getCodexHome()))}/${session.sessionId}` : '';
         if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
       }
@@ -490,6 +490,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     },
     dispose() {
       jobPipeline.dispose();
+      finder.stop();
       models.dispose();
       flushTreeScans();
       scheduler.stop();

@@ -30,7 +30,7 @@ import { colors } from './render/colors.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { BarNoticeTracker } from './collectors/bar-notices.js';
-import { readThinJobs } from './collectors/thin-jobs.js';
+import { jobLaneSnapshot } from './collectors/job-snapshot.js';
 import { workSignals, type WorkSignals } from './render/work-summary.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
@@ -90,16 +90,17 @@ const sessionFinder = new SessionFinder(
 // for one event is worse than none.
 const notifier = new Notifier(resolveNotifierOptions());
 const notices = new BarNoticeTracker();
-// What this pane's HUD jobs ask and just did, read at most every 5 s.
+// The running jobs in this pane, read at most every 5 s.
+const barJobs = jobLaneSnapshot(
+  getHudHome(),
+  { project: null, pane: process.env.HERDR_PANE_ID ?? null },
+  { settledBefore: 'now' }
+);
 let jobSignals: { at: number; signals?: WorkSignals } = { at: 0 };
-function readJobSignals(now: number): WorkSignals | undefined {
+async function readJobSignals(now: number): Promise<WorkSignals | undefined> {
   if (now - jobSignals.at >= 5000) {
-    try {
-      const lanes = readThinJobs(getHudHome(), { project: null, pane: process.env.HERDR_PANE_ID ?? null }, undefined, { settledBefore: now });
-      jobSignals = { at: now, signals: workSignals(lanes, now) };
-    } catch {
-      jobSignals = { at: now };
-    }
+    const snapshot = await barJobs.read().catch(() => undefined);
+    jobSignals = { at: now, signals: snapshot && workSignals(snapshot.lanes, now) };
   }
   return jobSignals.signals;
 }
@@ -177,7 +178,7 @@ async function collectData(): Promise<HudData> {
   let stale = false;
   const health = hudStatus.health;
   try {
-    session = sessionFinder.check();
+    session = await sessionFinder.check();
   } catch (error) {
     stale = true;
     health.fail('session', error);
@@ -235,7 +236,7 @@ async function mainLoop(): Promise<void> {
     try {
       const data = await collectData();
       data.notices = notices.observe(data, Date.now());
-      data.work = readJobSignals(Date.now());
+      data.work = await readJobSignals(Date.now());
       renderToStdout(data, HUD_PANE_HEIGHT);
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.
@@ -286,6 +287,7 @@ function shutdown(): void {
   stopProfiling();
   // Clean up watchers
   sessionFinder.stop();
+  barJobs.close();
   hudFileWatcher.stop().catch(() => {
     // Ignore cleanup errors
   });
@@ -353,12 +355,9 @@ async function main(): Promise<void> {
 
   hudFileWatcher.onRolloutChange(() => {
     wakeCollection();
-    try {
-      const session = sessionFinder.check();
-      if (session) void parseRolloutIfChanged(session.path).catch(() => {});
-    } catch {
-      /* The next collection displays a failed read without an unhandled rejection. */
-    }
+    void sessionFinder.check().then((session) => {
+      if (session) return parseRolloutIfChanged(session.path);
+    }).catch(() => { /* The next collection reports failed reads. */ });
   });
 
   hudFileWatcher.start();

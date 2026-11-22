@@ -6,7 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { visualWidth, truncateAnsi } from '../../dist/render/colors.js';
 import { createP10kFooter } from '../../dist/harness/pi/p10k-footer.js';
 import type { FooterContext, FooterHost, FooterComponent } from '../../dist/harness/pi/footer-host.js';
-import { createPiSegment } from '../../dist/harness/pi/segment.js';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { workSignals } from '../../dist/render/work-summary.js';
 const { createFooterHost } = await import(pathToFileURL(join(process.cwd(), 'tests/fakes/pi.mjs')).href);
 // Native pi-tui closes even plain truncated fragments with SGR resets. All fixture
 // fragments are plain text; ANSI is added later by the real port's painters.
@@ -117,13 +118,7 @@ export function parityFixture(row: ParityRow, host = parityHost) {
       },
     }
   );
-  const segment = createPiSegment({
-    env,
-    now: () => FOOTER_NOW,
-    schedule: () => () => {},
-    onSignals: (signals) => controller.setWork(signals),
-  });
-  const root = 'pi-synthetic/synthetic-session';
+
   function publish(coverage: 'complete' | 'partial' | 'unavailable') {
     const jobs = join(home, 'jobs');
     rmSync(jobs, { recursive: true, force: true });
@@ -145,11 +140,10 @@ export function parityFixture(row: ParityRow, host = parityHost) {
         );
         if (i <= 2) writeFileSync(join(dir, 'qa/q1.md'), '# Question\n\nContinue?');
       }
-    segment.refresh();
+    controller.setWork(workSignals(readThinJobs(home, { project: null, pane: env.HERDR_PANE_ID ?? null }), FOOTER_NOW));
   }
-  if (row.delegation) publish(row.delegation);
   controller.start(ctx);
-  if (row.delegation) segment.start(ctx, root, () => true);
+  if (row.delegation) publish(row.delegation);
   return {
     controller,
     ctx,
@@ -170,7 +164,6 @@ export function parityFixture(row: ParityRow, host = parityHost) {
     },
     editor: () => editor,
     dispose() {
-      segment.stop();
       controller.dispose();
       rmSync(home, { recursive: true, force: true });
     },

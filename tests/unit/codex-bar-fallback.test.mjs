@@ -42,50 +42,54 @@ if (process.env[flag] === '1') {
   fs.mkdirSync(job, { recursive: true });
   const writeStatus = (body) => fs.writeFileSync(statusFile, JSON.stringify(body) + '\n');
 
-  assert.equal(findMostRecentRollout(1, cwd).sessionId, workerId);
+  assert.equal((await findMostRecentRollout(1, cwd)).sessionId, workerId);
   writeStatus({ agent: 'codex', agent_session_id: workerId, state: 'working' });
-  assert.equal(findMostRecentRollout(1, cwd).sessionId, nextId);
+  assert.equal((await findMostRecentRollout(1, cwd)).sessionId, nextId);
   writeStatus({ agent: 'grok', agent_session_id: workerId, state: 'working' });
-  assert.equal(findMostRecentRollout(1, cwd).sessionId, workerId);
+  assert.equal((await findMostRecentRollout(1, cwd)).sessionId, workerId);
   writeStatus({ agent: 'codex', agent_session_id: workerId, state: 'closed' });
-  assert.equal(findMostRecentRollout(1, cwd).sessionId, nextId);
+  assert.equal((await findMostRecentRollout(1, cwd)).sessionId, nextId);
   writeStatus({ agent: 'codex', agent_session_id: null, state: 'working' });
-  assert.equal(findMostRecentRollout(1, cwd).sessionId, workerId);
+  assert.equal((await findMostRecentRollout(1, cwd)).sessionId, workerId);
   fs.writeFileSync(statusFile, '{');
-  assert.equal(findMostRecentRollout(1, cwd).sessionId, workerId);
+  assert.equal((await findMostRecentRollout(1, cwd)).sessionId, workerId);
   writeStatus({ agent: 'codex', agent_session_id: nextId, state: 'idle_grace' });
-  assert.equal(findMostRecentRollout(1, cwd).sessionId, workerId);
+  assert.equal((await findMostRecentRollout(1, cwd)).sessionId, workerId);
 
   process.env.CODEX_HUD_MAIN_PANE = 'w4E:p1';
   process.env.CODEX_HUD_TMUX_BIN = join(process.env.SYNTHETIC_CWD, 'no-tmux');
   writeStatus({ agent: 'codex', agent_session_id: workerId, state: 'working' });
   const bound = new SessionFinder(cwd, undefined, new Date(t0 - 180_000));
-  assert.equal(bound.check()?.sessionId, nextId);
+  assert.equal((await bound.check())?.sessionId, nextId);
+  bound.stop();
 
   fs.rmSync(statusFile);
   delete process.env.CODEX_HUD_MAIN_PANE;
   const sticky = new SessionFinder(cwd);
-  assert.equal(sticky.check()?.sessionId, workerId);
+  assert.equal((await sticky.check())?.sessionId, workerId);
   writeStatus({ agent: 'codex', agent_session_id: workerId, state: 'working' });
   const realNow = Date.now;
   Date.now = () => realNow() + 2500;
   try {
-    assert.equal(sticky.check()?.sessionId, nextId);
+    assert.equal((await sticky.check())?.sessionId, nextId);
     assert.notEqual(sticky.getCurrentSession()?.sessionId, workerId);
   } finally {
     Date.now = realNow;
   }
 
-  // Repeated lookups reuse the shared JobIndexCache without reopening unchanged STATUS.json.
-  const opened = [];
-  const origOpen = fs.openSync;
-  fs.openSync = (p, ...args) => { opened.push(String(p)); return origOpen(p, ...args); };
+  // The fallback keeps excluding workers without even stat'ing STATUS on the caller's thread.
+  const statuses = [];
+  const orig = fs.lstatSync;
+  fs.lstatSync = (p, ...args) => { if (String(p).endsWith('/STATUS.json')) statuses.push(p); return orig(p, ...args); };
   syncBuiltinESMExports();
+  Date.now = () => realNow() + 5000;
   try {
-    assert.equal(findMostRecentRollout(1, cwd).sessionId, nextId);
-    assert.deepEqual(opened.filter((p) => p.endsWith('/STATUS.json')), []);
+    assert.equal((await sticky.check())?.sessionId, nextId);
+    assert.deepEqual(statuses, []);
   } finally {
-    fs.openSync = origOpen;
+    sticky.stop();
+    Date.now = realNow;
+    fs.lstatSync = orig;
     syncBuiltinESMExports();
   }
 } else {

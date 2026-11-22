@@ -7,7 +7,7 @@ import { displayTarget } from '../../integrations/panel/receipt.js';
 import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
 import { startSessionWatch } from '../../cli/watch.js';
 import { herdrId } from '../../roles/herdr-run.js';
-import { resumedWorkerRefusal } from '../../roles/resume-guard.js';
+import { collectResumeRefusal } from '../../collectors/job-snapshot.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import { piExpUsage } from './exp-usage.js';
@@ -129,9 +129,11 @@ export function installPiPackage(
     if (mode === 'delegate' && env.HUD_JOB_DIR === undefined) {
       const checked = resumeCheck?.id === id && resumeCheck.source === source;
       if (!checked) {
-        resumeCheck = { id, source, refusal: resumedWorkerRefusal(binding.hudHome, {
+        const refusal = await collectResumeRefusal(binding.hudHome, {
           agent: 'pi', id, file: ctx.sessionManager.getSessionFile(),
-        }) };
+        });
+        if (ticket !== epoch) return;
+        resumeCheck = { id, source, refusal };
       }
       resumeRefusal = resumeCheck?.refusal;
       if (resumeRefusal) {

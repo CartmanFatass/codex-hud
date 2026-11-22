@@ -1,8 +1,9 @@
 import * as path from 'node:path';
 import { ActivityRings } from '../collectors/activity-ring.js';
 import { DiffStatCollector } from '../collectors/diff-stat.js';
-import { readThinJobs, type ThinJobScope } from '../collectors/thin-jobs.js';
-import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
+import type { ThinJobScope } from '../collectors/thin-jobs.js';
+import { jobLaneSnapshot } from '../collectors/job-snapshot.js';
+import type { OwnerWorker, WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
 import { buildWorkboard } from '../collectors/workboard.js';
 import type { SubagentTree } from '../types.js';
 import { jobPanelObservation } from '../utils/collection-observation.js';
@@ -10,7 +11,8 @@ import { jobPanelObservation } from '../utils/collection-observation.js';
 /** Collect thin jobs and project them alongside the native tree. */
 export class PanelJobPipeline {
   private boardCache?: { tree: SubagentTree; board: WorkboardSnapshot };
-  private thinJobs: ReturnType<typeof readThinJobs> = [];
+  private readonly snapshot;
+  private thinJobs: WorkLane[] = [];
   private rings = new ActivityRings();
   private jobDiffs = new DiffStatCollector();
   private thinObservation = { complete: false };
@@ -19,11 +21,12 @@ export class PanelJobPipeline {
 
   constructor(
     readonly home: string,
-    private readonly thinScope: ThinJobScope,
+    thinScope: ThinJobScope,
     readonly openedAt = Date.now()
-  ) {}
+  ) { this.snapshot = jobLaneSnapshot(home, thinScope, { openedAt }); }
   dispose(): void {
     this.closed = true;
+    this.snapshot.close();
     this.boardCache = undefined;
   }
   workboard(tree: SubagentTree): WorkboardSnapshot {
@@ -45,8 +48,9 @@ export class PanelJobPipeline {
   async refresh(inspecting?: string): Promise<boolean> {
     if (this.closed) return false;
     const generation = ++this.generation;
-    const observation = { complete: false };
-    let lanes = readThinJobs(this.home, this.thinScope, JSON.parse, { openedAt: this.openedAt }, observation);
+    const snapshot = await this.snapshot.read();
+    if (!snapshot || this.closed || generation !== this.generation) return false;
+    let lanes = snapshot.lanes;
     const id = /^thin-job:(j[0-9a-f]{16})$/.exec(inspecting ?? '')?.[1];
     const lane = id && lanes.find((l) => l.workers.some((w) => w.id === inspecting));
     if (id && lane) {
@@ -57,9 +61,9 @@ export class PanelJobPipeline {
         ...l, workers: l.workers.map((w) => w === worker ? { ...w, diffStat } : w),
       });
     }
+    if (this.thinJobs !== lanes) this.boardCache = undefined;
     this.thinJobs = lanes;
-    this.thinObservation = observation;
-    this.boardCache = undefined;
+    this.thinObservation = { complete: snapshot.complete };
     return true;
   }
 }

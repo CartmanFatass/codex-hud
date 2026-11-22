@@ -12,7 +12,8 @@ import { archiveJob } from '../roles/job-archive.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
 import { killSonicRoot, sonicExit, SONIC_TIMEOUT_MS } from '../mcp/sonic-process.js';
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
-import { JobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
+import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
+import { jobChangePublisher } from '../collectors/job-changes.js';
 import type { Job, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
 import { jobFiles, BUNDLED_ROOT, binScript } from '../mcp/paths.js';
 import { capForRole, isWorkingForCap, loadConcurrencySettings, queueOrderCompare, queuedTimestamp } from '../roles/concurrency.js';
@@ -48,7 +49,8 @@ const SHUTDOWN_DRAIN_MS = 3_000;
 const HOME_RETENTION_INTERVAL_MS = 60 * 60_000;
 let nextHomeRetention = 0;
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
-const jobCache = new JobIndexCache(home);
+const jobCache = getJobIndexCache(home);
+const jobChanges = jobChangePublisher(home);
 type SessionEntry = { fields: SessionFields; stamp: string };
 function readJsonEntry<T>(file: string): { value: T | null; at: number | null } {
   const res = jobCache.readJson<T>(file);
@@ -175,6 +177,7 @@ function stopScheduling() {
   runners.close();
   watcher?.close();
   watcher = undefined;
+  jobChanges.stop();
   settingsWatcher?.close();
   settingsWatcher = undefined;
   clearTimeout(timer);
@@ -693,6 +696,7 @@ function scan(retryWatch = false) {
     settingsWatcher.close();
     settingsWatcher = undefined;
   }
+  if (watcher) jobChanges.start();
   if (open) subscribe();
   runners.finishScan();
   for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);
@@ -730,12 +734,14 @@ function startWatch() {
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
       const path = filename?.toString();
+      jobChanges.change(path ?? '');
       if (path?.endsWith(`/${RUNNER_READY}`)) { runners.ready(join(jobs, dirname(path))); schedule(); return; }
       if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-exit\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;
       warn('watch error', `watch error: ${error.message}`);
       watcher?.close(); watcher = undefined;
+      jobChanges.stop();
       clearTimeout(timer);
       timer = setTimeout(() => scan(true), degradedMs);
     });

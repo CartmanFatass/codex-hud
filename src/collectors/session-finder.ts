@@ -7,9 +7,9 @@ import { sessionParentId } from '../utils/session-parent.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getHudHome } from '../hud-home.js';
-import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { codexJobSnapshot } from './job-snapshot.js';
 import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
-import { time } from '../utils/profile.js';
+import { timeAsync } from '../utils/profile.js';
 import { DaemonBinding } from './daemon-binding.js';
 
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -529,30 +529,25 @@ export async function findRolloutsInDaysYielding(
 }
 
 /**
- * Codex CLI job session ids under `$HUD_HOME/jobs` (the open and recent set the HUD keeps).
- * A closed job still counts: its rollout must not become the bar's main session.
- * Each STATUS.json is re-read only when its signature changes.
- */
-function codexWorkerSessionIds(): Set<string> {
-  const ids = new Set<string>();
-  const cache = getJobIndexCache(getHudHome());
-  for (const jobId of cache.listJobIds()) {
-    const res = cache.readStatus<{ agent?: unknown; agent_session_id?: unknown }>(jobId);
-    if (res.status !== 'ok') continue;
-    if (res.value.agent === 'codex' && typeof res.value.agent_session_id === 'string' && res.value.agent_session_id) {
-      ids.add(res.value.agent_session_id);
-    }
-  }
-  return ids;
-}
-
-/**
  * Find the most recent rollout file
  * Searches backwards from today's date
  */
-export function findMostRecentRollout(
+export async function findMostRecentRollout(
   maxDaysBack: number = DEFAULT_LOOKBACK_DAYS,
   targetCwd?: string
+): Promise<SessionFile | null> {
+  const snapshot = codexJobSnapshot(getHudHome());
+  try {
+    return selectMostRecentRollout(maxDaysBack, targetCwd, new Set(await snapshot.read()));
+  } finally {
+    snapshot.close();
+  }
+}
+
+function selectMostRecentRollout(
+  maxDaysBack: number,
+  targetCwd: string | undefined,
+  workers: ReadonlySet<string>
 ): SessionFile | null {
   const normalizedTarget = normalizePath(targetCwd);
   const sessionsDir = getSessionsDir();
@@ -588,7 +583,6 @@ export function findMostRecentRollout(
     return null;
   }
 
-  const workers = codexWorkerSessionIds();
   if (workers.size > 0) {
     allSessions = allSessions.filter((session) => !workers.has(session.sessionId));
     if (allSessions.length === 0) {
@@ -654,7 +648,7 @@ export async function findActiveSession(targetCwd?: string): Promise<string | nu
     return active[0].path;
   }
 
-  const recent = findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, targetCwd);
+  const recent = await findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, targetCwd);
   return recent?.path ?? null;
 }
 
@@ -932,6 +926,8 @@ export class SessionFinder {
   private lastFallbackScanMs = 0;
   // The 30-day walk behind the shallow scan runs on its own, slower clock.
   private lastDeepScanMs = 0;
+  private workers?: ReturnType<typeof codexJobSnapshot>;
+  private pending?: Promise<SessionFile | null>;
   // The daemon's log, read for the main pane's TUI; made on first use.
   private daemon: DaemonBinding | null = null;
   private stopped = false;
@@ -988,13 +984,16 @@ export class SessionFinder {
    * or skips snapshots until a shell tool runs. Fall back to the newest cwd
    * rollout created/touched around HUD start so token usage can still appear.
    */
-  private findFallbackSession(): SessionFile | null {
+  private async findFallbackSession(): Promise<SessionFile | null> {
+    if (!fs.existsSync(getSessionsDir())) return null;
+    this.workers ??= codexJobSnapshot(getHudHome());
+    const workers = new Set(await this.workers.read());
     const cwd = this.targetCwd ?? undefined;
     // Today and yesterday answer this in every realistic case. Only when they
     // hold nothing at all does the 30-day walk run, and then at most every
     // DEEP_RESCAN_MS: before Codex has written its first rollout the HUD would
     // otherwise repeat that walk every two seconds, forever.
-    let recent = findMostRecentRollout(RECENT_LOOKBACK_DAYS, cwd);
+    let recent = selectMostRecentRollout(RECENT_LOOKBACK_DAYS, cwd, workers);
     // The session already found stays a candidate. Rollouts live under the day
     // they were created, so a HUD left running past the next midnight but one
     // no longer sees its own session in the shallow scan; without this it
@@ -1002,13 +1001,13 @@ export class SessionFinder {
     // drop it two seconds later.
     const kept = this.refreshCurrentSession();
     // Drop a worker adopted before its job published agent_session_id. Its newer mtime must not win.
-    const keptIsWorker = kept !== null && codexWorkerSessionIds().has(kept.sessionId);
+    const keptIsWorker = kept !== null && workers.has(kept.sessionId);
     if (kept && !keptIsWorker && (!recent || kept.modifiedAt.getTime() >= recent.modifiedAt.getTime())) {
       recent = kept;
     }
     if (!recent && Date.now() - this.lastDeepScanMs >= DEEP_RESCAN_MS) {
       this.lastDeepScanMs = Date.now();
-      recent = findMostRecentRollout(DEFAULT_LOOKBACK_DAYS, cwd);
+      recent = selectMostRecentRollout(DEFAULT_LOOKBACK_DAYS, cwd, workers);
     }
     if (!recent) {
       return null;
@@ -1035,9 +1034,13 @@ export class SessionFinder {
    */
   start(checkIntervalMs: number = 5000): void {
     this.stopped = false;
-    this.check();
-    this.checkInterval = setInterval(() => this.check(), checkIntervalMs);
+    this.checkInBackground();
+    this.checkInterval = setInterval(this.checkInBackground, checkIntervalMs);
   }
+
+  private checkInBackground = (): void => {
+    if (!this.stopped) void this.check().catch(() => { /* Collection reports failed reads. */ });
+  };
 
   /**
    * Stop watching
@@ -1045,20 +1048,25 @@ export class SessionFinder {
   stop(): void {
     this.stopped = true;
     this.daemon?.stop();
+    this.daemon = null;
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
+    this.workers?.close();
+    this.workers = undefined;
   }
 
   /**
    * Check for active or recent sessions
    */
-  check(): SessionFile | null {
-    return time('session.find', () => this.checkNow());
+  check(): Promise<SessionFile | null> {
+    return (this.pending ??= timeAsync('session.find', () => this.checkNow()).finally(() => {
+      this.pending = undefined;
+    }));
   }
 
-  private checkNow(): SessionFile | null {
+  private async checkNow(): Promise<SessionFile | null> {
     const mainPaneId = process.env.CODEX_HUD_MAIN_PANE;
     if (mainPaneId) {
       // The daemon's log says which conversation the pane's TUI has open,
@@ -1066,7 +1074,10 @@ export class SessionFinder {
       // the older Codex's word for it.
       this.daemon ??= new DaemonBinding(getCodexHome(), mainPaneId, this.targetStartTime?.getTime() ?? null, {
         onChange: () => {
-          if (!this.stopped) this.check();
+          // A daemon update can arrive while the fallback awaits its job snapshot.
+          // Recheck after that flight, rather than just joining it.
+          if (this.pending) void this.pending.then(this.checkInBackground, this.checkInBackground);
+          else this.checkInBackground();
         },
       });
       const daemonThread = this.daemon.threadId();
@@ -1094,7 +1105,8 @@ export class SessionFinder {
       return this.currentSession;
     }
 
-    const fallback = this.findFallbackSession();
+    const fallback = await this.findFallbackSession();
+    if (this.stopped) return this.currentSession;
     this.lastFallbackScanMs = Date.now();
     if (!fallback) {
       return this.clearSession();

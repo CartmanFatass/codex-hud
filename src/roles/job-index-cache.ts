@@ -344,6 +344,13 @@ export class JobIndexCache {
     return ids;
   }
 
+  readJobDirMeta(id: string): JobDirMeta | null {
+    if (!JOB_ID_RE.test(id)) return null;
+    const dir = join(this.jobsRoot, id);
+    const st = fs.lstatSync(dir, { bigint: true, throwIfNoEntry: false });
+    return st?.isDirectory() ? { id, dir, mtimeMs: statsMtimeMs(st.mtimeNs), birthtimeMs: statsMtimeMs(st.birthtimeNs) } : null;
+  }
+
   listJobDirsByMtime(opts?: {
     limit?: number;
     sortBy?: 'mtime' | 'birthtime';
@@ -353,16 +360,9 @@ export class JobIndexCache {
     const ids = this.listJobIds({ onError: opts?.onDirError });
     const metas: JobDirMeta[] = [];
     for (const id of ids) {
-      const dir = join(this.jobsRoot, id);
       try {
-        const st = fs.lstatSync(dir, { bigint: true, throwIfNoEntry: false });
-        if (!st || !st.isDirectory()) continue;
-        metas.push({
-          id,
-          dir,
-          mtimeMs: statsMtimeMs(st.mtimeNs),
-          birthtimeMs: statsMtimeMs(st.birthtimeNs),
-        });
+        const meta = this.readJobDirMeta(id);
+        if (meta) metas.push(meta);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') opts?.onStatError?.(id, error);
       }

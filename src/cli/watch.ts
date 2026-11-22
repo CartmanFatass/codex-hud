@@ -7,6 +7,8 @@ import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
 import { getHudHome } from '../hud-home.js';
+import { watchJobChanges } from '../collectors/job-changes.js';
+import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-snapshot.js';
 import { landEvents } from '../mcp/land-state.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
@@ -108,20 +110,19 @@ function settlementNotices(windowMs: number) {
 
 // The CLI and pi both watch the same inputs, including atomic replacements of tries.jsonl.
 function watchInputs(home: string, changed: () => void, persistent = true) {
-  let watcher: fs.FSWatcher | undefined, homeWatcher: fs.FSWatcher | undefined, flowWatcher: fs.FSWatcher | undefined;
+  let homeWatcher: fs.FSWatcher | undefined, flowWatcher: fs.FSWatcher | undefined;
+  const jobs = persistent
+    ? watchJobChanges(home, (notice) => { if (notice) changed(); }, true)
+    : watchJobsInBackground(home, changed);
   let closed = false;
   const attach = () => {
     if (closed) return;
+    jobs.attach();
     if (!homeWatcher) try {
-      homeWatcher = fs.watch(home, { persistent }, (event, name) => {
+      homeWatcher = fs.watch(home, { persistent }, (_event, name) => {
         const file = name?.toString();
-        if (file === 'jobs' && event === 'rename') {
-          watcher?.close();
-          watcher = undefined;
-          attach();
-        }
         if (file === 'flows') { flowWatcher?.close(); flowWatcher = undefined; attach(); }
-        if (!file || file === 'flows' || file === 'jobs' || file === TRIES_FILE || file === PANEL_ACTIONS_FILE) changed();
+        if (!file || file === 'flows' || file === TRIES_FILE || file === PANEL_ACTIONS_FILE) changed();
       });
       homeWatcher.on('error', () => { homeWatcher?.close(); homeWatcher = undefined; });
     } catch { /* No home yet: the rescan retries. */ }
@@ -130,18 +131,6 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
         if (!file || file.endsWith('.json')) changed();
       }).on('error', () => { flowWatcher?.close(); flowWatcher = undefined; });
     } catch { /* No flows yet. */ }
-    if (watcher) return;
-    try {
-      // One recursive watch covers every job's STATUS.json, report.md and qa/ (Node 24 on Linux).
-      const jobs = fs.watch(join(home, 'jobs'), { recursive: true, persistent }, (_event, name) => {
-        const file = name?.toString() ?? '';
-        if (file.endsWith('.tmp') || file.endsWith('supervisor.pid') || file.endsWith('/progress.jsonl') ||
-          file.endsWith('/report-meta.json') || file.includes('/sessions/')) return;
-        changed();
-      });
-      watcher = jobs;
-      jobs.on('error', () => { jobs.close(); if (watcher === jobs) watcher = undefined; });
-    } catch { /* The home watch or next rescan will retry. */ }
   };
   return {
     attach,
@@ -150,7 +139,7 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
       closed = true;
       homeWatcher?.close();
       flowWatcher?.close();
-      watcher?.close();
+      jobs.close();
     },
   };
 }
@@ -175,8 +164,10 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     inputs.attach();
     scanning = true;
     dirty = false;
-    const rows = await readSessionJobRows(home, pane, cwd, process.env);
-    scanning = false;
+    let rows;
+    try { rows = await collectSessionJobRows(home, pane, cwd, process.env); }
+    catch { if (!stopped) schedule(DEFAULT_RESCAN_MS); return; }
+    finally { scanning = false; }
     if (stopped) return;
     const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines]);
     first = false;

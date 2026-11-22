@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { herdrId } from '../roles/herdr-run.js';
-import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
+import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
@@ -34,7 +34,7 @@ interface Snap {
 }
 type ArtifactStore = Map<string, { stamp: string; snap: Snap }>;
 const artifactStores = new WeakMap<JobIndexCache, ArtifactStore>();
-const hydrated = new WeakMap<JobIndexCache, string>();
+const hydrated = new WeakSet<JobIndexCache>();
 const artifactStoreFor = (idx: JobIndexCache) => {
   let store = artifactStores.get(idx);
   if (!store) artifactStores.set(idx, (store = new Map()));
@@ -45,7 +45,7 @@ const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'queued_at'
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string, idx: JobIndexCache): void {
   if (hydrated.has(idx)) return;
-  hydrated.set(idx, '');
+  hydrated.add(idx);
   try {
     const file = join(home, 'display/thin-jobs.json');
     if (fs.statSync(file).size > 1048576) return;
@@ -62,13 +62,18 @@ function restore(home: string, idx: JobIndexCache): void {
       facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
     }
     idx.hydrateFacts(facts);
-    hydrated.set(idx, text);
   } catch { /* Corrupt or missing display cache: rebuild on persist. */ }
 }
 function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string>): void {
-  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 4 }));
-  if (text === hydrated.get(idx) || text.length > 1048576) return;
-  try { writePrivateFile(join(home, 'display/thin-jobs.json'), text); hydrated.set(idx, text); }
+  // Entry order in JobIndexCache reflects recent lookups, not a change in facts.
+  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 4 }).sort(([a], [b]) => a.localeCompare(b)));
+  if (text.length > 1048576) return;
+  const file = join(home, 'display/thin-jobs.json');
+  try {
+    const { bytes, truncated } = readFileBounded(file, 1048576);
+    if (!truncated && bytes.toString('utf8') === text) return;
+  } catch { /* Missing or unreadable display cache: try to publish. */ }
+  try { writePrivateFile(file, text); }
   catch { /* An unavailable display cache must not stop collection. */ }
 }
 function readArtifact(path: string, max = 65536, store: ArtifactStore | null = null, seenSet?: Set<string>, onIncomplete?: () => void): Snap | null {
@@ -616,14 +621,17 @@ function scoutWorkFlow(
   };
 }
 
+export type ThinJobInventory = { dirs: readonly JobDirMeta[]; totalValid: number; complete: boolean };
+
 export function readThinJobs(
   home: string,
   scope: ThinJobScope,
   parse = JSON.parse,
   options?: { settledBefore?: number; openedAt?: number },
-  observation?: { complete: boolean }
+  observation?: { complete: boolean },
+  inventory?: ThinJobInventory
 ): WorkLane[] {
-  let complete = herdrId(scope.pane);
+  let complete = herdrId(scope.pane) && inventory?.complete !== false;
   const markIncomplete = () => { complete = false; };
   const idx = getJobIndexCache(home), artifacts = artifactStoreFor(idx);
   const seenFacts = new Set<string>(), seenArtifacts = new Set<string>();
@@ -638,7 +646,8 @@ export function readThinJobs(
     return null;
   };
   const readArt = (path: string) => readArtifact(path, 65536, artifacts, seenArtifacts, markIncomplete);
-  const { dirs: candidates, totalValid } = idx.listJobDirsByMtime({ limit: 200, onDirError: markIncomplete, onStatError: markIncomplete });
+  const { dirs, totalValid } = inventory ?? idx.listJobDirsByMtime({ limit: 200, onDirError: markIncomplete, onStatError: markIncomplete });
+  const candidates = dirs.slice(0, 200);
   if (totalValid > 200) complete = false;
   const landFlows = new Map<string, WorkFlow | null>();
   const landFor = (id: string) => {

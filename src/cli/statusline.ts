@@ -1,5 +1,5 @@
 import { getHudHome } from '../hud-home.js';
-import { readThinJobs } from '../collectors/thin-jobs.js';
+import { collectJobLanes } from '../collectors/job-snapshot.js';
 import { renderWorkSummary, workSignals } from '../render/work-summary.js';
 import { fileURLToPath } from 'node:url';
 import { truncateAnsi, visualLength } from '../render/colors.js';
@@ -155,21 +155,20 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
         applyBarSettings();
         // The same worker zone as Claude's bar; a failed read leaves it out and the line stays.
         const now = Date.now();
-        let work: ReturnType<typeof workSignals> | undefined;
-        try {
-          const scope = { project: null, pane: io.env.HERDR_PANE_ID ?? null };
-          work = workSignals(readThinJobs(getHudHome(io.env), scope, undefined, { settledBefore: now }), now);
-        } catch {
-          work = undefined;
-        }
-        return renderAntigravity(input, width, options, work);
+        const scope = { project: null, pane: io.env.HERDR_PANE_ID ?? null };
+        const snapshot = await collectJobLanes(getHudHome(io.env), scope, { settledBefore: now }).catch(() => undefined);
+        return renderAntigravity(input, width, options, snapshot && workSignals(snapshot.lanes, now));
       }
       if (antigravityOnly || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
       const now = Date.now();
       recordClaudeQuota(value, io.env, now);
-      const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null }, undefined,
-        parity && !options.details ? { settledBefore: now } : undefined);
-      // The bar is one line: what the jobs ask and just did are events of its notice zone, not a row below.
+      const snapshot = await collectJobLanes(
+        getHudHome(io.env),
+        { project: null, pane: io.env.HERDR_PANE_ID ?? null },
+        parity && !options.details ? { settledBefore: now } : undefined
+      ).catch(() => undefined);
+      const lanes = snapshot?.lanes ?? [];
+      // The compact bar's worker zone counts only running jobs.
       if (parity && !options.details) {
         applyBarSettings();
         return collectAndRenderParity(value, width, parity, io.env, now, workSignals(lanes, now));
