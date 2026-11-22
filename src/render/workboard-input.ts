@@ -66,7 +66,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const frame = ctx.frame,
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
-  const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
+  const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.text === 'm' && next.activeTab !== 'control' ? 'request-land' : input.key : '';
   const main = !next.subpage, classic = next.prefs.panelLayout !== 'split';
   const inspector = next.subpage?.kind === 'inspector' ? next.subpage : undefined;
   const goTab = (tab: MainTab = 'home') => { next = transitionTab(next, tab); };

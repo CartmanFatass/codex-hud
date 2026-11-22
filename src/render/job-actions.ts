@@ -43,7 +43,7 @@ export function answerKeys(worker: OwnerWorker): string[] {
 /** Home's footer for the row under the cursor, most useful first (a narrow row drops the last): a card takes `o` and `v`, a HUD job also its tab and, while it runs, stop. */
 export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefined, enter: 'open' | 'expand', preview = false): string[] {
   const job = jobUnderCursor(state, board), card = !state.subpage && state.activeTab === 'home' && !homeAnchor(state.home) && !!homeTarget(state.home);
-  return [...(job ? ['g job tab', ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
+  return [...(job ? [...(job.worker.state === 'failed' ? ['r request retry'] : []), 'g job tab', ...(job.worker.settledAt === null ? ['X stop'] : [])] : []),
     `⏎ ${enter}`, ...(preview ? ['Esc back'] : []), ...(card || preview ? ['o file', 'v inspect'] : []), 'a all'];
 }
 /** The one-row prompt above the page while a stop waits for its answer. */
@@ -56,9 +56,10 @@ export function stopPromptRows(state: MonitorState, width: number): MonitorRow[]
 export function openJobAction(next: MonitorState, input: WorkbenchInput, key: string, board: WorkboardSnapshot | undefined, result: (action?: MonitorOutcome['action']) => MonitorOutcome): MonitorOutcome | undefined {
   if (input.type !== 'key') return undefined;
   const digit = /^[1-4]$/.exec(input.text ?? '')?.[0], answering = digit !== undefined || key === 'answer-default';
-  if (!answering && !(key === 'stop-job' || input.text === 'g')) return undefined;
+  if (!answering && !(key === 'stop-job' || input.text === 'g' || input.text === 'r')) return undefined;
   const job = jobUnderCursor(next, board);
   if (!job) return undefined;
+  if (input.text === 'r') return job.worker.state === 'failed' ? result({ type: 'request-retry', home: job.home, jobId: job.jobId }) : undefined;
   if (input.text === 'g') return result({ type: 'focus-job-tab', dir: job.dir });
   if (key === 'stop-job') {
     if (job.worker.settledAt !== null) return undefined;

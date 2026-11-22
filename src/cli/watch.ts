@@ -179,7 +179,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     const rows = await readSessionJobRows(home, pane, cwd, process.env);
     scanning = false;
     if (stopped) return;
-    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job))), ...landEvents(home, pane, false, cwd).lines]);
+    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines]);
     first = false;
     prev = new Map(rows.map((row) => [row.job, row]));
     schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
@@ -315,7 +315,7 @@ export async function watchCommand(
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const flows = landEvents(home, callerPane, all);
-      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job))), ...flows.lines];
+      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines];
       if (queue) {
         const pending = flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
           actionable(home, new Map(), rows, true).length > 0;

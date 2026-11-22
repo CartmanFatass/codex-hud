@@ -171,7 +171,8 @@ export interface MonitorOutcome {
     | ({ type: 'preset-edit'; modelIndex?: number } & PresetEdit)
     | { type: 'model-picked'; value: string }
     | { type: 'harness-switch'; id: string; off: boolean }
-    | { type: 'record-try'; action: TryAction; target: TryTarget }
+    | { type: 'record-try'; action: TryAction | 'land'; target: TryTarget }
+    | { type: 'request-retry'; home: string; jobId: string }
     | { type: 'refresh-models' }
     | { type: 'brief-toggle' }
     /** Owner micro-actions on a HUD job (spec §2.2): focus its herdr tab, answer its open question, stop it. */

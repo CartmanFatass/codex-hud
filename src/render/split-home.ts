@@ -9,6 +9,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { askSlabRows } from './home-view.js';
 import { homeCursor, homeTarget, type HomeCursor } from './monitor-state.js';
+import { TRY_ACTIONS } from './split-project.js';
 import { homeKeys } from './job-actions.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
 import { activeFlow } from './work-visibility.js';
@@ -149,7 +150,7 @@ export function homeScene(
     list: entries.length ? entries.flatMap((e) => (e.cued && e.item !== cursor ? [e.cued, ...e.rows.slice(1)] : e.rows)) : [boardRow(theme.board.muted(fit('  ' + t(filtering ? 'No matches' : 'Nothing in progress'), width)))],
     cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, scope,
     left: homeDoneCount(done, width),
-    hints: shown.rows.some((r) => r.item === sub && r.tryTarget) ? ['Space mark', 'y accept', 'n flag', '⏎ details', 'Esc back', 'o file']
+    hints: shown.rows.some((r) => r.item === sub && r.tryTarget) ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file']
       : homeKeys({ ...state, home: { ...state.home, cursor: selected } }, board, sub ? 'expand' : 'open', !!sub),
   };
 }

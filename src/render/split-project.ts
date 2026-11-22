@@ -27,7 +27,7 @@ import { basename } from 'node:path';
 
 export type Shown = { label: string; right?: string; rows: MonitorRow[]; act?: string; /** The footer while the keys are in the list, where the row's own keys differ from the page's. */ hints?: readonly string[] };
 export interface Part { list: MonitorRow[]; start?: string; preview: (cursor?: string) => Shown; hints: readonly string[]; focusHints?: readonly string[] }
-export const TRY_ACTIONS = ['Space mark', 'y accept', 'n flag'] as const;
+export const TRY_ACTIONS = ['Space mark', 'y accept', 'n flag', 'm request land'] as const;
 export const HUB_HINTS = ['⏎ open', '[ ] project'] as const;
 export const HUB_TRY_HINTS = [...TRY_ACTIONS, ...HUB_HINTS];
 export const PROJECT_FILE_HINTS = ['⏎ open file', 'Esc back'] as const;

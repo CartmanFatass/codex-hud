@@ -9,6 +9,8 @@ import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, reportSignature } from '../../dist/mcp/cli-judge.js';
+import { appendTry } from '../../dist/collectors/try-records.js';
+import { appendPanelAction } from '../../dist/collectors/panel-actions.js';
 import { writeReportMeta } from '../../dist/roles/report-meta.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import {
@@ -98,6 +100,38 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const repair = taskJob(f, await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic repair.' }));
   assert.notEqual(repair.job, job.job);
   assert.equal(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'))).repair_of, job.job);
+});
+
+test('MCP tasks: scoped panel decisions wake the pane without a worker task; a reconnect collects offline intents once', async (t) => {
+  const f = await fixture(t), rpc = taskRpc(f.rpc), home = f.env.HUD_HOME;
+  const job = 'j1234567890abcdef', other = 'j1234567890abcdee';
+  for (const [id, pane] of [[job, f.env.HERDR_PANE_ID], [other, 'other:p1']]) {
+    const dir = join(home, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, herdr_pane: pane, cwd: f.root,
+      role: 'imp', created_at: new Date().toISOString(), dispatch_exit_code: 1 }));
+  }
+  await rpc('server/discover');
+  appendTry(home, f.root, 'accept', { milestone: 'M1', slices: [{ id: 'ONE' }] });
+  appendPanelAction(home, { type: 'retry', job });
+  appendPanelAction(home, { type: 'retry', job: other });
+  appendPanelAction(home, { type: 'land', root: join(f.root, 'elsewhere'), slices: ['FOREIGN'] });
+  appendPanelAction(home, { type: 'answer', job, role: 'imp', qid: 'q1', answer: 'keep it' });
+  const messages = () => f.commands().filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt').flatMap(c => c.args[3].split('\n'));
+  await until(() => messages().length >= 3);
+  assert.deepEqual(messages(), [`try accepted ${f.root.split('/').at(-1)} M1: ONE`, `[${job}] Retry requested from panel`, `[imp@${job}] ANSWERED q1 from panel: keep it`]);
+  // End this connection's task mode. A fresh server in the same pane resumes the saved position.
+  await rpc('initialize');
+  appendPanelAction(home, { type: 'land', root: f.root, slices: ['ONE'] });
+  fs.writeFileSync(join(f.env.HOME, 'fail-prompt'), '');
+  const child = spawn(process.execPath, [entry], { cwd: f.root, env: f.env, stdio: ['pipe', 'pipe', 'inherit'] });
+  const exited = once(child, 'exit');
+  t.after(async () => { child.stdin.end(); await exited; });
+  const next = taskRpc(rpcClient(child));
+  await next('server/discover');
+  const roster = async () => resultValue(await taskCall(next, 'hud_roster'));
+  assert.deepEqual((await roster()).changes, [`Land requested from panel: ${f.root.split('/').at(-1)}: ONE`]);
+  assert.equal((await roster()).changes, undefined);
 });
 
 test('MCP tasks: launch fall-through and effective effort stay in the dispatch and read, not the final notice', async (t) => {

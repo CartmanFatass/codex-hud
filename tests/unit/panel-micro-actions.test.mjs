@@ -131,6 +131,14 @@ test('g on a HUD job card (Home and Inspector) focuses its tab; elsewhere it mea
   assert.equal(handleMonitorInput(withState(header.state, { home: { cursor: homeCursor(target, 'home-progress:progress') } }), key('g'), ctx).action, undefined);
 });
 
+test('r requests a retry only on a failed HUD job', (t) => {
+  const f = fixture(t);
+  assert.equal(f.press(RUNNING, 'r').out.action, undefined);
+  assert.equal(f.press(DONE, 'r').out.action, undefined);
+  f.worker(DONE).state = 'failed';
+  assert.deepEqual(f.press(DONE, 'r').out.action, { type: 'request-retry', home: f.home, jobId: DONE });
+});
+
 test('1–4 switch no tab; on an expanded answerable question they pick an option and d the default, with no r first', (t) => {
   const f = fixture(t), asked = f.worker(ASKING), target = targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id });
   const open = { home: { expanded: new Set([target]) } };

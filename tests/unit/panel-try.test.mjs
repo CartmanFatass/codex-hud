@@ -83,7 +83,13 @@ test('the live panel flags a milestone, accepts one slice and immediately remove
   key('jn');
   await recorded(1);
   await painted(/▾ 0\.1\.4 +⚑ 2 flagged/);
-  key('jy'); // TWO is the later ledger entry and therefore first in this group.
+  key('jm'); // TWO is the later ledger entry and therefore first in this group.
+  const intents = join(f.hud, 'panel-actions.jsonl');
+  await painted(/Land requested/);
+  const { at, ...intent } = JSON.parse(fs.readFileSync(intents, 'utf8'));
+  assert.deepEqual(intent, { type: 'land', root: f.cwd, slices: ['TWO'] });
+  assert.equal(f.records().length, 1, 'a request to land neither marks nor removes the slice');
+  key('y');
   await recorded(2);
   await painted(/^Only to try ─+ 2$/m);
   assert.doesNotMatch(frame(), /TWO/);

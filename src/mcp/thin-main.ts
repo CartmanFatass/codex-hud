@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { cliWorkerTools, procStat, readTurn, REPORT_READ_EXIT, reportSignature, saveTurn, turnToken, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { readCodexStatusline, statuslineResource, statuslineTool } from './codex-statusline.js';
+import { panelDelivery } from './panel-delivery.js';
 import { editTickets } from './local-tickets.js';
 import { startLand, landTask } from './land.js';
 import { isFlowId, landEvents, landView, readLand } from './land-state.js';
@@ -67,7 +68,7 @@ function checkResume(agent: 'agy' | 'claude' | 'codex', id: unknown) {
 }
 const bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url));
 const binScript = (name: string) => join(bundled, 'bin', name);
-const { ensureQueueWatcher, paneInfo, watching } = await import(pathToFileURL(binScript('hud-notify.mjs')).href);
+const { ensureQueueWatcher, notify, paneInfo, watching } = await import(pathToFileURL(binScript('hud-notify.mjs')).href);
 const worker = isWorker ? await import(pathToFileURL(binScript('worker-tools.mjs')).href) : undefined;
 function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
@@ -2223,7 +2224,7 @@ function rememberCallerHarness(agent: unknown): void {
   if (!callerHarness && (agent === 'agy' || agent === 'claude' || agent === 'codex' || agent === 'pi')) callerHarness = agent;
 }
 function deliveryHint(watcherAlive: boolean): string {
-  if (taskClient) return 'Worker-turn events arrive as MCP task completions. Use `hud_read` to collect reports and check jobs without a task.';
+  if (taskClient) return 'Worker-turn events arrive as MCP task completions; owner panel decisions arrive without hud watch. Use `hud_read` to collect reports and check jobs without a task.';
   const fallback = 'Without live delivery, questions may be typed; use `hud_wait` for settlement or attention.';
   const live = 'Keep working until notified, then collect reports with `hud_read`.';
   switch (callerHarness) {
@@ -2270,11 +2271,31 @@ function sessionRows(markExhaustion: boolean): JobRow[] {
 }
 let cursor = new Map<string, JobRow>();
 const tries = new TryLog(hudHome), answers = new PanelActionLog(hudHome);
-function withChanges(value: unknown, markExhaustion: boolean): unknown {
+let ownerDelivery: ReturnType<typeof panelDelivery> | undefined;
+async function syncPanelDelivery() {
+  if (taskClient && !resumeRefusal) {
+    if (!ownerDelivery) {
+      const cwd = process.cwd(), matches = projectJobFilter(cwd);
+      ownerDelivery = panelDelivery(hudHome, callerPane, cwd, id => {
+        const job = findJob(id);
+        return !!job && ownsJob(job) && matches(job);
+      }, async message => (await notify(callerPane, message, hudHome)).status === 0);
+    }
+  } else {
+    const old = ownerDelivery;
+    ownerDelivery = undefined;
+    await old?.stop();
+  }
+}
+async function withChanges(value: unknown, markExhaustion: boolean): Promise<unknown> {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
-  if (taskClient || !value || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (taskClient) {
+    const changes = await ownerDelivery?.changes();
+    return changes?.length ? { ...value, changes } : value;
+  }
   const rows = sessionRows(markExhaustion);
-  const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job))), ...landEvents(hudHome, callerPane).lines];
+  const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...landEvents(hudHome, callerPane).lines];
   cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }
@@ -2498,12 +2519,14 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       discovered = true;
       taskClient = !worker && !resumeRefusal && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
         Object.hasOwn(meta?.['io.modelcontextprotocol/clientCapabilities']?.extensions ?? {}, TASK_EXTENSION);
+      await syncPanelDelivery();
       result = { supportedVersions: ['2026-07-28'], ...privateCache,
         capabilities: { tools: {}, ...(!worker && !resumeRefusal ? { extensions: { [TASK_EXTENSION]: {} } } : {}) } };
       break;
     }
     case 'initialize':
       discovered = taskClient = false;
+      await syncPanelDelivery();
       const clientName = request.params?.clientInfo?.name;
       agyClient = clientName === 'antigravity-client';
       if (agyClient) callerHarness = 'agy';
@@ -2559,6 +2582,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       if (agyClient) checkResume('agy', meta?.['antigravity.google/conversation_id']);
       else checkResume('codex', meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id);
       if (resumeRefusal) {
+        await syncPanelDelivery();
         result = { ...taskContent(resumeRefusal), isError: true };
         break;
       }
@@ -2598,11 +2622,11 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
           result = value;
         } else if (typeof value === 'string') {
           const content = [{ type: 'text', text: value }];
-          const delta = withChanges({}, markExhaustion) as { changes?: unknown[] };
+          const delta = await withChanges({}, markExhaustion) as { changes?: unknown[] };
           if (delta.changes) content.push({ type: 'text', text: JSON.stringify(delta) });
           result = { content };
         } else {
-          result = { content: [{ type: 'text', text: JSON.stringify(withChanges(value, markExhaustion)) }] };
+          result = { content: [{ type: 'text', text: JSON.stringify(await withChanges(value, markExhaustion)) }] };
         }
       } catch (error) {
         result = {
@@ -2635,7 +2659,7 @@ function snapshot() {
 export function openRuntime() {
   return {
     snapshot,
-    start(state?: ReturnType<typeof snapshot>) {
+    async start(state?: ReturnType<typeof snapshot>) {
       if (!state) {
         checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
         if (!worker && !resumeRefusal) cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
@@ -2647,8 +2671,10 @@ export function openRuntime() {
       tries.delivered = state.triesAt;
       answers.offset = state.answersAt;
       for (const task of tasks.values()) armExpiry(task);
+      await syncPanelDelivery();
     },
     async stop() {
+      await ownerDelivery?.stop();
       for (const scout of pendingScouts.values()) scout.abort();
       await Promise.allSettled([...scoutedCreates]);
       for (const timer of expiry) clearTimeout(timer);

@@ -16,6 +16,22 @@ export const TRIES_FILE = 'tries.jsonl';
 // STATE has no per-line timestamps. Fingerprint the parsed ledger text so unrelated edits don't clear a flag.
 const revision = (text: string) => createHash('sha256').update(text).digest('hex');
 
+function parseTry(line: string): TryRecord | undefined {
+  try {
+    const r: TryRecord = JSON.parse(line);
+    if (typeof r.root === 'string' && typeof r.milestone === 'string' && ['accept', 'flag'].includes(r.action) &&
+      Array.isArray(r.slices) && r.slices.every(id => typeof id === 'string')) return r;
+  } catch { /* Malformed record. */ }
+}
+function tryLine(r: TryRecord, ids: string[]) {
+  const milestone = (r.action === 'accept' || ids.length > 1) && !/^[—–-]*$/.test(r.milestone) ? ` ${r.milestone}` : '';
+  return `try ${r.action === 'accept' ? 'accepted' : 'flagged'} ${basename(r.root)}${milestone}${milestone || ids.length > 1 ? ':' : ''} ${ids.join(', ')}`.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ');
+}
+export function liveTryLine(line: string, root: string): string | undefined {
+  const r = parseTry(line);
+  return r?.root === root && r.slices.length ? tryLine(r, r.slices) : undefined;
+}
+
 export function appendTry(home: string, root: string, action: TryAction, target: TryTarget): void {
   const { milestone, slices, milestones } = target;
   const record: TryRecord = { at: new Date().toISOString(), root, action, milestone, slices: slices.map((s) => s.id),
@@ -45,13 +61,7 @@ export class TryLog {
       if (stamp === this.stamp) return this.records;
       const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
       try {
-        this.records = fs.readFileSync(fd, 'utf8').split('\n').slice(0, -1).flatMap((line) => {
-          try {
-            const r: TryRecord = JSON.parse(line);
-            return typeof r.root === 'string' && typeof r.milestone === 'string' && ['accept', 'flag'].includes(r.action) &&
-              Array.isArray(r.slices) && r.slices.every((id) => typeof id === 'string') ? [r] : [];
-          } catch { return []; }
-        });
+        this.records = fs.readFileSync(fd, 'utf8').split('\n').slice(0, -1).flatMap(line => parseTry(line) ?? []);
         this.stamp = stamp;
       } finally { fs.closeSync(fd); }
     } catch { this.stamp = ''; this.records = []; }
@@ -92,8 +102,7 @@ export class TryLog {
         });
       }
       if (!ids.length) continue;
-      const milestone = (r.action === 'accept' || ids.length > 1) && !/^[—–-]*$/.test(r.milestone) ? ` ${r.milestone}` : '';
-      lines.push(`try ${r.action === 'accept' ? 'accepted' : 'flagged'} ${basename(r.root)}${milestone}${milestone || ids.length > 1 ? ':' : ''} ${ids.join(', ')}`.replace(/[\x00-\x1f\x7f-\x9f]/g, ' '));
+      lines.push(tryLine(r, ids));
     }
     return catchup ? lines.reverse() : lines;
   }

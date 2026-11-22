@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { openBoard, writeBoard } from '../cli/board.js';
 import { focusJobTab, openEditorPane, stopJob } from '../cli/panel-pane.js';
 import { readExpData, saveExpEdit } from '../collectors/exp-store.js';
-import { answerJobQuestion } from '../collectors/panel-actions.js';
+import { answerJobQuestion, appendPanelAction } from '../collectors/panel-actions.js';
 import type { ProjectVisits } from '../collectors/project-visits.js';
 import { appendTry } from '../collectors/try-records.js';
 import { finishChain } from '../render/chain-input.js';
@@ -63,14 +63,25 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           const root = state.activeTab === 'home' ? cwd : host.shownRoot();
           if (visits.snapshot(root) && (state.prefs.acceptance === 'slice' || host.projectDisplayRoot() === root)) {
             try {
-              appendTry(home, root, action.action, action.target);
-              host.notice('');
+              if (action.action === 'land') {
+                appendPanelAction(home, { type: 'land', root, slices: action.target.slices.map(s => s.id) });
+                host.notice(t('Land requested'));
+              } else {
+                appendTry(home, root, action.action, action.target);
+                host.notice('');
+              }
               host.collect();
-            } catch { host.notice(t('Could not record try')); }
+            } catch { host.notice(t(action.action === 'land' ? 'Could not record request' : 'Could not record try')); }
           }
           break;
         }
         // The owner's micro-actions on a HUD job: what failed shows until the next key.
+        case 'request-retry':
+          try {
+            appendPanelAction(action.home, { type: 'retry', job: action.jobId });
+            host.notice(t('Retry requested'));
+          } catch { host.notice(t('Could not record request')); }
+          break;
         case 'focus-job-tab':
           void focusJobTab(action.dir, process.env).then((focused) => {
             if (focused.ok) return;

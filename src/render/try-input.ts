@@ -13,7 +13,7 @@ export function tryInput(next: MonitorState, key: string, row?: MonitorRow): Mon
     if (!marked.delete(row.item)) marked.set(row.item, target);
     return { state: withMarks(marked.size ? marked : undefined), close: false };
   }
-  if (key !== 'try-accept' && key !== 'try-flag') return;
+  if (key !== 'try-accept' && key !== 'try-flag' && key !== 'request-land') return;
   let batch = target;
   if (selectedRows) {
     const slices = new Map<string, { slice: TryTarget['slices'][number]; milestone: string }>();
@@ -23,5 +23,5 @@ export function tryInput(next: MonitorState, key: string, row?: MonitorRow): Mon
     const mixed = milestones.some((m) => m !== milestones[0]);
     batch = { milestone: mixed ? '—' : milestones[0], slices: selected.map((s) => s.slice), ...(mixed ? { milestones } : {}) };
   }
-  if (batch) return { state: selectedRows ? withMarks() : next, close: false, action: { type: 'record-try', action: key === 'try-accept' ? 'accept' : 'flag', target: batch } };
+  if (batch) return { state: selectedRows ? withMarks() : next, close: false, action: { type: 'record-try', action: key === 'request-land' ? 'land' : key === 'try-accept' ? 'accept' : 'flag', target: batch } };
 }

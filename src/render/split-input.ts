@@ -121,7 +121,7 @@ export function splitProjectInput(next: MonitorState, controlNav: ClassicSplitNa
     return result();
   }
   if (key === 'enter' || key === 'activate') return enter();
-  if (key === 'space' || key === 'try-accept' || key === 'try-flag') {
+  if (key === 'space' || key === 'try-accept' || key === 'try-flag' || key === 'request-land') {
     const cursorRow = rows.find((r) => r.item === at && r.tryTarget);
     const parent = focus && split.listCursor?.startsWith('project:fold:task:') ? rows.find((r) => r.item === split.listCursor && r.tryTarget) : undefined;
     const row = cursorRow ?? parent ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget));

@@ -76,6 +76,7 @@ machine, inside herdr. (10.02, 22.12)
   `git_summary`, including files also changed in other managed worktrees of the same checkout. After closure
   the watcher reaps only clean worktrees that are merged or unmodified, or whose commits are already on
   the base branch (cherry-picked); preserve dirty worktrees or those with unintegrated work. (18.03)
+- Panel try marks, question answers and retry or land requests reach the main session even when it uses MCP tasks without `hud watch`.
 - A project's `worktree.disposable` globs exempt matching ignored files from worktree cleanup's dirty check; the default is empty. (22.19)
 - HUD, not the model, manages launch parameters. Check each dispatch's model, thinking and place against
   model facts before opening a tab. Show only supported levels; map to nearest supported and report the
@@ -270,6 +271,7 @@ Reference: `docs/design/control-tab/design.md`, `docs/design/control-tab/index.h
 - No panel briefing or chaining. Owner actions equivalent to local commands: `g` focuses selected job's
   herdr tab; `1`–`4` or `d` on expanded question writes `qa/qN.answer.md` once, notifies main via `changes` /
   `hud watch`; confirmed `X` reaps a runaway via `pi-role-reap`. (18.09)
+- `r` on a failed job requests a retry and `m` on a to-try slice requests landing; the panel records the intent and the main session decides whether to act.
 - Split's unselected working rows show compact keyword and progress cues. Cards and Inspector show a 10-bucket
   activity sparkline (`▁`–`█`), `hud-progress` milestones and nested `sonic` trees under their parent jobs.
   Inspector, Working tree and To-try previews show a bounded safe Git `--numstat` diff bar (top 12 files)

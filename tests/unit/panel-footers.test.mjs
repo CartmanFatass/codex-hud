@@ -34,6 +34,7 @@ const narrow = {
 const words = [
   ['g job tab', 'g 任务页'], ['X stop', 'X 停止'], ['o file', 'o 文件'], ['v inspect', 'v 详情'],
   ['/ filter', '/ 筛选'], ['a all', 'a 全部'], ['[ ] project', '[ ] 项目'], ['? help', '? 帮助'],
+  ['m request land', 'm 请求合入'], ['r request retry', 'r 请求重试'],
   ['Space mark', 'Space 勾选'], ['y accept', 'y 验收'], ['n flag', 'n 标记'], ['t to try', 't 待试用'],
   ['⏎ open', '⏎ 打开'], ['⏎ open file', '⏎ 打开文件'], ['⏎ expand', '⏎ 展开'],
   ['⏎ chain', '⏎ 备选链'], ['⏎ edit', '⏎ 编辑'], ['Esc back', 'Esc 返回'],

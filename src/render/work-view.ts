@@ -54,6 +54,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['g', 'job: go to its herdr tab'],
     ['1-4 d', 'job: answer its open question'],
     ['X', 'job: stop it (y confirms)'],
+    ['r', 'failed job: request a retry'],
     ['v', 'inspect: details and files'],
     ['a', 'show / hide older cards'],
     ['> <', 'next / previous card that needs you'],
@@ -62,6 +63,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['[ ]', 'previous / next project'],
     ['Space', 'mark a to-try row'],
     ['y n', 'accept / flag the marked rows, or the current one'],
+    ['m', 'to-try rows: request landing'],
     ['t', 'Progress: only what is to try'],
   ];
   const control = [
