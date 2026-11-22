@@ -155,6 +155,7 @@ machine, inside herdr. (10.02, 22.12)
 - `hud_roster` returns roles and effective convention. Ship a short default, replaced whole by a project or
   owner file. Only dispatch mechanics; methods (grilling, specs, tickets, design vocabulary, build recipes)
   go in on-demand skills that may stay uninstalled, not every session's convention. (17.07)
+- Mutating MCP tools accept batch arrays with independent per-item results in input order: `hud_create` `jobs` (with `brief_file` for task text inside `cwd`, each created job keeping its own notice), `hud_tickets` `updates`, `hud_respond` `answers`, and `hud_send` `messages` (alongside fan-out `jobs`).
 
 ### 2.2 Observation, status bars and side panel
 

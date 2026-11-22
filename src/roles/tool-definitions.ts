@@ -24,11 +24,18 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Dispatch a role (requires role and task), or retry a failed or stopped job with retry_of, inheriting its task and options unless overridden. An identical call within 10 minutes returns the same job; pass a fresh request_key for an intentional duplicate. Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for other role options.',
+    'Dispatch a role (role + task or brief_file), retry a failed/stopped job (retry_of), or batch-create with jobs: [...]. An identical call within 10 minutes returns the same job; pass a fresh request_key for an intentional duplicate. Omit preset, on, model and thinking unless the user requests them. See hud_roster(detail:true) for other role options.',
     {
       role: text,
       request_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same caller, role, cwd and task match for 10 minutes.' },
       task: text,
+      brief_file: { ...text, description: 'UTF-8 text path within cwd used as task.' },
+      jobs: {
+        type: 'array',
+        minItems: 1,
+        items: { type: 'object' },
+        description: 'Batch create; items take single-create fields (no nested jobs).',
+      },
       scout: { ...text, minLength: 1, description: 'Run sonic on this question first and attach its report. Not available for role sonic.' },
       retry_of: { ...text, description: 'Failed or stopped job ID. Reuses its brief and options and selects an available place.' },
       cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
@@ -108,26 +115,51 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_send',
-    'Send text to one job, or use jobs to send only to working jobs and get sent and skipped lists. A single send to a job closed by reading its report starts a repair and returns continued_as. Use either job or jobs.',
+    'Send text to one job, fan out one text to working jobs (jobs), or send distinct messages (messages: [{job, text, message_key?}]). A single or messages send to a job closed by reading its report starts a repair (continued_as). Use one of job, jobs or messages.',
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1 },
       message_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same job and text match for 10 minutes.' },
       text,
-    },
-    ['text']
+      messages: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          properties: { job: text, text, message_key: text },
+          required: ['job', 'text'],
+          additionalProperties: false,
+        },
+        description: 'Batch sends in input order; errors are per item.',
+      },
+    }
   ),
-  tool('hud_respond', 'Write a question answer once.', { job: text, request_id: text, answer: text }, [
-    'job',
-    'request_id',
-    'answer',
-  ]),
+  tool(
+    'hud_respond',
+    'Write a question answer once, or batch-answer with answers: [{job, request_id, answer}].',
+    {
+      job: text,
+      request_id: text,
+      answer: text,
+      answers: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          properties: { job: text, request_id: text, answer: text },
+          required: ['job', 'request_id', 'answer'],
+          additionalProperties: false,
+        },
+        description: 'Batch answers in input order; errors are per item.',
+      },
+    }
+  ),
   tool('hud_close', 'Reap a job early; safe to repeat.', { job: text }, ['job']),
   tool('hud_land', 'Land a settled managed worktree job through the project gate. Read the returned flow ID with hud_read.', { job: text }, ['job']),
   LEASE_TOOL,
   tool(
     'hud_tickets',
-    'Read the ticket method (default), add or update local tickets, or sync a GitHub mirror. Only the main session can write.',
+    'Read the ticket method (default), add or update local tickets (single or via updates: [...]), or sync a GitHub mirror. Only the main session can write.',
     {
       op: { ...text, enum: ['guide', 'add', 'update', 'sync'], default: 'guide' },
       cwd: { ...text, description: 'Project directory (default: server cwd).' },
@@ -153,6 +185,23 @@ export const ROLE_TOOLS = [
       status: { ...ticketStatus, description: 'New status for update.' },
       blocked_by: { ...blockers, description: 'For update: replace blockers (local numbers or feature/NN).' },
       tick: { type: 'array', items: ticketNumber, description: 'For update: 1-based acceptance items to check.' },
+      updates: {
+        type: 'array',
+        minItems: 1,
+        description: 'For update: batch updates in input order (item feature overrides top-level feature); errors are per item.',
+        items: {
+          type: 'object',
+          properties: {
+            feature: { ...text, pattern: '^[a-z0-9-]+$' },
+            ticket: ticketNumber,
+            status: ticketStatus,
+            blocked_by: blockers,
+            tick: { type: 'array', items: ticketNumber },
+          },
+          required: ['ticket'],
+          additionalProperties: false,
+        },
+      },
     }
   ),
 ];

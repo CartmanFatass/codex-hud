@@ -52,11 +52,8 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
     return { ok: true, output };
   }
   if (op !== 'add' && op !== 'update') return invalid('op');
-  if (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature)) return invalid('feature');
   const scratch = join(cwd, '.scratch');
   scanScratch(scratch, true);
-  const featureDir = join(scratch, feature),
-    issues = join(featureDir, 'issues');
   const list = (dir: string) =>
     directoryExists(dir) && directoryExists(join(dir, 'issues'))
       ? fs.readdirSync(join(dir, 'issues'), { withFileTypes: true }).flatMap((entry) => {
@@ -64,21 +61,25 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
           return match && entry.isFile() ? [{ number: Number(match[1]), path: join(dir, 'issues', entry.name) }] : [];
         })
       : [];
-  const existing = list(featureDir);
-  const known = new Set(existing.map(t => t.number));
-  const blockers = (value: unknown) => {
+  const resolveBlockers = (value: unknown, feat: string, known: Set<number>) => {
     if (!Array.isArray(value)) return invalid('blocked_by');
     const refs = value.map(ref => {
       const match = typeof ref === 'string' && /^([a-z0-9-]+)\/(\d+)$/.exec(ref);
       const n = match ? Number(match[2]) : ref;
       if (!number(n)) return invalid('blocked_by');
-      const exists = match && match[1] !== feature ? list(join(scratch, match[1])).some(t => t.number === n) : known.has(n);
+      const exists = match && match[1] !== feat ? list(join(scratch, match[1])).some(t => t.number === n) : known.has(n);
       if (!exists) throw new Error(`unknown blocked_by ticket: ${ref}`);
       return match ? `${match[1]}/${nn(n)}` : nn(n);
     });
     return refs.join(', ') || 'none';
   };
   if (op === 'add') {
+    if (args.updates !== undefined) return invalid('updates');
+    if (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature)) return invalid('feature');
+    const featureDir = join(scratch, feature),
+      issues = join(featureDir, 'issues');
+    const existing = list(featureDir);
+    const known = new Set(existing.map(t => t.number));
     if (!Array.isArray(args.tickets) || !args.tickets.length) return invalid('tickets');
     let next = existing.reduce((max, ticket) => Math.max(max, ticket.number), 0);
     // Plan the entire batch before making directories or writing any ticket.
@@ -88,7 +89,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
       const title = line(ticket.title, 'title'),
         what = line(ticket.what, 'what');
       const label = ticket.status === undefined ? 'ready-for-agent' : status(ticket.status);
-      const blocked = blockers(ticket.blocked_by);
+      const blocked = resolveBlockers(ticket.blocked_by, feature, known);
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
       const body = [
@@ -115,31 +116,65 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
     return { ok: true, tickets };
   }
 
-  if (!number(args.ticket)) return invalid('ticket');
-  if (args.status === undefined && args.tick === undefined && args.blocked_by === undefined) return invalid('status, tick or blocked_by');
-  const matches = existing.filter(({ number }) => number === args.ticket);
-  if (!matches.length) throw new Error(`unknown ticket: ${args.ticket}`);
-  if (matches.length > 1) throw new Error(`ambiguous ticket: ${args.ticket}`);
-  const [ticket] = matches;
-  const original = fs.readFileSync(ticket.path, 'utf8');
-  const comments = original.search(/^## Comments[ \t]*\r?$/m);
-  let body = comments < 0 ? original : original.slice(0, comments);
-  if (args.status !== undefined) body = withStatus(body, status(args.status), args.ticket);
-  if (args.blocked_by !== undefined) {
-    const field = /((?:^|·)[ \t]*\*\*Blocked by:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-    if (!field.test(body)) throw new Error(`missing Blocked by field in ticket: ${args.ticket}`);
-    const refs = blockers(args.blocked_by);
-    body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${refs}${suffix}`);
+  const updateOne = (feat: unknown, item: Record<string, unknown>) => {
+    if (typeof feat !== 'string' || !/^[a-z0-9-]+$/.test(feat)) return invalid('feature');
+    if (!number(item.ticket)) return invalid('ticket');
+    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined) return invalid('status, tick or blocked_by');
+    const existing = list(join(scratch, feat));
+    const known = new Set(existing.map(t => t.number));
+    const matches = existing.filter(({ number }) => number === item.ticket);
+    if (!matches.length) throw new Error(`unknown ticket: ${item.ticket}`);
+    if (matches.length > 1) throw new Error(`ambiguous ticket: ${item.ticket}`);
+    const [ticket] = matches;
+    const original = fs.readFileSync(ticket.path, 'utf8');
+    const comments = original.search(/^## Comments[ \t]*\r?$/m);
+    let body = comments < 0 ? original : original.slice(0, comments);
+    if (item.status !== undefined) body = withStatus(body, status(item.status), item.ticket);
+    if (item.blocked_by !== undefined) {
+      const field = /((?:^|·)[ \t]*\*\*Blocked by:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+      if (!field.test(body)) throw new Error(`missing Blocked by field in ticket: ${item.ticket}`);
+      const refs = resolveBlockers(item.blocked_by, feat, known);
+      body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${refs}${suffix}`);
+    }
+    if (item.tick !== undefined) {
+      const tick = new Set(numbers(item.tick, 'tick'));
+      let count = 0;
+      body = body.replace(/^([ \t]*[-*] \[)([ xX])\]/gm, (box, prefix, mark) =>
+        tick.has(++count) && mark === ' ' ? `${prefix}x]` : box
+      );
+      for (const n of tick) if (n > count) throw new Error(`unknown acceptance item: ${n}`);
+    }
+    const updated = body + (comments < 0 ? '' : original.slice(comments));
+    if (updated !== original) writeFileAtomic(ticket.path, updated, fs.statSync(ticket.path).mode & 0o777);
+    return { ok: true, ...ticket };
+  };
+
+  if (args.updates !== undefined) {
+    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined)
+      return invalid('updates');
+    if (!Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
+    if (feature !== undefined && (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature))) return invalid('feature');
+    const updates = args.updates.map((raw) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: updates' };
+      }
+      const item = raw as Record<string, unknown>;
+      const feat = item.feature ?? feature;
+      try {
+        return { feature: feat as string, ...updateOne(feat, item) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          ...(typeof feat === 'string' ? { feature: feat } : {}),
+          ...(number(item.ticket) ? { ticket: item.ticket } : {}),
+          ok: false,
+          code: message.startsWith('invalid_arguments') ? 'invalid_arguments' : 'tool_error',
+          error: message,
+        };
+      }
+    });
+    return { updates };
   }
-  if (args.tick !== undefined) {
-    const tick = new Set(numbers(args.tick, 'tick'));
-    let count = 0;
-    body = body.replace(/^([ \t]*[-*] \[)([ xX])\]/gm, (box, prefix, mark) =>
-      tick.has(++count) && mark === ' ' ? `${prefix}x]` : box
-    );
-    for (const item of tick) if (item > count) throw new Error(`unknown acceptance item: ${item}`);
-  }
-  const updated = body + (comments < 0 ? '' : original.slice(comments));
-  if (updated !== original) writeFileAtomic(ticket.path, updated, fs.statSync(ticket.path).mode & 0o777);
-  return { ok: true, ...ticket };
+
+  return updateOne(feature, args);
 }

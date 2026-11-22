@@ -108,8 +108,12 @@ MCP delivers one result per task; only the client can combine those notices into
 not mark a report read; collect it with `hud_read({job})`. Launch details remain in `hud_read({job, detail:true})`.
 A successful fan-out send keeps the job’s existing active task instead of starting a new one.
 Cancelling a still-current task stops the worker like `hud_close`; repeating cancel or cancelling an old task does
-nothing. Dispatch failures, duplicates and fan-out sends return immediately. Use `hud_read` for jobs without a
-task and to recover after an MCP restart. Task clients do not get `hud_wait`, `changes`, `watcher_alive`, or the
+nothing. Dispatch failures, duplicates, fan-out sends and batch calls (`hud_create({jobs})`, `hud_send({messages})`,
+`hud_respond({answers})`) return immediately with per-item results in input order; for each created, continued or
+resumed job in a batch, the live MCP connection delivers the same compact notice (waiting for checks on report,
+immediate on question, failure or stop) once to the caller pane (or in `changes` if delivery fails), and falls back to
+normal `hud-notify`/`changes` delivery if the connection ends first. Use `hud_read` for jobs without a
+task and to recover after an MCP restart. Task clients do not get `hud_wait`, `changes` (beyond panel and undelivered batch notices), `watcher_alive`, or the
 `hud watch` delivery hint.
 
 For other clients, MCP tool responses carry `changes`: one line per state change of the jobs this pane dispatched since
@@ -140,7 +144,7 @@ back to typing that line, which can touch a draft or fire prompt hooks. Stale PI
 MCP `changes` stays the fuller, query-only stream; a `report` token always means unread. With live events, keep
 working until notified instead of polling or waiting. A report-ready notice leaves the report unread; collect it explicitly.
 
-`hud_create` takes `role`, `task`, optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) and `slice` (STATE ID) to link progress. The optional `request_key`
+`hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) and `slice` (STATE ID) to link progress. Pass `jobs: [...]` instead of single-create fields to dispatch several jobs in one call; each item accepts the same fields as a single create, returns its result in input order, and one item's error does not block the others (each created job keeps its own notice). The optional `request_key`
 defaults to a hash of the caller pane, role, cwd and task. By default it dispatches on the role's first available place (`runs_on`).
 `hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields
 can override them. It selects an available place through the role or preset chain unless you supply `on`.
@@ -286,13 +290,16 @@ sub-tasks without waiting, then collect their reports; HUD prompts once if they 
 its report is still unread. A single send to a job closed by reading its report starts a repair with references to its
 brief and report, returning the new job ID as `continued_as`. When continuing a managed-worktree job—or retrying a
 failed continuation with `retry_of` without overriding `cwd` or `isolation`—HUD reuses the source worktree if it still
-exists and is clean; otherwise it creates a fresh worktree. Use `jobs` instead of `job` to send only to working
-jobs; the response lists `sent` job IDs and `skipped` entries with reasons. An explicit `message_key` deduplicates sends;
+exists and is clean; otherwise it creates a fresh worktree. Use `jobs` instead of `job` to send one text only to working
+jobs; the response lists `sent` job IDs and `skipped` entries with reasons. Use `messages: [{job, text, message_key?}]`
+to send distinct messages (including idle-grace continuations and closed-job repairs) in one call, returning `messages`
+in input order with per-item errors. An explicit `message_key` deduplicates sends;
 if omitted, the same job and text are treated as a retry only within 10 minutes. Workers ask with `hud_ask`; the question arrives through
 an active MCP task or the `QUESTION` notice, and `hud_respond` answers it. A synchronous question waits up to 20 minutes;
 pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner; task clients can see it
 in `hud_read`, and other clients receive it through `changes` or their live job notices. `hud_respond` writes a
-`qN.answer.md` once. `hud_close` reaps early. A stopped Pi worker is recorded as `stopped` even if it
+`qN.answer.md` once (or pass `answers: [{job, request_id, answer}]` to answer several in one call, returning `answers`
+in input order with per-item errors). `hud_close` reaps early. A stopped Pi worker is recorded as `stopped` even if it
 exits during startup without publishing its final status. Normal cleanup belongs to the watcher, which also
 records `stopped` on its next scan if a stop was requested and the recorded Pi process is gone. The owner can also answer
 an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line,
@@ -309,7 +316,7 @@ working directory; pass the project directory to target another project.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing. `acceptance` is a list of checklist item strings.
   The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
-- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers).
+- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers); or pass `updates: [{feature?, ticket, status?, tick?, blocked_by?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
   Unknown tickets or items are refused; other lines are unchanged.
 - **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
 

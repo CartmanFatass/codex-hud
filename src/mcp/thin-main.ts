@@ -30,6 +30,7 @@ import { failedAttempt, jobChanges, adoptionAttention, jobRow, jobRowReportMeta,
 import { questionFields } from '../collectors/work-artifacts.js';
 import { firstReportProse, reportReadHint } from '../utils/report-summary.js';
 import { PanelActionLog } from '../collectors/panel-actions.js';
+import { writePrivateFile } from '../collectors/small-model.js';
 import { TryLog } from '../collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../roles/cli-kinds.js';
 import { herdrId, runCommand, runHerdr } from '../roles/herdr-run.js';
@@ -1165,6 +1166,24 @@ async function readContextFile(path: string, limit: number | undefined) {
   }
 }
 
+const BRIEF_FILE_MAX_BYTES = 256 * 1024;
+async function readBriefFile(raw: unknown, cwd: string): Promise<{ task: string } | { ok: false; code: 'invalid_arguments' | 'context_too_large'; error: string }> {
+  if (typeof raw !== 'string' || !raw || raw.includes('\0'))
+    return { ok: false, code: 'invalid_arguments', error: 'invalid brief_file' };
+  try {
+    const base = await fs.promises.realpath(cwd);
+    const path = await fs.promises.realpath(resolve(cwd, raw));
+    const rel = relative(base, path);
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside cwd');
+    const file = await readContextFile(path, BRIEF_FILE_MAX_BYTES);
+    if (!file) return { ok: false, code: 'context_too_large', error: `brief_file: ${JSON.stringify(raw)}` };
+    if (!file.content.trim()) return { ok: false, code: 'invalid_arguments', error: 'brief_file is empty' };
+    return { task: file.content };
+  } catch {
+    return { ok: false, code: 'invalid_arguments', error: `brief_file: ${JSON.stringify(raw)} must resolve to a readable UTF-8 text file inside ${cwd}` };
+  }
+}
+
 const SONIC_FACTS_EN =
   'Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.';
 const SONIC_FACTS_ZH =
@@ -1354,10 +1373,13 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
   return fallback?.worktree?.owner ? fallback : undefined;
 }
 
-export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { job: string; derived: boolean }) {
+export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { job: string; derived: boolean }, batch = false) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
     catch { return { ok: false, code: 'invalid_arguments', error: 'sonic cwd must be an existing directory inside the parent project' }; }
+  }
+  if (input.task !== undefined && input.brief_file !== undefined) {
+    return { ok: false, code: 'invalid_arguments', error: 'task and brief_file are mutually exclusive' };
   }
   const retryOf = input.retry_of === undefined ? undefined : required(input, 'retry_of');
   let args = input;
@@ -1371,7 +1393,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     const inherited = jobOptions(source);
     delete inherited.on; // Retry through the role's chain instead of pinning the previous harness.
     if (input.on !== undefined) delete inherited.preset;
-    args = { ...inherited, task: input.task === undefined ? originalTask(source) : input.task, ...input };
+    args = { ...inherited, ...(input.task === undefined && input.brief_file === undefined ? { task: originalTask(source) } : {}), ...input };
     repairOf = input.from_jobs === undefined ? source.repair_of : undefined;
     if (input.cwd === undefined && input.isolation !== 'none') {
       worktreeSource = continuationWorktreeSource(source.repair_of, source);
@@ -1379,13 +1401,19 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
   }
   const role = required(args, 'role');
   const cwd = jobCwd(args);
+  if (args.brief_file !== undefined) {
+    const loaded = await readBriefFile(args.brief_file, cwd);
+    if ('code' in loaded) return loaded;
+    const { brief_file: _unused, ...rest } = args;
+    args = { ...rest, task: loaded.task };
+  }
   // An explicit key can retrieve a prior job even when other arguments in the retry differ.
   const requestKey = args.request_key === undefined
     ? derivedKey(retryOf ? 'retry' : 'create', pane, role, cwd, required(args, 'task'), retryOf)
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource }));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch }));
 }
 
 const pendingScouts = new Map<string, AbortController>();
@@ -1431,7 +1459,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parentJob?: string, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, landCwd, worktreeSource }: { scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job } = {}) {
+  { scoutContextCwd, landCwd, worktreeSource, batch }: { scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean } = {}) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
@@ -1672,6 +1700,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
     finishLaunch(job, dir, result, reason, !scoutQuestion);
     if (scoutTask) scoutTask.fence = taskFence(job);
+    if (batch) {
+      registerBatchTask(taskEntry, job, result.exit_code === 0);
+      return created(job);
+    }
     return finishTask(taskEntry, job, result.exit_code === 0, taskEntry && launchSummary(job)) ?? created(job);
   });
   if (!scoutQuestion) return launch();
@@ -1689,7 +1721,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     scoutTask = beginTask(base);
     scoutTask.view.statusMessage = taskLabel(scoutTask, 'scouting');
   } else void ensureQueueWatcher(pane, hudHome);
-  const reply = finishTask(scoutTask, base, true) ?? created(base);
+  if (batch) registerBatchTask(scoutTask, base, true);
+  const reply = batch ? created(base) : (finishTask(scoutTask, base, true) ?? created(base));
   const controller = new AbortController();
   pendingScouts.set(id, controller);
   const creating = (async () => {
@@ -1856,7 +1889,7 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
 function ticketGuide(args: Args): boolean {
   return args.op === undefined || args.op === 'guide';
 }
-async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean, land = false) {
+async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean, land = false, batch = false) {
   const matchKey = explicitKey ?? derivedKey('send', id, message);
   const current = findJob(id);
   if (!current) return { ok: false, code: 'job_not_found' };
@@ -1878,7 +1911,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
   if (!workingOnly && !land && ((state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) ||
       ((state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) && piReadSettlement(dir, current, status)))) {
     const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: derivedKey('repair', id, matchKey) },
-      process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined });
+      process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined }, batch);
     return 'job' in repair && repair.job ? { ...repair, continued_as: repair.job } : repair;
   }
   const agent = primary(dir);
@@ -1945,9 +1978,14 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
     sampleTask(oldTask);
   }
   const ok = result.exit_code === 0;
-  const response = finishTask(taskEntry, latest, ok);
+  if (batch) {
+    registerBatchTask(taskEntry, latest, ok);
+  } else {
+    const response = finishTask(taskEntry, latest, ok);
+    if (response) return response;
+  }
   if (!ok && oldTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
-  return response ?? {
+  return {
     ...(ok ? {} : { code: 'send_failed' }),
     ok, sent: ok,
     ...(queued ? { queued: true } : {}),
@@ -1983,7 +2021,31 @@ export function releaseLandTurn(id: string, key: string) {
   if (job?.land_turn === key) { delete job.land_turn; save(job); }
 }
 
+function itemError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return { ok: false, code: message.startsWith('invalid_arguments') ? 'invalid_arguments' : 'tool_error', error: message };
+}
+
 async function sendJobs(args: Args) {
+  if (args.messages !== undefined) {
+    if (args.job !== undefined || args.jobs !== undefined || args.text !== undefined || args.message_key !== undefined ||
+        !Array.isArray(args.messages) || !args.messages.length) throw new Error('invalid_arguments: messages');
+    const messages = await Promise.all(args.messages.map(async (raw) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+        return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: messages' };
+      const item = raw as Args;
+      const jobId = typeof item.job === 'string' ? item.job : undefined;
+      try {
+        const id = required(item, 'job');
+        const message = required(item, 'text');
+        const key = item.message_key === undefined ? undefined : required(item, 'message_key');
+        return { job: id, ...await keyLock(`job:${id}`, () => sendJob(id, message, key, false, false, true)) };
+      } catch (error) {
+        return { ...(jobId ? { job: jobId } : {}), ...itemError(error) };
+      }
+    }));
+    return { messages };
+  }
   const text = required(args, 'text');
   const key = args.message_key === undefined ? undefined : required(args, 'message_key');
   const send = (id: string, workingOnly: boolean) => keyLock(`job:${id}`, () => sendJob(id, text, key, workingOnly));
@@ -2058,6 +2120,25 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
   }
   if (name === 'hud_create') {
+    if (args.jobs !== undefined) {
+      if (!Array.isArray(args.jobs) || !args.jobs.length ||
+          Object.keys(args).some((key) => key !== 'jobs' && args[key] !== undefined)) {
+        throw new Error('invalid_arguments: jobs');
+      }
+      const results = await Promise.all(args.jobs.map(async (raw) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw) || ('jobs' in raw && (raw as Args).jobs !== undefined))
+          return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: jobs' };
+        try {
+          return await dispatchJob(raw as Args, process.env.HERDR_PANE_ID, undefined, undefined, true);
+        } catch (error) {
+          return itemError(error);
+        }
+      }));
+      if (sentCreateHint) return { jobs: results };
+      sentCreateHint = true;
+      const watcherAlive = !taskClient && !!callerPane && watching(callerPane, hudHome);
+      return { jobs: results, hint: deliveryHint(watcherAlive) };
+    }
     const result = await dispatchJob(args, process.env.HERDR_PANE_ID);
     if (sentCreateHint) return result;
     sentCreateHint = true;
@@ -2069,6 +2150,25 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_send') {
     ensureWatcher();
     return sendJobs(args);
+  }
+  if (name === 'hud_respond' && args.answers !== undefined) {
+    if (args.job !== undefined || args.request_id !== undefined || args.answer !== undefined ||
+        !Array.isArray(args.answers) || !args.answers.length) throw new Error('invalid_arguments: answers');
+    const answers = await Promise.all(args.answers.map(async (raw) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+        return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: answers' };
+      const item = raw as Args;
+      const jobId = typeof item.job === 'string' ? item.job : undefined;
+      const reqId = typeof item.request_id === 'string' ? item.request_id : undefined;
+      try {
+        const id = required(item, 'job');
+        const res = await keyLock(`job:${id}`, async () => respondJob(item, true));
+        return { job: id, ...(reqId ? { request_id: reqId } : {}), ...res };
+      } catch (error) {
+        return { ...(jobId ? { job: jobId } : {}), ...(reqId ? { request_id: reqId } : {}), ...itemError(error) };
+      }
+    }));
+    return { answers };
   }
   if (name === 'hud_wait') return waitJobs(args);
   if (name === 'hud_read') {
@@ -2158,26 +2258,36 @@ async function callJob(name: string, args: Args, detail: boolean) {
       await sleep(Math.min(500, end - Date.now()));
     }
   }
-  if (name === 'hud_respond') {
-    const request = required(args, 'request_id');
-    if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
-    const answer = required(args, 'answer');
-    ensureWatcher();
-    fs.mkdirSync(join(dir, 'qa'), { recursive: true, mode: 0o700 });
-    const oldTask = activeTasks.get(id);
-    if (oldTask) sampleTask(oldTask);
-    const row = taskClient ? readRow(job, false).row : undefined;
-    const task = row?.question_ids.includes(request) ? beginTask(job, oldTask?.reportBefore, request, row) : undefined;
-    try {
-      fs.writeFileSync(join(dir, 'qa', `${request}.answer.md`), answer, { flag: 'wx', mode: 0o600 });
-      return finishTask(task, job, true) ?? { ok: true, written: true };
-    } catch (error) {
-      if (task) releaseTask(task);
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      return { ok: true, written: false };
-    }
-  }
+  if (name === 'hud_respond') return respondJob(args, false);
   return closeJob(job);
+}
+
+function respondJob(args: Args, batch: boolean) {
+  const id = required(args, 'job');
+  const job = findJob(id);
+  if (!job) return { ok: false, code: 'job_not_found' };
+  const dir = directory(job.job);
+  const request = required(args, 'request_id');
+  if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
+  const answer = required(args, 'answer');
+  ensureWatcher();
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true, mode: 0o700 });
+  const oldTask = activeTasks.get(id);
+  if (oldTask) sampleTask(oldTask);
+  const row = taskClient ? readRow(job, false).row : undefined;
+  const task = row?.question_ids.includes(request) ? beginTask(job, oldTask?.reportBefore, request, row) : undefined;
+  try {
+    fs.writeFileSync(join(dir, 'qa', `${request}.answer.md`), answer, { flag: 'wx', mode: 0o600 });
+    if (batch) {
+      registerBatchTask(task, job, true);
+      return { ok: true, written: true };
+    }
+    return finishTask(task, job, true) ?? { ok: true, written: true };
+  } catch (error) {
+    if (task) releaseTask(task);
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    return { ok: true, written: false };
+  }
 }
 
 async function closeJob(job: Job, stop = false) {
@@ -2281,18 +2391,20 @@ async function syncPanelDelivery() {
         return !!job && ownsJob(job) && matches(job);
       }, async message => (await notify(callerPane, message, hudHome)).status === 0);
     }
+    ensureBatchTimer();
   } else {
     const old = ownerDelivery;
     ownerDelivery = undefined;
     await old?.stop();
+    await stopBatchDelivery(true);
   }
 }
 async function withChanges(value: unknown, markExhaustion: boolean): Promise<unknown> {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   if (taskClient) {
-    const changes = await ownerDelivery?.changes();
-    return changes?.length ? { ...value, changes } : value;
+    const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges())];
+    return changes.length ? { ...value, changes } : value;
   }
   const rows = sessionRows(markExhaustion);
   const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...landEvents(hudHome, callerPane).lines];
@@ -2315,6 +2427,7 @@ async function keyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 function mutationKey(name: string, args: Args): string | null {
   if (name === 'hud_tickets' && !ticketGuide(args))
     return isWorker ? 'tickets' : `tickets:${fs.realpathSync(jobCwd(args))}`;
+  if (name === 'hud_respond' && args.answers !== undefined) return null;
   if (name !== 'hud_respond' && name !== 'hud_close') return null;
   const id = args.job;
   // Leave validation to the tool, without making invalid calls wait for one another.
@@ -2333,6 +2446,12 @@ type HudTask = {
   reportBefore: number | null; seenQuestions: Set<string>; view: TaskView; attentionBefore?: number; expiresAt?: number;
 };
 let tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
+type PendingBatchNotice = { job: string; fence: string; status: TaskStatus; text: string };
+let batchTasks = new Map<string, HudTask>();
+let batchPending = new Map<string, PendingBatchNotice>();
+let batchTimer: NodeJS.Timeout | undefined;
+let batchSending: Promise<void> | undefined;
+let handedOff = false;
 let landTasks = new Set<string>();
 const expiry = new Set<NodeJS.Timeout>();
 function armExpiry(task: HudTask) {
@@ -2403,6 +2522,105 @@ function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: s
   task.expiresAt = Date.now() + TASK_TTL;
   armExpiry(task);
   return { resultType: 'task', ...wireTask(task) };
+}
+function registerBatchTask(task: HudTask | undefined, job: Job, ok: boolean): void {
+  if (!task) return;
+  if (!ok) { releaseTask(task); return; }
+  task.fence = taskFence(job);
+  activeTasks.set(task.job, task);
+  task.expiresAt = Date.now() + TASK_TTL;
+  batchTasks.set(task.job, task);
+  ensureBatchTimer();
+}
+function stopBatchTimerIfIdle() {
+  if (!batchTasks.size && !batchPending.size && batchTimer) {
+    clearInterval(batchTimer);
+    batchTimer = undefined;
+  }
+}
+function ensureBatchTimer() {
+  if (!batchTimer && taskClient && !resumeRefusal && (batchTasks.size || batchPending.size)) {
+    batchTimer = setInterval(() => { void pushBatchNotices(); }, 250).unref();
+  }
+}
+function recordBatchNotice(item: PendingBatchNotice, taskId: string, via: 'push' | 'changes') {
+  try {
+    writePrivateFile(join(directory(item.job), 'batch-notice.json'), JSON.stringify({
+      task_id: taskId, fence: item.fence, status: item.status, delivered_at: new Date().toISOString(), via,
+    }, null, 2) + '\n');
+  } catch { /* Job directory gone or unreadable. */ }
+}
+function sampleBatchTasks() {
+  const now = Date.now();
+  for (const [id, task] of [...batchTasks.entries()]) {
+    if (task.expiresAt && now >= task.expiresAt) {
+      batchTasks.delete(id);
+      releaseTask(task);
+      continue;
+    }
+    if (activeTasks.get(id) !== task) {
+      batchTasks.delete(id);
+      continue;
+    }
+    const job = findJob(id);
+    if (!job || job.herdr_pane !== task.pane || taskFence(job) !== task.fence) {
+      batchTasks.delete(id);
+      releaseTask(task);
+      continue;
+    }
+    const view = sampleTask(task);
+    if (view.status === 'working') continue;
+    batchTasks.delete(id);
+    const text = view.result?.content[0]?.text ?? view.statusMessage;
+    batchPending.set(task.id, { job: task.job, fence: task.fence ?? '', status: view.status, text });
+  }
+  stopBatchTimerIfIdle();
+}
+async function pushBatchNotices() {
+  if (batchSending || !taskClient || resumeRefusal) return;
+  sampleBatchTasks();
+  if (!callerPane || !batchPending.size) return;
+  const run = (async () => {
+    for (const [id, item] of [...batchPending.entries()]) {
+      if (!taskClient || resumeRefusal) break;
+      try {
+        if ((await notify(callerPane, item.text, hudHome)).status === 0) {
+          batchPending.delete(id);
+          recordBatchNotice(item, id, 'push');
+        }
+      } catch { /* Retry on next tick or deliver via withChanges. */ }
+    }
+  })().finally(() => {
+    batchSending = undefined;
+    stopBatchTimerIfIdle();
+  });
+  batchSending = run;
+  await run;
+}
+async function drainBatchChanges(): Promise<string[]> {
+  if (batchSending) await batchSending;
+  sampleBatchTasks();
+  if (!batchPending.size) return [];
+  const lines: string[] = [];
+  for (const [id, item] of [...batchPending.entries()]) {
+    batchPending.delete(id);
+    recordBatchNotice(item, id, 'changes');
+    lines.push(item.text);
+  }
+  stopBatchTimerIfIdle();
+  return lines;
+}
+async function stopBatchDelivery(releaseMarkers: boolean) {
+  if (batchTimer) {
+    clearInterval(batchTimer);
+    batchTimer = undefined;
+  }
+  await batchSending;
+  if (releaseMarkers) {
+    for (const task of batchTasks.values()) releaseTask(task);
+  }
+  batchTasks.clear();
+  batchPending.clear();
 }
 function updateTask(task: HudTask, status: TaskStatus, statusMessage: string, text?: string): TaskView {
   if (task.view.status !== status || task.view.statusMessage !== statusMessage) {
@@ -2653,7 +2871,8 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
 }
 // Private live-connection handoff, never a disk recovery or a new client's authority.
 function snapshot() {
-  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, tasks, activeTasks, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
+  handedOff = true;
+  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
     callerHarness, sentConventionVersion, sentCreateHint, createdJobs, cursor, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
@@ -2668,6 +2887,8 @@ export function openRuntime() {
       if (state.version !== 1) throw new Error('incompatible MCP session handoff');
       ({ tasks, activeTasks, landTasks, discovered, taskClient, agyClient, resumeChecked, resumeRefusal,
         callerHarness, sentConventionVersion, sentCreateHint, createdJobs, cursor } = state);
+      batchTasks = state.batchTasks ?? new Map();
+      batchPending = state.batchPending ?? new Map();
       tries.delivered = state.triesAt;
       answers.offset = state.answersAt;
       for (const task of tasks.values()) armExpiry(task);
@@ -2675,6 +2896,7 @@ export function openRuntime() {
     },
     async stop() {
       await ownerDelivery?.stop();
+      await stopBatchDelivery(!handedOff);
       for (const scout of pendingScouts.values()) scout.abort();
       await Promise.allSettled([...scoutedCreates]);
       for (const timer of expiry) clearTimeout(timer);

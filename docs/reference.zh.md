@@ -77,7 +77,7 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 没有显式选择时，`HERDR_PANE_ID` 允许用一秒预算向 `herdr pane current` 查询调用者的 Claude 转写或 Codex 会话（herdr 窗格内回退读取 `CODEX_THREAD_ID`）；
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
 
-MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**、**hud_land**。
+MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**、**hud_land**、**hud_lease** 与 **hud_tickets**。
 首次分派或项目上下文失效时，调用 `hud_roster` 获取角色可用性、能否继续、生效的 `runs_on` 和约定；上下文仍有效时直接调用 `hud_create`。
 同一 MCP 会话再次调用时，若约定未变则省略正文，角色信息仍会刷新。
 `hud_roster` 和该会话的首个 `hud_create` 结果会按调用者的运行环境给出通知提示；无法识别时给出通用提示。
@@ -86,7 +86,7 @@ MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud
 已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
 见[项目工作者](#项目工作者)。
 
-`hud_create` 接收 `role`、`task`，可选 `cwd` 和仅用于显示的 `package`；还可用 `ticket`（`feature/NN`）和 `slice`（STATE 条目 ID）关联进度。
+`hud_create` 接收 `role`、`task`（或 `brief_file`：位于 `cwd` 内的可读 UTF-8 文本路径，上限 256 KiB，与 `task` 互斥），可选 `cwd` 和仅用于显示的 `package`；还可用 `ticket`（`feature/NN`）和 `slice`（STATE 条目 ID）关联进度。传入 `jobs: [...]` 可在一次调用中批量派发多个任务：每项接受与单次创建相同的字段，按输入顺序返回逐项结果，单项失败不阻塞其余项，每个创建成功的任务仍保留自己的通知。
 省略 `request_key` 时，根据调用窗格、角色、cwd 和任务正文生成去重键。默认在角色的首个可用位置（`runs_on`）启动。
 `hud_create({retry_of: job})` 使用失败或停止任务的简报和选项开启新任务，显式传入的字段优先。
 若未传入 `on`，则从角色或预设的执行链选择可用位置。传入 `preset` 可使用指定预设中首个可用且未耗尽的位置，
@@ -183,11 +183,11 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 `hud_send` 给工作中的 pi 或 CLI 任务排队消息；角色允许继续且报告未读时，也可在空闲宽限期内续写。
 若任务因报告已读而关闭，单发会开启修正任务，引用原简报和报告，并在 `continued_as` 返回新任务 ID。
 续写托管工作树任务，或用 `retry_of` 重试失败的续写任务（且未覆盖 `cwd` 或 `isolation`）时，若源工作树仍存在且工作区干净，HUD 会复用该工作树；否则新建工作树。
-用 `jobs` 代替 `job` 时，只发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不启动修正任务。
+用 `jobs` 代替 `job` 时，只把同一段文字发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不启动修正任务。用 `messages: [{job, text, message_key?}]` 可在一次调用中给多个任务发送各自的消息（包括空闲宽限续写和读后关闭修复），按输入顺序返回 `messages` 且错误逐项隔离。
 显式 `message_key` 始终用于去重；省略时，只有 10 分钟内发给同一任务的相同消息才视为重试。
 CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
 CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得知。
-`hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收：即使 Pi 工作者在启动期间退出、未写入最终状态，也会记为 `stopped`。
+`hud_respond` 只写一次 `qN.answer.md`（也可传入 `answers: [{job, request_id, answer}]` 一次回答多条，按输入顺序返回 `answers` 且错误逐项隔离）。`hud_close` 提前回收：即使 Pi 工作者在启动期间退出、未写入最终状态，也会记为 `stopped`。
 正常清理由 watcher 负责；如果任务已收到停止请求且记录的 Pi 进程已经退出，watcher 会在下次扫描时将任务记为 `stopped`。主人也可在面板里回答未答的问题
 （`r`，再按数字或 `d`）；主会话通过一行 `changes` / `hud watch` 得知：`[role@job] ANSWERED qN from panel: <答案>`，
 取自 `$HUD_HOME/panel-actions.jsonl`（读取方运行期间作出的回答；更早回答的问题只是不再出现）。
@@ -198,9 +198,11 @@ CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得�
 报告通知包含任务 ID、角色、状态、`hud_read` 调用方式和一行摘要（优先使用工作者摘要，否则摘取报告正文）。
 有 HUD 检查时，通知等检查结束后再发送，并附通过数与总数。提问不等检查，通知会给出问题编号和正文。
 MCP 每个任务返回一条结果；是否合并成一次唤醒由客户端决定。通知不标记报告已读，仍需用 `hud_read({job})` 收取报告；启动详情可用 `hud_read({job, detail:true})` 查看。
-取消当前回合的任务与 `hud_close` 一样会停止工作者；重复取消或取消旧任务不会产生影响。派发失败、重复调用和批量发送直接返回。
-没有后台任务的工作，以及 MCP 重启后无法识别的任务，仍可用 `hud_read` 查询。这类会话不提供 `hud_wait`、`changes`、
+取消当前回合的任务与 `hud_close` 一样会停止工作者；重复取消或取消旧任务不会产生影响。派发失败、重复调用、群发及批量调用（`hud_create({jobs})`、`hud_send({messages})`、`hud_respond({answers})`）直接返回逐项结果；批量调用创建、续写或恢复的任务由当前存活的 MCP 连接以同样的精简格式（报告等待检查、提问／失败／停止即时送达）向调用窗格逐条推送一次通知（推送失败则转入 `changes`），连接提前结束时回退到常规的 `hud-notify`／`changes` 通道，不会漏通知。
+没有后台任务的工作，以及 MCP 重启后无法识别的任务，仍可用 `hud_read` 查询。这类会话不提供 `hud_wait`、`changes`（面板意图和未送达的批量通知除外）、
 `watcher_alive` 或 `hud watch` 提示。
+
+`hud_tickets` 在各客户端提供本地工单方法与操作（仅主会话可写，拒绝改写 GitHub 镜像）：默认 `guide` 返回方法模板；`add` 按 `feature` 和 `tickets` 批量建单；`update` 可单条更新（`feature`、`ticket` 及 `status`／`tick`／`blocked_by`），也可传 `updates: [{feature?, ticket, status?, tick?, blocked_by?}]` 按输入顺序批量更新并返回逐项结果（每项可覆盖 `feature`，单项错误不阻塞其余项）；`sync` 执行 `hud tickets sync`。
 
 其他客户端的 MCP 工具响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
 与 `hud watch` 用同一个 `jobRow` 推导任务状态，所以结论一致。`hud watch` 默认只打印需要关注的事件，如提问、结算、受阻或新的静置原因；

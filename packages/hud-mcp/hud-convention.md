@@ -15,6 +15,7 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - `hud_create({ role, task, scout: "<question>" })` runs sonic first and attaches its dossier to the target via `from_jobs`
   (any sonic report attached through `from_jobs` is prefixed with one unverified-facts line in the brief's language);
   one notice or MCP task covers both, and a failed scout leaves a note instead.
+- Batch forms return per-item results in input order without one error blocking others: `hud_create({ jobs })` (each item takes single-create fields or `brief_file` within `cwd`), `hud_tickets({ op: "update", updates })`, `hud_respond({ answers })`, and `hud_send({ messages })` (distinct sends; `jobs` stays fan-out to working jobs).
 - Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
   otherwise choose the simplest option and note it.
 - Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
