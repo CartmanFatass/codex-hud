@@ -17,7 +17,7 @@ export class RunnerWatches {
     if (entry.socket) return Infinity;
     if (entry.retryAt > Date.now()) return entry.retryAt;
     const socket = entry.socket = createConnection(runnerAddress(dir, pid));
-    socket.on('error', () => {}); // close also fires on a refused pre-listen connection.
+    socket.on('error', () => {}); // close is also emitted on a refused pre-listen connection.
     socket.once('connect', () => { entry.delay = 50; });
     socket.once('close', () => {
       if (this.entries.get(key) !== entry) return;
