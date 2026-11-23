@@ -107,6 +107,14 @@ The owner approved the lean spec and resolved the draft questions:
   Claude's `/tasks` list and batch `hud_create({ jobs })` works again.
   Owner: an explicit `/land <job>` typed in Claude starts `hud_land` directly (no main-session turn); band
   buttons and `/retry` keep recording intent.
+- **D-2026-11-22-26** (§2.1.1, §2.1.5, §2.1.6, §2.2): Three open reviews (fable, carbon, astra) agreed the land
+  path is where the day goes. The owner approved all seven directions: install-wide `hud doctor` and
+  `hud --version`; docs reflowed one sentence per line with zh synced per milestone; per-job usage and outcome
+  in the archive with `hud stats`/`hud day`; compact results from the MCP for every client; a merge check at
+  worker report time; fast project checks before a report settles; a land train sharing one gate; and an
+  authorized ticket batch that lands clean settles and hands back at the first judgement point. The last two
+  of these change the spec (checks may refuse a report; main does not decide each step inside an authorized
+  batch); the spec lines change when those tickets are dispatched. Tickets: `.scratch/review-next/`.
 
 ## 2026-11-21
 
