@@ -40,7 +40,7 @@ test('Home opens only the newest current result by itself; routine running cards
   assert.ok(running.length >= 2);
   for (const w of running) {
     assert.ok(!cardExpanded(frame.state, key(w)), w.id);
-    assert.equal(rows(w).length, 1, `${w.id}: a routine running card packs into one dense row until expanded`);
+    assert.equal(rows(w).length, w.nativeDepth === undefined ? 2 : 1, `${w.id}: a routine running card is one dense row, plus its dim sentence for a job, until expanded`);
   }
   const newest = f.board.workers.find((w) => key(w) === frame.state.home.newestCard);
   assert.ok(newest && newest.settledAt !== null, 'the newest result opens');

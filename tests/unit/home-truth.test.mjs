@@ -27,10 +27,10 @@ test('Home top line counts STATE waiting items with job questions, ✓ only when
   assert.match(plain(f.quiet(38, 'en', 46))[1], /^\? 2 waiting for you +0 running$/);
   assert.match(plain(f.quiet(38, 'zh', 46))[1], /^\? 2 项等你处理 +0 运行中$/);
   assert.match(plain(f.quiet(38, 'en', 46, undefined, { ...f.data, waiting: [] }))[1], /^✓ Nothing needs you +0 running$/);
-  // One job question and two STATE items are three things waiting; the question's card stays under the line.
+  // One job question and two STATE items are three things waiting; the question's row stays under the line.
   const busy = plain(f.render(38, 'en', 46));
   assert.match(busy[1], /^\? 3 waiting/);
-  assert.match(busy[3], /^\? imp · NATIVE-TREE/);
+  assert.match(busy[3], /^\? {2}NATIVE-TREE {2}asks/);
   // A done-today count of 0 is not shown.
   assert.doesNotMatch(plain(f.quiet(38, 'en', 46)).at(-1), /done today/);
   assert.doesNotMatch(plain(f.quiet(38, 'zh', 46)).at(-1), /今日完成/);

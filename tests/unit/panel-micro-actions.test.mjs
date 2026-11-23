@@ -254,17 +254,15 @@ test('every row is exactly the panel width with the question expanded, a stop pr
   assert.equal(split[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
 });
 
-test('Classic Home at 40 columns keeps the collapsed slab’s lane, question and choices, without a file or hint row', (t) => {
+test('Classic Home at 40 columns keeps a collapsed question as its row (lane, option count, age) and the question under it, without a file or hint row', (t) => {
   const f = fixture(t);
   for (const lang of ['en', 'zh']) {
     const frame = f.render(initialMonitorState(), 40, lang), rows = plain(frame);
-    const at = rows.findIndex((line) => line.startsWith('? imp · IMP'));
+    const at = rows.findIndex((line) => line.startsWith('?  IMP'));
     assert.ok(at >= 0);
-    assert.match(rows[at], lang === 'en' ? /asking 4m$/ : /提问中 4分$/);
-    assert.deepEqual(rows.slice(at + 1, at + 3), ['┃ Keep the v1 shim for one more', '┃ release?']);
-    assert.match(rows[at + 3], lang === 'en' ? /^┃ 2 options · default:/ : /^┃ 2 个选项 · 默认:/);
-    assert.equal(rows[at + 4], '');
-    assert.doesNotMatch(rows.join('\n'), /qa\/q1\.md|\[1\]|r reply|Stop /);
+    assert.match(rows[at], lang === 'en' ? /^\? {2}IMP {2}asks 2 opts +4m$/ : /^\? {2}IMP {2}问 2选 +4分$/);
+    assert.match(rows[at + 1], /^ {3}Keep the v1 shim for one more releas…\s*$/, 'the question, cut to the line');
+    assert.doesNotMatch(rows.join('\n'), /qa\/q1\.md|\[1\]|r reply|Stop |default:|默认:/);
     for (const row of frame.lines) assert.equal(visualLength(row), 40);
   }
 });

@@ -4,7 +4,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { boardRow, minuteAge, mark, footHints } from './workboard-rows.js';
 import { orderedLanes } from './work-lanes.js';
-import { jobRows } from './work-jobs.js';
+import { askRows, jobRows } from './work-jobs.js';
 import { quietDecisionSummary, requestLines, questionOriginalRows, stemLines } from './work-card.js';
 import { theme, visualLength } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
@@ -187,7 +187,9 @@ export function homeRows(
     rows.push(boardRow(''));
   }
 
-  for (const worker of needs) rows.push(...askSlabRows(worker, board, state, width, now));
+  // A question is its row and its text until the owner opens it into the slab (Enter or a click).
+  for (const worker of needs)
+    rows.push(...(state.home.expanded?.has(targetKey({ kind: 'worker', laneId: worker.laneId, workerId: worker.id })) ? askSlabRows(worker, board, state, width, now) : askRows(worker, board, state, width, now)));
   if (!filtering && board.homeBrief) {
     rows.push(...flowLines(monitorText(board.homeBrief), width).map((s) => boardRow(theme.board.text(s))), boardRow(''));
   }

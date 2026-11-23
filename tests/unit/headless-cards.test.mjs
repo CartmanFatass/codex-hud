@@ -40,17 +40,17 @@ test('tier and headless marks sit between the model and the age, within the widt
   for (const lang of ['en', 'zh']) for (const width of [120, 80, 50]) {
     const lines = jobFrame(width, lang, routedBoard(lang));
     for (const line of lines) assert.ok(visualLength(line) <= width, `${lang} ${width}: ${line}`);
-    assert.match(lines.find((l) => /▆/.test(l)), / ▆ ⚡1 \d+(?:m|分)$/, `${lang} ${width}: hard on a tab job`);
-    assert.match(rowOf(lines, 'metrics-lite/01'), / ▂∅ ⚡2 \d+(?:m|分)$/, `${lang} ${width}: light and headless`);
-    assert.match(rowOf(lines, 'docs-sweep/04'), / ∅ \d+(?:m|分)$/, `${lang} ${width}: headless alone`);
+    assert.match(lines.find((l) => /▆/.test(l)), / ▆ ⚡1 +\d+(?:m|分)$/, `${lang} ${width}: hard on a tab job`);
+    assert.match(rowOf(lines, 'metrics-lite/01'), / ▂∅ ⚡2 +\d+(?:m|分)(?: (?:quiet |静)\d+(?:m|分))?$/, `${lang} ${width}: light and headless`);
+    assert.match(rowOf(lines, 'docs-sweep/04'), / ∅ +\d+(?:m|分)(?: (?:quiet |静)\d+(?:m|分))?$/, `${lang} ${width}: headless alone`);
     assert.doesNotMatch(rowOf(lines, 'docs-sweep/04'), /[▂▄▆]/, 'a job with no route has no tier mark');
-    assert.match(rowOf(lines, 'stream-sync/05'), / ▄ \d+(?:m|分)$/, `${lang} ${width}: standard`);
+    assert.match(rowOf(lines, 'stream-sync/05'), / ▄ +\d+(?:m|分)$/, `${lang} ${width}: standard`);
     assert.doesNotMatch(rowOf(lines, 'auth-refresh/04'), /[▂▄▆∅]/, 'an unrouted tab job has no mark');
   }
   const ascii = jobFrame(80, 'en', routedBoard('en'), initialMonitorState(), 'text');
-  assert.match(rowOf(ascii, 'metrics-lite/01'), / -h \*2 \d+m$/);
-  assert.match(rowOf(ascii, 'stream-sync/05'), / = \d+m$/);
-  assert.match(ascii.find((l) => / # \*1 /.test(l)), / # \*1 \d+m$/);
+  assert.match(rowOf(ascii, 'metrics-lite/01'), / -h \*2 +\d+m(?: quiet \d+m)?$/);
+  assert.match(rowOf(ascii, 'stream-sync/05'), / = +\d+m$/);
+  assert.match(ascii.find((l) => / # \*1 /.test(l)), / # \*1 +\d+m$/);
 });
 
 test('routeBadge is empty without a route or headless flag, and a route that chose headless marks it even without the flag', (t) => {

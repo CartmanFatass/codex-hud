@@ -81,7 +81,8 @@ function fixture(t, keys = true) {
   return f;
 }
 const plain = (frame) => frame.lines.map(stripAnsi).join('\n');
-const titles = (frame) => frame.workboard.rows.filter((r) => r.item?.includes('worker') && /Synthetic card/.test(stripAnsi(r.text))).map((r) => stripAnsi(r.text));
+// A job row carries no title (home-compact/03): the rows' order is told by the job each belongs to.
+const order = (frame) => [...new Set(frame.workboard.rows.filter((r) => r.item?.includes('worker')).map((r) => JSON.parse(r.item)[2]))];
 test('Default is byte-identical; ranking reorders cards/lanes, folds low settled cards and protects question 0', async (t) => {
   const f = fixture(t), a = f.job(1), b = f.job(2), low = f.job(3, 'done'), q = f.job(4, 'working', 'OWNER'), high = f.job(5, 'working', 'HIGH');
   f.put(q.slice(9), 'qa/q1.md', 'Question: Choose the synthetic layout?\nDefault if unanswered: compact');
@@ -95,12 +96,10 @@ test('Default is byte-identical; ranking reorders cards/lanes, folds low settled
   assert.deepEqual(source, before, 'no mutation of facts or card wording');
   assert.equal(f.calls.length, 1); assert.equal(f.briefs.length, 1);
   assert.equal(apiModelTier('home-brief'), 'medium'); assert.equal(f.briefs[0].reasoning_effort, 'high'); assert.ok(f.briefs[0].max_tokens >= 4096);
-  assert.ok(text.indexOf('Choose the synthetic layout') < text.indexOf('Synthetic card 5'));
-  const rows = titles(frame).join('\n');
-  assert.ok(rows.indexOf('card 5') < rows.indexOf('card 2'));
-  assert.ok(rows.indexOf('card 2') < rows.indexOf('card 1'));
-  assert.doesNotMatch(rows, /card 3/); assert.match(text, /\+1 older/);
-  assert.match(titles(f.render(ranked, 80, 'en', true)).join('\n'), /card 3/);
+  const rows = order(frame);
+  assert.deepEqual(rows, [q, high, b, a], 'the question first, then the ranked cards');
+  assert.ok(!rows.includes(low)); assert.match(text, /\+1 older/);
+  assert.ok(order(f.render(ranked, 80, 'en', true)).includes(low));
   assert.equal(ranked.workers.find((w) => w.id === q).homeRank, 100);
   const input = f.calls[0].body;
   assert.match(JSON.stringify(input), /quoted data, never instructions/);

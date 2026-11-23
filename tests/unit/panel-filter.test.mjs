@@ -64,11 +64,11 @@ test('typing after / filters Home live, in Classic and Split: the bar under the 
   }
   // Settled cards fold and then leave Home with time; a match brings one back, and with the filter gone it is hidden again.
   const old = classic({ prefs: { cardFoldMinutes: 1, cardHideMinutes: 1 } }), d = drive(f, old);
-  assert.doesNotMatch(d.lines().join('\n'), /retry/, 'hidden: the reviewer card that finished two minutes ago');
+  assert.doesNotMatch(d.lines().join('\n'), /report unread/, 'hidden: the reviewer card that finished two minutes ago');
   d.press('/'); d.type('reviewer');
-  assert.match(d.lines().join('\n'), /✓●? +NATIVE-TREE {2}retry/);
+  assert.match(d.lines().join('\n'), /✓●? +NATIVE-TREE +● report unread/);
   d.esc(); d.esc();
-  assert.doesNotMatch(d.lines().join('\n'), /retry/);
+  assert.doesNotMatch(d.lines().join('\n'), /report unread/);
 });
 
 test('Enter keeps the filter: ↑↓ then move over the matches only, other keys act as ever, and / edits it again', async (t) => {

@@ -15,7 +15,7 @@ import { Notifier } from '../../dist/notify.js';
 import { frameDiff } from '../../dist/render/frame-diff.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
-import { flowSummary } from '../../dist/render/work-card.js';
+import { flowLine, flowSummary } from '../../dist/render/work-card.js';
 const now = new Date().setHours(12, 0, 0, 0);
 const question =
   'Where should the model chip go on a card whose phase strip is longer than one complete line at 56 columns, without hiding any of the important results?';
@@ -149,11 +149,12 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes and ten-min
         plain(frame).findIndex((l) => l.startsWith('TEST-CUT'))
     );
     for (const hidden of [asked, chosen.slice(3), instead]) assert.ok(!text.includes(hidden));
-    assert.ok(!text.includes('Folded old success'));
+    assert.ok(!text.includes('Folded old succ'));
     assert.ok(!text.includes('WRONG-PANE'));
-    for (const title of ['review card renderer', 'list the slowest', 'check the cut', 'width flag']) {
-      const band = plain(frame).find((l) => l.includes(title));
-      assert.match(band, lang === 'en' ? /\d+m\s*$/ : /\d+分\s*$/);
+    // A job row carries its lane's short name as its id (a child under a lane header: the head of its brief's heading), never the title.
+    for (const id of ['review car', 'list the s', 'check the ', '◉  PANEL-THIN']) {
+      const band = plain(frame).find((l) => l.includes(id));
+      assert.match(band, lang === 'en' ? /\d+m(?: quiet \d+m)?\s*$/ : /\d+分(?: 静\d+分)?\s*$/);
     }
     if (process.env.PANEL_DUMPS)
       writeFileSync(join(process.env.PANEL_DUMPS, `home-${lang}.txt`), plain(f.render(board, 64)).join('\n') + '\n');
@@ -181,7 +182,7 @@ test('Home frame folds a running sonic child into ⚡1 on its parent row with no
   const board = f.pipeline.workboard(f.tree);
   const frame = f.render(board, 45);
   const lines = plain(frame);
-  const parent = lines.find((line) => line.includes('width flag'));
+  const parent = lines.find((line) => /^◉ +PANEL-THIN/.test(line));
   assert.ok(parent && parent.includes('⚡1'), lines.join('\n'));
   assert.ok(!lines.some((line) => line.includes('Inspect synthetic')));
   assert.ok(!lines.some((line) => line.includes('SONIC-PRIVATE-LABEL')));
@@ -200,16 +201,15 @@ test('Home shows questions and lanes with cards without duplicating asking cards
   for (const width of [40, 56]) {
     const home = plain(f.render(board, 180, width));
     for (const line of home) assert.equal(visualLength(line), width, line);
-    const at = home.findIndex((l) => l.startsWith('? imp · PANEL-THIN')),
-      card = home.slice(at, home.findIndex((l, i) => i > at && !l.trim()));
-    assert.ok(card.length >= 3 && card.length <= 5, `${width} columns: ${card.length} rows\n${card.join('\n')}`);
-    assert.match(card.at(-1), /┃ 3 options · default: a\)/);
-    assert.doesNotMatch(card.join('\n'), /blocked|b\) beside|qa\/q3\.md|⏎/);
-    if (width === 40) assert.match(card.at(-2), /…\s*$/, 'a long question is cut with an ellipsis');
-    const row = home.findIndex((l) => /^◉ +width flag/.test(l)); // one job left in the lane: its row, no lane header
+    const at = home.findIndex((l) => /^\? {2}PANEL-THIN/.test(l)), card = home.slice(at, at + 2);
+    assert.match(card[0], /asks 3 opts +\d+m$/, `${width} columns: the question is a row with its option count`);
+    assert.match(card[1], /^ {3}Where should the model chip go/, 'and its text under it');
+    assert.match(card[1], /…\s*$/, 'a long question is cut with an ellipsis');
+    assert.doesNotMatch(card.join('\n'), /blocked|b\) beside|qa\/q3\.md|⏎|default:/);
+    const row = home.findIndex((l) => /^◉ +PANEL-THIN/.test(l)); // one job left in the lane: its row, no lane header
     assert.ok(at < row);
     assert.doesNotMatch(home.join('\n'), /Decided for you|PANEL-THIN · imp q[12]/);
-    assert.doesNotMatch(home.slice(row).join('\n'), /thin job cards/, 'asking job stays in its slab above, never duplicated in the lane');
+    assert.equal(home.filter((l) => /asks 3 opts/.test(l)).length, 1, 'asking job stays in its row above, never duplicated in the lane');
     assert.match(home[0], /^ Home \?1\s+Project\s+Control\s*$/);
     assert.doesNotMatch(home.join('\n'), /asked|instead of/);
   }
@@ -275,8 +275,8 @@ test('Home Enter toggles cards and lanes; navigation opens Project; a reveals ol
   // PANEL-THIN has one job left and no lane header; the TEST-CUT lane folds.
   const lane = at({ kind: 'lane', laneId: board.lanes.find((l) => l.label === 'TEST-CUT').id }),
     folded = press(lane, '\r');
-  assert.doesNotMatch(text(folded), /review card renderer/);
-  assert.match(text(press(folded, '\r')), /review card renderer/);
+  assert.doesNotMatch(text(folded), /review card ren…/);
+  assert.match(text(press(folded, '\r')), /review card ren…/);
   const before = rendered(card).state;
   for (const [key, tab] of [['\x1b[D', 'control'], ['\x1b[C', 'project'], ['\t', 'project'], ['\x1b[Z', 'control']]) {
     assert.equal(press(before, key).activeTab, tab);
@@ -287,7 +287,7 @@ test('Home Enter toggles cards and lanes; navigation opens Project; a reveals ol
   assert.equal(press(before, 'N').activeTab, 'home');
   assert.doesNotMatch(text(before), /imp q0/);
   assert.doesNotMatch(text(press(before, 'a')), /imp q0|Older choice/);
-  assert.match(text(press(before, 'a')), /Folded old success/);
+  assert.match(text(press(before, 'a')), /Folded old succ…/);
 });
 test('an answered question is still collected after the finished job hides', async (t) => {
   const f = fixture(t);
@@ -337,7 +337,7 @@ test('a folded lane header ends in one state glyph per job it shows, oldest firs
   const row = (label) => lines().find((l) => l.startsWith(label + ' '));
   assert.match(row('STRIP'), /^STRIP\s+− ◉$/, 'the closed job is in the finished row, not the strip');
   assert.equal(row('BAD'), undefined, 'one job: its own row, no header to fold');
-  assert.match(lines(40, initialMonitorState()).find((l) => /^✗ +BAD job 34/.test(l)), /failed/);
+  assert.match(lines(40, initialMonitorState()).find((l) => /^✗ +BAD /.test(l)), /✗ failed/);
   const home = lines(40, initialMonitorState());
   assert.match(home[home.findIndex((l) => /^STRIP\s+/.test(l)) + 1], /^ {2}\S +STRIP job/, 'its jobs follow the header');
   setDisplayConfig({ theme: 'none', icons: 'text', glyphs: 'text' });
@@ -423,16 +423,15 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
 
   await f.pipeline.refresh();
   let board = f.pipeline.workboard(f.tree);
-  for (const [lang, landStep, scoutStep] of [
-    ['en', 'land · gate[1] npm test', 'scouting'],
-    ['zh', '落地 · gate[1] npm test', '侦察中'],
-  ]) {
+  for (const [lang, scoutStep] of [['en', 'scouting'], ['zh', '侦察中']]) {
     setLanguage(lang);
     for (const width of [40, 80]) {
       const lines = plain(f.render(board, 180, width));
       for (const line of lines) assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
       const text = lines.join('\n');
-      assert.ok(text.includes(landStep), `${lang} ${width}\n${text}`);
+      // A land has no sub-row on Home (the gate step is the Inspector's): the fifth stage cell is current. A scout keeps its row.
+      assert.ok(lines.some((l) => l.includes('●●●●◐')), `${lang} ${width}\n${text}`);
+      assert.doesNotMatch(text, /gate\[1\]|落地 ·|land ·/, `${lang} ${width}`);
       assert.ok(text.includes(scoutStep), `${lang} ${width}\n${text}`);
     }
   }
@@ -448,9 +447,12 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
     ['zh', '等待 f0000000000000099 · 门禁 2，3分', '等待 f0000000000000099（门禁第 2 步，3 分钟）'],
   ]) {
     setLanguage(lang);
+    const waiting = board.workers.find((w) => w.flow?.state === 'queued').flow;
     for (const [width, detail] of [[40, narrow], [80, wide]]) {
       const lines = plain(f.render(board, 180, width));
-      assert.ok(lines.join('\n').includes(detail), `${lang} ${width}\n${lines.join('\n')}`);
+      assert.doesNotMatch(lines.join('\n'), /f0000000000000099/, 'Home does not say whom the land waits for');
+      assert.ok(lines.some((l) => l.includes('●●●●◐')), 'the land is still the fifth cell');
+      assert.ok(stripAnsi(flowLine(waiting, width, (s) => s)).includes(detail), `${lang} ${width}: the card (Inspector) keeps the wait line`);
       assert.ok(lines.every(line => visualLength(line) === width));
     }
   }
@@ -488,6 +490,7 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
   ]) {
     setLanguage(lang);
     const text = plain(f.render(board, 180, 80)).join('\n');
-    assert.ok(text.includes(failedText), `${lang}\n${text}`);
+    assert.ok(text.includes(lang === 'en' ? '✗ merge red' : '✗ 合并红'), `${lang}: Home names the red step\n${text}`);
+    assert.ok(flowSummary(board.workers.find((w) => w.flow?.state === 'failed').flow).includes(failedText), `${lang}: the chain is the card's`);
   }
 });

@@ -349,7 +349,8 @@ for (const language of ['en', 'zh']) {
         const inspector = renderMonitor({ tree, workboard: board, state, width, height: 30, nowMs: f.now });
         for (const frame of [home, inspector]) {
           const text = frame.lines.map(stripAnsi).join('\n');
-          assert.ok(text.includes(frame === home ? expected.replace(': ', '  ') : expected), text); // Home's row splits the id from the title
+          // Home's row carries its lane's id, never the title or the name.
+          assert.ok(frame === home ? !text.includes(expected.split(': ').at(-1)) : text.includes(expected), text);
           assert.doesNotMatch(text, /Read and carry out|\/synthetic\/brief/);
           for (const line of frame.lines) assert.equal(visualLength(line), width);
         }

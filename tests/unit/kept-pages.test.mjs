@@ -36,12 +36,12 @@ test("frames: all seven kept pages in Home's kit", (t) => {
       text = plainFrame(frame).join('\n');
     if (page === 'older') {
       assert.match(text, /3 older shown · a hide/);
-      assert.match(text, /✓●? +Add the retry helper\s+.*1h12m/);
+      assert.match(text, /✓●? +Add the retry h…\s+.*1h12m/);
     }
     if (page === 'home') {
       assert.match(text, /\+3 older · a/);
       assert.doesNotMatch(text, /Decided for you|Backoff with jitter, cap 30s/);
-      assert.doesNotMatch(text, /Add the retry helper/);
+      assert.doesNotMatch(text, /Add the retry h/);
     }
     if (page === 'job') {
       assert.match(text, /◉ imp  Retry on HTTP 429/);
@@ -96,12 +96,12 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
 });
 test('short Chinese minutes keep the Home ask slab and card rows clean at 38 and 40 columns', (t) => {
   const f = fixture(t);
-  const askRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.startsWith('? imp · R5-UX'));
-  assert.match(askRow(38), /提问中 4分$/);
-  assert.match(askRow(40), /提问中 4分$/);
+  const askRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.startsWith('?  R5-UX'));
+  assert.match(askRow(38), /问 2选 +4分$/);
+  assert.match(askRow(40), /问 2选 +4分$/);
   const cardRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.includes('Retry on HTTP'));
-  assert.match(cardRow(38), /47分$/);
-  assert.match(cardRow(40), /47分$/);
+  assert.match(cardRow(38), /47分(?: 静\d+分)?$/);
+  assert.match(cardRow(40), /47分(?: 静\d+分)?$/);
 });
 
 test('the Inspector and expanded running cards show exactly one localized milestone in Classic and Split', (t) => {
@@ -385,6 +385,11 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(body, /o queued\s+\*N sonic running/);
   assert.match(body, /route\s+- light\s+= standard\s+# hard/);
   assert.match(body, /h headless: no herdr tab/);
+  assert.match(body, /stages\s+\+ passed\s+@ current/);
+  assert.match(body, /o not reached\s+o unknown/);
+  assert.match(body, /read>edit>test>report>land/);
+  assert.match(body, /time\s+quiet 4m no output for 3m/);
+  assert.match(body, /quiet 12m no output, stalled/);
   assert.match(body, /g\s+job: go to its herdr tab;\s+headless: its output in the\s+Inspector/);
   assert.doesNotMatch(body, /click|Codex's own panel|Timeline|press .* first/);
   assert.match(body, /switch tab/);
@@ -407,5 +412,10 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(chinese, /o 排队中\s+\*N sonic 运行中/);
   assert.match(chinese, /分流\s+- 轻量\s+= 标准\s+# 复杂/);
   assert.match(chinese, /h 无界面：没有 herdr 标签页/);
+  assert.match(chinese, /阶段\s+\+ 已过\s+@ 当前/);
+  assert.match(chinese, /o 未到\s+o 未知/);
+  assert.match(chinese, /读>改>测>报告>落地/);
+  assert.match(chinese, /时间\s+静4分 3 分钟没有输出/);
+  assert.match(chinese, /静12分 没有输出，已停滞/);
   assert.match(chinese, /无界面任务：在详情\s*页看输出/);
 });

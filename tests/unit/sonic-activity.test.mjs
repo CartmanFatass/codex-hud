@@ -20,7 +20,8 @@ async function scene(t, { parent = {}, kids = [['check retry flags', null], ['li
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await splitFixture(join(root, 'busy'));
   const lane = f.board.lanes.find((l) => l.label === 'AUTH-REFRESH'), base = lane.workers[0];
-  const main = { ...base, ...parent, ...(activity ? { activity } : {}) };
+  // The parent has just written: a silence mark (home-compact/03) would take the row's room before the helper count at 40 columns.
+  const main = { ...base, work: { ...base.work, activityAt: NOW }, ...parent, ...(activity ? { activity } : {}) };
   const child = ([task, settledAt, progress], i) => ({
     ...base, id: `thin-job:j00000000000000c${i}`, parentJobId: base.id, role: 'sonic', task, startedAt: NOW - 3 * MIN, settledAt,
     latest_progress: progress && { text: progress }, state: settledAt === null ? 'working' : 'done', work: { ...base.work, activityAt: NOW, result: settledAt !== null },
@@ -83,7 +84,7 @@ test('Sonic children fold into ⚡N on their parent worker (running only, never 
 test('Finished sonic children add nothing: when all sonic children settle, ⚡N disappears from the parent', async (t) => {
   const s = await scene(t, { kids: [['First query', NOW - 2 * MIN], ['Second query', NOW - MIN]] });
   const lines = text(s.render(80, 'en', initialMonitorState()));
-  const parentRow = lines.find((l) => /AUTH-REFRESH {2}token rotation/.test(l));
+  const parentRow = lines.find((l) => /AUTH-REFRESH +[●◐○]{5}/.test(l));
   assert.ok(parentRow, lines.join('\n'));
   assert.ok(!parentRow.includes('⚡'), `finished sonic must not show ⚡N: ${parentRow}`);
 });

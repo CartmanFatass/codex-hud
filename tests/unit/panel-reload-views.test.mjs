@@ -60,7 +60,7 @@ const LIVE_INPUT_BLOCK_WINDOW_MS = QUIET_MS + 1200;
 
 test('live input: a batched / query and later keys survive a build until Enter keeps the filter', async (t) => {
   const f = live(t);
-  await until(() => f.output().includes('SYNTHETIC reload job'), 'Home did not render');
+  await until(() => f.output().includes('SYNTHETIC reloa'), 'Home did not render');
   f.child.stdin.write('/relo');
   await until(() => stripAnsi(f.output()).includes('/ relo▌'), 'the batched slash and query did not reach the filter');
   f.appendBuild('\n// build during a filter edit');
@@ -78,10 +78,10 @@ test('live input: a batched / query and later keys survive a build until Enter k
 
 test('live input: g on a job reaches focus-job-tab after automatic reload', async (t) => {
   const f = live(t);
-  await until(() => f.output().includes('SYNTHETIC reload job'), 'Home did not render');
+  await until(() => f.output().includes('SYNTHETIC reloa'), 'Home did not render');
   const at = f.output().length;
   f.appendBuild('\n// build on a selected job');
-  await until(() => f.events().filter((e) => e.start).length === 2 && f.output().slice(at).includes('SYNTHETIC reload job'), 'Home did not return after reload');
+  await until(() => f.events().filter((e) => e.start).length === 2 && f.output().slice(at).includes('SYNTHETIC reloa'), 'Home did not return after reload');
   f.child.stdin.write('g');
   // The synthetic job has no SESSION.txt. Reaching this diagnostic proves the action ran without invoking herdr.
   await until(() => f.output().slice(at).includes('no tab recorded'), 'g never reached the tab-focus action', 3000);
@@ -123,7 +123,7 @@ test('live input: a build waits for the Harnesses Add back draft to close', asyn
 
 test('live input: a build waits for stop confirmation, and an unnamed key cancels it', async (t) => {
   const f = live(t);
-  await until(() => f.output().includes('SYNTHETIC reload job'), 'Home did not render');
+  await until(() => f.output().includes('SYNTHETIC reloa'), 'Home did not render');
   f.child.stdin.write('X');
   await until(() => f.output().includes('y confirm'), 'stop prompt did not open');
   f.appendBuild('\n// build during stop confirmation');

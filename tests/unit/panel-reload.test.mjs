@@ -324,7 +324,7 @@ else await reload.restart({state:initialMonitorState(),settings:null},()=>{});`)
 test('the live panel coalesces build bursts, retains jobs settled during its life, and keeps a broken build alive with a notice', async (t) => {
   const openedAt = Date.now() - 60000;
   const f = live(t, (state) => ({ state, settings: null, openedAt }));
-  await until(() => f.output().includes('SYNTHETIC reload job'), 'initial collected Home frame did not render');
+  await until(() => f.output().includes('SYNTHETIC reloa'), 'initial collected Home frame did not render');
   writeFixtureFile(join(f.env.HUD_HOME, 'jobs/j0000000000000000/STATUS.json'), JSON.stringify({ state: 'done', settled_at: new Date().toISOString() }));
   for (let i = 0; i < 2; i++) { f.appendBuild(`\n// build burst ${i}`); await delay(20); }
   const lastChange = Date.now();

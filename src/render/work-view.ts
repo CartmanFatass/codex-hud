@@ -14,6 +14,7 @@ import { modelInput, pickOf } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
+import { ageText } from './work-card.js';
 import { homeScene } from './split-home.js';
 import { projectScene, TRY_ACTIONS } from './split-project.js';
 import { paintSplit, splitPreviewRoom, type SplitScene } from './split-frame.js';
@@ -112,6 +113,9 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ...legend('Jobs', [entry(active(mark('◉', '@')), 'running'), entry(attention('?'), 'asking'), entry(stalled(mark('◷', '~')), 'stalled')],
       [entry(success(mark('✓', '+')), 'done'), entry(danger(mark('✗', 'x')), 'failed'), entry(muted(mark('−', '-')), 'stopped')],
       [entry(muted(mark('○', 'o')), 'queued'), entry(theme.board.roleInk.sonic(`${mark('⚡', '*')}N`), 'sonic running')]),
+    ...legend('Stages', [entry(muted(mark('●', '+')), 'passed'), entry(active(mark('◐', '@')), 'current')],
+      [entry(muted(mark('○', 'o')), 'not reached'), entry(theme.board.frame(mark('○', 'o')), 'unknown')], [muted(['read', 'edit', 'test', 'report', 'land'].map((stage) => t(stage)).join(mark('▸', '>')))]),
+    ...legend('Time', [muted(t('quiet {age}', { age: ageText(4) })) + ' ' + t('no output for 3m')], [stalled(t('quiet {age}', { age: ageText(12) })) + ' ' + t('no output, stalled')]),
     ...legend('Route', [entry(muted(mark('▂', '-')), 'light'), entry(muted(mark('▄', '=')), 'standard'), entry(muted(mark('▆', '#')), 'hard')],
       [entry(muted(mark('∅', 'h')), 'headless: no herdr tab')]),
     ...legend('Slices', [entry(active(mark('◐', '@')), 'working'), entry(attention(mark('◆', '!')), 'blocked'), entry(muted(mark('◇', 'o')), 'to try')],
