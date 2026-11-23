@@ -53,9 +53,9 @@ export class TicketRollup {
     const entries: { ticket: ProjectTicket; row: LedgerSlice }[] = [];
     // Oldest features first; later rows win ties when showing the newest landings.
     for (const { slug, tickets } of [...this.features].reverse()) for (const t of tickets) {
-      const id = key(slug, t.number), job = t.job?.state, claimed = live(job);
+      const id = key(slug, t.number), job = t.job?.state, claimed = live(job), gitLanded = landed.has(id);
       if (t.state !== 'done' && t.state !== 'dropped' && t.state !== 'try') {
-        if (landed.has(id)) t.state = 'try';
+        if (gitLanded) t.state = t.ownerTry === false ? 'done' : 'try';
         else if (job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
         else if (claimed || this.trees.has(t)) t.state = 'working';
         else if (/^claimed\b/i.test(t.status)) t.state = !job && now - t.at < 7200000 ? 'working' : 'blocked';
@@ -68,7 +68,7 @@ export class TicketRollup {
       entries.push({ ticket: t, row: { id: `${slug.toUpperCase()}-${t.number}`, state: sliceState(t), milestone: slug,
         text: t.commit && hasLand ? `${t.title} (${t.commit.slice(0, 8)})` : t.title,
         ...(commit ? { commit } : {}), ...(gitCommit ? { at: gitCommit.at } : {}),
-        ...(t.recordedLanding || t.state === 'try' ? { landed: true } : {}),
+        ...(t.recordedLanding || t.state === 'try' || (hasLand && gitLanded) ? { landed: true } : {}),
         ticketPath: `.scratch/${slug}/issues/${basename(t.path)}`, path: t.path } });
     }
     // Keep old try records for explicitly linked slice IDs readable, but write new accepts against the ticket ID.

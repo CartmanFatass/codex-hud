@@ -47,7 +47,8 @@ export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
   number: string; title: string; originalTitle?: string; path: string; at: number; status: string;
   checked: number; total: number; items: TicketItem[]; comment?: string; commit?: string; recordedLanding?: boolean;
-  blockers: string[]; state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
+  blockers: string[]; ownerTry?: boolean;
+  state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { id?: string; role: string; state: string; at?: number; created: number };
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
@@ -247,12 +248,12 @@ export class ProjectCollector {
         const ticket = this.body(path, (buffer, truncated, stat): ProjectTicket | null | undefined => {
           if (truncated) return null;
           const text = buffer.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
-          const { status, blocked, items, checked, landed, commit, recordedLanding } = ticketFileEvidence(text);
+          const { status, blocked, items, checked, ownerTry, landed, commit, recordedLanding } = ticketFileEvidence(text);
           if (!heading || !status || blocked === undefined) return undefined;
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
           const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
-          return { ...heading, path, at: stat.mtimeMs, status,
+          return { ...heading, path, at: stat.mtimeMs, status, ownerTry,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
             ...(commit !== undefined ? { commit } : {}), ...(recordedLanding ? { recordedLanding } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
@@ -429,16 +430,18 @@ export class ProjectCollector {
       this.landed.clear();
       this.ticketCommits.clear();
       if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) try {
-        const log = await worktreeGit(this.cwd, ['log', '-n', '64', '--no-show-signature', '--name-only', '--format=%x1e%H%x00%ct%x00%s', sha, '--']);
+        const log = await worktreeGit(this.cwd, ['log', '-n', '64', '--no-show-signature', '--no-renames', '--name-only', '--format=%x1e%H%x00%ct%x00%s', sha, '--']);
         for (const chunk of log.split('\x1e')) {
           if (!chunk) continue;
           const [header, ...rest] = chunk.split(/\r?\n/);
           const [commitSha, ct, subject = ''] = header.split('\0');
-          const ids = ticketIds(subject), at = Number(ct) * 1000;
+          const at = Number(ct) * 1000, files = rest.filter(Boolean);
+          // Git may quote a path; a quoted ticket path is still scratch metadata.
+          if (!commitSha || !Number.isFinite(at) || !files.some((p) => !/^"?\.scratch\//.test(p))) continue;
+          const ids = ticketIds(subject);
           for (const id of ids) this.landed.add(id);
-          if (!commitSha || !Number.isFinite(at) || /^Record landing\b/.test(subject)) continue;
-          const files = rest.filter(Boolean);
-          if (files.some((p) => !p.startsWith('.scratch/'))) for (const file of files) {
+          if (/^Record landing\b/.test(subject)) continue;
+          for (const file of files) {
             const m = /^\.scratch\/([^/]+)\/issues\/(\d+)-[^/]+\.md$/.exec(file);
             if (m) ids.push(targetKey(`${m[1]}/${m[2]}`));
           }

@@ -687,6 +687,7 @@ Project opens to the Inbox in both Classic and Split. Below the project name:
 - **Accept all** appears below the page links when there are tickets to try. Select it and press Enter
   (or click the selected row). It accepts all observed pending tickets in the displayed project in one
   `$HUD_HOME/tries.jsonl` record. If the read is partial, only the tickets found are included.
+  Landed tickets marked `**Owner try:** no` go straight to done; the main session verifies them.
   The panel reflects the result without writing to project files;
   `hud watch` and MCP `changes` receive one line. There is no per-slice acceptance, flagging or landing action.
   Old records are still readable.

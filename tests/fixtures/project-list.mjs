@@ -19,7 +19,7 @@ export async function listFixture(root) {
   state(quiet, '0.2', [], 3 * DAY + 0.5);
   state(waiting, 'M5', ['Choose the synthetic option', 'Answer the synthetic question'], 5 * 60 + 0.5);
   for (const n of ['01', '02']) f.put(join(waiting, `.scratch/demo/issues/${n}-landed.md`),
-    `# ${n}: Landed work\n**Status:** ready-for-human\n**Blocked by:** none\n\n## Comments\n- Landed abc1234\n`, 5 * 60 + 0.5);
+    `# ${n}: Landed work\n**Status:** ready-for-human\n**Owner try:** ${n === '01' ? 'yes' : 'no'}\n**Blocked by:** none\n\n## Comments\n- Landed abc1234\n`, 5 * 60 + 0.5);
   state(busy, 'M2', [], 20.5);
   state(old, 'M1', [], 40 * DAY + 0.5);
   f.put(join(bare, '.scratch/feature/issues/01-first.md'), '# 01: First\n\n**Blocked by:** None\n\n**Status:** ready-for-agent\n\n- [ ] One\n', 2 * DAY + 0.5);
