@@ -564,8 +564,14 @@ Failed or stopped jobs keep their raw logs until their directories expire.
 At settlement the watcher saves a bounded, best-effort snapshot of native usage in the job directory before raw logs can be pruned.
 It reads pi session entries, CLI result streams, or native transcript usage records; it never prices missing tokens or treats a truncated per-request transcript as a total.
 Before deletion it appends job facts to `$HUD_HOME/archive/YYYY-MM.jsonl`, including ticket, route, question count, land outcome, available usage and the worker's bounded declared summary with home paths removed.
-The line includes `sessions` and `retry_of` when known. Session paths are recorded as observed; the underlying files may later move or disappear.
-`land` keeps its attempt, repair and rerun counts and adds `repair_details: [{step_kind, step, outcome}]` (`conflict` for cherry-pick, `gate` otherwise) and `rerun_details: [{step, passed_unchanged}]` for reruns with a known result.
+The line includes `sessions`, `retry_of`, `dispatcher: {harness, id}` and the status flag `output_written` when recorded.
+Session paths are recorded as observed; the underlying files may later move or disappear.
+`questions: [{id, asked_at, answered_at?}]` records the modification times of question and answer files, without their text.
+`land` keeps its attempt, repair and rerun counts. Its `created_at` comes from the published attempt, or the latest attempt if none published.
+`land.attempt_details` records each attempt's number, state, known timestamps, published SHA if any, and repair and rerun counts.
+`repair_details: [{attempt, step_kind, step, outcome}]` uses `conflict` for cherry-pick and `gate` otherwise.
+`rerun_details: [{attempt, step, passed_unchanged, tests?}]` records known rerun results and the recorded flaky command or test names for unchanged reruns that passed.
+Older archive lines may omit the new fields.
 It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
 In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.
 

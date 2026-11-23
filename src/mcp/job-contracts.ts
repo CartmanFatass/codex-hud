@@ -55,6 +55,7 @@ export interface Job extends PiOptions {
   repair_of?: string;
   retry_of?: string;
   sessions?: JobSession[];
+  dispatcher?: { harness: string; id: string };
   land_turn?: string; // Only this repair turn's ordinary notices belong to the enclosing flow.
   ticket_queue?: string; // This turn's automatic notices belong to the batch, not the job.
   target_hint?: string | null;

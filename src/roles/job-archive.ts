@@ -9,7 +9,7 @@ import { getJobIndexCache } from './job-index-cache.js';
 import { jobChecks } from './job-checks.js';
 import { cliSession } from './job-sessions.js';
 import { archiveJobLand, type JobLand } from './job-land.js';
-import { epoch, readJobUsage, text, type JobUsage } from './job-usage.js';
+import { epoch, readJobUsage, record, text, type JobUsage } from './job-usage.js';
 import { normalizeReportMeta, readReportMeta } from './report-meta.js';
 function reason(value: unknown) {
   if (typeof value !== 'string') return;
@@ -70,6 +70,28 @@ function cachedOutcome(home: string, id: string, settlement?: number) {
   } catch { /* Optional panel cache. Never request a label. */ }
 }
 
+function archiveDispatcher(value: unknown) {
+  const dispatcher = record(value);
+  const harness = text(dispatcher.harness)?.trim(), id = text(dispatcher.id)?.trim() || text(dispatcher.session_id)?.trim();
+  if (harness && id) return { harness, id };
+}
+
+function archiveQuestions(home: string, dir: string) {
+  const mtime = (name: string) => {
+    try {
+      const stat = fs.lstatSync(join(dir, 'qa', name), { throwIfNoEntry: false });
+      if (stat?.isFile()) return stat.mtime.toISOString();
+    } catch { /* Missing or unreadable timing evidence. */ }
+  };
+  try {
+    const questions = getJobIndexCache(home).readQa(dir).allQuestionFiles.flatMap(name => {
+      const id = name.slice(0, -3), asked_at = mtime(name);
+      return asked_at ? [{ id, asked_at, answered_at: mtime(`${id}.answer.md`) }] : [];
+    });
+    if (questions.length) return questions;
+  } catch { /* Unknown question history. */ }
+}
+
 const logged = new Set<string>();
 export function archiveJob(home: string, dir: string, id: string, receipt: Job | null,
   status: Partial<JobStatus>, now: number, log: (message: string) => void): void {
@@ -93,6 +115,9 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       dispatch_code: text(job.dispatch_code), exit_reason: reason(status.exit_reason), read_at: text(job.read_at),
       checks: checks && { passed: checks.passed, total: checks.total, stale: checks.stale },
       repair_of: text(job.repair_of), retry_of: text(job.retry_of), sessions: sessions.length ? sessions : undefined,
+      dispatcher: archiveDispatcher(job.dispatcher),
+      output_written: typeof status.output_written === 'boolean' ? status.output_written : undefined,
+      questions: archiveQuestions(home, dir),
       experiment: typeof job.experiment === 'string' ? job.experiment : undefined,
       arm: typeof job.arm === 'string' ? job.arm : undefined,
       land: archiveJobLand(home, id),

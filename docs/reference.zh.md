@@ -604,8 +604,14 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。
 它读取 pi 会话记录、CLI 结果流或原生转写中的用量记录；
 不会给缺失费用的词元估价，也不会把截断的逐请求转写当成总量。
 删除任务目录前，watcher 向 `$HUD_HOME/archive/YYYY-MM.jsonl` 追加一行任务事实，包括工单、路由、提问数、合入结果、已知用量和去除主目录路径后的有限长度声明摘要。
-归档行在已知时包含 `sessions` 和 `retry_of`。会话路径按原样记录，文件之后可能移动或删除。
-`land` 保留尝试、修正和重跑次数，并增加 `repair_details: [{step_kind, step, outcome}]`（cherry-pick 步骤为 `conflict`，其余为 `gate`）和已知结果的 `rerun_details: [{step, passed_unchanged}]`。
+归档行在有记录时包含 `sessions`、`retry_of`、`dispatcher: {harness, id}` 和状态标记 `output_written`。
+会话路径按原样记录，文件之后可能移动或删除。
+`questions: [{id, asked_at, answered_at?}]` 记录提问和回答文件的修改时间，不含正文。
+`land` 保留尝试、修正和重跑次数。`created_at` 取自成功发布的尝试；若未发布则取自最近一次尝试。
+`land.attempt_details` 记录每次尝试的编号、状态、已知时间、发布的 SHA（若有）以及修正和重跑次数。
+`repair_details: [{attempt, step_kind, step, outcome}]` 将 cherry-pick 步骤标为 `conflict`，其余步骤标为 `gate`。
+`rerun_details: [{attempt, step, passed_unchanged, tests?}]` 记录已知的重跑结果；若未做改动即重跑通过，则保留回执中的不稳定命令或测试名称。
+旧归档行可能没有这些新字段。
 归档不含任务说明或报告正文；
 写入失败不影响删除，HUD 不会清理归档。
 同一轮清理中，任务目录删除后，watcher 会清理 `$HUD_HOME/flows/` 中一天未改动的已结束合入回执及附属文件。

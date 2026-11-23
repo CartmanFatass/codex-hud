@@ -16,30 +16,37 @@ test('retention appends one private facts-only line before removal, even if remo
   const f = fixture(t), archive = join(f.home, 'archive'), file = join(archive, '2026-10.jsonl');
   const secret = 'Synthetic private body marker.';
   const longReason = 'é'.repeat(99) + '合'; // Crosses the byte limit inside a character.
-  const dir = f.job({ ...state, exit_reason: longReason, started_at: ended, settled_at: ended }, {
+  const dir = f.job({ ...state, exit_reason: longReason, started_at: ended, settled_at: ended, output_written: true }, {
     role: 'imp', cli: { agent: 'claude' }, model: 'example', thinking: 'high', project_root: '/synthetic/project',
     preset: 'default', used_place: 'claude example', attempts: [{ index: 0, place: 'pi example', reason: longReason, extra: secret }],
     checks: [secret], created_at: ended, read_at: ended, reaped_at: reaped, parent_job: 'j000000000000000a',
     repair_of: 'j000000000000000b', retry_of: 'j000000000000000c', package: 'archive', experiment: 'synthetic-speed', arm: 'control',
     sessions: [{ harness: 'claude', id: 'synthetic-claude', extra: secret }, { harness: 'pi', id: 'synthetic-pi', path: '/synthetic/history.jsonl' }],
+    dispatcher: { harness: 'pi', session_id: 'synthetic-dispatcher', extra: secret },
     create_options: { task: secret }, request_key: secret,
     headless: true, ticket: 'sample/03', route: { tier: 'standard', mode: 'headless', reason: secret }, resume_s: 0,
   });
   const id = basename(dir);
   fs.mkdirSync(join(dir, 'qa'));
   for (const name of ['report.md', 'brief.md', 'qa/q1.md', 'qa/q1.answer.md']) fs.writeFileSync(join(dir, name), secret);
+  const firstLand = '2026-11-01T00:00:00.000Z', secondLand = '2026-11-01T00:00:30.000Z';
+  const asked = '2026-10-31T23:55:00.000Z', answered = '2026-10-31T23:57:00.000Z';
+  for (const [name, at] of [['q1.md', asked], ['q1.answer.md', answered]]) {
+    fs.utimesSync(join(dir, 'qa', name), Date.parse(at) / 1000, Date.parse(at) / 1000);
+  }
   writeReportMeta(dir, reportSignature(dir), { summary: 'Delivered /home/synthetic/private.txt and ~/worker/report.md.' });
   fs.writeFileSync(join(dir, 'stdout.jsonl'), JSON.stringify({ type: 'result', result: secret, total_cost_usd: 0.12,
     usage: { input_tokens: 6, output_tokens: 9, cache_read_input_tokens: 0 } }) + '\n');
   fs.mkdirSync(join(f.home, 'flows'));
   const flow = `f${id.slice(1)}`, sha = 'abc1234'.repeat(5) + 'abc12';
-  for (const [name, facts] of [[flow, { state: 'failed', repairs: [
+  const flakyTest = 'npm run test:synthetic';
+  for (const [name, facts] of [[flow, { state: 'failed', created_at: firstLand, repairs: [
     { step: 'cherry-pick', outcome: 'worker stopped', job: secret },
-  ] }], [`${flow}-2`, { state: 'completed', repairs: [{ step: 'gate[1]: build', outcome: 'gate passed' }], reruns: [
-    { step: 'gate[1]: build', tests: [], rerun_ok: false, output_path: secret },
-    { step: 'gate[2]: test', tests: [secret], rerun_ok: true, output_path: secret },
+  ] }], [`${flow}-2`, { state: 'completed', created_at: secondLand, repairs: [{ step: 'gate[1]: build', outcome: 'gate passed' }], reruns: [
+    { step: 'gate[1]: build', tests: [secret], rerun_ok: false, output_path: secret },
+    { step: 'gate[2]: test', tests: [flakyTest], rerun_ok: true, output_path: secret },
     { step: 'gate[3]: check', tests: [], output_path: secret }, // No rerun verdict (e.g. timeout).
-  ], landed_sha: sha, updated_at: reaped }]]) {
+  ], landed_sha: sha, landed_at: reaped, updated_at: reaped }]]) {
     const receipt = join(f.home, 'flows', `${name}.json`);
     fs.writeFileSync(receipt, JSON.stringify({ job: id, ...facts }));
     fs.utimesSync(receipt, Date.parse(reaped) / 1000, Date.parse(reaped) / 1000);
@@ -84,12 +91,19 @@ syncBuiltinESMExports();`);
     repair_of: 'j000000000000000b', retry_of: 'j000000000000000c', parent_job: 'j000000000000000a', package: 'archive', outcome: 'partial',
     sessions: [{ harness: 'claude', id: 'synthetic-claude' }, { harness: 'pi', id: 'synthetic-pi', path: '/synthetic/history.jsonl' }],
     mode: 'headless', route: { tier: 'standard', mode: 'headless' }, ticket: 'sample/03', question_count: 1,
+    dispatcher: { harness: 'pi', id: 'synthetic-dispatcher' }, output_written: true,
+    questions: [{ id: 'q1', asked_at: asked, answered_at: answered }],
     experiment: 'synthetic-speed', arm: 'control',
     summary: 'Delivered <home path> and <home path>', usage: { input: 6, output: 9, cache_read: 0, cost_usd: 0.12 },
-    land: { attempts: 2, state: 'completed', repairs: 2, reruns: 2, sha, landed_at: reaped, updated_at: reaped,
-      repair_details: [{ step_kind: 'conflict', step: 'cherry-pick', outcome: 'worker stopped' },
-        { step_kind: 'gate', step: 'gate[1]: build', outcome: 'gate passed' }],
-      rerun_details: [{ step: 'gate[1]: build', passed_unchanged: false }, { step: 'gate[2]: test', passed_unchanged: true }],
+    land: { attempts: 2, state: 'completed', repairs: 2, reruns: 2, sha, created_at: secondLand, landed_at: reaped, updated_at: reaped,
+      attempt_details: [
+        { attempt: 1, state: 'failed', created_at: firstLand, repairs: 1, reruns: 0 },
+        { attempt: 2, state: 'completed', created_at: secondLand, sha, landed_at: reaped, updated_at: reaped, repairs: 1, reruns: 2 },
+      ],
+      repair_details: [{ attempt: 1, step_kind: 'conflict', step: 'cherry-pick', outcome: 'worker stopped' },
+        { attempt: 2, step_kind: 'gate', step: 'gate[1]: build', outcome: 'gate passed' }],
+      rerun_details: [{ attempt: 2, step: 'gate[1]: build', passed_unchanged: false },
+        { attempt: 2, step: 'gate[2]: test', passed_unchanged: true, tests: [flakyTest] }],
     },
   });
   const second = f.start(clock);
@@ -102,7 +116,7 @@ syncBuiltinESMExports();`);
 
 test('retention appends successive jobs without adding absent facts or changing earlier lines', async (t) => {
   const f = fixture(t), file = join(f.home, 'archive', '2026-11.jsonl');
-  const dir = f.job({ state: 'failed' }, { dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped });
+  const dir = f.job({ state: 'failed', output_written: false }, { dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped });
   const other = f.job({ state: 'stopped' }, { model: null, thinking: null, bro: {} });
   fs.utimesSync(join(other, 'STATUS.json'), Date.parse(ended) / 1000, Date.parse(ended) / 1000);
   const run = f.start(clock);
@@ -112,7 +126,7 @@ test('retention appends successive jobs without adding absent facts or changing 
   const lines = fs.readFileSync(file, 'utf8').trimEnd().split('\n').map(JSON.parse);
   assert.deepEqual(lines, [
     { job: basename(dir), v: 1, archived_at: new Date(now).toISOString(), harness: 'pi',
-      dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped, state: 'failed', question_count: 0 },
+      dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped, state: 'failed', question_count: 0, output_written: false },
     { job: basename(other), v: 1, archived_at: new Date(now).toISOString(), harness: 'bro', dispatch_exit_code: 0, state: 'stopped', question_count: 0 },
   ]);
 });
