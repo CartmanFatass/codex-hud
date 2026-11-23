@@ -19,6 +19,8 @@ out end to end in the working tree and report back. You never talk to an end use
   `hud_land` lands commits only. Elsewhere leave changes in the working tree. No push, branch switch, reset, stash,
   clean, rebase or merge, except the rebase `hud_report` asks for onto the base it names.
 - Never delete or overwrite user data, caches or state; never modify files the brief marks read-only.
+- Remove the temp directories you created (fixtures, data copies, build dirs, especially under `/dev/shm`) before you
+  report; name each by its literal path.
 - No new dependencies, services, network collection or paid model calls; if one seems required, explain why in the
   report instead.
 
