@@ -675,9 +675,15 @@ test('mod watcher marker requires the live --mod process, start time, pane and h
   assert.equal(watchingMod(pane, f.home), false);
 });
 
-test('mod catch-up summarizes history, preserves questions and failures, and streams new settlements', async (t) => {
-  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID;
-  for (let i = 0; i < 30; i++) writeJob(f.home, `j${i.toString(16).padStart(16, '0')}`, pane, 'old', { state: 'closed' }, true);
+test('mod catch-up lists two fresh reports, summarizes history, and preserves questions and failures', async (t) => {
+  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, now = Date.now();
+  const old = { state: 'closed', settled_at: new Date(now - 4 * 60 * 60_000).toISOString() };
+  const recent = { state: 'closed', settled_at: new Date(now - 10 * 60_000).toISOString() };
+  for (let i = 0; i < 30; i++) writeJob(f.home, `j${i.toString(16).padStart(16, '0')}`, pane, 'old', old, true);
+  const fresh = ['j00000000000000b1', 'j00000000000000b2'];
+  for (const id of fresh) writeJob(f.home, id, pane, 'fresh', recent, true);
+  const foreign = 'j00000000000000b3';
+  writeJob(f.home, foreign, 'w4E:p2', 'foreign', recent, true);
   const failed = 'j00000000000000a1', ask = 'j00000000000000a2', active = 'j00000000000000a3';
   writeJob(f.home, failed, pane, 'failure', { state: 'failed', reason: 'needs repair' }, true);
   const observed = writeJob(f.home, 'j00000000000000a4', pane, 'seen', { state: 'failed' });
@@ -697,7 +703,9 @@ test('mod catch-up summarizes history, preserves questions and failures, and str
   try {
     await until(() => wakes.length > 0);
     const [lines] = wakes;
-    assert.equal(lines.length, 4);
+    assert.equal(lines.length, 6);
+    for (const id of fresh) assert.ok(lines.includes(`${id} imp fresh: closed | report | ${readHint(id)}`));
+    assert.ok(lines.every(line => !line.includes(foreign)));
     assert.ok(lines.includes(`f00000000000000a2 (land ${failed}) — failed: gate`));
     assert.ok(lines.includes('30 older unread reports — hud_read view:compact'));
     assert.ok(lines.some(s => s.startsWith(`${failed} imp failure: failed | needs repair`)));
@@ -708,9 +716,24 @@ test('mod catch-up summarizes history, preserves questions and failures, and str
   } finally { ac.abort(); await run; }
 });
 
+test('mod catch-up uses the recorded delivery instead of the two-hour default', async (t) => {
+  const f = queueFixture(t), now = Date.now(), hour = 60 * 60_000;
+  const id = 'j0000000000000001';
+  writeJob(f.home, id, f.env.HERDR_PANE_ID, 'newer', { state: 'closed', settled_at: new Date(now - 3 * hour).toISOString() }, true);
+  writeJob(f.home, 'j0000000000000002', f.env.HERDR_PANE_ID, 'older', { state: 'closed', settled_at: new Date(now - 5 * hour).toISOString() }, true);
+  const ac = new AbortController(), wakes = [];
+  const run = watchCommand(['--mod'], { env: { ...f.env, HUD_MOD_LAST_DELIVERY: String(now - 4 * hour) },
+    stdout: s => wakes.push(JSON.parse(s)), stderr: s => assert.fail(s) }, { signal: ac.signal });
+  try {
+    await until(() => wakes.length > 0);
+    assert.deepEqual(wakes[0].lines, [`${id} imp newer: closed | report | ${readHint(id)}`, '1 older unread report — hud_read view:compact']);
+    assert.ok(Number.isSafeInteger(wakes[0].at) && wakes[0].at >= now);
+  } finally { ac.abort(); await run; }
+});
+
 test('mod JSONL uses shared actionable lines, sleeps only once clear, and resumes panel logs', { timeout: 10000 }, async (t) => {
   const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, id = 'j0000000000000001';
-  const dir = writeJob(f.home, id, pane, 'mod', { state: 'closed' }, true);
+  const dir = writeJob(f.home, id, pane, 'mod', { state: 'closed', settled_at: new Date(Date.now() - 3 * 60 * 60_000).toISOString() }, true);
   const ac = new AbortController();
   t.after(() => ac.abort());
   const records = [], run = (env) => watchCommand(['--mod'], { env, stdout: s => records.push(JSON.parse(s)), stderr: s => assert.fail(s) },
@@ -718,7 +741,9 @@ test('mod JSONL uses shared actionable lines, sleeps only once clear, and resume
   const running = run({ ...f.env, HUD_MOD_CURSOR: '' });
   await until(() => records.some(r => r.type === 'wake'));
   await wait(150);
-  assert.deepEqual(records, [{ type: 'ready' }, { type: 'wake', lines: ['1 older unread report — hud_read view:compact'] }]);
+  assert.deepEqual(records.map(({ at, ...record }) => record), [
+    { type: 'ready' }, { type: 'wake', lines: ['1 older unread report — hud_read view:compact'] },
+  ]);
   const receipt = join(dir, 'job.json');
   writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), read_at: new Date().toISOString() }));
   assert.equal(await running, 0);

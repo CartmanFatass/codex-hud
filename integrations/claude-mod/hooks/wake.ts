@@ -18,10 +18,11 @@ async function wakeLane($: EngineInterface, cwd: string, turn: Turn) {
   const held = (await $.state.get(WAKE).catch(() => undefined))?.value;
   let busy = held?.busy ?? null, aborted = held?.aborted ?? false;
   let pending = [...(held?.pending ?? [])], seed = [...(held?.seed ?? [])];
+  let lastDelivery = held?.lastDelivery ?? 0;
   let waking = !busy && !aborted && !!seed.length, timer: Timer | undefined;
   held?.seen.forEach(line => turn.seen.add(line));
   // Reload recovery is best-effort: a state write failure is not a failed delivery.
-  const save = () => $.state.set(WAKE, { busy, aborted, pending: [...pending], seed: [...seed], seen: [...turn.seen] }).catch(() => {});
+  const save = () => $.state.set(WAKE, { busy, aborted, pending: [...pending], seed: [...seed], seen: [...turn.seen], lastDelivery }).catch(() => {});
 
   // Take the batch before any await: parallel tool completions cannot drain it twice.
   async function deliver(submit: boolean) {
@@ -54,13 +55,15 @@ async function wakeLane($: EngineInterface, cwd: string, turn: Turn) {
       if (!busy && !waking) void deliver(!aborted);
     });
   }
-  const watch = watchProcess($, cwd, home, project, async lines => {
+  const watch = watchProcess($, cwd, home, project, () => lastDelivery, async (lines, at) => {
     for (const line of lines) {
       if (turn.seen.has(line) || pending.includes(line)) continue;
       const job = /^(j[0-9a-f]{16}) /.exec(line)?.[0];
       if (job) pending = pending.filter(s => !s.startsWith(job)); // Not question/answer lines.
       pending.push(line);
     }
+    // The cursor is durable together with any received lines that have not reached the session yet.
+    if (typeof at === 'number' && Number.isSafeInteger(at) && at > lastDelivery) lastDelivery = at;
     schedule(100);
     await save();
   });

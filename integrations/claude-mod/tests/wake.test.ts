@@ -72,6 +72,30 @@ for (const end of ['answer', 'aborted', 'stop'] as const) test(`pending final-an
   expect(f.transcript.appended().map(r => r.message.content[0]?.text)).toEqual(end === 'answer' ? [] : [merged]);
 });
 
+test('a reload restores the last watch delivery and checkpoints newer batches with pending lines', async ($, on) => {
+  const clock = mock.clock(on), cutoffs: (string | undefined)[] = [];
+  const held = { busy: null, aborted: false, pending: [], seed: [], seen: [], lastDelivery: 123 };
+  mock.env(on, { HERDR_PANE_ID: 'w4E:p1', HUD_HOME: '/state' });
+  on('env.set', () => ({ value: {} }));
+  on('session.start', (_, e) => ({ cwd: e.cwd }));
+  on('session.root', () => ({ value: '/demo' }));
+  on('fs.exists', () => ({ value: true }));
+  on('state.get', () => ({ value: { value: held, version: 1 } }));
+  const writes: unknown[] = [];
+  on('state.set', async (_, e, next) => { writes.push(e.value); return next(e); });
+  on('process.spawn', async function* (_, e) {
+    cutoffs.push(e.env?.HUD_MOD_LAST_DELIVERY);
+    yield { stream: 'stdout', text: '{"type":"ready"}\n' };
+    await clock.sleep(10);
+    yield { stream: 'stdout', text: JSON.stringify({ type: 'wake', lines: [line], at: 456 }) + '\n' };
+    return { value: { code: 0, signal: null } };
+  });
+  await $.session.start(session);
+  expect(cutoffs).toEqual(['123']);
+  await clock.advance(10);
+  expect(writes).toEqual([{ ...held, lastDelivery: 456, pending: [line] }]);
+});
+
 test('after idle exit only a changed panel log restarts the child with its resume cursor', async ($, on) => {
   const clock = mock.clock(on), cursors: (string | undefined)[] = [];
   let size = 48;

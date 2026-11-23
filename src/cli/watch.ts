@@ -27,6 +27,7 @@ export const WATCH_HELP =
 const DEFAULT_RESCAN_MS = 30_000;
 const DEBOUNCE_MS = 50;
 const SETTLEMENT_WINDOW_MS = 3000;
+const MOD_REPORT_LOOKBACK_MS = 2 * 60 * 60_000;
 
 // Test-only override for both the CLI and in-process notification paths.
 function settlementWindow(env: NodeJS.ProcessEnv): number {
@@ -41,7 +42,8 @@ const isBrokenPipe = (error: unknown): boolean => {
 
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
 type Notice = { line: string; defer?: boolean };
-function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup: boolean | 'mod' = false): Notice[] {
+// A numeric catch-up value is the Claude mod's cutoff for individual report notices.
+function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup: boolean | number = false): Notice[] {
   let olderReports = 0;
   const notices = rows.flatMap((row) => {
     const old = prev.get(row.job);
@@ -70,9 +72,15 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
     }
     const attention = attentionUnread && (row.blocked || row.display_state === 'failed');
     const unread = !row.parent_job && settled(row) && row.report_unread;
-    if (catchup === 'mod' && unread && !attention) {
-      olderReports++;
-      return questions;
+    if (typeof catchup === 'number' && unread && !attention) {
+      const status = getJobIndexCache(home).readStatus(row.job);
+      const at = status.status === 'ok'
+        ? [status.value.settled_at, status.value.ended_at].map(v => typeof v === 'string' ? Date.parse(v) : NaN).find(Number.isFinite) ?? status.at
+        : -Infinity;
+      if (at < catchup) {
+        olderReports++;
+        return questions;
+      }
     }
     const pending = unread || attention;
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
@@ -259,6 +267,7 @@ export async function watchCommand(
     }
   }
   if (freshMod) tries.seekEnd();
+  const lastDelivery = Number(io.env.HUD_MOD_LAST_DELIVERY);
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue || mod ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
@@ -348,6 +357,7 @@ export async function watchCommand(
         queueAgent = agent;
       }
       const agyPending = queueAgent === 'agy' && delivery!.hasAgyEvents(callerPane, home);
+      const scanAt = Date.now();
       const rows = all ? readThinJobRows(home, { pane: null }) : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
@@ -356,7 +366,9 @@ export async function watchCommand(
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
       const progress = checkpoints(rows); // Seed the cursor, but don't replay progress from before the switch.
       const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...(modCatchup ? [] : progress)];
-      const events = first || !verbose ? actionable(home, prev, rows, modCatchup ? 'mod' : first) : [];
+      const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
+        ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
+      const events = first || !verbose ? actionable(home, prev, rows, modCatchup ? modCutoff : first) : [];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       if (queue || mod) {
@@ -388,15 +400,19 @@ export async function watchCommand(
         }
         continue;
       }
-      for (const line of modCatchup && lines.length ? [lines.join('\n')] : lines) {
+      const batches = modCatchup && lines.length ? [lines.join('\n')] : lines;
+      for (const [i, line] of batches.entries()) {
         if (stopped) break;
         try {
           if (queue) {
             const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
             if (stopped) break;
             if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
-          } else if (mod) await io.stdout(JSON.stringify({ type: 'wake', lines: line.split('\n') }) + '\n');
-          else await io.stdout(`${line}\n`);
+          } else if (mod) {
+            // Checkpoint only after the whole scan's batch, and leave changes racing the scan eligible on reload.
+            const at = i === batches.length - 1 && !notices.pending ? scanAt : undefined;
+            await io.stdout(JSON.stringify({ type: 'wake', lines: line.split('\n'), at }) + '\n');
+          } else await io.stdout(`${line}\n`);
         } catch (error) {
           if (isBrokenPipe(error)) {
             stop();

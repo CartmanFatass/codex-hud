@@ -2,7 +2,8 @@ import type { EngineInterface, Timer } from 'claude-code';
 
 // The child owns filesystem watches. The mod only stats the two append-only logs while a
 // registered project sleeps. Hand their cursors back on restart: PanelActionLog starts at EOF.
-export function watchProcess($: EngineInterface, cwd: string, home: string, project: boolean, receive: (lines: string[]) => Promise<void>) {
+export function watchProcess($: EngineInterface, cwd: string, home: string, project: boolean,
+  lastDelivery: () => number, receive: (lines: string[], at: unknown) => Promise<void>) {
   let child: ReturnType<typeof $.process.spawn> | undefined, ready: Promise<void> | undefined;
   let retry: Timer | undefined, sleeper: Timer | undefined, stopped = false, failures = 0;
   // Empty starts a bounded catch-up. Only a clean sleep has a cursor to replay from.
@@ -20,7 +21,8 @@ export function watchProcess($: EngineInterface, cwd: string, home: string, proj
 
   async function run(signal: () => void) {
     try {
-      child = $.process.spawn({ argv: ['hud', 'watch', '--mod'], cwd, env: { HUD_MOD_CURSOR: cursor } });
+      child = $.process.spawn({ argv: ['hud', 'watch', '--mod'], cwd,
+        env: { HUD_MOD_CURSOR: cursor, HUD_MOD_LAST_DELIVERY: String(lastDelivery()) } });
       let buffer = '', sizes: number[] | undefined;
       for await (const chunk of child) {
         if (chunk.stream !== 'stdout') continue;
@@ -30,7 +32,7 @@ export function watchProcess($: EngineInterface, cwd: string, home: string, proj
           const record = JSON.parse(buffer.slice(0, nl));
           buffer = buffer.slice(nl + 1);
           if (record.type === 'ready') { cursor = ''; signal(); }
-          if (record.type === 'wake' && Array.isArray(record.lines) && record.lines.every((s: unknown) => typeof s === 'string')) await receive(record.lines);
+          if (record.type === 'wake' && Array.isArray(record.lines) && record.lines.every((s: unknown) => typeof s === 'string')) await receive(record.lines, record.at);
           if (record.type === 'sleep') { cursor = record.cursor; sizes = record.sizes; }
         }
       }
