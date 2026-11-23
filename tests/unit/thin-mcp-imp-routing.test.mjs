@@ -103,6 +103,21 @@ console.log(JSON.stringify({ event: 'init', conversation_id: 'synthetic-routing'
   assert.equal(receipt(tab).cli.agent, 'codex');
 });
 
+test('explicit tab on a non-continuable role asks only for tier', async t => {
+  const { f, api } = await setup(t, body => answer(body, 'light', 'headless'));
+  role(f, routing);
+  const { result: listed } = await f.rpc('tools/list');
+  assert.deepEqual(listed.tools.find(tool => tool.name === 'hud_create').inputSchema.properties.mode.enum, ['tab', 'headless']);
+  const file = join(f.env.HUD_HOME, 'roles', 'imp.json');
+  write(file, JSON.stringify({ ...read(file), can_continue: false }));
+  const job = await create(f, 'Pin this edit to a tab.', { mode: 'tab' });
+  assert.deepEqual(api.requests[0]?.questions.map(q => q.name), ['tier']);
+  assert.equal(job.route.tier, 'light');
+  assert.equal(job.route.mode, 'tab');
+  assert.equal(job.route.reason, `${light.use}; ${modes.tab}`);
+  assert.equal(receipt(job).headless, undefined);
+});
+
 test('a winning role without routing never asks; unlisted tiers are not offered or accepted', async t => {
   const { f, api } = await setup(t, body => answer(body, 'light', 'tab'));
   role(f, undefined);
@@ -153,6 +168,29 @@ test('a pre-input headless launch failure falls through to a tab on the standard
   assert.match(result.route.fallback, /light.*standard/);
   assert.equal(receipt(result).headless, undefined);
   assert.equal(receipt(result).model, 'synthetic/daily');
+});
+
+test('standard/headless falls back to the active tab on validation or pre-input rejection', async t => {
+  const { f } = await setup(t, body => answer(body, 'standard', 'headless'));
+  role(f, routing);
+  f.overrideBin('pi-role', '#!/bin/sh\ncase " $* " in *" --print "*) echo "Headless rejected" >&2; exit 1;; esac\nexec node "$FAKE_BIN" pi-role "$@"\n');
+  for (const [task, options, attempts] of [['Invalid in headless.', { pi_args: ['--session-dir', f.root] }, 1], ['Headless launch rejected.', {}, 2]]) {
+    const job = await create(f, task, options);
+    assert.equal(job.state, 'working', JSON.stringify(job));
+    assert.equal(job.attempts.length, attempts);
+    assert.equal(job.route.tier, 'standard');
+    assert.equal(job.route.mode, 'tab');
+    assert.equal(receipt(job).model, 'synthetic/daily');
+  }
+  const pinned = await create(f, 'Pinned headless launch rejected.', { mode: 'headless' });
+  assert.equal(pinned.state, 'failed');
+  assert.equal(pinned.attempts.length, 1);
+  f.overrideBin('pi-role', '#!/bin/sh\nexec node "$FAKE_BIN" pi-role "$@"\n');
+  f.overrideBin('pi', '#!/bin/sh\necho "Received prompt"; exit 1\n');
+  const delivered = await create(f, 'Failure after input reached pi.');
+  await until(() => read(join(delivered.task_dir, 'STATUS.json')).state === 'failed');
+  assert.equal(receipt(delivered).route.mode, 'headless');
+  assert.equal(receipt(delivered).attempts.length, 1);
 });
 
 test('API error and timeout are visible; explicit headless wins and asks only for tier', { timeout: 18000 }, async t => {

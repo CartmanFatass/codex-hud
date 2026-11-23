@@ -93,6 +93,8 @@ test('the Inspector shows the route words and reason, then a headless job\'s out
   assert.match(text, /^✗ bash failed/m);
   worker.output = { lines: [], bytes: 0 };
   assert.match(draw(worker, board, 'en', 100).join('\n'), /^ {2}No output yet/m);
+  worker.output = { lines: [], bytes: 80 };
+  assert.match(draw(worker, board, 'en', 100).join('\n'), /^ {2}Nothing displayable/m);
   worker.output = OUTPUT;
   Object.assign(worker, { settledAt: JOBS_NOW - 60_000, state: 'done' });
   assert.doesNotMatch(draw(worker, board, 'en', 100).join('\n'), /^Output ─+ live$/m, 'a settled job is no longer live');
@@ -205,7 +207,7 @@ test('outputLines reads pi events, Claude stream-json and plain text, and skips 
   assert.deepEqual(outputLines(claude), [{ kind: 'tool', text: 'Read a.md' }, { kind: 'say', text: 'Looking.' }, { kind: 'error', text: 'Stopped by a synthetic limit' }]);
   assert.deepEqual(outputLines('plain line one\n\nplain line two\n{"unknown":"event"}'), [{ kind: 'say', text: 'plain line one' }, { kind: 'say', text: 'plain line two' }]);
   const many = Array.from({ length: 90 }, (_, i) => JSON.stringify({ type: 'tool_execution_start', toolName: 'read', args: { path: `f${i}` } })).join('\n');
-  assert.equal(outputLines(many).length, 40);
+  assert.equal(outputLines(many).length, 12);
   assert.equal(outputLines(many).at(-1).text, 'read f89');
   assert.ok(outputLines(JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(1000) }] } }))[0].text.length <= 240);
 });
@@ -245,8 +247,17 @@ test('the panel pipeline gives only the job open in the Inspector its output, an
   assert.equal((await collect(`thin-job:${TAB}`)).output, undefined);
   assert.deepEqual((await collect(id)).output.lines, [{ kind: 'tool', text: 'read f1' }]);
   assert.equal((await collect(id)).headless, true);
-  fs.appendFileSync(log, call(2));
-  assert.deepEqual((await collect(id)).output.lines.map((l) => l.text), ['read f1', 'read f2'], 'following live');
+  const events = [
+    { event: 'init', conversation_id: 'synthetic' },
+    { event: 'step_update', step_update: { step_index: 1, tool_info: { name: 'read_file', parameters: { Path: 'f2' } } } },
+    { event: 'step_update', step_update: { step_index: 2, text_delta: 'Read the file.' } },
+    { event: 'result', result: { response: '', error: 'Synthetic interruption' } },
+  ];
+  fs.appendFileSync(log, events.map(e => JSON.stringify(e) + '\n').join(''));
+  assert.deepEqual((await collect(id)).output.lines, [
+    { kind: 'tool', text: 'read f1' }, { kind: 'tool', text: 'read_file f2' },
+    { kind: 'say', text: 'Read the file.' }, { kind: 'error', text: 'Synthetic interruption' },
+  ], 'the live Inspector follows Antigravity step and result records');
   await pipeline.refresh(`thin-job:${TAB}`);
   assert.equal(pipeline.workboard(TREE).workers.find((w) => w.id === `thin-job:${TAB}`).output, undefined, 'a tab job never gets one');
 });

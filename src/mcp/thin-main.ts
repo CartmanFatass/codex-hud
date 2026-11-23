@@ -396,7 +396,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
     const resources = piSkillArgs(job, role, place);
     const launcher = executable('pi-role');
     if (!launcher) throw new Error('pi-role not found on PATH');
-    if (job.route && job.headless && !executable('pi')) throw new Error('pi not found on PATH');
+    if (job.role !== 'sonic' && job.headless && !executable('pi')) throw new Error('pi not found on PATH');
     const dir = directory(job.job),
       output = join(dir, jobFiles.report);
     const sessionWorker = job.headless && job.role !== 'sonic';
@@ -455,7 +455,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, 
           job.role === 'sonic' ? sonicLimits(role) : undefined);
       } catch (error) {
         // A rejected handshake never starts pi. Allow another place in this route to launch a fresh session.
-        if (job.route && sessionFile && !resume) fs.rmSync(sessionFile, { force: true });
+        if (sessionFile && !resume) fs.rmSync(sessionFile, { force: true });
         throw error;
       }
       return { exit_code: 0, stdout: '', stderr: '' };
@@ -704,6 +704,7 @@ type DispatchResult = {
   exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
   preInput?: boolean; cleanupFailed?: boolean; status?: JobStatus; path?: string;
 };
+const canTryNext = (job: Job, result: DispatchResult) => job.role !== 'sonic' && result.preInput && !result.cleanupFailed;
 const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });
 async function rejectLaunch(result: DispatchResult, tab?: string): Promise<DispatchResult> {
   const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
@@ -1409,8 +1410,8 @@ const supportsHeadless = (place: RolePlace) => place.harness === 'pi' ||
 function placeOptions(args: Args, configured: RolePlace) {
   const place = { ...configured };
   const invalid = (error?: string) => ({ ok: false, code: 'invalid_arguments', error } as const);
-  if (args.mode !== undefined) {
-    if (args.mode !== 'headless' || !supportsHeadless(place))
+  if (args.mode === 'headless') {
+    if (!supportsHeadless(place))
       return invalid('headless mode requires pi, claude or agy');
     if (place.harness === 'cli' && place.args?.some(value => value === '--' ||
         /^(-[cpri]|--(?:continue|conversation|resume|fork-session|session-id|no-session-persistence|print|prompt|prompt-interactive|input-format|output-format))(?:=|$)/.test(value)))
@@ -1458,6 +1459,7 @@ function placeOptions(args: Args, configured: RolePlace) {
 const roleCwd = (job: Job) => job.worktree?.main_root ?? (job.land_turn ? job.project_root : undefined) ?? job.cwd;
 const piOptionKeys = [...piSwitches, 'pi_args'] as const;
 const placementOverrides = ['preset', 'on', 'model', 'thinking'] as const;
+const hasPiPlacement = (args: unknown) => Array.isArray(args) && args.some(arg => typeof arg === 'string' && /^--(?:models?|provider|thinking)(?:=|$)/.test(arg));
 const replayOptions = ['mode', 'on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
 function jobOptions(job: Job): Args {
   return {
@@ -1507,7 +1509,7 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
 
 type SlotGate = { wait: Promise<void>; release: () => void };
 
-export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { job: string; derived: boolean }, batch = false, slotGate?: SlotGate) {
+export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { source: Job; derived: boolean }, batch = false, slotGate?: SlotGate) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
     catch { return { ok: false, code: 'invalid_arguments', error: 'sonic cwd must be an existing directory inside the parent project' }; }
@@ -1520,18 +1522,20 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
   if (retryOf && !source) return { ok: false, code: 'job_not_found' };
   const role = input.role === undefined && source ? source.role : required(input, 'role');
   // Check caller input, not inherited retry options or internal repair placement.
-  if (!parent && !repair && role !== 'general' && placementOverrides.some(key => input[key] !== undefined)) {
+  if (!repair && role !== 'general' && ((!parent && placementOverrides.some(key => input[key] !== undefined)) || hasPiPlacement(input.pi_args))) {
     return { ok: false, code: 'invalid_arguments', error: `Role ${JSON.stringify(role)} runs as configured in its role file and Control; use general to choose a model for one job.` };
   }
   let args = input;
-  let retrySource: Job | undefined;
-  let repairOf = repair?.job;
-  let worktreeSource = repair?.job ? continuationWorktreeSource(repair.job) : undefined;
+  let repairOf = repair?.source.job;
+  let worktreeSource = repairOf ? continuationWorktreeSource(repairOf) : undefined;
   if (source) {
     const { row } = readRow(source);
     if (row.state !== 'failed' && row.state !== 'stopped') return { ok: false, code: 'not_retryable' };
-    retrySource = source;
     const inherited = jobOptions(source);
+    if (role !== source.role) {
+      for (const key of placementOverrides) delete inherited[key];
+      if (hasPiPlacement(inherited.pi_args)) delete inherited.pi_args;
+    }
     delete inherited.on; // Retry through the role's chain instead of pinning the previous harness.
     if (input.on !== undefined) delete inherited.preset;
     args = { ...inherited, ...(input.task === undefined && input.brief_file === undefined ? { task: originalTask(source) } : {}), ...input, role };
@@ -1553,7 +1557,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, retrySource }));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source }));
 }
 
 const pendingScouts = new Map<string, AbortController>();
@@ -1658,12 +1662,14 @@ function launchPlan(found: Registry, chain: Role, now: number, args: Args,
     return [{ candidate, effective, route: applied, prepared: placeOptions(launchArgs, candidate.place) }];
   });
   const preferred = tier ? entries(tier, route) : [];
-  const fallback = route && route.tier !== 'standard' ? {
-    ...route, tier: 'standard' as const, mode: 'tab' as const, mode_reason: undefined,
-    fallback: `${route.tier} tier has no usable place; using standard`,
+  const modeFallback = route?.tier === 'standard' && !explicit && preferred.some(entry => entry.route?.mode === 'headless');
+  const fallback: JobRoute | undefined = route && (route.tier !== 'standard' || modeFallback) ? {
+    ...route, tier: 'standard', mode: args.mode === 'headless' ? 'headless' : 'tab', mode_reason: undefined,
+    fallback: modeFallback ? 'Cannot launch headless; using standard in a tab' : `${route.tier} tier has no usable place; using standard`,
   } : undefined;
-  const all = fallback ? [...preferred, ...entries(standard, fallback)] : preferred;
-  const candidates = route ? all.filter(entry => !('code' in entry.prepared)) : all;
+  // On the same chain, tab-only candidates already had their tab attempt.
+  const all = fallback ? [...preferred, ...entries(standard, fallback).filter(({ candidate }) => !modeFallback || supportsHeadless(candidate.place))] : preferred;
+  const candidates = route || args.mode === 'headless' ? all.filter(entry => !('code' in entry.prepared)) : all;
   return { candidates, error: all.find(entry => 'code' in entry.prepared)?.prepared,
     effective: candidates[0]?.effective ?? standard, route: candidates[0]?.route ?? fallback ?? route, fallback };
 }
@@ -1691,8 +1697,8 @@ export function canOverflowImpJob(job: Job): boolean {
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parentJob?: string, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, retrySource }: {
-    scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; retrySource?: Job;
+  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob }: {
+    scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
   } = {}) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
@@ -1725,12 +1731,16 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   // A retry of an overflow keeps the imp seat's launch configuration, unless the caller
   // uses general's public placement overrides to request a different place.
-  const fromImp = role === 'general' && retrySource?.role === 'general' && retrySource.overflow_from === 'imp' &&
-    !placementOverrides.some(key => retryInput?.[key] !== undefined);
+  const fromImp = role === 'general' && sourceJob?.overflow_from === 'imp' &&
+    !placementOverrides.some(key => retryInput?.[key] !== undefined) && !hasPiPlacement(retryInput?.pi_args);
   const chain = fromImp ? configured.get('imp') : definition;
   if (!chain || chain.optionalEnabled === false)
     return { ok: false, code: 'role_unavailable', reason: 'Role imp is not configured or is hidden in this project' };
-  if (args.mode !== undefined && !chain.can_continue)
+  const mode = args.mode;
+  if (mode !== undefined && mode !== 'tab' && mode !== 'headless')
+    return { ok: false, code: 'invalid_arguments', error: 'mode must be tab or headless' };
+  if (mode === 'tab' && role === 'sonic') return { ok: false, code: 'invalid_arguments', error: 'sonic runs headless only' };
+  if (mode === 'headless' && !chain.can_continue)
     return { ok: false, code: 'invalid_arguments', error: 'explicit headless mode requires a continuable role' };
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
@@ -1747,7 +1757,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const presetName = args.preset === undefined ? undefined : required(args, 'preset');
   const preset = chain.presets?.find((p) => p.name === presetName);
-  if (presetName !== undefined && !preset && !(fromImp && retrySource?.route)) {
+  if (presetName !== undefined && !preset && !(fromImp && sourceJob?.route)) {
     return { ok: false, code: 'invalid_arguments', error: `unknown preset: ${presetName}` };
   }
   let routing;
@@ -1777,13 +1787,13 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const imp = requestedRole === 'imp' || fromImp;
   let route: JobRoute | undefined;
   let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
-  if (imp && retryInput) {
-    route = landCwd ? repairImpRoute(chain, retrySource?.route) : retrySource?.route;
+  if (imp && (retryInput || fromImp)) {
+    route = landCwd ? repairImpRoute(chain, sourceJob?.route) : sourceJob?.route;
   } else if (imp && chain.routing) {
     localContext = await contextFor(args, false);
     if ('code' in localContext) return localContext;
     const context_files = localContext.contextInputs;
-    route = await pickImpRoute(hudHome, chain.routing, task, args.mode === 'headless', () => ({
+    route = await pickImpRoute(hudHome, chain.routing, task, mode, () => ({
       ticket: routingTicketText(project.root, args.ticket), context_files,
     }));
   }
@@ -2047,10 +2057,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if ((job.headless && !job.route) || !result.preInput || result.cleanupFailed) break;
+      if (!canTryNext(job, result)) break;
       save(job);
     }
-    if (plan.fallback && result.preInput && !result.cleanupFailed && job.route?.tier !== 'standard')
+    if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
       job.route = plan.fallback;
     const launchRow = finishLaunch(job, dir, result, reason, !scoutQuestion);
     if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && job.herdr_pane === scoutTask.pane) {
@@ -2298,10 +2308,10 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if ((job.headless && !job.route) || !result.preInput || result.cleanupFailed) break;
+      if (!canTryNext(job, result)) break;
       save(job);
     }
-    if (plan.fallback && result.preInput && !result.cleanupFailed && job.route?.tier !== 'standard')
+    if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
       job.route = plan.fallback;
     finishLaunch(job, dir, result, reason, false);
     return { started: result.exit_code === 0, ...(result.exit_code !== 0 ? { failed: true, reason } : {}) };
@@ -2601,7 +2611,7 @@ async function sendJob(id: string, message: string, explicitKey: string | undefi
       (current.resume_s === undefined && (state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) &&
         piReportSettlement(dir, current, status)))) {
     const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: repairKey },
-      process.env.HERDR_PANE_ID, undefined, { job: id, derived: explicitKey === undefined }, batch);
+      process.env.HERDR_PANE_ID, undefined, { source: current, derived: explicitKey === undefined }, batch);
     const continued_as = 'job' in repair ? repair.job : isTaskReply(repair) ? tasks.get(repair.taskId)?.job : undefined;
     if (continued_as) supersedeTask(id, `continued as repair job ${continued_as}`);
     return { ...repair, continuation: 'repair' as const, ...(continued_as ? { continued_as } : {}) };
@@ -2714,7 +2724,7 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
   // A closed but successfully settled job isn't a public retry target. Use the same keyed create path,
   // retaining retry provenance and the original checkout rather than starting at a clean main tip.
   const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? source.herdr_pane, key, false,
-    undefined, undefined, { retry_of: id }, { landCwd: cwd, retrySource: source }));
+    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source }));
   if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
   throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);
 }

@@ -1,6 +1,6 @@
 /**
  * A headless job's output for the Inspector (auto-route/04): the newest lines of its `stdout.jsonl`, read from the end of the
- * file and kept in a form the panel paints without I/O. Pi's JSON events and Claude's stream-json become one line per tool
+ * file and kept in a form the panel paints without I/O. Pi's JSON events and Claude's and Antigravity's stream-json records become one line per tool
  * call, assistant text line or error; a line that is not JSON is plain text; any other JSON event is skipped.
  */
 import * as fs from 'node:fs';
@@ -10,7 +10,7 @@ import { jobFiles } from '../mcp/paths.js';
 
 export interface OutputLine { readonly kind: 'say' | 'tool' | 'error'; readonly text: string }
 export interface HeadlessOutput {
-  /** Oldest first, at most `MAX_LINES`. */
+  /** Oldest first, at most `OUTPUT_ROWS`. */
   readonly lines: readonly OutputLine[];
   /** The log's size: 0 is a job that has not written yet. */
   readonly bytes: number;
@@ -18,7 +18,7 @@ export interface HeadlessOutput {
 
 /** Bytes read from the end of the log; a longer event (a big tool result) is not shown. */
 const WINDOW = 128 * 1024;
-const MAX_LINES = 40;
+export const OUTPUT_ROWS = 12;
 const MAX_TEXT = 240;
 const cache = new Map<string, { stamp: string; value: HeadlessOutput }>();
 
@@ -33,14 +33,32 @@ function toolText(name: unknown, args: unknown): string {
   return clip(`${typeof name === 'string' ? name : 'tool'} ${typeof first === 'string' ? first : ''}`);
 }
 
+function sayText(text: unknown, out: OutputLine[]): void {
+  if (typeof text === 'string')
+    for (const line of text.split('\n')) if (line.trim()) out.push({ kind: 'say', text: clip(line) });
+}
+
 function say(content: unknown, out: OutputLine[]): void {
   for (const part of Array.isArray(content) ? content : []) {
-    if (isRecord(part) && part.type === 'text' && typeof part.text === 'string')
-      for (const line of part.text.split('\n')) if (line.trim()) out.push({ kind: 'say', text: clip(line) });
+    if (isRecord(part) && part.type === 'text') sayText(part.text, out);
   }
 }
 
 function eventLines(event: Record<string, unknown>, out: OutputLine[]): void {
+  // Antigravity nests the payload under its event name; init and usage aren't display lines.
+  if (event.event === 'step_update' && isRecord(event.step_update)) {
+    const step = event.step_update, tool = isRecord(step.tool_info) ? step.tool_info : {};
+    const name = tool.name ?? step.tool_name;
+    if (typeof name === 'string' && name) out.push({ kind: 'tool', text: toolText(name, tool.parameters) });
+    if (typeof tool.error === 'string' && tool.error.trim()) out.push({ kind: 'error', text: clip(tool.error) });
+    sayText(step.text_delta, out);
+    return;
+  }
+  if (event.event === 'result' && isRecord(event.result)) {
+    sayText(event.result.response, out);
+    if (typeof event.result.error === 'string' && event.result.error.trim()) out.push({ kind: 'error', text: clip(event.result.error) });
+    return;
+  }
   const message = isRecord(event.message) ? event.message : {};
   switch (event.type) {
     // Pi: a tool starts, a tool fails, an assistant message is complete.
@@ -75,7 +93,7 @@ export function outputLines(text: string): OutputLine[] {
     try { event = JSON.parse(line); } catch { out.push({ kind: 'say', text: clip(line) }); continue; }
     if (isRecord(event)) eventLines(event, out);
   }
-  return out.slice(-MAX_LINES);
+  return out.slice(-OUTPUT_ROWS);
 }
 
 /** The newest output of the job in `dir`, or undefined when its log is missing or unreadable. Read-only, bounded, and cached until the log changes. A log that exists and is empty is `{ lines: [], bytes: 0 }`. */

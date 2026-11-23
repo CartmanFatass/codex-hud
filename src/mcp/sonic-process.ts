@@ -62,13 +62,13 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
       child.stdin!.end('start');
     } catch (error) { child.stdin!.destroy(); throw error; }
   } catch (error) {
-    // A new routed attempt may start another headless place. Only remove files this failed launch created.
-    if (job.route) for (const path of created) fs.rmSync(path, { force: true });
+    // A subsequent attempt can start another headless place. Only remove files this failed launch created.
+    for (const path of created) fs.rmSync(path, { force: true });
     throw error;
   } finally { for (const fd of fds) fs.closeSync(fd); }
 }
 
-type HeadlessExit = { code: number | null; signal?: string | null; error?: string; agent_session_id?: string };
+type HeadlessExit = { code: number | null; signal?: string | null; paused?: boolean; error?: string; agent_session_id?: string };
 
 function cliStreamSession(dir: string, agent: string, offset: number) {
   // The native init record precedes conversation output. Read only this turn's bounded log prefix.
@@ -86,7 +86,9 @@ function cliStreamSession(dir: string, agent: string, offset: number) {
   }
 }
 
-function launchTurn(dir: string, argv: string[], status: JobStatus, command: string) {
+async function launchTurn(dir: string, argv: string[], status: JobStatus, command: string) {
+  const pause = join(dir, jobFiles.pauseRequested);
+  if (status.harness === 'cli') fs.rmSync(pause, { force: true }); // A fresh handoff for each native turn.
   const child = spawn(command, argv, { stdio: ['ignore', 'inherit', 'inherit'] });
   const exit = new Promise<HeadlessExit>(resolve => {
     child.once('error', error => resolve({ code: null, error: error.message }));
@@ -99,7 +101,21 @@ function launchTurn(dir: string, argv: string[], status: JobStatus, command: str
       throw Error(capture.issue ?? 'cannot capture sonic child');
     }
   }
-  return exit;
+  if (status.harness !== 'cli') return exit;
+  const controller = new AbortController();
+  let escalation;
+  try {
+    const ended = await Promise.race([exit, waitUntilFs<'pause'>({ signal: controller.signal, timeoutMs: Infinity,
+      targets: [{ dir, filter: name => !name || name === jobFiles.pauseRequested }],
+      check: () => fs.existsSync(pause) ? { done: true, value: 'pause' as const } : { done: false },
+    })]);
+    if (ended !== 'pause') return ended;
+    // The question and ancestry snapshot are durable. End the native process, not the runner;
+    // the watcher reaps its descendants before allowing hud_respond to reopen the session.
+    child.kill('SIGTERM');
+    escalation = setTimeout(() => child.kill('SIGKILL'), 1000);
+    return { ...await exit, paused: true };
+  } finally { controller.abort(); clearTimeout(escalation); }
 }
 
 /** Run in the owned runner, after the dispatch handshake. Capture the child before a crash could orphan it. */
@@ -138,7 +154,7 @@ export async function runHeadlessTurn(dir: string, argv: string[]) {
       fs.renameSync(session, `${session}.rejected`);
       result = await launchTurn(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status, 'pi');
     }
-    if (agent && result.code === 0) {
+    if (agent && (result.code === 0 || result.paused)) {
       try { result.agent_session_id = cliStreamSession(dir, agent, offset); }
       catch (error) { result.error = (error as Error).message; }
     }
@@ -170,7 +186,7 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
   }
   if (exit.at >= deadline) return timeout;
   const agent = status.harness === 'cli' ? status.agent : undefined;
-  if (exit.code !== 0 || exit.error)
+  if ((exit.code !== 0 && !(agent && asking && exit.paused)) || exit.error)
     return { state: 'failed', exit_reason: exit.error || `${agent ?? 'pi'} exited: ${exit.signal || exit.code}`,
       ...(agent && { agent_session_id: null }) };
   if (agent) {

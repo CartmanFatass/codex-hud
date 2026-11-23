@@ -124,6 +124,23 @@ test('hud_create closes a pre-input failure and starts the next place in the sam
   assert.equal(exhausted['cli:grok:synthetic-first'].reason, reason);
 });
 
+test('non-general roles refuse caller Pi placement flags and do not inherit general overrides on role change', async t => {
+  const f = await fixture(t);
+  const owner = { harness: 'pi', pi_role: 'implementer', model: 'synthetic/owner', thinking: 'high', pi_args: ['--thinking', 'high'] };
+  fallbackRole(f, 'reviewer', [owner]);
+  for (const flag of ['--model', '--thinking=low', '--models', '--provider']) {
+    const result = await f.call('hud_create', { role: 'reviewer', task: 'Read only.', pi_args: [flag, 'synthetic/caller'] });
+    assert.equal(result.code, 'invalid_arguments', flag);
+  }
+  const original = await f.call('hud_create', { role: 'general', task: 'Synthetic retry.', on: 'pi', model: 'synthetic/override', thinking: 'low', pi_args: ['--model', 'synthetic/caller'] });
+  writeFixtureFile(join(original.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed' }));
+  const next = await f.call('hud_create', { retry_of: original.job, role: 'reviewer' });
+  const receipt = JSON.parse(fs.readFileSync(join(next.task_dir, 'job.json')));
+  assert.equal(receipt.model, owner.model);
+  assert.equal(receipt.thinking, owner.thinking);
+  assert.deepEqual(receipt.pi_args, owner.pi_args);
+});
+
 test('hud_create retry_of reuses a failed job brief and options on an available place', async (t) => {
   const f = await fixture(t);
   const places = ['synthetic/primary', 'synthetic/fallback'].map((model) => ({ harness: 'pi', pi_role: 'implementer', model }));

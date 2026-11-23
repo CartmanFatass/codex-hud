@@ -378,7 +378,12 @@ export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: Ques
     pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
   }
   if (job.headless) {
-    if (job.cli) capturePiTree(dir);
+    if (job.cli) {
+      capturePiTree(dir);
+      writePrivateFile(join(dir, jobFiles.pauseRequested), `q${published.n}`, { mkdir: false });
+      // Keep the CLI inside the tool call until its runner ends this process. No next model action.
+      return new Promise<never>(() => {});
+    }
     return `Question q${published.n} recorded (${pushed}); end this turn without acting on a default. The orchestrator's answer resumes this session.`;
   }
   const timeoutSec = timeoutRaw !== undefined && /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : 1200;

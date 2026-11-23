@@ -63,7 +63,9 @@ try {
   };
   await call('hud_progress', { message: 'Synthetic headless CLI progress.' });
   if (!resumed) {
-    assert.match(await call('hud_ask', { question: 'Which value?', default: 'A' }), /end this turn/);
+    await call('hud_ask', { question: 'Which value?', default: 'A' });
+    fs.writeFileSync(join(dir, 'continued-after-ask'), 'Unexpected next action');
+    setInterval(() => {}, 1000); // The fake never volunteers to end the turn.
   } else {
     const turn = /turn: (\\S+)/.exec(prompt)[1];
     await call('hud_report', { turn, text: 'Synthetic report: ' + prompt.split('\\n')[0] });
@@ -95,6 +97,7 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
       return status()?.state === state && (state === 'waiting_orchestrator' || read(join(dir, 'job.json')).reaped_at);
     });
     await wait('waiting_orchestrator');
+    assert.ok(!fs.existsSync(join(dir, 'continued-after-ask')));
     const id = status().agent_session_id;
     assert.ok(id && !isProcAlive(status().pid));
     assert.equal(status().slot, 'headless');

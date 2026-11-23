@@ -1,6 +1,6 @@
 # 05: Milestone review fixes for routing and headless workers
 
-**Status:** ready-for-agent
+**Status:** done
 **Blocked by:** none
 **Owner try:** no
 
@@ -16,7 +16,9 @@
 - Deletions: the blanket headless break, the `retrySource` shadow, the 40-vs-12 output line limit (one shared limit).
 Leave the review's optional list alone.
 
-- [ ] Each blocking finding has one main-path test that fails before and passes after
-- [ ] Targeted tests pass
+- [x] Each blocking finding has one main-path test that fails before and passes after
+- [x] Targeted tests pass
 
 ## Comments
+
+- Landed cebf64285e59b79ac5184488d810e8f2a6f9753b; gate 5/5 passed.

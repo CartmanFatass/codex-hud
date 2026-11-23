@@ -22,6 +22,7 @@ export const jobFiles = {
   qa: 'qa',
   sonic: '.sonic',
   sonicExit: 'sonic-exit.json',
+  pauseRequested: 'question.pause-requested',
   sonicTimeout: 'STATUS.json.timeout-requested', // Legacy scout stop intent.
   sonicStop: 'sonic-stop.json',
   sonicStdout: 'stdout.jsonl',

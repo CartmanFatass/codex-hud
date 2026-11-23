@@ -57,7 +57,7 @@ export const ROLE_TOOLS = [
         default: 'none',
         description: 'Managed Git checkout from HEAD (local only).',
       },
-      mode: { ...text, enum: ['headless'], description: 'Run a continuable pi, Claude Code or Antigravity worker without a tab; retain its native session.' },
+      mode: { ...text, enum: ['tab', 'headless'], description: 'Headless requires a continuable pi, Claude or Antigravity role.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI only.' },
       on: { ...text, description: 'General harness/provider: pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow.' },
       preset: { ...text, description: 'Named general preset; mutually exclusive with on.' },
@@ -74,7 +74,7 @@ export const ROLE_TOOLS = [
         type: 'array',
         items: { ...text, maxLength: 4096 },
         maxItems: 128,
-        description: 'Pi argv after --; --orchestrator and --notify are reserved.',
+        description: 'Pi argv; placement is general-only; --orchestrator and --notify reserved.',
       },
     }
   ),

@@ -37,7 +37,8 @@ export function piSessionIdentity(job: Job, file: string | null | undefined): Om
     const path = fs.realpathSync(file);
     const { bytes } = readFileBounded(path, 64 * 1024);
     const head = JSON.parse(bytes.toString('utf8').split('\n', 1)[0]);
-    if (head.type === 'session' && typeof head.id === 'string' && head.id && head.cwd === job.cwd) return { id: head.id, file: path };
+    if (head.type === 'session' && typeof head.id === 'string' && head.id && typeof head.cwd === 'string' &&
+        isAbsolute(head.cwd) && fs.realpathSync(head.cwd) === fs.realpathSync(job.cwd)) return { id: head.id, file: path };
   } catch { /* Missing or unreadable native session: the caller will repair instead. */ }
   return null;
 }

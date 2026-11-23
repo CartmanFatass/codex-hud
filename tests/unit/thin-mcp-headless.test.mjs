@@ -68,7 +68,9 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   const f = await fixture(t);
   f.overrideBin('pi', fakePi);
   write(join(f.env.HOME, 'ask'), '');
-  const job = await create(f), dir = job.task_dir;
+  const cwd = join(f.root, 'linked-cwd');
+  fs.symlinkSync(f.root, cwd);
+  const job = await f.call('hud_create', { role: 'imp', mode: 'headless', cwd, task: 'Synthetic change.' }), dir = job.task_dir;
   assert.equal(job.mode, 'headless');
   await until(() => cliState(dir)?.state === 'waiting_orchestrator');
   const paused = cliState(dir);
@@ -84,7 +86,7 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.equal((await f.call('hud_respond', answer)).written, false);
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Check C.' })).continuation, 'resumed');
   await closed(job);
-  const land = `import { dispatchLandRepair } from ${JSON.stringify(moduleUrl('../../dist/mcp/thin-main.js'))};\n    console.log(await dispatchLandRepair(${JSON.stringify(job.job)}, process.cwd(), 'Synthetic land repair.', 'land:test', null));`;
+  const land = `import { dispatchLandRepair } from ${JSON.stringify(moduleUrl('../../dist/mcp/thin-main.js'))};\n    console.log(await dispatchLandRepair(${JSON.stringify(job.job)}, ${JSON.stringify(cwd)}, 'Synthetic land repair.', 'land:test', null));`;
   assert.equal(execFileSync(process.execPath, ['--input-type=module', '-e', land], { cwd: f.root, env: f.env, encoding: 'utf8' }).trim(), job.job);
   await closed(job);
   const lines = fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trimEnd().split('\n').map(x => JSON.parse(x));
@@ -157,6 +159,41 @@ test('queued headless imp can overflow without borrowing the general role defini
   assert.equal(receipt.overflow_from, 'imp');
   assert.equal(receipt.headless, true);
   assert.equal(receipt.model, 'synthetic/default');
+  write(join(queued.task_dir, 'STATUS.json'), JSON.stringify({ ...cliState(queued.task_dir), ended_at: new Date(0).toISOString() }));
+  const replacement = await f.call('hud_send', { job: queued.job, text: 'Expired overflow follow-up.' });
+  assert.equal(replacement.continuation, 'repair');
+  assert.equal(replacement.overflow_from, 'imp', JSON.stringify(replacement));
+  await closed(replacement);
+  assert.equal(read(join(replacement.task_dir, 'job.json')).model, receipt.model);
+});
+
+test('direct and queued unrouted headless creates skip incompatible places and pre-input rejections', async t => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  write(join(roles, 'general.json'), JSON.stringify({ role: 'general', instructions: 'general', can_continue: true, run: [
+    { harness: 'cli', agent: 'codex' }, { harness: 'cli', agent: 'claude' }, { harness: 'pi', model: 'synthetic/fallback' },
+  ] }));
+  write(join(f.env.CLAUDE_CONFIG_DIR, '.claude.json'), '{}');
+  f.overrideBin('pi', fakePi);
+  for (const queued of [false, true]) {
+    if (queued) {
+      write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { general: 1 } }));
+      assert.equal((await f.call('hud_create', { role: 'general', task: 'Hold a slot.', on: 'pi' })).state, 'working');
+    }
+    const job = await f.call('hud_create', { role: 'general', mode: 'headless', task: `Fallback (queued: ${queued}).` });
+    assert.ok(job.job, JSON.stringify(job));
+    if (queued) {
+      assert.equal(job.state, 'queued');
+      write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { general: 0 } }));
+    }
+    await closed(job);
+    const receipt = read(join(job.task_dir, 'job.json'));
+    assert.equal(receipt.attempts.length, 2);
+    assert.match(receipt.attempts[0].reason, /claude has not trusted/);
+    assert.equal(receipt.model, 'synthetic/fallback');
+    assert.equal(receipt.headless, true);
+  }
 });
 
 test('old report cannot settle a resumed turn and unsupported launches refuse headless mode', async t => {

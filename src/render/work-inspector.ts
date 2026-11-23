@@ -1,4 +1,5 @@
 /** Expanded Home cards, honest local facts and openable workflow files. No I/O. */
+import { OUTPUT_ROWS } from '../collectors/headless-output.js';
 import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
@@ -43,14 +44,12 @@ function facts(entries: [string, string][], width: number): MonitorRow[] {
       rows.push(boardRow(fit(parts[i][j]?.text ?? '', half) + fit(parts[i + 1]?.[j]?.text ?? '', width - half)));
   return rows;
 }
-/** Output rows the Inspector shows; a longer log shows its newest lines. */
-const OUTPUT_ROWS = 12;
 /** A headless job has no tab to look at: its newest output, one row per line, under the card (auto-route/04). */
 function outputRows(worker: OwnerWorker, width: number): MonitorRow[] {
   const { output } = worker;
   if (!output) return [];
   const rows = [boardRow(''), section(t('Output'), width, worker.settledAt === null ? t('live') : '')];
-  if (!output.lines.length) return [...rows, itemRow('', theme.board.muted(t('No output yet')), '', width)];
+  if (!output.lines.length) return [...rows, itemRow('', theme.board.muted(t(output.bytes === 0 ? 'No output yet' : 'Nothing displayable')), '', width)];
   for (const { kind, text } of output.lines.slice(-OUTPUT_ROWS)) {
     const [glyph, ink] = kind === 'tool' ? [mark('▸', '>'), theme.board.muted] : kind === 'error' ? [mark('✗', 'x'), theme.board.danger] : [' ', theme.board.body];
     rows.push(itemRow(ink(glyph), ink(monitorText(text)), '', width));

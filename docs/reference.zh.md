@@ -99,7 +99,7 @@ MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud
 仅 `pi` 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
 （最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；
 split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 加载个人技能；
-split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
+split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。调用方只有在使用 `general` 时才能传入模型、提供方和推理强度参数。重试时若更换角色，不沿用原先的位置覆盖项。
 浏览器（`bro`）位置拒绝这些 pi 选项。
 
 传入 `scout: "<问题>"` 时，HUD 先按 sonic 角色的常规设置，在目标任务的工作目录（包括托管工作树）中用相同的
@@ -172,7 +172,7 @@ Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不�
 
 只提供文件中声明的档位。`light` 和 `hard` 指定角色预设；`standard` 不带 `preset`，沿用「控制」中当前选择的预设。分流会发送任务简报的前 4000 字符、指定本地工单（`feature/NN`，最多 4 KiB/4000 字符）、最多 32 个 `context_files` 的相对文件名（每个最多 512 字符）和字节数，以及档位和运行方式的用途说明。不发送上下文正文、常驻简报、既有报告、预设或模型 ID。所选的用途说明组成一行理由。
 
-所选档位无可用位置时回退到 `standard`；决策失败、超时或设置关闭时，使用当前预设并打开标签页。显式指定 `mode: "headless"` 优先，此时只选择档位。自动无标签页运行仅用于支持该模式的可继续位置（pi、Claude Code 或 Antigravity），否则打开标签页。溢出到 `general` 时保留 `imp` 的运行链。`retry_of` 保留档位，不再请求决策；轻量任务的落地修复改用标准档。任务回执、创建结果和单任务 `hud_read` 返回 `route`，包括 `tier`、`mode`、`reason`、`source` 以及适用时的 `fallback` 或 `mode_reason`；任务卡也显示分流及原因：首页行（及分栏列表行、详情标题）上有档位和无界面标记，详情里有一行 `分流：轻量 · 无界面 — <原因>`。
+所选档位无可用位置时回退到 `standard`；决策失败、超时或设置关闭时，使用当前预设并打开标签页。自动选择标准档的无界面任务若在输入提交前启动失败，会尝试用标签页运行当前预设。显式指定 `mode: "tab"` 或 `mode: "headless"` 优先，此时只选择档位。自动无标签页运行仅用于支持该模式的可继续位置（pi、Claude Code 或 Antigravity），否则打开标签页。溢出到 `general` 时保留 `imp` 的运行链。`retry_of` 保留档位，不再请求决策；轻量任务的落地修复改用标准档。任务回执、创建结果和单任务 `hud_read` 返回 `route`，包括 `tier`、`mode`、`reason`、`source` 以及适用时的 `fallback` 或 `mode_reason`；任务卡也显示分流及原因：首页行（及分栏列表行、详情标题）上有档位和无界面标记，详情里有一行 `分流：轻量 · 无界面 — <原因>`。
 
 按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位，则计入 `general` 的名额，但保留 `imp` 的执行链（适用时按分流选择，否则使用当前预设），并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
 
