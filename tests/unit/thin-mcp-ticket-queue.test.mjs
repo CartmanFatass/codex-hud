@@ -147,6 +147,22 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 });
 
+test('ticket queue keeps going past an answered worker question', { timeout: 30_000 }, async t => {
+  const f = await project(t);
+  const { flow } = await f.start();
+  const [first] = await f.jobs(flow, 1);
+  const qa = join(f.dir(first), 'qa');
+  fs.mkdirSync(qa, { recursive: true });
+  writeFixtureFile(join(qa, 'q1.md'), '# Question q1 from Synthetic\n\nChoose a synthetic path.\n');
+  writeFixtureFile(join(qa, 'q1.answer.md'), 'Take the synthetic path.\n');
+  await f.settle(first);
+  const [, second] = await f.jobs(flow, 2);
+  await f.settle(second);
+  const [, , third] = await f.jobs(flow, 3);
+  await f.settle(third);
+  assert.equal((await f.end(flow)).state, 'completed');
+});
+
 test('ticket queue task hands back on a red HUD check, not on the report before checks', { timeout: 30_000 }, async t => {
   const f = await project(t);
   const rpc = taskRpc(f.rpc);

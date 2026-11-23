@@ -113,8 +113,8 @@ async function drive(q: TicketQueue) {
           if (!job) { flag('job receipt missing'); continue; }
           if (job.ticket_queue !== owner(item)) { flag('job taken over outside the ticket queue'); continue; }
           const { row, status } = readRow(job, false, null);
-          const question = jobCache.readQa(directory(job.job)).allQuestionFiles[0];
-          if (question) flag(`worker question ${question.slice(0, -3)} — use hud_read or hud_respond`);
+          const question = jobCache.readQa(directory(job.job)).openIds[0];
+          if (question) flag(`worker question ${question} — use hud_read or hud_respond`);
           else if (fs.existsSync(join(directory(job.job), jobFiles.stopRequested))) flag('worker stop requested');
           else if (failedAttempt(row)) flag(row.reason ?? row.display_state);
           else if (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator') flag(row.reason ?? 'worker needs main');
