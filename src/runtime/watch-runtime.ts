@@ -876,12 +876,14 @@ function ensureSettingsWatch() {
 }
 // Watch before catch-up, so a STATUS rename during the initial scan is not missed.
 function startWatch() {
-  try {
+  // A degraded jobs watch can retry repeatedly. Keep the independent flow watch
+  // rather than replacing its handle and leaving the old one alive.
+  if (!flowsWatcher) try {
     const flows = join(home, 'flows');
     fs.mkdirSync(flows, { mode: 0o700, recursive: true });
-    flowsWatcher = fs.watch(flows, (_event, file) => {
+    flowsWatcher = fs.watch(flows, { persistent: false }, (_event, file) => {
       if (!file || /^q[a-f0-9]{16}\.json$/.test(file)) schedule();
-    }).on('error', () => { flowsWatcher?.close(); flowsWatcher = undefined; });
+    }).once('error', () => { flowsWatcher?.close(); flowsWatcher = undefined; });
   } catch { /* The initial scan and active-queue recovery timer still run. */ }
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {

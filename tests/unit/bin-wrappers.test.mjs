@@ -16,7 +16,7 @@ function release(t) {
 }
 
 test('installed bin paths and executable bits survive the move to dist', () => {
-  const bootstraps = ['generation', 'agy-events', 'hud-mcp', 'land-runner', 'surface'];
+  const bootstraps = ['generation', 'agy-events', 'hud-mcp', 'land-runner', 'surface', 'ticket-queue-runner'];
   assert.deepEqual(fs.readdirSync(bin).filter(file => file.endsWith('.mjs')).sort(),
     [...wrappers, ...bootstraps].map(name => `${name}.mjs`).sort());
   for (const name of wrappers) assert.ok(fs.readFileSync(join(bin, `${name}.mjs`), 'utf8').trimEnd().split('\n').length <= 6, name);
