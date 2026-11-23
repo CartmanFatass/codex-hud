@@ -4,7 +4,13 @@ import type { On } from 'claude-code';
 
 const JOB = 'j00000000000000a1';
 const start = { cwd: '/demo', surface: 'terminal' as const, isInteractive: true };
-const text = (value: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], isError: false });
+/** What HUD's MCP server sends the main session: compact `key: value` rows (src/mcp/mcp/result-text.ts), JSON for refusals. */
+const compact = (value: unknown) => {
+  const v = value as Record<string, unknown>;
+  if (!v || typeof v !== 'object' || v.ok === false) return JSON.stringify(value);
+  return Object.entries(v).map(([k, x]) => `${k}: ${typeof x === 'string' && x && !/[\r\n]/.test(x) ? x : JSON.stringify(x)}`).join('\n');
+};
+const text = (value: unknown) => ({ content: [{ type: 'text', text: compact(value) }], isError: false });
 
 /** A session whose `hud` answers `mcp` per tool and `act` per verb; `choice` is what the owner picks when asked. */
 function session(on: On, mcp: Record<string, unknown>, env: Record<string, string> = { HERDR_PANE_ID: 'w4E:p1' }, choice = 'Cancel') {

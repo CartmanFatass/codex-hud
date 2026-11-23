@@ -31,6 +31,22 @@ export async function openPanel($: EngineInterface): Promise<string | undefined>
   return done?.exitCode === 0 ? `HUD panel ${done.stdout.trim()}`.trim() : undefined;
 }
 
+/**
+ * HUD answers the main session in compact text (`key: value` per line, nested values as JSON, an optional
+ * trailing `changes:` list; src/mcp/mcp/result-text.ts) unless HUD_MCP_JSON=1 asks for JSON. Reads either.
+ */
+export function parseResult(text: string): any {
+  try { return JSON.parse(text); } catch { /* compact text */ }
+  const value: Record<string, unknown> = {};
+  for (const row of text.split('\n')) {
+    if (row === 'changes:') break;
+    const m = /^([A-Za-z_][\w-]*): (.*)$/.exec(row);
+    if (!m) continue;
+    try { value[m[1]!] = JSON.parse(m[2]!); } catch { value[m[1]!] = m[2]; }
+  }
+  return value;
+}
+
 /** One call on the HUD MCP server with the session's own connection: the JSON it answered, or its error text. */
 async function hud($: EngineInterface, tool: string, args: Record<string, unknown>): Promise<{ value?: any; error?: string }> {
   const server = (await $.state.get(SERVER).catch(() => undefined))?.value ?? 'hud';
@@ -38,7 +54,7 @@ async function hud($: EngineInterface, tool: string, args: Record<string, unknow
     const done = await $.mcp.call(server, tool, args);
     const text = done.content.map(block => block.text ?? '').join('');
     if (done.isError) return { error: text || 'failed' };
-    const value = JSON.parse(text);
+    const value = parseResult(text);
     return value?.ok === false ? { error: String(value.code ?? 'failed') } : { value };
   } catch (error) { return { error: (error as Error).message || 'HUD is not connected' }; }
 }
