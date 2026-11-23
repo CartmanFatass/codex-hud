@@ -1,0 +1,28 @@
+{
+  "en-42": [
+    "Dispatch today ───────────────────────────",
+    "  frontend-imp  6 jobs · 5✓ 0✗ · avg 12m  ",
+    "  general  23 jobs · 21✓ 1✗ · quiet 2     ",
+    "    cli/agy (gemini-4-neon-high)   19✓ 0✗ ",
+    "    pi (openai/gpt-6.2-sol-fast)   2✓ 0✗  ",
+    "    cli/agy (gemini-4-neon-xhigh)  0✓ 1✗  ",
+    "  imp  31 jobs · 30✓ 0✗ · avg 9m          ",
+    "    pi (openai/gpt-6.2-sol-fast)    20✓ 0✗",
+    "    pi (openai/gpt-6.2-astra)        8✓ 0✗",
+    "    cli/agy (gemini-4-hydrogen-hig…  2✓ 0✗",
+    "  oracle  5 jobs · 3✓ 1✗ · avg 21m        "
+  ],
+  "zh-42": [
+    "今日派发 ─────────────────────────────────",
+    "  frontend-imp  6 个任务 · 5✓ 0✗          ",
+    "  general  23 个任务 · 21✓ 1✗ · 转交 2    ",
+    "    cli/agy (gemini-4-neon-high)   19✓ 0✗ ",
+    "    pi (openai/gpt-6.2-sol-fast)   2✓ 0✗  ",
+    "    cli/agy (gemini-4-neon-xhigh)  0✓ 1✗  ",
+    "  imp  31 个任务 · 30✓ 0✗ · 平均 9分      ",
+    "    pi (openai/gpt-6.2-sol-fast)    20✓ 0✗",
+    "    pi (openai/gpt-6.2-astra)        8✓ 0✗",
+    "    cli/agy (gemini-4-hydrogen-hig…  2✓ 0✗",
+    "  oracle  5 个任务 · 3✓ 1✗ · 平均 21分    "
+  ]
+}

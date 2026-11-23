@@ -29,6 +29,10 @@ const writers = {
     const { jobFrames } = await load('home-jobs.mjs');
     return jobFrames();
   },
+  'control-usage-frames.json': async () => {
+    const { dispatchFrames } = await load('control-usage.mjs');
+    return dispatchFrames();
+  },
   'native-tree-frames.json': async () => {
     const { nativeFixture, nativeFrames } = await load('native-tree.mjs');
     return withHome((h) => nativeFrames(nativeFixture(h)));

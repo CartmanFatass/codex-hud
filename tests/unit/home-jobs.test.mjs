@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { jobsBoard, jobFrame, jobFrames, NOW } from '../fixtures/home-jobs.mjs';
+import { jobsBoard, jobFrame, jobFrames, narrowBoard, NOW } from '../fixtures/home-jobs.mjs';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { withState } from '../fixtures/state-helpers.mjs';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -24,6 +24,22 @@ test('a busy run of 14 jobs: frames in EN/ZH at 120, 80 and 50 columns, none wid
     for (const line of lines) assert.ok(visualLength(line) <= width, `${name}: ${line}`);
     assert.doesNotMatch(lines.join('\n'), /Implement the synthetic ticket/, `${name}: the raw task text is never a title`);
   }
+});
+
+test('at 42 and 48 columns a job row keeps 16 title cells (15 and the …) while the marks narrow, and the state word stays', () => {
+  const board = narrowBoard(), titleOf = (id) => board.workers.find((w) => w.displayId === id).ticketTitle;
+  for (const width of [48, 42]) {
+    const lines = jobFrame(width, 'en', board);
+    for (const id of ['auto-route/08', 'hud-doctor/01', 'stream-sync/05', 'docs-sweep/04']) {
+      const row = lines.find((l) => l.includes(`${id}  `)), from = row.indexOf(id) + id.length + 2;
+      assert.equal(row.slice(from, from + 15), titleOf(id).slice(0, 15), `${width} ${id}: ${row}`);
+    }
+    assert.match(lines.find((l) => /export-csv\/02/.test(l)), / failed 9m$/, `${width}: failed is never narrowed away`);
+  }
+  const narrow = jobFrame(42, 'en', board), wide = jobFrame(48, 'en', board);
+  assert.match(wide.find((l) => /auto-route\/08/.test(l)), / ⚒ ◎ ▆∅ ⚡2 0m$/, '48: the model mark is gone, the route marks and the helper count stay');
+  assert.match(narrow.find((l) => /auto-route\/08/.test(l)), / ⚡2 0m$/, '42: the route marks, the provider and the role icon narrow away before the title; the helper count stays');
+  assert.match(narrow.find((l) => /statusline-workers\/03/.test(l)), / ⚒ 6m$/, 'a 21-cell id leaves no room: the role icon and the age are what stay');
 });
 
 test('at 80 columns the 14 jobs take 15 rows (38 before); a header only where a lane shows several jobs; folds list their ids', () => {

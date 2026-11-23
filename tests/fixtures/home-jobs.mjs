@@ -58,4 +58,27 @@ export function jobFrame(width, lang = 'en', board = jobsBoard(lang), state = in
     return homeRows(board, state, width, NOW, input).map((r) => stripAnsi(r.text));
   } finally { setDisplayConfig(display); setLanguage(previous); }
 }
-export const jobFrames = () => Object.fromEntries([120, 80, 50].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}`, jobFrame(width, lang)])));
+/** Narrow-panel rows (panel-polish/02): routed headless jobs with helpers running, a failed one, a long id, and a job with no route. */
+export function narrowBoard(lang = 'en') {
+  n = 0;
+  const T = (en, zh) => (lang === 'zh' ? zh : en), L = (label) => `thin-job:package:${label}`;
+  const route = (tier, mode) => ({ tier, mode, source: 'decision', reason: `${tier} work; ${mode} run` });
+  const lanes = [
+    lane('auto-route/08', [
+      job(L('auto-route/08'), SOL, { id: 'thin-job:r1', displayId: 'auto-route/08', ticketTitle: T('A headless job keeps its title', '无界面任务保留标题'), at: 0, route: route('hard', 'headless'), headless: true }),
+      job(L('auto-route/08'), ['deepseek-v4-1-flash-1017', 'high'], { id: 'thin-job:r2', role: 'sonic', parentJobId: 'thin-job:r1' }),
+      job(L('auto-route/08'), ['deepseek-v4-1-flash-1017', 'high'], { id: 'thin-job:r3', role: 'sonic', parentJobId: 'thin-job:r1' }),
+    ]),
+    lane('hud-doctor/01', [job(L('hud-doctor/01'), SOL, { displayId: 'hud-doctor/01', ticketTitle: T('hud doctor shows why a job stalled', 'hud doctor 说明任务为何停滞'), done: true, at: 1, route: route('standard', 'headless'), headless: true, flow: land('gate[3]: npm run test:mjs', 1) })]),
+    lane('stream-sync/05', [job(L('stream-sync/05'), SOL, { displayId: 'stream-sync/05', ticketTitle: T('Drain async sockets cleanly', '异步套接字排空与关闭'), done: true, at: 2, reportUnread: true, route: route('light', 'tab') })]),
+    lane('export-csv/02', [job(L('export-csv/02'), NEON, { displayId: 'export-csv/02', ticketTitle: T('Stream large CSV exports', '流式导出大型 CSV 报表'), role: 'general', state: 'failed', done: true, at: 9, route: route('standard', 'headless'), headless: true,
+      work: work({ failed: true, result: true, reason: T('HTTP 429 rate limit; no report written', 'HTTP 429 限流；未写出报告') }) })]),
+    lane('statusline-workers/03', [job(L('statusline-workers/03'), SOL, { displayId: 'statusline-workers/03', ticketTitle: T('Show workers in the statusline', '在状态栏显示任务'), at: 6, route: route('hard', 'headless'), headless: true })]),
+    lane('docs-sweep/04', [job(L('docs-sweep/04'), SONNET, { displayId: 'docs-sweep/04', ticketTitle: T('Compare retry backoff options', '对比重试退避方案'), role: 'general', at: 6 })]),
+  ];
+  return { revision: 'r', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
+}
+export const jobFrames = () => Object.fromEntries([
+  ...[120, 80, 50].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}`, jobFrame(width, lang)])),
+  ...[48, 42].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}-routes`, jobFrame(width, lang, narrowBoard(lang))])),
+]);

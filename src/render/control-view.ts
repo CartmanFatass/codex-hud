@@ -9,7 +9,7 @@ import { boardRow, section, mark, kvRows, minuteAge } from './workboard-rows.js'
 import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
 import { stripModelSnapshotDate } from '../models/catalog.js';
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
-import { theme, visualLength } from './colors.js';
+import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 
 export const glyph = (state: PlaceState) => ({
@@ -214,10 +214,18 @@ export function radarSummary({ quotas, pi }: RadarFacts, withTokens: boolean): s
   return [...quotas.map(({ client, windows }) => `${t(client)} ${t('{n} left', { n: remaining(Math.min(...windows.map((w) => w.remaining))) })}`),
     ...(pi ? [`${t('pi')} ${usd(pi)}${withTokens ? ` (${tokens(pi)})` : ''}`] : [])];
 }
-export function roleToday(s: RoleRadar, compact = false): string {
+export function roleToday(s: RoleRadar, compact = false, keep: readonly ('avg' | 'quiet')[] = ['avg', 'quiet']): string {
   return [compact ? `${s.ok}${mark('✓', '+')} ${s.failed}${mark('✗', 'x')}` : t('{ok} ok · {failed} failed', { ok: s.ok, failed: s.failed }),
-    s.avgMinutes === null ? '' : t('avg {time}', { time: t('{n}m', { n: Math.round(s.avgMinutes) }) }),
-    s.quietEscalated ? t('quiet {n}', { n: s.quietEscalated }) : ''].filter(Boolean).join(' · ');
+    s.avgMinutes === null || !keep.includes('avg') ? '' : t('avg {time}', { time: t('{n}m', { n: Math.round(s.avgMinutes) }) }),
+    s.quietEscalated && keep.includes('quiet') ? t('quiet {n}', { n: s.quietEscalated }) : ''].filter(Boolean).join(' · ');
+}
+const roleText = (role: string, s: RoleRadar, compact: boolean, keep: readonly ('avg' | 'quiet')[]) =>
+  `${monitorText(role)}  ${t('{n} jobs', { n: s.total })} · ${roleToday(s, compact, keep)}`;
+/** A role's Dispatch today row in one line: its optional `avg`, then `quiet` drop when it does not fit; wrapped only when even the bare counts do not. */
+function roleRow(role: string, s: RoleRadar, width: number, compact: boolean): string[] {
+  const keeps: ('avg' | 'quiet')[][] = [['avg', 'quiet'], ['quiet'], []], rows = keeps.map((keep) => roleText(role, s, compact, keep));
+  const fits = rows.find((row) => visualLength(row) <= width - 2);
+  return fits ? [fits] : flowLines(rows[0], Math.max(1, width - 2));
 }
 function placeStats(p: PlaceRadar): string {
   const parts: string[] = [];
@@ -241,10 +249,10 @@ function placeRadarRows(s: RoleRadar, width: number): MonitorRow[] {
   for (const { name, stats } of shown) {
     const room = width - 4 - 2 - visualLength(stats);
     if (room >= 12) {
-      const label = fit(squeeze(name, room), Math.min(maxName, room));
+      const label = fit(name, Math.min(maxName, room));
       rows.push(boardRow(fit(`    ${theme.board.muted(`${label}  ${stats}`)}`, width)));
     } else {
-      rows.push(boardRow(fit(`    ${theme.board.muted(squeeze(name, Math.max(1, width - 4)))}`, width)));
+      rows.push(boardRow(fit(`    ${theme.board.muted(truncateAnsi(name, Math.max(1, width - 4)))}`, width)));
       rows.push(...flowLines(stats, Math.max(1, width - 6)).map((part) => boardRow(fit(`      ${theme.board.muted(part)}`, width))));
     }
   }
@@ -269,8 +277,9 @@ export function radarRows(facts: RadarFacts, width: number, detail = false): Mon
     }
     if (row) out.push(...line(row));
   }
-  return out.concat(roles.flatMap(([role, s]) => [
-    ...line(`${monitorText(role)}  ${detail ? t('{n} jobs', { n: s.total }) + ' · ' : ''}${roleToday(s, !detail)}`),
-    ...(detail ? placeRadarRows(s, width) : []),
-  ]));
+  // Counts as words while every role's row fits, else as marks in all of them, so the rows read alike.
+  const compact = !roles.every(([role, s]) => visualLength(roleText(role, s, false, ['avg', 'quiet'])) <= width - 2);
+  return out.concat(roles.flatMap(([role, s]) => detail
+    ? [...roleRow(role, s, width, compact).map((part) => boardRow(fit('  ' + part, width))), ...placeRadarRows(s, width)]
+    : line(`${monitorText(role)}  ${roleToday(s, true)}`)));
 }

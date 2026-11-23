@@ -136,5 +136,57 @@
     "◉  docs-sweep/04  对比重试退避方案  ◈ ✻ opus● 21分",
     "○  排队 3 · cache-v2/04 · export-csv/03 +1",
     "✓  完成 2 · cache-v1/06 · export-csv/01"
+  ],
+  "en-48-routes": [
+    "✗ 1 failed               ▲◕1 ✗  ◎◕4 ✓●  ✻●1  ⚡2",
+    "",
+    "✗  export-csv/02  Stream large CS… ✦ ∅ failed 9m",
+    "┃ Route: standard · headless — standard work; h…",
+    "┃ HTTP 429 rate limit; no report written        ",
+    "✓● stream-sync/05  Drain async socket… ⚒ ◎◕ ▂ 2m",
+    "◉  auto-route/08  A headless job … ⚒ ◎ ▆∅ ⚡2 0m",
+    "✓  hud-doctor/01  hud doctor shows w… ⚒ ◎◕ ▄∅ 1m",
+    "┃ land · gate[3] test:mjs · 1m                  ",
+    "◉  statusline-workers/03  Show workers in … ⚒ 6m",
+    "◉  docs-sweep/04  Compare retry backoff… ✦ ✻● 6m"
+  ],
+  "zh-48-routes": [
+    "✗ 1 失败                 ▲◕1 ✗  ◎◕4 ✓●  ✻●1  ⚡2",
+    "",
+    "✗  export-csv/02  流式导出大型 CS… ✦ ▄∅ 失败 9分",
+    "┃ 分流：标准 · 无界面 — standard work; headless…",
+    "┃ HTTP 429 限流；未写出报告                     ",
+    "✓● stream-sync/05  异步套接字排空与…  ⚒ ◎◕ ▂ 2分",
+    "◉  auto-route/08  无界面任务保留标… ⚒ ▆∅ ⚡2 0分",
+    "✓  hud-doctor/01  hud doctor 说明任… ⚒ ◎◕ ▄∅ 1分",
+    "┃ 落地 · gate[3] test:mjs · 1分                 ",
+    "◉  statusline-workers/03  在状态栏显示任务 ⚒ 6分",
+    "◉  docs-sweep/04  对比重试退避方案      ✦ ✻● 6分"
+  ],
+  "en-42-routes": [
+    "✗ 1 failed         ▲◕1 ✗  ◎◕4 ✓●  ✻●1  ⚡2",
+    "",
+    "✗  export-csv/02  Stream larg… ✦ failed 9m",
+    "┃ Route: standard · headless — standard w…",
+    "┃ HTTP 429 rate limit; no report written  ",
+    "✓● stream-sync/05  Drain async soc… ⚒ ▂ 2m",
+    "◉  auto-route/08  A headless job k… ⚡2 0m",
+    "✓  hud-doctor/01  hud doctor show… ⚒ ▄∅ 1m",
+    "┃ land · gate[3] test:mjs · 1m            ",
+    "◉  statusline-workers/03  Show worke… ⚒ 6m",
+    "◉  docs-sweep/04  Compare retry b… ✦ ✻● 6m"
+  ],
+  "zh-42-routes": [
+    "✗ 1 失败           ▲◕1 ✗  ◎◕4 ✓●  ✻●1  ⚡2",
+    "",
+    "✗  export-csv/02  流式导出大型… ✦ 失败 9分",
+    "┃ 分流：标准 · 无界面 — standard work; he…",
+    "┃ HTTP 429 限流；未写出报告               ",
+    "✓● stream-sync/05  异步套接字排空与… ⚒ 2分",
+    "◉  auto-route/08  无界面任务保留…  ⚡2 0分",
+    "✓  hud-doctor/01  hud doctor 说明… ⚒ ∅ 1分",
+    "┃ 落地 · gate[3] test:mjs · 1分           ",
+    "◉  statusline-workers/03  在状态栏…  ⚒ 6分",
+    "◉  docs-sweep/04  对比重试退避方案 ✦ ✻ 6分"
   ]
 }

@@ -12,6 +12,7 @@ import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { radarFacts, radarRows, roleToday } from '../../dist/render/control-view.js';
 import { NOW, onControl, plain, projectFixture, richControl } from '../fixtures/project-page.mjs';
+import { ROLE_STATS, dispatchFrames } from '../fixtures/control-usage.mjs';
 
 const MINUTE = 60_000, DAY = 86_400_000;
 const now = new Date(2030, 8, 24, 12).getTime(), iso = (at) => new Date(at).toISOString();
@@ -145,7 +146,7 @@ test('full Project collection and both Control views include radar without chang
     const preview = plain(radar).join('\n');
     assert.equal(radar.state.control.roles.nav.cursor, 'project:fold:usage');
     assert.match(preview, /\$1\.42.*184K/);
-    assert.match(preview, /5 ok · 1 failed|5 成功 · 1 失败/);
+    assert.match(preview, width === 80 ? /5 ok · 1 failed|5 成功 · 1 失败/ : / jobs · 5✓ 1✗| 个任务 · 5✓ 1✗/, 'counts as words while they fit, else as marks, on the role\'s one row');
     assert.match(preview, /Quota|额度/);
     assert.match(preview, /2026-11-12\s+12:36Z/);
     assert.match(preview, /Pi today|pi 今日/);
@@ -290,6 +291,23 @@ test('Control Dispatch today splits by place at 40 and 80 columns in EN and ZH w
     assert.ok(!usageFrame.lines.some((line) => stripAnsi(line).includes('\x1b')), 'control characters in place names are escaped');
     // Role detail preview has no chain-row dispatch note (§6 default #2).
     assert.doesNotMatch(plain(roleFrame).join('\n'), /launch ✗|启动 ✗|quota \d|配额 \d/);
+  }
+});
+
+test('Dispatch today at 42 columns: one row per role that drops avg and quiet before wrapping, place names cut at the end', () => {
+  const golden = JSON.parse(fs.readFileSync(new URL('../fixtures/control-usage-frames.json', import.meta.url), 'utf8'));
+  assert.deepEqual(dispatchFrames(), golden);
+  for (const [name, lines] of Object.entries(golden)) {
+    for (const line of lines) assert.ok(visualLength(line) <= 42, `${name}: ${line}`);
+    for (const role of Object.keys(ROLE_STATS)) assert.equal(lines.filter((l) => l.startsWith(`  ${role}  `)).length, 1, `${name}: ${role} is one row`);
+    assert.ok(!lines.some((l) => /^ {2}(?:·|avg|平均)/.test(l)), `${name}: no row carries on from another`);
+    assert.ok(lines.filter((l) => l.includes('…')).every((l) => /^ +\S.*…\s+\d+✓ \d+✗$/.test(l)), `${name}: a long place name is cut at its end`);
+  }
+  for (const lang of ['en', 'zh']) for (const width of [24, 30, 36, 42, 60, 80]) {
+    const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }), previous = setLanguage(lang);
+    try {
+      for (const row of radarRows(radarFacts({ roleStats: ROLE_STATS }), width, true)) assert.equal(visualLength(row.text), width, `${lang} ${width}: ${row.text}`);
+    } finally { setDisplayConfig(display); setLanguage(previous); }
   }
 });
 

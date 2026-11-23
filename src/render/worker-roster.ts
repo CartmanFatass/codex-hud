@@ -120,8 +120,8 @@ const TIER_MARKS = { light: ['▂', '-'], standard: ['▄', '='], hard: ['▆', 
  * headless. A job with neither has none, and the marks are muted like every secondary fact; the words and the reason are the
  * Inspector's Route row.
  */
-export function routeBadge(w: OwnerWorker): string {
-  const tier = w.route ? TIER_MARKS[w.route.tier] : undefined;
+export function routeBadge(w: OwnerWorker, withTier = true): string {
+  const tier = withTier && w.route ? TIER_MARKS[w.route.tier] : undefined;
   const marks = (tier ? mark(tier[0], tier[1]) : '') + (isHeadless(w) ? mark('∅', 'h') : '');
   return marks ? theme.board.muted(marks) : '';
 }

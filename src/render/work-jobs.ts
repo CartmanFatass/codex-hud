@@ -22,6 +22,13 @@ type FoldKind = 'queued' | 'done';
 type Job = readonly [OwnerWorker, WorkLane];
 /** Fewest cells the title keeps before the model mark narrows. */
 const MIN_TITLE = 16;
+/**
+ * What the right side keeps as a row narrows, widest first: the model mark's level, the route marks (2 tier and headless, 1
+ * headless, 0 none) and whether the role icon stays. The `⚡N` helper count, the state words and the age always stay; the last
+ * rung is only for a row it lets keep its title, so a row that cannot reach the minimum keeps its role icon.
+ */
+type Narrowing = readonly ['full' | 'compact' | 'min' | '', 0 | 1 | 2, boolean];
+const NARROWING: readonly Narrowing[] = [['full', 2, true], ['compact', 2, true], ['min', 2, true], ['', 2, true], ['', 1, true], ['', 0, true], ['', 0, false]];
 /** The state glyph's fixed two-cell column, so ids start in the same column on every row. */
 const cell = (glyph: string) => glyph + ' '.repeat(Math.max(0, 2 - visualLength(glyph)));
 
@@ -64,12 +71,12 @@ function jobRow(w: OwnerWorker, lane: WorkLane, c: Ctx, indent = ''): MonitorRow
   const prefix = `${indent}${cell(ink(workStateGlyph(card)))} ${indent || !w.displayId ? '' : theme.board.identifier(monitorText(w.displayId)) + '  '}`;
   const title = jobTitle(w, !!indent);
   const sonic = sonicBadge(sonicChildrenRunning(c.pool, w.id)), marks = cardMarks(card, '', activeFlow(w) ? '' : workStateWord(card));
-  const right = (level: 'full' | 'compact' | 'min' | '') =>
-    [roleMark(card.role), level ? workerModelBadge(w, level) : '', routeBadge(w), sonic, ...marks, theme.board.muted(ageText(card.elapsedMinutes ?? 0))]
-      .filter(Boolean).join(' ');
-  // Narrow the model mark (name, effort, all) before the title is cut below its minimum.
+  const right = ([model, route, role]: Narrowing) =>
+    [role ? roleMark(card.role) : '', model ? workerModelBadge(w, model) : '', route ? routeBadge(w, route > 1) : '', sonic, ...marks,
+      theme.board.muted(ageText(card.elapsedMinutes ?? 0))].filter(Boolean).join(' ');
+  // Narrow the marks one step at a time before the title is cut below its minimum.
   const need = visualLength(prefix) + Math.min(visualLength(title), MIN_TITLE) + 1;
-  const mine = right((['full', 'compact', 'min', ''] as const).find((l) => need + visualLength(right(l)) <= c.width) ?? '');
+  const mine = right(NARROWING.find((n) => need + visualLength(right(n)) <= c.width) ?? NARROWING[NARROWING.length - 2]);
   const line = pair(prefix + title, mine, c.width);
   const band = prominent || activeFlow(w) || isUnreadReport(w) || card.state === 'stalled';
   const rows: MonitorRow[] = [{
