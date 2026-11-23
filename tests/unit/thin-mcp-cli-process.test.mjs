@@ -317,15 +317,19 @@ for (const first of ['watcher', 'supervisor']) {
 
 test('supervisor preserves the watcher tab-close fact when its own push socket was lost', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
+  const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'lost-close', 10);
   const job = await f.call('hud_create', { role: 'lost-close', request_key: 'lost-close', task: 'Synthetic tab-close outage.' });
-  await until(() => cliState(job.task_dir)?.pid);
-  f.dropWorker(job.job);
+  // A PID does not mean the watcher is subscribed to the one-shot close event yet.
+  await until(() => cliState(job.task_dir)?.pid === worker.pid &&
+    f.socketRequests.some(r => r.id === 'hud-watch') && f.dropWorker(job.job));
+  const supervisor = cliState(job.task_dir).supervisor_pid;
   f.closeTab();
   await until(() => cliState(job.task_dir)?.exit_reason === 'tab closed');
   writeFixtureFile(join(job.task_dir, 'report.md'), 'A late report must not overwrite tab closure.\n');
-  await new Promise((r) => setTimeout(r, 800));
+  await worker.exit(); // With no tab event, the supervisor would judge this exit with a report as settled.
+  await until(() => !procStat(supervisor) || procStat(supervisor)?.state === 'Z');
   assert.equal(cliState(job.task_dir).state, 'failed');
   assert.equal(cliState(job.task_dir).exit_reason, 'tab closed');
 });

@@ -272,7 +272,10 @@ if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
   let exiting;
   fs.readFileSync = (file, ...args) => {
     if (exiting && file === '/proc/' + exiting + '/cmdline') {
-      fs.writeFileSync(process.env.HOME + '/saw-empty-cmdline', '');
+      const pid = exiting;
+      fs.writeFileSync(process.env.HOME + '/saw-empty-cmdline', String(pid));
+      exiting = undefined;
+      setImmediate(() => kill(pid, 'SIGKILL')); // Finish exiting once the watcher has sampled cmdline.
       return '';
     }
     return read(file, ...args);
@@ -280,12 +283,13 @@ if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
   process.kill = (pid, signal) => {
     if (signal !== 'SIGKILL' || !read('/proc/' + pid + '/cmdline', 'utf8').includes('/sonic-run.mjs')) return kill(pid, signal);
     exiting = pid;
-    setTimeout(() => { exiting = undefined; kill(pid, signal); }, 40);
     return true;
   };
   syncBuiltinESMExports();
 }`;
-  const f = await fixture(t, { probe: `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify('data:text/javascript,' + encodeURIComponent(exitProbe))}` });
+  const preload = ' --import=data:text/javascript,' + encodeURIComponent(exitProbe);
+  const f = await fixture(t, { probe: `process.env.NODE_OPTIONS += ${JSON.stringify(preload)}` });
+  f.env.NODE_OPTIONS += preload; // Either the MCP or the panel process can launch the watcher.
   f.overrideBin('pi', `#!${process.execPath}
 import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs';
 if (!process.argv.includes('--print')) process.exit(1);
@@ -305,6 +309,6 @@ writeFileSync(process.env.HUD_JOB_DIR + '/pids', JSON.stringify([process.pid, ch
     }
     assert.equal(cliState(job.task_dir).state, 'stopped');
     assert.ok(pids.every(pid => !isProcAlive(pid)));
-    fs.unlinkSync(join(f.env.HOME, 'saw-empty-cmdline')); // The watcher observed an exit in progress.
+    assert.equal(fs.readFileSync(join(f.env.HOME, 'saw-empty-cmdline'), 'utf8'), String(pids[0]));
   }
 });
