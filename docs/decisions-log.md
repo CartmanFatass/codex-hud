@@ -89,6 +89,10 @@ The owner approved the lean spec and resolved the draft questions:
   and optimization questions, frontend-imp stays claude-sonnet-5-5 xhigh, general runs on agy gemini-4-neon-high (pi general kept as a
   preset), reviewer on agy gemini-4-neon-xhigh (pi gpt-6.2-sol max kept as preset `sol`), and `pro`/`flow` become
   optional roles.
+- **D-2026-11-22-23** (§2.1.6, §2.4): The owner wants a Claude Code mod so the workflow is not limited to MCP.
+  First slice: main-session context slimming (compact HUD tool results and notices, merge duplicate events,
+  route report reads through `hud_read`). Panel inside Claude Code and event wake come later. Installed as an
+  `./install` extension like the others.
 
 ## 2026-11-21
 

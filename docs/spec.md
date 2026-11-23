@@ -155,6 +155,10 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   native or watched delivery. The panel and MCP share a state reader. (14.03, 18.06)
 - A working Antigravity session gets job events through its `PreInvocation` hook. An idle session has them
   typed into its prompt. (22.12)
+- A Claude Code main session may load the HUD mod (an install extension). It first keeps the main session's
+  context lean: it compacts what HUD tool results and job notices add to the conversation, merges duplicate
+  events and routes report reads through `hud_read`. Panel, toasts and event wake inside Claude Code are later
+  slices. (22.23)
 - Neutral workers do only their job, with one role text across harnesses. On any harness a worker may
   choose to start sonic for a useful, simple, fully specified sub-task. If it does, it collects the report.
   HUD refuses worker requests to start other roles. (17.06)
@@ -388,7 +392,7 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
 
 ### 2.4 Installation and uninstallation
 
-One command each: `./install` with core and chosen extensions (Claude, pi, Codex, `agy`, browser, herdr);
+One command each: `./install` with core and chosen extensions (Claude, Claude mod, pi, Codex, `agy`, browser, herdr);
 `hud uninstall` removes them. Register via official client commands where available. The `agy` extension
 reversibly configures Antigravity's MCP, permission, statusline and `PreInvocation` hook. (13.04, 22.12)
 
