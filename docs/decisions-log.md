@@ -131,6 +131,10 @@ The owner approved the lean spec and resolved the draft questions:
 
 ## 2026-11-21
 
+- **D-2026-11-22-29** (§2.1.2, §2.1.4): Owner, comparing imp models on landed astra tasks: `general` is the flexible
+  seat, so it can borrow any role's instructions for one job (`instructions: "<role>"`), letting a model comparison
+  or an owner-named model run with the implementer prompt without editing role files. `imp` still rejects
+  placement options; its tier stays the MCP's routing.
 - **D-2026-11-21-01** (§2.1.2): Skip pre-input launch failures for that dispatch; report the places tried.
 - **D-2026-11-21-02** (§2.1.2): Grok paused; switch off `grok` and `xai`, remove Grok `imp` presets.
   The shipped `imp` combinations include Antigravity Hydrogen at high.

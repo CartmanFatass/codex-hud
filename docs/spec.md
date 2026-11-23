@@ -44,7 +44,7 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   `oracle` unless a role file defines `architect`. (14.01, 17.03)
 - HUD ships `pro` (ChatGPT 6 Pro, then Gemini, then AI Studio) and `flow` (Google Flow images and video) as optional roles, off by default until enabled in Control or by the owner's configuration.
 - `general`: global ad-hoc work set by the brief, with any model (e.g. a pi provider's) via `hud_create`
-  `model`/`thinking` for one job (§2.1.4). (16.01)
+  `model`/`thinking`, and any role's instructions via `instructions`, for one job (§2.1.4). (16.01, 22.29)
 - Named presets in role files are full chains. Owner switches places and presets in Control (§2.2.5).
   Only `general` takes a one-job `on`, `preset`, `model` or `thinking` (§2.1.4). (14.01, 17.04, 18.01, 22.22)
 - Ship presets for the owner's current combinations, including Antigravity Hydrogen (`high`) for `imp`.
@@ -68,6 +68,8 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - Role files decide where every role runs. `hud_create` accepts `preset`, `on`, `model` or `thinking` only for
   `general`, the flexible seat, when the owner names a model for one job; for any other role it rejects them and
   names Control and `general`. Picking a tier for `imp` is the MCP's routing below, not the caller's. (22.22)
+  `general` also takes `instructions: "<role>"`: that role's instructions (and pi role) with general's place
+  choice and concurrency slot, so one seat can run any role's prompt on any model. (22.29)
   For pi roles, named switches cover pi-lens, MCP adapter, tokens/s, UI extensions, helper pane and personal
   skills; pass extra pi args as given. (11.02)
   Pi workers skip the MCP adapter when no MCP servers are configured unless `mcp: true` is set. (22.17)
