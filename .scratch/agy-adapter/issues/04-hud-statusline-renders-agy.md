@@ -1,6 +1,6 @@
 # 04: hud-statusline renders agy's payload, fast enough for 3 Hz
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** Proposal 25 §2.4.

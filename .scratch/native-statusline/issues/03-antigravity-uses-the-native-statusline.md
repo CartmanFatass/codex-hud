@@ -1,6 +1,6 @@
 # 03: Antigravity uses the native statusline
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 02
 **Owner try:** yes
 

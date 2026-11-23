@@ -1,6 +1,6 @@
 # 03: The worker zone shows one icon and count per role
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 **Owner try:** yes
 

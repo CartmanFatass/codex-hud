@@ -1,6 +1,6 @@
 # 04: Cards show the route and a headless job's output
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 01, 03
 **Owner try:** yes
 

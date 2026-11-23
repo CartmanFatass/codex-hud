@@ -1,6 +1,6 @@
 # 03: Split thin-main into store, dispatch and mcp modules
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 02
 
 **What to build:** S3 (:639): thin-main.ts shrinks to the entry point; store/dispatch/mcp modules; MCP tool names, schemas, errors and results unchanged.

@@ -1,6 +1,6 @@
 # 01: The statusline worker zone shows counts and marks, not titles
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 **Owner try:** yes
 

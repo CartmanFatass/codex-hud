@@ -1,6 +1,6 @@
 # 02: The worker zone shows only running workers
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 **Owner try:** yes
 

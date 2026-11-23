@@ -1,6 +1,6 @@
 # 03: Lease mutex without flock
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 01
 
 **What to build:** 07 S3 (owner default B1): src/utils/abstract-lock.ts (Linux abstract socket, as exp-lock and hud-check already do) replaces spawnSync('flock') in src/roles/lease.ts; waits use the shared fs wait; docs drop the util-linux flock requirement. Supersedes async-watch's deferred S4.

@@ -1,6 +1,6 @@
 # 01: `./install --with agy` wires agy to the HUD and uninstalls cleanly
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 
 **What to build:** Proposal docs/neon-proposal/25-agy-adapter.md §2.1 (owner, 2026-11-22: installation may edit agy's own config; delivery A+B). New `install.d/agy.sh` modelled on `install.d/claude.sh`:

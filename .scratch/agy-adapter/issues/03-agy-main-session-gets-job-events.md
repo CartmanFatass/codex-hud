@@ -1,6 +1,6 @@
 # 03: An agy main session gets job events (A+B) and the resume guard
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 02
 
 **What to build:** Proposal 25 §2.3, owner 2026-11-22: A+B.

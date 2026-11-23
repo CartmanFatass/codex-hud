@@ -1,6 +1,6 @@
 # 01: Home shows what matters and folds the rest into marks
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** none
 **Owner try:** yes
 

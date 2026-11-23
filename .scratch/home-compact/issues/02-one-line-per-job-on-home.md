@@ -1,6 +1,6 @@
 # 02: One line per job on Home
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 01
 **Owner try:** yes
 
