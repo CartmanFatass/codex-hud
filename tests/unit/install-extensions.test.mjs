@@ -19,7 +19,7 @@ function fixture(t) {
   fs.mkdirSync(bin);
   for (const file of ['install', 'install.d/browser.sh', 'install.d/herdr.sh']) fs.copyFileSync(path.join(root, file), path.join(repo, file));
   // An isolated PATH cannot accidentally discover the owner's real external CLIs.
-  for (const name of ['bash', 'dirname', 'readlink', 'mkdir', 'ln', 'rm']) fs.symlinkSync(`/usr/bin/${name}`, path.join(bin, name));
+  for (const name of ['bash', 'basename', 'dirname', 'readlink', 'mkdir', 'ln', 'rm']) fs.symlinkSync(`/usr/bin/${name}`, path.join(bin, name));
   fs.symlinkSync(process.execPath, path.join(bin, 'node'));
   const env = { ...process.env, HOME: home, HUD_HOME: hud, PATH: bin,
     CODEX_HOME: path.join(temp, 'codex'), CLAUDE_CONFIG_DIR: path.join(temp, 'claude'), PI_CODING_AGENT_DIR: path.join(temp, 'pi') };
@@ -33,6 +33,50 @@ function fixture(t) {
   };
   return { repo, home, hud, bin, env, fake, run, config: path.join(hud, 'config.json') };
 }
+test('claude-mod reinstalls in place and hud uninstall preserves foreign settings', (t) => {
+  const f = fixture(t), manifest = '.claude-plugin/marketplace.json';
+  for (const file of ['bin/hud', manifest, 'install.d/claude-mod.sh']) fs.cpSync(path.join(root, file), path.join(f.repo, file));
+  const { plugins } = JSON.parse(fs.readFileSync(path.join(f.repo, manifest), 'utf8'));
+  assert.deepEqual(plugins, [{ name: 'hud-mod', source: './integrations/claude-mod' }]);
+  const plugin = path.join(f.repo, plugins[0].source);
+  for (const [file, text] of [['.claude-plugin/plugin.json', '{"name":"hud-mod","version":"0.1.0"}'], ['hooks/hooks.json', '{"hooks":{}}']]) {
+    fs.mkdirSync(path.join(plugin, path.dirname(file)), { recursive: true });
+    fs.writeFileSync(path.join(plugin, file), text);
+  }
+  const config = f.env.CLAUDE_CONFIG_DIR, settings = path.join(config, 'settings.json');
+  const original = '{ "unrelated": true }\n', log = path.join(f.bin, 'claude.log');
+  fs.mkdirSync(config);
+  fs.writeFileSync(settings, original);
+  fs.writeFileSync(path.join(f.bin, 'claude'), `#!${process.execPath}
+const fs = require('node:fs'), args = process.argv.slice(2), [, kind, action, target] = args;
+const file = process.env.CLAUDE_CONFIG_DIR + '/settings.json', settings = JSON.parse(fs.readFileSync(file));
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+if (kind === 'marketplace' && action === 'add') (settings.extraKnownMarketplaces ??= {})['myhud-local'] = {source: {source: 'directory', path: target}};
+else if (kind === 'marketplace' && action === 'remove') delete settings.extraKnownMarketplaces[target];
+else if (kind === 'install') (settings.enabledPlugins ??= {})[action] = true;
+else if (kind === 'uninstall') delete settings.enabledPlugins[target];
+else process.exit(99);
+fs.writeFileSync(file, JSON.stringify(settings));
+`, { mode: 0o700 });
+  const read = () => JSON.parse(fs.readFileSync(settings));
+  f.run('claude-mod');
+  assert.deepEqual(read().enabledPlugins, { 'hud-mod@myhud-local': true });
+  const edited = { ...read(), unrelated: 'owner edit' };
+  fs.writeFileSync(settings, JSON.stringify(edited));
+  f.run('claude-mod');
+  assert.deepEqual(read(), edited);
+  assert.equal(fs.readFileSync(path.join(config, '.hud-claude-mod-backup/settings.json'), 'utf8'), original);
+  const result = spawnSync(path.join(f.home, '.local/bin/hud'), ['uninstall'], { cwd: f.repo, env: f.env, encoding: 'utf8' });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.deepEqual(read(), { unrelated: 'owner edit' });
+  const add = ['plugin', 'marketplace', 'add', f.repo, '--scope', 'user'];
+  const enable = ['plugin', 'install', 'hud-mod@myhud-local', '--scope', 'user'];
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse), [add, enable, add, enable,
+    ['plugin', 'uninstall', '--keep-data', 'hud-mod@myhud-local', '--scope', 'user'],
+    ['plugin', 'marketplace', 'remove', 'myhud-local', '--scope', 'user'],
+  ]);
+});
+
 const board = { revision: '', lanes: [], workers: [], decisions: [], coverage: {} };
 const browserAvailable = async (f) => (await new ProjectCollector(f.repo, f.hud, f.env, f.home).collect(true, board, Date.now())).browser;
 

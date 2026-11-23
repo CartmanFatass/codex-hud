@@ -1,0 +1,5 @@
+{
+  "name": "myhud-local",
+  "owner": { "name": "MyHUD" },
+  "plugins": [{ "name": "hud-mod", "source": "./integrations/claude-mod" }]
+}

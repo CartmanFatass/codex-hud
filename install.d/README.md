@@ -1,6 +1,6 @@
 # Installer extensions
 
-`./install --with claude,pi,codex,agy,browser,herdr` sources each selected `install.d/<name>.sh` and calls
+`./install --with claude,claude-mod,pi,codex,agy,browser,herdr` sources each selected `install.d/<name>.sh` and calls
 `hud_ext_install`. Extensions define both `hud_ext_install` and `hud_ext_uninstall`.
 An optional `hud_ext_check` runs after name validation, before builds or filesystem changes
 (install only); herdr and browser use it to refuse missing requirements without changing anything.
@@ -49,6 +49,10 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   non-HUD statusline is left alone. Uninstall removes the HUD statusline, restores
   a backed-up owner statusline, and removes the owned command and any old owned
   `$HUD_HOME/claude.json`. Unrelated settings and files stay.
+- **claude-mod**: uses `claude` on PATH to add this checkout as the `myhud-local` marketplace
+  and install `hud-mod` for the user. `/reload-plugins` reads the plugin from the checkout.
+  One-time plain backups go in `.hud-claude-mod-backup` under the Claude config directory.
+  Uninstall uses Claude's plugin and marketplace removal commands and keeps plugin data.
 - **pi**: prepares and registers both `$HUD_HOME/pi-package` (delegation tools +
   `hud-delegate`, `hud-setup` and `hud-handoff` skills, the same set Claude and Codex get) and `$HUD_HOME/pi-display` (footer, Work segment, `/hud`)
   with `pi install`. Registration is idempotent, including hand-registered packages.

@@ -143,6 +143,7 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
     assert.ok(!member.endsWith('/CLAUDE.md'), member);
   }
   for (const required of ['install', 'install.d/pi.sh', 'install.d/agy.sh', 'install.d/agy-config.mjs',
+    'install.d/claude-mod.sh', '.claude-plugin/marketplace.json',
     'integrations/agy/pre-invocation.sh', 'bin/hud', 'src/mcp/thin-main.ts', 'scripts/build.mjs',
     'packages/hud-mcp/bin/hud-watch.mjs', 'packages/hud-mcp/bin/hud-jev.mjs', 'packages/hud-mcp/hud-convention.md',
     'packages/hud-mcp/roles/imp.json', 'integrations/skills/hud/SKILL.md', 'integrations/skills/hud-delegate/SKILL.md', 'integrations/skills/hud-setup/SKILL.md',

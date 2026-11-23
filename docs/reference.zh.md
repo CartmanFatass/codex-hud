@@ -25,7 +25,7 @@ Claude Code、Codex 与 pi 的当前操作说明。[English](./reference.md) ·
 ./install --with claude,pi,codex,browser,herdr
 ```
 
-可任选 **claude**、**pi**、**codex**、**agy**、**browser**、**herdr**；核心始终安装。
+可任选 **claude**、**claude-mod**、**pi**、**codex**、**agy**、**browser**、**herdr**；核心始终安装。
 安装器先检查 Node，再运行扩展检查、构建或修改文件，构建 HUD 与 MCP，将命令链接到 `~/.local/bin`。
 `--skip-build` 使用已有构建。保留检出／解压目录：已安装命令和客户端绑定均指向它。不修改 shell rc。
 

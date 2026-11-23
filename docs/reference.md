@@ -28,7 +28,7 @@ Use **Node ≥24.0.0** (Node 24 is the tested supported line; see
 ./install --with claude,pi,codex,browser,herdr
 ```
 
-Choose any of **claude**, **pi**, **codex**, **agy**, **browser**, **herdr**; core is always
+Choose any of **claude**, **claude-mod**, **pi**, **codex**, **agy**, **browser**, **herdr**; core is always
 included. The installer checks Node before extension hooks/builds/changes, builds
 the HUD and MCP, and links commands into `~/.local/bin`. `--skip-build` uses existing
 build output. Keep the checkout/extraction directory: installed commands and client
