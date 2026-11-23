@@ -251,7 +251,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
       } else boundJobRoot = '';
       const inspect = inspector()?.target;
-      await jobPipeline.refresh(inspect?.kind === 'worker' ? inspect.workerId : undefined);
+      await jobPipeline.refresh(inspect?.kind === 'worker' ? inspect.workerId : undefined, state.prefs.cardStallMinutes);
       if (isClosed()) return;
       stage = 'rollout';
       parser.setRolloutPath(session?.path ?? null);

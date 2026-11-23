@@ -46,10 +46,10 @@ export class PanelJobPipeline {
   observation(tree: SubagentTree, nativeQuiet: boolean) {
     return jobPanelObservation(this.workboard(tree), this.thinObservation.complete, nativeQuiet);
   }
-  async refresh(inspecting?: string): Promise<boolean> {
+  async refresh(inspecting?: string, stallMinutes?: number): Promise<boolean> {
     if (this.closed) return false;
     const generation = ++this.generation;
-    const snapshot = await this.snapshot.read();
+    const snapshot = await this.snapshot.read(stallMinutes);
     if (!snapshot || this.closed || generation !== this.generation) return false;
     let lanes = snapshot.lanes;
     const id = /^thin-job:(j[0-9a-f]{16})$/.exec(inspecting ?? '')?.[1];

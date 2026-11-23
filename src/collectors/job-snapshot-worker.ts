@@ -5,8 +5,9 @@ import { readSessionJobRows, readThinJobs } from './thin-jobs.js';
 import { JobSnapshotIndex, RECONCILE_MS } from './job-snapshot-index.js';
 import { resumedWorkerRefusal } from '../roles/resume-guard.js';
 import type { Lanes, Request } from './job-snapshot.js';
+import { DEFAULT_PANEL_VIEW } from '../settings.js';
 
-type ViewState = { home: string; source: ReturnType<typeof watchJobChanges>; dirty: boolean; at: number };
+type ViewState = { home: string; source: ReturnType<typeof watchJobChanges>; dirty: boolean; at: number; stageExpiry?: number; stallMinutes?: number };
 const views = new Map<number, ViewState>();
 const indexes = new Map<string, JobSnapshotIndex>();
 const listeners = new Map<number, ReturnType<typeof watchJobChanges>>();
@@ -15,7 +16,7 @@ function project({ home, scope, options }: Extract<Request, { kind: 'project' }>
   const observation = { complete: false };
   // A long-lived bar advances its settlement cutoff on every projection, not just when it opens.
   const cutoff = options?.settledBefore;
-  const scanOptions = options && { openedAt: options.openedAt, settledBefore: cutoff === 'now' ? Date.now() : cutoff };
+  const scanOptions = options && { ...options, settledBefore: cutoff === 'now' ? Date.now() : cutoff };
   const lanes = readThinJobs(home, scope, undefined, scanOptions, observation, index?.directoryInventory());
   return { lanes, complete: observation.complete };
 }
@@ -59,10 +60,17 @@ async function collect(request: Request): Promise<Lanes | string[] | unknown> {
       cached.source.attach();
       // Receive file events already queued before a client's refresh request.
       await yieldToWatch();
-      if (views.get(key) !== cached || (!cached.dirty && performance.now() - cached.at < RECONCILE_MS)) return;
+      const stallMinutes = (view.kind === 'lanes' ? view.options?.stallMinutes : undefined) ?? DEFAULT_PANEL_VIEW.cardStallMinutes;
+      if (views.get(key) !== cached || (!cached.dirty && performance.now() - cached.at < RECONCILE_MS &&
+        cached.stallMinutes === stallMinutes && Date.now() < (cached.stageExpiry ?? Infinity))) return;
       const result = view.kind === 'codex' ? shared.codexWorkerSessions() : project(view, shared);
       cached.dirty = false;
       cached.at = performance.now();
+      cached.stallMinutes = stallMinutes;
+      cached.stageExpiry = Infinity;
+      if (!Array.isArray(result)) for (const lane of result.lanes) for (const w of lane.workers) {
+        if (w.stage && w.work?.activityAt != null) cached.stageExpiry = Math.min(cached.stageExpiry, w.work.activityAt + stallMinutes * 60_000);
+      }
       return result;
     }
   }

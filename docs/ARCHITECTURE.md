@@ -206,14 +206,14 @@ Only settled jobs expose worker metadata whose report signature still matches. T
 and matches the Home filter; the Inspector shows up to 12 reported paths as text only when no Git changes are shown.
 Single-job reads reuse the summary and file list. Task notices use the summary and wait for HUD-run checks, reporting only the outcome; watch and
 `changes` lines and list reads carry only a clipped summary. Metadata writes do not wake `hud watch` on their own.
-Working-session target mtime contributes activity without an extra body read.
+Working-session target mtime contributes activity. For a running job's stage, the collector reuses that stat (or stats `stdout.jsonl` for a headless job) and reads only appended bytes, capped at the newest 32 KiB on first sight or after a gap. An unchanged file is not opened. The stage is absent without a recognised tool call and clears at the card's stall threshold.
 The thin-job signature cache is shared disposable display state, never job authority.
 Job directory enumeration/stat/ranking still grows with retained history; the body
 limits are not a claim of constant total scan cost.
 
 `hud_land` runs in a detached helper. The watcher uses the job's latest land attempt to protect its worktree and receipt while queued or running. A retry before fast-forward keeps the old attempt readable under its own flow ID and removes its scratch worktree under the `main-checkout` lease. Integration tests the source commit directly when possible, otherwise picking only commits not on the current base. A red gate gets one immediate rerun of the reported Node.js test files (or of the whole command when no files are reported); recovery is stored in the flow and reported with the flaky test names when available.
 
-Home has package lanes plus one lane per native main session. Classic draws a package lane's jobs in `work-jobs.ts`: one row per job (glyph, id, the stage strip from `job-stages.ts`, executor group, `⚡N`, age, silence; a reason in the strip's place for a job that needs the owner), a running job's sentence under it, a lane header only when it shows several, queued jobs and read finished jobs folded into one row each; a collapsed question is `askRows`, its slab is `askSlabRows`; native lanes keep `laneRows`. The strip's read/edit/test cells need `OwnerWorker.stage`, which no collector sets yet. Direct native children
+Home has package lanes plus one lane per native main session. Classic draws a package lane's jobs in `work-jobs.ts`: one row per job (glyph, id, the stage strip from `job-stages.ts`, executor group, `⚡N`, age, silence; a reason in the strip's place for a job that needs the owner), a running job's sentence under it, a lane header only when it shows several, queued jobs and read finished jobs folded into one row each; a collapsed question is `askRows`, its slab is `askSlabRows`; native lanes keep `laneRows`. The strip's read/edit/test cells use the thin job's `OwnerWorker.stage` when present. Direct native children
 are cards, their children indent one level, deeper descendants say `↳ parent`.
 `work-visibility.ts` owns shared lifetimes: settled cards fold after 5 minutes and
 hide after 15 by default (failed/stopped at least 30); `a` reveals older items in

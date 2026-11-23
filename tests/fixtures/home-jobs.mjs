@@ -1,14 +1,30 @@
-/** A busy Home of 14 synthetic jobs (home-compact/02, /03): 1 asking, 1 failed, 3 landing, 4 running (stages and sentences set by hand: no collector yet), 3 queued, 2 finished. */
+/** A busy Home of 14 synthetic jobs (home-compact/02, /03): 1 asking, 1 failed, 3 landing, 4 running (stages from synthetic transcripts, sentences set by hand), 3 queued, 2 finished. */
 import { homeRows } from '../../dist/render/home-view.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { scope, stageJob } from './job-stage.mjs';
 export const NOW = Date.parse('2026-11-22T12:00:00.000Z');
 const MIN = 60_000, ago = (m) => NOW - m * MIN;
 const SOL = ['gpt-6.2-sol-fast', 'high'], NEON = ['gemini-4-neon-high', 'high'], SONNET = ['claude-sonnet-5-5', 'xhigh'], OPUS = ['claude-opus-5-5', 'xhigh'];
 const work = (o = {}) => ({ episode: 'e', activityAt: NOW - 5000, activityBasis: 'observed', phases: [], request: false, failed: false, result: false, ...o });
-let n = 0;
+let n = 0, stageFacts;
+function fixtureStages() {
+  if (!stageFacts) {
+    const home = mkdtempSync(join(tmpdir(), 'home-jobs-stages-'));
+    try {
+      const jobs = ['codex', 'pi', 'claude-headless'].map((format, i) => stageJob(home, i, format, i + 1).id);
+      const workers = readThinJobs(home, scope).flatMap((lane) => lane.workers);
+      stageFacts = jobs.map((id) => workers.find((w) => w.id === id)?.stage);
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  }
+  return stageFacts;
+}
 /** One job; `at` is the minutes since it started, or since it settled when `done`. */
 function job(lane, [model, effort], o) {
   const { at = 5, done, id = `thin-job:j${String(++n).padStart(16, '0')}`, ...rest } = o;
@@ -21,6 +37,7 @@ const lane = (label, workers, phase = null) => ({ id: `thin-job:package:${label}
 const land = (step, updated) => ({ kind: 'land', state: 'running', steps: [{ key: 'gate', state: 'active' }, { key: 'merge', state: 'pending' }], step, updatedAt: ago(updated) });
 export function jobsBoard(lang = 'en') {
   n = 0;
+  const [read, edit, test] = fixtureStages();
   const T = (en, zh) => (lang === 'zh' ? zh : en);
   const L = (label) => `thin-job:package:${label}`;
   const lanes = [
@@ -35,14 +52,14 @@ export function jobsBoard(lang = 'en') {
     lane('stream-sync/06', [job(L('stream-sync/06'), SONNET, { displayId: 'stream-sync/06', ticketTitle: T('Drain state badge styling', '排空状态徽章样式'), role: 'frontend-imp', done: true, at: 3, reportUnread: true, flow: land('gate[1]: npm run build', 3) })]),
     lane('auth-refresh/04', [job(L('auth-refresh/04'), NEON, { displayId: 'auth-refresh/04', ticketTitle: T('Rotate refresh window', '轮换令牌刷新时间窗口'), role: 'general', done: true, at: 4, flow: land('cherry-pick', 1) })]),
     lane('perf-ts/05', [
-      job(L('perf-ts/05'), SOL, { id: 'thin-job:p1', displayId: 'perf-ts/05', ticketTitle: T('Cache the tsc project graph', '缓存 tsc 项目图'), briefTitle: T('Implement the project graph cache', '实现项目图缓存'), at: 14, stage: 'test', work: work({ phases: ['build', 'review r1'] }),
+      job(L('perf-ts/05'), SOL, { id: 'thin-job:p1', displayId: 'perf-ts/05', ticketTitle: T('Cache the tsc project graph', '缓存 tsc 项目图'), briefTitle: T('Implement the project graph cache', '实现项目图缓存'), at: 14, stage: test, work: work({ phases: ['build', 'review r1'] }),
         modelSentence: T('Rewriting the graph cache invalidation, then adding its eviction test to the tsc suite so a stale project graph can never be served after a config change', '重写项目图缓存的失效逻辑，再把淘汰测试补进 tsc 测试集，确保配置变更后不会再读到过期的项目图') }),
-      job(L('perf-ts/05'), SONNET, { displayId: 'perf-ts/05', ticketTitle: T('Cache the tsc project graph', '缓存 tsc 项目图'), briefTitle: T('Review round 1', '第 1 轮评审'), role: 'reviewer', at: 3, stage: 'read', work: work({ phases: ['review r1'] }),
+      job(L('perf-ts/05'), SONNET, { displayId: 'perf-ts/05', ticketTitle: T('Cache the tsc project graph', '缓存 tsc 项目图'), briefTitle: T('Review round 1', '第 1 轮评审'), role: 'reviewer', at: 3, stage: read, work: work({ phases: ['review r1'] }),
         latest_progress: { at: '2026-11-22T11:58:00.000Z', text: T('Reading the cache diff against the ticket', '对照工单阅读缓存改动') } }),
       job(L('perf-ts/05'), ['deepseek-v4-1-flash-1017', 'high'], { id: 'thin-job:s2', role: 'sonic', parentJobId: 'thin-job:p1' }),
     ]),
     lane('metrics-lite/01', [
-      job(L('metrics-lite/01'), SOL, { id: 'thin-job:m1', displayId: 'metrics-lite/01', ticketTitle: T('Trim idle poll interval', '降低空闲轮询频率'), role: 'general', at: 6, stage: 'edit', work: work({ activityAt: ago(4) }),
+      job(L('metrics-lite/01'), SOL, { id: 'thin-job:m1', displayId: 'metrics-lite/01', ticketTitle: T('Trim idle poll interval', '降低空闲轮询频率'), role: 'general', at: 6, stage: edit, work: work({ activityAt: ago(4) }),
         modelSentence: T('Trimming the idle poll interval in the watcher', '正在缩短监视器的空闲轮询间隔') }),
       job(L('metrics-lite/01'), ['deepseek-v4-1-flash-1017', 'high'], { id: 'thin-job:s3', role: 'sonic', parentJobId: 'thin-job:m1' }),
       job(L('metrics-lite/01'), ['deepseek-v4-1-flash-1017', 'high'], { id: 'thin-job:s4', role: 'sonic', parentJobId: 'thin-job:m1' }),
@@ -64,11 +81,12 @@ export function jobFrame(width, lang = 'en', board = jobsBoard(lang), state = in
 /** Narrow-panel rows (panel-polish/02): routed headless jobs with helpers running, a failed one, a long id, and a job with no route. */
 export function narrowBoard(lang = 'en') {
   n = 0;
+  const [read, edit, test] = fixtureStages();
   const T = (en, zh) => (lang === 'zh' ? zh : en), L = (label) => `thin-job:package:${label}`;
   const route = (tier, mode) => ({ tier, mode, source: 'decision', reason: `${tier} work; ${mode} run` });
   const lanes = [
     lane('auto-route/08', [
-      job(L('auto-route/08'), SOL, { id: 'thin-job:r1', displayId: 'auto-route/08', ticketTitle: T('A headless job keeps its title', '无界面任务保留标题'), at: 0, stage: 'test', route: route('hard', 'headless'), headless: true,
+      job(L('auto-route/08'), SOL, { id: 'thin-job:r1', displayId: 'auto-route/08', ticketTitle: T('A headless job keeps its title', '无界面任务保留标题'), at: 0, stage: test, route: route('hard', 'headless'), headless: true,
         modelSentence: T('Adding the sonic liveness test to the ask path', '正在给 ask 路径补 sonic 存活测试') }),
       job(L('auto-route/08'), ['deepseek-v4-1-flash-1017', 'high'], { id: 'thin-job:r2', role: 'sonic', parentJobId: 'thin-job:r1' }),
       job(L('auto-route/08'), ['deepseek-v4-1-flash-1017', 'high'], { id: 'thin-job:r3', role: 'sonic', parentJobId: 'thin-job:r1' }),
@@ -77,8 +95,8 @@ export function narrowBoard(lang = 'en') {
     lane('stream-sync/05', [job(L('stream-sync/05'), SOL, { displayId: 'stream-sync/05', ticketTitle: T('Drain async sockets cleanly', '异步套接字排空与关闭'), done: true, at: 2, reportUnread: true, route: route('light', 'tab') })]),
     lane('export-csv/02', [job(L('export-csv/02'), NEON, { displayId: 'export-csv/02', ticketTitle: T('Stream large CSV exports', '流式导出大型 CSV 报表'), role: 'general', state: 'failed', done: true, at: 9, route: route('standard', 'headless'), headless: true,
       work: work({ failed: true, result: true, reason: T('HTTP 429 rate limit; no report written', 'HTTP 429 限流；未写出报告') }) })]),
-    lane('statusline-workers/03', [job(L('statusline-workers/03'), SOL, { displayId: 'statusline-workers/03', ticketTitle: T('Show workers in the statusline', '在状态栏显示任务'), at: 6, stage: 'edit', work: work({ activityAt: ago(5) }), route: route('hard', 'headless'), headless: true })]),
-    lane('docs-sweep/04', [job(L('docs-sweep/04'), SONNET, { displayId: 'docs-sweep/04', ticketTitle: T('Compare retry backoff options', '对比重试退避方案'), role: 'general', at: 6, stage: 'read', work: work({ activityAt: ago(4) }) })]),
+    lane('statusline-workers/03', [job(L('statusline-workers/03'), SOL, { displayId: 'statusline-workers/03', ticketTitle: T('Show workers in the statusline', '在状态栏显示任务'), at: 6, stage: edit, work: work({ activityAt: ago(5) }), route: route('hard', 'headless'), headless: true })]),
+    lane('docs-sweep/04', [job(L('docs-sweep/04'), SONNET, { displayId: 'docs-sweep/04', ticketTitle: T('Compare retry backoff options', '对比重试退避方案'), role: 'general', at: 6, stage: read, work: work({ activityAt: ago(4) }) })]),
   ];
   return { revision: 'r', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
 }

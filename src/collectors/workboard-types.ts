@@ -81,7 +81,7 @@ export interface OwnerWorker extends Partial<JobProgress> {
   };
   /** Observed activity of a running worker: ten one-minute buckets, oldest first, each a count of collects that saw it write. */
   readonly activity?: readonly number[];
-  /** The kind of work a running worker is in, from its newest tool call (the stage strip's read/edit/test cells). No collector sets it yet: absent, those cells are unknown. */
+  /** The latest classified tool call of a running, non-stalled thin job. Absent when the read/edit/test cells are unknown. */
   readonly stage?: 'read' | 'edit' | 'test';
   readonly nativeDepth?: number;
   /** Raw local excerpt for the card, separate from fact and model-sentence inputs. */

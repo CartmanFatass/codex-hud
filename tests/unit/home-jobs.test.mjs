@@ -95,6 +95,7 @@ test('the silence shows from 3 minutes without output, dim, and amber once the c
   assert.doesNotMatch(row(2), /quiet/, '2 minutes is not silence');
   assert.match(row(3), / 6m quiet 3m$/);
   assert.match(row(3, 'zh'), / 6分 静3分$/);
+  assert.match(row(10), /○○○○○.*quiet 10m$/, 'the stall threshold hides a stage from the previous snapshot');
   assert.doesNotMatch(jobFrame(80).find((l) => l.includes('perf-ts/05 ') && l.endsWith('14m')), /quiet/, 'a job that just wrote has none');
   assert.doesNotMatch(jobFrame(80).find((l) => l.includes('stream-sync/05 ')), /quiet/, 'a settled job has none');
   const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });

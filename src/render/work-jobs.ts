@@ -116,13 +116,15 @@ function jobRow(w: OwnerWorker, lane: Pick<WorkLane, 'id' | 'label'>, c: Ctx, in
     const rights = [[sonicBadge(sonic), age], [age]].map((parts) => parts.filter(Boolean).join(' '));
     line = pair(head + reason, rights.find((r) => visualLength(head) + MIN_REASON + 1 + visualLength(r) <= c.width) ?? age, c.width);
   } else {
+    // The frame can cross the stall threshold before the next collector snapshot.
+    const strip = stageStrip(card.state === 'stalled' && w.stage ? { ...w, stage: undefined } : w);
     // Narrow the right side one mark at a time before the strip or the id is cut.
     const parts = (drop: number): [string, string] => {
       const keep = (d: (typeof DROPS)[number]) => !DROPS.slice(0, drop).includes(d);
       const [role, model] = [keep('role') ? roleMark(card.role) : '', keep('model') ? workerModelBadge(w, 'compact') : ''];
       const executor = role + (role && model ? mark('', ' ') : '') + model;
       const group = [executor, keep('route') ? routeBadge(w) : '', keep('sonic') ? sonicBadge(sonic) : ''].filter(Boolean).join(' ');
-      return [head + stageStrip(w) + (group ? '  ' + group : ''), [age, keep('silence') ? quiet : ''].filter(Boolean).join(' ')];
+      return [head + strip + (group ? '  ' + group : ''), [age, keep('silence') ? quiet : ''].filter(Boolean).join(' ')];
     };
     let drop = 0;
     while (drop < DROPS.length && visualLength(parts(drop)[0]) + 1 + visualLength(parts(drop)[1]) > c.width) drop++;
