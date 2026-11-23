@@ -1,6 +1,6 @@
 # 05: Slash commands and band buttons for owner actions without a model turn
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** 04
 

@@ -1,6 +1,6 @@
 # 01: A Claude Code mod keeps the main session's HUD context lean
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** none
 

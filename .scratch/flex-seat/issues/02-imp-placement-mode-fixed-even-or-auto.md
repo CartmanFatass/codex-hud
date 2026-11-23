@@ -1,6 +1,6 @@
 # 02: imp placement mode: fixed, even or auto
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** none
 

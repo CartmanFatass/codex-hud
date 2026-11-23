@@ -1,6 +1,6 @@
 # 04: Band above the prompt and live toasts from the shared job rows
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** 03
 

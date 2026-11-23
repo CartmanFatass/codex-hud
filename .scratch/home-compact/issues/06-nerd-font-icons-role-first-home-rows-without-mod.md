@@ -1,6 +1,6 @@
 # 06: Nerd Font icons, role-first Home rows without model, and per-role worker counts
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** none
 
