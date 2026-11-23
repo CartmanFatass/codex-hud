@@ -843,8 +843,9 @@ and `+N` when full), a `latest` line, a one-row legend, In flight and gauge page
 milestone into its slices in cell order on Progress (older milestones as map rows, jobs outside the ledger, Next); and draws the Projects list as a one-row-per-project table (`ms`, `ledger`, `?`,
 `◉`, `age`). **Inbox** opens the hub with a ranked Needs you list (questions and STATE's waiting items, to-try slices
 newest first, tickets asking for an answer, blocked slices, roles at their limit, each with its reason word on the
-right and the same `N · M to try` header figures as Timeline), followed by Running, a `last accepted` line and the page
-rows; orders Progress as To try (every milestone, newest first), Blocked, Working, Next and Done folded to one row;
+right and the same `N · M to try` header figures as Timeline), followed by Running (one row per running job: role,
+ticket title, `⚡N` for its running sonic children as on Home, age; slices, worktrees and sonic children are not rows),
+a `last accepted` line and the page rows; orders Progress as To try (every milestone, newest first), Blocked, Working, Next and Done folded to one row;
 groups the Projects list into Needs you, Running and Quiet (one row per quiet project); and keeps Timeline's Tickets.
 Enter on an Inbox role alert opens that role on Control; `o` still opens its file.
 

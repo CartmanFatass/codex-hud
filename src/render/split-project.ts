@@ -121,7 +121,7 @@ export function slicePreview(input: MonitorData, data: ProjectSnapshot, state: M
       ...(r.state !== 'try' ? {} : { hints: rows.some((x) => x.item === ledgerFoldItem(r)) ? PROGRESS_FOLD_HINTS : TRY_HINTS }) };
   }
   if (cursor === 'split:next') return { label: t('Next'), right: String(data.next.length), rows: data.next.flatMap((n) => clampLines(n.value, width - 4, 2).lines.map((l, k) => plain(`${k ? '    ' : `  ${mark('→', '>')} `}${l}`, width))) };
-  const job = unsliced(data).find((j) => `project:job:${j.jobId}` === cursor);
+  const job = data.active.find((j) => `project:job:${j.jobId}` === cursor);
   return { label: monitorText(job?.role ?? ''), rows: job ? indent(job.title ?? job.package ?? '', width, 3) : [] };
 }
 

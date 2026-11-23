@@ -39,7 +39,7 @@ function foldKind(w: OwnerWorker, lane: WorkLane, c: Ctx): FoldKind | undefined 
 }
 
 /** The ticket's heading, else the brief's (a child under its lane header leads with the brief's); raw task text only when nothing else names the job. */
-function jobTitle(w: OwnerWorker, child: boolean): string {
+export function jobTitle(w: OwnerWorker, child: boolean): string {
   const heading = child ? (w.briefTitle ?? w.ticketTitle) : (w.ticketTitle ?? w.briefTitle);
   const text = monitorText(heading ?? (w.displayId ? '' : w.task)), id = monitorText(w.displayId ?? '');
   return id && text.startsWith(id) ? text.slice(id.length).replace(/^[\s:–—-]+/, '') : text;

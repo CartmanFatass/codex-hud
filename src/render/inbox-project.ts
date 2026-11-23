@@ -5,7 +5,7 @@
  * Tickets stay Timeline's; role alerts link to Control. Pure.
  */
 import { SLICE_STATES, type ActiveJob, type LedgerSlice, type ProjectSnapshot } from '../collectors/project-board.js';
-import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
+import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { TryAction } from '../collectors/try-records.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
@@ -19,6 +19,8 @@ import { glyph, roleName } from './control-view.js';
 import { HUB_HINTS, HUB_TRY_HINTS, LEDGER_FOCUS_HINTS, PROJECT_FILE_HINTS, TRY_ACTIONS, inboxRolePreview, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { jobSentenceLine, labelSummary, workCardDetail } from './work-card.js';
+import { jobTitle } from './work-jobs.js';
+import { sonicBadge, sonicChildrenRunning } from './worker-roster.js';
 import { boardRow, mark, minuteAge, pack, section } from './workboard-rows.js';
 import { cutWords, fit, monitorText, pair } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
@@ -28,7 +30,8 @@ import { t } from './i18n.js';
 const muted = theme.board.muted, NEEDS_CAP = 7;
 const bare = (rows: MonitorRow[]): MonitorRow[] => rows.map(({ item: _i, files: _f, ...row }) => row);
 const plain = (text: string, width: number): MonitorRow => ({ text: fit(text, width) });
-const cutProse = (text: string, room: number) => { const b = monitorText(text); return room < 1 ? '' : visualLength(b) <= room ? b : cutWords(b, room); };
+const cutText = (b: string, room: number) => room < 1 ? '' : visualLength(b) <= room ? b : cutWords(b, room);
+const cutProse = (text: string, room: number) => cutText(monitorText(text), room);
 const cutId = (text: string, room: number) => { const b = monitorText(text); return room < 1 ? '' : visualLength(b) <= room ? b : cutWords(b, room) || truncateAnsi(b, room); };
 const mins = (until: number, now: number) => t('{n}m', { n: Math.max(1, Math.ceil((until - now) / 60000)) });
 const waitFacts = (data: ProjectSnapshot, state: MonitorState) => {
@@ -39,10 +42,11 @@ const workerOf = (jobId: string | undefined, board?: WorkboardSnapshot) => jobId
 const sliceAsking = (s: ProjectSnapshot['slices'][number], board?: WorkboardSnapshot) => workerOf(s.jobId, board)?.homeNeedsHuman ?? !!s.asking;
 const jobAsking = (j: ActiveJob, board?: WorkboardSnapshot) => workerOf(j.jobId, board)?.homeNeedsHuman ?? j.asking;
 
-function unslicedRow(job: ActiveJob, width: number, now: number, selectable = false): MonitorRow {
+/** A job's row: role, title (the ticket's heading when the board knows the job, as on Home), then `⚡N` for its running sonic children and its age. */
+function unslicedRow(job: ActiveJob, width: number, now: number, selectable = false, worker?: OwnerWorker, sonic = 0): MonitorRow {
   const lead = `  ${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))}`;
-  const right = job.asking ? theme.board.attention(`${t('asking')} ?`) : muted(minuteAge(job.at ?? null, now));
-  const title = cutProse(job.title ?? job.package ?? '', width - visualLength(lead) - 2 - visualLength(right) - 1);
+  const right = job.asking ? theme.board.attention(`${t('asking')} ?`) : [sonicBadge(sonic), muted(minuteAge(job.at ?? null, now))].filter(Boolean).join(' ');
+  const title = cutText((worker && jobTitle(worker, false)) || monitorText(job.title ?? job.package ?? ''), width - visualLength(lead) - 2 - visualLength(right) - 1);
   return { text: pair(lead + (title ? '  ' + muted(title) : ''), right, width), ...(selectable ? { item: `project:job:${job.jobId}`, ...(job.path ? { files: [job.path] } : {}) } : {}) };
 }
 function sliceRight(s: ProjectSnapshot['slices'][number] | undefined, worker: WorkboardSnapshot['workers'][number] | undefined, now: number, fallback = ''): string {
@@ -127,16 +131,14 @@ function needsBlock(needs: NeedEntry[], expanded: boolean, cap: number, data: Pr
     : expanded && needs.length > NEEDS_CAP ? [{ item: 'project:fold:inbox:more', text: fit(`  ${muted(`${mark('▾', 'v')} ${t('fewer')}`)}`, width) }] : [];
   return [section(t('Needs you'), width, waitFacts(data, state)), ...(needs.length ? [...shown.flatMap((n) => n.rows), ...tail] : [plain('  ' + muted(t('Nothing needs you')), width)])];
 }
+/** One row per running job: slices and worktrees are not rows, and a sonic child folds into its running parent's `⚡N`, as on Home. */
 function runningRows(data: ProjectSnapshot, width: number, now: number, selectable: boolean, board?: WorkboardSnapshot): MonitorRow[] {
-  const files = data.statePath ? { files: [data.statePath] } : {};
-  return [
-    ...inFlight(data).filter((r) => r.ledgerState !== 'blocked' && !sliceAsking(r, board)).map((r): MonitorRow => {
-      const lead = r.drift ? theme.board.attention('!') : sliceInk('working')(mark('◐', '@'));
-      const right = sliceRight(r, workerOf(r.jobId, board), now, sliceInk('working')(t(r.ledgerState ?? 'working')));
-      return { ...(selectable ? { item: `project:slice:${r.label}` } : {}), ...(r.path ? { files: [r.path] } : files), text: inline(`  ${lead} ${monitorText(r.label)}`, r.value, right, width) };
-    }),
-    ...unsliced(data).filter((j) => !jobAsking(j, board)).map((j) => unslicedRow(j, width, now, selectable)),
-  ];
+  const parents = new Set(data.active.flatMap((j) => workerOf(j.jobId, board)?.id ?? []));
+  return data.active.flatMap((j) => {
+    const worker = workerOf(j.jobId, board);
+    if (jobAsking(j, board) || (worker?.parentJobId && parents.has(worker.parentJobId))) return [];
+    return [unslicedRow(j, width, now, selectable, worker, worker && board ? sonicChildrenRunning(board.workers, worker.id) : 0)];
+  });
 }
 function lastAcceptedRow(data: ProjectSnapshot, width: number, now: number, selectable = false): MonitorRow | undefined {
   const last = landedNewest(data).find(({ r }) => r.state === 'accepted')?.r;

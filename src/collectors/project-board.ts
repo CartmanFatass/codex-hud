@@ -126,6 +126,7 @@ interface JobReceipt {
   role?: unknown;
   brief_path?: unknown;
   target_hint?: string;
+  parent_job?: unknown;
 }
 interface JobStatus {
   state?: unknown;
@@ -781,7 +782,8 @@ export class ProjectCollector {
           created, ...(Number.isFinite(at) ? { at } : {}) });
       }
       if (home) continue;
-      if ((byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
+      // A sonic child runs in its parent's tree but never stands for it.
+      if (job.parent_job || (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const path = firstFile(report, brief);
       const at = Date.parse(String(s.started_at ?? job.created_at ?? ''));
       byTree.set(cwd, { jobId: id, role: typeof job.role === 'string' ? job.role : '', created,

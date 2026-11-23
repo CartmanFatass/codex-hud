@@ -6,10 +6,13 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stripAnsi } from '../../dist/render/colors.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { sonicChildrenRunning } from '../../dist/render/worker-roster.js';
 import { tryCount } from '../../dist/render/project-view.js';
 import { splitFixture, split, layoutDriver, assertWidth, assertNoMidWordCut } from '../fixtures/split-layout.mjs';
 import { listFixture } from '../fixtures/project-list.mjs';
-import { NOW, onPage, plain } from '../fixtures/project-page.mjs';
+import { NOW, onPage, plain, projectFixture } from '../fixtures/project-page.mjs';
 
 let sharedRoot, busy, lists;
 before(async () => {
@@ -121,6 +124,42 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
   cl.run('space');
   assert.deepEqual(cl.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
   assert.equal(cl.run({ type: 'key', key: 'try-flag', text: 'n' }).action.action, 'flag');
+});
+
+test('Inbox Running is one row per running job: an imp in a worktree with two sonic children is one row (role, ticket title, ⚡2, age), never a worktree, slice or sonic row', async () => {
+  const f = await projectFixture(join(sharedRoot, 'running')), iso = (m) => new Date(NOW - m * 60000).toISOString();
+  // The base fixture's imp works in the NATIVE-TREE worktree: give it a ticket and no open question, then run two sonic children in that tree.
+  f.put(join(f.cwd, '.scratch/native-tree/issues/02-home-lanes.md'), '# 02: Home lanes, one per session\n\n**Status:** claimed\n');
+  f.put(join(f.sliceJob, 'job.json'), { job: 'j0000000000000002', role: 'imp', cwd: f.linked[0], herdr_pane: 'w4E:p1', ticket: 'native-tree/02', created_at: iso(12),
+    worktree: { root: f.linked[0], branch: 'wt/NATIVE-TREE', main_root: f.cwd } });
+  fs.rmSync(join(f.sliceJob, 'qa'), { recursive: true, force: true });
+  for (const n of [3, 4]) {
+    const id = `j000000000000000${n}`;
+    f.put(join(f.hud, 'jobs', id, 'job.json'), { job: id, role: 'sonic', cwd: f.linked[0], herdr_pane: 'w4E:p1', parent_job: 'j0000000000000002', created_at: iso(2) });
+    f.put(join(f.hud, 'jobs', id, 'STATUS.json'), { state: 'working', started_at: iso(2) });
+  }
+  const lanes = readThinJobs(f.hud, { project: f.cwd, pane: 'w4E:p1' }), board = { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers) };
+  const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect(true, board, NOW);
+  // A sonic never labels its parent's worktree.
+  assert.deepEqual(['jobId', 'role'].map((k) => data.slices.find((x) => x.label === 'NATIVE-TREE')[k]), ['j0000000000000002', 'imp']);
+  assert.equal(sonicChildrenRunning(board.workers, board.workers.find((w) => w.evidence[0].sourceId === 'j0000000000000002').id), 2, 'Home folds the same two');
+  const running = (lines, header) => { const at = lines.findIndex((l) => header.test(l)); return lines.slice(at, lines.findIndex((l, i) => i > at && l === '')); };
+  const age = { en: ['12m', '20m'], zh: ['12分', '20分'] };
+  for (const lang of ['en', 'zh']) {
+    const inbox = { prefs: { projectLayout: 'inbox' } }, header = lang === 'zh' ? /^运行中/ : /^Running/;
+    const frames = [f.render(60, lang, onPage(undefined, inbox), 40, data, true, 'unicode', 'none', { workboard: board }),
+      f.render(60, lang, split({ activeTab: 'project', project: { nav: { cursor: 'project:job:j0000000000000002' } }, ...inbox }), 40, data, true, 'unicode', 'none', { workboard: board })];
+    for (const frame of frames) {
+      assertWidth(frame, 60, `running ${lang}`);
+      const [head, ...below] = running(plain(frame), header), rows = below.filter((l) => !/last accepted|最近验收/.test(l));
+      assert.match(head, / 2$/, `${lang}: two jobs, not one row per slice, worktree and sonic`);
+      assert.equal(rows.length, 2);
+      assert.match(rows[0], new RegExp(`^  ◉ imp  Home lanes, one per session\\s+⚡2 ${age[lang][0]}$`));
+      assert.match(rows[1], new RegExp(`^  ◉ imp  Build the Project tab\\s+${age[lang][1]}$`));
+      assert.doesNotMatch(rows.join('\n'), /sonic|NATIVE-TREE|ORPHAN/);
+    }
+    assert.match(plain(frames[1]).join('\n'), /^imp ─+\n  NATIVE-TREE: synthetic subagents$/m, `${lang}: Enter's preview is the job's`);
+  }
 });
 
 test('Inbox Progress at 40 cols EN and ZH (Split and Classic): To try newest first across milestones, Blocked, Working, Next, Done folded to one row, Space/y/n', async (t) => {
