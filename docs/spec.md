@@ -157,8 +157,9 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   typed into its prompt. (22.12)
 - A Claude Code main session may load the HUD mod (an install extension). It first keeps the main session's
   context lean: it compacts what HUD tool results and job notices add to the conversation, merges duplicate
-  events and routes report reads through `hud_read`. Panel, toasts and event wake inside Claude Code are later
-  slices. (22.23)
+  events and routes report reads through `hud_read`. Later slices add event wake, a band and toasts, slash
+  commands for owner actions and mechanical convention rules as hooks; the panel stays the herdr panel.
+  (22.23, 22.25)
 - Neutral workers do only their job, with one role text across harnesses. On any harness a worker may
   choose to start sonic for a useful, simple, fully specified sub-task. If it does, it collects the report.
   HUD refuses worker requests to start other roles. (17.06)

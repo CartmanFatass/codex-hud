@@ -98,6 +98,10 @@ The owner approved the lean spec and resolved the draft questions:
   glyphs, owner picked from a live render in MesloLGS NF) as the default, with `unicode` and `text` kept as
   fallbacks; emoji stays out (double width). Reverses the Nerd Font part of D-2026-11-11-06. Home's top line
   counts workers per role since the panel opened, whatever their state; no cross-session total.
+- **D-2026-11-22-25** (§2.1.6): The owner approved four further Claude mod slices: mod-owned event wake, a band
+  and toasts above the prompt, slash commands for owner actions, and mechanical convention rules as hooks. No
+  panel inside Claude Code: it would add little over the herdr panel, which stays the panel for every client.
+  Oracle designs the four slices before tickets are filed.
 
 ## 2026-11-21
 
