@@ -1043,20 +1043,9 @@ The Split shortcuts appear only in the Split layout. Marks are grouped by jobs
 (state glyphs, queued, and `⚡N` for running sonic children), route (the tier bars
 `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places. `g` is
 the job's herdr tab, or the Inspector's Output for a headless job. At 80 columns and wider, Marks sit to the right of the
-shortcuts. Scroll with ↑↓, PgUp/PgDn or the wheel to reach the **Backup skills**
-section; Esc, `?` or Enter returns to the previous page.
+shortcuts. Scroll with ↑↓, PgUp/PgDn or the wheel; Esc, `?` or Enter returns to the previous page.
 
-The section lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
-Matt Pocock skills not installed: the adapted copies in `integrations/skills-optional/`
-and the upstream text, which the main session reads when asked. Under a `Backup skills` header with the count, a muted line says what the list
-is, then each skill's name and its whole one-line description in the panel's language.
-Descriptions wrap, never cut, so the list reads at a 40-column panel. A panel under 103
-columns (with the shipped names) stacks them: the name in the identifier ink on its own
-row, the description under it two cells further in, nearly the panel's width. One of 103
-or more puts the description beside the name in its own column, wrapped rows hanging
-under the first. A name longer than the row breaks after a hyphen. Skill rows are
-read-only, with no row actions, install state or adopted/dropped skills. A missing
-or unreadable catalog shows a muted notice, an empty one another.
+See [Optional skills](optional-skills.md) for the skills shipped but not installed. Ask the main session to read one when needed.
 
 ### Inspector
 

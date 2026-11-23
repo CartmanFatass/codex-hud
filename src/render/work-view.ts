@@ -5,7 +5,6 @@ import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './moni
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows, newestCard } from './home-view.js';
 import { activeFilter, homeAnchor, homeCursor, homeTarget, onlyTry, type ClassicSplitNav, type HomeCursor } from './monitor-state.js';
-import { skillsRows } from './skills-view.js';
 import { roleIcon } from './model-glyphs.js';
 import { roleMark } from './work-jobs.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
@@ -135,7 +134,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
         boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4)));
   const start = state.activeTab === 'project' ? projectStart : state.activeTab === 'control' ? controlStart : undefined;
-  return { rows: [boardRow(''), ...rows, ...skillsRows(input.backupSkills, width)], anchor: start === undefined ? undefined : rows[start] };
+  return { rows: [boardRow(''), ...rows], anchor: start === undefined ? undefined : rows[start] };
 }
 export function renderWorkboardFrame(
   input: MonitorData,

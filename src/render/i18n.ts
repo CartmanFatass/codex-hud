@@ -115,11 +115,6 @@ const ZH: Record<string, string> = {
   '⏎ edit': '⏎ 编辑',
   '⏎ preview': '⏎ 预览',
   '⏎ save': '⏎ 保存',
-  'Backup skills': '备用技能',
-  'Skills catalog unavailable': '技能目录缺失或无法读取',
-  'No backup skills listed': '目录里没有备用技能',
-  'Matt Pocock skills kept as backups, not installed. Ask the main session to read one when you want it.':
-    'Matt Pocock 的备用技能，未安装。想用哪一个，让主会话去读它的上游原文。',
   outcome: '结果',
   category: '类别',
   findings: '发现',

@@ -942,5 +942,41 @@
     "",
     "",
     "       ←→ 修改  s 保存  Esc 返回  ? 帮助"
+  ],
+  "help-end-40-en": [
+    "‹ Help",
+    "        ○ not reached  ○ unknown",
+    "        read▸edit▸test▸report▸land",
+    "time    quiet 4m no output for 3m",
+    "        quiet 12m no output, stalled",
+    "route   ▂ light  ▄ standard  ▆ hard",
+    "        ∅ headless: no herdr tab",
+    "slices  ◐ working  ◆ blocked  ◇ to try",
+    "        ✓ accepted  ○ todo",
+    "answers ◆ differs from the default",
+    "        ◇ as proposed",
+    "places  ◉ next  ○ standby  ✗ exhausted",
+    "        ⊘ off  − not installed",
+    "dim     older rows; a shows them",
+    "lavender words are marked by the model",
+    "                                Esc back"
+  ],
+  "help-end-40-zh": [
+    "‹ 帮助",
+    "        ○ 未到  ○ 未知",
+    "        读▸改▸测▸报告▸落地",
+    "时间    静4分 3 分钟没有输出",
+    "        静12分 没有输出，已停滞",
+    "分流    ▂ 轻量  ▄ 标准  ▆ 复杂",
+    "        ∅ 无界面：没有 herdr 标签页",
+    "切片    ◐ 工作中  ◆ 受阻  ◇ 待试用",
+    "        ✓ 已验收  ○ 待办",
+    "答复    ◆ 与默认不同",
+    "        ◇ 与建议一致",
+    "位置    ◉ 下一个  ○ 备选  ✗ 已耗尽",
+    "        ⊘ 已停用  − 未安装",
+    "暗色    较早的行，按 a 显示",
+    "紫色字是模型标出的关键词",
+    "                                Esc 返回"
   ]
 }

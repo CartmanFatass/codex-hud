@@ -11,6 +11,7 @@ The [decisions log](decisions-log.md) records the history behind the spec, inclu
 | [Product spec](spec.md) | The active product boundary and milestones. It takes precedence over older documents. |
 | [Architecture](ARCHITECTURE.md) | Processes, data flows, rendering, and rules for changes. |
 | [Reference](reference.md) · [简体中文](reference.zh.md) | Installation, configuration, commands, and troubleshooting. |
+| [Optional skills](optional-skills.md) | Skills shipped but not installed, for the main session to read on request. |
 | [Delegation](delegation.md) | The workflow for decisions, slices, reviews, and acceptance. |
 
 ## Working documents
@@ -33,6 +34,6 @@ By default, ripgrep skips `docs/archive/`; use `rg -u` or `git grep` to search i
 
 ## Source release
 
-The source archive ships four files from `docs/`: `spec.md`, `ARCHITECTURE.md`,
-`reference.md`, and `reference.zh.md`. Working documents and historical records
+The source archive ships `spec.md`, `ARCHITECTURE.md`, `reference.md`, `reference.zh.md`,
+and `optional-skills.md` from `docs/`. Working documents and historical records
 are available in the repository, not the source archive.

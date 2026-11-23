@@ -12,7 +12,6 @@ import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../di
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
-import { skillsRows } from '../../dist/render/skills-view.js';
 import { defaultSettings } from '../../dist/settings.js';
 import { defaultExpConfig } from '../../dist/exp-config.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
@@ -71,8 +70,7 @@ test('a printable key is one decoder name, and Help covers the decoder with each
       try {
         const draw = (width) => renderMonitor({ tree: TREE, state: withState(initialMonitorState(), { prefs: { panelLayout }, help: {} }), width, height: 40, nowMs: NOW });
         const read = (width) => {
-          const rows = draw(width).workboard.rows;
-          const body = rows.slice(0, rows.findIndex((r) => /(?:Backup skills|备用技能) ─/.test(r.text)));
+          const body = draw(width).workboard.rows;
           // The extra cell is the space replacing the cropped right column; trim it with the padding.
           return body.map(({ text }) => (width < 80 ? text : truncateAnsi(text, (width - 4) / 2 + 1, ' ')).trimEnd());
         };
@@ -106,7 +104,7 @@ test('a printable key is one decoder name, and Help covers the decoder with each
   } finally { setDisplayConfig(display); }
 });
 
-test('Help opens at the source tab, scrolls back to Everywhere, and leaves the skills rows intact', () => {
+test('Help opens at the source tab, scrolls back to Everywhere, and closes to the same tab', () => {
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
     for (const panelLayout of ['classic', 'split']) for (const width of [40, 120]) for (const height of [24, 160]) {
@@ -114,8 +112,7 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
         const previous = setLanguage(lang);
         try {
           for (const [i, mainTab] of ['home', 'project', 'control', 'exp'].entries()) {
-            const backupSkills = [{ name: 'synthetic', en: 'A short test description.', zh: '用于测试的说明。' }];
-            const draw = (state) => renderMonitor({ tree: TREE, width, height, state, nowMs: NOW, backupSkills });
+            const draw = (state) => renderMonitor({ tree: TREE, width, height, state, nowMs: NOW });
             const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW }).state;
             const from = draw(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout, experiments: true } }));
             const help = draw(press(from, '?'));
@@ -123,8 +120,6 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
             const anchored = i === 1 || i === 2;
             assert.match(help.lines[anchored ? 1 : 2], new RegExp(`^${titles[i]} ─`));
             if (!anchored) assert.equal(help.lines[1].trim(), '');
-            const skills = skillsRows(backupSkills, width);
-            assert.deepEqual(help.workboard.rows.slice(-skills.length), skills);
             const top = draw(press(help, '\x1b[H'));
             assert.match(top.lines[2], new RegExp(`^${titles[0]} ─`));
             for (const key of ['\x1b', '?', '\r']) {

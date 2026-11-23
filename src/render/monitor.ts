@@ -11,7 +11,6 @@ import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-
 import { initialHomeTab, initialProjectTab, initialControlTab, viewPrefs, reconcileMonitor, type MonitorState } from './monitor-state.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
-import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
 import type { MainTab } from './main-tabs.js';
 import type { ExpData, ExpEdit } from '../exp-config.js';
@@ -139,7 +138,6 @@ export interface MonitorData {
   projectDisplayRoot?: string;
   projectWaiting?: number;
   tryMarks?: ReadonlyMap<string, TryAction>;
-  backupSkills?: BackupSkill[] | null;
   /** The shown project's own name, for the hub's top row. */
   projectName?: string;
   /** The projects `[` and `]` cycle through (the panel's own first); one or none means no switch. */

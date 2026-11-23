@@ -345,12 +345,10 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
   "Job consent denied", no card progress used only by retired facade jobs, no model text only for hidden views
   (main recap, approval words, change summary, session title, `S` overview). (11.05, 12.03)
 
-#### 2.2.9 Help and backup skills
+#### 2.2.9 Help
 
-- Help (`?`) has a section listing backup skills. (17.12, 17.14, 22.03)
-- Shipped catalog: uninstalled Matt Pocock skills (adapted and upstream, §2.3.2). Show name and full one-line
-  panel-language description, wrapped under name at 40 columns. Display only: no row action, install state
-  or adopted/dropped skills. Main reads a skill on owner request. (17.12)
+- Help (`?`) shows shortcuts and marks, not the optional skills list. The shipped, uninstalled skills (§2.3.2)
+  are listed in [`docs/optional-skills.md`](optional-skills.md); the main session reads one at the owner's request. (22.27)
 - Keep Inspector (`v`), Settings and Help in Home's look. No old Timeline page (not Project's Timeline
   layout), Activity hub, Summary, diagnostics pages or old Agents pane. Keep only the model-call count
   from diagnostics in Settings → LLM. No Settings panel picture, Look presets, emoji icon

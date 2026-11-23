@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readBackupSkills } from '../collectors/backup-skills.js';
 import { ClaudeNativeTree } from '../collectors/claude-native-tree.js';
 import { readExpData } from '../collectors/exp-store.js';
 import type { HealthSource } from '../collectors/hud-health.js';
@@ -169,7 +168,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     repaintAll: () => repaintAll(),
   });
   const syncModelListDiscovery = () => models.syncDiscovery(controlShown(state, settingsFlow.open));
-  const backupSkills = readBackupSkills();
 
   const render = () => {
     if (isClosed() || (place && !collected)) return;
@@ -189,7 +187,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const settingsLines = settingsFlow.paint(width, height, () => ({
         state: hudStatus.health.current(), modelCalls: models.modelCalls(), decisionCalls: models.decisionCalls(),
       }), (help, mouse) => {
-        frame = renderMonitor({ tree, state: framePlace(help), backupSkills, mouse, width, height });
+        frame = renderMonitor({ tree, state: framePlace(help), mouse, width, height });
         frameSource = help;
         return frame.lines;
       });
@@ -208,7 +206,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         projectDisplayRoot: shown.root,
         projectWaiting: control ? visits.snapshot(chosen)?.waiting.length : undefined,
         tryMarks,
-        backupSkills,
         projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
         projects: listing(painted) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
         error,

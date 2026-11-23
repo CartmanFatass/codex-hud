@@ -58,7 +58,7 @@ test("frames: all seven kept pages in Home's kit", (t) => {
     if (page === 'help') {
       assert.doesNotMatch(text, /Home · Project/);
       const help = frame.workboard.rows.map((row) => stripAnsi(row.text)).join('\n');
-      assert.match(help, /Backup skills ─+ 17/);
+      assert.match(help, /Marks ─+/);
       assert.match(help, /m\s+role\/place: picker in this\s+pane;/);
       assert.match(help, /one click or Enter sets/);
       assert.match(help, /Esc\s+back; clear a filter first;[^\n]*\n\s+does nothing at a tab root/);
@@ -90,9 +90,35 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
       for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes']) {
         const frame = f.render(page, width, lang, 40);
         assert.equal(frame.lines.length, 40);
+        if (page === 'help') {
+          const body = frame.workboard.rows.map(({ text }) => stripAnsi(text)).join('\n');
+          assert.doesNotMatch(body, /Backup skills|备用技能|wayfinder/);
+        }
         for (const line of frame.lines)
           assert.equal(visualLength(line), width, `${page} ${lang} ${width}: ${stripAnsi(line)}`);
       }
+});
+test('Help scrolls to the last shortcut or mark without offering row actions', () => {
+  for (const lang of ['en', 'zh']) {
+    const previous = setLanguage(lang);
+    try {
+      for (const width of [40, 120]) {
+        const draw = (state) => renderMonitor({ tree: TREE, state, width, height: 16, nowMs: NOW });
+        const send = (frame, input) => handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW });
+        const key = (frame, key) => send(frame, { type: 'key', key });
+        const start = draw(withState(initialMonitorState(), { help: {} }));
+        assert.ok(key(start, 'page-down').state.help.scroll > 0);
+        assert.ok(send(start, { type: 'mouse', button: 'wheel-down', x: 0, y: 3 }).state.help.scroll > 0);
+        const end = draw(key(start, 'end').state);
+        const pane = end.panes[0];
+        assert.equal(pane.offset, pane.contentLength - pane.height);
+        const click = send(end, { type: 'mouse', button: 'left', x: 5, y: 3 });
+        assert.equal(click.action, undefined);
+        assert.equal(click.state.help?.scroll, pane.offset);
+        assert.equal(draw(key(end, 'home').state).panes[0].offset, 0);
+      }
+    } finally { setLanguage(previous); }
+  }
 });
 test('short Chinese minutes keep the Home ask slab and card rows clean at 38 and 40 columns', (t) => {
   const f = fixture(t);

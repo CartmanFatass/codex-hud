@@ -3,7 +3,6 @@ import { withState } from './state-helpers.mjs';
 import { mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-import { readBackupSkills } from '../../dist/collectors/backup-skills.js';
 import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { defaultSettings } from '../../dist/settings.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
@@ -11,7 +10,6 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { stripAnsi } from '../../dist/render/colors.js';
-const backupSkills = readBackupSkills();
 export const NOW = Date.parse('2026-11-12T12:35:00Z');
 export const TREE = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) };
 export function pageFixture(home) {
@@ -149,7 +147,6 @@ export function pageFixture(home) {
     help: { ...initialMonitorState(), help: {} },
     changes: withState(initialMonitorState(), { subpage: { kind: 'changes', scroll: 0 } }),
   };
-  // Help lists three more keys (the job micro-actions) and still shows the skills catalog under them.
   const render = (page, width, lang = 'en', height = page === 'help' ? 50 : 40) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }),
       previous = setLanguage(lang);
@@ -176,8 +173,7 @@ export function pageFixture(home) {
         tree: TREE,
         workboard: board,
         worktrees,
-        backupSkills,
-        state: states[page],
+        state: page === 'help-end' ? { ...states.help, help: { scroll: Infinity } } : states[page],
         width,
         height,
         modelEnabled: true,
@@ -202,5 +198,7 @@ export function pageFrames(fixture) {
     }
   // Settings' help/gauge also reflow at the ordinary narrow panel width.
   for (const lang of ['en', 'zh']) frames[`settings-40-${lang}`] = plainFrame(fixture.render('settings', 40, lang));
+  // At narrow widths, the last Help viewport shows the end of Marks.
+  for (const lang of ['en', 'zh']) frames[`help-end-40-${lang}`] = plainFrame(fixture.render('help-end', 40, lang, 16));
   return frames;
 }

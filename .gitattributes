@@ -6,6 +6,7 @@ tests/fixtures/workboard-frames/*.txt whitespace=-blank-at-eol
 /tests export-ignore
 /docs/* export-ignore
 /docs/ARCHITECTURE.md -export-ignore
+/docs/optional-skills.md -export-ignore
 /docs/reference.md -export-ignore
 /docs/reference.zh.md -export-ignore
 /docs/spec.md -export-ignore
