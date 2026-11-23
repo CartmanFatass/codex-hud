@@ -80,11 +80,12 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_read',
-    "List active project jobs + caller's unread settled reports or collect job/jobs. Default digest: summary, changed paths, open questions, check results, latest progress. Full adds report text/path/diagnostics. Reading settled reports closes workers; inspect via hud_peek.",
+    "List active project jobs + caller's unread settled reports or collect job/jobs. Default digest: summary, changed paths, open questions, check results, latest progress. Full adds paged report text/path/diagnostics. Reading settled reports closes workers; inspect via hud_peek.",
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1, description: 'Input order; per-item errors.' },
       mode: { ...text, enum: ['digest', 'full'], default: 'digest' },
+      offset: { type: 'integer', minimum: 0, description: 'Single full read: byte next_offset from prior page.' },
       wait_ms: { type: 'integer', minimum: 0, maximum: 120000, description: 'For settlement/attention.' },
       full: { ...bool, description: 'Legacy mode: full alias.' },
       detail: { ...bool, description: 'Job only: launch diagnostics.' },

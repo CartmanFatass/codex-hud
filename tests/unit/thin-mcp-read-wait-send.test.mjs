@@ -301,8 +301,50 @@ test('hud_read collects bounded report digests or full text, with independent ba
   const full = await f.call('hud_read', { jobs: [stale.job, current.job], mode: 'full' });
   assert.equal(full.jobs[0].report, fs.readFileSync(revised, 'utf8'));
   assert.equal(full.jobs[0].report_path, revised);
-  assert.equal(full.jobs[1].report, report);
+  assert.equal(full.jobs[0].report_bytes, undefined);
+  assert.equal(full.jobs[0].next_offset, undefined);
+  assert.equal(full.jobs[0].report_truncated, undefined);
+  assert.ok(report.startsWith(full.jobs[1].report));
   assert.equal(full.jobs[1].report_path, path);
+  assert.equal(full.jobs[1].report_bytes, Buffer.byteLength(report));
+  assert.equal(full.jobs[1].next_offset, Buffer.byteLength(full.jobs[1].report));
+});
+
+test('hud_read full pages fit the JSON budget and reassemble the UTF-8 report', async (t) => {
+  const f = await fixture(t), { job, dir } = waitFixtureJob(f, 1, 'closed');
+  const path = join(dir, 'report.md'), limit = 24 * 1024;
+  // Split the first raw byte limit inside an emoji, then force JSON escaping to shrink later pages.
+  const lead = 'r'.repeat(limit - 1);
+  const report = lead + '🙂' + '\r\n"\\\u0000测试🙂'.repeat(4000);
+  const reportBytes = Buffer.byteLength(report);
+  writeFixtureFile(path, report);
+  let offset = 0, collected = '';
+  for (;;) {
+    const args = { job, mode: 'full', ...(offset ? { offset } : {}) };
+    const { result } = await f.rpc('tools/call', { name: 'hud_read', arguments: args });
+    assert.equal(result.isError, undefined);
+    const text = result.content[0].text;
+    const page = JSON.parse(text);
+    assert.ok(Buffer.byteLength(text) < 32 * 1024);
+    assert.ok(Buffer.byteLength(JSON.stringify(page.report)) - 2 <= limit);
+    assert.equal(page.report_path, path);
+    assert.equal(page.report_bytes, reportBytes);
+    if (offset === 0) assert.equal(page.report, lead);
+    collected += page.report;
+    if (page.next_offset === undefined) {
+      assert.equal(page.report_truncated, undefined);
+      break;
+    }
+    assert.equal(page.report_truncated, true);
+    assert.ok(page.next_offset > offset && page.next_offset < reportBytes);
+    assert.equal(page.next_offset, Buffer.byteLength(collected));
+    offset = page.next_offset;
+  }
+  assert.equal(collected, report);
+  const eof = await f.call('hud_read', { job, full: true, offset: reportBytes });
+  assert.equal(eof.report, '');
+  assert.equal(eof.report_bytes, reportBytes);
+  assert.equal(eof.next_offset, undefined);
 });
 
 test('hud_read compact keeps a busy project snapshot under 2 KiB without listing child jobs', async (t) => {
@@ -358,12 +400,18 @@ test('hud_read starts the watcher and settles a dead stop-requested job without 
   assert.equal(cliState(dir).exit_reason, 'stop requested');
 });
 
-test('hud_read rejects invalid views and views on single-job reads', async (t) => {
-  const f = await fixture(t);
+test('hud_read rejects invalid views and paging arguments', async (t) => {
+  const f = await fixture(t), job = 'j0000000000000001';
+  const offsetError = 'invalid_arguments: offset requires a nonnegative integer and one full job read';
   for (const [args, error] of [
     [{ view: 'history' }, 'invalid_arguments: view'],
     [{ view: null }, 'invalid_arguments: view'],
-    [{ view: 'recent', job: 'j0000000000000001' }, 'invalid_arguments: view is list-only'],
+    [{ view: 'recent', job }, 'invalid_arguments: view is list-only'],
+    [{ job, offset: 1 }, offsetError],
+    [{ jobs: [job], mode: 'full', offset: 1 }, offsetError],
+    [{ job, mode: 'full', offset: -1 }, offsetError],
+    [{ job, mode: 'full', offset: 1.5 }, offsetError],
+    [{ job, mode: 'full', offset: '1' }, offsetError],
   ]) {
     const response = await f.rpc('tools/call', { name: 'hud_read', arguments: args });
     assert.equal(response.result.isError, true);
@@ -710,8 +758,10 @@ syncBuiltinESMExports();`
   assert.equal(question.digest.report_bytes, 65537);
   assert.ok(Buffer.byteLength(JSON.stringify(question.digest)) < 1024);
   const full = await f.call('hud_read', { job, mode: 'full' });
-  assert.equal(full.report.length, 65536);
+  assert.equal(full.report.length, 24 * 1024);
   assert.equal(full.report_truncated, true);
+  assert.equal(full.report_bytes, 65537);
+  assert.equal(full.next_offset, full.report.length);
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at);
   const newQuestion = read(3000);
   setTimeout(() => writeFixtureFile(join(dir, 'qa', 'q2.md'), 'New question.'), 100);

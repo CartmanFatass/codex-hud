@@ -209,8 +209,10 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 `hud_read({ job })` 返回任务状态和未读报告的 `digest`。`result` 优先采用已结算任务与报告签名匹配的工作者摘要，否则与任务通知一样，跳过标题和空行，取报告前 2 KiB 中的首行正文；若没有正文则显示 `Report ready`。
 摘要给出 `hud_read` 调用提示、报告字节数、托管工作树的改动文件数；仅当报告前 64 KiB 明确写出 `Verdict:`、`Blockers:` 时才附上相应内容。
 默认响应保留待答问题、已完成检查的单行结果及最新里程碑。工作树列出最多 20 个改动路径，有余项时显示 `+N more`，并提示重叠改动。
-已读报告不再打开正文，而是返回 `report_unchanged: true`。`mode: "full"`（或 `full: true`）返回报告正文（最多 64 KiB）和 `report_path`，即使已读也会返回，同时保留原有的元数据、进度、检查和工作树诊断。
-用 `jobs: [id, …]` 代替 `job` 可按输入顺序收取 `jobs` 结果数组，所有任务使用同一模式；找不到编号只影响对应条目。
+已读报告不再打开正文，而是返回 `report_unchanged: true`。`mode: "full"`（或 `full: true`）即使已读也会返回报告正文和 `report_path`，同时保留原有的元数据、进度、检查和工作树诊断。
+报告正文每页经 JSON 转义后最多 24 KiB。还有后续内容时，响应含 `report_bytes`（文件总字节数）、`report_truncated: true` 和 `next_offset`。
+将该字节偏移量传给 `hud_read({ job, mode: "full", offset: next_offset })`，依次拼接每页的 `report`，直到不再返回 `next_offset`。
+用 `jobs: [id, …]` 代替 `job` 可按输入顺序收取 `jobs` 结果数组，所有任务使用同一模式；找不到编号只影响对应条目。后续页需按任务分别读取。
 `detail: true` 可在读取时附带启动诊断；只想检查时用 `hud_peek`。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
 返回报告摘要或正文时都会记录 `read_at`，不代表验收。当前回合有效声明报告且回合结束后，即使报告未读也关闭工作进程和窗格。
 CLI 声明后 120 秒仍未结束时，交由主会话处理，不强制中断。未回答的问题、未结束或未收取结果的 Sonic 子任务会阻止关闭。

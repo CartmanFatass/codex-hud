@@ -49,6 +49,7 @@ function squeeze(v: unknown, key = ''): unknown {
 /**
  * One HUD tool result (the JSON the MCP server sent) as compact text, or undefined when it is not one to touch.
  * `changes` lines this turn already delivered (a Monitor row said them first) are left out.
+ * Keep report_path, report_bytes and next_offset so the model can continue a paged read, even from a batch row.
  */
 export function compactResult(raw: string, turn: Turn): string | undefined {
   let value: unknown;

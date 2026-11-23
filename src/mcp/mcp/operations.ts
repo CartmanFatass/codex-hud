@@ -16,7 +16,7 @@ import { ensureQueueWatcher, paneInfo, watching, notify } from '../../roles/noti
 import { piSwitches } from '../../roles/roster.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { reapWorkerTree } from '../../roles/worker-tree.js';
-import { writePrivateFile } from '../../utils/atomic-fs.js';
+import { readFileBounded, writePrivateFile } from '../../utils/atomic-fs.js';
 import { waitUntilFs, type WatchTarget } from '../../utils/fs-wait.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { required, jobCwd, type Args } from '../dispatch/context.js';
@@ -283,16 +283,57 @@ function reportDigest(report: NonNullable<ReturnType<typeof slice>>, job: string
   const budget = 1000 - Buffer.byteLength(JSON.stringify({ ...facts, result: '…' }));
   return { ...facts, result: digestLine(summary ?? fallbackResultLine(report.text), budget) };
 }
+const REPORT_PAGE_BYTES = 24 * 1024;
+
+function fullRead({ mode, full }: Args) {
+  return mode === 'full' || (mode === undefined && full === true);
+}
+
+function readReportPage(path: string, offset: number) {
+  try {
+    // One lookahead byte tells us if the page edge splits a UTF-8 character or reaches EOF.
+    const { bytes, stat } = readFileBounded(path, REPORT_PAGE_BYTES + 1, { followSymlinks: true, offset });
+    const boundary = (end: number) => {
+      const min = Math.max(0, end - 3);
+      while (end > min && (bytes[end] & 0xc0) === 0x80) end--;
+      return end;
+    };
+    let high = Math.min(bytes.length, REPORT_PAGE_BYTES);
+    let end = boundary(high);
+    let text = bytes.toString('utf8', 0, end);
+    // Newlines, quotes and other escapes must also fit in the client's JSON tool result.
+    const fits = (value: string) => Buffer.byteLength(JSON.stringify(value)) - 2 <= REPORT_PAGE_BYTES;
+    if (!fits(text)) {
+      let low = 0;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (fits(bytes.toString('utf8', 0, boundary(mid)))) low = mid;
+        else high = mid - 1;
+      }
+      end = boundary(low);
+      text = bytes.toString('utf8', 0, end);
+    }
+    const truncated = end < bytes.length;
+    return { text, bytes: stat.size, truncated, next_offset: truncated ? offset + end : undefined };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 function observation(
   job: Job,
   full: boolean,
   detail: boolean,
   git: GitSummary | undefined,
+  offset: number,
   preRead?: ReturnType<typeof readRow>
 ) {
   const dir = directory(job.job);
   const { row, status, job: currentJob } = preRead ?? readRow(job, !isWorker);
-  const report = row.report_unread || full ? slice(join(dir, jobFiles.report), 65536) : null;
+  const reportPath = join(dir, jobFiles.report);
+  const page = full ? readReportPage(reportPath, offset) : null;
+  const report = full ? page : row.report_unread ? slice(reportPath, 65536) : null;
   const reportMeta = jobRowReportMeta(row, dir);
   const questions = (preRead ? row.question_ids.map((id) => `${id}.md`) : openQuestions(dir)).map((name) => ({
     id: name.slice(0, -3),
@@ -329,7 +370,11 @@ function observation(
       ...(row.report_present && !report ? { report_unchanged: true } : report && !full ? {
         digest: reportDigest(report, currentJob.job, row.state ?? row.display_state, reportMeta?.summary, git),
       } : {
-        ...(full && report ? { report_path: join(dir, jobFiles.report) } : {}),
+        ...(page ? {
+          report_path: reportPath,
+          ...(page.truncated || offset > 0 ? { report_bytes: page.bytes } : {}),
+          ...(page.truncated ? { next_offset: page.next_offset } : {}),
+        } : {}),
         ...(detail || report ? { report: report?.text ?? null } : {}),
         ...(detail || report?.truncated ? { report_truncated: report?.truncated ?? false } : {}),
       }),
@@ -518,6 +563,9 @@ export async function call(name: string, args: Args, scan: JobScan): Promise<unk
     }
     if (args.mode !== undefined && args.mode !== 'digest' && args.mode !== 'full') throw new Error('invalid_arguments: mode');
     if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
+    if (args.offset !== undefined && (typeof args.offset !== 'number' || !Number.isSafeInteger(args.offset) || args.offset < 0 ||
+        !fullRead(args) || typeof args.job !== 'string' || args.jobs !== undefined || isFlowId(args.job)))
+      throw new Error('invalid_arguments: offset requires a nonnegative integer and one full job read');
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
     ensureJobWatcher(hudHome, () => scan.watcherNeeded(Number(args.wait_ms) > 0));
@@ -549,7 +597,8 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
   if (name === 'hud_peek') return job.job === id ? peekJob(job, args, scan) : { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   if (name === 'hud_read') {
-    const full = args.mode === 'full' || (args.mode === undefined && args.full === true);
+    const full = fullRead(args);
+    const offset = (args.offset as number | undefined) ?? 0;
     const waitMs = Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
     let initial: JobRow | undefined;
     const isReady = (row: JobRow) =>
@@ -585,7 +634,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
           if (!timedOut && !isReady(polled.row)) return { done: false, minDelayMs: 50 };
         }
         if (polled.row.state === 'queued') polled.row.queue_position = scan.position(job.job);
-        const { value: result, row: currentRow } = observation(polled.job, full, detail, summary, polled);
+        const { value: result, row: currentRow } = observation(polled.job, full, detail, summary, offset, polled);
         const collected = ('report' in result || 'digest' in result) && result.report_exists;
         const observed = result.blocked || failedAttempt(currentRow);
         if (!isWorker && (collected || observed)) {

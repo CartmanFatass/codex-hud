@@ -46,6 +46,18 @@ test('each HUD result shrinks and keeps what the model acts on', async ($, on) =
   console.log(figures.join('\n'));
 });
 
+test('report paging hints survive compaction on single and batch reads', async ($, on) => {
+  const report_path = `/hud-home/jobs/${ids.a2}/report.md`;
+  const page = { job: ids.a2, report: 'Synthetic first page.', report_path, report_bytes: 57000,
+    report_truncated: true, next_offset: 24576 };
+  let raw = JSON.stringify(page);
+  engine(on, () => raw);
+  const single = await hud($);
+  for (const [key, value] of Object.entries(page)) expect(single).toContain(`${key}: ${value}`);
+  raw = JSON.stringify({ jobs: [page] });
+  expect(await hud($)).toContain(JSON.stringify(page));
+});
+
 test('a long changed_files list collapses to a count and the first few; a short one stays', async ($, on) => {
   let raw = '';
   engine(on, () => raw);

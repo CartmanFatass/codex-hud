@@ -316,9 +316,12 @@ when current and settled. Otherwise it uses the same fallback as the task notice
 byte size, Git changed-file count for a managed worktree, and explicit `Verdict:` and `Blockers:` lines when present in the first 64 KiB.
 The response keeps open questions, one line per completed check and the latest milestone. For worktrees it lists up to
 20 changed paths, then `+N more`, and warns about overlaps. Already-read reports return `report_unchanged: true` without
-reopening the body. `mode: "full"` (or `full: true`) returns the report even if already read (up to 64 KiB), its
-`report_path`, and the usual metadata, progress, checks and worktree diagnostics. Use `jobs: [id, …]` instead of `job` to get a `jobs` array of
-results in input order; all use the same mode, and an unknown ID returns an error only for that entry.
+reopening the body. `mode: "full"` (or `full: true`) returns the report even if already read, its `report_path`, and
+the usual metadata, progress, checks and worktree diagnostics. Report text is capped at 24 KiB per page after JSON
+escaping. If more remains, the result includes `report_bytes` (total file size), `report_truncated: true` and
+`next_offset`. Pass that byte offset to `hud_read({ job, mode: "full", offset: next_offset })` and append each
+`report` until `next_offset` is absent. Use `jobs: [id, …]` instead of `job` to get results in input order;
+all use the same mode, and an unknown ID returns an error only for that entry. Continue each paged report separately.
 `detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
 use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
 question or timeout. Collecting either the digest or the report body stamps `read_at` (including during work and idle grace), not
