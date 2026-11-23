@@ -44,8 +44,7 @@ export function finishChain(state: MonitorState): MonitorState {
   if (chain?.kind !== 'control-chain') return state;
   const roles = state.control.roles, nav = roles.nav;
   return { ...state, overlay: undefined, control: { ...state.control, roles: { ...roles, nav: { ...nav,
-    cursor: controlRoleItem(chain.role.role), revealed: undefined,
-    split: { ...nav.split, focus: 'list', listCursor: undefined, previewCursor: undefined } } } } };
+    cursor: controlRoleItem(chain.role.role), revealed: undefined } } } };
 }
 
 function fill(place: DraftPlace, field: 'model' | 'kind' | 'thinking' | 'effort', value?: string): DraftPlace {
@@ -140,7 +139,7 @@ export function chainInputKey(state: MonitorState, chain: ChainInput, input: Wor
   const run = draft?.run ?? role.editor?.places ?? [];
   const key = input.type === 'key' ? input.key : '', typed = input.type === 'key' ? input.text : undefined;
   const models = modelsOf(ctx);
-  const camera = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
+  const camera = ctx.frame?.panes.find((p) => p.id === 'agents');
   const clicked = input.type === 'mouse' && input.button === 'left';
   const hit = clicked ? ctx.frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width) : undefined;
   const item = clicked && camera ? monitorRowAt(camera, input.x, input.y)?.item : undefined;
@@ -190,7 +189,7 @@ export function chainInputKey(state: MonitorState, chain: ChainInput, input: Wor
   if (key === 'help' && !choice)
     return draft ? { state: { ...state, help: {} }, close: false } : route(finishChain(state), input, ctx);
   const leave = (!sheet || (!choice && !cancelKey)) && (
-    ['escape', 'close', 'tab', 'shift-tab', 'left', 'right', 'project-prev', 'project-next', 'settings', 'changes'].includes(key) ||
+    ['escape', 'close', 'tab', 'shift-tab', 'left', 'right', 'project-prev', 'project-next', 'settings'].includes(key) ||
     hit?.kind.startsWith('board-') || hit?.kind === 'control-harnesses' || (!sheet && hit?.kind === 'chain-back'));
   if (leave) {
     const destination = hit?.kind === 'chain-back' ? { type: 'key' as const, key: 'escape' } : input;

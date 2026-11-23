@@ -1,24 +1,20 @@
 import * as path from 'node:path';
-import { ActivityRings } from '../collectors/activity-ring.js';
 import { DiffStatCollector } from '../collectors/diff-stat.js';
 import { readHeadlessOutput } from '../collectors/headless-output.js';
 import type { ThinJobScope } from '../collectors/thin-jobs.js';
 import { jobLaneSnapshot } from '../collectors/job-snapshot.js';
-import type { OwnerWorker, WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
+import type { WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
 import { buildWorkboard } from '../collectors/workboard.js';
 import type { SubagentTree } from '../types.js';
 import { jobPanelObservation } from '../utils/collection-observation.js';
-import { WorkerCounts } from './worker-counts.js';
+import type { PaneLoad } from '../render/home-view.js';
 
-/** Collect thin jobs and project them alongside the native tree. */
+/** Collect the retained jobs of the calling pane, with extra evidence only for the inspected job. */
 export class PanelJobPipeline {
   private boardCache?: { tree: SubagentTree; board: WorkboardSnapshot };
   private readonly snapshot;
   private thinJobs: WorkLane[] = [];
-  private rings = new ActivityRings();
   private jobDiffs = new DiffStatCollector();
-  /** Workers per role since this pipeline (the panel process) started, for Home's top line. */
-  readonly workerCounts = new WorkerCounts(Date.now());
   private thinObservation = { complete: false };
   private generation = 0;
   private closed = false;
@@ -26,8 +22,7 @@ export class PanelJobPipeline {
   constructor(
     readonly home: string,
     thinScope: ThinJobScope,
-    readonly openedAt = Date.now()
-  ) { this.snapshot = jobLaneSnapshot(home, thinScope, { openedAt }); }
+  ) { this.snapshot = jobLaneSnapshot(home, thinScope); }
   dispose(): void {
     this.closed = true;
     this.snapshot.close();
@@ -35,25 +30,26 @@ export class PanelJobPipeline {
   }
   workboard(tree: SubagentTree): WorkboardSnapshot {
     if (this.boardCache?.tree === tree) return this.boardCache.board;
-    let board = buildWorkboard(tree, this.thinJobs);
-    // Each running worker's activity ring, fed once per recomposition; a worker is one object in the lanes and the list.
-    const activity = this.rings.observe(board.workers, Date.now());
-    if (activity.size) {
-      const add = new Map(board.workers.filter((w) => activity.has(w.id)).map((w) => [w, { ...w, activity: activity.get(w.id) }]));
-      const swap = (w: OwnerWorker) => add.get(w) ?? w;
-      board = { ...board, workers: board.workers.map(swap), lanes: board.lanes.map((l) => ({ ...l, workers: l.workers.map(swap) })) };
-    }
-    this.workerCounts.observe(board.workers);
+    const board = buildWorkboard(tree, this.thinJobs);
     this.boardCache = { tree, board };
     return board;
+  }
+  load(): PaneLoad | undefined {
+    if (!this.thinObservation.complete) return;
+    let running = 0, queued = 0;
+    for (const lane of this.thinJobs) for (const worker of lane.workers) {
+      if (worker.state === 'queued') queued++;
+      else if (worker.settledAt === null) running++;
+    }
+    return { running, queued };
   }
   observation(tree: SubagentTree, nativeQuiet: boolean) {
     return jobPanelObservation(this.workboard(tree), this.thinObservation.complete, nativeQuiet);
   }
-  async refresh(inspecting?: string, stallMinutes?: number): Promise<boolean> {
+  async refresh(inspecting?: string): Promise<boolean> {
     if (this.closed) return false;
     const generation = ++this.generation;
-    const snapshot = await this.snapshot.read(stallMinutes);
+    const snapshot = await this.snapshot.read();
     if (!snapshot || this.closed || generation !== this.generation) return false;
     let lanes = snapshot.lanes;
     const id = /^thin-job:(j[0-9a-f]{16})$/.exec(inspecting ?? '')?.[1];

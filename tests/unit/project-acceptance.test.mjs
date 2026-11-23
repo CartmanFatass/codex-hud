@@ -30,13 +30,14 @@ test('board milestone grouping excludes other states and keeps rows without a mi
   assert.equal(groups[0].oldest, 200);
 });
 
-test('the old Detail setting is ignored without rewriting the preference file', (t) => {
+test('old Detail and Split settings are ignored without rewriting the preference file', (t) => {
   const path = join(temp(t), 'hud-settings.json'), saved = JSON.stringify({ acceptance: 'slice', panelLayout: 'split' });
   fs.writeFileSync(path, saved);
   const settings = loadSettings({ ...process.env, HUD_SETTINGS_PATH: path });
-  assert.equal(settings.panelLayout, 'split');
-  assert.ok(!Object.hasOwn(settings, 'acceptance'));
-  assert.ok(!SETTING_ROWS.some(row => row.key === 'acceptance'));
+  for (const key of ['panelLayout', 'acceptance']) {
+    assert.equal(Object.hasOwn(settings, key), false);
+    assert.ok(!SETTING_ROWS.some(row => row.key === key));
+  }
   assert.equal(fs.readFileSync(path, 'utf8'), saved);
 });
 
@@ -73,29 +74,29 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     while (lines.length > 2 && !lines.at(-2)) lines.splice(-2, 1);
     frames.push(`### ${label}, ${lang.toUpperCase()}, ${width} columns\n\n\x60\x60\x60text\n${lines.join('\n')}\n\x60\x60\x60\n`);
   };
-  for (const lang of ['en', 'zh']) for (const width of [40, 120]) for (const panelLayout of ['classic', 'split']) {
+  for (const lang of ['en', 'zh']) for (const width of [40, 120]) {
     const text = (frame) => plain(frame).join('\n');
-    const render = (page, cursor, extra = {}) => draw(page, withState({ project: { nav: { cursor } }, prefs: { panelLayout } }, extra), width, lang);
+    const render = (page, cursor, extra = {}) => draw(page, withState({ project: { nav: { cursor } } }, extra), width, lang);
     const tickets = render('tickets', feature);
     assert.match(text(tickets), lang === 'en' ? /export\s+1\/3\s+needs-info/ : /export\s+1\/3\s+待补充/);
     assert.match(text(tickets), /search\s+2\/2/);
-    const ticketsDetail = panelLayout === 'classic' ? draw('tickets', press(tickets, 'enter').state, width, lang) : tickets;
+    const ticketsDetail = draw('tickets', press(tickets, 'enter').state, width, lang);
     assert.match(text(ticketsDetail), /Download CSV/);
     assert.match(text(ticketsDetail), /Save as text/);
     assert.doesNotMatch(text(ticketsDetail), /Find phrases/);
     const filteredTickets = render('tickets', feature, { project: { filter: { query: 'download csv', editing: false } } });
     assert.match(text(filteredTickets), lang === 'en' ? /1 match/ : /1 个匹配/);
     assert.doesNotMatch(text(filteredTickets), /search/);
-    record(`Tickets — ${panelLayout}`, tickets, width, lang);
+    record('Tickets', tickets, width, lang);
 
     const progress = render('progress', milestone);
     assert.match(text(progress), /◆ export\s+◆ 1  ◇ 1  ✓ 1/);
     assert.match(text(progress), /✓ search\s+✓ 1  – 1/);
-    const progressDetail = panelLayout === 'classic' ? draw('progress', press(progress, 'enter').state, width, lang) : progress;
+    const progressDetail = draw('progress', press(progress, 'enter').state, width, lang);
     for (const id of ['EXPORT-01', 'EXPORT-02', 'EXPORT-03']) assert.match(text(progressDetail), new RegExp(id));
     for (const key of ['space', 'y', 'n', 'm', 't']) assert.equal(press(progress, '', key).action, undefined);
     const filtered = render('progress', milestone, { project: { filter: { query: 'choose columns', editing: false } } });
-    const filteredDetail = panelLayout === 'classic' ? draw('progress', press(filtered, 'enter').state, width, lang) : filtered;
+    const filteredDetail = draw('progress', press(filtered, 'enter').state, width, lang);
     assert.match(text(filteredDetail), /Download CSV/);
     const hub = render(undefined);
     assert.doesNotMatch(text(hub), /Accept all|全部验收/);
@@ -103,7 +104,7 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     const accept = render('tickets', 'project:accept-all');
     assert.match(text(accept), lang === 'en' ? /Accept all\s+1 to try/ : /全部验收\s+1 待试用/);
     assert.deepEqual(press(accept, 'enter').action, { type: 'accept-all' });
-    record(`Progress — ${panelLayout}`, progress, width, lang);
+    record('Progress', progress, width, lang);
   }
   if (process.env.OWNER_VIEW_TASK_FRAMES) fs.writeFileSync(process.env.OWNER_VIEW_TASK_FRAMES, frames.join('\n'));
 });

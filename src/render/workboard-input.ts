@@ -1,17 +1,12 @@
 /** Main-tab routing. It mutates nothing: the owner's micro-actions on a job leave as actions (`job-actions.ts`) for the panel to run. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
-import { closeSubpage, copyControlTab, controlRoleItem, controlRoleOf, harnessFold, homeAnchor, homeCursor, homeTarget,
-  openSubpage, switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
-import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
+import { backFromSubpage, copyControlTab, controlRoleItem, controlRoleOf, harnessFold, jobsPage,
+  switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
-import { projectWorkCard } from '../collectors/work-card.js';
-import { cardExpanded } from './work-card.js';
 import { ACCEPT_ALL, projectPageOf, projectListOpen } from './project-view.js';
 import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
-import { splitHomeInput, splitProjectInput } from './split-input.js';
-import { join } from 'node:path';
 import { openJobAction } from './job-actions.js';
 import { controlShown, mainTabOf, mainTabs, type MainTab } from './main-tabs.js';
 import { expInput } from './exp-view.js';
@@ -25,7 +20,7 @@ export function harnessAddInput(state: MonitorState, add: Extract<OverlayState, 
   const out = (value: Omit<typeof add, 'kind'> | undefined, action?: MonitorOutcome['action']): MonitorOutcome => ({
     state: { ...state, overlay: value && { ...value, kind: 'control-harness-add' } }, close: false, action,
   });
-  const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
+  const pane = ctx.frame?.panes.find((p) => p.id === 'agents');
   const items = (pane?.rows ?? []).flatMap((r) => restoreId(r.item) ? [r.item!] : []);
   const at = Math.max(0, items.indexOf(add.pick ?? ''));
   const select = (i: number) => out({ ...add, pick: items[Math.max(0, Math.min(items.length - 1, i))] });
@@ -56,8 +51,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   // Only the routed tab's navigation is edited. Transitions replace other branches as needed.
   let next: MonitorState = { ...state };
   switch (state.activeTab) {
-    case 'home': next.home = { ...state.home, split: { ...state.home.split } }; break;
-    case 'project': next.project = { ...state.project, nav: { ...state.project.nav, split: { ...state.project.nav.split } } }; break;
+    case 'home': break;
+    case 'project': next.project = { ...state.project, nav: { ...state.project.nav } }; break;
     case 'control': next.control = copyControlTab(state.control); break;
     case 'exp': break;
   }
@@ -66,8 +61,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
   const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
-  const main = !next.subpage, classic = next.prefs.panelLayout !== 'split';
-  const inspector = next.subpage?.kind === 'inspector' ? next.subpage : undefined;
+  const main = !next.subpage;
   const goTab = (tab: MainTab = 'home') => { next = transitionTab(next, tab); };
   const goProject = (page?: ProjectSubPage, cursor?: string) => {
     next = transitionProjectView(next, page ? { kind: page } : { kind: 'hub' }, { cursor });
@@ -104,50 +98,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     else goProject();
     return result();
   }
-  if (back || (key === 'escape' && next.subpage?.kind === 'changes')) {
-    goTab();
+  if (next.subpage && (back || key === 'escape')) {
+    next = backFromSubpage(next);
     return result();
-  }
-  // `g`, `r` and `X` on a HUD job, on Home (either layout) and in the Inspector; before the keys that move the cursor take `g` for Home.
-  const job = (main && next.activeTab === 'home') || inspector ? openJobAction(next, input, key, boardFrame.snapshot, result) : undefined;
-  if (job) return job;
-  function toggleOriginal(id: string) {
-    const expanded = new Set(next.home.expanded);
-    if (!expanded.delete(id)) expanded.add(id);
-    next.home.expanded = expanded;
-  }
-  if (inspector) {
-    const rows = boardFrame.rows.filter((r, i, all) => r.files?.length ||
-      (r.item?.startsWith('original:') && r.item !== all[i - 1]?.item)),
-      at = rows.findIndex((r) => r.item === inspector.cursor);
-    if (input.type === 'mouse' && input.button === 'left') {
-      const pane = frame?.panes.find((p) => p.id === 'details'),
-        row = pane && monitorRowAt(pane, input.x, input.y);
-      if (row?.item?.startsWith('original:')) {
-        next.subpage = { ...inspector, cursor: row.item };
-        toggleOriginal(row.item);
-        return result();
-      }
-      if (row?.files?.length) {
-        next.subpage = { ...inspector, cursor: row.item };
-        return result({ type: 'open-files', files: row.files });
-      }
-    }
-    if (rows[at]?.item?.startsWith('original:') && ['enter', 'activate', 'open-session'].includes(key)) {
-      toggleOriginal(rows[at].item!);
-      return result();
-    }
-    if (['enter', 'activate', 'open-session'].includes(key))
-      return result(rows[at] ? { type: 'open-files', files: rows[at].files! } : undefined);
-    if (['up', 'down', 'home', 'end', 'page-up', 'page-down'].includes(key)) {
-      const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
-      const cursor =
-        rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]
-          ?.item;
-      next.subpage = { ...inspector, cursor };
-      return result();
-    }
-    if (['left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
   }
   const tab = clickKind(input, ctx);
   const control = controlShown(next);
@@ -168,10 +121,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (['help', 'settings', 'brief-toggle'].includes(key)) return null;
     if (tab === 'brief') return result({ type: 'brief-toggle' });
     return expInput(next, input, ctx) ?? result();
-  }
-  if (key === 'changes') {
-    next = openSubpage(next, { kind: 'changes', scroll: next.subpage?.kind === 'changes' ? next.subpage.scroll : next.lastChangesScroll });
-    return result();
   }
   if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
   if (control && (key === 'project-prev' || key === 'project-next')) {
@@ -202,18 +151,16 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       const openChain = (role: RoleFact, at = 0) => {
         if (role.optionalEnabled === false) return result();
         nav.cursor = controlRoleItem(role.role);
-        nav.split.focus = 'list';
         next.overlay = { kind: 'control-chain', role, at, mode: { kind: 'places' } };
         return result();
       };
       if (key !== 'escape') next.control.notice = undefined;
       const rowFact = (item?: string) => rows.find((r) => r.item === controlRoleItem(controlRoleOf(item) ?? ''))?.roleFact;
       if (input.type === 'mouse' && input.button === 'left') {
-        const pane = frame?.panes.find((p) => p.id === 'preview'), list = frame?.panes.find((p) => p.id === 'agents');
-        const place = pane && monitorRowAt(pane, input.x, input.y)?.item;
+        const list = frame?.panes.find((p) => p.id === 'agents');
         const listItem = list && monitorRowAt(list, input.x, input.y)?.item;
-        const index = /:(\d+)$/.exec(place ?? '')?.[1];
-        const role = rowFact(place ?? listItem);
+        const index = /:(\d+)$/.exec(listItem ?? '')?.[1];
+        const role = rowFact(listItem);
         if (role && index !== undefined) {
           if (tab !== 'control-model') return openChain(role, Number(index));
           next = openQuickModel(next, role, Number(index), ctx);
@@ -243,7 +190,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
             step: op.endsWith('prev') ? -1 : 1, revision: fact.revision });
         if ((op === 'preset-list' && fact.presets?.length) || op === 'preset-copy' || op === 'preset-empty' || ((op === 'preset-rename' || op === 'preset-delete') && fact.preset)) {
           nav.cursor = controlRoleItem(fact.role);
-          nav.split.focus = 'list';
           next.overlay = { kind: 'control-preset', sheet: op === 'preset-list' ? { mode: 'list', role: fact, text: '', at: 0 }
             : op === 'preset-delete' ? { mode: 'delete', role: fact }
               : { mode: op === 'preset-copy' ? 'copy' : op === 'preset-empty' ? 'empty' : 'rename', role: fact, text: '' } };
@@ -281,7 +227,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         next.control.subTab = 'roles';
         const roles = next.control.roles.nav;
         next.control.roles = { ...next.control.roles, nav: { ...roles, cursor: controlRoleItem(role), scroll: 0,
-          revealed: undefined, split: { ...roles.split, focus: 'list', listCursor: undefined, previewCursor: undefined } } };
+          revealed: undefined } };
       } else if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
@@ -290,11 +236,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       else if (row?.item?.startsWith('project:fold:')) toggleFold(row.item.slice(13));
       else if (row?.files) return { type: 'open-files' as const, files: row.files };
     };
-    // The Split layout has its own list and preview; what it does not do is Classic's, below.
-    if (!classic && frame?.panes.some((p) => p.id === 'preview')) {
-      const out = splitProjectInput(next, view?.nav, input, key, ctx, result, () => result(activate()));
-      if (out) return out;
-    }
     if (input.type === 'mouse') {
       const pane = frame?.panes.find((p) => p.id === 'agents');
       if (input.button !== 'left') {
@@ -334,199 +275,72 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return ['help', 'settings', 'escape'].includes(key) ? null : result();
   }
 
-  // Home's cards, list stops, task folds and mouse actions (including Inspector scrolling).
-  const anchor = () => homeAnchor(next.home);
-  const selected = () => homeTarget(next.home);
-  const setAnchor = (item?: string) => { next.home.cursor = homeCursor(selected(), item); };
-  const inspect = () => {
-    const target = selected();
-    if (!target || target.kind === 'decision' || anchor()) return;
-    const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
-    const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
-    next = openSubpage(next, { kind: 'inspector', target, scroll: 0, selectedNodeId: worker?.nodeId });
-  };
-  if ((key === 'inspect' || key === 'details' || key === 'detail-toggle' || key === 'space') && main) {
-    inspect();
+  if (tab === 'settings') return result({ type: 'settings' });
+  if (tab === 'help') { next.help = {}; return result(); }
+  const sub = next.subpage;
+  const enter = key === 'enter' || key === 'activate';
+  if (!sub && next.activeTab === 'home' && (enter || key === 'jobs' || tab === 'board-jobs')) {
+    next.subpage = jobsPage(next);
     return result();
   }
-  if (key === 'escape' && inspector) {
-    next = closeSubpage(next);
+  if ((sub?.kind === 'jobs' || sub?.kind === 'inspector') && (key === 'native-inspector' || tab === 'board-native')) {
+    next.subpage = { kind: 'native-inspector', scroll: 0, ...(sub.kind === 'inspector' && { back: sub }) };
     return result();
   }
-  if (!main && !inspector) return null;
-  const setTarget = (target: WorkTarget) => { next.home.cursor = homeCursor(target); };
-  const toggle = (item: string, open?: boolean) => {
-    const set = new Set(next.home.expanded);
-    const worker = boardFrame.snapshot.workers.find(
-      (w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id }) === item
-    );
-    const expanded = worker && !worker.homeNeedsHuman ? cardExpanded(next, item) : set.has(item);
-    if (open === false || (open === undefined && expanded)) set.delete(item);
-    else set.add(item);
-    next.home.expanded = set;
-    if (worker) next.home.toggled = new Set([...(next.home.toggled ?? []), item]);
-  };
-  const jobFiles = (): MonitorOutcome['action'] => {
-    const target = selected();
-    if (!target) return;
-    const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
-    const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
-    if (worker?.nativeDepth !== undefined) {
-      const files = worker.files?.[0]?.paths;
-      return files?.length ? { type: 'open-files', files } : undefined;
-    }
-    if (!target.laneId.startsWith('thin-job:') || lane?.identity.kind !== 'invocation') return;
-    // A job card with no question open opens its report, else its brief.
-    const evidence = worker?.work?.requestInfo?.evidence ?? worker?.evidence.at(-1);
-    if (!evidence || !/^j[0-9a-f]{16}$/.test(evidence.sourceId)) return;
-    const file = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
-    if (/^(report|brief)\.md$/.test(evidence.relativePath)) return { type: 'open-files', files: [file] };
-    if (/^qa\/q\d+\.md$/.test(evidence.relativePath))
-      return {
-        type: 'open-files',
-        files: worker?.work?.requestInfo?.evidence === evidence ? [file] : [file, file.replace(/\.md$/, '.answer.md')],
-      };
-  };
-  const openProgress = (item: string) => {
-    const id = item.slice('home-progress:'.length);
-    goTab('project');
-    // Home's block is the panel's own project's.
-    useProject(undefined);
-    if (id === 'waiting') {
-      // The hub starts on its first selectable Needs-you entry.
-      next = transitionProjectView(next, { kind: 'hub' });
-      return;
-    }
-    if (/^wait:\d+$/.test(id)) return readWait(Number(id.slice(5)));
-    if (id === 'progress' || id === 'latest' || id.startsWith('latest:')) return goProject('progress');
-    // A ticket row opens the Tickets page where it was left: its lanes cross features, so no feature row is there to rest on.
-    goProject('tickets');
-  };
-  // Cards expand in place; the compact progress block opens its Project destination.
-  const activate = (target = selected()) => {
-    if (anchor()?.startsWith('home-progress:')) return openProgress(anchor()!);
-    if (anchor()) {
-      toggle(anchor()!);
-      return;
-    }
-    if (!target) return;
-    if (target.kind !== 'lane') return toggle(targetKey(target));
-    const folded = new Set(next.home.foldedLanes);
-    if (!folded.delete(target.laneId)) folded.add(target.laneId);
-    next.home.foldedLanes = folded;
-  };
-  if (next.prefs.panelLayout === 'split' && main && frame?.panes.some((p) => p.id === 'preview')) {
-    const out = splitHomeInput(next, input, key, ctx, result, { toggle, openProgress });
-    if (out) return out;
+  if (sub?.kind === 'inspector') {
+    const job = openJobAction(next, input, key, boardFrame.snapshot, result);
+    if (job) return job;
   }
+  const pane = frame?.panes[0];
+  if (!pane) return null;
+  const nav = sub ?? next.home;
+  const moveScroll = (scroll: number) => {
+    const offset = Math.max(0, Math.min(Math.max(0, pane.contentLength - pane.height), scroll));
+    if (sub) {
+      next.subpage = { ...sub, scroll: offset };
+      if (sub.kind === 'jobs') next.jobs = { cursor: sub.cursor, scroll: offset, revealed: sub.revealed };
+    } else next.home = { scroll: offset };
+    return result();
+  };
+  const actions = boardFrame.rows.filter((r) => r.item);
+  const cursor = sub?.cursor;
+  const select = (item?: string) => {
+    if (sub) next.subpage = { ...sub, cursor: item, revealed: undefined };
+    return result();
+  };
+  const act = (row: typeof actions[number] | undefined, fileOnly = false) => {
+    if (row?.files?.length) return result({ type: 'open-files', files: row.files });
+    const target = row?.item && boardFrame.targets.get(row.item);
+    if (!fileOnly && target && target.kind === 'worker') {
+      if (sub?.kind === 'jobs') next.jobs = { cursor: row.item, scroll: sub.scroll, revealed: sub.revealed };
+      next.subpage = { kind: 'inspector', target, scroll: 0 };
+    }
+    return result();
+  };
   if (input.type === 'mouse') {
-    const control =
-      input.button === 'left'
-        ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)
-        : undefined;
-    if (control?.kind === 'board-inspect') {
-      inspect();
-      return result();
-    }
-    if (control?.kind === 'board-activate') {
-      const target = control.item ? boardFrame.targets.get(control.item) : selected();
-      if (main && target) {
-        setTarget(target);
-        activate();
-      }
-      return result();
-    }
-    if (control?.kind === 'brief') return result({ type: 'brief-toggle' });
-    if (control?.kind === 'settings') return result({ type: 'settings' });
-    if (control?.kind === 'help') {
-      next.help = {};
-      return result();
-    }
-    const pane = frame?.panes.find((p) => p.id === (inspector ? 'details' : 'agents'));
-    if (!pane) return result();
-    if (input.button !== 'left') {
-      const page = Math.max(1, pane.height), max = Math.max(0, pane.contentLength - page);
-      const delta = input.button === 'wheel-down' ? 3 : -3;
-      if (inspector) next.subpage = { ...inspector, scroll: Math.max(0, Math.min(max, inspector.scroll + delta)) };
-      else next.home.scroll = Math.max(0, Math.min(max, (next.home.scroll ?? 0) + delta));
-      return result();
-    }
-    const row = monitorRowAt(pane, input.x, input.y),
-      item = control?.kind === 'board-pick' ? control.item : row?.item;
-    if (item?.startsWith('home-progress:')) {
-      openProgress(item);
-      return result();
-    }
-    if (item?.startsWith('fold:') || item?.startsWith('original:')) {
-      setAnchor(item);
-      toggle(item);
-      return result();
-    }
-    const target = item ? boardFrame.targets.get(item) : undefined;
-    if (target) {
-      if (!anchor() && selected() && targetKey(selected()!) === targetKey(target)) activate(target);
-      else setTarget(target);
-    }
-    return result();
+    if (input.button !== 'left') return moveScroll(nav.scroll + (input.button === 'wheel-down' ? 3 : -3));
+    const row = monitorRowAt(pane, input.x, input.y);
+    return row?.item ? act(row) : result();
   }
-  if (key === 'enter' || key === 'activate') {
-    if (main) activate();
-    return result();
+  if (enter || key === 'open-session') {
+    const request = sub?.kind === 'inspector' ? boardFrame.snapshot.workers.find((w) => w.id === sub.target.workerId)?.work?.requestInfo : undefined;
+    const preferred = sub?.kind === 'inspector' && (actions.find((row) => row.files?.[0].endsWith('/report.md'))
+      ?? (request && actions.find((row) => row.files?.[0].endsWith(`/qa/${request.id}.md`)))
+      ?? actions.find((row) => row.files?.[0].endsWith('/brief.md')) ?? actions.find((row) => row.files));
+    return act(actions.find((row) => row.item === cursor) ?? (preferred || undefined), key === 'open-session');
   }
-  // `o` opens the selected job's file in $EDITOR.
-  if (key === 'open-session' && main) return result(anchor() ? undefined : jobFiles());
-  if (key === 'show-all' && main) {
-    next.home.showAll = !next.home.showAll;
-    return result();
+  const step = key === 'up' ? -1 : key === 'down' ? 1 : key === 'page-up' ? -Math.max(1, pane.height) : key === 'page-down' ? Math.max(1, pane.height) : 0;
+  if (step || key === 'home' || key === 'end') {
+    if (sub?.kind === 'jobs' && actions.length) {
+      const at = actions.findIndex((r) => r.item === cursor);
+      return select(actions[key === 'home' ? 0 : key === 'end' ? actions.length - 1 : Math.max(0, Math.min(actions.length - 1, at + step))]?.item);
+    }
+    // Inspector scrolls its evidence; Tab visits its files and child-job links.
+    return moveScroll(key === 'home' ? 0 : key === 'end' ? pane.contentLength : nav.scroll + step);
   }
-  // Removed controls cannot act through hidden legacy shortcuts either.
-  if (['resume-reconcile', 'reset', 'filter', 'main', 'log', 'pane-close', 'zoom'].includes(key))
-    return result();
-  if (key === 'next-trouble' || key === 'previous-trouble') {
-    const workers = boardFrame.snapshot.workers;
-    const targets = [
-      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.prefs.cardStallMinutes).state === 'needs-you'),
-      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.prefs.cardStallMinutes).state === 'stalled'),
-    ].map((w) => ({ kind: 'worker' as const, laneId: w.laneId, workerId: w.id }));
-    if (targets.length) {
-      const at = targets.findIndex((t) => selected() && targetKey(t) === targetKey(selected()!));
-      const target =
-        targets[(at + (key === 'previous-trouble' ? targets.length - 1 : 1) + targets.length) % targets.length];
-      setTarget(target);
-      const folded = new Set(next.home.foldedLanes);
-      folded.delete(target.laneId);
-      next.home.foldedLanes = folded;
-      next.home.revealed = undefined;
-    }
-    return result();
-  }
-  if (main && ['left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
-  if (main && ['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
-    const rows = boardFrame.rows,
-      items: string[] = [];
-    for (const row of rows) {
-      if (row.item && !items.includes(row.item)) items.push(row.item);
-      for (const c of row.controls ?? []) if (c.item && !items.includes(c.item)) items.push(c.item);
-    }
-    const current = anchor() ?? (selected() ? targetKey(selected()!) : ''),
-      at = items.indexOf(current);
-    const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
-    const index =
-      key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + step));
-    const item = items[index];
-    if (item?.startsWith('home-progress:') || item?.startsWith('original:')) {
-      setAnchor(item);
-      next.home.revealed = undefined;
-      return result();
-    }
-    if (item?.startsWith('fold:')) {
-      setAnchor(item);
-      next.home.revealed = undefined;
-      return result();
-    }
-    const target = boardFrame.targets.get(item);
-    if (target) setTarget(target);
-    return result();
+  if ((sub?.kind === 'inspector' || sub?.kind === 'native-inspector') && actions.length && (key === 'tab' || key === 'shift-tab')) {
+    const at = actions.findIndex((r) => r.item === cursor);
+    return select(actions[(at < 0 ? key === 'tab' ? 0 : actions.length - 1 : (at + (key === 'tab' ? 1 : -1) + actions.length) % actions.length)]?.item);
   }
   return null;
 }

@@ -86,10 +86,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const jobPipeline = new PanelJobPipeline(getHudHome(), {
     project: HUD_CWD_REAL,
     pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
-  }, openedAt);
+  });
   let boundJobRoot = '';
-  // Opened again, the panel reads only what each rollout gained since it last saved its scan.
-  useTreeScanStore(new TreeScanStore(path.join(getHudDisplayHome(), 'scan')));
+  let scanStoreStarted = false;
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
   const parser = new RolloutParser(40);
   // One collector per project the tab has shown (this one's always); Home reads only the panel's own.
@@ -109,14 +108,16 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   let expData = expShown(state) ? readExpData(jobPipeline.home) : undefined;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
-  let tree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
-  // Don't reset the restored panel place on the first tree build.
-  let treeBuilt = false;
+  const emptyTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
+  let tree: SubagentTree | undefined;
+  // Binding the calling session and collecting its native tree are separate operations.
+  let sessionRoot: string | undefined;
   let main: RolloutParseResult | null = null;
   // Size/mtime/inode as of the last parse: this page runs its own parser over
   // the same rollout as the HUD, so it re-reads nothing while the file is still.
   let lastParsedRollout: string | null = null;
   let worktrees: WorktreesSnapshot | null = null;
+  let worktreesRoot: string | undefined;
   let error: string | null = settingsError || null;
   // What the last Control plane key could not do; shown until the next key.
   let roleNotice = '';
@@ -130,7 +131,21 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const isClosed = () => lifecycle.closed;
   const agentContext = createAgentContext(isClosed);
   const models = createPanelModelServices(jobPipeline.home, () => render(), isClosed);
-  const displayBoard = () => models.apply(jobPipeline.workboard(tree));
+  const boardFacts = () => jobPipeline.workboard(emptyTree);
+  const displayBoard = () => models.apply(boardFacts());
+  // Retained jobs are browsable, but opening the panel does not add old jobs to model requests or notices.
+  const liveEvidence = (board: ReturnType<typeof boardFacts>): ReturnType<typeof boardFacts> => {
+    const workers = board.workers.filter((w) => w.settledAt === null || Math.max(w.settledAt, w.flow?.updatedAt ?? -Infinity) >= openedAt ||
+      (w.flow?.kind === 'land' && (w.flow.state === 'queued' || w.flow.state === 'running')));
+    const visible = new Set(workers.map((w) => w.id));
+    const evidence = new Set(workers.flatMap((w) => w.evidence.map((e) => e.sourceId)));
+    const decisions = board.decisions.filter((d) => d.evidence.some((e) => evidence.has(e.sourceId)));
+    const lanes = board.lanes.flatMap((lane) => {
+      const members = lane.workers.filter((w) => visible.has(w.id));
+      return members.length ? [{ ...lane, workers: members, decisions: lane.decisions.filter((d) => d.evidence.some((e) => evidence.has(e.sourceId))) }] : [];
+    });
+    return { ...board, workers, lanes, decisions };
+  };
   const claudeNative = new ClaudeNativeTree();
   models.configure(settings);
   // The bar's fields, for the foot of the panel: the panel replaces the bar
@@ -180,7 +195,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const settingsLines = settingsFlow.paint(width, height, () => ({
         state: hudStatus.health.current(), modelCalls: models.modelCalls(), decisionCalls: models.decisionCalls(),
       }), (help, mouse) => {
-        frame = renderMonitor({ tree, state: framePlace(help), mouse, width, height });
+        frame = renderMonitor({ state: framePlace(help), mouse, width, height });
         frameSource = help;
         return frame.lines;
       });
@@ -189,11 +204,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       frame = renderMonitor({
         tree,
         workboard: displayBoard(),
-        workerCounts: jobPipeline.workerCounts.counts(),
+        paneLoad: jobPipeline.load(),
+        homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
         modelEnabled: settings.modelEnabled,
         mouse: settings.mouse,
         state: painted,
-        worktrees,
+        worktrees: worktreesRoot === chosen && shown.root === chosen ? worktrees : undefined,
         expData: expShown(painted) ? expData : undefined,
         project: control ? shown.snapshot : models.waitingBriefs.project(shown.snapshot),
         projectDisplayRoot: shown.root,
@@ -221,6 +237,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   };
   const reloadExp = () => { expData = readExpData(jobPipeline.home); };
   const inspector = () => !settingsFlow.open && !state.help && state.subpage?.kind === 'inspector' ? state.subpage : undefined;
+  const nativeInspector = () => !settingsFlow.open && !state.help && state.subpage?.kind === 'native-inspector';
+  const workingTree = () => projectShown(state, settingsFlow.open) && state.project.view.kind === 'tree';
   const collectStep = async () => {
     state = framePlace(state);
     let session: Awaited<ReturnType<typeof finder.check>> = null;
@@ -241,7 +259,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
       } else boundJobRoot = '';
       const inspect = inspector()?.target;
-      await jobPipeline.refresh(inspect?.kind === 'worker' ? inspect.workerId : undefined, state.prefs.cardStallMinutes);
+      await jobPipeline.refresh(inspect?.workerId);
       if (isClosed()) return;
       stage = 'rollout';
       parser.setRolloutPath(session?.path ?? null);
@@ -267,44 +285,41 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       hudStatus.health.bind(Boolean(session));
       hudStatus.health.read();
       if (isClosed()) return;
-      stage = 'tree';
-      const claude =
-        selectedRoot && process.env.CODEX_HUD_PANEL_HARNESS === 'claude' && process.env.CODEX_HUD_PANEL_SOURCE
-          ? claudeNative.refresh(process.env.CODEX_HUD_PANEL_SOURCE, parseRosterRoot(selectedRoot).sessionId)
-          : undefined;
-      const rootId = main?.session?.id ?? session?.sessionId ?? claude?.rootId ?? selectedRoot ?? '';
-      if (rootId !== tree.rootId) {
-        if (treeBuilt) state = initialMonitorState(settings);
+      const rootId = main?.session?.id ?? session?.sessionId ?? selectedRoot ?? '';
+      if (rootId !== sessionRoot) {
+        if (sessionRoot !== undefined) state = initialMonitorState(settings);
+        sessionRoot = rootId;
         worktrees = null;
         models.leaveRoot();
         agentContext.clear();
-        tree = { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
+        tree = undefined;
       }
-      const priority = treePaths(tree.nodes);
-      // The root is not a card node, but its new spawn charges must be read
-      // on this tick too, rather than waiting for the quiet-file budget.
-      if (session) priority.add(session.path);
-      const listed =
-        rootId && !!session
-          ? await timeAsync('tree.list', () =>
-              findRolloutsInDaysYielding(
-                treeLookbackDays(rootId, 3, main?.subagents?.map((agent) => agent.id)),
-                priority
-              )
-            )
-          : undefined;
-      tree =
-        rootId && !!session
-          ? await timeAsync('tree.build', () =>
-              buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
-            )
-          : (claude ?? { rootId, nodes: [], totalCount: 0, updatedAt: new Date() });
+      // Neither Home nor the ordinary Jobs list enumerates nearby native transcripts.
+      if (nativeInspector()) {
+        stage = 'tree';
+        if (rootId && session) {
+          if (!scanStoreStarted) {
+            useTreeScanStore(new TreeScanStore(path.join(getHudDisplayHome(), 'scan')));
+            scanStoreStarted = true;
+          }
+          const priority = treePaths(tree?.nodes ?? []);
+          priority.add(session.path);
+          const lookback = treeLookbackDays(rootId, 3, main?.subagents?.map((agent) => agent.id));
+          const listed = await timeAsync('tree.list', () => findRolloutsInDaysYielding(lookback, priority));
+          if (nativeInspector() && !isClosed())
+            tree = await timeAsync('tree.build', () => buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed));
+        } else if (selectedHarness === 'claude' && selectedRoot && selectedSource) {
+          tree = claudeNative.refresh(selectedSource, parseRosterRoot(selectedRoot).sessionId);
+        } else tree = emptyTree;
+        if (tree && nativeInspector()) agentContext.apply(tree.nodes);
+      }
+      if (!nativeInspector()) tree = undefined;
       if (isClosed()) return;
-      treeBuilt = true;
-      agentContext.apply(tree.nodes);
+      stage = 'status';
       state = reconcileMonitor(framePlace(state));
-      const board = jobPipeline.workboard(tree);
-      models.update(board, tree, inspector());
+      const board = boardFacts();
+      const live = liveEvidence(board);
+      models.update(live, emptyTree, inspector());
       // Only the shown project is collected; the list of projects is read again at most every five seconds.
       const shown = projectShown(state, settingsFlow.open), control = controlShown(state, settingsFlow.open);
       if ((shown || control) && Date.now() - projectsAt >= 5000) {
@@ -324,7 +339,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const visit = visits.visit(root);
       const projectFacts = await visit.collector.collect(
         control ? 'control' : shown ? full : !state.subpage && !state.help && !settingsFlow.open ? 'home' : false,
-        jobPipeline.workboard(tree),
+        board,
         Date.now()
       );
       if (projectFacts) {
@@ -334,8 +349,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const stillShown = () => !isClosed() && !state.subpage && !state.help && !settingsFlow.open &&
         (state.activeTab === 'home' ? root === HUD_CWD_REAL : projectShown(state) && !listing(state) && shownRoot() === root);
       if (projectFacts && !control && stillShown()) {
-        models.waitingBriefs.update(board, projectFacts, projectShown(state));
-      } else if (inspector() && !settingsFlow.open) models.waitingBriefs.update(board);
+        models.waitingBriefs.update(live, projectFacts, projectShown(state));
+      } else if (inspector() && !settingsFlow.open) models.waitingBriefs.update(live);
       error = settingsError || roleNotice || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
@@ -346,12 +361,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     }
     let built: ReturnType<HudStatus['build']> | null = null;
     try {
-      built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree, skipGit: true });
+      built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree, skipTree: true, skipGit: true });
     } catch (err) {
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
     }
     if (built && !stale) {
-      notifier.update(built, Date.now(), jobPipeline.workboard(tree));
+      notifier.update(built, Date.now(), liveEvidence(boardFacts()));
       try {
         snapshotWriter.write(buildSnapshot(built, { width: 0, segments: [] }));
       } catch {
@@ -361,9 +376,10 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     // Collect both EXP readings together; paint only consumes cached facts.
     if (expShown(state) && !settingsFlow.open) reloadExp();
     render();
-    void agentContext.refresh(tree.nodes, state.subpage, frame, () => {
-      agentContext.apply(tree.nodes);
-      tree = { ...tree };
+    const observed = tree;
+    if (observed && nativeInspector()) void agentContext.refresh(observed.nodes, frame, () => {
+      if (tree !== observed || !nativeInspector()) return;
+      agentContext.apply(observed.nodes);
       render();
     });
   };
@@ -375,17 +391,17 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     collectStep,
     observation() {
       const data = currentHud();
-      const native = collectionObservation(data, tree);
+      const native = collectionObservation(data, tree ?? (main?.subagents?.length ? undefined : emptyTree));
       const jobOnly = !boundJobRoot;
-      // The board checks Claude subagent coverage and activity. Pi has only HUD jobs here.
-      const boardScope = selectedHarness === 'claude' ? Boolean(selectedRoot && selectedSource)
-        : selectedHarness === 'pi' || (!selectedRoot && !tree.nodes.length);
+      // Outside the native Inspector, polling the pane's jobs does not depend on native activity.
+      const boardScope = selectedHarness === 'claude' ? Boolean(selectedRoot && selectedSource && (!nativeInspector() || (tree && !tree.incomplete)))
+        : selectedHarness === 'pi' || !selectedRoot;
       const jobQuiet = jobOnly && boardScope && native.activity !== 'active';
       const observation = jobOnly
-        ? jobPipeline.observation(tree, jobQuiet)
+        ? jobPipeline.observation(tree ?? emptyTree, jobQuiet)
         : { ...native, succeeded: data?.health?.sessionBound === true };
       return {
-        scopeKey: `${tree.rootId}:${state.subpage?.kind ?? 'main'}`,
+        scopeKey: `${sessionRoot ?? ''}:${state.subpage?.kind ?? 'main'}`,
         nowMs: Date.now(),
         ...observation,
         fingerprint: JSON.stringify([native.fingerprint, observation.fingerprint]),
@@ -393,10 +409,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       };
     },
     repaint: render,
-    repaintDelay: () => computeRepaintDelay(Date.now(), tree.nodes, hudStatus.current(), settingsFlow.open),
-    isChangesFocused: () => state.subpage?.kind === 'changes',
-    worktreeSources: () => worktreeSources(HUD_CWD_REAL, main?.session?.cwd, settings.worktreeRoot, process.env.CODEX_HUD_WORKTREE_ROOT),
-    onWorktrees(snapshot) { worktrees = snapshot; render(); },
+    repaintDelay: () => computeRepaintDelay(Date.now(), tree?.nodes ?? [], hudStatus.current(), settingsFlow.open),
+    isWorkingTreeOpen: workingTree,
+    worktreeSources: () => shownRoot() === HUD_CWD_REAL
+      ? worktreeSources(HUD_CWD_REAL, main?.session?.cwd, settings.worktreeRoot, process.env.CODEX_HUD_WORKTREE_ROOT)
+      : worktreeSources(shownRoot()),
+    onWorktrees(snapshot) { worktrees = snapshot; worktreesRoot = shownRoot(); render(); },
     onWorktreeError: (err) => hudStatus.health.fail('worktrees', err),
   });
   models.onChange(() => {
@@ -441,14 +459,17 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       if (key.type === 'mouse' && !settings.mouse) continue;
       const fromSettings = settingsFlow.open;
       if (!acceptsMonitorInput(fromSettings ? undefined : state, key)) continue;
-      const input = settingsFlow.input(key, { tree, frame }, framePlace);
+      const input = settingsFlow.input(key, { frame }, framePlace);
       if (!input) continue;
       const previous = state;
-      const result = handleMonitorInput(state, input, { tree, frame, navigationOverlay: fromSettings });
+      const wasWorkingTree = workingTree(), priorRoot = shownRoot(), wasNative = nativeInspector();
+      const result = handleMonitorInput(state, input, { frame, navigationOverlay: fromSettings });
       state = result.state;
       if (expShown(state) && !expShown(previous)) reloadExp();
-      if (previous.subpage?.kind !== 'changes' && state.subpage?.kind === 'changes') void scheduler.refreshGit();
-      if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) ||
+      if (workingTree() && (!wasWorkingTree || priorRoot !== shownRoot())) void scheduler.refreshGit();
+      if (!nativeInspector()) tree = undefined;
+      if (wasNative !== nativeInspector()) void scheduler.collect(true);
+      if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state) || priorRoot !== shownRoot())) ||
         (controlShown(state) && (!controlShown(previous) || state.selectedProject !== previous.selectedProject)) ||
         ((state.subpage?.kind === 'inspector' || previous.subpage?.kind === 'inspector') &&
           (state.subpage?.kind !== previous.subpage?.kind || !!state.help !== !!previous.help ||
@@ -485,7 +506,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       jobPipeline.dispose();
       finder.stop();
       models.dispose();
-      flushTreeScans();
+      if (scanStoreStarted) flushTreeScans();
       scheduler.stop();
       stopProfiling();
     },

@@ -10,13 +10,12 @@ import { delay, until, live, encode, QUIET_MS } from '../helpers/panel-reload-fi
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 describe('panel reload views', { concurrency: 2 }, () => {
-for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspector'], [true, 'project']]) test(`the live ${bound ? 'Claude-bound' : 'unbound'} panel restores ${view}, selection and show-all across replacements`, async (t) => {
-  const f = live(t, ({ home }) => encode({ state: {
+for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspector'], [true, 'project']]) test(`the live ${bound ? 'Claude-bound' : 'unbound'} panel restores ${view} across replacements`, async (t) => {
+  const f = live(t, (_state, target) => encode({ state: {
     mainTab: view === 'project' ? 'project' : 'home', help: view === 'help',
-    focus: view === 'inspector' ? 'details' : 'agents', boardInspect: view === 'inspector' ? home.cursor.target : undefined,
-    homeTarget: home.cursor.target, boardExpanded: home.expanded, boardToggled: home.toggled, tree: { showAll: home.showAll },
+    focus: view === 'inspector' ? 'details' : 'agents', boardInspect: view === 'inspector' ? target : undefined,
   }, settings: null }), { bound });
-  await until(() => f.output().includes('models off') || f.output().includes('Home ›') || f.output().includes('Help'), 'first collected view did not render');
+  await until(() => f.output().includes('models off') || f.output().includes('Inspector') || f.output().includes('Help'), 'first collected view did not render');
   for (let generation = 1; generation <= 2; generation++) {
     f.appendBuild(`\n// ${view} build ${generation}`);
     // The start event precedes PanelReload construction. Wait for the replacement
@@ -28,11 +27,8 @@ for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspe
     assert.equal(state.activeTab, view === 'project' ? 'project' : 'home');
     assert.equal(Boolean(state.help), view === 'help');
     assert.equal(state.subpage?.kind, view === 'inspector' ? 'inspector' : undefined);
-    if (view === 'inspector') assert.deepEqual(state.subpage.target, f.state.home.cursor.target);
-    assert.deepEqual(state.home.cursor, f.state.home.cursor);
-    assert.equal(state.home.showAll, true);
-    assert.deepEqual(state.home.toggled, [...f.state.home.toggled]);
-    assert.equal(state.prefs.cardHideMinutes, undefined, 'settings-derived prefs do not travel');
+    if (view === 'inspector') assert.deepEqual(state.subpage.target, f.target);
+    assert.equal(state.home.showAll, undefined);
   }
 });
 
@@ -56,8 +52,8 @@ test('the 40-column Tickets page restores the selected Accept all row without ru
 const LIVE_INPUT_BLOCK_WINDOW_MS = QUIET_MS + 1200;
 
 test('live input: a batched / query and later keys survive a build until Enter keeps the filter', async (t) => {
-  const f = live(t);
-  await until(() => f.output().includes('SYNTHETIC reloa'), 'Home did not render');
+  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'progress' } } }, settings: null }));
+  await until(() => f.output().includes('Progress'), 'Progress did not render');
   f.child.stdin.write('/relo');
   await until(() => stripAnsi(f.output()).includes('/ relo▌'), 'the batched slash and query did not reach the filter');
   f.appendBuild('\n// build during a filter edit');
@@ -69,16 +65,16 @@ test('live input: a batched / query and later keys survive a build until Enter k
   await until(() => f.events().filter((e) => e.start).length === 2, 'reload did not resume after Enter');
   await until(() => stripAnsi(f.output()).includes('esc clear'), 'kept filter was not drawn');
   const saved = f.restarts()[0].restart.stateV2;
-  assert.equal(saved.home.filterQuery, 'reload');
-  assert.equal(saved.project.filterQuery, undefined);
+  assert.equal(saved.home.filterQuery, undefined);
+  assert.equal(saved.project.filterQuery, 'reload');
 });
 
 test('live input: g on a job reaches focus-job-tab after automatic reload', async (t) => {
-  const f = live(t);
-  await until(() => f.output().includes('SYNTHETIC reloa'), 'Home did not render');
+  const f = live(t, (state, target) => ({ state: { ...state, subpage: { kind: 'inspector', target, scroll: 0 } }, settings: null }));
+  await until(() => f.output().includes('Inspector'), 'Inspector did not render');
   const at = f.output().length;
   f.appendBuild('\n// build on a selected job');
-  await until(() => f.events().filter((e) => e.start).length === 2 && f.output().slice(at).includes('SYNTHETIC reloa'), 'Home did not return after reload');
+  await until(() => f.events().filter((e) => e.start).length === 2 && f.output().slice(at).includes('Inspector'), 'Inspector did not return after reload');
   f.child.stdin.write('g');
   // The synthetic job has no SESSION.txt. Reaching this diagnostic proves the action ran without invoking herdr.
   await until(() => f.output().slice(at).includes('no tab recorded'), 'g never reached the tab-focus action', 3000);
@@ -119,8 +115,8 @@ test('live input: a build waits for the Harnesses Add back draft to close', asyn
 });
 
 test('live input: a build waits for stop confirmation, and an unnamed key cancels it', async (t) => {
-  const f = live(t);
-  await until(() => f.output().includes('SYNTHETIC reloa'), 'Home did not render');
+  const f = live(t, (state, target) => ({ state: { ...state, subpage: { kind: 'inspector', target, scroll: 0 } }, settings: null }));
+  await until(() => f.output().includes('Inspector'), 'Inspector did not render');
   f.child.stdin.write('X');
   await until(() => f.output().includes('y confirm'), 'stop prompt did not open');
   f.appendBuild('\n// build during stop confirmation');
@@ -130,14 +126,14 @@ test('live input: a build waits for stop confirmation, and an unnamed key cancel
   await until(() => f.events().filter((e) => e.start).length === 2, 'unnamed z did not cancel the prompt and unblock reload');
 });
 
-test('v, f and Esc never rewrite hud-settings.json, even when it contains retired pane settings', async (t) => {
-  const retired = { changesPane: 'folded', detailsPane: 'closed', monitorModes: {}, monitorPreferences: {} };
+test('Jobs and Inspector never rewrite hud-settings.json, even when it contains retired pane settings', async (t) => {
+  const retired = { panelLayout: 'split', tasks: true, cardStallMinutes: 5, cardFoldMinutes: 1, cardHideMinutes: 2, changesPane: 'folded' };
   const f = live(t, undefined, { settings: retired });
   const file = join(f.env.HUD_HOME, 'hud-settings.json'), mtime = () => statSync(file, { bigint: true }).mtimeNs;
   const before = mtime();
   assert.equal(loadSettings(f.env).language, 'en');
   for (const key of Object.keys(retired)) assert.ok(!(key in loadSettings(f.env)), key);
-  await until(() => stripAnsi(f.output()).includes('v inspect'), 'Home did not draw its Inspect key');
+  await until(() => stripAnsi(f.output()).includes('v Jobs'), 'Home did not draw its Jobs action');
   const press = async (key, text) => {
     const at = f.output().length;
     f.child.stdin.write(key);
@@ -146,10 +142,10 @@ test('v, f and Esc never rewrite hud-settings.json, even when it contains retire
     assert.equal(readFileSync(file, 'utf8'), f.settingsBody);
   };
   for (let i = 0; i < 2; i++) {
-    await press('v', 'Home ›');
-    await press('\x1b', 'v inspect');
-    await press('f', '‹ Changes');
-    await press('\x1b', 'v inspect');
+    await press('v', '‹ Jobs');
+    await press('\r', '‹ Inspector');
+    await press('\x1b', '‹ Jobs');
+    await press('\x1b', 'v Jobs');
   }
 });
 

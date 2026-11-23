@@ -1,5 +1,5 @@
 import { readAgentTokens, type AgentTokens } from '../collectors/agent-context.js';
-import type { MonitorFrame, MonitorState } from '../render/monitor.js';
+import type { MonitorFrame } from '../render/monitor.js';
 import type { SubagentTreeNode } from '../types.js';
 
 /** At most one tail read per agent per this long, however often we repaint. */
@@ -39,18 +39,17 @@ export function createAgentContext(isClosed: () => boolean) {
         node.tokensSpent = tokens?.spent;
       });
     },
-    /** Read only the agents on screen, the selected one, and those still running. */
-    async refresh(nodes: SubagentTreeNode[], subpage: MonitorState['subpage'], frame: MonitorFrame | undefined, onChange: () => void) {
+    /** The native Inspector reads only agents on screen or still running. */
+    async refresh(nodes: SubagentTreeNode[], frame: MonitorFrame | undefined, onChange: () => void) {
       if (isClosed() || readingAgentContext) return;
       readingAgentContext = true;
       try {
-        const pane = frame?.panes.find((p) => p.id === 'agents');
+        const pane = frame?.panes.find((p) => p.id === 'details');
         const wanted = new Set<string>();
-        if (subpage?.kind === 'inspector' && subpage.selectedNodeId) wanted.add(subpage.selectedNodeId);
         if (pane) {
-          for (let i = pane.offset; i < pane.offset + Math.max(0, pane.height - (pane.edge ?? 1)); i++) {
+          for (let i = pane.offset; i < pane.offset + (pane.visible ?? pane.height); i++) {
             const item = pane.rows[i]?.item;
-            if (item) wanted.add(item);
+            if (item?.startsWith('native:')) wanted.add(item.slice('native:'.length));
           }
         }
         const byId = new Map<string, SubagentTreeNode>();

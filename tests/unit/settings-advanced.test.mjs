@@ -15,9 +15,6 @@ import { setLanguage } from '../../dist/render/i18n.js';
 const EXPECTED_ADVANCED_LABELS = [
   'Bar style',
   'Icons',
-  'Stall threshold',
-  'Fold after',
-  'Hide after',
   'Refresh',
   'Mouse',
   'Experiments',
@@ -30,7 +27,7 @@ const EXPECTED_ADVANCED_LABELS = [
 
 const plain = (frame) => frame.lines.map((line) => stripAnsi(line).trimEnd()).join('\n');
 
-test('Settings folds the 13 rarely changed rows under Advanced by default and shows Models on the first screen at 40 and 100 columns', () => {
+test('Settings folds the 10 rarely changed rows under Advanced by default and shows Models on the first screen at 40 and 100 columns', () => {
   const prevLang = setLanguage('en');
   const prevDisplay = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
@@ -52,27 +49,27 @@ test('Settings folds the 13 rarely changed rows under Advanced by default and sh
     assert.match(narrowText, /Call cap/);
     assert.match(narrowText, /Sonic auto-thinking/);
 
-    // At 40x30 and 100x30, Advanced (13) is visible and exact width.
+    // At 40x30 and 100x30, Advanced (10) is visible and exact width.
     for (const width of [40, 100]) {
       const tall = renderSettingsPage(state, width, 30);
       for (const line of tall.lines) assert.equal(visualLength(line), width, `${width}: ${stripAnsi(line)}`);
       const text = plain(tall);
-      assert.match(text, /Advanced \(13\)/);
+      assert.match(text, /Advanced \(10\)/);
       assert.match(text, /Models ─+/);
       for (const row of advancedRows) assert.doesNotMatch(text, new RegExp(`\\b${row.label}\\b`), `${width}:${row.label}`);
     }
 
-    // Also verify Advanced (13) at 40x24 when selected on ADVANCED.
+    // Also verify Advanced (10) at 40x24 when selected on ADVANCED.
     const atAdvanced = renderSettingsPage({ ...state, selected: ADVANCED }, 40, 24);
     for (const line of atAdvanced.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
-    assert.match(plain(atAdvanced), /Advanced \(13\)/);
+    assert.match(plain(atAdvanced), /Advanced \(10\)/);
   } finally {
     setLanguage(prevLang);
     setDisplayConfig(prevDisplay);
   }
 });
 
-test('Enter, Left/Right and mouse click on Advanced toggle the 13 rows with source-group prefixes', () => {
+test('Enter, Left/Right and mouse click on Advanced toggle the 10 rows with source-group prefixes', () => {
   const prevLang = setLanguage('en');
   const prevDisplay = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
@@ -81,7 +78,7 @@ test('Enter, Left/Right and mouse click on Advanced toggle the 13 rows with sour
     let frame = renderSettingsPage(state, 80, 48);
     assert.equal(frame.state.advanced, false);
 
-    // 2. Enter expands Advanced and shows all 13 rows with source group prefixes.
+    // 2. Enter expands Advanced and shows all 10 rows with source group prefixes.
     state = handleSettingsInput(state, { type: 'key', key: 'enter' }, frame).state;
     assert.equal(state.advanced, true);
     frame = renderSettingsPage(state, 80, 48);
@@ -131,7 +128,7 @@ test('Folded unsaved changes and non-default values show * and active highlight 
     // 3. Collapsed Advanced row shows * and active colour when a folded row changed.
     const frame = renderSettingsPage(state, 60, 40);
     const advLine = frame.lines[frame.rows.indexOf(ADVANCED)];
-    assert.match(stripAnsi(advLine), /^\* Advanced \(13\)/);
+    assert.match(stripAnsi(advLine), /^\* Advanced \(10\)/);
     assert.ok(advLine.includes(theme.board.attention('*')), 'attention ink on *');
     assert.ok(advLine.includes(theme.board.active('closed ›')), 'active ink on folded non-default tail');
   } finally {
@@ -177,7 +174,7 @@ test('Collapsed navigation walks only visible rows plus ADVANCED; PageDown/PageU
   }
   assert.deepEqual(jumped, [
     SETTING_ROWS.findIndex((r) => r.key === 'theme'),
-    SETTING_ROWS.findIndex((r) => r.key === 'panelLayout'),
+    SETTING_ROWS.findIndex((r) => r.key === 'treeWidth'),
     SETTING_ROWS.findIndex((r) => r.key === 'modelEnabled'),
     SETTING_ROWS.findIndex((r) => r.key === 'statusline'),
     ADVANCED,
@@ -202,12 +199,12 @@ test('Reset on ADVANCED returns a hint without reset action; self-healing expand
     // Pressing t on ADVANCED does not trigger test-api.
     assert.equal(handleSettingsInput(advState, { type: 'key', key: 'settings-test' }, advFrame).action, undefined);
 
-    // 6. Hot-reload self-healing: selected on cardFoldMinutes without advanced flag auto-expands.
-    const foldIndex = SETTING_ROWS.findIndex((r) => r.key === 'cardFoldMinutes');
+    // 6. Hot-reload self-healing: selected on refreshMs without advanced flag auto-expands.
+    const foldIndex = SETTING_ROWS.findIndex((r) => r.key === 'refreshMs');
     const healed = renderSettingsPage({ draft, original: draft, selected: foldIndex, offset: 0, message: '' }, 40, 24);
     assert.equal(healed.state.advanced, true);
     assert.ok(healed.rows.includes(foldIndex), 'selected folded row is visible after self-heal');
-    assert.match(plain(healed), /Panel · Fold after/);
+    assert.match(plain(healed), /Panel · Refresh/);
   } finally {
     setLanguage(prevLang);
     setDisplayConfig(prevDisplay);
@@ -223,7 +220,7 @@ test('Chinese locale localizes Advanced section, toggle, help, reset hint, and e
     for (const line of collapsed.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
     const collapsedText = plain(collapsed);
     assert.match(collapsedText, /高级 ─+/);
-    assert.match(collapsedText, /高级（13）/);
+    assert.match(collapsedText, /高级（10）/);
     assert.match(collapsedText, /关闭 ›/);
     assert.match(collapsedText, /较少修改的设置/);
 
@@ -236,7 +233,7 @@ test('Chinese locale localizes Advanced section, toggle, help, reset hint, and e
     const expandedText = plain(expanded);
     assert.match(expandedText, /打开 ▾/);
     assert.match(expandedText, /显示 · 底栏样式/);
-    assert.match(expandedText, /面板 · 折叠时间/);
+    assert.match(expandedText, /面板 · 刷新/);
     assert.match(expandedText, /模型 · 决策调用上限/);
     assert.match(expandedText, /工作者 · imp→general 溢出/);
   } finally {

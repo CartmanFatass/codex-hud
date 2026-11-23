@@ -24,16 +24,11 @@ const KEYS: Record<string, string> = {
   Q: 'close',
   '\x03': 'close',
   '\x04': 'close',
-  a: 'show-all',
-  v: 'detail-toggle',
   r: 'reset',
   s: 'settings-save',
   t: 'settings-test',
   ',': 'settings',
   o: 'open-session',
-  // Home's next and previous card that needs the owner. `n` flags a to-try row, `g` goes to a job's tab, `+ - =` size Split: one meaning per key.
-  '>': 'next-trouble',
-  '<': 'previous-trouble',
   '?': 'help',
   b: 'brief-toggle',
   '1': 'agents',
@@ -100,12 +95,11 @@ export class WorkbenchInputDecoder {
           this.profile === 'workboard'
             ? ((
                 {
-                  // The digits switch no tab: `1`–`4` pick an option of an open question (`text` carries which); `f` is the Changes page `3` used to open.
+                  // Digits pick an option of an open question only in Inspector.
                   '1': 'option',
                   '2': 'option',
                   '3': 'option',
                   '4': 'option',
-                  f: 'changes',
                   '[': 'project-prev',
                   ']': 'project-next',
                   // Control: presets on role rows, structural edits in the focused chain.
@@ -118,21 +112,19 @@ export class WorkbenchInputDecoder {
                   p: 'preset-list',
                   m: 'place-model',
                   i: 'place-add',
-                  '+': 'list-grow',
-                  '-': 'list-shrink',
                   K: 'place-up',
                   J: 'place-down',
                   x: 'place-clear',
-                  // A HUD job's micro-actions: `d` answers with the question's default on an expanded slab; `X` asks to stop it.
+                  // Inspector: answer with the default, or ask to stop the job.
                   d: 'answer-default',
                   X: 'stop-job',
                   '\x7f': 'backspace',
                   '\b': 'backspace',
                   '\x12': 'model-refresh',
-                  v: 'inspect',
-                  ' ': 'inspect',
+                  v: 'jobs',
+                  n: 'native-inspector',
+                  ' ': 'space',
                   w: 'export-board',
-                  '=': 'list-grow',
                 } as Record<string, string>
               )[ch] ?? KEYS[ch])
             : KEYS[ch];

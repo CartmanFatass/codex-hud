@@ -11,6 +11,8 @@ import { basename } from 'node:path';
 import { boardRow, itemRow, originalRows, section, mark, minuteAge, pack } from './workboard-rows.js';
 import { inboxHubRows, inboxListRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
+import { worktreeRows } from './monitor-panes.js';
+import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import { monitorText, fit, pair, flowLines, cutWords } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { t } from './i18n.js';
@@ -28,118 +30,13 @@ export function progressSegments(counts: ProjectSnapshot['counts'], width: numbe
     return segment;
   });
 }
-const HOME_STATES = ['accepted', 'try', 'working', 'blocked', 'todo'] as const;
-const HOME_WORD = { accepted: 'accepted', try: 'to try', working: 'working', blocked: 'Stalled', todo: 'planned' };
-const HOME_SHORT = { accepted: 'done', try: 'try', working: 'now', blocked: 'Stalled', todo: 'plan' };
 // To try is a medium shade (▒), a step from both the full block of what is accepted and the light one of what is still to do; the
 // ascii glyphs differ too, so a bar with no colour (the `none` theme) still reads.
 const BAR_GLYPH: Record<SliceState, [string, string]> = { working: ['█', '#'], blocked: ['█', '#'], try: ['▒', '='], accepted: ['█', '#'], todo: ['░', '.'], dropped: ['░', '.'] };
 export const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number, order?: readonly SliceState[]) => progressSegments(data.counts, width, order).map(({ state, width: cells }) =>
   sliceInk(state)(mark(...BAR_GLYPH[state]).repeat(cells))).join('');
-const HOME_WAITING = 5;
 const ticketTotalText = (data: ProjectSnapshot, text: string) =>
   data.ticketTotals?.partial ? `${t('Partial')} · ${text}` : text;
-/** Group the collector's derived states for display; never infer activity from tracker files or jobs here. */
-function homeTicketRows(data: ProjectSnapshot, width: number): MonitorRow[] {
-  const totals = data.ticketTotals;
-  if (!totals?.totalTickets) return [];
-  const row = (text: string, key: string): MonitorRow => ({ text: fit(text, width), item: `home-progress:tickets:${key}` });
-  const { doneTickets, totalTickets, doneFeatures, totalFeatures } = totals;
-  const label = `  ${t('Tickets')}`, ratio = ticketTotalText(data, `${doneTickets}/${totalTickets}`);
-  const closedText = t('{done}/{total} closed', { done: doneFeatures, total: totalFeatures });
-  const closed = totals.partial && visualLength(`${label} ${ratio} ${closedText}`) > width ? '' : closedText;
-  const cells = Math.min(8, width - visualLength(`${label}  ${ratio} ${closed}`));
-  const rows = [row(pair(`${label}${cells > 0 ? ' ' + meter(doneTickets, totalTickets, cells) : ''} ${ratio}`, closed, width), 'all')];
-  let planned = 0, ready = 0, queued = 0;
-  const started: MonitorRow[] = [];
-  let startedFeatures = 0;
-  const lanes = ['working', 'try', 'you', 'blocked', 'ready', 'queued'];
-  for (const { slug, tickets } of data.tickets) {
-    const open = tickets.filter(r => !ticketResolved(r)), done = tickets.length - open.length;
-    if (!open.length) continue;
-    open.sort((a, b) => lanes.indexOf(ticketLane(a)) - lanes.indexOf(ticketLane(b)));
-    const ticket = open[0], lane = ticketLane(ticket);
-    if (!done && (lane === 'ready' || lane === 'queued')) {
-      const waiting = open.filter(r => r.state === 'queued').length;
-      planned++; ready += open.length - waiting; queued += waiting;
-      continue;
-    }
-    startedFeatures++;
-    const you = lane === 'you', word = you ? t('For you') : ticketStateWord(ticket);
-    const head = `  ${you ? theme.board.attention('?') : ticketGlyph(ticket)} ${monitorText(slug)}`;
-    const right = `${done}/${tickets.length} · ${open.filter(r => ticketLane(r) === lane).length} ${word}`;
-    const bar = visualLength(head + right) + 6 <= width ? ' ' + meter(done, tickets.length, 4) : '';
-    started.push(row(pair(head + bar, theme.board.muted(right), width), slug));
-  }
-  if (started.length) rows.push({ ...section(t('Active & ready'), width, featureCountText(startedFeatures)), item: 'home-progress:tickets:all' }, ...started);
-  if (planned) rows.push(row(pair(`  ${mark('▸', '>')} ${t('{n} planned', { n: planned })}`,
-    theme.board.muted(`${ready} ${t('ready')} · ${t('{n} queued', { n: queued })}`), width), 'planned'));
-  return rows;
-}
-/**
- * Only whole spare rows; cards have already claimed their space. The counts are the current milestone's, as on the hub
- * (the whole ledger when there is none, and the title says so). Shrinks from the bottom up: tickets, the summary's wrapped rows,
- * legend, summary, then the bar, then the block.
- */
-export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true): MonitorRow[] {
-  if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.ledger.length && !data.tickets.length)) return [];
-  const row = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
-  const cur = currentRows(data), counts = cur.counts, states = HOME_STATES.filter(s => counts[s]);
-  const legend = (words?: typeof HOME_WORD) => states.map(s => sliceInk(s)(`${mark(...PROGRESS_MARK[s])} ${counts[s]}${words ? ' ' + t(words[s]) : ''}`)).join(words === HOME_SHORT ? ' ' : '  ');
-  const legendLine = [legend(HOME_WORD), legend(HOME_SHORT)].find(line => visualLength(line) <= width - 2) ?? legend();
-  const fraction = `${counts.accepted}/${cur.rows.length - counts.dropped}`;
-  const summary = data.summary ? clampLines(data.summary, width - 2, 3).lines : [];
-  const milestone = data.ladder.current && (cur.whole && cur.rows.length ? '' : data.ladder.current);
-  const head = section(t('Progress'), width, milestone ? `${t('Milestone')} ${monitorText(milestone)}` : cur.rows.length ? t('All tickets') : '');
-  // What the block keeps as it shrinks: the bar and the first summary row, then the legend, then the summary's other rows.
-  let room = spare - (gap ? 1 : 0) - 1;
-  const bar = states.length && room > 0 ? (room--, 1) : 0, first = summary.length && room > 0 ? (room--, 1) : 0;
-  const legendRows = bar && room > 0 ? [legendLine] : [];
-  room -= legendRows.length;
-  const more = first ? Math.min(summary.length - 1, room) : 0;
-  room -= more;
-  const rows = [...(gap ? [boardRow('')] : []), { ...head, item: 'home-progress:progress' },
-    ...summary.slice(0, first + more).map((line) => row('  ' + line)),
-    ...(bar ? [row(`  ${barText({ counts }, Math.max(0, Math.min(24, width - 3 - visualLength(fraction))), HOME_STATES)} ${theme.board.muted(fraction)}`)] : []),
-    ...legendRows.map((line) => row('  ' + line))];
-  if (bar && !legendRows.length) return rows;
-  return room > 0 ? [...rows, ...homeTicketRows(data, width).slice(0, room)] : rows;
-}
-/**
- * Home's spare rows, top to bottom: STATE's waiting items (a row each) and recently accepted slices under the cards, the progress block
- * at the bottom. The block takes its rows first (its own order of shrinking is above); the two lists, waiting first, take what is left.
- */
-export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, spare: number, now: number, gap: boolean, state: MonitorState): MonitorRow[] {
-  if (!data || spare < 1) return [];
-  const progress = homeProgressRows(data, width, spare, gap), out: MonitorRow[] = [], keep = progress.length + (progress.length && !gap ? 1 : 0);
-  // A list of at most `all.length` rows out of `total`; short of room it ends with `+N more` for those it does not show.
-  const list = (head: MonitorRow, id: string, all: MonitorRow[][], total: number, room: number): MonitorRow[] => {
-    const slots = room - 1, item = `home-progress:${id}`;
-    if (slots < 1 || !all.length) return [];
-    const limit = (total > all.length || all.flat().length > slots) && slots > 2 ? slots - 1 : slots;
-    const shown = all.flat().slice(0, limit), hidden = total - all.filter(group => shown.includes(group[0])).length;
-    return [{ ...head, item }, ...shown, ...(hidden > 0 && slots > 2 ? [{ text: fit('  ' + theme.board.muted(t('+{n} more', { n: hidden })), width), item }] : [])];
-  };
-  const lists = [
-    (room: number) => list(section(t('Waiting for you'), width, String(data.waiting.length)), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r, i) => [{
-      ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: `home-progress:wait:${i}` },
-      ...originalRows(r.original, `original:wait:${i}`, state.home.expanded.has(`original:wait:${i}`), width)]), data.waiting.length, room),
-    (room: number) => {
-      const landed = landedNewest(data).filter(({ r }) => r.state === 'accepted').slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow[] => {
-        const right = theme.board.muted([t('accepted'), sinceText(r.at, now)].filter(Boolean).join(' '));
-        return [{ text: inline(`  ${sliceInk('accepted')(mark('✓', '+'))} ${monitorText(r.id)}`, ledgerText(r), right, width), item: 'home-progress:latest' }];
-      });
-      return list(section(t('Latest'), width, t('newest first')), 'latest', landed, landed.length, room);
-    },
-  ];
-  // A blank row sets each list off from what is above it, and the last from the block (the block has its own when it was given one).
-  for (const make of lists) {
-    const lead = out.length || gap ? 1 : 0, block = make(spare - keep - out.length - lead);
-    if (block.length) out.push(...(lead ? [boardRow('')] : []), ...block);
-  }
-  const fill = (rows: MonitorRow[]) => [...out, ...Array.from({ length: spare - out.length - rows.length }, () => boardRow('')), ...rows];
-  return progress.length ? fill(out.length && !gap ? [boardRow(''), ...progress] : progress) : out;
-}
 export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs'] as const;
 /** The hub's pages, and the page of one waiting item (`ProjectView.waiting`), which a row opens and the hub does not list. */
 export type ProjectPage = (typeof PROJECT_PAGES)[number] | 'waiting';
@@ -317,7 +214,7 @@ export function progressTaskHeader(task: AcceptanceTask, data: ProjectSnapshot, 
   return { item: taskItem(task), text: pair(label, visualLength(label + right) + 1 <= width ? right : counts, width), ...(file ? { files: [file] } : {}) };
 }
 
-/** Slice details shared by the existing Split slice preview and task drill-down in either panel layout. */
+/** Slice details in the Project task drill-down. */
 export function sliceDetailRows(r: LedgerSlice, data: ProjectSnapshot, width: number, now: number,
   board?: WorkboardSnapshot, modelEnabled = false): MonitorRow[] {
   const plain = (text: string) => boardRow(fit(text, width)), muted = theme.board.muted;
@@ -448,7 +345,7 @@ export function featureRow(feature: TicketFeature, width: number, open = false):
 /** One page: today's section content, without the section header (the crumb names the page). */
 export function pageRows(
   page: ProjectPage, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false
+  board?: WorkboardSnapshot, modelEnabled = false, worktrees?: WorktreesSnapshot | null
 ): MonitorRow[] {
   const rows: MonitorRow[] = [boardRow('')], folded = state.project.folded;
   const item = (r: ProjectItem, i: number, glyph = '') => rows.push(projectItem(r, i, glyph, width, now));
@@ -514,7 +411,8 @@ export function pageRows(
     }
     rows.push(...ticketAcceptRows(data, width));
   } else if (page === 'tree') {
-    if (data.git) item({ label: 'branch', value: [
+    if (worktrees) rows.push(...worktreeRows(worktrees, width, now));
+    if ((!worktrees || worktrees.error) && data.git) item({ label: 'branch', value: [
       data.git.branch, t('{n} changed', { n: data.git.changed }),
       data.git.ahead === null ? '' : `${data.git.ahead} ${t('ahead')}`,
       data.git.behind ? `${data.git.behind} ${t('behind')}` : '',
@@ -532,11 +430,11 @@ export function pageRows(
 /** The Project tab: a hub of one summary row per page, or the page the panel has open. */
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false, name = '', projects: ProjectChoice[] = [], room?: number
+  board?: WorkboardSnapshot, modelEnabled = false, name = '', projects: ProjectChoice[] = [], room?: number, worktrees?: WorktreesSnapshot | null
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
   if (projectListOpen(state, projects)) return inboxListRows(projects, width, now);
   if (!data) return [];
-  return page ? pageRows(page, data, state, width, now, board, modelEnabled) : inboxHubRows(data, state, width, now, name, projects, board, room);
+  return page ? pageRows(page, data, state, width, now, board, modelEnabled, worktrees) : inboxHubRows(data, state, width, now, name, projects, board, room);
 }

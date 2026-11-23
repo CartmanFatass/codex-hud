@@ -1,11 +1,12 @@
 /** Job details, local facts and openable workflow files. No I/O. */
 import { OUTPUT_ROWS } from '../collectors/headless-output.js';
-import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-types.js';
+import type { OwnerWorker } from '../collectors/workboard-types.js';
 import { projectWorkJob } from '../collectors/work-job.js';
-import type { MonitorRow, MonitorState } from './monitor.js';
-import { flowSummary, jobDetailRows, requestLines, questionOriginalRows, stemLines, workPhaseText,
-  labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-job-detail.js';
-import { failed, laneStrip, renderJobRow, workStateGlyph, workStateInk } from './work-job-row.js';
+import type { SubagentTree } from '../types.js';
+import type { MonitorRow } from './monitor.js';
+import { flowSummary, jobDetailRows, requestLines, stemLines, workPhaseText, labelSummary, quietDecisionSummary } from './work-job-detail.js';
+import { failed, renderJobRow } from './work-job-row.js';
+import { jobRows } from './work-jobs.js';
 import {
   ageText,
   kvRows,
@@ -16,7 +17,7 @@ import {
   boardRow,
   asciiBoard,
 } from './workboard-rows.js';
-import { theme } from './colors.js';
+import { theme, visualLength } from './colors.js';
 import { monitorText, fit } from './monitor-text.js';
 import { providerMark } from './providers.js';
 import { t } from './i18n.js';
@@ -59,28 +60,30 @@ function outputRows(worker: OwnerWorker, width: number): MonitorRow[] {
 }
 export function workInspectorRows(
   worker: OwnerWorker,
-  state: MonitorState,
   width: number,
   now: number,
-  _heading = true
+  children: readonly OwnerWorker[] = [],
 ): MonitorRow[] {
-  const job = projectWorkJob(worker, now, state.prefs.cardStallMinutes);
-  const heading = boardRow(theme.board.title(renderJobRow(job, width)));
-  const rows =
-    job.state === 'needs-you'
-      ? [
-          heading,
-          ...[...requestLines(job, true, answerable(worker) !== undefined).flatMap((s) => stemLines(s, width, theme.board.attention)),
-            // An answerable question says how: its option keys and the default.
-            ...(answerKeys(worker).length ? stemLines(answerKeys(worker).join('  '), width, theme.board.muted, 1) : []),
-          ].map((text) => boardRow(theme.board.slab(text))),
-          ...questionOriginalRows(job, state, width),
-        ]
-      : [heading, ...jobDetailRows(job, width).map((text) => boardRow(text))];
-  const milestone = milestoneLine(worker, width);
-  if (milestone) rows.push(boardRow(milestone));
-  const pulse = pulseLine(worker, width);
-  if (pulse) rows.push(boardRow(pulse));
+  const job = projectWorkJob(worker, now);
+  const rows = [boardRow(theme.board.title(renderJobRow(job, width)))];
+  if (worker.homeNeedsHuman) {
+    rows.push(section(t('Question for main'), width));
+    const question = requestLines(job, true, answerable(worker) !== undefined, true);
+    for (const line of question.length ? question : [worker.ask ?? job.reason ?? ''])
+      rows.push(...stemLines(line, width, theme.board.attention).map((text) => boardRow(text)));
+    const keys = answerKeys(worker);
+    if (keys.length) rows.push(...stemLines(keys.join('  '), width, theme.board.muted, 1).map((text) => boardRow(text)));
+  }
+  if (worker.reportMeta?.summary) {
+    rows.push(section(t('Report'), width), ...stemLines(worker.reportMeta.summary, width).map((text) => boardRow(text)));
+  }
+  rows.push(...jobDetailRows(job, width, !worker.homeNeedsHuman && !worker.reportMeta?.summary).map((text) => boardRow(text)));
+  const progress = worker.progress?.length ? worker.progress : worker.latest_progress ? [worker.latest_progress] : [];
+  if (progress.length) {
+    rows.push(boardRow(''), section(t('Progress'), width));
+    for (const entry of progress) rows.push(...stemLines(`${entry.at} · ${entry.text}`, width).map((text) => boardRow(text)));
+  }
+  if (children.length) rows.push(boardRow(''), section(t('Sonic children'), width), ...jobRows(children, width));
   rows.push(...outputRows(worker, width));
   const stamp = (at: number | null) =>
     at === null ? '' : `${localTime(at, now)} · ${t('{age} ago', { age: minuteAge(at, now) })}`;
@@ -167,68 +170,34 @@ export function workInspectorRows(
   }
   return rows;
 }
-export function boardInspectorRows(
-  lane: WorkLane | undefined,
-  target: WorkTarget | undefined,
-  state: MonitorState,
-  width: number,
-  now: number
-): MonitorRow[] {
-  if (!lane || !target) return [];
-  if (target.kind === 'worker') {
-    const worker = lane.workers.find((w) => w.id === target.workerId);
-    return worker
-      ? [
-          boardRow(''),
-          ...workInspectorRows(
-            {
-              ...worker,
-              files: worker.files?.map((f) => ({
-                ...f,
-                title:
-                  lane.decisions.find((d) =>
-                    d.evidence.some((e) => e.sourceId === worker.evidence[0]?.sourceId && e.relativePath === f.rel)
-                  )?.modelTitle ?? f.title,
-              })),
-            },
-            state,
-            width,
-            now
-          ),
-        ]
-      : [];
-  }
-  if (target.kind === 'lane')
-    return [
-      boardRow(''),
-      boardRow(
-        theme.board.title(
-          itemRow(
-            mark('▸', '>'),
-            monitorText(lane.label) + '  ' + workPhaseText(lane.phase ?? ''),
-            laneStrip(lane, state, now, Math.floor(width / 3)),
-            width
-          ).text
-        )
-      ),
-      ...facts(
-        [
-          ['jobs', String(lane.workers.length)],
-          ['decisions', String(lane.decisions.length)],
-          ['started', localTime(lane.startedAt, now)],
-        ],
-        width
-      ),
-      boardRow(''),
-      section(t('Jobs'), width),
-      ...lane.workers.map((w) => {
-        const job = projectWorkJob(w, now);
-        return {
-          ...itemRow(workStateInk(job)(workStateGlyph(job)), monitorText(`${w.role ?? ''}  ${w.task}`), minuteAge(w.startedAt, now), width),
-          item: 'file:' + w.id,
-          files: w.files?.find((f) => f.kind === 'report')?.paths ?? w.files?.find((f) => f.kind === 'brief')?.paths,
-        };
-      }),
-    ];
-  return [];
+
+/** This is the panel's calling native session, not a second list of HUD jobs. */
+export function nativeInspectorRows(tree: SubagentTree | undefined, width: number): MonitorRow[] {
+  if (!tree) return [boardRow(fit(t('Loading…'), width))];
+  const rows = [section(t('This session'), width)];
+  if (tree.incomplete) rows.push(boardRow(fit(theme.board.attention(t('Partial')), width)));
+  if (!tree.nodes.length) rows.push(boardRow(fit(t(tree.rootId && !tree.incomplete ? 'No subagents observed' : 'Native tree unavailable'), width)));
+  const add = (nodes: SubagentTree['nodes'], depth: number) => {
+    for (const node of nodes) {
+      const lead = ' '.repeat(Math.min(2 * depth, Math.floor(width / 4)));
+      const label = monitorText(node.label || node.name);
+      const status = t(node.status);
+      const extra = monitorText([node.model, node.effort].filter(Boolean).join(' · '));
+      const context = node.contextUsage ? `${node.contextUsage.percent}%` : '';
+      const rate = node.outputRate ? `~${Math.round(node.outputRate.tokensPerSecond)} tok/s` : '';
+      const spent = node.tokensSpent
+        ? `${formatTokenCount(node.tokensSpent.input + node.tokensSpent.output)} ${t('tokens spent')}` : '';
+      const facts = [extra, context, rate, spent].filter(Boolean);
+      let detail = [status, ...facts].join(' · ');
+      while (facts.length && visualLength(lead + label + detail) + 2 > width) {
+        facts.pop();
+        detail = [status, ...facts].join(' · ');
+      }
+      const row = itemRow(lead, label, detail, width);
+      rows.push(node.rolloutPath ? { ...row, item: `native:${node.id}`, files: [node.rolloutPath] } : row);
+      add(node.children, depth + 1);
+    }
+  };
+  add(tree.nodes, 0);
+  return rows;
 }

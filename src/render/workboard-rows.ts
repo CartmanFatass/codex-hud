@@ -11,7 +11,7 @@ export const mark = (unicode: string, ascii: string, nerd = unicode) => {
   const set = displayConfig().icons;
   return set === 'text' ? ascii : set === 'nerd' ? nerd : unicode;
 };
-/** A job's state marks: one place for Home's rows, top line and folds, the cards and Help. */
+/** Job state marks for the Inspector. */
 export const stateMark = {
   asking: () => mark('?', '?', '\uF059'),
   failed: () => mark('✗', 'x', '\uF057'),
@@ -110,7 +110,4 @@ export function footerLayout(hints: FooterHints, width: number, left = '') {
 export function footRow(left: string, hints: FooterHints, width: number): string {
   const right = footerLayout(hints, width, left).map(({ label }) => label).join('  ');
   return fit(pair(left, theme.board.muted(right), width), width);
-}
-export function homeDoneCount(done: number, width: number): string {
-  return done ? theme.board.success(`${mark('✓', '+')} ${width < 56 ? done : t('{n} done today', { n: done })}`) : '';
 }

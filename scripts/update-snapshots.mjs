@@ -21,14 +21,6 @@ async function withHome(fn) {
   }
 }
 const writers = {
-  'card-details-frames.json': async () => {
-    const { cardFixture, colourFrames } = await load('card-details.mjs');
-    return withHome((h) => colourFrames(cardFixture(h)));
-  },
-  'home-jobs-frames.json': async () => {
-    const { jobFrames } = await load('home-jobs.mjs');
-    return jobFrames();
-  },
   'control-usage-frames.json': async () => {
     const { dispatchFrames } = await load('control-usage.mjs');
     return dispatchFrames();
@@ -37,17 +29,9 @@ const writers = {
     const { nativeFixture, nativeFrames } = await load('native-tree.mjs');
     return withHome((h) => nativeFrames(nativeFixture(h)));
   },
-  'home-progress-frames.json': async () => {
-    const { homeFixture, homeFrames } = await load('home-progress.mjs');
-    return withHome(async (h) => homeFrames({ root: h, ...(await homeFixture(h)) }));
-  },
   'kept-pages-frames.json': async () => {
     const { pageFixture, pageFrames } = await load('kept-pages.mjs');
     return withHome((h) => pageFrames(pageFixture(h)));
-  },
-  'split-frames.json': async () => {
-    const { splitFixture, splitFrames } = await load('split-layout.mjs');
-    return withHome(async (h) => splitFrames(await splitFixture(join(h, 'busy')), await splitFixture(join(h, 'idle'), { idle: true })));
   },
   'project-frames.json': async () => {
     const { projectFixture, projectFrames } = await load('project-page.mjs');

@@ -33,7 +33,6 @@ test('reload place retains opening time; legacy handoffs use their consumption t
     const { control, home, project, exp, subpage, overlay } = legacy.state;
     assert.equal(legacy.state.activeTab, 'home');
     assert.equal(project.nav.cursor, 'project:page:docs');
-    assert.equal(home.showAll, true);
     assert.deepEqual({ detail: exp.detail, cursor: exp.cursor, scroll: exp.scroll }, { detail: 'openai-api', cursor: 'calibration', scroll: 2 });
     assert.equal(subpage, undefined);
     assert.equal(overlay, undefined);
@@ -43,8 +42,6 @@ test('reload place retains opening time; legacy handoffs use their consumption t
     assert.equal(control.roles.nav.scroll, 3);
     assert.deepEqual(control.roles.folded, new Set(['usage']));
     assert.equal(control.harnesses.nav.cursor, 'control:harness:pi');
-    assert.equal(control.harnesses.nav.split.previewScroll, 4);
-    assert.equal(control.harnesses.nav.split.previewFor, 'harnesses|control:harness:pi');
     assert.deepEqual(control.harnesses.folded, new Set());
     assert.equal(control.notice, undefined);
     assert.deepEqual(control.modelPrevious, { synthetic: 'previous-model' });
@@ -87,24 +84,19 @@ test('v1 migrates the Project view, cursor, saved pages and nested Control nav',
   assert.equal(project.fromProjectsList, true);
   assert.equal(project.nav.cursor, state.projectCursor);
   assert.equal(project.nav.scroll, state.projectScroll);
-  assert.deepEqual(project.nav.split, { focus: 'preview', listCursor: state.splitList, listScroll: 2,
-    previewCursor: state.splitSub, previewScroll: 5, previewFor: state.splitFor });
   assert.deepEqual(project.savedPages, state.projectSaved);
   assert.deepEqual(project.folded, state.projectFolded);
   assert.deepEqual(project.filter, { query: 'slice', editing: false });
-  assert.equal(home.filter, undefined);
-  assert.deepEqual(control.roles.nav.split, split);
   assert.equal(control.roles.nav.cursor, split.previewCursor);
   assert.deepEqual(control.roles.folded, new Set(['usage']));
   assert.deepEqual(control.harnesses.folded, new Set(['harness-off']));
   assert.deepEqual(control.modelPrevious, { imp: 'synthetic/old' });
   assert.equal(control.notice, undefined);
-  assert.deepEqual(prefs, { ...DEFAULT_PANEL_VIEW, panelLayout: 'split', splitRatio: 0.4 });
   assert.deepEqual([place.openedAt, place.widthOverride, place.settings], [42, 56, { selected: 2, offset: 1 }]);
 });
 
-test('v1 migrates Home Split, Inspector, Changes, Help and only the original kept filter scope', () => {
-  const target = { kind: 'worker', laneId: 'lane', workerId: 'worker' };
+test('v1 drops Home card, Split and Changes state but restores Inspector, Help and Project filters', () => {
+  const target = { kind: 'worker', laneId: 'lane', workerId: 'thin-job:j0000000000000001' };
   const state = { mainTab: 'home', focus: 'agents', homeTarget: target, boardAnchor: 'home-progress:progress', homeScroll: 4,
     boardExpanded: new Set(['worker']), boardToggled: new Set(['worker']), boardFolded: new Set(['lane']),
     projectFolded: new Set(['task:one', 'ledger:two', 'agents']), splitCursor: 'lane', splitFocus: 'preview',
@@ -112,32 +104,17 @@ test('v1 migrates Home Split, Inspector, Changes, Help and only the original kep
     filterQuery: 'job', scroll: { changes: 8, details: 7 } };
   const get = (patch = {}) => readPlace(encode({ state: { ...state, ...patch } })).state;
   const restored = get();
-  assert.deepEqual(restored.home.cursor, { kind: 'anchor', item: state.boardAnchor, fallbackTarget: target });
-  assert.equal(restored.home.scroll, 4);
-  assert.equal(restored.home.showAll, true);
-  assert.deepEqual(restored.home.expanded, state.boardExpanded);
-  assert.deepEqual(restored.home.toggled, state.boardToggled);
-  assert.deepEqual(restored.home.foldedLanes, state.boardFolded);
-  assert.equal(restored.home.expandedTasks, undefined);
   assert.deepEqual(restored.project.folded, new Set(['agents']));
-  assert.deepEqual(restored.home.split, { focus: 'preview', listCursor: 'lane', previewCursor: 'worker',
-    listScroll: 2, previewScroll: 5, previewFor: 'home|lane' });
-  assert.equal(restored.project.nav.split.previewCursor, undefined);
-  assert.equal(restored.lastChangesScroll, 8);
-  assert.deepEqual(restored.home.filter, { query: 'job', editing: false });
   assert.equal(restored.project.filter, undefined);
-  assert.equal(get({ filterOpen: true }).home.filter, undefined);
   const inspector = get({ focus: 'details', boardInspect: target, inspectCursor: 'file:one' });
-  const { kind, target: inspected, cursor, scroll, selectedNodeId } = inspector.subpage;
-  assert.deepEqual([kind, inspected, cursor, scroll, selectedNodeId], ['inspector', target, 'file:one', 7, 'node']);
-  assert.equal(inspector.home.filter, undefined);
-  assert.deepEqual(get({ focus: 'changes' }).subpage, { kind: 'changes', scroll: 8 });
+  const { kind, target: inspected, cursor, scroll } = inspector.subpage;
+  assert.deepEqual([kind, inspected, cursor, scroll], ['inspector', target, 'file:one', 7]);
+  assert.equal(get({ focus: 'changes' }).subpage, undefined);
+  assert.deepEqual(restored.home, { scroll: 0 });
   const help = get({ help: true, helpScroll: 14 });
   assert.deepEqual(help.help, { scroll: 14 });
-  assert.equal(help.home.filter, undefined);
   for (const projectPage of ['tickets', 'docs']) {
     const { home, project } = get({ mainTab: 'project', projectPage });
-    assert.equal(home.filter, undefined);
     assert.equal(project.filter?.query, projectPage === 'tickets' ? 'job' : undefined);
   }
 });
@@ -148,7 +125,7 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   const state = initialMonitorState();
   state.activeTab = 'project';
   state.selectedProject = '/synthetic/project';
-  const target = { kind: 'worker', laneId: 'lane', workerId: 'worker', raw: rawArgs };
+  const target = { kind: 'worker', laneId: 'lane', workerId: 'thin-job:j0000000000000001', raw: rawArgs };
   const homeSplit = { focus: 'preview', listCursor: 'lane', listScroll: 2, previewCursor: 'worker', previewScroll: 9, previewFor: 'home|lane' };
   const projectSplit = { focus: 'preview', listCursor: 'project:page:tree', listScroll: 3,
     previewCursor: 'project:file:synthetic', previewScroll: 5, previewFor: 'project|hub|/synthetic/project|project:page:tree' };
@@ -180,27 +157,19 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   assert.equal(place.state.activeTab, 'project');
   assert.equal(place.state.selectedProject, state.selectedProject);
   assert.deepEqual(place.state.help, { scroll: 15 });
-  assert.deepEqual(home.cursor, { kind: 'work', target: { kind: 'worker', laneId: 'lane', workerId: 'worker' } });
   assert.equal(home.scroll, 6);
   assert.equal(project.nav.scroll, 4);
-  assert.deepEqual(home.split, homeSplit);
-  assert.deepEqual(project.nav.split, projectSplit);
-  assert.deepEqual(home.filter, state.home.filter);
   assert.deepEqual(project.filter, state.project.filter);
-  for (const key of ['expanded', 'toggled', 'foldedLanes']) assert.deepEqual(home[key], state.home[key]);
+  assert.deepEqual(home, { scroll: 6 });
+  assert.deepEqual(prefs, DEFAULT_PANEL_VIEW);
   assert.deepEqual(project.folded, state.project.folded);
   assert.deepEqual(project.savedPages, { docs: { cursor: 'doc', scroll: 1 } });
   assert.deepEqual(control.roles.folded, state.control.roles.folded);
   assert.deepEqual(control.harnesses.folded, state.control.harnesses.folded);
   assert.equal(exp.detail, 'openai-api');
-  assert.deepEqual(subpage.target, home.cursor.target);
-  assert.equal(subpage.selectedNodeId, 'node');
-  assert.deepEqual(prefs, { ...DEFAULT_PANEL_VIEW, panelLayout: 'split', splitRatio: 0.4 });
   assert.equal(encodePanelPlace(place), raw);
   const edited = { ...state, home: { ...state.home, filter: { query: secret, editing: true } }, subpage: { kind: 'changes', scroll: 3 } };
   const changed = readPlace(encodePanelPlace({ state: edited, settings: null })).state;
-  assert.deepEqual(changed.subpage, edited.subpage);
-  assert.equal(changed.home.filter, undefined);
 });
 
 test('broken and unknown handoffs fall back safely, retaining a valid opening time', () => {
@@ -215,7 +184,6 @@ test('broken and unknown handoffs fall back safely, retaining a valid opening ti
   assert.deepEqual(state.project.view, { kind: 'waiting', index: -1 });
   assert.equal(state.project.nav.scroll, 0);
   assert.equal(state.subpage, undefined);
-  assert.deepEqual(state.home.expanded, new Set(['ok']));
 });
 
 test('a real dist entry change is quiet for 2s, bursts coalesce, and a generation is attempted once', async (t) => {
@@ -271,7 +239,7 @@ for (const fallback of [false, true]) test(`${fallback ? 'single-supervisor fall
   const f = fixture(t), runner = join(f.root, 'restart.mjs');
   const state = initialMonitorState();
   state.activeTab = 'project';
-  state.home = { ...state.home, cursor: { kind: 'work', target: { kind: 'worker', laneId: 'lane', workerId: 'worker' } },
+  state.home = { ...state.home, cursor: { kind: 'work', target: { kind: 'worker', laneId: 'lane', workerId: 'thin-job:j0000000000000001' } },
     expanded: new Set(['worker:lane:worker']), toggled: new Set(['worker:lane:worker']), foldedLanes: new Set(['other']), showAll: true };
   state.project.folded = new Set(['project']);
   state.help = {};
@@ -324,7 +292,7 @@ else await reload.restart({state:initialMonitorState(),settings:null},()=>{});`)
 
 test('the live panel coalesces build bursts, retains jobs settled during its life, and keeps a broken build alive with a notice', { timeout: 60000 }, async (t) => {
   const openedAt = Date.now() - 60000;
-  const f = live(t, (state) => ({ state, settings: null, openedAt }));
+  const f = live(t, (state) => ({ state: { ...state, subpage: { kind: 'jobs', ...state.jobs } }, settings: null, openedAt }));
   // A start record precedes PanelReload construction. Wait for a collected Home
   // frame on the new alternate screen before replacing that generation's entry.
   const homeFrame = (generation) => {
@@ -343,9 +311,8 @@ test('the live panel coalesces build bursts, retains jobs settled during its lif
   assert.equal(f.restarts()[0].restart.openedAt, openedAt);
   const saved = f.restarts()[0].restart.stateV2;
   assert.equal(saved.activeTab, 'home');
-  assert.deepEqual(saved.home.cursor, f.state.home.cursor);
-  assert.deepEqual(saved.home.expanded, [...f.state.home.expanded]);
-  assert.equal(saved.home.showAll, true);
+  assert.equal(saved.subpage.kind, 'jobs');
+  assert.equal(saved.jobs.cursor, f.state.jobs.cursor);
   f.appendBuild('\ninvalid syntax !');
   await untilRendered(() => f.output().includes('new build failed to load'), t.signal);
   assert.equal(f.restarts().length, 1);
@@ -355,10 +322,8 @@ test('the live panel coalesces build bursts, retains jobs settled during its lif
   assert.equal(f.events().filter((e) => e.start).length, 3, 'good build recovered');
   assert.equal(f.restarts()[1].restart.openedAt, openedAt);
   const restored = f.restarts()[1].restart.stateV2;
-  assert.deepEqual(restored.home.cursor, saved.home.cursor, 'settled job and selection survived the first collected frame');
-  assert.deepEqual(restored.home.expanded, saved.home.expanded);
-  assert.deepEqual(restored.home.foldedLanes, saved.home.foldedLanes);
-  assert.deepEqual(restored.home.toggled, saved.home.toggled);
+  assert.deepEqual(restored.jobs, saved.jobs);
+  assert.deepEqual(restored.subpage, saved.subpage);
   for (const start of f.events().filter((e) => e.start)) {
     assert.deepEqual(start.argv, ['same argv']);
     assert.equal(start.test, 'same env');

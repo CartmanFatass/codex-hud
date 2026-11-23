@@ -3,7 +3,7 @@ import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { flowLines, monitorText, pair } from './monitor-text.js';
 import { subTopRow, footRow, mark } from './workboard-rows.js';
-import { stemLines } from './work-card.js';
+import { stemLines } from './work-job-detail.js';
 import { SETTING_ROWS, rowValue, valueText, type SettingsPageState } from './settings-page.js';
 
 export type SettingsLeaveChoice = 'save' | 'discard' | 'cancel';

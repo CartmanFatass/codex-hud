@@ -9,7 +9,7 @@ import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { BAR_STYLES, THEMES } from './hud-config.js';
 import type { ModelProbeState } from '../collectors/model-probe.js';
 import { section, subTopRow, footRow, mark } from './workboard-rows.js';
-import { stemLines } from './work-card.js';
+import { stemLines } from './work-job-detail.js';
 
 type SettingValue = string | number | boolean;
 const CALL_FEATURES: Record<string, string> = {
@@ -75,9 +75,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     values: ['auto', 'en', 'zh'],
     help: 'Panel and everything a model writes',
   },
-  { key: 'panelLayout', group: 'Panel', label: 'Layout', values: ['classic', 'split'],
-    help: 'Home, Project and Control: Classic is the default; Split puts a list over a preview of the selected row',
-    format: (value) => t(({ classic: 'Classic', split: 'Split' } as Record<string, string>)[String(value)] ?? String(value)) },
   {
     key: 'treeWidth',
     group: 'Panel',
@@ -86,19 +83,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Panel columns for every client; the agent pane keeps 41',
     format: (value) => (Number(value) === 0 ? 'auto' : t('{n} cols', { n: Number(value) })),
   },
-  {
-    key: 'cardStallMinutes',
-    group: 'Panel',
-    label: 'Stall threshold',
-    values: [5, 10, 15, 30, 60],
-    help: 'Minutes without new evidence; presentation only',
-    advanced: true,
-    format: (value) => t('{n}m', { n: Number(value) }),
-  },
-  { key: 'cardFoldMinutes', group: 'Panel', label: 'Fold after', values: [1, 2, 5, 10, 15, 30],
-    help: 'Finished jobs and agents shrink to one row after this long; Enter opens one', advanced: true, format: (value) => t('{n}m', { n: Number(value) }) },
-  { key: 'cardHideMinutes', group: 'Panel', label: 'Hide after', values: [5, 10, 15, 30, 60, 120],
-    help: 'Finished jobs and agents leave Home after this long (a shows them); failed ones stay 30m at least', advanced: true, format: (value) => t('{n}m', { n: Number(value) }) },
   {
     key: 'notify',
     group: 'Panel',
@@ -249,7 +233,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['panelLayout', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
+  Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'impPlacement', 'impEvenPool', 'summaryIntervalMinutes'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],

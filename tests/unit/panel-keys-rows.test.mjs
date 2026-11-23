@@ -1,12 +1,11 @@
 import { withState } from '../fixtures/state-helpers.mjs';
-import { homeTarget } from '../../dist/render/monitor-state.js';
 /** PANEL-UX-02: one meaning per key, a row says its state once, 40-column rows keep the part that identifies them, the fixed words follow the panel language. */
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { splitFixture, split } from '../fixtures/split-layout.mjs';
+import { panelProjectFixture, panelState } from '../fixtures/panel-project.mjs';
 import { NOW, TREE, plain, chainOverlay, onControl, onPage } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -24,12 +23,12 @@ const decode = (raw) => {
 let sharedRoot, busy, idle;
 before(async () => {
   sharedRoot = fs.mkdtempSync(join(tmpdir(), 'keys-rows-'));
-  busy = await splitFixture(join(sharedRoot, 'busy'));
-  idle = await splitFixture(join(sharedRoot, 'idle'), { idle: true });
+  busy = await panelProjectFixture(join(sharedRoot, 'busy'));
+  idle = await panelProjectFixture(join(sharedRoot, 'idle'), { idle: true });
 });
 after(() => fs.rmSync(sharedRoot, { recursive: true, force: true }));
 /** One input against a frame, then the next frame from the state it left. */
-function driver(f, { width = 40, height = 40, data = f.data, state = split(), board } = {}) {
+function driver(f, { width = 40, height = 40, data = f.data, state = panelState(), board } = {}) {
   let frame = f.render(width, 'en', height, state, data, undefined, board ? { workboard: board } : {});
   const run = (input) => {
     const out = handleMonitorInput(frame.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame, nowMs: NOW, standalone: true });
@@ -40,17 +39,17 @@ function driver(f, { width = 40, height = 40, data = f.data, state = split(), bo
 }
 
 test('a printable key is one decoder name, and Help covers the decoder with each key once per section', async (t) => {
-  assert.deepEqual([...'yn<>'].map((c) => decode(c)[0].key), ['', '', 'previous-trouble', 'next-trouble']);
+  assert.deepEqual([...'yn<>'].map((c) => decode(c)[0].key), ['', 'native-inspector', '', '']);
   assert.deepEqual([...'NIRDgpPeE'].map((c) => decode(c)[0].key), ['preset-copy', 'preset-empty', 'preset-rename', 'preset-delete', '', 'preset-list', '', '', '']);
-  assert.deepEqual(['i', '\x1b[3~', '+', '-', '='].map((c) => decode(c)[0].key), ['place-add', 'place-remove', 'list-grow', 'list-shrink', 'list-grow']);
+  assert.deepEqual(['i', '\x1b[3~', '+', '-', '='].map((c) => decode(c)[0].key), ['place-add', 'place-remove', '', '', '']);
   // `+` and `=` are one physical key and one meaning; no key besides them names the same action.
   const named = new Map();
   for (let c = 33; c < 127; c++) {
     const name = decode(String.fromCharCode(c))[0]?.key;
     if (name) named.set(name, [...(named.get(name) ?? []), String.fromCharCode(c)]);
   }
-  for (const name of ['next-trouble', 'previous-trouble', 'place-add', 'list-shrink']) assert.equal(named.get(name)?.length, 1, `${name} is on one key`);
-  assert.deepEqual(named.get('list-grow'), ['+', '=']);
+  for (const name of ['jobs', 'native-inspector', 'place-add']) assert.equal(named.get(name)?.length, 1, `${name} is on one key`);
+  assert.equal(named.get('list-grow'), undefined);
   // Walk the standalone decoder: ASCII (including control keys) and the terminal forms for navigation.
   const ascii = Array.from({ length: 128 }, (_, c) => String.fromCharCode(c));
   const terminals = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].flatMap((end) => [`\x1b[${end}`, `\x1bO${end}`]);
@@ -61,7 +60,7 @@ test('a printable key is one decoder name, and Help covers the decoder with each
     Tab: '\t', 'Shift+Tab': '\x1b[Z', Home: '\x1b[H', End: '\x1b[F', PgUp: '\x1b[5~', PgDn: '\x1b[6~',
     '⏎': '\r', Esc: '\x1b', Space: ' ', Del: '\x1b[3~', Backspace: '\x7f', '^R': '\x12',
   };
-  const headings = { en: ['Everywhere', 'Home', 'Project', 'Control', 'Split'], zh: ['通用', '首页', '项目', '控制', '分栏'] };
+  const headings = { en: ['Everywhere', 'Home', 'Project', 'Control'], zh: ['通用', '首页', '项目', '控制'] };
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
     for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
@@ -89,9 +88,9 @@ test('a printable key is one decoder name, and Help covers the decoder with each
             seen.add(key);
           }
         }
-        assert.deepEqual([...sections.keys()], headings[lang].slice(0, panelLayout === 'split' ? 5 : 4));
+        assert.deepEqual([...sections.keys()], headings[lang]);
         const covered = new Set([...sections.values()].flatMap((keys) => [...keys]).flatMap((key) => decode(raw[key] ?? key).map((event) => event.key)));
-        const expected = panelLayout === 'split' ? [...names] : [...names].filter((key) => !['list-grow', 'list-shrink'].includes(key));
+        const expected = [...names];
         assert.deepEqual(expected.filter((key) => !covered.has(key)), [], `${panelLayout} ${lang}: decoder keys missing in Help`);
         // At 40 columns the columns fit, and wrapping retains the same words as the wide left column.
         const text = (rows) => rows.join('').replace(/[─\s]/gu, '');
@@ -223,10 +222,10 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
     const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW, standalone: true });
     const root = render(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout, experiments: true } }));
     const moved = render(press(root, '\x1b[B').state);
-    const cursor = ({ home: panelLayout === 'split' ? (s) => s.home.split.listCursor : (s) => homeTarget(s.home),
+    const cursor = ({ home: (s) => s.home.scroll,
       project: (s) => s.project.nav.cursor, control: (s) => s.control.roles.nav.cursor, exp: (s) => s.exp.cursor })[mainTab];
-    assert.ok(cursor(moved.state), `${panelLayout} ${mainTab} has a cursor`);
-    assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${panelLayout} ${mainTab} moved off its first row`);
+    if (mainTab !== 'home') assert.ok(cursor(moved.state), `${panelLayout} ${mainTab} has a cursor`);
+    if (mainTab !== 'home') assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${panelLayout} ${mainTab} moved off its first row`);
     const escaped = press(moved, '\x1b');
     assert.equal(escaped.close, false);
     assert.equal(escaped.action, undefined);
@@ -235,47 +234,10 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
   }
 });
 
-test('> and < are Home’s next and previous card that needs the owner, not Project keys', () => {
-  const home = driver(busy), start = home.state.home.split.listCursor;
-  home.run({ type: 'key', key: 'next-trouble', text: '>' });
-  assert.notEqual(home.state.home.split.listCursor, start, '> moves to the next card that needs the owner');
-  home.run({ type: 'key', key: 'previous-trouble', text: '<' });
-  assert.equal(home.state.home.split.listCursor, start, '< comes back');
-  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' }, project: { nav: { cursor: 'project:page:progress' } } }) });
-  for (const input of [{ type: 'key', key: 'next-trouble', text: '>' }, { type: 'key', key: 'previous-trouble', text: '<' }]) {
-    const out = hub.run(input);
-    assert.equal(out.action, undefined);
-  }
-  assert.equal(hub.state.project.nav.cursor, 'project:page:progress');
-});
-
-const STATE_WORDS = { en: ['asking', 'failed', 'done', 'stopped', 'stalled', 'report ready'], zh: ['提问中', '失败', '完成', '已停止', '停滞', '报告待阅'] };
-/** The state words a row says more than once (a word as a whole, not inside a title). */
-const repeated = (line, lang) => STATE_WORDS[lang].filter((word) => line.split(word).length > 2);
-test('a row says its state once: Home’s lane rows, its cards and their model marks, in both layouts and languages', () => {
-  // The finished job carries the model's outcome mark `done`, the same word as its state.
-  const marked = (f) => {
-    const workers = f.board.workers.map((w) => (w.state === 'done' || w.settledAt !== null ? { ...w, labels: { ...w.labels, outcome: { value: w.state === 'failed' ? 'failed' : 'done', confidence: 1 } } } : w));
-    const lanes = f.board.lanes.map((l) => ({ ...l, workers: l.workers.map((w) => workers.find((x) => x.id === w.id) ?? w) }));
-    return { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers) };
-  };
-  for (const f of [busy, idle]) for (const lang of ['en', 'zh']) for (const width of [40, 56, 80]) for (const layout of ['split', 'classic']) {
-    const state = withState(split(), { prefs: { panelLayout: layout } }), board = marked(f);
-    const frame = f.render(width, lang, 40, state, f.data, undefined, { workboard: board });
-    for (const line of plain(frame)) assert.deepEqual(repeated(line, lang), [], `${layout} ${lang} ${width}: ${line}`);
-    if (layout === 'classic') for (const line of plain(frame)) assert.doesNotMatch(line, /\[(done|failed|完成|失败)\] (done|failed|完成|失败)/);
-  }
-  // The lane that asks carries its role icon, not its state again; a finished lane shows its job cleanly.
-  const lines = plain(busy.render(40, 'en', 40, split(), busy.data));
-  assert.match(lines.find((l) => /^\? NATIVE-TREE/.test(l)), /^\? NATIVE-TREE +⚒ asking 0m$/);
-  const idleDone = plain(idle.render(40, 'en', 40, split({ prefs: { cardHideMinutes: 15 } }), idle.data)).find((l) => /^✓●? NATIVE-TREE/.test(l));
-  assert.match(idleDone, /^✓●? NATIVE-TREE +2 jobs +\S+ \d+m$/);
-});
-
 test('at 40 columns the role row retains the next target without a placeholder tag; detail retains full place names', () => {
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
-    const state = split(withState({ activeTab: 'control', prefs: { panelLayout }, control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'usage', 'files']) }).control }, (panelLayout === 'classic' ? { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) } : {})));
+    const state = panelState(withState({ activeTab: 'control', prefs: { panelLayout }, control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'usage', 'files']) }).control }, { overlay: chainOverlay(control.roles.find((r) => r.role === 'imp')) }));
     const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
     assert.match(text, /imp → agy/);
     assert.match(text, /pi\/openai +\[gpt-6\.1-sol ▾\]/);
@@ -287,11 +249,11 @@ test('at 40 columns the role row retains the next target without a placeholder t
 
 test('fixed words follow the panel language: the invalid role file’s reason, the Usage block with what is left, the Settings (no key) mark', () => {
   const control = { ...busy.control, radar: { quotas: { codex: [{ label: '5h', remaining: 71 }], claude: [{ label: '7d', remaining: 7 }] }, roleStats: {} } };
-  const zh = plain(busy.render(40, 'zh', 60, split({ activeTab: 'control' }), control)).join('\n');
+  const zh = plain(busy.render(40, 'zh', 60, panelState({ activeTab: 'control' }), control)).join('\n');
   assert.match(zh, /JSON 无法解析/);
   assert.doesNotMatch(zh, /unparseable|雷达/);
   assert.match(zh, /用量 ─+ Codex 剩余 71%/, 'the figure says it is what is left');
-  const en = plain(busy.render(80, 'en', 60, split({ activeTab: 'control' }), control)).join('\n');
+  const en = plain(busy.render(80, 'en', 60, panelState({ activeTab: 'control' }), control)).join('\n');
   assert.match(en, /Usage ─+ codex 71% left · claude 7% left/);
   assert.match(en, /unparseable JSON/);
   // Settings: the mark on a Decision API without a key is the panel's language too.

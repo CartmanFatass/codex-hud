@@ -1,3 +1,4 @@
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
@@ -48,7 +49,7 @@ test('Settings → Models shows real hourly usage/cap, including zero and with m
   }
 });
 
-test('Changes keeps key f and repository/worktree summary; no file selection, previews or diffs', async (t) => {
+test('Project Working tree includes repository/worktree summary; f does not open a standalone panel', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'hud-changes-'));
   const previous = setLanguage('en');
   t.after(() => {
@@ -86,10 +87,11 @@ test('Changes keeps key f and repository/worktree summary; no file selection, pr
     height: 24,
   });
   const [key] = new WorkbenchInputDecoder('workboard').push(Buffer.from('f'));
-  const state = handleMonitorInput(home.state, key, { tree, frame: home }).state;
-  assert.equal(state.subpage?.kind, 'changes');
-  const frame = renderMonitor({ tree, worktrees, state, width: 120, height: 30 });
-  const pane = frame.panes.find((p) => p.id === 'changes');
+  assert.equal(handleMonitorInput(home.state, key, { frame: home }).state.subpage, undefined);
+  const state = { ...home.state, activeTab: 'project', project: { ...home.state.project, view: { kind: 'tree' } } };
+  const project = await new ProjectCollector(repo, join(dir, 'hud')).collect('home', { workers: [], lanes: [] }, Date.now());
+  const frame = renderMonitor({ tree, project, worktrees, state, width: 120, height: 30 });
+  const pane = frame.panes.find((p) => p.id === 'agents');
   const text = pane.rows.map((row) => stripAnsi(row.text)).join('\n');
   for (const fact of [
     'branch     trunk',
@@ -108,9 +110,9 @@ test('Changes keeps key f and repository/worktree summary; no file selection, pr
   assert.ok(pane.rows.every((row) => !row.item && !row.controls));
   assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { tree, frame }).state, frame.state);
   for (const width of [32, 40, 56]) {
-    const narrow = renderMonitor({ tree, worktrees, state, width, height: 30 });
+    const narrow = renderMonitor({ tree, project, worktrees, state, width, height: 30 });
     assert.ok(narrow.lines.every((line) => visualLength(line) === width));
-    const rows = narrow.panes.find((p) => p.id === 'changes').rows;
+    const rows = narrow.panes.find((p) => p.id === 'agents').rows;
     assert.ok(rows.some((row) => stripAnsi(row.text).includes('trunk · dirty')));
   }
   // Starting in a linked worktree's subdirectory (also through a symlink) must
@@ -120,9 +122,9 @@ test('Changes keeps key f and repository/worktree summary; no file selection, pr
   symlinkSync(side, join(dir, 'alias'), 'dir');
   for (const source of [join(side, 'src'), join(dir, 'alias', 'src')]) {
     const nested = await new WorktreeCollector().refresh([source]);
-    const detail = renderMonitor({ tree, worktrees: nested, state, width: 120, height: 30 });
+    const detail = renderMonitor({ tree, project, worktrees: nested, state, width: 120, height: 30 });
     const summary = detail.panes
-      .find((p) => p.id === 'changes')
+      .find((p) => p.id === 'agents')
       .rows.map((r) => stripAnsi(r.text))
       .join('\n');
     assert.match(summary, /branch\s+side/);

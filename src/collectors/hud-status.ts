@@ -63,8 +63,10 @@ export interface HudStatusInput {
   sessionId?: string;
   /** The latest collection failed; the values shown are the last good ones. */
   stale: boolean;
-  /** The panel has its own on-demand Project/Changes git collectors. */
+  /** The panel has its own on-demand Project git collectors. */
   skipGit?: boolean;
+  /** The panel scans native threads only in its native Inspector. */
+  skipTree?: boolean;
   runtimeSession?: Partial<SessionInfo>;
   /**
    * The panel's tree, when this build is the second one on a tick. Passed
@@ -112,7 +114,7 @@ export class HudStatus {
     return time('status.build', () => this.buildNow(input));
   }
 
-  private buildNow({ rollout, sessionId, stale, runtimeSession, tree, skipGit }: HudStatusInput): HudData {
+  private buildNow({ rollout, sessionId, stale, runtimeSession, tree, skipGit, skipTree }: HudStatusInput): HudData {
     const now = Date.now();
     if (this.config === null || this.configStale || now - this.configAt >= this.configMaxAgeMs) {
       this.config = readCodexConfig();
@@ -132,9 +134,7 @@ export class HudStatus {
       rollout?.lastCompactTime
     );
     const rootId = rollout?.session?.id ?? sessionId ?? '';
-    const subagentTree =
-      tree ??
-      (rootId
+    const subagentTree = tree ?? (skipTree ? undefined : rootId
         ? time('tree.build', () => buildSubagentTree(rootId, rollout?.subagents ?? []))
         : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() });
     const health = this.health.current();

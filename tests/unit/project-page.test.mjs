@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
 import { projectFixture, projectFrames, plain, onPage, onControl, PAGES, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
 import { progressSegments } from '../../dist/render/project-view.js';
-import { renderWorkCard } from '../../dist/render/work-card.js';
+import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { STATE_BYTES } from '../../dist/collectors/state-ledger.js';
@@ -110,7 +110,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
         assert.match(text(pages.control), /bad\.json/);
       }
       if (lang === 'zh') {
-        assert.match(text(hub), /^ 首页 \?1  项目 \?2/m);
+        assert.match(text(hub), /^ 首页  项目 \?2/m);
         assert.doesNotMatch(text(hub, ...Object.values(pages)), /\bProject 2\b|3 agent\b/);
         assert.ok(pages.control.workboard.rows.some((r) => stripAnsi(r.text).startsWith('▸ 文件')));
       }
@@ -209,7 +209,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 5$/m, 'a second Enter folds the roles again');
 });
-test('arrows/Tab cycle main tabs with independent Project cursor/scroll; the digits switch none and f opens Changes', async (t) => {
+test('arrows/Tab cycle main tabs with independent Project cursor/scroll; digits and retired f switch no view', async (t) => {
   const f = await fixture(t),
     decoder = new WorkbenchInputDecoder('workboard');
   const send = (frame, raw) => handleMonitorInput(frame.state, decoder.push(Buffer.from(raw))[0], ctx(frame));
@@ -245,8 +245,8 @@ test('arrows/Tab cycle main tabs with independent Project cursor/scroll; the dig
   frame = f.render(80, 'en', send(frame, '3').state);
   assert.equal(frame.state.subpage, undefined, 'a digit opens no page');
   frame = f.render(80, 'en', send(frame, 'f').state);
-  assert.equal(frame.state.subpage?.kind, 'changes');
-  assert.equal(projectShown(frame.state), false);
+  assert.equal(frame.state.subpage, undefined);
+  assert.equal(projectShown(frame.state), true);
 });
 
 test('Project collection failure is caught and the live panel re-arms collection', async (t) => {
@@ -454,7 +454,7 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
     frame = f.render(80, 'en', press(frame, 'escape').state);
     assert.equal(projectPageOf(frame.state), undefined);
     assert.equal(frame.state.project.nav.cursor, `project:page:${page}`);
-    assert.match(stripAnsi(frame.lines[0]), /^ Home \?1  Project \?2/);
+    assert.match(stripAnsi(frame.lines[0]), /^ Home  Project \?2/);
     frame = f.render(80, 'en', press(frame, 'enter').state);
     frame = f.render(80, 'en', click(frame, 33, 0).state);
     assert.equal(projectPageOf(frame.state), undefined, 'a click anywhere on the crumb returns');
@@ -554,10 +554,10 @@ test('Progress dates STATE notes but does not flag working tickets that have no 
   assert.match(text, /◐ QUEUE-04 +working/);
   assert.doesNotMatch(text, /no worktree|not in ledger|NO-JOB/);
 });
-test('ticket lines use the same Home worker fact/model and keep hidden jobs available; files open tickets', async (t) => {
+test('ticket lines use the same Home worker fact/model and keep older jobs available; files open tickets', async (t) => {
   const f = await fixture(t),
     worker = f.board.workers.find((w) => w.evidence[0]?.sourceId === 'j0000000000000002');
-  const home = renderWorkCard(projectWorkCard(worker, NOW), sliceState(), 120).map(stripAnsi).join('\n');
+  const home = workInspectorRows(worker, 120, NOW).map(r => stripAnsi(r.text)).join('\n');
   assert.match(home, /Question: Which synthetic option\?/);
   const opened = onPage('progress', { project: { folded: new Set(['task:milestone:native-tree']) } });
   assert.match(plain(f.render(120, 'en', opened)).join('\n'), /Which synthetic option\?/);
@@ -576,7 +576,7 @@ test('ticket lines use the same Home worker fact/model and keep hidden jobs avai
   const hidden = f.render(120, 'en', opened);
   assert.equal(
     hidden.workboard.snapshot.workers.some((w) => w.id === worker.id),
-    false
+    true
   );
   assert.match(plain(hidden).join('\n'), /Building synthetic agents/);
   fs.unlinkSync(join(f.sliceJob, 'report.md'));

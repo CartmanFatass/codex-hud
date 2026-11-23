@@ -1,5 +1,4 @@
 import { withState, sliceState } from '../fixtures/state-helpers.mjs';
-import { homeCursor, homeTarget } from '../../dist/render/monitor-state.js';
 import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -164,12 +163,6 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   const home = f.render(80, 'en', { ...sliceState(), selectedProject: PROJECTS[1].root }, 56, f.data, true, 'unicode', 'none', { projects: PROJECTS });
   assert.equal(send(home, ']').state.selectedProject, PROJECTS[1].root);
   assert.deepEqual(plain(home), plain(f.render(80, 'en', sliceState(), 56, f.data, true, 'unicode', 'none', { projects: PROJECTS })), 'Home does not depend on the choice');
-  // Home's progress block is the panel's own project's: opening it from Home leaves the choice for the panel's own.
-  const block = home.workboard.rows.find((r) => r.item === 'home-progress:progress');
-  assert.ok(block, 'Home has its progress block');
-  home.state.home.cursor = homeCursor(homeTarget(home.state.home), block.item);
-  const opened = send(home, '\r').state;
-  assert.deepEqual([opened.activeTab, projectPageOf(opened), opened.selectedProject], ['project', 'progress', undefined]);
   // The choice survives the panel's own restart: the whole state goes through the reload place.
   const state = hub(send(hub(onPage()), ']').state).state;
   process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state, settings: null });

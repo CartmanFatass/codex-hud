@@ -1,6 +1,6 @@
 {
   "hub-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ───────────────────────────",
     "Needs you ──────────────────────────── 2",
@@ -26,7 +26,7 @@
     "                          ⏎ open  ? help"
   ],
   "hub-80-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────",
     "Needs you ──────────────────────────────────────────────────────────────────── 2",
@@ -52,7 +52,7 @@
     "                                                                  ⏎ open  ? help"
   ],
   "hub-120-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "Needs you ──────────────────────────────────────────────────────────────────────────────────────────────────────────── 2",
@@ -372,7 +372,7 @@
     "                                                                                                ⏎ open  Esc back  ? help"
   ],
   "control-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses",
     "",
@@ -414,7 +414,7 @@
     "        ⏎ open file  h harnesses  ? help"
   ],
   "control-120-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses",
     "",
@@ -456,7 +456,7 @@
     "                                                                ⏎ open file  h harnesses  r refresh  [ ] project  ? help"
   ],
   "hub-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "",
     "demo-project ───────────────────────────",
     "需要你处理 ─────────────────────────── 2",
@@ -482,7 +482,7 @@
     "                          ⏎ 打开  ? 帮助"
   ],
   "hub-80-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────",
     "需要你处理 ─────────────────────────────────────────────────────────────────── 2",
@@ -508,7 +508,7 @@
     "                                                                  ⏎ 打开  ? 帮助"
   ],
   "hub-120-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "需要你处理 ─────────────────────────────────────────────────────────────────────────────────────────────────────────── 2",
@@ -828,7 +828,7 @@
     "                                                                                                ⏎ 打开  Esc 返回  ? 帮助"
   ],
   "control-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主",
     "",
@@ -870,7 +870,7 @@
     "      ⏎ 打开文件  h 宿主  r 刷新  ? 帮助"
   ],
   "control-120-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主",
     "",
@@ -1324,7 +1324,7 @@
     "      ⏎ open  Esc back  / filter  ? help"
   ],
   "hub-switch-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "second-project ─────────── ▾ project 2/3",
     "Needs you ──────────────────────────── 2",
@@ -1350,7 +1350,7 @@
     "             ⏎ open  [ ] project  ? help"
   ],
   "hub-switch-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "",
     "second-project ────────────── ▾ 项目 2/3",
     "需要你处理 ─────────────────────────── 2",
@@ -1390,7 +1390,7 @@
     "      ⏎ open  Esc back  / filter  ? help"
   ],
   "hub-rich-40-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ───────────────────────────",
     "Needs you ──────────────────────────── 2",
@@ -1432,7 +1432,7 @@
     "                          ⏎ open  ? help"
   ],
   "hub-rich-40-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "",
     "demo-project ───────────────────────────",
     "需要你处理 ─────────────────────────── 2",
@@ -1474,7 +1474,7 @@
     "                          ⏎ 打开  ? 帮助"
   ],
   "hub-rich-40-20-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ───────────────────────────",
     "Needs you ──────────────────────────── 2",
@@ -1496,7 +1496,7 @@
     "                          ⏎ open  ? help"
   ],
   "hub-rich-40-16-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ───────────────────────────",
     "Needs you ──────────────────────────── 2",
@@ -1514,7 +1514,7 @@
     "                          ⏎ open  ? help"
   ],
   "hub-rich-40-12-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
     "Needs you ──────────────────────────── 2",
     "  ? Try the Project tab",
@@ -1528,7 +1528,7 @@
     "                          ⏎ open  ? help"
   ],
   "hub-rich-120-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "Needs you ──────────────────────────────────────────────────────────────────────────────────────────────────────────── 2",
@@ -1570,7 +1570,7 @@
     "                                                                                                          ⏎ open  ? help"
   ],
   "control-rich-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses",
     "",
@@ -1620,7 +1620,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "control-rich-120-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses",
     "",
@@ -1670,7 +1670,7 @@
     "                        m model  c C preset  p presets  ⏎ chain  N copy  I empty  h harnesses  o file  r refresh  ? help"
   ],
   "control-rich-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主",
     "",
@@ -1720,7 +1720,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "control-rich-120-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主",
     "",
@@ -1770,7 +1770,7 @@
     "                                    m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "control-rich-open-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses",
     "",
@@ -1828,7 +1828,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "control-chain-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1856,7 +1856,7 @@
     "        m model  x clear  ⏎ edit  ? help"
   ],
   "control-rich-open-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主",
     "",
@@ -1914,7 +1914,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "control-chain-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1942,7 +1942,7 @@
     "m 模型  x 清除  ⏎ 编辑  Esc 返回  ? 帮助"
   ],
   "control-rich-open-120-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses",
     "",
@@ -2000,7 +2000,7 @@
     "                        m model  c C preset  p presets  ⏎ chain  N copy  I empty  h harnesses  o file  r refresh  ? help"
   ],
   "control-rich-40-text": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "demo-project ---------------------------",
     " Roles  Harnesses",
     "",
@@ -2050,7 +2050,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "pick-grouped-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ pi's model (gpt-6.1-sol)",
@@ -2076,7 +2076,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-filter-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ grok▌                                5",
     "  ◉ xai/grok-4.7",
@@ -2098,7 +2098,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-long-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ maverick▌                            2",
     "    arena/meta-llama/llam…-128e-instruct",
@@ -2116,7 +2116,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-exhausted-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ openai/gpt-6.1-sol▌                  1",
     "›   openai/gpt-6.1-sol             ✗ 42m",
@@ -2134,7 +2134,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-unknown-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ grok-4.7                           ?",
@@ -2152,7 +2152,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-off-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   28",
     "› ◉ xai/grok-4.7                       ⊘",
@@ -2170,7 +2170,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-grouped-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ pi 自带模型（gpt-6.1-sol）",
@@ -2196,7 +2196,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-filter-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ grok▌                                5",
     "  ◉ xai/grok-4.7",
@@ -2218,7 +2218,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-long-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ maverick▌                            2",
     "    arena/meta-llama/llam…-128e-instruct",
@@ -2236,7 +2236,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-exhausted-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ openai/gpt-6.1-sol▌                  1",
     "›   openai/gpt-6.1-sol            ✗ 42分",
@@ -2254,7 +2254,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-unknown-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ grok-4.7                           ?",
@@ -2272,7 +2272,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-off-40-zh": [
-    " 首页 ?1  项目 ?2  控制",
+    " 首页  项目 ?2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   28",
     "› ◉ xai/grok-4.7                       ⊘",
@@ -2290,7 +2290,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-no-match-40-en": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ zz-new▌                              0",
     "No matching models",
@@ -2308,7 +2308,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-order-browse-40-en": [
-    " Home ?1  Project ?2  Control  EXP      ",
+    " Home  Project ?2  Control  EXP         ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   88",
     "› ◉ xai/grok-4.7                        ",
@@ -2334,7 +2334,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-order-filter-40-en": [
-    " Home ?1  Project ?2  Control  EXP      ",
+    " Home  Project ?2  Control  EXP         ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ grok▌                                8",
     "›   xai/grok-4.5                        ",
@@ -2360,7 +2360,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-order-browse-40-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP            ",
+    " 首页  项目 ?2  控制  EXP               ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   88",
     "› ◉ xai/grok-4.7                        ",
@@ -2386,7 +2386,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-order-filter-40-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP            ",
+    " 首页  项目 ?2  控制  EXP               ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ grok▌                                8",
     "›   xai/grok-4.5                        ",
@@ -2412,7 +2412,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-order-browse-120-en": [
-    " Home ?1  Project ?2  Control  EXP                                                                                      ",
+    " Home  Project ?2  Control  EXP                                                                                         ",
     " Model · imp [daily] place #1 · pi                                                              88 models · list 2h old ",
     "/ ▌                                                                 88│ xai/grok-4.7                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -2438,7 +2438,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "pick-order-filter-120-en": [
-    " Home ?1  Project ?2  Control  EXP                                                                                      ",
+    " Home  Project ?2  Control  EXP                                                                                         ",
     " Model · imp [daily] place #1 · pi                                                              88 models · list 2h old ",
     "/ grok▌                                                              8│ xai/grok-4.5                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -2464,7 +2464,7 @@
     "                                                                            ⏎ set  esc clear  ^R refresh  type to filter"
   ],
   "pick-order-browse-120-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP                                                                                            ",
+    " 首页  项目 ?2  控制  EXP                                                                                               ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               88 个模型 · 列表 2小时前 ",
     "/ ▌                                                                 88│ xai/grok-4.7                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -2490,7 +2490,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "pick-order-filter-120-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP                                                                                            ",
+    " 首页  项目 ?2  控制  EXP                                                                                               ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               88 个模型 · 列表 2小时前 ",
     "/ grok▌                                                              8│ xai/grok-4.5                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -2516,7 +2516,7 @@
     "                                                                                     ⏎ 设为  esc 清除  ^R 刷新  输入筛选"
   ],
   "pick-flat-claude-40-en": [
-    " Home ?1  Project ?2  Control           ",
+    " Home  Project ?2  Control              ",
     "oracle #1 ───────────── [fable] · claude",
     "/ ▌                                    4",
     "› ◉ fable                               ",
@@ -2542,7 +2542,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-flat-claude-40-zh": [
-    " 首页 ?1  项目 ?2  控制                 ",
+    " 首页  项目 ?2  控制                    ",
     "oracle 第 1 位 ──────── [fable] · claude",
     "/ ▌                                    4",
     "› ◉ fable                               ",
@@ -2568,7 +2568,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-flat-claude-120-en": [
-    " Home ?1  Project ?2  Control                                                                                           ",
+    " Home  Project ?2  Control                                                                                              ",
     "oracle #1 ───────────────────────────────────────────────────────────────────────────────────────────── [fable] · claude",
     "/ ▌                                                                                                                    4",
     "› ◉ fable                                                                                                               ",
@@ -2594,7 +2594,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "pick-flat-claude-120-zh": [
-    " 首页 ?1  项目 ?2  控制                                                                                                 ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     "oracle 第 1 位 ──────────────────────────────────────────────────────────────────────────────────────── [fable] · claude",
     "/ ▌                                                                                                                    4",
     "› ◉ fable                                                                                                               ",
@@ -2620,7 +2620,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "preset-row-40-split-en": [
-    " Home ?1  Project ?2  Control  EXP",
+    " Home  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses",
     "",
@@ -2633,6 +2633,8 @@
     "",
     "Healthy ────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7",
+    "  Presets  Copy preset  Empty preset",
+    "  Rename  Delete",
     "  ◉ reviewer → pi/mistral",
     "  ◉ sonic → pi",
     "  ◉ oracle [fable] → claude fable",
@@ -2641,14 +2643,12 @@
     "▸ Usage ────────────────────────────────",
     "▸ Files ─────────── keys 3/5 · browser ✓",
     "",
-    "imp ──────────────────────────── [daily]",
-    "Chain ──────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7 ▾]          high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "  3 ○ claude  [claude-opus-5-5 ▾]   high",
-    "source    yours · imp.json",
-    "  Presets  Copy preset  Empty preset",
-    "  Rename  Delete",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -2656,12 +2656,9 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-list-40-split-en": [
-    " Home ?1  Project ?2  Control  EXP",
+    " Home  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses",
-    "Healthy ────────────────────────────── 5",
-    "  ◉ imp [daily] → xai/grok-4.7",
-    "  ◉ reviewer → pi/mistral",
     "imp ────────────────────── choose preset",
     "/ ▌                                    4",
     "    default   → pi/openai",
@@ -2678,15 +2675,15 @@
     "",
     "",
     "",
+    "",
+    "",
+    "",
     "     type to filter  ⏎ apply  Esc cancel"
   ],
   "preset-delete-40-split-en": [
-    " Home ?1  Project ?2  Control  EXP",
+    " Home  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses",
-    "Healthy ────────────────────────────── 5",
-    "  ◉ imp [daily] → xai/grok-4.7",
-    "  ◉ reviewer → pi/mistral",
     "imp ────────────────────── delete preset",
     "Delete daily?",
     "Use file chain next",
@@ -2703,10 +2700,13 @@
     "",
     "",
     "",
+    "",
+    "",
+    "",
     "                    ⏎ delete  Esc cancel"
   ],
   "preset-row-40-split-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制  EXP",
     "harbor-api ─────────────────────────────",
     " 角色  宿主",
     "",
@@ -2719,6 +2719,8 @@
     "",
     "正常 ───────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7",
+    "  预设  复制预设  空白预设  重命名",
+    "  删除",
     "  ◉ reviewer → pi/mistral",
     "  ◉ sonic → pi",
     "  ◉ oracle [fable] → claude fable",
@@ -2727,14 +2729,12 @@
     "▸ 用量 ─────────────────────────────────",
     "▸ 文件 ───────────── 密钥 3/5 · 浏览器 ✓",
     "",
-    "imp ──────────────────────────── [daily]",
-    "备选链 ─────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7 ▾]          high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "  3 ○ claude  [claude-opus-5-5 ▾]   high",
-    "来源      用户 · imp.json",
-    "  预设  复制预设  空白预设  重命名",
-    "  删除",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -2742,12 +2742,9 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "preset-list-40-split-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制  EXP",
     "harbor-api ─────────────────────────────",
     " 角色  宿主",
-    "正常 ───────────────────────────────── 5",
-    "  ◉ imp [daily] → xai/grok-4.7",
-    "  ◉ reviewer → pi/mistral",
     "imp ─────────────────────────── 选择预设",
     "/ ▌                                    4",
     "    default   → pi/openai",
@@ -2764,15 +2761,15 @@
     "",
     "",
     "",
+    "",
+    "",
+    "",
     "              输入筛选  ⏎ 应用  Esc 取消"
   ],
   "preset-delete-40-split-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制  EXP",
     "harbor-api ─────────────────────────────",
     " 角色  宿主",
-    "正常 ───────────────────────────────── 5",
-    "  ◉ imp [daily] → xai/grok-4.7",
-    "  ◉ reviewer → pi/mistral",
     "imp ─────────────────────────── 删除预设",
     "删除 daily？",
     "下次使用文件链",
@@ -2789,10 +2786,13 @@
     "",
     "",
     "",
+    "",
+    "",
+    "",
     "                        ⏎ 删除  Esc 取消"
   ],
   "preset-row-40-classic-en": [
-    " Home ?1  Project ?2  Control  EXP",
+    " Home  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses",
     "",
@@ -2828,7 +2828,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-list-40-classic-en": [
-    " Home ?1  Project ?2  Control  EXP",
+    " Home  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses",
     "imp ────────────────────── choose preset",
@@ -2853,7 +2853,7 @@
     "     type to filter  ⏎ apply  Esc cancel"
   ],
   "preset-delete-40-classic-en": [
-    " Home ?1  Project ?2  Control  EXP",
+    " Home  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses",
     "imp ────────────────────── delete preset",
@@ -2878,7 +2878,7 @@
     "                    ⏎ delete  Esc cancel"
   ],
   "preset-row-40-classic-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制  EXP",
     "harbor-api ─────────────────────────────",
     " 角色  宿主",
     "",
@@ -2914,7 +2914,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "preset-list-40-classic-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制  EXP",
     "harbor-api ─────────────────────────────",
     " 角色  宿主",
     "imp ─────────────────────────── 选择预设",
@@ -2939,7 +2939,7 @@
     "              输入筛选  ⏎ 应用  Esc 取消"
   ],
   "preset-delete-40-classic-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制  EXP",
     "harbor-api ─────────────────────────────",
     " 角色  宿主",
     "imp ─────────────────────────── 删除预设",
@@ -2964,7 +2964,7 @@
     "                        ⏎ 删除  Esc 取消"
   ],
   "preset-switched-40-split-en": [
-    " Home ?1  Project ?2  Control  EXP",
+    " Home  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses",
     "✓ imp · preset applied",
@@ -2978,6 +2978,8 @@
     "",
     "Healthy ────────────────────────────── 5",
     "  ◉ imp → openai/gpt-6.1-sol",
+    "  Presets  Copy preset  Empty preset",
+    "  Rename  Delete",
     "  ◉ reviewer → pi/mistral",
     "  ◉ sonic → pi",
     "  ◉ oracle [fable] → claude fable",
@@ -2986,13 +2988,11 @@
     "▸ Usage ────────────────────────────────",
     "▸ Files ─────────── keys 3/5 · browser ✓",
     "",
-    "imp ────────────────────────────────────",
-    "Chain ──────────────────────────────── 2",
-    "  1 ◉ pi/openai [gpt-6.1-sol ▾]    xhigh",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "source    yours · imp.json",
-    "  Presets  Copy preset  Empty preset",
-    "  Rename  Delete",
+    "",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -3000,7 +3000,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-switched-40-split-zh": [
-    " 首页 ?1  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制  EXP",
     "harbor-api ─────────────────────────────",
     " 角色  宿主",
     "✓ imp · 已应用预设",
@@ -3014,6 +3014,8 @@
     "",
     "正常 ───────────────────────────────── 5",
     "  ◉ imp → openai/gpt-6.1-sol",
+    "  预设  复制预设  空白预设  重命名",
+    "  删除",
     "  ◉ reviewer → pi/mistral",
     "  ◉ sonic → pi",
     "  ◉ oracle [fable] → claude fable",
@@ -3022,13 +3024,11 @@
     "▸ 用量 ─────────────────────────────────",
     "▸ 文件 ───────────── 密钥 3/5 · 浏览器 ✓",
     "",
-    "imp ────────────────────────────────────",
-    "备选链 ─────────────────────────────── 2",
-    "  1 ◉ pi/openai [gpt-6.1-sol ▾]    xhigh",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "来源      用户 · imp.json",
-    "  预设  复制预设  空白预设  重命名",
-    "  删除",
+    "",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -3036,7 +3036,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-row-40-split-en": [
-    " Home ?1  Project ?2  Control           ",
+    " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses                       ",
     "                                        ",
@@ -3044,6 +3044,8 @@
     "                                        ",
     "Healthy ────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7          ",
+    "  Presets  Copy preset  Empty preset    ",
+    "  Rename  Delete                        ",
     "  ◉ reviewer → mistral/mistral-small-4  ",
     "  ◉ sonic → pi                          ",
     "  ◉ oracle [fable] → claude fable       ",
@@ -3052,21 +3054,19 @@
     "▸ Usage ────────────────────────────────",
     "▸ Files ─────────── keys 3/5 · browser ✓",
     "                                        ",
-    "imp ──────────────────────────── [daily]",
-    "Chain ──────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7 ▾]          high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "  3 ○ claude  [claude-opus-5-5 ▾]   high",
-    "source    yours · imp.json              ",
-    "  Presets  Copy preset  Empty preset    ",
-    "  Rename  Delete                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
     "                                        ",
     "                                        ",
     "                                        ",
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-picker-40-split-en": [
-    " Home ?1  Project ?2  Control           ",
+    " Home  Project ?2  Control              ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3092,7 +3092,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "quick-model-saved-40-split-en": [
-    " Home ?1  Project ?2  Control           ",
+    " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses                       ",
     "✓ imp #1 → xai/grok-4.7-fast            ",
@@ -3101,6 +3101,8 @@
     "                                        ",
     "Healthy ────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7-fast     ",
+    "  Presets  Copy preset  Empty preset    ",
+    "  Rename  Delete                        ",
     "  ◉ reviewer → mistral/mistral-small-4  ",
     "  ◉ sonic → pi                          ",
     "  ◉ oracle [fable] → claude fable       ",
@@ -3109,20 +3111,18 @@
     "▸ Usage ────────────────────────────────",
     "▸ Files ─────────── keys 3/5 · browser ✓",
     "                                        ",
-    "imp ──────────────────────────── [daily]",
-    "Chain ──────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7-fast ▾]     high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "  3 ○ claude  [claude-opus-5-5 ▾]   high",
-    "source    yours · imp.json              ",
-    "  Presets  Copy preset  Empty preset    ",
-    "  Rename  Delete                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
     "                                        ",
     "                                        ",
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-row-40-split-zh": [
-    " 首页 ?1  项目 ?2  控制                 ",
+    " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
     " 角色  宿主                             ",
     "                                        ",
@@ -3130,6 +3130,8 @@
     "                                        ",
     "正常 ───────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7          ",
+    "  预设  复制预设  空白预设  重命名      ",
+    "  删除                                  ",
     "  ◉ reviewer → mistral/mistral-small-4  ",
     "  ◉ sonic → pi                          ",
     "  ◉ oracle [fable] → claude fable       ",
@@ -3138,21 +3140,19 @@
     "▸ 用量 ─────────────────────────────────",
     "▸ 文件 ───────────── 密钥 3/5 · 浏览器 ✓",
     "                                        ",
-    "imp ──────────────────────────── [daily]",
-    "备选链 ─────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7 ▾]          high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "  3 ○ claude  [claude-opus-5-5 ▾]   high",
-    "来源      用户 · imp.json               ",
-    "  预设  复制预设  空白预设  重命名      ",
-    "  删除                                  ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
     "                                        ",
     "                                        ",
     "                                        ",
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-picker-40-split-zh": [
-    " 首页 ?1  项目 ?2  控制                 ",
+    " 首页  项目 ?2  控制                    ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3178,7 +3178,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "quick-model-saved-40-split-zh": [
-    " 首页 ?1  项目 ?2  控制                 ",
+    " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
     " 角色  宿主                             ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast       ",
@@ -3187,6 +3187,8 @@
     "                                        ",
     "正常 ───────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7-fast     ",
+    "  预设  复制预设  空白预设  重命名      ",
+    "  删除                                  ",
     "  ◉ reviewer → mistral/mistral-small-4  ",
     "  ◉ sonic → pi                          ",
     "  ◉ oracle [fable] → claude fable       ",
@@ -3195,20 +3197,18 @@
     "▸ 用量 ─────────────────────────────────",
     "▸ 文件 ───────────── 密钥 3/5 · 浏览器 ✓",
     "                                        ",
-    "imp ──────────────────────────── [daily]",
-    "备选链 ─────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7-fast ▾]     high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]",
-    "  3 ○ claude  [claude-opus-5-5 ▾]   high",
-    "来源      用户 · imp.json               ",
-    "  预设  复制预设  空白预设  重命名      ",
-    "  删除                                  ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
+    "                                        ",
     "                                        ",
     "                                        ",
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-row-40-classic-en": [
-    " Home ?1  Project ?2  Control           ",
+    " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses                       ",
     "                                        ",
@@ -3238,7 +3238,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-picker-40-classic-en": [
-    " Home ?1  Project ?2  Control           ",
+    " Home  Project ?2  Control              ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3264,7 +3264,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "quick-model-saved-40-classic-en": [
-    " Home ?1  Project ?2  Control           ",
+    " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses                       ",
     "✓ imp #1 → xai/grok-4.7-fast            ",
@@ -3294,7 +3294,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-row-40-classic-zh": [
-    " 首页 ?1  项目 ?2  控制                 ",
+    " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
     " 角色  宿主                             ",
     "                                        ",
@@ -3324,7 +3324,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-picker-40-classic-zh": [
-    " 首页 ?1  项目 ?2  控制                 ",
+    " 首页  项目 ?2  控制                    ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3350,7 +3350,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "quick-model-saved-40-classic-zh": [
-    " 首页 ?1  项目 ?2  控制                 ",
+    " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
     " 角色  宿主                             ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast       ",
@@ -3380,7 +3380,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-row-120-split-en": [
-    " Home ?1  Project ?2  Control                                                                                           ",
+    " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses                                                                                                       ",
     "                                                                                                                        ",
@@ -3388,6 +3388,7 @@
     "                                                                                                                        ",
     "Healthy ────────────────────────────────────────────────────────────────────────────────────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7                                                                                          ",
+    "  Presets  Copy preset  Empty preset  Rename  Delete                                                                    ",
     "  ◉ reviewer → mistral/mistral-small-4                                                                                  ",
     "  ◉ sonic → pi                                                                                                          ",
     "  ◉ oracle [fable] → claude fable                                                                                       ",
@@ -3396,13 +3397,12 @@
     "▸ Usage ────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "▸ Files ─────────────────────────────────────────────────────────────────────────────────────────── keys 3/5 · browser ✓",
     "                                                                                                                        ",
-    "imp ──────────────────────────────────────────────────────────────────────────────────────────────────────────── [daily]",
-    "Chain ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7 ▾]                                                                                          high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]                                                                                ",
-    "  3 ○ claude  [claude-opus-5-5 ▾]                                                                                   high",
-    "source     yours · imp.json                                                                                             ",
-    "  Presets  Copy preset  Empty preset  Rename  Delete                                                                    ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
@@ -3410,7 +3410,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-picker-120-split-en": [
-    " Home ?1  Project ?2  Control                                                                                           ",
+    " Home  Project ?2  Control                                                                                              ",
     " Model · imp [daily] place #1 · pi                                                              31 models · list 2h old ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -3436,7 +3436,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "quick-model-saved-120-split-en": [
-    " Home ?1  Project ?2  Control                                                                                           ",
+    " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses                                                                                                       ",
     "✓ imp #1 → xai/grok-4.7-fast                                                                                            ",
@@ -3445,6 +3445,7 @@
     "                                                                                                                        ",
     "Healthy ────────────────────────────────────────────────────────────────────────────────────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7-fast                                                                                     ",
+    "  Presets  Copy preset  Empty preset  Rename  Delete                                                                    ",
     "  ◉ reviewer → mistral/mistral-small-4                                                                                  ",
     "  ◉ sonic → pi                                                                                                          ",
     "  ◉ oracle [fable] → claude fable                                                                                       ",
@@ -3453,20 +3454,19 @@
     "▸ Usage ────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "▸ Files ─────────────────────────────────────────────────────────────────────────────────────────── keys 3/5 · browser ✓",
     "                                                                                                                        ",
-    "imp ──────────────────────────────────────────────────────────────────────────────────────────────────────────── [daily]",
-    "Chain ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7-fast ▾]                                                                                     high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]                                                                                ",
-    "  3 ○ claude  [claude-opus-5-5 ▾]                                                                                   high",
-    "source     yours · imp.json                                                                                             ",
-    "  Presets  Copy preset  Empty preset  Rename  Delete                                                                    ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-row-120-split-zh": [
-    " 首页 ?1  项目 ?2  控制                                                                                                 ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主                                                                                                             ",
     "                                                                                                                        ",
@@ -3474,6 +3474,7 @@
     "                                                                                                                        ",
     "正常 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7                                                                                          ",
+    "  预设  复制预设  空白预设  重命名  删除                                                                                ",
     "  ◉ reviewer → mistral/mistral-small-4                                                                                  ",
     "  ◉ sonic → pi                                                                                                          ",
     "  ◉ oracle [fable] → claude fable                                                                                       ",
@@ -3482,13 +3483,12 @@
     "▸ 用量 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "▸ 文件 ───────────────────────────────────────────────────────────────────────────────────────────── 密钥 3/5 · 浏览器 ✓",
     "                                                                                                                        ",
-    "imp ──────────────────────────────────────────────────────────────────────────────────────────────────────────── [daily]",
-    "备选链 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7 ▾]                                                                                          high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]                                                                                ",
-    "  3 ○ claude  [claude-opus-5-5 ▾]                                                                                   high",
-    "来源       用户 · imp.json                                                                                              ",
-    "  预设  复制预设  空白预设  重命名  删除                                                                                ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
@@ -3496,7 +3496,7 @@
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "quick-model-picker-120-split-zh": [
-    " 首页 ?1  项目 ?2  控制                                                                                                 ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               31 个模型 · 列表 2小时前 ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -3522,7 +3522,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "quick-model-saved-120-split-zh": [
-    " 首页 ?1  项目 ?2  控制                                                                                                 ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主                                                                                                             ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast                                                                                       ",
@@ -3531,6 +3531,7 @@
     "                                                                                                                        ",
     "正常 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────── 5",
     "  ◉ imp [daily] → xai/grok-4.7-fast                                                                                     ",
+    "  预设  复制预设  空白预设  重命名  删除                                                                                ",
     "  ◉ reviewer → mistral/mistral-small-4                                                                                  ",
     "  ◉ sonic → pi                                                                                                          ",
     "  ◉ oracle [fable] → claude fable                                                                                       ",
@@ -3539,20 +3540,19 @@
     "▸ 用量 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "▸ 文件 ───────────────────────────────────────────────────────────────────────────────────────────── 密钥 3/5 · 浏览器 ✓",
     "                                                                                                                        ",
-    "imp ──────────────────────────────────────────────────────────────────────────────────────────────────────────── [daily]",
-    "备选链 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────── 3",
-    "  1 ◉ pi/xai  [grok-4.7-fast ▾]                                                                                     high",
-    "  2 ○ agy     [gemini-4-hydrogen-high ▾]                                                                                ",
-    "  3 ○ claude  [claude-opus-5-5 ▾]                                                                                   high",
-    "来源       用户 · imp.json                                                                                              ",
-    "  预设  复制预设  空白预设  重命名  删除                                                                                ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
+    "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "quick-model-row-120-classic-en": [
-    " Home ?1  Project ?2  Control                                                                                           ",
+    " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses                                                                                                       ",
     "                                                                                                                        ",
@@ -3582,7 +3582,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-picker-120-classic-en": [
-    " Home ?1  Project ?2  Control                                                                                           ",
+    " Home  Project ?2  Control                                                                                              ",
     " Model · imp [daily] place #1 · pi                                                              31 models · list 2h old ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -3608,7 +3608,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "quick-model-saved-120-classic-en": [
-    " Home ?1  Project ?2  Control                                                                                           ",
+    " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses                                                                                                       ",
     "✓ imp #1 → xai/grok-4.7-fast                                                                                            ",
@@ -3638,7 +3638,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-row-120-classic-zh": [
-    " 首页 ?1  项目 ?2  控制                                                                                                 ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主                                                                                                             ",
     "                                                                                                                        ",
@@ -3668,7 +3668,7 @@
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "quick-model-picker-120-classic-zh": [
-    " 首页 ?1  项目 ?2  控制                                                                                                 ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               31 个模型 · 列表 2小时前 ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -3694,7 +3694,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "quick-model-saved-120-classic-zh": [
-    " 首页 ?1  项目 ?2  控制                                                                                                 ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主                                                                                                             ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast                                                                                       ",
@@ -3724,7 +3724,7 @@
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "hub-40-text": [
-    " Home ?1  Project ?2  Control",
+    " Home  Project ?2  Control",
     "",
     "demo-project ---------------------------",
     "Needs you ---------------------------- 2",

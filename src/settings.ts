@@ -18,14 +18,11 @@ import { DEFAULT_WIDTH } from './utils/pane-width.js';
 export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'> {
   statusline: boolean;
   mouse: boolean;
-  tasks: boolean;
   details: boolean;
   refreshMs: number;
   treeWidth: number;
   worktreeRoot: string;
   modelEnabled: boolean;
-  /** How Home and Project are laid out (owner, 2026-11-17): the layouts being tried, one of which stays. */
-  panelLayout: 'classic' | 'split';
   experiments: boolean;
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
@@ -37,11 +34,6 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
   briefingApiBase: string;
   model: string;
-  /** Display-only inactivity threshold, never an execution deadline. */
-  cardStallMinutes: number;
-  /** A settled job or native agent folds to one Home row after this many minutes, and leaves Home (show-all keeps it) after the hide time. */
-  cardFoldMinutes: number;
-  cardHideMinutes: number;
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
   decisionCallsPerHour: number;
@@ -61,10 +53,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
 export const DEFAULT_ROLE_CAPS: Readonly<Record<string, number>> = Object.freeze({ imp: 3, general: 3 });
 
 /** Display defaults shared by settings and the pure panel initializer. */
-export const DEFAULT_PANEL_VIEW = {
-  panelLayout: 'classic', experiments: false,
-  cardStallMinutes: 10, cardFoldMinutes: 5, cardHideMinutes: 5,
-} as const;
+export const DEFAULT_PANEL_VIEW = { experiments: false } as const;
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
@@ -74,7 +63,6 @@ export function defaultSettings(): HudSettings {
     barFields: [...DEFAULT_BAR_FIELDS],
     statusline: true,
     mouse: true,
-    tasks: false,
     details: true,
     refreshMs: 1000,
     treeWidth: DEFAULT_WIDTH,
@@ -127,13 +115,11 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   barFields: (value) =>
     Array.isArray(value) && value.every((field) => (BAR_FIELDS as readonly unknown[]).includes(field)),
   mouse: isBoolean,
-  tasks: isBoolean,
   details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
-  panelLayout: oneOf('classic', 'split'),
   experiments: isBoolean,
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   sonicAutoThinking: isBoolean,
@@ -142,9 +128,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   model: isText(200),
-  cardStallMinutes: (value) => isIntegerBetween(value, 1, 120),
-  cardFoldMinutes: (value) => isIntegerBetween(value, 1, 1440),
-  cardHideMinutes: (value) => isIntegerBetween(value, 1, 1440),
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 0, 1000),

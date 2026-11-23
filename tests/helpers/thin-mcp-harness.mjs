@@ -9,9 +9,7 @@ import { createInterface } from 'node:readline';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-import { projectWorkCard } from '../../dist/collectors/work-card.js';
-import { renderWorkCard } from '../../dist/render/work-card.js';
-import { initialMonitorState } from '../../dist/render/monitor.js';
+import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, turnToken } from '../../dist/mcp/cli-judge.js';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
@@ -26,8 +24,8 @@ export const workerFor = (f, id) =>
     .flatMap((lane) => lane.workers)
     .find((worker) => worker.id === 'thin-job:' + id);
 export const cardText = (worker) =>
-  renderWorkCard(projectWorkCard(worker, Date.now()), { ...initialMonitorState(), activeTab: 'home' }, 56)
-    .map(stripAnsi)
+  workInspectorRows(worker, 80, Date.now())
+    .map((row) => stripAnsi(row.text))
     .join('\n');
 
 export const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');

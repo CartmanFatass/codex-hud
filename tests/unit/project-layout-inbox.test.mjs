@@ -12,14 +12,14 @@ import { tryCount } from '../../dist/render/project-view.js';
 import { loadSettings } from '../../dist/settings.js';
 import { viewPrefs } from '../../dist/render/monitor-state.js';
 import { SETTING_ROWS } from '../../dist/render/settings-page.js';
-import { splitFixture, split, layoutDriver, assertWidth, assertNoMidWordCut } from '../fixtures/split-layout.mjs';
+import { panelProjectFixture, panelState, layoutDriver, assertWidth, assertNoMidWordCut } from '../fixtures/panel-project.mjs';
 import { listFixture } from '../fixtures/project-list.mjs';
 import { NOW, onPage, plain, projectFixture } from '../fixtures/project-page.mjs';
 
 let sharedRoot, busy, lists;
 before(async () => {
   sharedRoot = fs.mkdtempSync(join(tmpdir(), 'project-inbox-'));
-  [busy, lists] = await Promise.all([splitFixture(join(sharedRoot, 'busy')), listFixture(join(sharedRoot, 'lists'))]);
+  [busy, lists] = await Promise.all([panelProjectFixture(join(sharedRoot, 'busy')), listFixture(join(sharedRoot, 'lists'))]);
 });
 after(() => fs.rmSync(sharedRoot, { recursive: true, force: true }));
 async function fixture() { return { root: sharedRoot, busy, lists }; }
@@ -33,12 +33,12 @@ test('Project uses Inbox for old saved layouts and no longer offers a layout set
     const saved = JSON.stringify({ panelLayout, acceptance: 'slice', projectLayout });
     fs.writeFileSync(path, saved);
     const settings = loadSettings(env);
-    assert.equal(settings.panelLayout, panelLayout);
+    assert.equal('panelLayout' in settings, false);
     assert.ok(!Object.hasOwn(settings, 'projectLayout'));
     assert.equal(fs.readFileSync(path, 'utf8'), saved, 'loading does not rewrite owner settings');
     const frame = busy.render(40, 'en', 36, onPage(undefined, { prefs: viewPrefs(settings) }));
     assert.match(plain(frame).join('\n'), /^Needs you ─/m);
-    assert.equal(frame.panes.some((pane) => pane.id === 'preview'), panelLayout === 'split');
+    assert.equal(frame.panes.some((pane) => pane.id === 'preview'), false);
   }
 });
 
@@ -86,7 +86,7 @@ test('Inbox at 40 cols EN and ZH: ranked Needs you, Running, last accepted, and 
     active: [...data.active, { jobId: 'j00000000000000bb', role: 'reviewer', state: 'waiting_orchestrator', title: 'Approve synthetic migration', at: NOW - 3 * 60000, asking: true }],
   };
   for (const lang of ['en', 'zh']) {
-    const askFrame = busy.render(40, lang, 36, split({ activeTab: 'project' }), askingSnap);
+    const askFrame = busy.render(40, lang, 36, panelState({ activeTab: 'project' }), askingSnap);
     assertWidth(askFrame, 40, `hub asking ${lang}`);
     const listLines = askFrame.panes.find((p) => p.id === 'agents').rows.map((r) => stripAnsi(r.text).trimEnd()).join('\n');
     const askPos = listLines.indexOf('Approve synthetic');
@@ -96,7 +96,7 @@ test('Inbox at 40 cols EN and ZH: ranked Needs you, Running, last accepted, and 
     assert.equal(listLines.split('Approve synthetic').length, 2, `${lang}: asking job not duplicated in Running`);
   }
 
-  const capped = driver(busy, { data, height: 38, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:fold:inbox:more' } } }) });
+  const capped = driver(busy, { data, height: 38, state: panelState({ activeTab: 'project', project: { nav: { cursor: 'project:fold:inbox:more' } } }) });
   assert.match(capped.lines().join('\n'), /▸ 1 more/);
   capped.run('enter');
   assert.match(capped.lines().join('\n'), /PAGE-TWO\s+blocked/);
@@ -119,13 +119,13 @@ test('Inbox Running is one row per running job: an imp in a worktree with two so
   const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect(true, board, NOW);
   // A sonic never labels its parent's worktree.
   assert.deepEqual(['jobId', 'role'].map((k) => data.slices.find((x) => x.label === 'NATIVE-TREE-02')[k]), ['j0000000000000002', 'imp']);
-  assert.equal(sonicChildrenRunning(board.workers, board.workers.find((w) => w.evidence[0].sourceId === 'j0000000000000002').id), 2, 'Home folds the same two');
+  assert.equal(sonicChildrenRunning(board.workers, board.workers.find((w) => w.evidence[0].sourceId === 'j0000000000000002').id), 2, 'collector retains both running children');
   const running = (lines, header) => { const at = lines.findIndex((l) => header.test(l)); return lines.slice(at, lines.findIndex((l, i) => i > at && l === '')); };
   const age = { en: ['12m', '20m'], zh: ['12分', '20分'] };
   for (const lang of ['en', 'zh']) {
     const header = lang === 'zh' ? /^运行中/ : /^Running/;
     const frames = [f.render(60, lang, onPage(), 40, data, true, 'unicode', 'none', { workboard: board }),
-      f.render(60, lang, split({ activeTab: 'project', project: { nav: { cursor: 'project:job:j0000000000000002' } } }), 40, data, true, 'unicode', 'none', { workboard: board })];
+      f.render(60, lang, panelState({ activeTab: 'project', project: { nav: { cursor: 'project:job:j0000000000000002' } } }), 40, data, true, 'unicode', 'none', { workboard: board })];
     for (const frame of frames) {
       assertWidth(frame, 60, `running ${lang}`);
       const [head, ...below] = running(plain(frame), header), rows = below.filter((l) => !/last accepted|最近验收/.test(l));
@@ -135,7 +135,6 @@ test('Inbox Running is one row per running job: an imp in a worktree with two so
       assert.match(rows[1], new RegExp(`^  ◉ imp  Build the Project tab\\s+${age[lang][1]}$`));
       assert.doesNotMatch(rows.join('\n'), /sonic|NATIVE-TREE|ORPHAN/);
     }
-    assert.match(plain(frames[1]).join('\n'), /^imp ─+\n  NATIVE-TREE: synthetic subagents$/m, `${lang}: Enter's preview is the job's`);
   }
 });
 

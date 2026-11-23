@@ -137,7 +137,7 @@ test('Control switches optional roles on with Space and off with the footer in b
   const host = { state: s.session.state, shownRoot: () => s.cwd, notice: (text) => assert.equal(text, '') };
   const actions = createPanelActions(s.hud, s.cwd, { visit: () => visit }, host);
   const role = () => visit.control.roles.find((r) => r.role === 'pro');
-  for (const panelLayout of ['classic', 'split']) {
+  for (const panelLayout of ['classic']) {
     s.session.state = onControl({ cursor: 'project:role:pro' }, { prefs: { panelLayout } });
     assert.equal(role().optionalEnabled, false);
     assert.equal(role().editor, undefined);
@@ -235,7 +235,7 @@ test('focused editable and project-pinned chains report unknown providers withou
     assert.equal(fact.places[0].state, 'active');
     assert.equal(s.assignment('imp').model, model);
     assert.equal(s.assignment('imp').available, true);
-    for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+    for (const panelLayout of ['classic']) for (const lang of ['en', 'zh']) {
       s.session.state = onControl(undefined, { prefs: { panelLayout } });
       focus(s);
       const frame = s.frame(40, lang, 22), rows = plain(frame).join('\n');
@@ -328,7 +328,7 @@ test('Control uses inherited model and thinking when known and a clickable arrow
   for (const known of [true, false]) {
     s.put(join(s.root, 'roles/implementer.md'), known ? '---\nmodel: xai/gpt-6.2-sol\nthinking: high\n---\nSynthetic role\n' : 'Synthetic role\n');
     s.collector.refreshRoles(s.session.snap, NOW);
-    for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+    for (const panelLayout of ['classic']) for (const lang of ['en', 'zh']) {
       s.session.state = onControl(undefined, { prefs: { panelLayout } });
       focus(s);
       const draw = () => s.frame(40, lang, 32);
@@ -601,7 +601,7 @@ test('CLI quick picker merges catalog and discovery; Edit place keeps inline Mod
       s.collector.refreshRoles(s.session.snap, NOW);
       assert.equal(s.assignment('imp').harness, 'pi');
     }
-    for (const text of inputs) for (const panelLayout of ['classic', 'split']) {
+    for (const text of inputs) for (const panelLayout of ['classic']) {
       s.session.state = onControl(undefined, { prefs: { panelLayout } });
       focus(s);
       await s.press('m');
@@ -675,7 +675,7 @@ test('pi picker paints live quota, off and unknown facts without offering off or
   assert.match(page, /^272K ctx {2}128K out {2}think ✓ {2}img –$/m);
   assert.doesNotMatch(page, /Selected|resets in/);
   const exact = () => {
-    for (const lang of ['en', 'zh']) for (const panelLayout of ['classic', 'split']) {
+    for (const lang of ['en', 'zh']) for (const panelLayout of ['classic']) {
       const frame = s.render(40, lang, withState(s.session.state, { prefs: { panelLayout } }), 16, s.session.snap, true, 'unicode', 'mocha');
       assert.equal(frame.lines.length, 16);
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
@@ -843,7 +843,7 @@ test('Control plane keys: decoded names, scoped to Control, Settings letters unc
   const decoded = (raw, profile = 'workboard') => new WorkbenchInputDecoder(profile).push(Buffer.from(raw));
   assert.deepEqual(decoded('m'), [{ type: 'key', key: 'place-model', text: 'm' }]);
   assert.deepEqual(decoded('Z'), [{ type: 'key', key: '', text: 'Z' }]);
-  assert.deepEqual(decoded('é-'), [{ type: 'key', key: '', text: 'é' }, { type: 'key', key: 'list-shrink', text: '-' }]);
+  assert.deepEqual(decoded('é-'), [{ type: 'key', key: '', text: 'é' }, { type: 'key', key: '', text: '-' }]);
   assert.deepEqual(decoded('\x7f'), [{ type: 'key', key: 'backspace' }]);
   assert.deepEqual(decoded('\r'), [{ type: 'key', key: 'enter' }]);
   assert.deepEqual(decoded('\x1b[B'), [{ type: 'key', key: 'down' }]);
@@ -858,7 +858,7 @@ test('Control plane keys: decoded names, scoped to Control, Settings letters unc
   assert.equal(s.session.state.activeTab, 'home');
 });
 
-test('40-col EN/ZH frames 5a–5e follow the Control sample; Classic and Split use the same sheet', async (t) => {
+test('40-col EN/ZH frames 5a–5e follow the Control sample', async (t) => {
   const s = await setup(t), nav = { cursor: 'project:role:imp' };
   const pi = { harness: 'pi', model: 'xai/grok-4.7', thinking: 'high' };
   const cli = { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' };
@@ -875,7 +875,7 @@ test('40-col EN/ZH frames 5a–5e follow the Control sample; Classic and Split u
     ['5e', [ENTER, DOWN, ENTER, pi.model, ENTER, DOWN, ENTER, 'high', ENTER, END, ENTER, 'i', ENTER, 'agy', ENTER, DOWN, ENTER, 'hydrogen', ENTER, END, ENTER]]];
   const normalize = (row) => row.trim().replace(/^[›>] +/, '').replace(/─+/g, '─').replace(/’/g, "'").replace(/ +/g, ' ').replace(/ Off$/, ' off');
   const body = (rows) => rows.slice(rows.findIndex((row) => /^imp ─/.test(row)), -1).filter((row) => row.trim()).map(normalize);
-  for (const panelLayout of ['split', 'classic']) {
+  for (const panelLayout of ['classic']) {
     s.session.state = onControl(nav, { prefs: { panelLayout, experiments: true } });
     for (const [id, keys] of shots) {
       await s.keys(...[keys].flat());

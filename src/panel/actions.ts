@@ -144,7 +144,7 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
             const harnesses = state.control.harnesses, nav = harnesses.nav;
             host.state = { ...state, overlay: undefined, control: { ...state.control, notice: { kind: 'harness', id, off }, harnesses: {
               folded: off ? new Set() : harnesses.folded,
-              nav: { ...nav, cursor: harnessItem(id), revealed: undefined, split: { ...nav.split, focus: 'list' } },
+              nav: { ...nav, cursor: harnessItem(id), revealed: undefined },
             } } };
             host.notice('');
           } catch (err) {

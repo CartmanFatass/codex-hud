@@ -1,53 +1,25 @@
-/**
- * The `/` filter (spec §2.2): a one-row bar under the header on Home (either layout) and on Project's Progress and Tickets pages.
- * A pure, case-insensitive substring over the fields each view names. The views draw only the rows that match, so the cursor,
- * Enter and Split's preview move over those. Typing owns every printable key; Enter keeps the filter, Esc stops typing and then
- * clears it; leaving the view (tab, page, project, Help, Inspector) clears it. Home and Project each own their filter.
- */
-import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
-import { projectWorkJob } from '../collectors/work-job.js';
+/** The Project Progress and Tickets filter. Typing owns printable keys. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { ledgerTasks } from '../collectors/acceptance-tasks.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import { keywordMarks } from '../utils/keyword-marks.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import { activeFilter, activeTabState, projectPage, type ViewFilter } from './monitor-state.js';
-import { failed } from './work-job-row.js';
+import { activeFilter, projectPage, type ViewFilter } from './monitor-state.js';
 import { boardRow, mark, type FooterHints } from './workboard-rows.js';
 import { monitorText, pair } from './monitor-text.js';
 import { theme } from './colors.js';
 import { t } from './i18n.js';
 
 const FILTER_MAX = 48;
-/** Where a filter can be: Home, or the shown project's Progress or Tickets page. Another scope clears it. */
 export function filterScope(state: MonitorState): string | undefined {
-  if (state.help || state.subpage) return undefined;
-  if (state.activeTab === 'home') return 'home';
-  if (state.activeTab !== 'project') return undefined;
+  if (state.help || state.subpage || state.activeTab !== 'project') return undefined;
   const page = projectPage(state.project.view);
   return page === 'progress' || page === 'tickets' ? `${page}|${state.selectedProject ?? ''}` : undefined;
 }
 export function clearFilter(state: MonitorState): MonitorState {
-  if (state.activeTab === 'home' && state.home.filter) return { ...state, home: { ...state.home, filter: undefined } };
-  if (state.activeTab === 'project' && state.project.filter) return { ...state, project: { ...state.project, filter: undefined } };
+  if (state.project.filter) return { ...state, project: { ...state.project, filter: undefined } };
   return state;
 }
 const has = (needle: string, ...fields: (string | null | undefined)[]) => fields.some((f) => !!f && f.toLowerCase().includes(needle));
-
-/** Home: package, title, role, harness, status, worker summary or model-sentence keywords. */
-export function homeMatcher(board: WorkboardSnapshot, needle: string, now: number, stall?: number) {
-  const label = new Map(board.lanes.map((l) => [l.id, l.label]));
-  const own = (w: OwnerWorker) => {
-    const card = projectWorkJob(w, now, stall), { plain, spans } = keywordMarks(monitorText(w.modelSentence ?? ''));
-    const word = failed(card) ? 'failed' : w.state === 'stopped' ? 'stopped' : card.state === 'needs-you' ? 'asking'
-      : card.state === 'stalled' ? 'stalled' : card.state === 'in-progress' ? 'working' : 'done';
-    return has(needle, label.get(w.laneId), card.title, card.role, w.harness, word, t(word), w.reportMeta?.summary,
-      w.flow?.kind, w.flow?.state, w.flow?.step, ...(w.flow?.steps.flatMap((s) => [s.key, t(s.key)]) ?? []),
-      ...spans.map((s) => plain.slice(s.start, s.end)));
-  };
-  // A sonic child that matches brings its parent, which it is drawn under.
-  return (w: OwnerWorker) => own(w) || board.workers.some((c) => c.parentJobId === w.id && own(c));
-}
 
 /** Progress: ledger slices by id, milestone, text and state, worktree slices and loose jobs by their label, role and state. Tickets: by feature, number, title, status and blocker. */
 export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets', needle: string): { data: ProjectSnapshot; count: number } {
@@ -81,8 +53,7 @@ export function filterRow(state: MonitorState, count: number | undefined, width:
 export function filterHints(state: MonitorState, hints: FooterHints): FooterHints {
   if ('modal' in hints || !filterScope(state)) return hints;
   if (activeFilter(state)?.editing) return { modal: ['type to filter', '⏎ keep', 'Esc stop'] };
-  const at = hints.indexOf('a all');
-  return at < 0 ? [...hints, '/ filter'] : [...hints.slice(0, at), '/ filter', ...hints.slice(at)];
+  return [...hints, '/ filter'];
 }
 
 /**
@@ -91,12 +62,11 @@ export function filterHints(state: MonitorState, hints: FooterHints): FooterHint
  * wait while typing; the arrows move over the matches. Null for every other input.
  */
 export function filterInput(state: MonitorState, input: WorkbenchInput): MonitorOutcome | null {
-  const tab = activeTabState(state);
-  if (input.type !== 'key' || !tab || !filterScope(state) || state.overlay?.kind === 'confirm-stop') return null;
+  if (input.type !== 'key' || !filterScope(state)) return null;
   const to = (filter?: ViewFilter): MonitorOutcome => ({
-    state: { ...state, [state.activeTab]: { ...tab, filter } }, close: false,
+    state: { ...state, project: { ...state.project, filter } }, close: false,
   });
-  const filter = tab.filter, query = [...(filter?.query ?? '')];
+  const filter = state.project.filter, query = [...(filter?.query ?? '')];
   if (filter?.editing) {
     if (input.text !== undefined) return to({ editing: true, query: [...query, ...input.text].slice(0, FILTER_MAX).join('') });
     if (input.key === 'backspace') return to({ editing: true, query: query.slice(0, -1).join('') });
@@ -104,8 +74,6 @@ export function filterInput(state: MonitorState, input: WorkbenchInput): Monitor
     return ['left', 'right', 'tab', 'shift-tab'].includes(input.key) ? { state, close: false } : null;
   }
   if (input.text === '/') return to({ query: filter?.query ?? '', editing: true });
-  // Split's preview gives Esc back to the list first; then it clears the filter before the page is left.
-  const split = 'split' in tab ? tab.split : tab.nav.split;
-  if (input.key === 'escape' && filter?.query && !(state.prefs.panelLayout === 'split' && split.focus === 'preview')) return to();
+  if (input.key === 'escape' && filter?.query) return to();
   return null;
 }

@@ -6,13 +6,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { acceptsRawText, blocksReload, hasUnsavedDraft } from '../../dist/render/monitor-state.js';
-import { split, splitFixture } from '../fixtures/split-layout.mjs';
+import { panelState, panelProjectFixture } from '../fixtures/panel-project.mjs';
 import { NOW, PROJECTS, TREE, onControl, onPage } from '../fixtures/project-page.mjs';
 
 async function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'monitor-state-machine-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  return splitFixture(root);
+  return panelProjectFixture(root);
 }
 
 function deepFreeze(value) {
@@ -31,8 +31,7 @@ test('painting twice gives the same frame without modifying the supplied state',
   const f = await fixture(t), initial = initialMonitorState();
   const worker = f.board.workers[0], target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
   const role = f.control.roles.find((r) => r.role === 'imp');
-  const cases = [initial, withState(initial, { home: { filter: { query: 'imp', editing: true } } }),
-    split({ home: { split: { listCursor: 'home-progress:waiting', focus: 'preview', previewCursor: 'home-progress:wait:0', previewScroll: 5 } } }),
+  const cases = [initial, { ...initial, subpage: { kind: 'jobs', scroll: 0 } },
     { ...initial, overlay: { kind: 'confirm-stop', jobId: worker.id, role: 'imp', dir: '/synthetic/job' } },
     onPage(undefined, { project: { view: { kind: 'projects-list' } } }), onControl(), onControl({}, {}, { subTab: 'harnesses' }),
     onControl({}, { overlay: { kind: 'control-harness-add', text: '' } }, { subTab: 'harnesses' }),
@@ -43,7 +42,7 @@ test('painting twice gives the same frame without modifying the supplied state',
     withState(initial, { activeTab: 'exp', prefs: { experiments: true } }),
     withState(initial, { activeTab: 'exp', prefs: { experiments: true }, exp: { detail: 'codex-help', scroll: 2 } }),
     withState(initial, { activeTab: 'exp', prefs: { experiments: true }, overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }),
-    withState(initial, { subpage: { kind: 'inspector', scroll: 0, target } }), withState(initial, { subpage: { kind: 'changes', scroll: 0 } }),
+    withState(initial, { subpage: { kind: 'inspector', scroll: 0, target } }), withState(initial, { subpage: { kind: 'native-inspector', scroll: 0 } }),
     onPage('progress', { help: {} }), onPage('progress', { project: { filter: { query: 'try', editing: false } } }),
     ...[undefined, 'progress', 'tickets', 'tree', 'docs', 'waiting'].map((page) => onPage(page)),
   ];
@@ -68,39 +67,7 @@ test('Classic Home and Project keep their selected rows across tab changes', asy
   const returnedHome = key(returnedProject, 'shift-tab');
   assert.equal(returnedProject.state.project.nav.cursor, project.state.project.nav.cursor);
   assert.equal(returnedProject.panes[0].offset, project.panes[0].offset);
-  assert.deepEqual(returnedHome.workboard.selected, home.workboard.selected);
-});
-
-test('Home keeps its Split waiting preview across a tab or project switch', async (t) => {
-  const f = await fixture(t);
-  const project = { ...f.rich, ledger: [
-    { id: 'ONE', milestone: 'M-TEST', text: 'First synthetic slice', state: 'try', at: NOW - 2000 },
-    { id: 'TWO', milestone: 'M-TEST', text: 'Second synthetic slice', state: 'try', at: NOW - 1000 },
-  ], waiting: Array.from({ length: 12 }, (_, i) => ({ value: `Synthetic waiting item ${i}` })) };
-  const draw = (state) => f.render(40, 'en', 14, state, project, { projects: PROJECTS });
-  const press = (frame, key) => handleMonitorInput(frame.state, { type: 'key', key }, { tree: TREE, frame, nowMs: NOW }).state;
-  const step = (frame, key) => draw(press(frame, key));
-  const initial = split({ selectedProject: PROJECTS[0].root,
-    home: { split: { listCursor: 'home-progress:waiting' } } });
-  let frame = step(draw(initial), 'enter');
-  assert.equal(frame.state.home.split.focus, 'preview');
-  frame = step(frame, 'end');
-  assert.equal(frame.state.home.split.previewCursor, 'home-progress:wait:11');
-  assert.ok(frame.state.home.split.previewScroll > 0);
-  const home = frame.state.home;
-  assert.equal(frame.state.project.folded.size, 0);
-
-  const other = step(step(frame, 'tab'), 'enter');
-  assert.equal(other.state.activeTab, 'project');
-  assert.deepEqual(other.state.home.split, home.split);
-  const switched = press(other, 'project-next');
-  assert.equal(switched.selectedProject, PROJECTS[1].root);
-  assert.equal(switched.project.nav.split.focus, 'list');
-  assert.equal(switched.project.nav.split.previewScroll, 0);
-  assert.deepEqual(switched.home, other.state.home);
-  const back = step(draw(switched), 'shift-tab');
-  assert.equal(back.state.activeTab, 'home');
-  assert.deepEqual(back.state.home.split, home.split);
+  assert.equal(returnedHome.state.home.scroll, home.state.home.scroll);
 });
 
 test('overlay policy distinguishes a reload blocker from a draft and a raw-text consumer', () => {
@@ -135,7 +102,7 @@ test('overlay policy distinguishes a reload blocker from a draft and a raw-text 
   }
   const help = { ...initial, overlay: chain(places, { run: [] }), help: {} };
   assert.deepEqual([blocksReload(help), acceptsRawText(help)], [true, false]);
-  const kept = withState(initial, { home: { filter: { query: 'sonic', editing: false } } }), typing = withState(kept, { home: { filter: { editing: true } } });
+  const kept = onPage('progress', { project: { filter: { query: 'sonic', editing: false } } }), typing = withState(kept, { project: { filter: { editing: true } } });
   assert.deepEqual([blocksReload(kept), acceptsRawText(kept)], [false, false]);
   assert.deepEqual([blocksReload(typing), acceptsRawText(typing)], [true, true]);
 });

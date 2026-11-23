@@ -272,7 +272,8 @@ export class Notifier {
 
   private agentEvents(data: HudData): NotifyEvent[] {
     // The agents the main session started, as every view counts them; a failed subtask or review is an attention event.
-    const summary = agentCounts(data.subagentTree?.nodes ?? []).agents;
+    if (!data.subagentTree) return []; // An on-demand tree was not collected; no transition was observed.
+    const summary = agentCounts(data.subagentTree.nodes).agents;
     const previousActive = this.lastActiveAgents;
     const previousCompleted = this.lastCompletedAgents;
     this.lastActiveAgents = summary.active;

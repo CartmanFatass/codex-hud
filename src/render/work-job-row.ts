@@ -1,11 +1,10 @@
 /** Single-line job headings and the state marks shared by job lists and diagnostics. */
-import { projectWorkJob, type WorkJob } from '../collectors/work-job.js';
-import type { OwnerWorker, WorkLane } from '../collectors/workboard-types.js';
-import type { MonitorState } from './monitor.js';
-import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
+import type { WorkJob } from '../collectors/work-job.js';
+import type { OwnerWorker } from '../collectors/workboard-types.js';
+import { theme, truncateAnsi, visualLength } from './colors.js';
 import { monitorText, pair } from './monitor-text.js';
 import { ageText, mark, stateMark } from './workboard-rows.js';
-import { isUnreadReport, mainLaneWorkers, routeBadge, sonicBadge, workerModelBadge } from './worker-roster.js';
+import { isUnreadReport, routeBadge, workerModelBadge } from './worker-roster.js';
 import { activeFlow } from './work-visibility.js';
 import { t } from './i18n.js';
 
@@ -71,9 +70,8 @@ export function cardMarks(card: WorkJob, badge = '', word = workStateWord(card))
     word ? wordInk(word) : '',
   ].filter(Boolean);
 }
-export function renderJobRow(card: WorkJob, width: number, badge = '', sonicCount = 0): string {
-  const ink = workStateInk(card), marks = cardMarks(card, badge);
-  const sonic = sonicBadge(sonicCount);
+export function renderJobRow(card: WorkJob, width: number): string {
+  const ink = workStateInk(card), marks = cardMarks(card);
   const age = theme.board.muted(ageText(card.elapsedMinutes ?? 0));
   const glyph = workStateGlyph(card);
   const role = monitorText(card.role);
@@ -83,7 +81,7 @@ export function renderJobRow(card: WorkJob, width: number, badge = '', sonicCoun
     card.title + ((card.worker.nativeDepth ?? 0) > 2 && card.worker.parentName ? ` ↳ ${card.worker.parentName}` : '')
   );
   const makeRight = (lvl: '' | 'full' | 'compact' | 'min') =>
-    [lvl ? workerModelBadge(card.worker, lvl) : '', routeBadge(card.worker), sonic, ...marks, age].filter(Boolean).join(' ');
+    [lvl ? workerModelBadge(card.worker, lvl) : '', routeBadge(card.worker), ...marks, age].filter(Boolean).join(' ');
   const minTitle = Math.min(visualLength(titleRaw), 26);
   let right = makeRight('');
   for (const lvl of ['full', 'compact', 'min', ''] as const) {
@@ -102,56 +100,4 @@ export function jobTitle(w: OwnerWorker, child: boolean): string {
   const heading = child ? (w.briefTitle ?? w.ticketTitle) : (w.ticketTitle ?? w.briefTitle);
   const text = monitorText(heading ?? (w.displayId ? '' : w.task)), id = monitorText(w.displayId ?? '');
   return id && text.startsWith(id) ? text.slice(id.length).replace(/^[\s:–—-]+/, '') : text;
-}
-
-/**
- * A lane's right side: one state glyph per non-child job, oldest dispatch first (`✓●` unread, `✓` done, `◉` running,
- * `?` asking, `✗` failed, `○` queued, `◷` stalled, `−` stopped). Older jobs that do not fit `room` are `+N`.
- */
-export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room: number, extra = ''): string {
-  const main = mainLaneWorkers(lane);
-  const cards = [...main]
-    .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
-    .map((w) => projectWorkJob(w, now, state.prefs.cardStallMinutes));
-  if (!cards.length) return extra;
-  const glyph = {
-    unread: theme.board.success(stateMark.unread()),
-    done: theme.board.success(stateMark.done()),
-    run: theme.board.active(mark('◉', '@')),
-    queue: theme.board.muted(stateMark.queued()),
-    stall: theme.board.stalled(stateMark.stalled()),
-    ask: theme.board.attention(stateMark.asking()),
-    fail: theme.board.danger(stateMark.failed()),
-    stop: theme.board.muted(stateMark.stopped()),
-  };
-  const tokens = cards.map((c) => {
-    const kind =
-      c.worker.state === 'stopped'
-        ? 'stop'
-        : failed(c)
-          ? 'fail'
-          : c.state === 'needs-you'
-            ? 'ask'
-            : c.state === 'queued'
-              ? 'queue'
-              : c.state === 'stalled'
-                ? 'stall'
-                : c.state === 'in-progress'
-                  ? 'run'
-                  : isUnreadReport(c.worker)
-                    ? 'unread'
-                    : 'done';
-    const painted = glyph[kind];
-    return c.worker.superseded ? theme.board.muted(stripAnsi(painted)) : painted;
-  });
-  const tail = extra ? ' ' + extra : '';
-  let keep = tokens.length;
-  const measure = (n: number) => {
-    const slice = tokens.slice(-n);
-    const olderW = n < tokens.length ? String(tokens.length - n).length + 2 : 0;
-    return olderW + slice.reduce((sum, tok) => sum + visualLength(tok), 0) + Math.max(0, slice.length - 1);
-  };
-  while (keep > 1 && measure(keep) + visualLength(tail) > room) keep--;
-  const older = tokens.length - keep ? theme.board.muted(`+${tokens.length - keep}`) + ' ' : '';
-  return older + tokens.slice(-keep).join(' ') + tail;
 }

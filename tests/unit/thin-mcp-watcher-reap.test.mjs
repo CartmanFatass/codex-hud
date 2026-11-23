@@ -9,7 +9,7 @@ import test from 'node:test';
 import { createServer } from 'node:net';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
-import { workStateInk } from '../../dist/render/work-card.js';
+import { workStateInk } from '../../dist/render/work-job-row.js';
 import { theme } from '../../dist/render/colors.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
 import { readReportMeta } from '../../dist/roles/report-meta.js';

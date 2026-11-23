@@ -8,7 +8,6 @@ import { syncBuiltinESMExports } from 'node:module';
 import { ticketFixture, ticketFrames, ticketVocabulary } from '../fixtures/project-tickets.mjs';
 import { plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
-import { homeProgressRows } from '../../dist/render/project-view.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -278,7 +277,7 @@ test('the 64-feature scan marks partial meters without opening omitted tickets',
   assert.equal(opened.length, 64);
   assert.ok(opened.every((path) => Number(path.match(/feature-(\d+)/)[1]) < 64));
   for (const [lang, word] of [['en', 'Partial'], ['zh', '不完整']]) {
-    for (const panelLayout of ['classic', 'split']) for (const page of [undefined, 'tickets']) {
+    for (const panelLayout of ['classic']) for (const page of [undefined, 'tickets']) {
       const frame = f.render(40, lang, onPage(page, { prefs: { panelLayout } }), data);
       assert.match(plain(frame).join('\n'), new RegExp(word));
       if (!page) assert.match(plain(frame).join('\n'), new RegExp(`${word} · 64`));
@@ -286,7 +285,6 @@ test('the 64-feature scan marks partial meters without opening omitted tickets',
     }
   }
   const home = await f.collector.collect('home', f.board, NOW + 3);
-  assert.match(stripAnsi(homeProgressRows(home, 32, 20, false).find((r) => r.item === 'home-progress:tickets:all').text), /Tickets .*Partial · 32\/64/);
   for (let n = 64; n < 81; n++) fs.rmSync(join(scratch, slug(n)), { recursive: true });
   const complete = await f.collector.collect('home', f.board, NOW + 4);
   assert.equal(complete.ticketTotals.totalFeatures, 64);
@@ -349,7 +347,7 @@ test('40-column Tickets frame (EN and ZH) cuts titles at whole words or CJK char
     if (visualLength(first) < visualLength(prefix) + 1) assert.ok(wholeWord || cjk, `title cut inside a word for ${num}: ${line}`);
   };
   for (const lang of ['en', 'zh']) {
-    for (const layout of ['classic', 'split']) {
+    for (const layout of ['classic']) {
       const state = withState(featurePage(), { prefs: { panelLayout: layout }, project: { nav: { cursor: 'project:fold:feature:native-tree' } } });
       const frame = f.render(40, lang, state, data);
       const lines = frame.workboard.rows.map(row => stripAnsi(row.text));

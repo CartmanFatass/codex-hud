@@ -47,7 +47,7 @@ export function presetInputKey(state: MonitorState, sheet: PresetInput, input: W
     return { state: { ...state, overlay: { kind: 'control-chain', role: sheet.role, at: 0, mode: { kind: 'places' },
       draft: { name: text, run: sheet.mode === 'empty' ? [] : sheet.role.editor?.places ?? [] } } }, close: false };
   };
-  const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
+  const pane = ctx.frame?.panes.find((p) => p.id === 'agents');
   const page = Math.max(1, (pane?.height ?? 1) - 2);
   const step = (by: number) => sheet.mode === 'list' ? pick(sheet.at + by)
     : sheet.mode === 'delete'

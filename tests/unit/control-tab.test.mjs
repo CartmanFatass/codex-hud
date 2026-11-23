@@ -9,10 +9,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { chainOverlay, projectFixture, onControl, onPage, plain, presetFrames, quickModelFrames, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
 import { build } from '../../docs/design/control-tab/gen/frames.mjs';
-import { handleMonitorInput } from '../../dist/render/monitor.js';
+import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { readPanelPlace } from '../../dist/utils/panel-reload.js';
-import { DEFAULT_PANEL_VIEW } from '../../dist/settings.js';
+import { DEFAULT_PANEL_VIEW, loadSettings } from '../../dist/settings.js';
 import { finishChain } from '../../dist/render/chain-input.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
@@ -33,7 +33,7 @@ const tabClick = (frame, id) => {
 
 test('Control is the third whole tab at 40 columns, with arrows, Tab, click and separate navigation', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
-  for (const lang of ['en', 'zh']) for (const experiments of [false, true]) for (const panelLayout of ['classic', 'split']) {
+  for (const lang of ['en', 'zh']) for (const experiments of [false, true]) for (const panelLayout of ['classic']) {
     const draw = (state) => f.render(40, lang, state, 36, data, true, 'unicode', 'none', { projects: PROJECTS });
     let frame = draw(onPage(undefined, { selectedProject: PROJECTS[1].root, project: { nav: { cursor: 'project:page:docs' } }, prefs: { panelLayout, experiments } }));
     const keys = ['home', 'project', 'control', ...(experiments ? ['exp'] : [])];
@@ -73,7 +73,7 @@ test('Control shows active lease name, holder and age for the selected project',
   await takeLease({ name: 'other project', wait_s: 0 }, { ...caller, cwd: elsewhere });
   const now = Date.now() + 10_000;
   const snapshot = await f.collector.collect('control', f.board, now);
-  for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+  for (const panelLayout of ['classic']) for (const lang of ['en', 'zh']) {
     const frame = f.render(40, lang, onControl({}, { prefs: { panelLayout } }), 38, snapshot, true, 'unicode', 'none', { nowMs: now });
     const rendered = plain(frame).join('\n');
     assert.match(rendered, lang === 'zh' ? /资源租约/ : /Leases/);
@@ -90,7 +90,7 @@ test('Control shows active lease name, holder and age for the selected project',
 test('Project hubs have no Control row; Inbox alert links to its role on the same root in both layouts', async (t) => {
   const f = await fixture(t), data = { ...richControl(f.data), ledger: [], waiting: [], tickets: [], slices: [] };
   const root = PROJECTS[1].root;
-  for (const panelLayout of ['classic', 'split']) {
+  for (const panelLayout of ['classic']) {
     const draw = (state, projectDisplayRoot = root) => f.render(40, 'en', state, 36, data, true, 'unicode', 'none', { projects: PROJECTS, projectDisplayRoot });
     const state = onPage(undefined, { selectedProject: root, project: { nav: { cursor: 'inbox:role:pro' } }, prefs: { panelLayout } });
     const frame = draw(state);
@@ -107,7 +107,7 @@ test('Project hubs have no Control row; Inbox alert links to its role on the sam
 
 test('legacy Project/control continuation returns to the selected role on Control, in Classic and Split', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
-  for (const panelLayout of ['classic', 'split']) {
+  for (const panelLayout of ['classic']) {
     const projectCursor = 'project:role:reviewer:0';
     process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: { mainTab: 'project', projectPage: 'control', projectRoot: PROJECTS[1].root, projectCursor } });
     const place = readPanelPlace({ ...DEFAULT_PANEL_VIEW, panelLayout });
@@ -135,7 +135,7 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     assert.ok(c, kind);
     return { type: 'mouse', button: 'left', x: c.x, y: c.y };
   };
-  for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+  for (const panelLayout of ['classic']) for (const lang of ['en', 'zh']) {
     f.put(join(f.hud, 'harnesses.json'), { disabled: ['cli:grok', 'pi:xai'] });
     const data = await f.collector.collect('control', f.board, NOW);
     const roles = { cursor: 'project:role:imp' };
@@ -228,7 +228,7 @@ test('40-column preset row, successful switch and chooser text match the sample 
     const listEntry = /^ *(?:◉ )?(?:default |grok |daily |file chain |文件链 )+.*→/;
     const list = (rows) => rows.filter((line) => line.startsWith('/ ') || listEntry.test(line));
     const wanted = list(sample('4c').map((row) => row.replace(/(?:Custom|自定义) +→ (\S+) +(?:file chain|文件链)$/, lang === 'en' ? 'file chain → $1' : '文件链    → $1')));
-    for (const layout of ['classic', 'split']) {
+    for (const layout of ['classic']) {
       assert.equal(rendered[`preset-row-40-${layout}-${lang}`].find((line) => role.test(line)), '  ◉ imp [daily] → xai/grok-4.7');
       assert.deepEqual(list(rendered[`preset-list-40-${layout}-${lang}`]), wanted);
     }
@@ -238,9 +238,28 @@ test('40-column preset row, successful switch and chooser text match the sample 
   }
 });
 
-test('quick model role, picker and saved notice fit in both layouts and languages', async (t) => {
+test('Control model picker works after loading a retired Split preference', async (t) => {
+  const f = await fixture(t), data = richControl(f.data);
+  const settingsPath = join(f.root, 'legacy-hud-settings.json');
+  const legacy = { panelLayout: 'split', tasks: true, cardStallMinutes: 5, cardFoldMinutes: 1, cardHideMinutes: 2 };
+  fs.writeFileSync(settingsPath, JSON.stringify({ ...legacy, language: 'en' }));
+  const saved = loadSettings({ ...f.env, HUD_SETTINGS_PATH: settingsPath });
+  for (const key of Object.keys(legacy)) assert.equal(Object.hasOwn(saved, key), false, key);
+  const state = onControl({ cursor: 'project:role:imp' }, { prefs: initialMonitorState(saved).prefs });
+  const frame = f.render(80, 'en', state, 36, data);
+  assert.equal(frame.panes.length, 1);
+  const opened = send(frame, 'place-model').state;
+  assert.equal(opened.overlay?.kind, 'control-quick-model');
+  const picked = f.render(80, 'en', opened, 36, data);
+  const selection = send(picked, 'enter').action;
+  assert.equal(selection?.type, 'preset-edit');
+  assert.equal(selection.role, 'imp');
+  assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).panelLayout, 'split', 'loading and inspecting do not rewrite owner preferences');
+});
+
+test('quick model role, picker and saved notice fit in EN and ZH', async (t) => {
   const f = await fixture(t), frames = quickModelFrames(f, richControl(f.data));
-  for (const width of [40, 120]) for (const layout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
+  for (const width of [40, 120]) for (const layout of ['classic']) for (const lang of ['en', 'zh']) {
     const frame = (id) => frames[`quick-model-${id}-${width}-${layout}-${lang}`];
     const zh = lang === 'zh';
     for (const id of ['row', 'picker', 'saved']) assert.ok(frame(id).every((line) => visualLength(line) === width));
@@ -259,7 +278,7 @@ test('quick model role, picker and saved notice fit in both layouts and language
 
 test('project role at 40 columns shows source and lock, with open but no preset controls', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
-  for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+  for (const panelLayout of ['classic']) for (const lang of ['en', 'zh']) {
     const state = onControl({ cursor: 'project:role:frontend' }, { prefs: { panelLayout }, overlay: chainOverlay(data.roles.find((r) => r.role === 'frontend')) });
     const frame = f.render(40, lang, state, 34, data);
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
@@ -281,7 +300,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
   const original = { role: 'imp', instructions: 'implementer', can_continue: true, run, active_preset: 'daily',
     presets: [{ name: 'daily', run: chain }] };
   f.put(join(f.hud, 'harnesses.json'), { disabled: ['pi:xai'] });
-  for (const layout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
+  for (const layout of ['classic']) for (const lang of ['en', 'zh']) {
     f.put(file, original);
     const snap = await f.collector.collect('control', f.board, NOW);
     const before = fs.readFileSync(file, 'utf8'), zh = lang === 'zh';

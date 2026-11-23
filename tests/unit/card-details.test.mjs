@@ -4,74 +4,18 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { cardFixture, colourFrame, colourFrames, NOW } from '../fixtures/card-details.mjs';
+const NOW = Date.parse('2026-11-12T12:35:00Z');
 import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
-import { cardExpanded, jobSentenceRows, identifiers, paintSentence, workCardDetail, renderWorkCard } from '../../dist/render/work-card.js';
+import { jobSentenceRows, identifiers, paintSentence, workJobDetail as workCardDetail } from '../../dist/render/work-job-detail.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { theme, stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { keywordMarks, markedTitle } from '../../dist/utils/keyword-marks.js';
-const key = (w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id });
-function fixture(t) {
-  const home = fs.mkdtempSync(join(tmpdir(), 'card-details-'));
-  const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
-  t.after(() => { setDisplayConfig(display); fs.rmSync(home, { recursive: true, force: true }); });
-  return cardFixture(home);
-}
-function enter(f, frame, worker) {
-  return handleMonitorInput(withState(frame.state, { home: { cursor: { kind: 'work', target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } } } }),
-    { type: 'key', key: 'enter' }, { frame, tree: f.tree, nowMs: NOW }).state;
-}
-test('Home opens only the newest current result by itself; routine running cards pack to one row; owner choices survive', (t) => {
-  const f = fixture(t), [job, native] = f.board.workers;
-  assert.match(job.id, /^thin-job:/);
-  assert.equal(native.nativeDepth, 1);
-  for (const w of f.board.workers) {
-    w.modelSentence = 'A complete sentence with enough words to wrap and end at the final word.';
-    w.work.activityAt = NOW - 5000;
-    if (w.settledAt !== null) w.settledAt = NOW - 5000;
-  }
-  native.work.activityAt = NOW - 1000; // the most recent activity is a running card: it must not open
-  let frame = f.render(initialMonitorState(), 32);
-  const rows = (w) => frame.workboard.rows.filter((r) => r.item === key(w));
-  const running = f.board.workers.filter((w) => w.settledAt === null);
-  assert.ok(running.length >= 2);
-  for (const w of running) {
-    assert.ok(!cardExpanded(frame.state, key(w)), w.id);
-    assert.equal(rows(w).length, w.nativeDepth === undefined ? 2 : 1, `${w.id}: a routine running card is one dense row, plus its dim sentence for a job, until expanded`);
-  }
-  const newest = f.board.workers.find((w) => key(w) === frame.state.home.newestCard);
-  assert.ok(newest && newest.settledAt !== null, 'the newest result opens');
-  job.settledAt = NOW - 500; // the job settles: a Classic job row never opens by itself (its sentence is in the Inspector)
-  frame = f.render(frame.state);
-  assert.notEqual(frame.state.home.newestCard, key(job));
-  assert.doesNotMatch(rows(job).map((r) => stripAnsi(r.text)).join(' '), /final word/);
-  let state = enter(f, frame, job); // Enter opens it
-  frame = f.render(state);
-  assert.ok(cardExpanded(frame.state, key(job)));
-  assert.match(rows(job).map((r) => stripAnsi(r.text)).join(' '), /final word/);
-  frame = f.render(enter(f, frame, job)); // Enter folds it again
-  assert.ok(!cardExpanded(frame.state, key(job)));
-  state = enter(f, frame, native); // explicitly open a running card
-  frame = f.render(state);
-  assert.ok(cardExpanded(frame.state, key(native)));
-  native.work.activityAt = NOW; // activity alone changes nothing
-  frame = f.render(frame.state);
-  assert.ok(cardExpanded(frame.state, key(native)));
-  assert.ok(!cardExpanded(frame.state, key(job)));
-  // No default expansion for the separate question slab.
-  job.homeNeedsHuman = true;
-  job.ask = 'Synthetic question?';
-  job.work.requestInfo = { question: job.ask, options: ['A) first', 'B) second'], context: 'QUESTION-CONTEXT', suggested: 'A' };
-  frame = f.render(initialMonitorState());
-  assert.doesNotMatch(frame.lines.map(stripAnsi).join('\n'), /QUESTION-CONTEXT/);
-  frame = f.render(enter(f, frame, job));
-  assert.match(frame.lines.map(stripAnsi).join('\n'), /QUESTION-CONTEXT/);
-});
 test('all mark inks and deterministic unmarked files in EN and ZH', (t) => {
-  fixture(t);
+  const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => setDisplayConfig(display));
   for (const language of ['en', 'zh']) {
     const words = language === 'en' ? ['keyword', 'accept', 'reject', 'recommends X'] : ['关键词', '批准', '拒绝', '认为更简单'];
     const raw = `«${words[0]}» «+${words[1]}» «-${words[2]}» «!${words[3]}» report.md src/tree-page.ts`;
@@ -89,7 +33,8 @@ test('all mark inks and deterministic unmarked files in EN and ZH', (t) => {
   }
 });
 test('flag marks retain prefixes as identifiers, stance marks still work in EN and ZH', (t) => {
-  fixture(t);
+  const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => setDisplayConfig(display));
   for (const language of ['en', 'zh']) {
     const lead = language === 'en' ? 'Use ' : '使用';
     for (const [raw, plain] of [
@@ -114,7 +59,8 @@ test('flag marks retain prefixes as identifiers, stance marks still work in EN a
   }
 });
 test('malformed, prefix-only, five marks and nesting strip syntax without colouring keywords; old grammar still paints', (t) => {
-  fixture(t);
+  const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => setDisplayConfig(display));
   for (const raw of ['«+»', '«-»', '«!»', '«»', '«+accept', '«+outer «!inner»»', '«a» «+b» «-c» «!d» «e»']) {
     const parsed = keywordMarks(raw);
     assert.equal(parsed.valid, false, raw);
@@ -134,7 +80,8 @@ test('malformed, prefix-only, five marks and nesting strip syntax without colour
   assert.equal(paintSentence('«!prefer»'), 'prefer');
 });
 test('corner keyword grammar preserves ordinary quotations and shares the four-mark limit', (t) => {
-  fixture(t);
+  const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => setDisplayConfig(display));
   assert.deepEqual(keywordMarks('「bar-fields.ts」以「835行」'), keywordMarks('«bar-fields.ts»以«835行»'));
   assert.deepEqual(keywordMarks('「+批准」「-拒绝」「!更简单」'), keywordMarks('«+批准»«-拒绝»«!更简单»'));
   for (const quote of [
@@ -162,7 +109,8 @@ test('corner keyword grammar preserves ordinary quotations and shares the four-m
   assert.equal(markedTitle('「甲，乙」', 'zh'), '「甲，乙」');
 });
 test('decision title eight-word cap does not count prefixes or break marks', (t) => {
-  fixture(t);
+  const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => setDisplayConfig(display));
   for (const [language, raw, expected] of [
     ['en', '«+Accept» «design» «!today» «-instead»', '«+Accept» «design» today instead'],
     ['zh', '«+批准»«设计»«!今天»«-替代»', '«+批准»«设计»今天替代'],
@@ -179,25 +127,8 @@ test('decision title eight-word cap does not count prefixes or break marks', (t)
     assert.ok([...new Intl.Segmenter(language, { granularity: 'word' }).segment(parsed.plain)].filter((s) => s.isWordLike).length <= 8);
   }
 });
-test('Home frames EN/ZH at 80/120 columns retain all colour kinds (ANSI assertion plus stripped snapshots)', (t) => {
-  const f = fixture(t);
-  const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/card-details-frames.json', import.meta.url)));
-  assert.deepEqual(colourFrames(f), expected);
-  for (const width of [80, 120]) for (const lang of ['en', 'zh']) {
-    const frame = colourFrame(f, width, lang);
-    assert.ok(frame.lines.every((line) => visualLength(line) === width));
-    const ansi = frame.lines.join('\n');
-    // Keep ANSI here: snapshot stripping must not hide a lost category colour.
-    assert.ok([theme.board.identifier('report.md'), theme.board.success(lang === 'en' ? 'approves' : '批准'),
-      theme.board.danger(lang === 'en' ? 'rejects' : '拒绝'), theme.board.opinion(lang === 'en' ? 'recommends simplicity' : '认为更简单'),
-      theme.board.identifier(lang === 'en' ? 'parser' : '解析器')].every((span) => ansi.includes(span)));
-  }
-});
-
 test('settled cards drop stale still-working or prompt-report quiet_decision while unsettled and quiet-failed keep it', (t) => {
-  const f = fixture(t);
-  const base = f.board.workers[0];
-  const state = { ...initialMonitorState(), activeTab: 'home' };
+  const base = { role: 'imp', task: 'Synthetic job', state: 'working', startedAt: NOW - 60000, settledAt: null, laneId: 'synthetic', work: { reason: 'Synthetic detail', phases: [] } };
   for (const [choice, action] of [['still-working', 'wait'], ['finished-no-report', 'prompt-report']]) {
     const settled = {
       ...base,
@@ -209,9 +140,9 @@ test('settled cards drop stale still-working or prompt-report quiet_decision whi
     };
     const card = projectWorkCard(settled, NOW);
     assert.doesNotMatch(workCardDetail(card), /still-working|prompt-report|wait/);
-    const inspector = (worker) => workInspectorRows(worker, state, 110, NOW).map((r) => stripAnsi(r.text)).join('\n');
+    const inspector = (worker) => workInspectorRows(worker, 110, NOW).map((r) => stripAnsi(r.text)).join('\n');
     assert.doesNotMatch(inspector(settled), new RegExp(choice), 'the Inspector follows the card');
-    assert.doesNotMatch(renderWorkCard(card, state, 80).map(stripAnsi).join('\n'), /still-working|prompt-report|wait/);
+    assert.doesNotMatch(workInspectorRows(settled, 80, NOW).map(r => stripAnsi(r.text)).join('\n'), /still-working|prompt-report|wait/);
 
     const unsettled = { ...settled, state: 'working', settledAt: null, work: { ...base.work, failed: false, result: false, reason: 'quiet' } };
     assert.match(workCardDetail(projectWorkCard(unsettled, NOW)), new RegExp(`${choice} 92%`));
@@ -225,5 +156,5 @@ test('settled cards drop stale still-working or prompt-report quiet_decision whi
     work: { ...base.work, failed: true, result: false, reason: '429 rate limit' },
   };
   assert.match(workCardDetail(projectWorkCard(failedByQuiet, NOW)), /failed 96% → fail/);
-  assert.match(workInspectorRows(failedByQuiet, state, 110, NOW).map((r) => stripAnsi(r.text)).join('\n'), /quiet\s+failed 96% → fail/);
+  assert.match(workInspectorRows(failedByQuiet, 110, NOW).map((r) => stripAnsi(r.text)).join('\n'), /quiet\s+failed 96% → fail/);
 });

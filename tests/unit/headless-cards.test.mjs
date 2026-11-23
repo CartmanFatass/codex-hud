@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { jobsBoard, jobFrame, NOW as JOBS_NOW } from '../fixtures/home-jobs.mjs';
 import { NOW, TREE } from '../fixtures/project-page.mjs';
 import { withState } from '../fixtures/state-helpers.mjs';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
@@ -22,34 +21,6 @@ const OUTPUT = { bytes: 900, lines: [
   { kind: 'tool', text: 'read src/synthetic.ts' }, { kind: 'say', text: 'The interval is read once at start.' },
   { kind: 'tool', text: 'bash npm run build' }, { kind: 'error', text: 'bash failed' }, { kind: 'say', text: 'Fixing the type error, then building again.' }] };
 
-/** The 14-job fixture with a hard tab job, a light headless job, a headless job with no route and a standard tab job. */
-function routedBoard(lang) {
-  const board = jobsBoard(lang), by = (id) => board.workers.find((w) => w.displayId === id);
-  Object.assign(by('perf-ts/05'), { route: route('hard', 'tab') });
-  Object.assign(by('metrics-lite/01'), { route: route('light', 'headless'), headless: true });
-  Object.assign(by('docs-sweep/04'), { headless: true });
-  Object.assign(by('stream-sync/05'), { route: route('standard', 'tab') });
-  return board;
-}
-const rowOf = (lines, id) => lines.find((l) => l.includes(id));
-const decoder = new WorkbenchInputDecoder('workboard');
-/** What the panel's own keyboard hands over for these bytes. */
-const key = (bytes) => decoder.push(Buffer.from(bytes))[0];
-
-test('a Classic Home row carries no tier or headless mark, in both languages and both icon sets: the route is the Inspector\'s', () => {
-  for (const lang of ['en', 'zh']) for (const width of [120, 80, 50]) {
-    const lines = jobFrame(width, lang, routedBoard(lang));
-    for (const line of lines) assert.ok(visualLength(line) <= width, `${lang} ${width}: ${line}`);
-    assert.doesNotMatch(lines.join('\n'), /[▂▄▆∅]/, `${lang} ${width}: no route mark on a row`);
-    assert.match(rowOf(lines, 'metrics-lite/01'), /[●◐○]{5} {2}[⚡\uF0E7]2 +\d+(?:m|分)(?: (?:quiet |静)\d+(?:m|分))?$/, `${lang} ${width}: the helper count stays`);
-    assert.match(rowOf(lines, 'stream-sync/05'), /[●◐○]{5} +\d+(?:m|分)$/, `${lang} ${width}: a routed job's row ends in the strip and the age`);
-  }
-  const ascii = jobFrame(80, 'en', routedBoard('en'), initialMonitorState(), 'text');
-  assert.doesNotMatch(rowOf(ascii, 'metrics-lite/01'), / -h /);
-  assert.match(rowOf(ascii, 'metrics-lite/01'), / \*2 +\d+m(?: quiet \d+m)?$/);
-  assert.doesNotMatch(ascii.join('\n'), / [=#] /);
-});
-
 test('routeBadge is empty without a route or headless flag, and a route that chose headless marks it even without the flag', (t) => {
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   t.after(() => setDisplayConfig(display));
@@ -65,10 +36,10 @@ test('the Inspector shows the route words and reason, then a headless job\'s out
   const draw = (worker, board, lang, width, height = 40) => {
     const lane = board.lanes.find((l) => l.workers.includes(worker)), previous = setLanguage(lang);
     const state = withState(initialMonitorState(), { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: lane.id, workerId: worker.id } } });
-    try { return renderMonitor({ tree: TREE, workboard: board, state, width, height, nowMs: JOBS_NOW }).lines.map(stripAnsi); } finally { setLanguage(previous); }
+    try { return renderMonitor({ tree: TREE, workboard: board, state, width, height, nowMs: NOW }).lines.map(stripAnsi); } finally { setLanguage(previous); }
   };
   for (const lang of ['en', 'zh']) for (const width of [100, 50]) {
-    const board = routedBoard(lang), worker = board.workers.find((w) => w.displayId === 'metrics-lite/01');
+    const f = fixture(t), board = f.board, worker = f.worker(HEADLESS);
     worker.output = { ...OUTPUT, lines: [...OUTPUT.lines, ...Array.from({ length: 20 }, (_, i) => ({ kind: 'say', text: `Later line ${i}` }))] };
     const lines = draw(worker, board, lang, width);
     for (const line of lines) assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
@@ -82,7 +53,7 @@ test('the Inspector shows the route words and reason, then a headless job\'s out
     assert.match(shown.at(-1), /Later line 19/);
     assert.doesNotMatch(text, /read src\/synthetic/, 'older lines scroll off');
   }
-  const board = routedBoard('en'), worker = board.workers.find((w) => w.displayId === 'metrics-lite/01');
+  const f = fixture(t), board = f.board, worker = f.worker(HEADLESS);
   worker.output = OUTPUT;
   const text = draw(worker, board, 'en', 100).join('\n');
   assert.match(text, /^▸ read src\/synthetic\.ts/m);
@@ -93,13 +64,13 @@ test('the Inspector shows the route words and reason, then a headless job\'s out
   worker.output = { lines: [], bytes: 80 };
   assert.match(draw(worker, board, 'en', 100).join('\n'), /^ {2}Nothing displayable/m);
   worker.output = OUTPUT;
-  Object.assign(worker, { settledAt: JOBS_NOW - 60_000, state: 'done' });
+  Object.assign(worker, { settledAt: NOW - 60_000, state: 'done' });
   assert.doesNotMatch(draw(worker, board, 'en', 100).join('\n'), /^Output ─+ live$/m, 'a settled job is no longer live');
   assert.match(draw(worker, board, 'en', 100).join('\n'), /^Output ─+$/m);
   // A tab job has no Output section, and neither does a headless job whose output has not been read.
   delete worker.output;
   assert.doesNotMatch(draw(worker, board, 'en', 100).join('\n'), /Output/);
-  const tab = board.workers.find((w) => w.displayId === 'perf-ts/05' && w.role === 'imp');
+  const tab = f.worker(TAB);
   assert.doesNotMatch(draw(tab, board, 'en', 100).join('\n'), /Output/);
   assert.match(draw(tab, board, 'en', 100).join('\n'), /Route: hard · tab — hard work; tab run/);
 });
@@ -128,13 +99,7 @@ function fixture(t) {
     const previous = setLanguage(lang);
     try { return renderMonitor({ tree: TREE, workboard: board, state, width, height: 30, nowMs: NOW }); } finally { setLanguage(previous); }
   };
-  /** Select a job's card, draw, press one key and return the outcome. */
-  const press = (id, input, state = {}) => {
-    const w = worker(id);
-    const frame = render(withState(initialMonitorState(), { home: { cursor: { kind: 'work', target: { kind: 'worker', laneId: w.laneId, workerId: w.id } } } }, state));
-    return { out: handleMonitorInput(frame.state, key(input), { tree: TREE, frame, nowMs: NOW }), frame };
-  };
-  return { home, board, worker, render, press, dir: (id) => join(home, 'jobs', id) };
+  return { home, board, worker, render, dir: (id) => join(home, 'jobs', id) };
 }
 
 test('the collector marks a headless job and keeps its route; a tab job has neither flag', (t) => {
@@ -143,42 +108,6 @@ test('the collector marks a headless job and keeps its route; a tab job has neit
   assert.deepEqual(f.worker(HEADLESS).route, route('light', 'headless'));
   assert.equal(f.worker(TAB).headless, undefined);
   assert.equal(f.worker(TAB).route.tier, 'hard');
-});
-
-test('g on a headless card opens its output in the Inspector instead of failing; a tab job still focuses its tab; stop still works', (t) => {
-  const f = fixture(t), w = f.worker(HEADLESS);
-  const opened = f.press(HEADLESS, 'g').out;
-  assert.equal(opened.action, undefined, 'no tab to focus');
-  assert.equal(opened.state.subpage?.kind, 'inspector');
-  assert.deepEqual(opened.state.subpage.target, { kind: 'worker', laneId: w.laneId, workerId: w.id });
-  assert.deepEqual(f.press(TAB, 'g').out.action, { type: 'focus-job-tab', dir: f.dir(TAB) });
-  // The settled headless job opens its (kept) output too.
-  assert.equal(f.press(SETTLED, 'g').out.state.subpage?.kind, 'inspector');
-  // In the Inspector the output is already on screen: g changes nothing and starts nothing.
-  const again = f.press(HEADLESS, 'g', { subpage: { kind: 'inspector', scroll: 0, target: opened.state.subpage.target } }).out;
-  assert.equal(again.action, undefined);
-  assert.equal(again.state.subpage?.kind, 'inspector');
-  // Stop: X asks, y stops this job's directory, on Home and in the Inspector.
-  for (const state of [{}, { subpage: { kind: 'inspector', scroll: 0, target: opened.state.subpage.target } }]) {
-    const asked = f.press(HEADLESS, 'X', state).out;
-    assert.equal(asked.state.overlay?.kind, 'confirm-stop');
-    const confirmed = handleMonitorInput(asked.state, key('y'), { tree: TREE, frame: f.render(asked.state), nowMs: NOW });
-    assert.deepEqual(confirmed.action, { type: 'stop-job', dir: f.dir(HEADLESS) });
-  }
-});
-
-test('the footer says g output on a headless job (not in the Inspector) and g job tab on a tab job, in both languages', (t) => {
-  const f = fixture(t), foot = (frame) => stripAnsi(frame.lines.at(-1));
-  for (const [lang, headless, tab] of [['en', 'g output', 'g job tab'], ['zh', 'g 输出', 'g 任务页']]) {
-    const w = f.worker(HEADLESS), t2 = f.worker(TAB);
-    const home = (job) => withState(initialMonitorState(), { home: { cursor: { kind: 'work', target: { kind: 'worker', laneId: job.laneId, workerId: job.id } } } });
-    assert.ok(foot(f.render(home(w), 80, lang)).includes(headless), `${lang}: ${foot(f.render(home(w), 80, lang))}`);
-    assert.ok(!foot(f.render(home(w), 80, lang)).includes(tab));
-    assert.ok(foot(f.render(home(t2), 80, lang)).includes(tab));
-    const inspecting = withState(home(w), { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: w.laneId, workerId: w.id } } });
-    assert.ok(!foot(f.render(inspecting, 80, lang)).includes(headless), 'the Inspector already shows it');
-    assert.ok(visualLength(foot(f.render(home(w), 80, lang))) <= 80);
-  }
 });
 
 test('outputLines reads pi events, Claude stream-json and plain text, and skips what it does not know', () => {

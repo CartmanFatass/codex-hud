@@ -7,9 +7,6 @@ import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
-import { laneTop } from '../../dist/render/split-home.js';
-import { workerPriority } from '../../dist/render/work-lanes.js';
-import { currentWorker, foldedWorker } from '../../dist/render/work-visibility.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 
 async function setup(t) {
@@ -25,7 +22,7 @@ async function setup(t) {
   return { f, home, seed, lanes, workers };
 }
 
-test('linked attempts retire failures immediately; show-all keeps muted history, not the lane headline', async (t) => {
+test('linked attempts retire failures immediately; Jobs retains both attempts', async (t) => {
   const { f, seed, lanes } = await setup(t);
   for (const [i, link] of ['retry_of', 'repair_of', 'from_jobs'].entries()) {
     const old = seed(2 * i + 1, 'failed', { package: `old-${i}` }), next = seed(2 * i + 2, 'done', {
@@ -33,15 +30,12 @@ test('linked attempts retire failures immediately; show-all keeps muted history,
     });
     const lane = lanes().find((l) => l.label === `old-${i}`);
     assert.equal(lane.workers.find((w) => w.id.endsWith(old.job)).superseded, true);
-    assert.ok(laneTop(lane, Date.now()).id.endsWith(next.job));
   }
-  const list = lanes(), nowMs = Date.now(), state = initialMonitorState();
+  const list = lanes(), nowMs = Date.now(), state = { ...initialMonitorState(), subpage: { kind: 'jobs', scroll: 0 } };
   const draw = () => renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() },
     workboard: { lanes: list, workers: list.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } },
     state, width: 100, height: 60, nowMs });
-  assert.equal(draw().workboard.snapshot.workers.length, 3);
-  state.home.showAll = true;
-  assert.match(draw().lines.map(stripAnsi).join('\n'), /superseded/);
+  assert.equal(draw().workboard.rows.filter((r) => r.item).length, 6);
   assert.equal(draw().workboard.snapshot.workers.length, 6);
   assert.equal((await f.call('hud_read', { view: 'recent' })).jobs.length, 6);
 });
@@ -91,18 +85,10 @@ test('Project ignores legacy slice evidence still understood by the failed-job c
   assert.deepEqual(jobs.map(({ job }) => flags[job].superseded), [true, true, true, false, true, false, false, true]);
 });
 
-test('unhandled failure expires only on Home; observing it demotes and folds the card', async (t) => {
+test('reading a retained failure still records observation', async (t) => {
   const { f, seed, workers } = await setup(t), { job, dir } = seed(1, 'failed');
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', settled_at: new Date(Date.now() - 31 * 60000) }));
-  let w = workers()[job];
-  assert.equal(workerPriority(w, w.settledAt), 2);
-  assert.ok(currentWorker(w, w.settledAt + 30*60000 - 1));
-  assert.ok(!currentWorker(w, w.settledAt + 30*60000));
-  assert.ok(!currentWorker(w, Date.now()));
+  assert.equal(workers()[job].failureObserved, false);
   await f.call('hud_read', { job });
-  w = workers()[job];
-  assert.equal(w.failureObserved, true);
-  assert.ok(workerPriority(w, w.settledAt) > 4);
-  assert.ok(foldedWorker(w, w.settledAt + 5*60000));
-  assert.ok(!currentWorker(w, w.settledAt + 15*60000));
+  assert.equal(workers()[job].failureObserved, true);
 });

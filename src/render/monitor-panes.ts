@@ -1,11 +1,11 @@
-/** Repository/worktree summary for the retained Changes page. */
-import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
+/** Repository/worktree summary for Project's Working tree diagnostics. */
+import type { WorktreesSnapshot } from '../collectors/worktrees.js';
+import type { MonitorRow } from './monitor.js';
 import { theme } from './colors.js';
 import { t } from './i18n.js';
 import { monitorText } from './monitor-text.js';
 import { section, kvRows, itemRow } from './workboard-rows.js';
-export function changesRows(input: MonitorData, _state: MonitorState, width: number, now: number): MonitorRow[] {
-  const snapshot = input.worktrees;
+export function worktreeRows(snapshot: WorktreesSnapshot, width: number, now: number): MonitorRow[] {
   const rows: MonitorRow[] = [];
   if (snapshot?.error) rows.push({ text: theme.warning(t('No readable repository')) });
   if (snapshot?.truncated) rows.push({ text: theme.warning(t('Worktree list limited')) });
@@ -21,7 +21,7 @@ export function changesRows(input: MonitorData, _state: MonitorState, width: num
         rows.push(...kvRows(key, String(status[key] ?? '?'), width));
     } else rows.push({ text: theme.warning(t('Git incomplete')) });
   }
-  rows.push({ text: '' }, section(t('Worktrees'), width, String(snapshot?.entries.length ?? 0)));
+  rows.push({ text: '' }, section(t('Worktrees'), width, snapshot.error ? '' : String(snapshot.entries.length)));
   for (const entry of snapshot?.entries ?? []) {
     const dirty = entry.status && now - (entry.observedAt ?? 0) <= 30_000 ? entry.status.changed > 0 : null;
     const label = `${monitorText(entry.branch ?? t(entry.bare ? 'bare' : 'detached'))} · ${t(dirty === null ? 'unknown' : dirty ? 'dirty' : 'clean')}`;

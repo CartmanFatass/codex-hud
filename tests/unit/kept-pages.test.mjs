@@ -1,5 +1,4 @@
 import { withState } from '../fixtures/state-helpers.mjs';
-import { homeTarget } from '../../dist/render/monitor-state.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
@@ -26,20 +25,20 @@ function fixture(t) {
   t.after(() => rmSync(home, { recursive: true, force: true }));
   return pageFixture(home);
 }
-test("frames: all seven kept pages in Home's kit", (t) => {
+test("frames: Home, Jobs, Inspector, Settings and Help", (t) => {
   const f = fixture(t),
     frames = pageFrames(f);
   assert.deepEqual(frames, expected);
-  for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes']) {
+  for (const page of ['home', 'jobs', 'job', 'asking', 'settings', 'help']) {
     // Read the scrolling Help body separately from the visible frame.
     const frame = f.render(page, 80, 'en', page === 'help' ? 54 : 40),
       text = plainFrame(frame).join('\n');
-    if (page === 'older') {
-      assert.match(text, /3 older shown · a hide/);
-      assert.match(text, /✓●? +Add the retry h…\s+.*1h12m/);
+    if (page === 'jobs') {
+      assert.match(text, /Add the retry helper/);
+      assert.doesNotMatch(text, /older shown|done today/);
     }
     if (page === 'home') {
-      assert.match(text, /\+3 older · a/);
+      assert.match(text, /Waiting/);
       assert.doesNotMatch(text, /Decided for you|Backoff with jitter, cap 30s/);
       assert.doesNotMatch(text, /Add the retry h/);
     }
@@ -49,7 +48,7 @@ test("frames: all seven kept pages in Home's kit", (t) => {
       assert.doesNotMatch(text, /Time basis|Source details|Evidence time/);
     }
     if (page === 'settings') {
-      assert.match(text, /Advanced \(13\)/);
+      assert.match(text, /Advanced \(10\)/);
       assert.doesNotMatch(text, /Bar style|imp cap|Home mode/);
       assert.match(text, /Calls this hour\s+██▍░░░░░░░ 14\/60/);
       assert.match(text, /\* Call cap\s+‹ 120\/h ›/);
@@ -70,15 +69,10 @@ test("frames: all seven kept pages in Home's kit", (t) => {
       assert.match(help, /i Del\s+place: add \/ remove; harness:\s+add back \/ off/);
       assert.match(help, /h\s+Roles \/ Harnesses/);
       assert.doesNotMatch(text, /\+ - K J|n N /);
-      assert.match(text, /f\s+Changes/);
+      assert.doesNotMatch(text, /f\s+Changes/);
       assert.match(text, /← → Tab\s+switch tab \(a click too\)/);
       assert.match(text, /1-4 d\s+job: answer its open question/);
       assert.doesNotMatch(text, /Timeline|Mouse\s+Legend/);
-    }
-    if (page === 'changes') {
-      assert.match(text, /^‹ Changes/m);
-      assert.match(text, /branch\s+universal-hud/);
-      assert.match(text, /untracked\s+2/);
     }
   }
 });
@@ -87,7 +81,7 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
   const f = fixture(t);
   for (const width of [32, 40, 56, 80, 120])
     for (const lang of ['en', 'zh'])
-      for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes']) {
+      for (const page of ['home', 'jobs', 'job', 'asking', 'settings', 'help']) {
         const frame = f.render(page, width, lang, 40);
         assert.equal(frame.lines.length, 40);
         if (page === 'help') {
@@ -120,42 +114,6 @@ test('Help scrolls to the last shortcut or mark without offering row actions', (
     } finally { setLanguage(previous); }
   }
 });
-test('short Chinese minutes keep the Home ask slab and card rows clean at 38 and 40 columns', (t) => {
-  const f = fixture(t);
-  const askRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => /^⚒ \? +R5-UX/.test(line));
-  assert.match(askRow(38), /问 2选 +4分$/);
-  assert.match(askRow(40), /问 2选 +4分$/);
-  const cardRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.includes('Retry on HTTP'));
-  assert.match(cardRow(38), /47分(?: 静\d+分)?$/);
-  assert.match(cardRow(40), /47分(?: 静\d+分)?$/);
-});
-
-test('the Inspector and expanded running cards show exactly one localized milestone in Classic and Split', (t) => {
-  const f = fixture(t);
-  const { id: workerId, laneId } = f.apiWorker;
-  const target = { kind: 'worker', laneId, workerId };
-  for (const [lang, label] of [['en', 'Milestone'], ['zh', '里程碑']]) for (const width of [40, 80]) {
-    const lines = (frame) => frame.lines.filter((line) => stripAnsi(line).includes(`${label}: Retry cap verified`));
-    const check = (frame) => {
-      const rows = lines(frame);
-      assert.equal(rows.length, 1);
-      assert.equal(visualLength(rows[0]), width);
-    };
-    check(f.render('job', width, lang));
-    const previous = setLanguage(lang);
-    try {
-      for (const panelLayout of ['classic', 'split']) {
-        const state = withState(initialMonitorState(), { home: { split: { listCursor: targetKey({ kind: 'lane', laneId }) }, cursor: { kind: 'work', target: target } }, prefs: { panelLayout } });
-        const draw = (expanded) => renderMonitor({ tree: TREE, workboard: f.board, width, height: 48, nowMs: NOW,
-          state: withState(state, { home: { expanded: new Set(expanded ? [targetKey(target)] : []) } }),
-        });
-        assert.equal(lines(draw(false)).length, 0);
-        check(draw(true));
-      }
-    } finally { setLanguage(previous); }
-  }
-});
-
 test('Inspector shows elapsed run time for running and settled jobs, not for unknown endpoints', (t) => {
   const f = fixture(t);
   const nowMs = NOW + 18 * 60000;
@@ -176,14 +134,13 @@ test('Inspector shows elapsed run time for running and settled jobs, not for unk
   assert.doesNotMatch(draw({ ...settled, settledAt: null }), /^ran\s/m);
 });
 
-test('Inspector uses collected files, selects the open question/report/brief and opens exact QA pairs', (t) => {
+test('Inspector uses collected files, opens the report or a selected QA pair', (t) => {
   const f = fixture(t);
   const ctx = (frame) => ({ tree: TREE, frame, nowMs: NOW, standalone: true });
   let frame = f.render('asking', 80);
-  assert.equal(frame.state.subpage?.cursor, 'file:' + join(f.ux, 'qa/q3.md'));
   const press = (key) => handleMonitorInput(frame.state, { type: 'key', key }, ctx(frame));
   assert.deepEqual(press('enter').action.files, [join(f.ux, 'qa/q3.md')]);
-  const before = press('up').state;
+  const before = { ...frame.state, subpage: { ...frame.state.subpage, cursor: 'file:' + join(f.ux, 'qa/q2.md') } };
   frame = renderMonitor({ tree: TREE, workboard: f.board, state: before, width: 80, height: 40, nowMs: NOW });
   assert.deepEqual(press('open-session').action.files, [join(f.ux, 'qa/q2.md'), join(f.ux, 'qa/q2.answer.md')]);
   for (const key of ['home-tab', 'project-tab', 'left', 'right', 'tab'])
@@ -194,8 +151,8 @@ test('Inspector uses collected files, selects the open question/report/brief and
     [join(f.ux, 'qa/q1.md'), join(f.ux, 'qa/q1.answer.md')]
   );
   const home = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 0, y: 0 }, ctx(frame)).state;
-  assert.equal(home.subpage, undefined);
-  assert.equal(f.render('job', 80).state.subpage?.cursor, 'file:' + join(f.api, 'brief.md'));
+  assert.equal(home.subpage.kind, 'jobs');
+  assert.deepEqual(handleMonitorInput(f.render('job', 80).state, { type: 'key', key: 'enter' }, { frame: f.render('job', 80) }).action.files, [join(f.api, 'brief.md')]);
   const done = f.board.workers.find((w) => w.task === 'Check the retry tests');
   const report = renderMonitor({
     tree: TREE,
@@ -205,32 +162,7 @@ test('Inspector uses collected files, selects the open question/report/brief and
     height: 40,
     nowMs: NOW,
   });
-  assert.match(report.state.subpage?.cursor, /report\.md$/);
-});
-test('old rows have only muted ink, no band; expansion restores the card and a returns to a nearby row', (t) => {
-  const f = fixture(t),
-    previous = setDisplayConfig({ theme: 'titanium', icons: 'unicode' }),
-    lang = setLanguage('en');
-  t.after(() => {
-    setDisplayConfig(previous);
-    setLanguage(lang);
-  });
-  const old = f.board.workers.find((w) => w.task === 'Add the retry helper'),
-    target = { kind: 'worker', laneId: old.laneId, workerId: old.id },
-    key = targetKey(target);
-  const draw = (state) => renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 60, nowMs: NOW });
-  const frame = draw(withState(f.states.older, { home: { cursor: { kind: 'work', target: target } } }));
-  const oldRow = frame.workboard.rows.find((r) => r.item === key);
-  assert.equal(oldRow.text, theme.board.muted(stripAnsi(oldRow.text)));
-  assert.ok(f.board.decisions.length);
-  assert.ok(![...frame.workboard.targets.values()].some((target) => target.kind === 'decision'));
-  const act = (key) => handleMonitorInput(frame.state, { type: 'key', key }, { tree: TREE, frame, nowMs: NOW }).state;
-  const expanded = draw(act('enter')).workboard.rows.filter((r) => r.item === key);
-  assert.ok(expanded.length > 1);
-  assert.notEqual(expanded[0].text, theme.board.muted(stripAnsi(expanded[0].text)));
-  const hidden = draw(act('show-all'));
-  assert.notDeepEqual(homeTarget(hidden.state.home), target);
-  assert.equal(homeTarget(hidden.state.home).laneId, target.laneId);
+  assert.match(handleMonitorInput(report.state, { type: 'key', key: 'enter' }, { frame: report }).action.files[0], /report\.md$/);
 });
 test('Settings Bar style cycles the exported styles, saves barStyle, and ignores retired keys', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'page-settings-')),
@@ -400,7 +332,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 58, nowMs: NOW, ...options });
   const home = draw(f.states.home),
     text = plainFrame(home).join('\n');
-  assert.match(text, /I {4}Retry/, 'a running job: its role letter and no state mark');
+  assert.match(text, /Waiting/);
   assert.doesNotMatch(text, /@ {2}Retry/);
   assert.doesNotMatch(text, /◉|●/);
   const asking = draw(f.states.asking),
@@ -409,21 +341,9 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   const opened = handleMonitorInput(asking.state, { type: 'key', key: 'help' }, ctx(asking)).state;
   const help = draw(opened, { mouse: false });
   const body = plainFrame(help).join('\n');
-  assert.match(body, /roles\s+I imp\s+F frontend-imp/);
-  assert.match(body, /jobs\s+\? asking\s+x failed\s+~ stalled/);
-  assert.match(body, /\+\* report unread\s+\+ done/);
-  assert.match(body, /- stopped\s+o queued/);
-  assert.match(body, /\*N sonic running/);
-  assert.match(body, /a running job has no mark/);
   assert.match(body, /route\s+- light\s+= standard\s+# hard/);
   assert.match(body, /h headless: no herdr tab/);
-  assert.match(body, /stages\s+\+ passed\s+@ current/);
-  assert.match(body, /o not reached\s+o unknown/);
-  assert.match(body, /read>edit>test>report>land/);
-  assert.match(body, /time\s+quiet 4m no output for 3m/);
-  assert.match(body, /quiet 12m no output, stalled/);
-  assert.match(body, /g\s+job: go to its herdr tab;/);
-  assert.match(body, /headless: its output in the\s+Inspector/);
+  assert.match(body, /g\s+Inspector: focus the job tab;/);
   assert.doesNotMatch(body, /click|Codex's own panel|Timeline|press .* first/);
   assert.match(body, /switch tab/);
   assert.equal(help.state.subpage?.cursor, cursor);
@@ -432,7 +352,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.equal(returned.subpage?.kind, 'inspector');
   assert.equal(draw(returned).state.subpage?.cursor, cursor);
   const withMouse = plainFrame(draw({ ...opened, subpage: undefined }, { mouse: true })).join('\n');
-  assert.match(withMouse, /click\s+select; again = ⏎; wheel\s[^]*\sscrolls/);
+  assert.match(withMouse, /click\s+select; links open directly;\s+wheel scrolls/);
   assert.doesNotMatch(withMouse, /press .* first/);
   setLanguage('zh');
   const chinese = plainFrame(draw({ ...opened, subpage: undefined }, { width: 120 })).join('\n');
@@ -442,16 +362,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(chinese, /Esc\s+选择器：先清空筛选，再关闭/);
   assert.match(chinese, /\^R\s+选择器：刷新模型列表/);
   assert.doesNotMatch(chinese, /On Control|pick a model/);
-  assert.match(chinese, /- 已停止\s+o 排队中/);
-  assert.match(chinese, /\*N sonic 运行中/);
-  assert.match(chinese, /运行中的任务不带标记/);
   assert.match(chinese, /分流\s+- 轻量\s+= 标准\s+# 复杂/);
   assert.match(chinese, /h 无界面：没有 herdr 标签页/);
-  assert.match(chinese, /阶段\s+\+ 已过\s+@ 当前/);
-  assert.match(chinese, /o 未到\s+o 未知/);
-  assert.match(chinese, /读>改>测>报告>落地/);
-  assert.match(chinese, /时间\s+静4分 3 分钟没有输出/);
-  assert.match(chinese, /静12分 没有输出，已停滞/);
-  assert.match(chinese, /无界面任务：在详情/);
-  assert.match(chinese, /页看输出/);
+  assert.match(chinese, /无界面任务的输出/);
 });

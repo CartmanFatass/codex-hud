@@ -12,11 +12,9 @@ import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { SmallModel, modelHttpRequest } from '../../dist/collectors/small-model.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
-import { homeMatcher } from '../../dist/render/filter.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
-import { renderWorkCard, jobSentenceLine, paintSentence } from '../../dist/render/work-card.js';
-import { laneRows } from '../../dist/render/work-lanes.js';
+import { jobSentenceLine, paintSentence } from '../../dist/render/work-job-detail.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -109,9 +107,7 @@ function fixture(t, mode = 'on', language = 'en') {
     return f.service.apply(f.board());
   };
   f.render = (board, width = 56) =>
-    renderWorkCard(projectWorkCard(board.workers[0], f.now), { ...initialMonitorState(), activeTab: 'home' }, width).join(
-      '\n'
-    );
+    workInspectorRows(board.workers[0], width, f.now).map((r) => r.text).join('\n');
   const previous = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
   t.after(async () => {
     f.service.stop();
@@ -234,12 +230,11 @@ for (const [language, summary] of [['en', 'Parser repaired; checks passed.'], ['
     assert.equal(worker.modelSentence, undefined);
     assert.equal(worker.work.reason, summary);
     assert.equal(worker.labels, undefined, 'worker metadata does not set an outcome');
-    assert.equal(homeMatcher(board, summary.toLowerCase(), f.now)(worker), true);
     assert.doesNotMatch(fs.readFileSync(join(f.home, 'display/thin-jobs.json'), 'utf8'), /file-0\.ts|checks passed|全部通过/);
     const original = setLanguage(language);
     try {
       for (const width of [40, 100]) {
-        const rows = workInspectorRows(worker, initialMonitorState(), width, f.now);
+        const rows = workInspectorRows(worker, width, f.now);
         const text = rows.map((row) => stripAnsi(row.text)).join('\n');
         assert.equal(text.split(summary).length, 2, 'result appears once');
         assert.match(text, /Reported files|报告文件/);
@@ -252,7 +247,7 @@ for (const [language, summary] of [['en', 'Parser repaired; checks passed.'], ['
       }
     } finally { setLanguage(original); }
     const diffStat = { files: [{ path: 'git-only.ts', absPath: '/synthetic/git-only.ts', added: 1, deleted: 0 }], totalFiles: 1 };
-    const diff = workInspectorRows({ ...worker, diffStat }, initialMonitorState(), 100, f.now).map((row) => stripAnsi(row.text)).join('\n');
+    const diff = workInspectorRows({ ...worker, diffStat }, 100, f.now).map((row) => stripAnsi(row.text)).join('\n');
     assert.match(diff, /git-only\.ts/);
     assert.doesNotMatch(diff, /src\/file-0\.ts/);
     f.service.configure(false, language);
@@ -277,9 +272,8 @@ test('cross-language summary makes one translation request; a stale signature dr
   assert.match(f.calls[0].messages[0].content, /Translate the worker's one-line result/);
   assert.deepEqual(JSON.parse(f.calls[0].messages[1].content.split('\n')[1]), { reportedSummary: summary });
   assert.equal(worker.modelSentence, f.reply);
-  const inspector = workInspectorRows(worker, initialMonitorState(), 100, f.now).map((row) => stripAnsi(row.text)).join('\n');
-  assert.ok(inspector.includes(f.reply));
-  assert.ok(!inspector.includes(summary));
+  const inspector = workInspectorRows(worker, 100, f.now).map((row) => stripAnsi(row.text)).join('\n');
+  assert.ok(inspector.includes(summary));
   assert.equal((await f.update()).workers[0].modelSentence, f.reply);
   assert.equal(f.calls.length, 1);
   f.put('STATUS.json', { state: 'working' });
@@ -296,28 +290,6 @@ test('cross-language summary makes one translation request; a stale signature dr
   assert.equal(f.calls.length, 2, 'stale metadata falls back to one legacy final request');
   assert.match(f.calls[1].messages[1].content, /Synthetic revised report/);
   assert.doesNotMatch(f.calls[1].messages[1].content, /reportedSummary/);
-});
-
-test('Split Home keeps the numeric lane suffix and uses the same summary call for its localized name', async t => {
-  const f = fixture(t, 'on', 'zh'), previous = setLanguage('zh');
-  t.after(() => setLanguage(previous));
-  const id = 'HARBOR-REPAIR-02', summary = 'The pier repair passed its final checks.';
-  const receipt = JSON.parse(fs.readFileSync(join(f.dir, 'job.json'), 'utf8'));
-  delete receipt.package;
-  f.put('job.json', receipt);
-  f.put('brief.md', `# Ticket ${id}: Repair the pier`);
-  f.put('report.md', summary);
-  writeReportMeta(f.dir, cachedReportSignature(f.dir), { summary });
-  f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
-  f.reply = JSON.stringify({ name: '修复码头', sentence: '码头修复已通过检查。' });
-  const board = await f.update();
-  assert.equal(board.lanes[0].label, id);
-  assert.equal(board.workers[0].task, `${id} · 修复码头`);
-  const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
-    state: withState(initialMonitorState(), { prefs: { panelLayout: 'split' } }), width: 40, height: 30, nowMs: f.now });
-  assert.match(frame.panes.find(p => p.id === 'agents').rows.map(r => stripAnsi(r.text)).join('\n'), /HARBOR.*…-02/);
-  assert.equal(f.calls.length, 1);
-  assert.deepEqual(JSON.parse(f.calls[0].messages[1].content.split('\n')[1]), { reportedSummary: summary });
 });
 
 for (const language of ['en', 'zh']) {
@@ -345,7 +317,7 @@ for (const language of ['en', 'zh']) {
       };
       for (const width of [80, 120]) {
         const home = renderMonitor({ tree, workboard: board, state: initialMonitorState(), width, height: 30, nowMs: f.now });
-        const state = handleMonitorInput(withState(home.state, { home: { cursor: { kind: 'work', target: target } } }), { type: 'key', key: 'inspect' }, { tree, frame: home }).state;
+        const state = { ...home.state, subpage: { kind: 'inspector', target, scroll: 0 } };
         const inspector = renderMonitor({ tree, workboard: board, state, width, height: 30, nowMs: f.now });
         for (const frame of [home, inspector]) {
           const text = frame.lines.map(stripAnsi).join('\n');
@@ -399,38 +371,6 @@ test('unnamed thin job: pending, plain and blank-name replies keep the first lin
     }
     f.now += 120_001;
     f.put('report.md', 'Changed factual progress');
-  }
-});
-test('ordinary cards start collapsed, expand the whole marked sentence and factual detail, then collapse on Home', async (t) => {
-  const f = fixture(t);
-  f.reply = 'Checking «parser boundaries» while preserving the complete sentence through its very last word.';
-  const board = await f.update(),
-    worker = board.workers[0];
-  const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
-  const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  {
-    let state = withState(initialMonitorState(), { activeTab: 'home', home: { cursor: { kind: 'work', target: target } } });
-    const render = () => renderMonitor({ tree, workboard: board, state, width: 32, height: 40, nowMs: f.now });
-    const enter = () => {
-      const frame = render();
-      state = handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { tree, frame }).state;
-    };
-    const text = () =>
-      render()
-        .lines.map((line) => stripAnsi(line).replace(/^┃ /, ''))
-        .join(' ');
-    assert.doesNotMatch(text(), /last word|Factual progress/, 'a running card starts collapsed');
-    enter();
-    assert.match(text().replace(/\s+/g, ' '), /very last word\./);
-    assert.match(text(), /Factual progress/);
-    assert.doesNotMatch(text(), /[«»]/);
-    assert.ok(render().lines.some((line) => line.includes(theme.board.identifier('parser boundaries'))));
-    enter();
-    assert.doesNotMatch(text(), /last word|Factual progress/);
-    board.workers[0].modelSentence = undefined;
-    enter();
-    assert.match(text(), /Factual progress/);
-    board.workers[0].modelSentence = f.reply;
   }
 });
 test('linked sessions select target mtime, ignore dangling/nonregular targets and survive job deletion', async (t) => {
@@ -553,11 +493,7 @@ test('Chinese request, question/review/answer changes, one request per job in fl
   const asking = await f.update();
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[1].messages[1].content, /Use parser B/);
-  const home = laneRows({}, asking.lanes[0], { ...initialMonitorState(), activeTab: 'home' }, 56, f.now)
-    .map((r) => r.text)
-    .join('\n');
-  assert.match(stripAnsi(home), /正在检查解析器边界/);
-  assert.doesNotMatch(home, /[«»]/);
+
   f.put('qa/q1.answer.md', 'yes');
   f.put('review-1.md', 'Verdict: changes-required\nSynthetic finding');
   f.now += 300_001;

@@ -1,5 +1,4 @@
 import { withState } from '../fixtures/state-helpers.mjs';
-import { homeCursor, homeTarget } from '../../dist/render/monitor-state.js';
 /** The owner's micro-actions on a HUD job from the panel (spec §2.2): `g` its tab, `1`–`4` / `d` on its expanded question to answer, `X` to stop. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,14 +59,6 @@ function fixture(t) {
   return { home, board, worker, render, press, dir: (id) => join(home, 'jobs', id) };
 }
 
-test('the decoder names the new keys; the digits are options, not tabs, and Changes has a letter', () => {
-  assert.deepEqual([key('g'), key('d'), key('X'), key('r')].map((k) => [k.key, k.text]), [['', 'g'], ['answer-default', 'd'], ['stop-job', 'X'], ['reset', 'r']]);
-  assert.deepEqual(['1', '2', '3', '4'].map((c) => [key(c).key, c]), ['1', '2', '3', '4'].map((c) => ['option', c]));
-  assert.deepEqual(['1', '2', '3', '4'].map((c) => key(c).text), ['1', '2', '3', '4']);
-  assert.equal(key('f').key, 'changes');
-  assert.deepEqual(decoder.push(Buffer.from('\x1b[H')).map((k) => [k.key, k.text]), [['home', undefined]]);
-});
-
 test('answerJobQuestion writes qN.answer.md once with mode 0600 and records it; bad ids, a missing question and a second answer change nothing', (t) => {
   const f = fixture(t), file = join(f.dir(ASKING), 'qa/q1.answer.md');
   assert.deepEqual(answerJobQuestion(f.home, ASKING, 'q1', ' keep it \n', 'imp'), { ok: true, written: true });
@@ -117,157 +108,6 @@ test('hud watch tells the main session what the owner answered from the panel', 
   assert.deepEqual(lines.filter((l) => l.includes('ANSWERED')), [`[imp@${ASKING}] ANSWERED q1 from panel: remove it now`]);
 });
 
-test('g on a HUD job card (Home and Inspector) focuses its tab; elsewhere it means nothing (the Home key is the top)', (t) => {
-  const f = fixture(t);
-  for (const id of [ASKING, RUNNING, DONE]) assert.deepEqual(f.press(id, 'g').out.action, { type: 'focus-job-tab', dir: f.dir(id) }, id);
-  const home = f.press(RUNNING, '\x1b[H');
-  assert.equal(home.out.action, undefined, 'the Home key moves, it does not focus');
-  const w = f.worker(RUNNING), target = { kind: 'worker', laneId: w.laneId, workerId: w.id };
-  assert.deepEqual(f.press(RUNNING, 'g', { subpage: { kind: 'inspector', scroll: 0, target } }).out.action, { type: 'focus-job-tab', dir: f.dir(RUNNING) });
-  // A lane header, the progress block and the Project tab have no job: `g` does nothing.
-  assert.equal(f.press(RUNNING, 'g', { activeTab: 'project' }).out.action, undefined);
-  const header = f.render(), ctx = { tree: TREE, frame: header, nowMs: NOW };
-  assert.equal(handleMonitorInput(withState(header.state, { home: { cursor: { kind: 'work', target: { kind: 'lane', laneId: w.laneId } } } }), key('g'), ctx).action, undefined);
-  assert.equal(handleMonitorInput(withState(header.state, { home: { cursor: homeCursor(target, 'home-progress:progress') } }), key('g'), ctx).action, undefined);
-});
-
-test('r requests a retry only on a failed HUD job', (t) => {
-  const f = fixture(t);
-  assert.equal(f.press(RUNNING, 'r').out.action, undefined);
-  assert.equal(f.press(DONE, 'r').out.action, undefined);
-  f.worker(DONE).state = 'failed';
-  assert.deepEqual(f.press(DONE, 'r').out.action, { type: 'request-retry', home: f.home, jobId: DONE });
-});
-
-test('1–4 switch no tab; on an expanded answerable question they pick an option and d the default, with no r first', (t) => {
-  const f = fixture(t), asked = f.worker(ASKING), target = targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id });
-  const open = { home: { expanded: new Set([target]) } };
-  // The slab says its keys once it is open, and offers them nowhere else.
-  const closed = plain(f.press(ASKING, 'x').frame).join('\n');
-  assert.doesNotMatch(closed, /\[1\]|1-2 answer|r reply|qa\/q1\.md/);
-  assert.deepEqual(f.press(ASKING, 'o').out.action, { type: 'open-files', files: [join(f.dir(ASKING), 'qa/q1.md')] });
-  const { out, frame } = f.press(ASKING, 'x', open);
-  const text = plain(f.render(withState(initialMonitorState(), { home: { cursor: homeCursor(homeTarget(out.state.home)) } }, open))).join('\n');
-  assert.match(text, /┃ \[1\] keep it\n┃ \[2\] remove it now/);
-  assert.match(text, /^┃ 1-2 answer {2}d default$/m);
-  assert.doesNotMatch(text, /r reply|qa\/q1\.md/);
-  const action = (answer) => ({ type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer, role: 'imp' });
-  assert.deepEqual(f.press(ASKING, '1', open).out.action, action('keep it'));
-  assert.deepEqual(f.press(ASKING, '2', open).out.action, action('remove it now'));
-  assert.deepEqual(f.press(ASKING, 'd', open).out.action, action('keep it'));
-  // No third option: nothing happens. No digit changes the tab, on the slab or off it.
-  for (const c of ['1', '2', '3', '4']) assert.equal(f.press(ASKING, c, open).out.state.activeTab, 'home', `${c} leaves the tab alone`);
-  assert.equal(f.press(ASKING, '3', open).out.action, undefined);
-  // A collapsed question is not answered by a stray digit, and the digits are no tabs there either.
-  for (const c of ['1', '2', 'd']) {
-    const closedOut = f.press(ASKING, c).out;
-    assert.equal(closedOut.action, undefined, c);
-    assert.equal(closedOut.state.activeTab, 'home', c);
-  }
-  // r no longer opens anything on the job: it is the Settings and Control plane key only.
-  const reset = f.press(ASKING, 'r', open);
-  assert.equal(reset.out.action, undefined);
-  assert.equal('reply' in reset.out.state && reset.out.state.reply !== undefined, false);
-  // The Inspector shows the question whole, so the keys answer there too.
-  const w = f.worker(ASKING), inspect = { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: w.laneId, workerId: w.id } } };
-  assert.deepEqual(f.press(ASKING, '2', inspect).out.action, action('remove it now'));
-  assert.match(plain(f.render({ ...initialMonitorState(), ...inspect })).join('\n'), /1-2 answer d default/);
-  // The tabs are the arrows, Tab and a click: still switching.
-  for (const bytes of ['\x1b[C', '\t']) assert.equal(f.press(ASKING, bytes).out.state.activeTab, 'project', JSON.stringify(bytes));
-  assert.equal(frame.lines.length > 0, true);
-});
-
-test('the answer keys do nothing on a job with no answerable question; a pane ask has no file to answer', (t) => {
-  const f = fixture(t), expanded = (id) => ({ home: { expanded: new Set([targetKey({ kind: 'worker', laneId: f.worker(id).laneId, workerId: f.worker(id).id })]) } });
-  for (const id of [RUNNING, DONE]) for (const c of ['1', 'd']) assert.equal(f.press(id, c, expanded(id)).out.action, undefined, `${id} ${c}`);
-  // A pane ask (no qN file to answer) is not answerable here either.
-  const asked = f.worker(ASKING), saved = asked.work.requestInfo;
-  asked.work.requestInfo = { ...saved, id: 'blocked', evidence: { ...saved.evidence, relativePath: 'STATUS.json' } };
-  assert.equal(f.press(ASKING, '1', expanded(ASKING)).out.action, undefined);
-  asked.work.requestInfo = saved;
-  assert.notEqual(f.press(ASKING, '1', expanded(ASKING)).out.action, undefined);
-});
-
-test('X asks before stopping an unsettled job: y or Enter stops it, any other input cancels, a settled job has nothing to stop', (t) => {
-  const f = fixture(t);
-  const { out, frame } = f.press(RUNNING, 'X');
-  assert.deepEqual(out.state.overlay, { kind: 'confirm-stop', jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) });
-  assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
-  const ctx = { tree: TREE, frame, nowMs: NOW };
-  assert.deepEqual(handleMonitorInput(out.state, key('y'), ctx).action, { type: 'stop-job', dir: f.dir(RUNNING) });
-  assert.deepEqual(handleMonitorInput(out.state, key('\r'), ctx).action, { type: 'stop-job', dir: f.dir(RUNNING) });
-  assert.equal(handleMonitorInput(out.state, key('y'), ctx).state.overlay, undefined);
-  for (const input of [{ type: 'key', key: 'escape' }, key('n'), key('j'), { type: 'mouse', button: 'left', x: 2, y: 4 }]) {
-    const no = handleMonitorInput(out.state, input, ctx);
-    assert.equal(no.action, undefined);
-    assert.equal(no.state.overlay, undefined);
-    assert.equal(no.close, false);
-  }
-  assert.equal(f.press(DONE, 'X').out.state.overlay, undefined, 'a settled job is not stopped');
-  assert.equal(f.press(RUNNING, 'X', { activeTab: 'project' }).out.state.overlay, undefined);
-  const inspected = f.press(RUNNING, 'X', { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: f.worker(RUNNING).laneId, workerId: f.worker(RUNNING).id } } });
-  assert.equal(inspected.out.state.overlay?.jobId, RUNNING);
-  assert.equal(plain(inspected.frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
-});
-
-test('the Split layout takes the same keys for the job its list cursor is on', (t) => {
-  const f = fixture(t), split = withState(initialMonitorState(), { prefs: { panelLayout: 'split' } });
-  let frame = f.render(split, 60, 'en', 30);
-  const ctx = () => ({ tree: TREE, frame, nowMs: NOW });
-  const run = (bytes, state = frame.state) => { const out = handleMonitorInput(state, typeof bytes === 'string' ? key(bytes) : bytes, ctx()); frame = f.render(out.state, 60, 'en', 30); return out; };
-  // The cursor starts on the lane that asks: a digit does nothing until its slab is expanded.
-  assert.deepEqual(run('g').action, { type: 'focus-job-tab', dir: f.dir(ASKING) });
-  assert.equal(run('2').action, undefined);
-  assert.equal(frame.state.activeTab, 'home');
-  const asked = f.worker(ASKING);
-  frame = f.render(withState(frame.state, { home: { expanded: new Set([targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id })]) } }), 60, 'en', 30);
-  const text = plain(frame).join('\n');
-  assert.match(text, /┃ \[2\] remove it now/);
-  assert.match(text, /1-2 answer {2}d default/);
-  assert.deepEqual(run('2').action, { type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer: 'remove it now', role: 'imp' });
-  frame = f.render(withState(frame.state, { home: { split: { listCursor: targetKey({ kind: 'lane', laneId: f.worker(RUNNING).laneId }) } } }), 60, 'en', 30);
-  assert.equal(run('X').state.overlay?.jobId, RUNNING);
-  assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
-  assert.deepEqual(run('y').action, { type: 'stop-job', dir: f.dir(RUNNING) });
-  // The Home key still moves the list's cursor to the top.
-  assert.equal(run('\x1b[H').action, undefined);
-  assert.equal(frame.state.home.split.listCursor, targetKey({ kind: 'lane', laneId: asked.laneId }));
-  const zh = f.render(withState(split, { home: { expanded: new Set([targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id })]) } }), 60, 'zh', 30);
-  assert.match(plain(zh).join('\n'), /1-2 答复 {2}d 默认/);
-});
-
-test('every row is exactly the panel width with the question expanded, a stop prompt open and the Inspector showing a question, in both layouts and languages', (t) => {
-  const f = fixture(t), asking = f.worker(ASKING), running = f.worker(RUNNING);
-  const at = (w) => ({ home: { cursor: { kind: 'work', target: { kind: 'worker', laneId: w.laneId, workerId: w.id } } } });
-  const states = [
-    withState(at(asking), { home: { expanded: new Set([targetKey({ kind: 'worker', laneId: asking.laneId, workerId: asking.id })]) } }),
-    { ...at(running), overlay: { kind: 'confirm-stop', jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) } },
-    withState(at(asking), { subpage: { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: asking.laneId, workerId: asking.id } } }),
-  ];
-  for (const layout of [undefined, 'split']) for (const lang of ['en', 'zh']) for (const width of [24, 32, 40, 60, 100]) for (const [i, state] of states.entries()) {
-    const frame = f.render(withState(initialMonitorState(), { prefs: { panelLayout: layout } }, state), width, lang, 28);
-    for (const line of frame.lines) assert.equal(visualLength(line), width, `${layout} ${lang} ${width} state ${i}: ${stripAnsi(line)}`);
-  }
-  const zh = plain(f.render(withState(initialMonitorState(), states[1]), 60, 'zh'))[1];
-  assert.match(zh, /^停止 reviewer j1111111？ {2}y 确认 · Esc 取消/);
-  const split = plain(f.render(withState(initialMonitorState(), { prefs: { panelLayout: 'split' } }, states[1]), 60, 'en'));
-  assert.equal(split[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
-});
-
-test('Classic Home at 40 columns keeps a collapsed question as its row (lane, option count, age) and the question under it, without a file or hint row', (t) => {
-  const f = fixture(t);
-  for (const lang of ['en', 'zh']) {
-    const frame = f.render(initialMonitorState(), 40, lang), rows = plain(frame);
-    const at = rows.findIndex((line) => /^\S \? {2}IMP /.test(line));
-    assert.ok(at >= 0);
-    assert.match(rows[at], lang === 'en' ? /^\S \? {2}IMP {2}asks 2 opts +4m$/ : /^\S \? {2}IMP {2}问 2选 +4分$/);
-    assert.match(rows[at + 1], /^ {5}Keep the v1 shim for one more rele…\s*$/, 'the question, cut to the line');
-    assert.doesNotMatch(rows.join('\n'), /qa\/q1\.md|\[1\]|r reply|Stop |default:|默认:/);
-    for (const row of frame.lines) assert.equal(visualLength(row), 40);
-  }
-});
-
-/** A herdr and a pi-role-reap that only record what they were asked. */
 function stubs(t, { herdr = 0, reap = 0 } = {}) {
   const dir = fs.mkdtempSync(join(tmpdir(), 'micro-stubs-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

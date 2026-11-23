@@ -15,7 +15,7 @@ import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { ticketTitle } from './ticket-title.js';
 import { jobStage } from './job-stage.js';
-import { DEFAULT_PANEL_VIEW } from '../settings.js';
+import { DEFAULT_JOB_STALL_MINUTES } from './work-job.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { computeQueuePositions, queuedTimestamp } from '../roles/concurrency.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
@@ -748,7 +748,7 @@ export function readThinJobs(
     })
     .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id));
   const lanes = new Map<string, WorkLane>();
-  const stalledBefore = Date.now() - (options?.stallMinutes ?? DEFAULT_PANEL_VIEW.cardStallMinutes) * 60_000;
+  const stalledBefore = Date.now() - (options?.stallMinutes ?? DEFAULT_JOB_STALL_MINUTES) * 60_000;
   const cards = jobs.flatMap(({ id, job, created, jobAt, status: checkedStatus }) => {
     const directory = join(root, id),
       status = checkedStatus ?? readFact(join(directory, 'STATUS.json')),

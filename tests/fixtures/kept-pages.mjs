@@ -141,11 +141,10 @@ export function pageFixture(home) {
   const target = (w) => ({ kind: 'worker', laneId: w.laneId, workerId: w.id });
   const states = {
     home: initialMonitorState(),
-    older: withState(initialMonitorState(), { home: { showAll: true } }),
+    jobs: { ...initialMonitorState(), subpage: { kind: 'jobs', scroll: 0 } },
     job: inspect(target(apiWorker)),
     asking: inspect(target(askingWorker)),
     help: { ...initialMonitorState(), help: {} },
-    changes: withState(initialMonitorState(), { subpage: { kind: 'changes', scroll: 0 } }),
   };
   const render = (page, width, lang = 'en', height = page === 'help' ? 50 : 40) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }),
@@ -193,9 +192,9 @@ export const plainFrame = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd
 export function pageFrames(fixture) {
   const frames = {};
   for (const width of [80, 120])
-    for (const page of ['home', 'older', 'job', 'asking', 'settings', 'help', 'changes']) {
+    for (const page of ['home', 'jobs', 'job', 'asking', 'settings', 'help']) {
       frames[`${page}-${width}-en`] = plainFrame(fixture.render(page, width));
-      if (['home', 'older', 'settings'].includes(page))
+      if (['home', 'jobs', 'settings'].includes(page))
         frames[`${page}-${width}-zh`] = plainFrame(fixture.render(page, width, 'zh'));
     }
   // Settings' help/gauge also reflow at the ordinary narrow panel width.

@@ -24,7 +24,7 @@ import {
 } from '../../dist/render/settings-page.js';
 import { readThinJobRows, readThinJobs, formatJobChange } from '../../dist/collectors/thin-jobs.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
-import { renderWorkCard } from '../../dist/render/work-card.js';
+import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -363,7 +363,7 @@ test('sonic children and non-working jobs are excluded from caps; panel shows qu
   assert.equal(worker.queuePosition, 1);
   assert.equal(worker.settledAt, null);
 
-  // Even 60 minutes later, a queued card is still queued, never stalled.
+  // Even 60 minutes later the job is still queued, never stalled.
   const later = Date.now() + 60 * 60_000;
   const card = projectWorkCard(worker, later, 10);
   assert.equal(card.state, 'queued');
@@ -377,20 +377,18 @@ test('sonic children and non-working jobs are excluded from caps; panel shows qu
     coverage: { incomplete: false, diagnostics: [], workspace: f.root },
   };
 
-  for (const [lang, expectedText, folded] of [['en', 'queued #1', 'queued 1 · pkg-queued'], ['zh', '排队 #1', '排队 1 · pkg-queued']]) {
+  for (const [lang, expectedText] of [['en', 'queued #1'], ['zh', '排队 #1']]) {
     const prev = setLanguage(lang);
     try {
-      for (const panelLayout of ['classic', 'split']) {
-        for (const width of [40, 80]) {
-          const state = { ...initialMonitorState(), activeTab: 'home', prefs: { ...initialMonitorState().prefs, panelLayout } };
-          const frame = renderMonitor({ workboard: board, state, width, height: 30, nowMs: Date.now() });
-          for (const line of frame.lines) assert.equal(visualLength(line), width);
-          const plain = frame.lines.map(stripAnsi).join('\n');
-          assert.ok(plain.includes(folded), `${lang}/${panelLayout}/${width}: expected the queued row ${folded} in:\n${plain}`);
-        }
+      for (const width of [40, 80]) {
+        const state = { ...initialMonitorState(), subpage: { kind: 'jobs', scroll: 0 } };
+        const frame = renderMonitor({ workboard: board, state, width, height: 30, nowMs: later });
+        for (const line of frame.lines) assert.equal(visualLength(line), width);
+        const rows = frame.workboard.rows.filter((row) => frame.workboard.targets.get(row.item)?.workerId === worker.id);
+        assert.equal(rows.length, 1);
+        assert.match(stripAnsi(rows[0].text), /Queued work/);
       }
-      const cardPlain = renderWorkCard(card, { ...initialMonitorState(), activeTab: 'home' }, 56).map(stripAnsi).join('\n');
-      assert.ok(cardPlain.includes(expectedText));
+      assert.ok(workInspectorRows(worker, 56, later).map(r => stripAnsi(r.text)).join('\n').includes(expectedText));
     } finally {
       setLanguage(prev);
     }

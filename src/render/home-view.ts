@@ -1,185 +1,25 @@
-/** Home: compact top summary with Variant A worker roster, prominent ask slabs and packed package lanes. */
-import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collectors/workboard-types.js';
-import { projectWorkCard } from '../collectors/work-card.js';
-import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { boardRow, minuteAge, mark, footHints, stateMark } from './workboard-rows.js';
-import { orderedLanes } from './work-lanes.js';
-import { askRows, jobRows, roleMark } from './work-jobs.js';
-import { quietDecisionSummary, requestLines, questionOriginalRows, stemLines } from './work-card.js';
-import { theme, visualLength } from './colors.js';
-import { fit, pair, monitorText } from './monitor-text.js';
+/** Current-project handoff. A job waiting for main is not an owner request. */
+import type { ProjectItem, ProjectSnapshot } from '../collectors/project-board.js';
+import type { MonitorRow } from './monitor.js';
+import { theme } from './colors.js';
+import { fit, flowLines, monitorText } from './monitor-text.js';
+import { boardRow, mark, section } from './workboard-rows.js';
 import { t } from './i18n.js';
-import { activeFlow, currentWorker, foldedWorker, unattendedFailure } from './work-visibility.js';
-import { isUnreadReport, sonicChildrenRunning, workerModelPlain } from './worker-roster.js';
-import { answerable, answerKeys } from './job-actions.js';
-import { ROLE_GLYPHS, roleIcon } from './model-glyphs.js';
 
-/** `⚒ 5  ✎ 2  ⚡ 7`: the workers each role has started since the panel opened, an icon in the role's ink and the count, in `ROLE_GLYPHS`' order; none when nothing has started. */
-function roleCounts(counts: ReadonlyMap<string, number> | undefined): string {
-  return Object.keys(ROLE_GLYPHS).filter((role) => counts?.get(role)).map((role) => `${roleMark(role)} ${theme.board.text(String(counts!.get(role)))}`).join('  ');
-}
-
-/** Top status + per-role worker counts strip shared by Classic Home and Split Home. */
-export function homeSummaryRow(
-  board: WorkboardSnapshot,
-  input: MonitorData | undefined,
-  width: number,
-  now: number,
-  interactive = true
-): MonitorRow {
-  const needs = board.workers.filter((w) => !w.parentJobId && w.homeNeedsHuman);
-  const waiting = input?.project?.waiting.length ?? 0;
-  const askCount = needs.length + waiting;
-  const failCount = board.workers.filter((w) => !w.parentJobId && unattendedFailure(w)).length;
-  const unreadCount = board.workers.filter(
-    (w) => !w.parentJobId && isUnreadReport(w) && !w.homeNeedsHuman && !unattendedFailure(w)
-  ).length;
-  const failTail = failCount
-    ? ` ${theme.board.muted('·')} ${theme.board.danger(`${stateMark.failed()}${failCount}`)}`
-    : '';
-  const leftForms =
-    askCount > 0
-      ? [
-          `${theme.board.attention(`${stateMark.asking()} ${t('{n} waiting for you', { n: askCount })}`)}${failTail}`,
-          `${theme.board.attention(`${stateMark.asking()} ${t('{n} waiting', { n: askCount })}`)}${failTail}`,
-          `${theme.board.attention(`${stateMark.asking()}${askCount}`)}${failCount ? ' ' + theme.board.danger(`${stateMark.failed()}${failCount}`) : ''}`,
-        ]
-      : failCount > 0
-        ? [
-            theme.board.danger(`${stateMark.failed()} ${t('{n} failed', { n: failCount })}`),
-            theme.board.danger(`${stateMark.failed()}${failCount}`),
-          ]
-        : unreadCount > 0
-          ? [
-              theme.board.success(`${stateMark.unread()} ${t('{n} unread', { n: unreadCount })}`),
-              theme.board.success(`${stateMark.unread()}${unreadCount}`),
-            ]
-          : [
-              theme.board.success(`${stateMark.done()} ${t('Nothing needs you')}`),
-              theme.board.success(`${stateMark.done()} ${t('Clear')}`),
-              theme.board.success(stateMark.done()),
-            ];
-
-  // The right side: the workers each role has started since the panel opened; the left gives way before it is dropped.
-  const right = roleCounts(input?.workerCounts);
-  const left = leftForms.find((l) => !right || visualLength(l) + 2 + visualLength(right) <= width) ?? leftForms.at(-1)!;
-  const line = pair(left, right && visualLength(left) + 2 + visualLength(right) <= width ? right : '', width);
-  return {
-    ...boardRow(line),
-    ...(interactive && waiting ? { item: 'home-progress:waiting' } : {}),
-  };
-}
-
-/** The amber question title and options, with model/effort + `⚡N` packed on the title row and answer keys when open. */
-export function askSlabRows(
-  worker: OwnerWorker,
-  board: WorkboardSnapshot,
-  state: MonitorState,
-  width: number,
-  now: number,
-  underLane = false
-): MonitorRow[] {
-  const rows: MonitorRow[] = [];
-  const card = projectWorkCard(worker, now),
-    r = worker.work?.requestInfo?.display ?? worker.work?.requestInfo;
-  const target = { kind: 'worker' as const, laneId: worker.laneId, workerId: worker.id };
-  const lane = underLane ? undefined : board.lanes.find((l) => l.id === worker.laneId);
-  const open = state.home.expanded?.has(targetKey(target)) === true;
-  const keys = open ? footHints(answerKeys(worker).join('  '), width - 2) : '';
-  const left = `? ${worker.labels?.category ? `[${t(worker.labels.category)}] ` : ''}${monitorText(worker.role ?? '')}${underLane ? '' : ` · ${monitorText(lane?.label ?? '')}`}`;
-  const askAge = `${t('asking')} ${minuteAge(worker.humanEndedAt, now)}`.trim();
-  const sonic = sonicChildrenRunning(board.workers, worker.id);
-  const sonicStr = sonic > 0 ? `${roleIcon('sonic')}${sonic}` : '';
-  const modelFull = workerModelPlain(worker, 'full');
-  const modelCompact = workerModelPlain(worker, 'compact');
-  const rightCands = [
-    [modelFull, sonicStr, askAge].filter(Boolean).join('  '),
-    [modelCompact, sonicStr, askAge].filter(Boolean).join(' '),
-    [sonicStr, askAge].filter(Boolean).join(' '),
-    askAge,
-  ];
-  const right = rightCands.find((c) => visualLength(left) + 2 + visualLength(c) <= width) ?? askAge;
-  rows.push(boardRow(theme.board.askTitle(pair(left, right, width)), target));
-  const n = r?.options.length ?? 0;
-  const quiet = quietDecisionSummary(worker.quietDecision);
-  const choices = [
-    n ? t(n === 1 ? '{n} option' : '{n} options', { n }) : '',
-    r?.suggested ? `${t('default')}: ${r.suggested}` : '',
-    quiet,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const lines =
-    open && r
-      ? [...requestLines(card, true, answerable(worker) !== undefined), quiet]
-          .filter(Boolean)
-          .flatMap((part) => stemLines(part, width, theme.board.attention))
-      : [
-          ...stemLines(r?.question ?? worker.ask ?? card.reason ?? '', width, theme.board.attention, 3),
-          ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),
-        ];
-  rows.push(...lines.map((line) => boardRow(theme.board.slab(line), target)));
-  rows.push(...questionOriginalRows(card, state, width));
-  if (keys) rows.push(boardRow(theme.board.slab(fit(`${theme.board.attention(mark('┃', '|'))} ${keys}`, width)), target));
-  rows.push(boardRow(''));
-  return rows;
-}
-
-/** Only the newest current settled non-child result opens by itself, before its fold time. Classic's job rows never do (the report sentence is in the Inspector); its native subagent cards and Split's preview still do. */
-export function newestCard(board: WorkboardSnapshot, state: MonitorState, now: number): string | undefined {
-  const newest = board.workers
-    .filter(
-      (w) =>
-        !state.home.foldedLanes?.has(w.laneId) &&
-        w.settledAt !== null &&
-        !w.parentJobId &&
-        (state.prefs.panelLayout === 'split' || w.nativeDepth !== undefined) &&
-        currentWorker(w, now, state.prefs) &&
-        !foldedWorker(w, now, state.prefs) &&
-        (isUnreadReport(w) || unattendedFailure(w) || activeFlow(w) || w.nativeDepth !== undefined || !w.files?.length)
-    )
-    .reduce<(typeof board.workers)[number] | undefined>(
-      (a, w) => (!a || (w.settledAt ?? 0) > (a.settledAt ?? 0) ? w : a),
-      undefined
-    );
-  return newest ? targetKey({ kind: 'worker', laneId: newest.laneId, workerId: newest.id }) : undefined;
-}
+export interface PaneLoad { running: number; queued: number }
 
 export function homeRows(
-  board: WorkboardSnapshot,
-  state: MonitorState,
-  width: number,
-  now: number,
-  input?: MonitorData
+  waiting: readonly ProjectItem[], handoff: Pick<ProjectSnapshot, 'summary' | 'next'> | undefined,
+  load: PaneLoad | undefined, width: number,
 ): MonitorRow[] {
-  const filtering = !!state.home.filter?.query;
-  const rows: MonitorRow[] = [];
-  const needs = board.workers
-    .filter((w) => !w.parentJobId && w.homeNeedsHuman)
-    .sort((a, b) => Number(b.labels?.category === 'owner authorisation') - Number(a.labels?.category === 'owner authorisation'));
-
-  if (!filtering) {
-    rows.push(homeSummaryRow(board, input, width, now, true), boardRow(''));
-  } else {
-    rows.push(boardRow(''));
-  }
-
-  // A question is its row and its text until the owner opens it into the slab (Enter or a click).
-  for (const worker of needs)
-    rows.push(...(state.home.expanded?.has(targetKey({ kind: 'worker', laneId: worker.laneId, workerId: worker.id })) ? askSlabRows(worker, board, state, width, now) : askRows(worker, board, state, width, now)));
-  const allWorkers = input?.workboard?.workers ?? board.workers;
-  if (input) {
-    const ordered = state.home.showAll ? board.lanes : orderedLanes(board, now, true);
-    rows.push(...jobRows(input, ordered, state, width, now, allWorkers));
-  }
-  const source = input?.workboard;
-  const visibleMainCount = board.workers.filter((w) => !w.parentJobId).length;
-  if (filtering && !visibleMainCount) rows.push(boardRow(theme.board.muted('  ' + t('No matches'))));
-  const hidden = source && !filtering ? source.workers.filter((w) => !w.parentJobId && !currentWorker(w, now, state.prefs)).length : 0;
-  if (hidden) {
-    rows.push(
-      boardRow(theme.board.muted(t(state.home.showAll ? '{n} older shown · a hide' : '+{n} older · a', { n: hidden })))
-    );
-  }
-  return rows;
+  const prose = (body: string, prefix = '  ') => flowLines(monitorText(body), Math.max(1, width - 2))
+    .map((line, i) => boardRow(fit((i ? '  ' : prefix) + line, width)));
+  return [
+    section(t('Waiting'), width),
+    ...(waiting.length ? waiting.flatMap((item) => prose(item.value, theme.board.attention('? ')))
+      : handoff ? [boardRow(theme.board.muted(t('Nothing needs you')))] : [boardRow(t('Loading…'))]),
+    ...(handoff?.summary ? [section(t('Now'), width), ...prose(handoff.summary)] : []),
+    ...(handoff?.next.length ? [section(t('Next'), width), ...handoff.next.flatMap((item) => prose(item.value, `${mark('•', '-')} `))] : []),
+    ...(load ? [boardRow(theme.board.muted(t('This pane · {running} running · {queued} queued', { ...load })))] : []),
+  ];
 }

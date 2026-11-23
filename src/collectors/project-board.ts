@@ -514,8 +514,9 @@ export class ProjectCollector {
     out.waiting = bullets('Waiting for the owner', true).filter(item => !/^Owner 20\d\d-\d\d-\d\d\b/i.test(item.value));
     out.next = bullets('Next');
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
-    out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim()
-      ?? state.match(/^## Now(?: \([^\r\n]+\))?[ \t]*\r?\n\s*[-*] ([^\r\n]+)/m)?.[1]?.trim() ?? '';
+    const nowHeading = /^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m.exec(state)?.[1];
+    const nowBody = /^## Now(?: \([^\r\n]+\))?[ \t]*\r?\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(state)?.[1];
+    out.summary = (nowHeading?.trim() || nowBody?.trim().replace(/^[-*] /, '') || '').replace(/\s+/g, ' ');
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
     out.ladder.current = milestone?.split(/\s+/)[0];
     const specPath = join(this.cwd, 'docs/spec.md'), specFile = shown === 'overview' ? null : this.read(specPath);

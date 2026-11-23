@@ -102,18 +102,3 @@ test('stage disappears at the stall threshold and when a job settles', (t) => {
   fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"done"}');
   assert.equal(Object.hasOwn(worker(), 'stage'), false);
 });
-
-test('the panel snapshot respects a changed stall setting even without a transcript change', async (t) => {
-  const home = scratch(t), { dir, path } = stageJob(home, 1, 'pi');
-  const at = new Date(Date.now() - 90_000);
-  const receipt = join(dir, 'job.json');
-  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt, 'utf8')), created_at: at.toISOString() }));
-  for (const file of [receipt, path, join(dir, 'STATUS.json')]) fs.utimesSync(file, at, at);
-  const pipeline = new PanelJobPipeline(home, scope);
-  t.after(() => pipeline.dispose());
-  const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
-  await pipeline.refresh(undefined, 2);
-  assert.equal(pipeline.workboard(tree).workers[0].stage, 'read');
-  await pipeline.refresh(undefined, 1);
-  assert.equal(Object.hasOwn(pipeline.workboard(tree).workers[0], 'stage'), false);
-});

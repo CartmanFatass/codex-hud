@@ -120,7 +120,7 @@ export function nativeFixture(home) {
 export function nativeFrames(f) {
   return Object.fromEntries(
     [80, 120].flatMap((width) =>
-      ['en', 'zh'].map((lang) => [`${lang}-${width}`, f.render(width, lang).lines.map(stripAnsi)])
+      ['en', 'zh'].map((lang) => [`${lang}-${width}`, f.render(width, lang, { ...initialMonitorState(), subpage: { kind: 'native-inspector', scroll: 0 } }).lines.map(stripAnsi)])
     )
   );
 }

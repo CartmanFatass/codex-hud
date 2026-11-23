@@ -195,9 +195,8 @@ test('05: only current open questions get labels; permission first without answe
   assert.equal(board.decisions[0].category, undefined);
   assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND|authorise a synthetic change/);
   const state = initialMonitorState();
-  const text = homeRows(board, state, 120, f.now, { workboard: board }).map((r) => stripAnsi(r.text)).join('\n');
-  assert.ok(text.indexOf('authorise deleting') < text.indexOf('clarify the width'));
-  assert.match(text, /owner authorisation/);
+  const text = workInspectorRows(board.workers.find(w => w.id.endsWith(b)), 120, f.now).map((r) => stripAnsi(r.text)).join('\n');
+  assert.match(text, /authorise deleting[\s\S]*owner authorisation/);
   assert.equal(fs.existsSync(join(f.home, 'jobs', a, 'qa/q1.answer.md')), false);
   f.open(); await f.pump(); assert.equal(f.calls.length, 2);
   f.now += 1000; f.put(a, 'qa/q1.md', 'Question: authorise a revised synthetic fixture?');
@@ -241,13 +240,13 @@ test('01–06: Home, Inspector and progress rows in EN/ZH at 80 and 120 columns'
       ladder: { ids: [] }, ledger: [{ id: 'SYNTHETIC', milestone: 'M1', state: 'working', text: 'synthetic slice' }],
       active: [], counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
       slices: [{ label: 'SYNTHETIC', value: 'synthetic slice', jobId: id }], next: [], tickets: [] };
-    const inspector = workInspectorRows({ ...w, labels: { ...w.labels, kinds: ['SYNTHETIC-KIND'] } }, state, width, f.now), progress = projectRows(project,
+    const inspector = workInspectorRows({ ...w, labels: { ...w.labels, kinds: ['SYNTHETIC-KIND'] } }, width, f.now), progress = projectRows(project,
       withState(state, { project: { folded: new Set(['task:milestone:M1']), view: { kind: 'progress' } } }), width, f.now, board, true);
     const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
       modelEnabled: true, state, width, height: 80, nowMs: f.now });
     for (const rows of [inspector, progress]) for (const r of rows) assert.ok(visualLength(r.text) <= width, stripAnsi(r.text));
     for (const line of frame.lines) assert.equal(visualLength(line), width);
-    assert.match(frame.lines.map(stripAnsi).join('\n'), new RegExp(tr('partial')));
+    assert.doesNotMatch(frame.lines.map(stripAnsi).join('\n'), /Synthetic UI feature/);
     const inspectText = inspector.map((r) => stripAnsi(r.text)).join('\n');
     for (const label of ['partial', 'must fix', 'should fix', 'optional']) assert.ok(inspectText.includes(tr(label)), inspectText);
     assert.doesNotMatch(inspectText, /\bkind\b|类型|SYNTHETIC-KIND/);
@@ -259,10 +258,10 @@ test('01–06: Home, Inspector and progress rows in EN/ZH at 80 and 120 columns'
     const running = { ...w, settledAt: null, homeNeedsHuman: true, labels: { ...w.labels, looping: 0.9, category: 'owner authorisation' } };
     const d = { id: 'q1', laneId: w.laneId, title: 'Synthetic choice', option: 'Keep fixture', departure: false, evidence: [], kind: 'answer', stale: false };
     const live = { ...empty([running], [d]), lanes: [{ ...board.lanes[0], workers: [running], decisions: [d] }] };
-    const rows = homeRows(live, state, width, f.now, { workboard: live });
+    const rows = workInspectorRows(running, width, f.now);
     assert.ok(rows.map((r) => stripAnsi(r.text)).join('\n').includes(tr('owner authorisation')));
     for (const r of rows) assert.ok(visualLength(r.text) <= width);
-    const loopInspector = workInspectorRows(running, state, width, f.now).map((r) => stripAnsi(r.text)).join('\n');
+    const loopInspector = workInspectorRows(running, width, f.now).map((r) => stripAnsi(r.text)).join('\n');
     assert.ok(loopInspector.includes(tr('looping'))); assert.match(loopInspector, /90%/);
   }
 });
@@ -300,7 +299,7 @@ test('06: a review with only non-finding check bullets shows no severity counts'
   f.put(id, 'review-1.md', 'No findings.\n- Synthetic tests passed\n- Build passed');
   const board = await f.pump();
   assert.deepEqual(board.workers[0].labels.severity, [0, 0, 0]);
-  const text = workInspectorRows(board.workers[0], initialMonitorState(), 80, f.now).map((r) => stripAnsi(r.text)).join('\n');
+  const text = workInspectorRows(board.workers[0], 80, f.now).map((r) => stripAnsi(r.text)).join('\n');
   assert.doesNotMatch(text, /must fix|should fix|optional/);
 });
 
@@ -357,8 +356,8 @@ for (const primary of ['openai', 'gemini']) test(`failed ${primary} label hides 
   let board = await f.pump();
   assert.equal(f.calls.length, 1, '402 does not change the existing failover rule');
   assert.equal(board.workers[0].labels.outcome, undefined);
-  const texts = [homeRows(board, initialMonitorState(), 120, f.now, { workboard: board }),
-    workInspectorRows(board.workers[0], initialMonitorState(), 120, f.now)];
+  const texts = [homeRows([], undefined, undefined, 120),
+    workInspectorRows(board.workers[0], 120, f.now)];
   for (const rows of texts) assert.doesNotMatch(rows.map((r) => stripAnsi(r.text)).join('\n'), /402|prepayment|SYNTHETIC-HTTP-BODY|decision_provider_error/);
   for (const file of fs.readdirSync(join(f.dir, 'decision-labels')))
     assert.doesNotMatch(fs.readFileSync(join(f.dir, 'decision-labels', file), 'utf8'), /402|prepayment|SYNTHETIC-HTTP-BODY/);

@@ -1,11 +1,11 @@
-/** The standalone Control tab uses the same role rows and chain detail in Classic and Split. */
+/** Control's role rows, presets and chain entry points. */
 import { basename } from 'node:path';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { placeDestination, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { controlRoleItem, controlRoleOf, type ControlViewState } from './monitor-state.js';
-import { effectiveModel, glyph, modelFieldRows, needsAttention, placeRows, placeTarget, presetName,
-  radarFacts, radarRows, radarSummary, roleModelDestination, roleName, roleToday, sourceLabel, harnessErrorRow } from './control-view.js';
+import { glyph, needsAttention, presetName,
+  radarFacts, radarRows, radarSummary, roleModelDestination, roleName, harnessErrorRow } from './control-view.js';
 import { projectItem } from './project-view.js';
 import { boardRow, footerLayout, kvRows, mark, pack, section, type FooterHints } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
@@ -83,34 +83,6 @@ export function roleRows(role: RoleFact, width: number, now: number): MonitorRow
     .flatMap((message) => flowLines(message, width - 6).map((part) => ({ ...extra, text: fit(`      ${theme.board.attention(part)}`, width) })))];
 }
 
-export function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: number): MonitorRow[] {
-  const today = radarFacts(data.radar).roles.find(([name]) => name === role.role)?.[1];
-  const source = `${sourceLabel(role.source)} · ${role.source === 'project' ? '.hud/roles/' : ''}${basename(role.path)}`;
-  const locked = t('project file · read-only here');
-  const available = role.presets?.map((p) => p.name).join('  ');
-  const metadata = [
-    ...kvRows('source', source, width),
-    ...(role.chainPath ? kvRows('chain source', role.chainPath, width) : []),
-    ...(role.source === 'project' ? [...kvRows('pinned', locked, width), ...(available ? kvRows('Presets', available, width) : [])] : []),
-  ];
-  if (role.optionalEnabled === false) return [...kvRows('status', t('Switched off'), width), ...metadata];
-  const actions = role.source === 'project' ? [] : roleActions(role, width);
-  const chain = role.places.flatMap<MonitorRow>((place, i) => {
-    const prefix = `  ${i + 1} ${glyph(place.state)} `, indent = ' '.repeat(visualLength(prefix));
-    const label = place.harness === 'pi' && !effectiveModel(place)?.includes('/') ? target(place) : place.label;
-    const ink = place.state === 'active' ? (s: string) => s : muted;
-    const extra = placeTarget(role, i, data), why = reason(place, now);
-    const notes = [why, place.state === 'off' ? quota(place, now) : '', place.provider === null ? t('provider unknown') : ''];
-    const rows = extra.modelPick && takesModel(role.editor?.places[i])
-      ? modelFieldRows(place, prefix, width, extra, ink)
-      : placeRows(prefix, { ...place, label }, width, ' ', '', extra, ink);
-    return [...rows, ...notes.filter(Boolean).flatMap((note) => flowLines(monitorText(note), Math.max(1, width - indent.length))
-        .map((line) => ({ ...extra, text: fit(indent + muted(line), width) })))];
-  });
-  return [section(t('Chain'), width, String(role.places.length)), ...chain, ...metadata,
-    ...(today ? kvRows('today', roleToday(today), width) : []), ...actions];
-}
-
 function jobUsageRows(stats: ProjectSnapshot['jobStats'], width: number): MonitorRow[] {
   if (!stats) return [];
   const { coverage: c, total, roles, places } = stats;
@@ -134,7 +106,7 @@ function jobUsageRows(stats: ProjectSnapshot['jobStats'], width: number): Monito
     ...rows(roles, 'By role'), ...rows(places, 'By role / place / mode')];
 }
 
-export function controlList(data: ProjectSnapshot, view: ControlViewState, width: number, now: number, classic: boolean): MonitorRow[] {
+function controlList(data: ProjectSnapshot, view: ControlViewState, width: number, now: number): MonitorRow[] {
   const needs = (r: RoleFact) => r.optionalEnabled !== false && (!!r.missingPreset || needsAttention(r));
   const attention = data.roles.filter(needs).sort((a, b) => Number(!active(a)) - Number(!active(b)));
   const healthy = (['roles', 'project', 'browser'] as const).flatMap((group) =>
@@ -153,14 +125,14 @@ export function controlList(data: ProjectSnapshot, view: ControlViewState, width
     return { ...section(left, width, parts.join(' · ')), item: `project:fold:${id}` };
   };
   const entries = (role: RoleFact) => [...roleRows(role, width, now),
-    ...(classic && role.source !== 'project' && role.optionalEnabled !== false && view.nav.cursor === controlRoleItem(role.role) ? roleActions(role, width) : [])];
+    ...(role.source !== 'project' && role.optionalEnabled !== false && view.nav.cursor === controlRoleItem(role.role) ? roleActions(role, width) : [])];
   const radar = radarFacts(data.radar), usage = radarSummary(radar, false);
   const jobs = data.jobStats?.total.jobs ?? radar.roles.reduce((n, [, s]) => n + s.total, 0);
   if (jobs) usage.push(t('{n} jobs', { n: jobs }));
   const ok = (yes: boolean) => yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-'));
   const files = data.control.filter((r) => r.label !== 'invalid'), have = data.keys.filter(([, present]) => present).length;
   return [
-    ...(classic ? [boardRow('')] : []), section(t('Needs attention'), width, theme.board.attention(String(attention.length + invalid.length + Number(!!data.harnessSwitchError)))),
+    boardRow(''), section(t('Needs attention'), width, theme.board.attention(String(attention.length + invalid.length + Number(!!data.harnessSwitchError)))),
     ...harnessErrorRow(data, width), ...attention.flatMap(entries),
     ...invalid.map((r, i): MonitorRow => ({ item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : undefined,
       text: pair(`  ${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, muted(t(r.value)), width) })),
@@ -191,7 +163,7 @@ export function controlList(data: ProjectSnapshot, view: ControlViewState, width
 }
 
 export const controlRows = (data: ProjectSnapshot | undefined, view: ControlViewState, width: number, now: number) =>
-  data ? controlList(data, view, width, now, true) : [boardRow(t('Loading…'))];
+  data ? controlList(data, view, width, now) : [boardRow(t('Loading…'))];
 
 function roleActions(role: RoleFact, width: number): MonitorRow[] {
   const actions = [

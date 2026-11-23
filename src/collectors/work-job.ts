@@ -37,7 +37,8 @@ export interface WorkJob {
 }
 export const workMinute = (at: number | null | undefined, now: number): number | null =>
   typeof at === 'number' && Number.isFinite(at) ? Math.max(0, Math.floor((now - at) / 60000)) : null;
-export function workState(worker: OwnerWorker, now: number, stallMinutes = 10): WorkState {
+export const DEFAULT_JOB_STALL_MINUTES = 10;
+export function workState(worker: OwnerWorker, now: number, stallMinutes = DEFAULT_JOB_STALL_MINUTES): WorkState {
   const w = worker.work;
   const inactive = workMinute(w?.activityAt, now);
   if (worker.homeNeedsHuman || (w?.failed && !worker.failureObserved && !worker.superseded)) return 'needs-you';
@@ -45,7 +46,7 @@ export function workState(worker: OwnerWorker, now: number, stallMinutes = 10): 
   if (worker.settledAt !== null) return w?.facadeClosed ? 'done' : 'awaiting-acceptance';
   return worker.stale || (inactive !== null && inactive >= stallMinutes) ? 'stalled' : 'in-progress';
 }
-export function projectWorkJob(worker: OwnerWorker, now: number, stallMinutes = 10): WorkJob {
+export function projectWorkJob(worker: OwnerWorker, now: number, stallMinutes = DEFAULT_JOB_STALL_MINUTES): WorkJob {
   const w = worker.work;
   const state = workState(worker, now, stallMinutes);
   return {

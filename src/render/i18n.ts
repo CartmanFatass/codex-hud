@@ -12,7 +12,6 @@
  */
 
 import { WORKBOARD_ZH } from './workboard-i18n.js';
-import { SPLIT_ZH } from './split-i18n.js';
 
 export type Language = 'en' | 'zh';
 export type LanguageSetting = 'auto' | Language;
@@ -39,7 +38,36 @@ export function language(): Language {
 
 const ZH: Record<string, string> = {
   ...WORKBOARD_ZH,
-  ...SPLIT_ZH,
+  '{n} accepted': '{n} 个已验收',
+  '{done}/{total} accepted': '{done}/{total} 已验收',
+  '⏎ open page': '⏎ 打开页面',
+  '⏎ accept all': '⏎ 全部验收',
+  'failed job: request a retry': '失败的任务：请求重试',
+  'r request retry': 'r 请求重试',
+  'Retry requested': '已请求重试',
+  'Could not record request': '无法记录请求',
+  'g job tab': 'g 任务页',
+  'X stop': 'X 停止',
+  '⏎ details': '⏎ 详情',
+  'v Jobs': 'v 任务列表',
+  'In Inspector, Tab selects files and child jobs': '在详情中，Tab 可选择文件和子任务',
+  'select; links open directly; wheel scrolls': '选中；链接直接打开；滚轮滚动',
+  'n subagents': 'n 子代理',
+  'open Jobs; Enter opens Inspector for the selected job': '打开任务列表；回车查看所选任务的详情',
+  'Jobs or Inspector: show this session’s native subagents': '任务列表或详情：显示当前会话的原生子代理',
+  'Inspector: focus the job tab; headless output is shown here': '详情：聚焦任务页；无界面任务的输出直接显示在详情中',
+  'This pane · {running} running · {queued} queued': '当前窗格 · {running} 个运行中 · {queued} 个排队',
+  'waiting for main': '等待主会话',
+  'Question for main': '给主会话的问题',
+  'Sonic children': 'Sonic 子任务',
+  'No jobs': '没有任务',
+  'No jobs observed': '未观察到任务',
+  Inspector: '详情',
+  'Job not available': '任务不可用',
+  'Native subagents': '原生子代理',
+  'Native tree unavailable': '无法读取原生子代理树',
+  'No subagents observed': '未观察到子代理',
+  'This session': '当前会话',
   Experiments: '实验功能',
   'Show EXP usage settings for this machine': '显示本机的 EXP 用量设置',
   EXP: 'EXP',
@@ -376,10 +404,7 @@ const ZH: Record<string, string> = {
   'write the review board (HTML)': '导出审阅看板（HTML）',
   'close panel (also Q, ^C, ^D)': '关闭面板（Q、^C、^D 也可）',
   click: '点击',
-  'select; again = ⏎; wheel scrolls': '选中；再点即 ⏎；滚轮滚动',
   'Settings: save / reset / test': '设置：保存 / 重置 / 测试',
-  'show / hide older cards': '显示 / 收起较早的卡片',
-  'next / previous card that needs you': '下一个 / 上一个需要你的卡片',
   'previous / next project': '上一个 / 下一个项目',
   'Accept all: record all pending slices': '全部验收：记录所有待试用切片',
   'role: choose a preset by name': '角色：按名称选择预设',
@@ -399,9 +424,6 @@ const ZH: Record<string, string> = {
   'refresh the model lists': '刷新模型列表',
   'Saved to $HUD_HOME/roles; the next job uses it. Project role files are read-only here.':
     '写入 $HUD_HOME/roles，下一个任务即用；项目角色文件在此只读。',
-  'into the preview / back': '进入预览 / 返回',
-  'scroll the preview': '滚动预览',
-  'list bigger / smaller': '列表变大 / 变小',
   Slices: '切片',
   Answers: '答复',
   Places: '位置',
@@ -409,7 +431,6 @@ const ZH: Record<string, string> = {
   'as proposed': '与建议一致',
   next: '下一个',
   dim: '暗色',
-  'older rows; a shows them': '较早的行，按 a 显示',
 
   // Tree page messages
   'Settings: {reason}': '设置：{reason}',

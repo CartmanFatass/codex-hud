@@ -103,8 +103,7 @@ console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
   const lane = readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' })[0];
   const target = { kind: 'worker', laneId: lane.id, workerId: lane.workers[0].id };
   const initial = initialMonitorState();
-  const state = { ...initial, home: { ...initial.home, cursor: { kind: 'work', target }, expanded: new Set([targetKey(target)]),
-    toggled: new Set([targetKey(target)]), foldedLanes: new Set(['synthetic-fold']), showAll: true } };
+  const state = { ...initial, jobs: { cursor: targetKey(target), scroll: 0 } };
   writeFixtureFile(log, '');
   writeFixtureFile(runner, `import {readFileSync} from 'node:fs';
 import {writeFixtureFile} from ${JSON.stringify(atomicWriter)};
@@ -117,11 +116,11 @@ log({start:true,pid:process.pid,argv:process.argv.slice(2),test:process.env.SYNT
 const original=PanelReload.prototype.restart;
 PanelReload.prototype.restart=function(place,finish){log({restart:JSON.parse(encodePanelPlace(place)),at:Date.now()});return original.call(this,place,finish);};
 await runLivePage();process.exit(process.exitCode??0);`);
-  const place = typeof initialPlace === 'function' ? initialPlace(state) : initialPlace ?? { state, settings: null };
+  const place = typeof initialPlace === 'function' ? initialPlace(state, target) : initialPlace ?? { state, settings: null };
   const run = launch(f, runner, ['same argv'], { SYNTHETIC: 'same env',
     HUD_PANEL_RELOAD_PLACE: typeof place === 'string' ? place : encodePanelPlace(place), CODEX_HUD_INITIAL_COMMAND: 'help' });
   const events = () => readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  return { ...f, ...run, entry, events, state, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
+  return { ...f, ...run, entry, events, state, target, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
     baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart),
     appendBuild: (suffix) => writeFixtureFile(entry, readFileSync(entry, 'utf8') + suffix) };
 }

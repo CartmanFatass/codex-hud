@@ -5,7 +5,7 @@ import { readSessionJobRows, readThinJobs } from './thin-jobs.js';
 import { JobSnapshotIndex, RECONCILE_MS } from './job-snapshot-index.js';
 import { resumedWorkerRefusal } from '../roles/resume-guard.js';
 import type { Lanes, Request } from './job-snapshot.js';
-import { DEFAULT_PANEL_VIEW } from '../settings.js';
+import { DEFAULT_JOB_STALL_MINUTES } from './work-job.js';
 
 type ViewState = { home: string; source: ReturnType<typeof watchJobChanges>; dirty: boolean; at: number; stageExpiry?: number; stallMinutes?: number };
 const views = new Map<number, ViewState>();
@@ -60,7 +60,7 @@ async function collect(request: Request): Promise<Lanes | string[] | unknown> {
       cached.source.attach();
       // Receive file events already queued before a client's refresh request.
       await yieldToWatch();
-      const stallMinutes = (view.kind === 'lanes' ? view.options?.stallMinutes : undefined) ?? DEFAULT_PANEL_VIEW.cardStallMinutes;
+      const stallMinutes = (view.kind === 'lanes' ? view.options?.stallMinutes : undefined) ?? DEFAULT_JOB_STALL_MINUTES;
       if (views.get(key) !== cached || (!cached.dirty && performance.now() - cached.at < RECONCILE_MS &&
         cached.stallMinutes === stallMinutes && Date.now() < (cached.stageExpiry ?? Infinity))) return;
       const result = view.kind === 'codex' ? shared.codexWorkerSessions() : project(view, shared);

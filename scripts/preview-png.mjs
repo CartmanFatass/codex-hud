@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Renders the panel's real frames in colour from the synthetic Split fixture and saves them as one PNG per frame
+ * Renders the panel's real frames in colour from the synthetic panel fixture and saves them as one PNG per frame
  * (plus an overview sheet) through headless Chrome. For design previews the owner looks at (docs/delegation.md).
  *
  *   npm run build && npm run build:test && node scripts/preview-png.mjs <out-dir> [--lang zh|en] [--width 40] [--theme mocha]
@@ -25,7 +25,7 @@ const chrome = process.env.CHROME ?? '/usr/bin/google-chrome';
 
 const root = process.cwd();
 const load = (p) => import(new URL(`../${p}`, import.meta.url));
-const { splitFixture, split } = await load('tests/fixtures/split-layout.mjs');
+const { panelProjectFixture, panelState } = await load('tests/fixtures/panel-project.mjs');
 const { NOW, TREE, onControl, onPage } = await load('tests/fixtures/project-page.mjs');
 const { renderMonitor } = await load('dist/render/monitor.js');
 const { setDisplayConfig } = await load('dist/render/hud-config.js');
@@ -36,9 +36,9 @@ const { visualLength } = await load('dist/render/colors.js');
 const home = fs.mkdtempSync(join(tmpdir(), 'preview-png-'));
 let frames;
 try {
-  const busy = await splitFixture(join(home, 'busy'));
-  const idle = await splitFixture(join(home, 'idle'), { idle: true });
-  const page = (p, cursor) => onPage(p, { prefs: { panelLayout: 'split' }, project: { nav: { cursor } } });
+  const busy = await panelProjectFixture(join(home, 'busy'));
+  const idle = await panelProjectFixture(join(home, 'idle'), { idle: true });
+  const page = (p, cursor) => onPage(p, { project: { nav: { cursor } } });
   const render = (f, height, state, snapshot = f.data, extras = {}) => {
     const display = setDisplayConfig({ theme: themeName, icons: 'unicode' }), previous = setLanguage(lang);
     try {
@@ -49,14 +49,14 @@ try {
     }
   };
   frames = [
-    ['home-busy', 'Home, busy', render(busy, 40, split())],
-    ['home-idle', 'Home, all done', render(idle, 40, split())],
+    ['home-busy', 'Home, busy', render(busy, 40, panelState())],
+    ['home-idle', 'Home, all done', render(idle, 40, panelState())],
     ['hub', 'Project hub', render(busy, 40, page(undefined), busy.control)],
     ['accept-all', 'Project hub, Accept all selected', render(busy, 40, page(undefined, 'project:accept-all'), busy.control)],
     ['progress', 'Progress, milestone selected', render(busy, 40, page('progress', 'project:fold:task:milestone:0.1.3'), busy.rich)],
-    ['control', 'Control plane', render(busy, 40, onControl({}, { prefs: { panelLayout: 'split' } }), { ...busy.control, radar: undefined })],
+    ['control', 'Control plane', render(busy, 40, onControl(), { ...busy.control, radar: undefined })],
     ['tickets', 'Tickets', render(busy, 40, page('tickets'))],
-    ['help', 'Help', render(busy, 56, split({ help: {} }))],
+    ['help', 'Help', render(busy, 56, panelState({ help: {} }))],
   ];
 } finally {
   fs.rmSync(home, { recursive: true, force: true });

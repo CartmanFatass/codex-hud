@@ -176,7 +176,7 @@ test('quiet decision still-working keeps waiting up to 3 questions then escalate
   const worker = workerFor(f, job.job);
   assert.equal(worker.quietDecision.action, 'needs-human');
   assert.match(cardText(worker), /needs-human \(max questions\)/);
-  const inspectText = workInspectorRows(worker, initialMonitorState(), 80, Date.now()).map((r) => stripAnsi(r.text)).join('\n');
+  const inspectText = workInspectorRows(worker, 80, Date.now()).map((r) => stripAnsi(r.text)).join('\n');
   assert.match(inspectText, /quiet\s+needs-human \(max questions\)/);
 });
 
@@ -224,7 +224,7 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
   assert.equal(status2.quiet_decision.action, 'needs-human');
   const worker2 = workerFor(f2, job2.job);
   assert.match(cardText(worker2), /finished-no-report 94%/);
-  const inspect2 = workInspectorRows(worker2, initialMonitorState(), 110, Date.now()).map((r) => stripAnsi(r.text)).join('\n');
+  const inspect2 = workInspectorRows(worker2, 110, Date.now()).map((r) => stripAnsi(r.text)).join('\n');
   assert.match(inspect2, /finished-no-report 94% → needs-human/);
 });
 

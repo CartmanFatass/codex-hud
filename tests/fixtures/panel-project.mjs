@@ -12,9 +12,9 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { ticketFixture } from './project-tickets.mjs';
 import { NOW, TREE, plain, onControl, richProgress, richControl } from './project-page.mjs';
 
-export const split = (extra) => (withState(initialMonitorState(), { prefs: { panelLayout: 'split' } }, extra));
+export const panelState = (extra) => (withState(initialMonitorState(), extra));
 
-export function layoutDriver(f, { width = 40, height = 36, lang = 'en', data = f.data, state = split() } = {}) {
+export function layoutDriver(f, { width = 40, height = 36, lang = 'en', data = f.data, state = panelState() } = {}) {
   let frame = f.render(width, lang, height, state, data);
   const run = (input) => {
     const out = handleMonitorInput(frame.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame, nowMs: NOW, standalone: true });
@@ -39,7 +39,7 @@ export const assertNoMidWordCut = (lines, corpus, label) => {
   }
 };
 /** `idle`: every job has settled and nothing asks, so Home's list is what finished plus Waiting and Progress. */
-export async function splitFixture(root, { idle = false } = {}) {
+export async function panelProjectFixture(root, { idle = false } = {}) {
   const f = await ticketFixture(root);
   const job = (n, role, title, status, age, files = {}) => {
     const id = `j00000000000000${n}`, dir = join(f.hud, 'jobs', id), iso = (m) => new Date(NOW - m * 60000).toISOString();
@@ -64,33 +64,10 @@ export async function splitFixture(root, { idle = false } = {}) {
   const board = { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions) };
   const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect(true, board, NOW);
   const rich = { ...richProgress(data), tickets: data.tickets, waiting: data.waiting };
-  const render = (width, lang = 'en', height = 40, state = split(), snapshot = data, { icons = 'unicode', ...extras } = {}) => {
+  const render = (width, lang = 'en', height = 40, state = panelState(), snapshot = data, { icons = 'unicode', ...extras } = {}) => {
     const display = setDisplayConfig({ theme: 'none', icons }), previous = setLanguage(lang);
     try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state: state, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   return { ...f, board, data, rich, control: richControl(rich), render };
-}
-/** Split frames at 40 columns EN/ZH, also 80 and 120 for the Project hub and Progress and for busy Home (EN). */
-export function splitFrames(busy, idle) {
-  const frames = {}, page = (p, extra) => split(withState({ activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(p) } }, extra));
-  for (const lang of ['en', 'zh']) {
-    frames[`home-busy-40-${lang}`] = plain(busy.render(40, lang, 40));
-    frames[`home-short-40-${lang}`] = plain(busy.render(40, lang, 24));
-    frames[`home-idle-40-${lang}`] = plain(idle.render(40, lang, 40));
-    for (const width of [40, 80, 120]) {
-      frames[`hub-${width}-${lang}`] = plain(busy.render(width, lang, 40, page(undefined), busy.control));
-      frames[`progress-${width}-${lang}`] = plain(busy.render(width, lang, 40, page('progress'), busy.rich));
-    }
-    frames[`hub-short-40-${lang}`] = plain(busy.render(40, lang, 24, page(undefined), busy.control));
-    const control = { ...busy.control, radar: undefined };
-    frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, onControl(undefined, split({ activeTab: 'control' })), control));
-    const unfolded = onControl({ cursor: 'project:role:reviewer', folded: new Set(['agents', 'usage', 'files']) }, split({ activeTab: 'control' }));
-    frames[`control-unfolded-40-${lang}`] = plain(busy.render(40, lang, 40, unfolded, control));
-    frames[`tickets-40-${lang}`] = plain(busy.render(40, lang, 40, page('tickets')));
-    frames[`tree-40-${lang}`] = plain(busy.render(40, lang, 40, page('tree')));
-    frames[`docs-40-${lang}`] = plain(busy.render(40, lang, 40, page('docs')));
-  }
-  for (const width of [80, 120]) frames[`home-busy-${width}-en`] = plain(busy.render(width, 'en', 40));
-  return frames;
 }

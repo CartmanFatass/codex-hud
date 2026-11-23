@@ -117,9 +117,11 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   const role = snapshot.roles.find((r) => r.role === 'imp');
   assert.deepEqual(role.places.map((p) => p.state), assigned.places.map((p) => p.state));
   const state = onControl({ cursor: 'project:role:imp' }, { prefs: { panelLayout: 'split' } });
-  const panel = plain(renderMonitor({ state, tree: TREE, project: snapshot, projectName: 'harbor-api', width: 40, height: 38 }));
+  const draw = state => renderMonitor({ state, tree: TREE, project: snapshot, projectName: 'harbor-api', width: 40, height: 38 });
+  const view = draw(state);
+  const panel = plain(draw(handleMonitorInput(view.state, { type: 'key', key: 'enter' }, { frame: view }).state));
   assert.match(panel.join('\n'), /imp \[daily\] → agy/);
-  assert.match(panel.join('\n'), /1 ⊘ pi\/xai +\[grok-4.7 ▾\][\s\S]*off · pi:xai/);
+  assert.match(panel.join('\n'), /1 ⊘ pi\/xai +\[grok-4.7 ▾\][\s\S]*Switched off/);
   for (const [key, options] of [['on-off', { on: 'pi' }], ['model-off', { model: 'xai/other' }],
     ['preset-model-off', { preset: 'daily', model: 'xai/other' }], ['cli-off', { on: 'grok' }]]) {
     const res = await create(key, { role: 'general', ...options });

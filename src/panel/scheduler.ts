@@ -14,7 +14,7 @@ type CollectionHost = {
   observation(): AdaptivePollObservation;
   repaint(): void;
   repaintDelay(): number;
-  isChangesFocused(): boolean;
+  isWorkingTreeOpen(): boolean;
   worktreeSources(): Parameters<WorktreeCollector['refresh']>[0];
   onWorktrees(snapshot: WorktreesSnapshot): void;
   onWorktreeError(error: unknown): void;
@@ -88,7 +88,7 @@ export function createCollectionScheduler(refreshMs: number, host: CollectionHos
       gitAgain = true;
       return;
     }
-    if (!host.isChangesFocused()) return;
+    if (!host.isWorkingTreeOpen()) return;
     collectingGit = true;
     const candidates = host.worktreeSources();
     const requestKey = JSON.stringify(candidates);
@@ -101,6 +101,7 @@ export function createCollectionScheduler(refreshMs: number, host: CollectionHos
       }
       host.onWorktrees(snapshot);
     } catch (err) {
+      if (host.isClosed() || requestKey !== JSON.stringify(host.worktreeSources())) return;
       host.onWorktreeError(err);
       host.onWorktrees({ sourcePath: null, entries: [], updatedAt: Date.now(), error: 'Worktree read failed' });
     } finally {

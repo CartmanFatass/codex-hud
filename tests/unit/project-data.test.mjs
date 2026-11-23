@@ -10,7 +10,7 @@ import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
 import { clearJobIndexCaches } from '../../dist/roles/job-index-cache.js';
 import { acceptAll, appendTry, TryLog } from '../../dist/collectors/try-records.js';
-import { currentRows, homeProgressRows, landedNewest, pageRows } from '../../dist/render/project-view.js';
+import { currentRows, landedNewest, pageRows } from '../../dist/render/project-view.js';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -498,9 +498,6 @@ test('Progress, Home, HTML board and TryLog use ticket landings, not legacy STAT
   assert.equal(full.slices.length, 0, 'landed ticket slices do not pollute in-flight Now slices');
 
   const home = await collector.collect('home', EMPTY_BOARD, NOW);
-  const homeText = homeProgressRows(home, 80, 20, false).map((r) => stripAnsi(r.text)).join('\n');
-  assert.match(homeText, /1\/3/);
-  assert.match(homeText, /✓ 1 accepted.*◇ 2 to try/);
   const state = initialMonitorState();
   state.project.folded = new Set(['task:milestone:orch-lean-2']);
   const progress = pageRows('progress', full, state, 80, NOW, EMPTY_BOARD).map((r) => stripAnsi(r.text)).join('\n');

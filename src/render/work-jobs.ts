@@ -1,226 +1,30 @@
-/**
- * Classic Home's jobs (`home-compact/03`): one row per job (the role's icon, the state mark when the job is not simply running, the
- * ticket id, the stage strip, `⚡N`, the age and the silence; no model, effort or route mark: the Inspector has them), the running job's current sentence under it, a lane header only when a lane shows several jobs, and the
- * queued and the finished-and-read jobs each folded into one row. A job that needs the owner (asking, failed, an unread report)
- * shows the reason where the strip would be (an asking job its question on the line below); a land has no sub-row, its fifth stage cell says it.
- */
-import { targetKey, type OwnerWorker, type WorkboardSnapshot, type WorkLane } from '../collectors/workboard-types.js';
-import { projectWorkCard, workMinute, type WorkCard } from '../collectors/work-card.js';
-import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { ageText, cardExpanded, cardSentence, failed, flowStepDetail, milestoneLine, pulseLine, renderWorkCard, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
-import { lanePhase, laneRows, laneStrip, workerPriority } from './work-lanes.js';
-import { activeFlow, currentWorker, unattendedFailure } from './work-visibility.js';
-import { isUnreadReport, laneSonicRunning, mainLaneWorkers, sonicBadge, sonicChildrenRunning, workerModelName } from './worker-roster.js';
-import { roleIcon } from './model-glyphs.js';
-import { iconSet } from './hud-config.js';
-import { jobTitle, roleInk } from './work-job-row.js';
-import { fit, flowLines, monitorText, pair } from './monitor-text.js';
-import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
-import { mark, minuteAge, stateMark } from './workboard-rows.js';
-import { STRIP_CELLS, stageStrip } from './job-stages.js';
-import { keywordMarks } from '../utils/keyword-marks.js';
+/** One row per retained HUD job, including queued, settled and Sonic child jobs. */
+import { targetKey, type OwnerWorker } from '../collectors/workboard-types.js';
+import type { MonitorRow } from './monitor.js';
+import type { JobTarget } from './monitor-state.js';
+import { theme, visualLength } from './colors.js';
+import { fit, monitorText, pair } from './monitor-text.js';
+import { boardRow } from './workboard-rows.js';
 import { t } from './i18n.js';
 
-/** `idw` is the ticket-id column's width on this frame (0: ids are not padded), so the stage strips start in one column; `tags` is the model's short name of each job whose role and id another row on the frame repeats. */
-interface Ctx { state: MonitorState; width: number; now: number; pool: readonly OwnerWorker[]; idw: number; tags: ReadonlyMap<string, string> }
-type FoldKind = 'queued' | 'done';
-type Job = readonly [OwnerWorker, WorkLane];
-/** Minutes without output before the silence mark shows. */
-const QUIET_MINUTES = 3;
-/** Cells a row's reason keeps before its right side narrows, the ticket-id column's floor, and the longest id a job without a ticket gets. */
-const MIN_REASON = 12, MIN_ID = 8, MAX_UNTICKETED_ID = 16;
-/** What the right side loses as a row narrows, first to last (the sonic helper count outlasts the silence); the role icon, the id, the strip (or the reason) and the age stay. */
-const DROPS = ['silence', 'sonic'] as const;
-/** The state mark's fixed column (a Nerd glyph is one cell, `✓●` and `+*` two), so ids start in the same column on every row. */
-const stateCols = () => (iconSet() === 'nerd' ? 1 : 2);
-const cell = (glyph: string) => glyph + ' '.repeat(Math.max(0, stateCols() - visualLength(glyph)));
-/** The columns before the id: the role icon, the state column and a space after each. */
-const headCols = () => 2 + stateCols() + 1;
-/** The job's id on its row: its ticket's, else its lane's short name (the package, or the head of the brief); a child under a lane header, which shares that name, gets the head of its own brief's heading. */
-const jobId = (w: OwnerWorker, lane: Pick<WorkLane, 'label'>, child = false) =>
-  w.displayId ? monitorText(w.displayId) : truncateAnsi((child && jobTitle(w, true)) || monitorText(lane.label), MAX_UNTICKETED_ID);
+export const jobTarget = (w: OwnerWorker): JobTarget => ({ kind: 'worker', laneId: w.laneId, workerId: w.id });
+export const isHudJob = (w: OwnerWorker) => w.id.startsWith('thin-job:');
 
-/** The id cell: the id, then a row's tag dim after it (the id gives way before the tag); padded to `room` unless that is 0. */
-function idCell(id: string, tag: string | undefined, room: number): string {
-  const text = theme.board.identifier(tag && room ? truncateAnsi(id, Math.max(1, room - 1 - visualLength(tag))) : id) + (tag ? theme.board.muted(' ' + tag) : '');
-  return room ? fit(text, room) : text;
+export function jobRows(workers: readonly OwnerWorker[], width: number): MonitorRow[] {
+  return workers.map((w) => {
+    const item = targetKey(jobTarget(w));
+    const id = monitorText(w.displayId || w.id.slice(-8));
+    const rawTitle = monitorText(w.ticketTitle || w.briefTitle || w.task).replace(/\s+/g, ' ').trim();
+    const title = w.displayId && rawTitle.startsWith(id) ? rawTitle.slice(id.length).replace(/^[\s:–—-]+/, '') : rawTitle;
+    const role = monitorText(w.role ?? '');
+    const status = w.homeNeedsHuman ? t('waiting for main') : t(w.state);
+    const suffix = [role, status].filter(Boolean).join(' · ');
+    const tail = [suffix, status].find((s) => visualLength(id + s) + 7 <= width) ?? '';
+    return { item, text: pair(id + (title ? `  ${title}` : ''), theme.board.muted(tail), width) };
+  });
 }
 
-/** The role's icon (`ROLE_GLYPHS`, the statusline's) in the role's ink; a role with no icon of its own gets `•`. */
-export const roleMark = (role: string): string => roleInk(role)(roleIcon(role));
-
-/** The queued job or the read, settled job that folds into one row; everything else keeps its own (so does a settled job whose sonic children still run: their `⚡N` is on it, and one the owner opened). */
-function foldKind(w: OwnerWorker, lane: WorkLane, c: Ctx): FoldKind | undefined {
-  if (!currentWorker(w, c.now, c.state.prefs) || cardExpanded(c.state, targetKey({ kind: 'worker', laneId: lane.id, workerId: w.id }))) return undefined;
-  if (w.settledAt === null) return w.state === 'queued' ? 'queued' : undefined;
-  return unattendedFailure(w) || isUnreadReport(w) || activeFlow(w) || w.flow?.state === 'failed' || sonicChildrenRunning(c.pool, w.id) ? undefined : 'done';
-}
-
-/** `scouting · 1m`: a scouted dispatch's step and the time in it, under the job's row. */
-function scoutRow(w: OwnerWorker, c: Ctx): string {
-  const flow = w.flow!;
-  const tail = [flowStepDetail(flow.step ?? ''), minuteAge(flow.updatedAt, c.now)].filter(Boolean).join(' · ');
-  return theme.board.body(fit(`${theme.board.active(mark('┃', '|'))} ${theme.board.active(t('scouting'))}${tail ? theme.board.muted(` · ${tail}`) : ''}`, c.width));
-}
-
-/**
- * What takes the stage strip's place, painted, when the job has none to show: the question it asks, the failure, a land gone red,
- * the unread report, its queue place, its stop or its supersession. Empty when the strip says it all.
- */
-function reasonText(w: OwnerWorker, card: WorkCard): string {
-  const { danger, muted, success } = theme.board, cross = stateMark.failed();
-  if (w.superseded) return muted(t('superseded'));
-  if (w.state === 'stopped') return muted(t('stopped'));
-  if (card.state === 'queued') return muted(workStateWord(card));
-  if (w.homeNeedsHuman) {
-    const n = w.work?.requestInfo?.options.length ?? 0, category = w.labels?.category;
-    return workStateInk(card)((n ? t('asks {n} opts', { n }) : t('asks')) + (category ? ` [${t(category)}]` : ''));
-  }
-  if (failed(card)) return danger(`${cross} ${cardSentence(card.reason ? t(card.reason) : '') || t('failed')}`);
-  if (w.flow?.state === 'failed') return danger(`${cross} ${t('{step} red', { step: t(w.flow.steps.find((s) => s.state === 'failed')?.key ?? 'land') })}`);
-  if (isUnreadReport(w) && !activeFlow(w)) {
-    const outcome = w.labels?.outcome?.value;
-    return success(`${mark('●', '*', '\uF0E0')} ${t('report unread')}${outcome && outcome !== 'done' ? ` [${t(outcome)}]` : ''}`);
-  }
-  return '';
-}
-
-/** What the row's second line says: an asking job's question, else a running job's current sentence (the model's, else its own latest progress line); none without one. */
-const sentenceOf = (w: OwnerWorker): string | undefined =>
-  w.homeNeedsHuman ? w.work?.requestInfo?.display?.question ?? w.work?.requestInfo?.question ?? w.ask
-    : w.settledAt === null && w.state === 'working' ? w.modelSentence ?? w.latest_progress?.text : undefined;
-
-/** The sentence under its row, indented to the id, in `ink` (dim for a running job, the ask colour for a question): one line, two from 100 columns, the last cut with …. */
-function summaryRows(raw: string | undefined, room: number, wide: boolean, ink: (s: string) => string): string[] {
-  if (!raw) return [];
-  const pad = ' '.repeat(headCols()), text = keywordMarks(monitorText(raw)).plain.replace(/\s+/g, ' ').trim(), max = wide ? 2 : 1;
-  let lines = flowLines(text, room - pad.length);
-  if (lines.length > max) lines = [...lines.slice(0, max - 1), truncateAnsi(lines.slice(max - 1).join(' '), room - pad.length)];
-  return lines.map((line) => fit(pad + ink(line), room));
-}
-
-function jobRow(w: OwnerWorker, lane: Pick<WorkLane, 'id' | 'label'>, c: Ctx, indent = ''): MonitorRow[] {
-  const card = projectWorkCard(w, c.now, c.state.prefs.cardStallMinutes);
-  const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: w.id });
-  const open = cardExpanded(c.state, key), ink = workStateInk(card), room = c.width - indent.length;
-  const running = w.settledAt === null && w.state === 'working' && !w.homeNeedsHuman;
-  const id = jobId(w, lane, !!indent), reason = reasonText(w, card);
-  // A running job has no state mark: the column shows exceptions only.
-  const head = `${indent}${roleMark(card.role)} ${cell(card.state === 'in-progress' ? '' : ink(workStateGlyph(card)))} ${idCell(id, c.tags.get(w.id), c.idw && c.idw - indent.length)}  `;
-  // The age is the job's own; the silence is the time since it last wrote, dim, then amber once the card calls it stalled.
-  const age = theme.board.muted(ageText(running ? workMinute(w.startedAt, c.now) ?? 0 : card.elapsedMinutes ?? 0));
-  const quiet = running && (card.inactivityMinutes ?? 0) >= QUIET_MINUTES
-    ? (card.state === 'stalled' ? theme.board.stalled : theme.board.muted)(t('quiet {age}', { age: ageText(card.inactivityMinutes!) })) : '';
-  const sonic = sonicChildrenRunning(c.pool, w.id);
-  let line: string;
-  if (reason) {
-    const rights = [[sonicBadge(sonic), age], [age]].map((parts) => parts.filter(Boolean).join(' '));
-    line = pair(head + reason, rights.find((r) => visualLength(head) + MIN_REASON + 1 + visualLength(r) <= c.width) ?? age, c.width);
-  } else {
-    // The frame can cross the stall threshold before the next collector snapshot.
-    const strip = stageStrip(card.state === 'stalled' && w.stage ? { ...w, stage: undefined } : w);
-    // Narrow the right side one mark at a time before the strip or the id is cut.
-    const parts = (drop: number): [string, string] => {
-      const keep = (d: (typeof DROPS)[number]) => !DROPS.slice(0, drop).includes(d);
-      const group = keep('sonic') ? sonicBadge(sonic) : '';
-      return [head + strip + (group ? '  ' + group : ''), [age, keep('silence') ? quiet : ''].filter(Boolean).join(' ')];
-    };
-    let drop = 0;
-    while (drop < DROPS.length && visualLength(parts(drop)[0]) + 1 + visualLength(parts(drop)[1]) > c.width) drop++;
-    line = pair(...parts(drop), c.width);
-  }
-  const band = open || card.state === 'needs-you' || card.state === 'stalled' || activeFlow(w) || isUnreadReport(w) || w.flow?.state === 'failed';
-  const rows: MonitorRow[] = [{
-    // A question's row wears the ask slab's amber, on a plain line like the slab's own header.
-    text: !currentWorker(w, c.now, c.state.prefs) && !open ? theme.board.muted(stripAnsi(line))
-      : w.homeNeedsHuman ? theme.board.askTitle(stripAnsi(line)) : band ? theme.board.title(line) : line,
-    item: key, key,
-  }];
-  const body: string[] = open
-    ? [...renderWorkCard(card, c.state, room, card.reason ? t(card.reason) : '').slice(1)]
-    : [...summaryRows(sentenceOf(w), room, c.width >= 100, w.homeNeedsHuman ? theme.board.attention : theme.board.muted), ...(activeFlow(w) && w.flow?.kind === 'scout' ? [scoutRow(w, { ...c, width: room })] : [])];
-  if (open && running) {
-    const milestone = milestoneLine(w, room), pulse = pulseLine(w, room);
-    if (milestone) body.push(theme.board.body(milestone));
-    if (pulse) body.push(theme.board.body(pulse));
-  }
-  return [...rows, ...body.map((text) => ({ text: indent + text, item: key, key }))];
-}
-
-/** A collapsed asking job: its row (`asks`, the option count) and its question under it; the ask slab is what Enter opens. Ids are not padded: no strip aligns with it. */
-export function askRows(w: OwnerWorker, board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
-  const lane = board.lanes.find((l) => l.id === w.laneId);
-  return jobRow(w, { id: w.laneId, label: lane?.label ?? '' }, { state, width, now, pool: board.workers, idw: 0, tags: new Map() });
-}
-
-/** A lane with several jobs: its ticket id and title once, the phase at the right (or the folded lane's job strip). */
-function headerRow(lane: WorkLane, shown: readonly OwnerWorker[], c: Ctx): MonitorRow {
-  const title = shown.find((w) => w.ticketTitle)?.ticketTitle;
-  const left = theme.board.identifier(monitorText(lane.label)) + (title ? '  ' + theme.board.muted(monitorText(title)) : '');
-  const right = c.state.home.foldedLanes?.has(lane.id)
-    ? laneStrip({ ...lane, workers: shown }, c.state, c.now, Math.floor(c.width / 3), sonicBadge(laneSonicRunning(lane)))
-    : theme.board.muted(workPhaseText(lanePhase(lane, shown, c.now)));
-  const text = visualLength(left) + 2 + visualLength(right) <= c.width ? pair(left, right, c.width) : truncateAnsi(left, c.width);
-  const key = targetKey({ kind: 'lane', laneId: lane.id }), muted = shown.every((w) => !currentWorker(w, c.now, c.state.prefs));
-  return { text: muted ? theme.board.muted(stripAnsi(text)) : text, item: key, key };
-}
-
-/** `○ queued 3 · cache-v2/04 · export-csv/03 +1`: whole ids while they fit, then `+N`; `open` leaves the ids to the rows below. */
-export function foldText(kind: FoldKind, ids: readonly string[], width: number, open = false): string {
-  const glyph = kind === 'queued' ? theme.board.muted(stateMark.queued()) : theme.board.success(stateMark.done());
-  const head = t(kind === 'queued' ? 'queued {n}' : 'done {n}', { n: ids.length });
-  const list = (n: number) => ids.slice(0, n).map((id) => ' · ' + id).join('') + (n < ids.length ? ` +${ids.length - n}` : '');
-  let n = open ? 0 : ids.length;
-  while (n > 0 && visualLength(list(n)) > width - 3 - visualLength(head)) n--;
-  return truncateAnsi(`${cell(glyph)} ${theme.board.muted(head + (open ? '' : list(n)))}`, width);
-}
-
-/** One fold row for the queued or the finished jobs; Enter opens it into one row per job. */
-function foldRows(kind: FoldKind, jobs: readonly Job[], c: Ctx): MonitorRow[] {
-  const item = `fold:${kind}`, open = c.state.home.expanded?.has(item) === true;
-  const ids = jobs.map(([w, lane]) => jobId(w, lane));
-  return [{ text: foldText(kind, ids, c.width, open), item, key: item }, ...(open ? jobs.flatMap(([w, lane]) => jobRow(w, lane, c)) : [])];
-}
-
-/** `lanes` in Home's order. Native lanes keep their header and cards; the rest fold as described above. */
-export function jobRows(input: MonitorData, lanes: readonly WorkLane[], state: MonitorState, width: number, now: number, pool: readonly OwnerWorker[]): MonitorRow[] {
-  const tags = new Map<string, string>(), c: Ctx = { state, width, now, pool, idw: 0, tags }, folds: Record<FoldKind, Job[]> = { queued: [], done: [] };
-  const groups: { lane: WorkLane; shown?: OwnerWorker[] }[] = [];
-  for (const lane of lanes) {
-    if (!lane.workers.length) continue;
-    if (lane.identity.kind === 'native') { groups.push({ lane }); continue; }
-    const shown: OwnerWorker[] = [];
-    for (const w of mainLaneWorkers(lane)) {
-      const fold = w.homeNeedsHuman ? undefined : foldKind(w, lane, c);
-      if (fold) folds[fold].push([w, lane]);
-      else if (!w.homeNeedsHuman) shown.push(w);
-    }
-    if (shown.length) groups.push({ lane, shown });
-  }
-  folds.queued.sort(([a], [b]) => (a.queuePosition ?? Infinity) - (b.queuePosition ?? Infinity));
-  folds.done.sort(([a], [b]) => (b.settledAt ?? 0) - (a.settledAt ?? 0));
-  // One id column for every job row on the frame (a child's id sits two cells in), so the strips line up.
-  const items = [
-    ...groups.flatMap(({ lane, shown = [] }) => shown.map((w) => ({ w, lane, indent: shown.length > 1 ? 2 : 0 }))),
-    ...(['queued', 'done'] as const).flatMap((kind) => (state.home.expanded?.has(`fold:${kind}`) ? folds[kind].map(([w, lane]) => ({ w, lane, indent: 0 })) : [])),
-  ].map((item) => ({ ...item, id: jobId(item.w, item.lane, item.indent > 0) }));
-  // Rows of one role that repeat an id (jobs from one brief) get their model's short name; a row whose id is its own gets nothing.
-  const same = (i: (typeof items)[number]) => `${i.w.role}\0${i.id}`, repeats = new Map<string, number>();
-  for (const i of items) repeats.set(same(i), (repeats.get(same(i)) ?? 0) + 1);
-  for (const i of items) {
-    const model = workerModelName(i.w.model, i.w.provider);
-    if (model && repeats.get(same(i))! > 1) tags.set(i.w.id, model);
-  }
-  const wanted = items.map((i) => visualLength(i.id) + (tags.has(i.w.id) ? 1 + visualLength(tags.get(i.w.id)!) : 0) + i.indent);
-  c.idw = Math.min(Math.max(MIN_ID, ...wanted), Math.max(MIN_ID, width - headCols() - 2 - STRIP_CELLS - 1 - ageText(0).length));
-  const rows: MonitorRow[] = [];
-  for (const { lane, shown } of groups) {
-    if (!shown) { rows.push(...laneRows(input, lane, state, width, now, { skipAsking: true, allWorkers: pool })); continue; }
-    if (shown.length > 1) rows.push(headerRow(lane, shown, c));
-    if (shown.length > 1 && state.home.foldedLanes?.has(lane.id)) continue;
-    const ordered = state.home.showAll ? shown : [...shown].sort((a, b) => workerPriority(a, now, true) - workerPriority(b, now, true));
-    for (const w of ordered) rows.push(...jobRow(w, lane, c, shown.length > 1 ? '  ' : ''));
-  }
-  for (const kind of ['queued', 'done'] as const) if (folds[kind].length) rows.push(...foldRows(kind, folds[kind], c));
-  return rows;
+export function jobsRows(workers: readonly OwnerWorker[], width: number, known: boolean): MonitorRow[] {
+  const rows = jobRows(workers.filter(isHudJob), width);
+  return rows.length ? rows : [boardRow(fit(theme.board.muted(t(known ? 'No jobs' : 'No jobs observed')), width))];
 }

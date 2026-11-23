@@ -9,7 +9,7 @@ Current controls for Claude Code, Codex and pi.
 - [Project workers](#project-workers)
 - [Home](#home)
 - [Project](#project)
-- [The panel](#the-panel): [Keys](#keys), [Inspector](#inspector), [Changes summary](#changes-summary), [Settings](#settings)
+- [The panel](#the-panel): [Keys](#keys), [Inspector](#inspector), [Settings](#settings)
 - [LLM](#llm)
 - [The bottom bars](#the-bottom-bars)
 - [Machine-readable state](#machine-readable-state)
@@ -198,7 +198,7 @@ The HUD runs them in order with `bash -lc` after a declared pi or CLI settlement
 Retries and closed-job repairs inherit them.
 `hud_read({job})` shows check outcomes; `mode: "full"` includes the bounded failure tail; a new turn or rewritten report marks the previous results stale.
 `hud watch` adds `checks 2/3` on settlement or in a follow-up notice when the results arrive.
-The job card and Inspector show the same count of passed/total checks (`✓` pass, `✗` fail, `↻` running, `~` stale).
+The Inspector show the same count of passed/total checks (`✓` pass, `✗` fail, `↻` running, `~` stale).
 Checks do not settle jobs or decide acceptance.
 
 Role files and Control decide where each role runs.
@@ -230,7 +230,7 @@ Progress and Stop work as usual.
 Each turn runs in a new process on the same native session and appends output to `stdout.jsonl` and `stderr.log`.
 Pi keeps its session under the job’s `sessions/`; Claude Code and Antigravity keep theirs in their native stores.
 Headless CLI turns use the same prompts and worker MCP setup as tab workers: Claude Code gets the job’s `--mcp-config`; Antigravity uses its installed `hud` server and inherits the job environment.
-The job has no tab to focus: `g` on its card opens the Inspector, where an `Output` section shows the newest lines of `stdout.jsonl` (tool calls, assistant text and errors, up to 12 rows; labelled `live` while the job runs) and follows the log at the panel's collection cadence; Stop (`X`) works as for any job.
+The job has no tab to focus. Open it from Jobs; the Inspector’s `Output` section shows the newest lines of `stdout.jsonl` (tool calls, assistant text and errors, up to 12 rows; labelled `live` while the job runs) and follows the log at the panel's collection cadence; Stop (`X`) works as for any job.
 A question ends the turn; `hud_respond` or an answer from the panel restarts it with the decision.
 With a valid report declaration, the worker closes at turn end even if the report is unread.
 Follow-ups sent while a headless worker is running queue in send order for its next turn, alongside the answer if it asked.
@@ -265,7 +265,7 @@ Dispatch records and returns the effective level after nearest-supported mapping
 For `even`, use the **Even pool** row (`impEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
 HUD chooses the available preset with the fewest imp starts in the last 24 hours, breaking ties in role-file order.
 It reports skipped presets and uses the active preset if the pool is empty or unavailable.
-The create result and job record include `route.placement: "even"` and `route.preset`; the card shows `Placement: even` and the preset.
+The create result and job record include `route.placement: "even"` and `route.preset`; the Inspector shows `Placement: even` and the preset.
 Queueing, overflow, retry and land repair keep the preset selected at create in fixed and even modes.
 Legacy `impRouting: true` loads as `auto`; `false` loads as `fixed`.
 
@@ -295,7 +295,7 @@ Explicit `mode: "tab"` or `mode: "headless"` wins and routing then chooses only 
 Automatic headless runs only on a supported continuable place (pi, Claude Code, or Antigravity); otherwise HUD uses a tab.
 Overflow to `general` keeps the imp chain.
 `retry_of` keeps the tier without another decision, and a light job's land repair starts on standard.
-The job record, create result and per-job `hud_read` show `route` with `tier`, `mode`, `reason`, `source`, and any `fallback` or `mode_reason`; the job card shows the route and why: the tier and headless marks on the Split list row and the Inspector header (Classic Home rows carry none), and in the Inspector a `Route: light · headless — <reason>` row.
+The job record, create result and per-job `hud_read` show `route` with `tier`, `mode`, `reason`, `source`, and any `fallback` or `mode_reason`; Inspector shows the route and why: tier and headless marks in its header and a `Route: light · headless — <reason>` row.
 
 Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic).
 With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap uses a free `general` slot while retaining the `imp` chain (with the selected placement).
@@ -383,7 +383,7 @@ Calling `hud_land` again returns the existing flow if it is active or has alread
 If it failed or was cancelled before fast-forward, the call starts a new flow, keeps the old receipt under its original ID and removes the old integration worktree once it holds the lease.
 `hud_read({job: "<flow ID>"})` gives any attempt's state, current step and per-step wall-clock `timings` (including reruns and skipped `after` rebuilds).
 The receipt records `tested_tree` (the latest green tree) and `published_tree` (the candidate tree, even if fast-forward or push does not happen).
-While another land holds the lease, the queued flow names the holder in `hud_read` and on its panel card; when the holder is in the gate, it also shows the step number and elapsed minutes.
+While another land holds the lease, the queued flow names the holder in `hud_read` and in its Inspector; when the holder is in the gate, it also shows the step number and elapsed minutes.
 One terminal notice per attempt reports the SHA or the failing step, up to three known failing tests, and up to 40 lines of failure output, with one line per repair attempt.
 The helper survives a watcher restart; an interrupted helper is reported, not replayed.
 Receipts live under `$HUD_HOME/flows/`.
@@ -678,121 +678,17 @@ If a CLI place needs a trust grant for the project directory, run `hud trust <di
 
 ## Home
 
-Home shows needs-you questions, package lanes with compact job cards, and native session lanes.
-Its only live sources for cards are HUD jobs in `$HUD_HOME/jobs/` recorded for the caller pane and the selected Claude or Codex session's native subagent tree.
-It does not scan `tmp/tasks/` or read retired observation records; `CODEX_HUD_PANEL_ALL_DELEGATIONS` no longer changes the scope.
-Home never briefs or chains work; its only actions on a job are the owner's three micro-actions (see [Keys](#keys)).
-Running jobs with unanswered questions need you; an unanswered question left on a finished job does not.
-A report is not proof of success, and display labels are not acceptance or a merge decision.
-Unknown evidence stays unknown.
+Home shows the current project's handoff. **Waiting** lists explicit requests from `## Waiting for the owner` in `docs/handoff/STATE.md` (or root `STATE.md`), not routine worker questions to main. An item marked `(waits on …)` clears when all of its named tickets are done or dropped.
 
-Home draws **one row per job**: the role's icon, a state mark in a fixed column that shows exceptions only (`?` asking, `✗` failed, `✓●` unread report, `○` queued, `◷` stalled, `✓` done, `−` stopped; ASCII `? x +* o ~ + -`; a running job has none), the ticket id (a job with no ticket: its lane's short name, the package or the head of the brief), then the **stage strip**, `⚡N`, the age and the silence.
-A row has no model, effort or route mark (the Inspector has them) and no title (it is in the lane header and the Inspector), and the ids pad to one column so the strips line up.
-Rows of one role that show the same id (jobs dispatched from one brief) get their model's short name after it, dim (`Open review: ho… sol-fast`, `… neon`); a row whose id is its own has none.
-The marks here are the Unicode set; the default Nerd Font set draws the role and state icons as listed under Icons in Settings.
+**Now** and **Next** are STATE notes, not inferred goals. When the calling pane's job counts are known, one load line shows its running and queued HUD jobs. Started jobs waiting for main are still running for this count; native transcript threads are not jobs. This is not a project or machine total.
 
-- **Stage strip.**
-  Five fixed cells, read ▸ edit ▸ test ▸ report ▸ land: `●` passed, `◐` current, `○` not reached (ASCII `+ @ o`), and a dimmer `○` for a stage the card cannot know.
-  It is read from what the card already has: the report and the job's settling (settled: the first four cells are passed), the checks receipt (a check still running or failed keeps the test cell current), the land flow (the fifth cell is current while a land runs or waits, passed once landed; the gate, merge and push detail is the Inspector's, there is no land sub-row on Home), and `stage`, the kind of work a running job is in (`read`, `edit` or `test`).
-  For a running job, the latest tool call in the local session or headless output can identify its read, edit or test stage.
-  Without a recognised call, or once the job stalls, the first three cells are the dim unknown `○` unless the report, checks or land flow supply them.
-- **A job that needs the owner** shows a short reason in the strip's place, coloured: `asks N opts` with the question's option count (and the model's category, `[owner authorisation]`), `✗ <reason>` for a failed job, `✗ gate red` for a land that failed at that step, `● report unread` (with the model's outcome label when it is not `done`), `queued #N`, `stopped` or `superseded`.
-  An asking job's row is amber and its question is the line below it (one line, two from 100 columns, cut with `…`); Enter or a click opens it into the full slab with the answer keys.
-  Asking rows come first, as the slabs did.
-- **Role icon**, first on the row, in the role's ink: imp, frontend-imp, general, oracle, reviewer, sonic (ASCII `I F G O R *`), `•` for a role with no icon of its own.
-  Then, at the right, `⚡N` (the sonic icon and the active sonic children).
-- **Order.**
-  Jobs keep the order they were dispatched in while their progress changes: a running job going quiet or moving a stage never swaps rows.
-  A row moves only when the job's state does (a failure or an unread report rises above the running jobs; a finished, read job sinks).
-- **Time**: the age, at the right (running: since it started; settled: since it settled), then the silence, `quiet 4m`, only after 3 minutes without output (the card's last observed write), dim, and amber once the card calls the job stalled (Settings → Stall threshold).
-- **Narrowing** drops, in order: the silence, `⚡N`; the role icon, the ticket id, the reason, the stage strip and the age stay.
-- **The running job's sentence**: under each running job's row, one dim line (two from 100 columns): the model's current sentence, else the job's own latest progress line, cut to fit with `…`; none when it has neither, never the ticket title.
-  Settled jobs keep the folds below.
-
-A lane gets a header (ticket id, title, phase at the right) only when it shows more than one job; its jobs indent under it, each with its own id (a child without a ticket gets the head of its brief heading).
-A failed job is one row with its reason until the failure is observed or superseded (Enter opens its full card); a job with a scouted dispatch gets one sub-row (`scouting · 1m`); an unread report (`✓●`, ASCII `+*`) keeps its own row.
-Queued jobs fold into one `○ queued N · cache-v2/04 · …` row and read finished jobs inside the hide window into one `✓ done N · …` row (whole ids while they fit, then `+N`); Enter on a fold lists one row per job.
-Enter on a job row expands its card in place (sentence, milestone, activity) and keeps the row out of the folds while it is open; the report sentence is also in the Inspector.
-Help's **Marks** page lists the role icons, the state, stage, silence and route marks.
-A brief heading in the panel language supplies the lane header's and the Inspector's title when the job has no ticket file.
-For a foreign heading, the same sentence request can supply a localized short name that replaces it (and a ticket heading in the wrong language).
-Without model text the ticket or brief heading remains; narrow lane labels keep their numeric suffix.
-Classic's job rows never open by themselves; native subagent cards and Split's preview still open the newest current settled card until its fold time, and explicit choices win for that panel lifetime.
-Enter on a lane header folds the lane.
-Question slabs show answer keys beside the expanded options; `o` still opens the question file.
-
-**Sonic children.**
-A `sonic` job a HUD job dispatched (`parent_job`) never renders as its own row or card on Home (in Classic or Split).
-Instead, active (currently running) sonic children appear only as `⚡N` (ASCII `*N`) on their parent worker's row (and on the parent's asking row, its ask slab header or Split lane row); finished sonic children add nothing (never a cumulative total).
-Sonic children do not count in lane strips, Split job counts or `done today`, and never hijack a Split lane row.
-A `/` filter that matches a sonic job still keeps its parent visible.
-
-**Flows.**
-A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows a land as the fifth cell of its stage strip on Classic Home (a failed land as `✗ gate red`; no sub-row) and a scouted dispatch as the one `scouting · 1m` sub-row while it runs; Split's preview, a failed flow and the Inspector show a flow row on the card (`gate ▸ merge ▸ push` or `scout ▸ run`, localized in Chinese) with the active step or final outcome (landed SHA, done, failed or cancelled), and Split's lane row shows its active chain.
-A job with a running land stays visible and unfolded until the flow settles; Fold after now applies to native subagent cards and Split's preview.
-A land queued behind another's lease says whom it waits for by that job's ticket id (else a short title), `waiting for land-log/01 (gate step 3, 1 min)`; a holder that is not on this panel's board shows its flow id.
-
-**Panel lifetime.**
-Jobs settled before the panel opened are excluded, including their decisions and model inputs; `a` cannot reveal them.
-Active/unknown jobs stay eligible regardless of age.
-Build reload preserves the original opening time.
-Native agents and Project's ticket lookup keep their own scope.
-
-**Card lifetimes.**
-Settled native cards fold after 5 minutes and hide after 5 minutes by default (so fold and hide coincide; adjust both in Settings → Panel).
-A read, settled HUD job is in the finished row from the start and leaves it at the hide time.
-A hide time below fold time counts as fold time.
-A failed or stopped job leaves Home immediately when a retry, repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
-`a` shows it muted as `superseded`.
-An observed failure follows the ordinary fold/hide times.
-An unhandled failure stays unfolded with its reason row and leaves Home after 30 minutes; use `hud_read({job})` to inspect it by job ID.
-Running/asking cards stay.
-`a` reveals hidden cards in place as muted one-row titles; Enter expands them.
-The job scan considers up to 200 top-level jobs and, separately, up to 200 of their children.
-Child jobs do not request card sentences or display labels.
-
-Answered questions are still collected but have no Home block or dedicated panel view.
-The Inspector still lists job files, including answers and their default/departure marks.
-A review verdict requires its recorded accept/changes-required line and settled output, not merely helper exit.
-
-**Native agents on Home.**
-Claude/Codex main sessions get their own lanes, labeled `subagents` in Split.
-Children indent once; deeper descendants say `↳ parent`.
-A hidden parent never hides a live child.
-pi helpers already appear as HUD jobs.
-A long Claude subagent transcript shows its latest public step first; Agent/Task nesting fills in as bounded forward replay catches up.
-Replay preserves known completion ages and blocks model requests until caught up.
-Growth after completion reopens an agent; fresh finished metadata or a caught-up public `end_turn` with no open calls settles it again.
-Incomplete reads cannot prove idle.
-`o` opens the transcript; there is no native conversation-switch control.
-
-**Ordering.**
-Home uses the built-in order, not model ranking.
-A saved `homeMode` setting is ignored; previously selecting Recommended does not change the order.
-
-**Top line.**
-Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering).
-The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear.
-The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in role order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker).
-The counts live in the panel's memory only, so a panel restart starts from zero, and nothing shows until a worker has started; the left side takes its shorter forms before the counts go.
-With STATE waiting items, Enter or a click on the top line in Classic opens the Project Inbox.
-The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
-
-**Spare rows.**
-Cards get space first.
-Remaining rows show, top to bottom: STATE's waiting items (a row each, up to five, then `+N more`), the most recently accepted tickets (three rows at 38–55 columns, five wider), then STATE's Now summary (up to three wrapped rows), a stacked progress bar and ticket count legend (accepted, to try, working, stalled, planned; dropped tickets excluded).
-The bar uses STATE's milestone as its heading, or `All tickets` without a milestone.
-A project ticket meter includes finished features.
-Started features get one row each; unstarted features share one planned row with ready and queued counts.
-In Split Home the Progress row names the milestone, how many slices are pending and how many are working, or the accepted fraction when idle.
-The Waiting row previews only STATE waiting items.
-The block takes its rows before the two lists, which take what is left.
-As height falls the latest list shrinks first, then waiting, tickets, the summary's extra rows, legend, summary, bar and the block.
-Enter or a click on a waiting item opens its page (Esc returns to its row on the hub), on the Waiting header the Project Inbox, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
+Press `v` or click **Jobs** for one plain row per retained HUD job of the calling pane, including queued, settled and Sonic child jobs. Press Enter or click a row for the [Inspector](#inspector), where reports and job actions live.
 
 ## Project
 
-Project opens to the Inbox in both Classic and Split.
+Project → **Working tree** includes the Git diagnostics formerly on the separate Changes page: branch and HEAD, ahead/behind, staged/unstaged/untracked counts, and each worktree's path, branch and observed dirty state. The worktree probe runs only on that page. Unknown, stale and incomplete readings are not treated as clean. The probe does not fetch or run repository filters.
+
+Project opens to the Inbox.
 Below the project name:
 
 - **Needs you**, in order: asking jobs, items the main session flagged in STATE's `Waiting for the owner`, tickets asking for an answer, other blocked tickets and exhausted roles.
@@ -816,7 +712,7 @@ Key rows contain names/presence only; Browser ✓ means Chrome and `jev-ask` exi
 
 **Progress page.**
 One row per ticket feature shows the most important state mark and counts by state, not a project completion percentage.
-Enter in Classic or the Split preview shows the member tickets, with `o` to open the ticket file.
+Enter shows the member tickets, with `o` to open the ticket file.
 Next and the Now summary still come from STATE, which is not a slice ledger.
 A job's row can open its report or, if none, its brief.
 Worktrees without a linked ticket or managed job are listed on the Working tree page.
@@ -866,8 +762,7 @@ The Roles view starts with:
 
 The role row names the next model when it fits whole; otherwise it shows the harness (and provider for pi, when known).
 A known inherited model is muted.
-Split previews the selected role's numbered chain and source; Enter focuses its places and Esc returns to the list.
-Classic expands the numbered chain and its source under the role with Enter.
+Enter expands the numbered chain and its source under the role; Esc returns to the list.
 `o` on a role or place opens its source.
 Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed.
 `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
@@ -876,7 +771,6 @@ Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and 
 Space or Enter toggles the selected switch; Del removes an enabled entry by turning it off, not uninstalling it.
 Enter on **Off** expands or folds the disabled entries.
 `i` opens **Add back**: type part of a switch ID, use ↑↓ to select, Enter to restore or Esc to cancel.
-These controls work in Classic and Split.
 Presence is separate from the switch: installed means the executable was found, and a provider being listed is not proof of login or quota.
 A provider under an off runner keeps its switch and shows `pi off`.
 `jev-ask` switches both ChatGPT and Gemini; `jev-aistudio` switches Argon.
@@ -944,7 +838,7 @@ Project-pinned roles show the source and a lock; `o` opens the file but the pane
 Shipped imp presets: `default`, `hydrogen`, `astra`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup).
 No separate architect HUD role remains.
 
-Enter on a role focuses its chain in place (Split preview or Classic expansion).
+Enter on a role opens its chain in place.
 It stays read-only until you make a change.
 `i` adds a place at the end; Enter on a place edits it.
 In the sheet, move between Target, Model or Flow kind, Thinking (or browser Effort) where applicable, and Done.
@@ -973,7 +867,7 @@ When unset, the model field shows the effective model in muted text if known, or
 Unset thinking likewise shows the known value in muted text or stays blank.
 If you open Edit place with Enter, its Model field still fills the form: choose Done to put the place in the draft, then `s` to save.
 With an empty query, the picker starts with the current model, compatible models from this role's other presets (tagged except for `default`), the previous model from the last quick save for this place (`was`, kept only for this panel session), and a clear row when applicable.
-The picker fills the panel body below the tabs in Classic and Split without zooming.
+The picker fills the panel body below the tabs.
 For CLI and AI Studio it stays a single list at any width, showing model IDs from the catalog and available discovery, with no provider groups or facts strip.
 In pi, the pinned models also stay in their groups.
 Pi providers used by role or preset places (including resolved defaults for unset places) are open below: the current provider first, then by number of uses.
@@ -1061,15 +955,6 @@ The command prints the path.
 
 In the panel `w` (Home or Project, not in a picker or Settings) does the same for the project shown, opens it the same way and shows `Board saved: <file>` at the top until the next key.
 
-## Panel layouts
-
-Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `split`) chooses how Home, Project and Control are laid out; saving switches the open panel at once, no restart.
-**Classic** is the default described above.
-**Split** puts a list over a preview of the selected row (see [Split layout](#split-layout)).
-
-There is no separate Project layout setting.
-Old `projectLayout` values, including `timeline` and `board`, are ignored: Project opens to the Inbox.
-
 ## The panel
 
 ### Frame and reload
@@ -1078,7 +963,6 @@ Home, Project, and Control are the default main tabs.
 Settings → Panel → **Experiments** (`experiments` in `hud-settings.json`, off by default) adds the experimental **EXP** tab.
 Use ↑/↓ to select and Enter to edit or open an account; Enter saves, and Esc cancels.
 For calibration, Enter first previews the change, then Enter saves the new base.
-The form is the same in Classic and Split.
 Settings apply to all projects on this machine, and are stored under `$HUD_HOME/exp/`.
 Codex profile choices are local; EXP does not change CLI configuration.
 
@@ -1104,20 +988,18 @@ The panel keeps footer hints whole: the selected row's actions take priority, th
 Hints drop from the right to make room, but `? help` stays last.
 Movement, tab switching and the Settings shortcut remain available without taking footer space.
 An editor or picker that owns the keyboard shows its own hints without `? help`; Help itself shows `Esc back`.
-For example, a running HUD job offers `g job tab` (`g output` for a headless job) and `X stop`, the Accept all row shows `⏎ accept all`, and a Control role shows `⏎ chain`.
+For example, a running HUD job offers `g job tab` (if it has a tab) and `X stop`, the Accept all row shows `⏎ accept all`, and a Control role shows `⏎ chain`.
 `o file` opens a row's file.
-One key means one thing on a page (`>` `<` move between Home's cards that need you; `i` `Del` change places; `+` `=` `-` size Split's list), and the Help page lists each key once.
-A row says its state once: a card's `[done]` mark is left out when its state word says the same, and a Home lane's state word is on its row once.
 The fixed words (`Usage`, `unparseable JSON`, `(no key)`) follow the panel language, and a quota figure says whether it is what is `used` or what is `left`.
-There is no Agents pane, stacked/compact layout, Timeline, activity hub, agent log, Summary or diagnostics page.
+There is no Agents pane, layout selector, Timeline, activity hub or agent log.
 Each page retains its scroll/selection.
 Icons (Settings → Display → Advanced → Icons, `icons`) are `nerd` (the default), `unicode` or `text`; an old or unknown saved value loads as the default.
 `nerd` draws Font Awesome glyphs from the Basic Multilingual Plane, which a Nerd Font such as MesloLGS NF has; the codepoints: roles imp U+F0AD (wrench), frontend-imp U+F1FC (paint brush), general U+F013 (cog), oracle U+F0EB (light bulb), reviewer U+F002 (search), sonic U+F0E7 (bolt); states asking U+F059 (question circle, amber), failed U+F057 (times circle, red), unread report U+F0E0 (envelope, green), done U+F058 (check circle), queued U+F252 (hourglass half), stalled U+F186 (moon), stopped U+F04D (stop).
 `unicode` is the earlier set (`⚒ ✎ ✦ ◈ ⚖ ⚡`, `? ✗ ✓● ✓ ○ ◷ −`) and `text` is ASCII letters and words.
-The panel's role icons follow the saved setting; the stage strip `●◐○` is the same in every set.
+The panel's role and job state icons follow the saved setting.
 
 After a new installed entry is stable for two seconds, a bounded child import validates it before the panel restarts in the same pane.
-Selection, scroll, folds, show-all, modal, Settings cursor, opening time and width override survive.
+Selection, scroll, diagnostic folds, Settings cursor, opening time and width override survive.
 A saved Skills tab from an older build falls back to Home; a saved Project/Control page reopens on Control.
 Unsaved Settings delay reload; a bad build leaves the old panel and a dim notice.
 Bars are separate and need restarting for new code.
@@ -1129,8 +1011,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
-| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control → EXP (if enabled). Digits switch no tab: `f` opens Changes and `1`–`4` answer an open question. The tab's count is `?` and a number (`Project ?4`: what waits for you) |
-| `f` | Changes summary (once `3`) |
+| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control → EXP (if enabled). Digits switch no tab. The tab's count is `?` and a number (`Project ?4`: what waits for you) |
 | `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
 | Enter, `i` `Del` `K` `J`, `s`, `x`, `r` | Control: focus the chain / edit the place; add / remove / move up / move down; save the draft; clear the saved place's quota mark; refresh model lists |
 | `c` / `C`, `p` | Control role row: next / previous named preset, or filter presets and choose a name or Custom |
@@ -1139,75 +1020,28 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the picker, one click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
-| `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. A headless job has no tab: `g` opens its Inspector, whose `Output` section shows the newest lines of its `stdout.jsonl` and follows them (in the Inspector it changes nothing). Everywhere else it does nothing: the first row is the Home key |
-| `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
+| `g` | Inspector: focus a job's herdr tab; a headless job shows Output instead |
+| `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then `pi-role-reap <dir>` runs and the panel reads again); any other key cancels |
-| Enter | Expand/collapse card, question or lane; in Project open a page, fold, show a ticket, open a file or run the selected Accept all action |
-| `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
-| `v` | Inspector |
-| `a` | Show/hide older job cards |
-| `>` / `<` | Home: next / previous card that needs you (asking, failed or stalled) |
-| Space | Home: open Inspector |
+| Enter | Open Jobs from Home, or Inspector from a job row; in Project open a page, fold, show a ticket, open a file or run the selected Accept all action |
+| `o` | Inspector or Project diagnostics: open the file |
+| `v` | Home: open Jobs |
+| `n` | Jobs or Inspector: show this session’s native subagents |
 | `b` | Toggle model text (also in Settings → Models). The top row shows `models off` when model text is off and the label fits; click it to turn model text back on |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
-| `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, worker summary, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
+| `/` | Filter Project Progress and Tickets by a case-insensitive substring. Backspace edits, Enter keeps the query, Esc stops editing then clears it. Leaving the view clears it; reload retains a kept query |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Control or EXP, Esc does nothing |
 | `q` | Close panel |
 
-Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Project hub links, Inspector file links and Home progress-block links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
+Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Project hub links, job rows and Inspector file links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
 The model picker is an exception: one click sets a model and scrolling keeps the selection visible.
-
-### Split layout
-
-The saved setting `panelLayout` (`classic` by default; Settings → Panel → Layout) can be `split`: Home, Project and Control become **a list above and a preview of the cursor row below** (`docs/design/panel-v8/`, option 2).
-The preview uses Classic's cards and sentences; a question slab doesn't repeat the lane name from its preview rule.
-
-- **Home.**
-  One row per package lane and per block (Waiting for you, Progress), always the same height, whatever runs: mark, name, phase, then the role icon and the state of the lane's most important job.
-  Queued lanes and read finished lanes are one row each (`○ queued N · ids`, `✓ done N · ids`) whose preview lists their cards.
-  A question or a failure keeps a reason row, so what needs you is always on screen; the cursor starts on the first such row.
-  Below the list the preview shows that row: the question's slab and the lane's cards, the STATE waiting items, or the milestone and ticket rollup.
-  On a short panel blank rows go first, then the preview from its bottom; the list never gives way (a very short panel scrolls it with its cursor).
-  A lane at work that the cursor is not on shows, in the row's free cells, the marked keywords of its model sentence (else its reason or the phases so far); when the width leaves under six cells, nothing.
-- **Project hub.**
-  The Inbox lists Needs you, Running, last accepted and the page rows. Accept all is explicit in the Tickets page when there are pending tries.
-  A waiting item previews its whole text; a role alert previews its places.
-  The Progress preview shows the summary, milestone bar, Running and last accepted.
-  Enter on a page row opens it.
-  PgUp/PgDn scroll a long preview.
-- **Progress.**
-  The selected feature previews its tickets, their state and title; `o` opens the source ticket.
-- **Control.**
-  Roles on top (Needs attention first), with the selected role's detail and chain below.
-  Enter focuses the chain and opens the place sheet on the next Enter.
-  Drafts and discard confirmation stay in the preview.
-  On a role row, `c` / `C` switch presets and `p` opens the preset list.
-  `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
-- **Tickets, Working tree, Docs.**
-  Preview the selected feature's tickets or the selected fact's whole text.
-  A ticket can show its checklist and latest comment; `o` opens the file.
-
-| Key | In Split |
-|---|---|
-| Up/Down | Move in the list (or in the preview, once Enter has taken the keys there) |
-| PgUp/PgDn, wheel over the preview | Scroll the preview; the wheel over the list moves the cursor |
-| Enter | A row with something to act on in its preview (cards, waiting items, places) moves the keys there; there Enter does what it does in Classic. Elsewhere as in Classic |
-| `=` `+` / `-` | Grow the list / the preview by a row (the list's share stays between a fifth and four fifths of the rows and is kept when the panel reloads). The Control plane's place keys are `i` and `Del`, so these keys never mean two things there |
-| Esc | Back from the preview to the list, then as in Classic |
-| Click | Selects a row (or a preview row); a second click is Enter |
-
-While the keys are in the preview the list shrinks to three rows around its cursor, so the preview has the rest; Esc brings the chosen share back.
-A preview with more rows than fit shows a scrollbar in its last cell: a thumb (`┃`, `#` with text icons) over a dim track (`│`, `|`); its rows are laid out one cell narrower, so nothing is cut.
-
-One waiting item's page and the Projects list are Classic's frames in either layout.
 
 ### Help
 
 Press `?` for shortcuts grouped by where they work.
 From Project or Control, Help opens at that tab’s section; from Home, EXP or Settings it opens at Everywhere.
-The Split shortcuts appear only in the Split layout.
-Marks are grouped by jobs (state glyphs, queued, and `⚡N` for running sonic children), route (the tier bars `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places.
+Marks are grouped by route (the tier bars `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places.
 `g` is the job's herdr tab, or the Inspector's Output for a headless job.
 At 80 columns and wider, Marks sit to the right of the shortcuts.
 Scroll with ↑↓, PgUp/PgDn or the wheel; Esc, `?` or Enter returns to the previous page.
@@ -1217,34 +1051,21 @@ Ask the main session to read one when needed.
 
 ### Inspector
 
-The selected card/question expands above facts: role/harness, model/effort, package, state/phase and observed local times.
-The Inspector and expanded running cards in both layouts show one muted Milestone line when the worker has logged one, and an Activity row under it: ten one-minute buckets (`▁▂▃▄▅▆▇█`, `..--==##` with text icons) of how often the panel saw the running worker write (session, status, report or `hud-progress`), a quiet minute blank, eight sightings or more a full cell.
-The ring lives in the panel's memory from when it first saw the worker, so there is none for a worker that has not written since, and none once it settles.
-The kind row lists at most the two kinds the model is surest of.
-Files lists brief, QA, reviews and report; Up/Down selects, Enter/`o` opens.
-With no Git diff, **Reported files** shows up to 12 worker-listed paths as text, not as links or verified changes.
-Native cards list their transcript and available context %, estimated tokens/s and cumulative tokens; missing values are omitted, with no extra model request.
-No stage/log history or switch controls remain.
+A job's Inspector shows the original open question, report evidence, role/harness, model/effort, package, state, checks, flow, local timestamps and recorded progress. **Files** includes the brief, questions and answers, reviews and report. Tab selects a file or a Sonic child job; Enter opens it. With no file selected, `o` opens the report or another collected job file. With no Git diff, **Reported files** shows up to 12 worker-listed paths, not verified changes. A headless job's **Output** follows the newest displayable lines of `stdout.jsonl`.
 
-### Changes summary
-
-`3` shows branch/HEAD, ahead/behind (unknown without upstream evidence), change counts and one row per worktree with path/branch/dirty state.
-No file lists, diffs, previews, staging, commits or checkout actions.
-Collection runs only while focused; failed/stale Git status stays unknown, with repository filters and lazy fetching disabled.
-Edits inside a submodule's working tree do not mark the Codex bar, pi footer or Project dirty; a moved submodule commit does.
-The Changes view ignores submodules entirely.
+Press `n` or click **subagents** from Jobs or a job Inspector to inspect the calling session's native Claude or Codex tree. It is scanned only while that view is open; incomplete coverage is marked. Tab selects a native transcript; Enter or `o` opens it. Esc returns to Jobs or the job Inspector.
 
 ### Settings
 
 | Group | Rows |
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
-| Panel | Layout, Width, Notifications; in **Advanced**: Stall threshold, Fold after, Hide after, Refresh, Mouse, Experiments |
+| Panel | Width, Notifications; in **Advanced**: Refresh, Mouse, Experiments |
 | Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter), Summary interval |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
-Common rows are open; the 13 rarely changed rows above fold under one **Advanced** row at the bottom (collapsed on each open; Enter, Left/Right or click expands or collapses it, and `*`/highlight mark folded unsaved or non-default values).
+Common rows are open; the 10 rarely changed rows above fold under one **Advanced** row at the bottom (collapsed on each open; Enter, Left/Right or click expands or collapses it, and `*`/highlight mark folded unsaved or non-default values).
 Expanded rows show their source group prefix so `r` still resets that row's group (pressing `r` on the Advanced row shows a hint).
 Up/Down selects; Left/Right or Enter changes; `s` saves, `r` resets only this group, `t` runs/cancels Test API.
 Dirty leave asks Save and leave / Discard changes / Continue editing (default); failed saves retain the draft.
@@ -1254,13 +1075,11 @@ No Reset all or picture.
 Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default.
 Saving a changed width resizes every client's panel, preserving 41 columns for the agent where possible.
 Window resizing reapplies it; border drags and unrelated saves do not.
-Fold default 5 minutes, Hide default 5 (stored 1–1440).
-Stall threshold is 10 minutes (1–120); job session writes count as activity even with models off.
 
 Themes: `terminal` (default), `titanium`, `mocha`, `arctic`, `ember`, `contrast`, `latte`, `paper`, `none`.
 Each has its own Home/Project/Inspector inks; latte/paper are light, none/`NO_COLOR` emits no colour.
 Preferences save privately to `$HUD_HOME/hud-settings.json` or `HUD_SETTINGS_PATH`; saved display values override environment defaults.
-Old card/layout/model-feature keys are ignored and dropped on save, not migrated; existing user caches/assets are not deleted.
+Retired keys `panelLayout` (including `split`), `tasks`, `cardStallMinutes`, `cardFoldMinutes` and `cardHideMinutes` are ignored on load and omitted on save. Existing job records, caches and assets are not deleted.
 
 ## LLM
 
@@ -1296,7 +1115,7 @@ Outcome labels are independent Decision-API judgements.
 | Feature | Input |
 |---|---|
 | Thin-job sentence/name | Only the worker's one-line summary (≤160 Unicode code points) when translating it; otherwise brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a 32 KiB working-session tail |
-| Panel translation | Waiting items from STATE (first 8, ≤2 KiB each), open worker questions (question, options, context and default, ≤4 KiB), open ticket titles (≤512 bytes each), the route reason a card shows (≤512 bytes) and the ticket text of the newest 6 landed rows (≤512 bytes each). Only wrong-language prose is sent, up to 25 strings / 4 KiB per call on the shared text budget. Translations are cached by text and language; expand Original below the translation to compare. Answer keys still select the worker's original options. |
+| Panel translation | Waiting items from STATE (first 8, ≤2 KiB each), open worker questions (question, options, context and default, ≤4 KiB), open ticket titles (≤512 bytes each), the route reason shown in Inspector (≤512 bytes) and the ticket text of the newest 6 landed rows (≤512 bytes each). Only wrong-language prose is sent, up to 25 strings / 4 KiB per call on the shared text budget. Translations are cached by text and language; expand Original below the translation to compare. Answer keys still select the worker's original options. |
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
 | Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
 | Outcome label | Final state + the same settled report excerpt, independently judged once per settlement |
@@ -1315,7 +1134,7 @@ Private revision caches survive reopen, as do sentence/title caches (200 records
 Sentences have at most three pending handles on the shared single-flight text queue; Decision labels have a separate single-flight path.
 Titles use effort none and sentences low; no model-tier/effort selector.
 Wrong-language text is rejected.
-Keyword marks `«keyword»`, `«+approve»`, `«-reject»`, `«!opinion»` (and short Chinese `「…」`) share painting across cards and the Inspector; files/paths retain identifier ink.
+Keyword marks `«keyword»`, `«+approve»`, `«-reject»`, `«!opinion»` (and short Chinese `「…」`) are painted in the Inspector and Project details; files/paths retain identifier ink.
 No recap, session-title or change-summary generator runs.
 
 Configure text through the settings file, not a connection editor:

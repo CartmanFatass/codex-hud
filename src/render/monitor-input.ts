@@ -1,4 +1,4 @@
-/** Shared passive-page input; Home owns all card navigation. */
+/** Shared input for panel views and overlays. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
 import { harnessAddInput, workboardInput } from './workboard-input.js';
@@ -24,14 +24,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   const ready = state.control.notice?.kind === 'harness'
     ? { ...state, control: { ...state.control, notice: undefined } } : state;
   const out = route(ready, input, ctx);
-  // Another tab, page, project, Help or the Inspector clears the departed view's filter.
-  if (filterScope(out.state) !== filterScope(state)) {
-    const tab = state.activeTab;
-    if (tab === out.state.activeTab) return { ...out, state: clearFilter(out.state) };
-    if ((tab === 'home' || tab === 'project') && out.state[tab].filter)
-      return { ...out, state: { ...out.state, [tab]: { ...out.state[tab], filter: undefined } } };
-  }
-  return out;
+  // Leaving filtered Project diagnostics clears the query.
+  return filterScope(out.state) !== filterScope(state) ? { ...out, state: clearFilter(out.state) } : out;
 }
 function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   const key =
@@ -87,11 +81,5 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   if (key === 'settings') return result({ type: 'settings' });
   if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
   if (key === 'help') next.help = {};
-  if (next.subpage?.kind === 'changes') {
-    const pane = ctx.frame?.panes.find((p) => p.id === 'changes');
-    const max = pane ? Math.max(0, pane.contentLength - Math.max(1, pane.height)) : Infinity;
-    const delta = key === 'down' ? 1 : key === 'up' ? -1 : key === 'page-down' ? 5 : key === 'page-up' ? -5 : 0;
-    next.subpage = { ...next.subpage, scroll: Math.max(0, Math.min(max, next.subpage.scroll + delta)) };
-  }
   return result();
 }

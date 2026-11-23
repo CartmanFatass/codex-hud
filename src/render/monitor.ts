@@ -5,7 +5,8 @@ import { DEFAULT_PANEL_VIEW, type HudSettings } from '../settings.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
-import type { ProjectSnapshot } from '../collectors/project-board.js';
+import type { ProjectItem, ProjectSnapshot } from '../collectors/project-board.js';
+import type { PaneLoad } from './home-view.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
 import { initialHomeTab, initialProjectTab, initialControlTab, viewPrefs, reconcileMonitor, type MonitorState } from './monitor-state.js';
@@ -39,7 +40,7 @@ export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type 
 export { monitorRowAt, monitorItemAt, handleMonitorInput } from './monitor-input.js';
 
 // `agents` is the internal main viewport id, not a separate pane or tab.
-export type MonitorPane = 'agents' | 'changes' | 'details';
+export type MonitorPane = 'agents' | 'details';
 export interface RowControl {
   kind: MonitorControl['kind'];
   item?: string;
@@ -61,7 +62,7 @@ export interface MonitorRow {
   roleFact?: RoleFact;
 }
 export interface MonitorRect {
-  id: MonitorPane | 'preview';
+  id: MonitorPane;
   x: number;
   y: number;
   width: number;
@@ -79,9 +80,8 @@ export interface MonitorControl {
   kind:
     | `board-${MainTab}`
     | 'board-back'
-    | 'board-pick'
-    | 'board-activate'
-    | 'board-inspect'
+    | 'board-jobs'
+    | 'board-native'
     | 'control-roles'
     | 'control-harnesses'
     | 'control-open-file'
@@ -109,7 +109,6 @@ export interface MonitorFrame {
   workboard?: {
     snapshot: WorkboardSnapshot;
     targets: ReadonlyMap<string, WorkTarget>;
-    selected?: WorkTarget;
     rows: MonitorRow[];
   };
   lines: string[];
@@ -128,10 +127,11 @@ export interface MonitorFrame {
 }
 export interface MonitorData {
   hud?: HudData;
-  tree: SubagentTree;
+  /** Only available while the native Inspector is open. */
+  tree?: SubagentTree;
   workboard?: WorkboardSnapshot;
-  /** Workers per role since the panel opened (Home's top line); absent where nothing counts them. */
-  workerCounts?: ReadonlyMap<string, number>;
+  paneLoad?: PaneLoad;
+  homeWaiting?: readonly ProjectItem[];
   project?: ProjectSnapshot;
   projectDisplayRoot?: string;
   projectWaiting?: number;
@@ -152,7 +152,6 @@ export interface MonitorData {
   mouse?: boolean;
 }
 export interface MonitorContext {
-  tree: SubagentTree;
   nowMs?: number;
   frame?: MonitorFrame;
   navigationOverlay?: boolean;
@@ -183,10 +182,10 @@ export interface MonitorOutcome {
 }
 export function initialMonitorState(settings?: HudSettings): MonitorState {
   return { activeTab: 'home', home: initialHomeTab(), project: initialProjectTab(), control: initialControlTab(),
-    exp: { scroll: 0 }, prefs: settings ? viewPrefs(settings) : { ...DEFAULT_PANEL_VIEW }, lastChangesScroll: 0 };
+    jobs: { scroll: 0 }, exp: { scroll: 0 }, prefs: settings ? viewPrefs(settings) : { ...DEFAULT_PANEL_VIEW } };
 }
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();
-  const board = input.workboard ?? buildWorkboard(input.tree);
+  const board = input.workboard ?? buildWorkboard({ rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(now) });
   return renderWorkboardFrame(input, reconcileMonitor(input.state), board, now);
 }

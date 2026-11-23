@@ -1,5 +1,4 @@
 import { sliceState } from '../fixtures/state-helpers.mjs';
-import { homeAnchor, homeTarget } from '../../dist/render/monitor-state.js';
 import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -102,12 +101,8 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   const homeTab = frame.controls.find((c) => c.kind === 'board-home');
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: homeTab.x, y: homeTab.y }).state);
   const shortFrame = draw(frame.state, 6);
-  const beforeTarget = homeTarget(shortFrame.state.home);
-  const beforeAnchor = homeAnchor(shortFrame.state.home);
   const beforeScroll = shortFrame.state.home.scroll ?? 0;
   const scrolled = send(shortFrame, { type: 'mouse', button: 'wheel-down', x: 4, y: 3 });
-  assert.deepEqual(homeTarget(scrolled.state.home), beforeTarget);
-  assert.equal(homeAnchor(scrolled.state.home), beforeAnchor);
   assert.ok((scrolled.state.home.scroll ?? 0) > beforeScroll);
 });
 

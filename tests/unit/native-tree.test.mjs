@@ -19,6 +19,7 @@ import { collectionObservation, jobPanelObservation } from '../../dist/utils/col
 import { recordAdaptivePoll, createAdaptivePollState } from '../../dist/collectors/adaptive-poll.js';
 import { callerSession, claudeCallerSession } from '../../dist/collectors/claude-caller-session.js';
 import { panelCommand, panelSelection } from '../../dist/cli/panel.js';
+const nativePage = () => ({ ...initialMonitorState(), subpage: { kind: 'native-inspector', scroll: 0 } });
 const tick = async () => {
   for (let i = 0; i < 15; i++) await new Promise(setImmediate);
 };
@@ -27,7 +28,7 @@ function fixture(t) {
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return nativeFixture(home);
 }
-test('Home: real Claude meta/transcript collection and Codex three-level tree, 80/120 columns EN/ZH', (t) => {
+test('Inspector: real Claude meta/transcript collection and Codex three-level tree, 80/120 columns EN/ZH', (t) => {
   const f = fixture(t),
     tree = f.combined(),
     board = f.board(tree);
@@ -41,17 +42,17 @@ test('Home: real Claude meta/transcript collection and Codex three-level tree, 8
   assert.deepEqual(nativeFrames(f), expected);
   for (const width of [80, 120])
     for (const lang of ['en', 'zh']) {
-      const frame = f.render(width, lang),
+      const frame = f.render(width, lang, nativePage()),
         text = frame.lines.map(stripAnsi).join('\n');
       for (const line of frame.lines) assert.equal(visualLength(line), width);
-      assert.match(text, /Claude ·/);
-      assert.match(text, /Codex ·/);
-      assert.match(text, /  ✓ custom-tester/);
-      assert.match(text, /Verify index ↳ Check migration/);
+      assert.match(text, /Repair parser/);
+      assert.match(text, /Review schema/);
+      assert.match(text, /^ +Check parser tests/m);
+      assert.match(text, /^ +Verify index/m);
       assert.doesNotMatch(text, /PRIVATE-CLAUDE|PRIVATE-CHANNEL|Agents/);
     }
 });
-for (const finished of [undefined, false]) test(`Claude real-shaped running metadata (finished=${finished}) reaches its Home lane, then completes`, (t) => {
+for (const finished of [undefined, false]) test(`Claude real-shaped running metadata (finished=${finished}) reaches the native Inspector, then completes`, (t) => {
   const f = fixture(t), file = join(f.dir, 'agent-lead.meta.json');
   const meta = { agentType: 'frontend-implementer', description: 'Repair parser', toolUseId: 'root-call',
     spawnDepth: 1, requestShape: 'background', ...(finished === undefined ? {} : { finished }) };
@@ -62,9 +63,8 @@ for (const finished of [undefined, false]) test(`Claude real-shaped running meta
     assert.equal(tree.incomplete, false);
     assert.equal(node.status, completed ? 'completed' : 'running');
     assert.equal(f.board(tree).workers.find((w) => w.id === node.id).state, completed ? 'done' : 'working');
-    const text = f.render(120, 'zh', initialMonitorState(), tree).lines.map(stripAnsi).join('\n');
-    assert.match(text, /Claude · 本次会话/);
-    assert.match(text, completed ? /✓ frontend-implementer/ : /◉ frontend-implementer/);
+    const text = f.render(120, 'zh', nativePage(), tree).lines.map(stripAnsi).join('\n');
+    assert.match(text, /Repair parser/);
   };
   check(false); check(false);
   assert.equal(f.collector.bytes, 0, 'unchanged running metadata remains stat-only');
@@ -73,87 +73,6 @@ for (const finished of [undefined, false]) test(`Claude real-shaped running meta
   assert.equal(f.collector.bytes, fs.statSync(file).size, 'completion reads only changed metadata');
   check(true);
   assert.equal(f.collector.bytes, 0);
-});
-
-test('native hide rules: done 5m, failed/stopped 30m; a reveals in place and native Inspector opens transcript', (t) => {
-  const f = fixture(t),
-    tree = f.combined();
-  const n = tree.nodes[1];
-  n.status = 'completed';
-  n.statusAt = new Date(NOW - 6 * 60_000);
-  n.children[0].children[0].status = 'error';
-  n.children[0].children[0].statusAt = new Date(NOW - 31 * 60_000);
-  let frame = f.render(120, 'en', initialMonitorState(), tree);
-  assert.doesNotMatch(frame.lines.map(stripAnsi).join('\n'), /Review schema|Verify index/);
-  assert.match(frame.lines.map(stripAnsi).join('\n'), /Check migration/);
-  const ctx = (frame) => ({ frame, tree, nowMs: NOW, standalone: true });
-  const all = handleMonitorInput(frame.state, { type: 'key', key: 'show-all' }, ctx(frame)).state;
-  frame = f.render(120, 'en', all, tree);
-  assert.match(frame.lines.map(stripAnsi).join('\n'), /Review schema|Verify index ↳ Check migration/);
-  f.claude();
-  const native = tree.nodes[0];
-  native.contextUsage = { percent: 42 };
-  native.outputRate = { tokensPerSecond: 37.5, sampledAt: new Date(NOW), sampleMs: 1000 };
-  native.tokensSpent = { input: 1200, cached: 200, output: 300 };
-  const worker = f.board(tree).workers.find((w) => w.task === 'Repair parser');
-  const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  frame = f.render(120, 'en', withState(all, { home: { cursor: { kind: 'work', target: target } } }), tree);
-  const nativeOpen = handleMonitorInput(frame.state, { type: 'key', key: 'open-session' }, ctx(frame));
-  assert.deepEqual(nativeOpen.action.files, [join(f.dir, 'agent-lead.jsonl')]);
-  const inspect = handleMonitorInput(frame.state, { type: 'key', key: 'inspect' }, ctx(frame));
-  assert.deepEqual(inspect.state.subpage?.target, target);
-  frame = f.render(120, 'en', inspect.state, tree);
-  assert.match(frame.lines.map(stripAnsi).join('\n'), /Files|custom-builder|claude-sonnet-4-5/);
-  assert.match(frame.lines.map(stripAnsi).join('\n'), /42% · ~38 tok\/s · 1\.5K tokens spent/);
-  assert.equal(f.collector.bytes, 0, 'painting/inspecting does not read a transcript');
-  assert.deepEqual(
-    handleMonitorInput(frame.state, { type: 'key', key: 'open-session' }, ctx(frame)).action.files,
-    nativeOpen.action.files
-  );
-  assert.equal(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, ctx(frame)).state.subpage, undefined);
-  // Exact expiry boundaries, including stopped, use the same projector as jobs.
-  for (const [state, minutes, visible] of [
-    ['done', 4, true],
-    ['done', 5, false],
-    ['failed', 29, true],
-    ['failed', 30, false],
-    ['stopped', 29, true],
-    ['stopped', 30, false],
-  ]) {
-    const w = {
-      ...worker,
-      state,
-      settledAt: NOW - minutes * 60000,
-      work: { ...worker.work, failed: state === 'failed', facadeClosed: true },
-    };
-    const board = {
-      ...f.board(tree),
-      lanes: [{ ...f.board(tree).lanes[0], workers: [w] }],
-      workers: [w],
-      decisions: [],
-    };
-    const draw = renderMonitor({
-      tree,
-      workboard: board,
-      state: initialMonitorState(),
-      width: 120,
-      height: 28,
-      nowMs: NOW,
-    });
-    assert.equal(draw.workboard.snapshot.workers.length > 0, visible, state + ' ' + minutes);
-  }
-});
-test('native cards without a transcript offer no open-files action on Home or in Inspector', (t) => {
-  const f = fixture(t), tree = f.claude();
-  tree.nodes[0].rolloutPath = undefined;
-  const worker = f.board(tree).workers.find((w) => w.task === 'Repair parser');
-  const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  let frame = f.render(120, 'en', withState(initialMonitorState(), { home: { cursor: { kind: 'work', target: target } } }), tree);
-  const press = (key) => handleMonitorInput(frame.state, { type: 'key', key }, { frame, tree, nowMs: NOW, standalone: true });
-  assert.equal(press('open-session').action, undefined);
-  frame = f.render(120, 'en', press('inspect').state, tree);
-  for (const key of ['enter', 'open-session']) assert.equal(press(key).action, undefined);
-  assert.equal(frame.workboard.rows.some((r) => r.files?.length), false);
 });
 
 test('matched nested Claude parents are complete; unmatched parents remain incomplete on warm refreshes', (t) => {
@@ -239,26 +158,6 @@ for (const mode of ['off', 'no-key', 'on'])
         return;
       }
       assert.equal(board.workers[0].task, language === 'en' ? 'Parser repair' : '解析器修复');
-      const display = setDisplayConfig({ theme: 'titanium', icons: 'unicode' });
-      t.after(() => setDisplayConfig(display));
-      const frame = renderMonitor({
-        tree,
-        workboard: board,
-        state: initialMonitorState(),
-        width: 120,
-        height: 28,
-        nowMs: now,
-      });
-      const checkPaint = (board) => {
-        const w = board.workers[0];
-        const expanded = withState(initialMonitorState(), { home: { expanded: new Set([JSON.stringify(['worker', w.laneId, w.id])]) } });
-        const ansi = renderMonitor({ tree, workboard: board, state: expanded, width: 120, height: 28, nowMs: now }).lines.join('\n');
-        for (const span of [theme.board.identifier(language === 'en' ? 'parser' : '解析器'), theme.board.identifier('report.md'),
-          theme.board.success(language === 'en' ? 'accept' : '批准'), theme.board.danger(language === 'en' ? 'reject' : '拒绝'),
-          theme.board.opinion(language === 'en' ? 'simpler design' : '认为更简单')]) assert.ok(ansi.includes(span));
-        assert.doesNotMatch(ansi, /[«»「」]/);
-      };
-      checkPaint(board);
       assert.match(calls[0].messages[0].content, /up to 4 keywords/);
       assert.match(calls[0].messages[0].content, /Use «…» keyword delimiters in every language, including Simplified Chinese/);
       now += 119999;
@@ -270,7 +169,6 @@ for (const mode of ['off', 'no-key', 'on'])
       board = await update();
       assert.equal(calls.length, 2);
       assert.match(calls[1].messages[1].content, /"state":"done"/);
-      checkPaint(board);
       now += 300000;
       await update();
       assert.equal(calls.length, 2, 'successful final freezes only that settlement');
@@ -288,7 +186,6 @@ for (const mode of ['off', 'no-key', 'on'])
       tree.nodes[0].status = 'error';
       tree.nodes[0].statusAt = new Date(now);
       board = await update();
-      checkPaint(board);
       assert.equal(calls.length, 3);
       assert.match(calls[2].messages[1].content, /"state":"failed"/);
       service.configure(false, language);
@@ -347,7 +244,6 @@ test('Claude resumes after background wait: running card, fresh last-reply final
   assert.equal(current.tree.nodes[0].status, 'running');
   assert.equal(current.tree.nodes[0].statusAt, undefined);
   assert.equal(current.board.workers[0].state, 'working');
-  assert.match(f.render(120, 'en', initialMonitorState(), current.tree).lines.map(stripAnsi).join('\n'), /◉ tester/);
   assert.equal(calls.length, 1, 'resumption cannot bypass the two-minute floor');
   f.append([{ type: 'tool_result', tool_use_id: 'background-read', content: 'Finished' }], now + 1000, undefined, 'user');
   now += 20_000;
@@ -415,7 +311,7 @@ test('Claude resumed settlement needs the last public end_turn and no open tools
   f.append([{ type: 'text', text: 'Settled without another metadata write.' }], NOW + 9000, 'end_turn');
   assert.equal(f.claude().nodes[0].status, 'completed');
 });
-test('finished Claude metadata survives multi-pass replay, hides by settlement age and makes no premature model call', async (t) => {
+test('finished Claude metadata survives multi-pass replay and makes no premature model call', async (t) => {
   const f = resumedFixture(t), settledAt = NOW - 9 * 60 * 60_000;
   f.metadata(true, settledAt);
   f.put(f.file, [0, 1, 2].map((i) => f.record(
@@ -443,9 +339,6 @@ test('finished Claude metadata survives multi-pass replay, hides by settlement a
     assert.equal(node.statusAt.getTime(), settledAt);
     assert.equal(board.workers[0].state, 'done');
     assert.equal(board.workers[0].settledAt, settledAt);
-    const frame = f.render(120, 'en', initialMonitorState(), tree);
-    assert.equal(frame.workboard.snapshot.workers.length, 0, 'normal ten-minute expiry applies during replay');
-    assert.doesNotMatch(frame.lines.map(stripAnsi).join('\n'), /Wait for background work|stalled/);
     service.update(board, f.home, tree);
     await tick();
     passes++;
@@ -561,24 +454,36 @@ if (args[1] === 'current') {
   const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
   return { ...f, session, source, projects, env, pane, setReply, calls };
 }
-async function foregroundCaller(t, f, args = ['--here'], ready = 'Nothing needs you') {
+async function foregroundCaller(t, f, args = ['--here'], ready = 'Native tree unavailable') {
   const runner = join(f.home, 'runner.mjs');
+  const scanFile = join(f.home, 'native-scans'), probe = join(f.home, 'native-probe.mjs');
+  fs.rmSync(scanFile, { force: true });
+  fs.writeFileSync(probe, `import {appendFileSync} from 'node:fs';
+import {ClaudeNativeTree} from ${JSON.stringify(pathToFileURL(resolve('dist/collectors/claude-native-tree.js')).href)};
+const refresh=ClaudeNativeTree.prototype.refresh;
+ClaudeNativeTree.prototype.refresh=function(...args){appendFileSync(${JSON.stringify(scanFile)},'scan\\n');return refresh.apply(this,args);};`);
   fs.writeFileSync(runner, `import {panelCommand} from ${JSON.stringify(pathToFileURL(resolve('dist/cli/panel.js')).href)};process.exitCode=await panelCommand({env:process.env,stdout:s=>process.stdout.write(s),stderr:s=>process.stderr.write(s)},${JSON.stringify(args)});`);
-  const child = spawn(process.execPath, [runner], { cwd: f.home, env: f.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  // --here uses a separate panel executable. Preload the probe there as well as in the CLI process.
+  const env = { ...f.env, NODE_OPTIONS: `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(probe).href}`.trim() };
+  const child = spawn(process.execPath, [runner], { cwd: f.home, env, stdio: ['pipe', 'pipe', 'pipe'] });
   let output = '', errors = '';
   child.stdout.on('data', b => output += b);
   child.stderr.on('data', b => errors += b);
   const exited = new Promise(r => child.once('exit', r));
   t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
-  const until = Date.now() + 10000;
-  while (!stripAnsi(output).includes(ready) && Date.now() < until && child.exitCode === null)
-    await new Promise(r => setTimeout(r, 20));
-  assert.match(stripAnsi(output), /Home/, errors);
+  await t.waitFor(() => assert.match(stripAnsi(output), /Nothing needs you/), { timeout: 10_000 });
+  assert.equal(fs.existsSync(scanFile), false, 'Home must not scan Claude native transcripts');
+  child.stdin.write('v');
+  await t.waitFor(() => assert.match(stripAnsi(output), /n subagents/), { timeout: 10_000 });
+  assert.equal(fs.existsSync(scanFile), false, 'Jobs must not scan Claude native transcripts');
+  child.stdin.write('n');
+  await t.waitFor(() => assert.match(stripAnsi(output), new RegExp(ready), errors), { timeout: 10_000 });
+  if (ready === 'Repair parser') assert.ok(fs.existsSync(scanFile));
   child.stdin.end();
   assert.equal(await exited, 0, errors);
   return stripAnsi(output);
 }
-test('current w4E:p1 binds before splitting; real foreground panel shows the Claude lane; statusline writes no binding', async t => {
+test('current w4E:p1 binds before splitting; real foreground panel scans the Claude tree on demand; statusline writes no binding', async t => {
   const f = callerFixture(t);
   const input = { session_id: f.session, transcript_path: join(f.source, f.session + '.jsonl'), cwd: f.home };
   for (const pane of ['w4E:p1', 'old-valid-pane']) {
@@ -591,7 +496,7 @@ test('current w4E:p1 binds before splitting; real foreground panel shows the Cla
   const bound = await claudeCallerSession(f.env);
   assert.deepEqual(bound, { session: f.session, source: f.source });
   assert.equal(panelSelection(['--harness', 'claude', '--session', bound.session, '--source', bound.source]).source, f.source);
-  assert.match(await foregroundCaller(t, f, ['--here'], 'Claude'), /Claude/);
+  assert.match(await foregroundCaller(t, f, ['--here'], 'Repair parser'), /Repair parser/);
   await panelCommand({ env: f.env, stdout: () => {}, stderr: () => {} });
   const calls = f.calls(), split = calls.findIndex(c => c[1] === 'split');
   assert.deepEqual(calls[split - 1], ['pane', 'current']);
@@ -689,7 +594,7 @@ test('Codex caller binds via herdr pane current or CODEX_THREAD_ID, passes --har
     const clock = encodeURIComponent(`import { mock } from 'node:test';
 mock.timers.enable({ apis: ['Date'], now: ${now} });`);
     const env = { ...f.env, NODE_OPTIONS: `--import=data:text/javascript,${clock}` };
-    assert.match(await foregroundCaller(t, { ...f, env }, ['--here'], 'Codex'), /Codex/,
+    assert.match(await foregroundCaller(t, { ...f, env }, ['--here'], 'codex-sub'), /codex-sub/,
       `Codex lane at ${pad(hour)}:30 local time`);
   }
 

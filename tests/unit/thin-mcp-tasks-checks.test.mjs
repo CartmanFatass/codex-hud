@@ -503,7 +503,7 @@ test('HUD checks: CLI declaration starts ordered checks and announces results af
     assert.equal(read.checks.results[0].output_tail, undefined);
     assert.match(read.checks.results[1].output_tail, /failure tail$/);
     assert.match(cardText(workerFor(f, job.job)), /\[✗1\/2\]/);
-    assert.match(workInspectorRows(workerFor(f, job.job), initialMonitorState(), 56, Date.now()).map((r) => stripAnsi(r.text)).join('\n'), /\[✗1\/2\]/);
+    assert.match(workInspectorRows(workerFor(f, job.job), 56, Date.now()).map((r) => stripAnsi(r.text)).join('\n'), /\[✗1\/2\]/);
     await until(() => lines.some((line) => line.endsWith(' | checks 1/2')), t.signal);
     assert.equal(lines.filter((line) => line.includes(' | checks ')).length, 1);
     assert.equal(reapAttempts(f, job), 1);

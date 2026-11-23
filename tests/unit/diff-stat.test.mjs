@@ -125,7 +125,7 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
   const r = project.ledger.at(-2), item = 'diff:' + file;
   const task = `task:milestone:${r.milestone}`;
   const render = (state) => renderMonitor({ tree: TREE, project, state, width: 40, height: 48, nowMs: NOW });
-  for (const panelLayout of ['classic', 'split']) {
+  for (const panelLayout of ['classic']) {
     for (const page of ['tree', 'progress']) {
       const state = onPage(page, withState({ prefs: { panelLayout } }, (panelLayout === 'split'
           ? { project: { nav: { cursor: page === 'tree' ? 'project:row:0' : `project:fold:${task}` } } }

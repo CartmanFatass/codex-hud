@@ -229,8 +229,7 @@ test('Claude and pi skip the Codex finder and back off when their observed board
     await p.until(() => p.collections().length >= 5);
     assert.equal(p.events.some((e) => e.type === 'session.find'), false, variant);
     const [previous, latest] = p.collections().slice(-2);
-    if (variant === 'incomplete-claude') assertBaseCadence(previous, latest, variant);
-    else assert.ok(latest.startedAt - previous.at >= LIVE_BASE_MS * 3.9, `${variant} did not back off`);
+    assert.ok(latest.startedAt - previous.at >= LIVE_BASE_MS * 3.9, `${variant} did not back off`);
   }));
 });
 
@@ -260,7 +259,7 @@ test('live working and capped scopes retain the original nonquiet base-tick timi
 });
 
 test(
-  'live panel: input wakes immediately, force during await is retained, and questions appear without retired observers',
+  'live panel: input wakes immediately, force during await is retained, and job updates arrive without retired observers',
   { timeout: 35000 },
   async (t) => {
     await Promise.all([
@@ -275,11 +274,11 @@ test(
         p.child.send('gate');
         await p.until(() => p.events.some((e) => e.type === 'armed'), 1000);
         const start = Date.now(), beforeInput = p.collections().length;
-        p.child.stdin.write('a');
+        p.child.stdin.write('j');
         await p.until(() => p.events.some((e) => e.type === 'waiting'), 1000);
         const latency = p.events.find((e) => e.type === 'waiting').at - start;
         assert.ok(latency >= 0 && latency < LIVE_BASE_MS, 'input started collection without waiting for the backed-off timer');
-        p.child.stdin.write('a');
+        p.child.stdin.write('j');
         // The second key must reach the panel while the first collection is still awaiting release.
         await p.until(() => p.events.filter((e) => e.type === 'input').length === 2, 1000);
         p.child.send('release');
@@ -299,12 +298,10 @@ test(
           beforeQuestion = p.collections().length;
         f.put(join(f.dir, 'STATUS.json'), { state: 'working' });
         f.put(join(f.dir, 'qa/q1.md'), '# Question\n\nBACKOFF_QUESTION?\n\nDefault if unanswered: yes\n');
-        await p.until(() => p.output().includes('BACKOFF_QUESTION'), LIVE_MAX_MS * 1.1);
+        await p.until(() => p.collections().length > beforeQuestion, LIVE_MAX_MS * 1.1);
+        assert.doesNotMatch(p.output(), /BACKOFF_QUESTION/, 'routine question never becomes Home attention');
         const elapsed = Date.now() - start;
-        assert.ok(
-          elapsed >= LIVE_MAX_MS * 0.9 && elapsed <= LIVE_MAX_MS * 1.1,
-          `visible after one scaled maximum interval plus collection/scheduler overhead: ${elapsed}ms`
-        );
+        assert.ok(elapsed >= LIVE_MAX_MS * 0.9 && elapsed <= LIVE_MAX_MS * 1.1, `recollected in one backed-off interval: ${elapsed}ms`);
         await p.until(() => p.collections().length >= beforeQuestion + 2, LIVE_BASE_MS * 2.6);
         const polls = p.collections();
         assertBaseCadence(polls[beforeQuestion], polls[beforeQuestion + 1], 'question/working job restores original base-grid cadence');

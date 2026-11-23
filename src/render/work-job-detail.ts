@@ -1,21 +1,20 @@
-/** Job details shared by Inspector, the panel's job views and their legacy cards. */
+/** Job evidence rendered in Inspector and Project diagnostics. */
 import type { WorkJob } from '../collectors/work-job.js';
 import type { WorkFlow, WorkFlowStep } from '../collectors/workboard-types.js';
-import type { MonitorState } from './monitor.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { fit, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { displayConfig } from './hud-config.js';
-import { ageText, mark, originalRows } from './workboard-rows.js';
+import { mark } from './workboard-rows.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { failed, workStateInk } from './work-job-row.js';
 
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 /** Paths, filenames, code and flags share the deterministic identifier ink. */
 const identifierPattern = /`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;，。；]+|\b[\w.-]+\/[\w/.-]+|\b[\w.-]+\.[a-zA-Z][\w-]*\b|--[\w-]+/g;
-export function identifiers(text: string): string {
-  return monitorText(text)
-    .replace(identifierPattern, (s) => theme.board.identifier(s))
+export const identifiers = (text: string): string => paintIdentifiers(monitorText(text));
+function paintIdentifiers(safe: string): string {
+  return safe.replace(identifierPattern, (s) => theme.board.identifier(s))
     .replace(
       new RegExp(`(${t('default')}: )([a-zA-Z])([).,:])`),
       (_match, before, letter, after) => before + theme.board.askTitle(letter) + after
@@ -26,7 +25,7 @@ export function stemLines(text: string, width: number, ink = theme.board.muted, 
   const room = Math.max(1, width - 3);
   let lines = flowLines(monitorText(text), room);
   if (lines.length > max) lines = [...lines.slice(0, max - 1), truncateAnsi(lines.slice(max - 1).join(' '), room)];
-  return lines.map((line) => fit(`${ink(mark('┃', '|'))} ${identifiers(line)}`, width));
+  return lines.map((line) => fit(`${ink(mark('┃', '|'))} ${paintIdentifiers(line)}`, width));
 }
 /** Model marks are presentation only; malformed marks leave a plain single line. */
 export function jobSentenceLine(raw: string, width: number, ink = theme.board.muted): string {
@@ -87,13 +86,6 @@ export function requestLines(card: WorkJob, full = false, numbered = false, orig
       ].filter(Boolean)
     : [];
 }
-export function questionOriginalRows(card: WorkJob, state: MonitorState, width: number) {
-  const r = card.worker.work?.requestInfo;
-  if (!r?.display) return [];
-  const item = `original:${card.worker.id}:${r.id}`;
-  return originalRows(requestLines(card, true, true, true).join('\n'), item, state.home.expanded.has(item), width);
-}
-export const workRequestDetail = (card: WorkJob, full = false): string => requestLines(card, full).join('\n');
 const QUIET_REASONS: Record<string, string> = {
   'no-key': 'no key',
   cap: 'cap',
@@ -101,20 +93,6 @@ const QUIET_REASONS: Record<string, string> = {
   'max-questions': 'max questions',
   'prompt-failed': 'prompt failed',
 };
-export function milestoneLine(worker: WorkJob['worker'], width: number): string | undefined {
-  const entry = worker.latest_progress;
-  if (entry) return fit(theme.board.muted(`${mark('┃', '|')} ${t('Milestone')}: ${monitorText(entry.text)}`), width);
-}
-/** Ten one-minute buckets of observed writes as one segment: a quiet minute is blank, eight writes in a minute fill the cell. */
-export function sparkline(counts: readonly number[]): string {
-  const glyphs = mark('▁▂▃▄▅▆▇█', '..--==##');
-  return counts.map((c) => (c > 0 ? glyphs[Math.min(8, c) - 1] : ' ')).join('');
-}
-/** The running worker's activity row (the Inspector and an expanded card); absent while nothing has been observed. */
-export function pulseLine(worker: WorkJob['worker'], width: number): string | undefined {
-  if (worker.activity?.some((c) => c > 0))
-    return fit(theme.board.muted(`${mark('┃', '|')} ${t('Activity')} `) + theme.board.active(sparkline(worker.activity)) + theme.board.muted(` ${ageText(worker.activity.length)}`), width);
-}
 export function quietDecisionSummary(q: WorkJob['worker']['quietDecision']): string {
   if (!q) return '';
   const action = t(q.action);
@@ -221,20 +199,12 @@ export function flowLine(flow: WorkFlow, width: number, ink: (s: string) => stri
   if (room < 4) return fit(truncateAnsi(head, width), width);
   return fit(`${head}${theme.board.muted(' · ')}${tailInk(truncateAnsi(tail, room))}`, width);
 }
-export function phaseChain(card: WorkJob): string {
-  return card.phases
-    .map((p, i) => {
-      const text = workPhaseText(p);
-      return (i === card.phases.length - 1 && !/✓|accept|done/.test(p) ? mark('▸', '>') : '') + text;
-    })
-    .join(mark(' › ', ' > '));
-}
 export function labelSummary(labels: WorkJob['worker']['labels']): string {
   return [labels?.outcome ? `[${t(labels.outcome.value)}]` : '',
     ...(labels?.severity ?? []).map((n, i) => n ? `${n} ${t(['must fix', 'should fix', 'optional'][i])}` : '')].filter(Boolean).join(' · ');
 }
 /** Body only; callers choose the row budget and supply their own heading. */
-export function jobDetailRows(card: WorkJob, width: number, bodyMax = Infinity, sentence = ''): string[] {
+export function jobDetailRows(card: WorkJob, width: number, includeDescription = true): string[] {
   const ink = workStateInk(card), rows: string[] = [];
   const route = card.worker.route;
   if (route) {
@@ -246,29 +216,14 @@ export function jobDetailRows(card: WorkJob, width: number, bodyMax = Infinity, 
       ? t('Skipped unavailable presets: {presets}', { presets: part.slice('Skipped unavailable presets: '.length) }) : t(part)).join('; ') : why;
     rows.push(fit(`${ink(mark('┃', '|'))} ${label} — ${monitorText(detail).replace(/\s+/g, ' ').trim()}`, width));
   }
-  // Open questions have their complete expandable slab above the lanes on Home.
-  const step = card.worker.transcriptStep;
-  const excerpt = step ? cardSentence(step.text) : '';
-  const generated = step?.replaying && excerpt ? undefined : card.worker.modelSentence;
   if (card.worker.flow) rows.push(flowLine(card.worker.flow, width, ink));
-  // Collapsed prominent cards show only actual content (flow, error, unread summary), never empty placeholder pipes.
-  if (generated) {
-    const lines = jobSentenceRows(generated, width, ink, true);
-    rows.push(
-      ...(lines.length <= bodyMax
-        ? lines
-        : [
-            ...lines.slice(0, bodyMax - 1),
-            fit(truncateAnsi(lines[bodyMax - 1].trimEnd(), width - 1) + '…', width),
-          ])
-    );
-  }
-  // A localized worker summary replaces its original, rather than adding a second result line.
-  if (!generated && excerpt) {
-    rows.push(fit(`${ink(mark('┃', '|'))} ${excerpt}`, width));
-  } else if (!generated || (bodyMax === Infinity && !card.worker.reportMeta?.summary)) {
-    const detail = workJobDetail(card, sentence);
-    if (detail) rows.push(...stemLines(detail, width, ink, bodyMax));
+  if (includeDescription) {
+    const step = card.worker.transcriptStep;
+    const excerpt = step ? cardSentence(step.text) : '';
+    const generated = step?.replaying && excerpt ? undefined : card.worker.modelSentence;
+    if (generated) rows.push(...jobSentenceRows(generated, width, ink, true));
+    const detail = (!generated && excerpt) || workJobDetail(card);
+    if (detail) rows.push(...stemLines(detail, width, ink));
   }
   return rows.map(failed(card) ? theme.board.failedBody : theme.board.body);
 }

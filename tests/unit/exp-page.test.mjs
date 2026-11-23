@@ -114,7 +114,7 @@ test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP 
   assert.equal(frame.state.activeTab, 'home');
   assert.equal(frame.expData, undefined);
   assert.deepEqual(
-    frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind),
+    frame.controls.filter((c) => ['board-home', 'board-project', 'board-control', 'board-exp'].includes(c.kind)).map((c) => c.kind),
     ['board-home', 'board-project', 'board-control']
   );
   assert.equal(send(frame, key('left')).state.activeTab, 'control');
