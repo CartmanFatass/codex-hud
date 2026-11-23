@@ -14,6 +14,15 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   job directory whose native session file exists nowhere else (headless pi) at least 7 days so toktrack can scan
   it. Not through the MCP. Model tests are tagged at `hud_create` (`experiment`, arm). Details:
   toktrack `.scratch/hud-insight/`, MyHUD `.scratch/toktrack-facts/`.
+- **D-2026-11-23-03** (whole spec): Product pivot. HUD becomes the operational workbench: execution, load,
+  Objectives and owner requests; toktrack does history and insights; Personal Standards holds knowledge and
+  preferences. `docs/spec.md` is replaced by the merged draft (`tmp/tasks/spec-pivot/spec-merged.md`, from astra's
+  draft plus the owner's four decisions): all display-side model text goes (the Decision API stays execution-only,
+  reversing the 11-11 wish to keep card text); a minimal Objective record (ID, title, `active|paused|done`); owner
+  requests without kinds, ordered waited-on first, then project priority, then age; no Insights page in HUD, main tabs
+  Home, Project and Control with EXP folded into Control. The owner approved all 23 visible removals in the spec's
+  checklist. The owner now approves milestone scope, value trade-offs, visible deletions and irreversible acts; the
+  orchestrator owns slicing, order and ordinary acceptance (`docs/delegation.md` steps 2 and 6).
 - **D-2026-11-23-02** (§2.1.2): The oracle may experiment but never changes the repository. It may build, test,
   benchmark and probe in a temp or job directory and on copies of the owner's data, and write a repository file
   only when the brief or an orchestrator answer names it. Still forbidden: changes to tracked files, the owner's

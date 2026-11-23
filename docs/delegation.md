@@ -13,7 +13,9 @@ agent proposes.
 1. **Grill.** Before a milestone, the orchestrator interviews the owner until the milestone's scope, non-goals and
    "done" are clear, and updates `docs/spec.md`. No code before this.
 2. **Slice.** The orchestrator splits the milestone into small vertical slices: each runs end to end, can be shown
-   working on its own, and fits one implementer session. The owner approves the list (size, order, dependencies).
+   working on its own, and fits one implementer session. The orchestrator owns the slice list, order and
+   dependencies; the owner approves only milestone scope, value trade-offs, visible deletions and irreversible acts
+   (owner, 2026-11-23; D-2026-11-23-03).
    Tickets only when the work needs several implementer sessions: too big for one, parallel on different files, or
    spread over days. Call `hud_tickets` without arguments for the slicing method adapted from Matt Pocock's, then
    use `op: add` to publish approved drafts into `.scratch/<slug>/issues/` (see `docs/agents/issue-tracker.md`).
@@ -48,9 +50,10 @@ agent proposes.
 
    One fresh implementer fixes the findings in one pass. Findings block only if a real user would hit them or the
    spec is violated.
-6. **Accept.** The orchestrator accepts work after verification. Ask the owner to try only behaviour they need to
-   judge themselves (for example, an interactive change). Record specific issues for the owner in STATE's
-   `## Waiting for the owner`. The Project Inbox has one Accept all action for pending work, not per-slice owner tries.
+6. **Accept.** The orchestrator accepts work after verification; there is no routine ticket-level owner acceptance.
+   Ask the owner only for what they must judge themselves (milestone scope, a value trade-off, a visible deletion, an
+   irreversible act, or behaviour only they can try) and record it as an owner request in STATE's
+   `## Waiting for the owner`.
 
 Extra review outside milestones only for: editing the owner's real config files, deleting data, killing processes,
 and the installer.

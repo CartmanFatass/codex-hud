@@ -1,478 +1,253 @@
 # HUD product spec
 
-Only the owner decides what this page says. An agent may edit it only after telling the owner the change
-and why. This page is the boundary for every brief, answer and review. It overrides the concept document
-and older decisions. (17.01, 10.02)
+Only the owner decides what this page says. An agent may edit it only after telling the owner the change and why.
+It is the boundary for briefs and reviews and overrides older designs and decisions. (17.01, 10.02)
 
-Decision refs use `DD.NN` for `D-2026-11-DD-NN` in `docs/decisions-log.md`.
+`DD.NN` refers to `D-2026-11-DD-NN` in [the decisions log](decisions-log.md); `(new)` marks a pivot clause.
+Moving protocol detail to [reference.md](reference.md) does not retire the capability.
 
 ## 1. What it is
 
-One HUD for Claude Code, Codex, pi and Antigravity (`agy`), used by one person (the owner) on one Linux/WSL
-machine, inside herdr. (10.02, 22.12)
+One HUD for Claude Code, Codex, pi and Antigravity, for one owner on one Linux/WSL machine inside herdr. (10.02, 22.12)
+
+MyHUD is an operational workbench: it answers *what should happen now*. With the panel closed, the owner sees
+current load. With it open, they can tell what each project is trying to achieve, what has changed and what needs
+their judgement. The orchestrator runs the workers; the owner manages objectives and value, not workers. Neither
+reading a worker conversation nor installing an analytics tool is a prerequisite. (new)
+
+Two sibling projects stay separate. **toktrack** is the analytical workbench (history, model and workflow
+efficiency, before/after comparisons); HUD records the facts it reads (§2.3) and builds no insight pages.
+**Personal Standards** (external repos and skills) holds knowledge and preferences; HUD owns none of it. (new)
+
+Display rule, replacing “cards win” (22.14): the owner's objectives, results and open requests come before
+execution detail; when space runs out, execution detail is not shown. (new)
 
 ## 2. What it must do
 
-### 2.1 Delegation through one MCP
+### 2.1 Execute work independently of the display
 
-#### 2.1.1 Tool surface and thin layer
+- One local MCP across supported main sessions: roster, create, read, peek, send, respond, close, wait or receive
+  tasks, lease, manage tickets, land, and serve the supported statusline. Thin adapters use herdr, installed role
+  runners, CLIs and the shared `bro` browser. Interactive workers have tabs; headless workers do not. (10.01, 14.01, 17.02, 21.07, 22.04)
+- Ask for a role, not a vendor. The owner controls ordered places, model, effort, presets and enabled harnesses.
+  Check trust and capabilities before launch; skip unavailable places, respect quota resets and report the actual
+  choice or failure. Only `general` takes one-job `on`/`preset`/`model`/`thinking` or borrows role instructions.
+  Keep browser roles `pro` and `flow` optional, off by default. (13.01, 14.01, 18.01, 20.01, 21.04, 22.22, 22.29)
+- Keep `imp` fixed/even/auto placement, machine-wide role caps, optional overflow to `general` on the imp chain,
+  oldest-first queue and cancellation. Keep retry/repair placement rules. Auto routing and Sonic thinking have
+  separate Decision API controls and fallbacks. New harness work prioritizes Claude Code, pi and Antigravity;
+  keep supported Codex and Grok Build paths. (21.05, 22.22, 22.30)
+- Pass standing briefs, context files, prior reports or a scout dossier without relaying file bodies through main.
+  Workers may start and collect one-shot headless Sonic queries, not other roles; Sonic cannot ask, continue or
+  start children. `oracle` advises without changing tracked files or owner state. Keep named exclusive leases for shared resources. (17.06, 18.03, 21.07, 21.10, 22.19, 23.02)
+- Worker questions, reports and progress work without a panel. Questions reach main immediately; an answer is written
+  once and resumes a waiting headless turn. Keep negotiated MCP tasks, mod-owned wake, native client delivery and
+  watch/`changes` fallbacks without duplicate wakes. Owner actions reach the responsible session too. A completion
+  notice is not a read. `hud_read` returns a digest or the full report; signature-bound summary, files and checks
+  need no display model. Keep idempotent create/send and batch tools. (14.03, 18.06, 21.06, 21.08, 22.01, 22.09, 22.15, 22.25)
+- Successful completion requires a matching current-turn report receipt and a finished turn, or native pi settlement
+  with a fresh report. Open questions or uncollected children block closure. Silence or a display label cannot fail
+  a live worker; the bounded quiet-job rule needs quoted quota evidence to declare failure. Hand uncertainty to main.
+  Close even if the report is unread; reap only proven descendants and the worker. An intentional stop stays a stop.
+  Within the resume window reuse the verified native session; otherwise use the repair path. (14.02, 17.08, 18.05, 19.01, 21.06, 22.22)
+- Keep clean managed worktrees and report-bound checks. A project's fast code-worker checks can refuse a report
+  once for a fix or an explicit skip reason. `hud_land` integrates settled work through the project's
+  gate, landing record, fast-forward, configured after-steps and optional push. A train shares a gate, not receipts;
+  conflicts land separately, a red train falls back to individual lands. Preserve dirty or unintegrated work.
+  Checks are evidence, not owner acceptance. (18.03, 21.08, 22.19, 22.26)
+- Keep `hud_tickets`, dependencies, acceptance criteria and ready work. Main may authorize a fixed scouted dispatch,
+  ticket batch or land flow; hand back at the first judgement point or after two failed repairs. No other automatic
+  role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
-- Start and use roles through one MCP from any supported main session. Add tools when clearer; no cap.
-  (17.02)
-- Main-session tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`, `hud_close`,
-  `hud_wait` (hidden from MCP-task clients), `hud_peek`, `hud_tickets`, `hud_lease`, `hud_statusline`.
-  (17.02, 21.07, 22.04)
-- `hud_land({ job })` lands a settled managed worktree through the project's configured gate, fast-forward, after commands, optional push and cleanup as one flow. (22.19)
-  Lands queued behind a running one ride one integration checkout and one gate run (a land train); a job that
-  conflicts drops out and lands alone, a red train falls back to one-by-one lands without repairs, and each job
-  keeps its own receipt. (22.26)
-- `hud_read` returns a digest by default (state, result line, changed files, verdict and blockers when the report gives them); `mode: "full"` returns the whole report; `jobs` reads several at once. (22.15)
-- Thin tools over local herdr and unbundled pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
-  `pi-role-reap`). The MCP opens a herdr tab for interactive workers and none for headless ones. Jobs are plain JSON under `$HUD_HOME/jobs`. (10.01)
+Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)
+for tool contracts, role defaults, launches, wake, checks, trains, repairs and cleanup; ARCHITECTURE §4.5 for job collection.
 
-Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens no tab or pane, takes a brief and publishes a report. It keeps a normal job record, progress and `hud_lease`; child queries appear under their parent. Sonic cannot ask questions or continue, has no idle grace, and a failure is final: the caller can dispatch a new query.
+### 2.2 What the owner sees
 
-#### 2.1.2 Roles, routing and presets
+**Statusline.** Keep the compact client line, `line` and `p10k`, pi's editor ribbon and other extensions' statuses,
+the `codexH` bar and supported native statuslines. (11.04, 12.01, 17.09, 22.12, 22.27)
 
-- Role files set instructions and continuability; HUD ships defaults. MCP names logical roles (`imp`,
-  `reviewer`, `sonic`, `oracle`, etc.), not roles per harness or site. (14.01)
-- Use the first available place (harness, model, thinking) in the role's ordered chain. Skip exhausted
-  places until parsed quota reset (one hour if unspecified). Skip pre-input launch failures for this
-  dispatch. Name places tried in the result. (14.01, 18.01, 21.01)
-- CLI roles use herdr with pi-roles or an interactive CLI (§2.1.3). Browser tasks (ChatGPT, Gemini, AI Studio,
-  Flow) use the shared browser via `bro`. Jev and Decision API name the structured choice/predicate model
-  with probabilities, not the browser. (11.01, 14.01)
-- `oracle`: strongest-model local advisor on a model harness for any judgement in the brief; it never changes tracked files or the owner's state, but may build and measure in scratch dirs and write a deliverable the brief names. (23.02)
-  `architect` and `oracle` share `oracle`, with former setups as presets. On create, `architect` aliases
-  `oracle` unless a role file defines `architect`. (14.01, 17.03)
-- HUD ships `pro` (ChatGPT 6 Pro, then Gemini, then AI Studio) and `flow` (Google Flow images and video) as optional roles, off by default until enabled in Control or by the owner's configuration.
-- `general`: global ad-hoc work set by the brief, with any model (e.g. a pi provider's) via `hud_create`
-  `model`/`thinking`, and any role's instructions via `instructions`, for one job (§2.1.4). (16.01, 22.29)
-- Named presets in role files are full chains. Owner switches places and presets in Control (§2.2.5).
-  Only `general` takes a one-job `on`, `preset`, `model` or `thinking` (§2.1.4). (14.01, 17.04, 18.01, 22.22)
-- Ship presets for the owner's current combinations, including Antigravity Hydrogen (`high`) for `imp`.
-  No shipped Grok presets for `imp`; `grok` and `xai` are currently switched off. (21.02)
+- Distinguish **this session** (model, effort, context, project/branch, available quota and reset, output tokens/s or
+  client-specific usage) from **this machine** (local CPU utilization, RAM used/total, running and queued HUD jobs).
+  Label WSL guest readings as WSL. No Windows host probe or swap gauge is required. (new)
+- Within this owner's `$HUD_HOME`, count each started, unsettled job once, including those waiting for main.
+  Queued means not yet started; native transcript threads are not extra jobs. The owner count means *open owner requests*, not workers asking
+  main. Real client permission prompts remain visible as such. Drop optional fields, including rate, to fit. (new)
+- Sample outside paint. No sleep, project scan, model call or resident service to draw a line. Omit or qualify
+  stale/partial readings; an absent watcher is not proof of zero. (new)
 
-#### 2.1.3 Interactive CLI harnesses and trust
+**Home.** `/hud` opens the same standalone herdr sidebar across clients; delegation stays installed when closed.
+Keep keyboard and mouse navigation, Settings and Help. (11.04, 17.09, 19.03, 20.10)
 
-- Focus (22.22): Claude Code, pi and Antigravity get new features (headless workers, routing); Codex and Grok
-  Build keep what works today and gain new features only when the owner asks.
-- Support Grok Build, Antigravity, Claude Code and Codex. Check local CLI trust files before opening a tab;
-  refuse untrusted directories. Launch in the job's herdr tab with only model, effort and permission-bypass
-  flags, without editing CLI config or session stores at launch. Use herdr status for report, idle grace,
-  continuation, questions, stop and reap as with pi. Launch per job without blocking other jobs or answers.
-  (13.01, 18.02)
-- Antigravity workers get the worker MCP like Claude and Codex, with the shell done-command fallback. (22.12)
-- `hud trust <dir>` backs up files under `$HUD_HOME`, then directly adds the owner's chosen project directory
-  `<dir>` to Grok Build, Antigravity and Claude Code trust lists. Installer config is separate (§2.4). (13.01, 22.12)
+- Show explicit owner requests first, then **all registered projects**, not just the current pane or recent visits.
+  Show declared stance (e.g. active, paused, maintenance), current goal, recent result, owner priority and update
+  time where known. Keep idle and unavailable projects identifiable. Bound or page detail, not membership. Opening
+  a project is navigation, not a grant to operate its workers. (new)
+- Attention means **someone has asked this owner to do something**. Say what, why now, which project/Objective,
+  whether anyone actually waits, and where to look. A result or research opportunity belongs here only with such
+  a request. No request kinds. Order: requests work waits on first, then owner priority, then oldest open; no
+  model ranking. Home, Project, band and badge show the
+  same requests within their stated scopes. (new)
+- Main handles ordinary questions, failures, blockers and completions. Escalate lack of authority, a preference,
+  a result to try or a risk main cannot resolve. The owner can answer in the responsible main session; recording the
+  resolution there clears it everywhere. Reading, landing or a dependency clearing is not an owner decision. (new)
 
-#### 2.1.4 Dispatch inputs, isolation and launch guards
+**Project.** An **Objective** is a named outcome with a stable ID within a registered project. A ticketless study
+with no jobs or results yet is valid. The orchestrator maintains one short project-owned record of intent under
+`.hud/`. Required per Objective: ID, title (what and why) and state `active`, `paused` or `done`. Optional:
+latest result, evidence links, next step, linked ticket features. Blocked is derived from an open request work
+waits on, not stored. No compulsory phase sequence. Use a fraction only with a named, meaningful denominator, such
+as a linked feature's acceptance items. Exact file syntax is settled before M3. (new)
 
-- Role files decide where every role runs. `hud_create` accepts `preset`, `on`, `model` or `thinking` only for
-  `general`, the flexible seat, when the owner names a model for one job; for any other role it rejects them and
-  names Control and `general`. Picking a tier for `imp` is the MCP's routing below, not the caller's. (22.22)
-  `general` also takes `instructions: "<role>"`: that role's instructions (and pi role) with general's place
-  choice and concurrency slot, so one seat can run any role's prompt on any model. (22.29)
-  For pi roles, named switches cover pi-lens, MCP adapter, tokens/s, UI extensions, helper pane and personal
-  skills; pass extra pi args as given. (11.02)
-  Pi workers skip the MCP adapter when no MCP servers are configured unless `mcp: true` is set. (22.17)
-  Claude and Codex CLI workers load only the HUD worker MCP and servers named by their role, except that unreadable Codex configuration leaves its MCPs unchanged with a launch diagnostic. (22.18)
-- `context_files` and `from_jobs` write a reference index into local worker briefs and splice bounded file
-  contents into browser briefs, without round-tripping through main-session context. (18.03)
-- `hud_create(scout: "<question>")` runs sonic on its role defaults in the target cwd with the target's `context_files`, then starts the target with the dossier in `from_jobs` or a failure note in its brief, with one notice or MCP task for both stages; sonic cannot request a scout. (22.19)
-- `isolation: "worktree"` creates a clean Git worktree with linked `node_modules`; `hud_read` gives
-  `git_summary`, including files also changed in other managed worktrees of the same checkout. After closure
-  the watcher reaps only clean worktrees that are merged or unmodified, or whose commits are already on
-  the base branch (cherry-picked); preserve dirty worktrees or those with unintegrated work. (18.03)
-- Panel try marks, question answers and retry or land requests reach the main session even when it uses MCP tasks without `hud watch`.
-- A project's `worktree.disposable` globs exempt matching ignored files from worktree cleanup's dirty check; the default is empty. (22.19)
-- HUD, not the model, manages launch parameters. Check each dispatch's model, thinking and place against
-  model facts before opening a tab. Show only supported levels; map to nearest supported and report the
-  level used. On pre-start failure close the tab and report the cause, not a timeout. (21.04)
-- Sonic thinking uses the role default (`high`), not caller choice or a tool prompt. When enabled (off by default),
-  the Decision API chooses `none`, `low`, `high` or `max` using each brief and the role file's level purposes.
-  Any failure falls back to the default. (21.05)
-- Imp routing (Settings, off by default; needs the Decision API): the role file's `routing` block names a preset
-  and a purpose per tier, light, standard and hard; standard is the role's active preset (the owner's Control
-  choice). Shipped `imp` maps light to `hydrogen` and hard to `astra`; no tier preset or model lives in code, a tier
-  missing from the file is not offered, and a role file without the block is never routed. When on, an `imp`
-  create gets a tier and a run mode, headless or tab, chosen from the brief, ticket and context files against
-  those purposes. Headless applies only when the chosen place's harness supports it; otherwise tab. A tier whose
-  preset has no available place falls to standard and says so. The create result, card and job record show tier,
-  mode and a one-line reason. An overflow to `general` keeps the routed run chain; `retry_of` keeps the tier; a
-  land repair of a light job runs as standard. Any failure, timeout or the toggle off runs the active preset in a
-  tab. (22.22)
-- Imp placement mode (Settings, replacing the routing toggle; `imp` first, other roles later): `fixed` runs the
-  active preset; `even` rotates through presets the owner picks, so each gets about the same number of jobs over
-  the last day (spreading work across subscriptions); `auto` is the routing above. Overflow, retry and repair
-  keep the place they would have under the chosen mode. (22.30)
-- A headless worker runs a continuable role without a tab, in its harness's non-interactive mode, and keeps its
-  native session. A question ends its turn and `hud_respond` resumes the session with the answer; `hud_send` and
-  land repairs resume it the same way, within the same `resume_s` rules as a closed tab worker. The owner can read
-  its progress and output and stop it from the panel; there is no tab to focus. (22.22)
-- Soft per-role concurrency caps (Settings; defaults `imp` 3, `general` 3, other roles uncapped) count working jobs
-  machine-wide. With `imp→general` overflow on (default), an `imp` create at its cap starts as `general` when
-  `general` has room and says so, on the run chain `imp` would have used; otherwise a create past the cap is `queued` with its position, the watcher starts
-  the oldest queued job when a slot frees or a cap rises, and `hud_close` removes a queued job. (22.22)
+- Record each fact once. Link the spec for scope; tickets and landings for execution; reports, artifacts, commits or
+  tests for results. Don't copy job state into an Objective. Keep explicitly flagged `STATE` waiting items without
+  duplicating requests on tickets. Where no Objective record exists, show available STATE Now/Next as handoff
+  notes, not fabricated goals. File update time is not result time. (new)
+- A waiting item explicitly marked `(waits on …)` still clears when all its named tickets are done or dropped.
+  (18.07, 20.05, 22.27) That is not an owner intervention. (new)
+- For ordinary work main sets `Owner try: no`, verifies and accepts. Ask the owner about a named outcome, not its
+  number of landed tickets. Keep explicit **Accept all** in ticket diagnostics and its command for pending tries;
+  read legacy accept/flag records. Bulk ticket marks do not accept Objectives. (new)
 
-#### 2.1.5 Lifecycle, settlement and cleanup
+**Off the main path:**
 
-- Main decides each step except the quiet-job choice below and the steps inside a ticket batch main started
-  (`hud_tickets` `op: "run"`, §5 MCP-ORCH), never manages workers. `hud_create` starts them, the watcher
-  closes them, `hud_close` only closes early. No HUD role chaining outside the fixed flows. (11.03, 14.02, 22.26)
-- Only facts end a CLI job. It fails only if its process is gone, its tab closes or dispatch is rejected
-  before input. Exit after reporting means closed, not failed. Herdr screen status, absent report or dead
-  supervisor hand live workers to main; never fail or quit them. (14.02, 22.10)
-- Quiet CLI job past idle grace with no report: one Decision API choice to wait, send one fixed prompt to
-  write the report, fail and mark the place exhausted, or hand to main. A fail choice stands only if it
-  quotes a quota or rate-limit line from the worker's screen; otherwise hand to main. Also hand to main
-  below confidence threshold, without a key or on any error. (14.02)
-- A live child the worker starts this turn proves work. No settlement, quiet-job decision or closure before
-  declared completion. Session-long helpers (e.g. MCP servers) don't count. Exempt MCP servers launched by
-  `npm exec`, `npx` or `uvx` even if startup ends after first turn dispatch. (17.05, 18.04)
-- Require an explicit current-turn CLI done receipt with the signature of a fresh report that still matches
-  the report on disk. A new turn or rewritten report invalidates it; terminal output and herdr idle neither
-  declare nor invalidate. Pi native settlement plus changed report is equivalent. Without valid declaration
-  the live-child rule applies. (19.01)
-- After declaration, leftover shells, test runners and daemons don't block settlement. When a worker ends the
-  current turn with a valid report declaration and no open question or open or uncollected sonic child, close its
-  process and pane whether or not main has read the report (hand a CLI worker back to main if its turn has not
-  ended within 120 seconds of declaring); for `resume_s` after closure (default 1620 seconds), `hud_send` and land
-  repairs resume the verified native session in a new pane in the same checkout, or start a repair job if the
-  session is unavailable or the window has expired. Terminate only the worker and proven descendants, including
-  leftovers; leave processes without captured ancestry alone. (17.08, 19.01, 22.22)
-- Intentional stop records stopped regardless of first writer, even with simultaneous tab close. Retry failed
-  process/tab cleanup after closure until gone. Pre-input continuation refusal opens no turn. (18.05)
-- `hud_send` to a closed job past its resume window creates a new repair job referencing the old brief and report. `hud_create`
-  and `hud_send` derive omitted idempotency keys. (21.06)
-- Retention (owner 2026-11-22: finished work need not be kept): a cleanly settled job's raw output logs
-  (`stdout.jsonl`, `stderr.log`) are removed once its resume window ends; a failed or stopped job keeps them until
-  its directory goes. A project may name scratch paths in `.hud/project.json` (`scratch`, default `keep_days` 7);
-  the watcher removes top-level entries there whose newest file is older, at most hourly, without following links.
-- Before deleting a closed job directory, the watcher appends one line of the job's facts (no report text) to `$HUD_HOME/archive/YYYY-MM.jsonl`. toktrack reads the archive and live job records read-only to join jobs with native sessions, so the line names the job's native session ids and its land repair causes; a job directory whose native session file exists nowhere else (headless pi) is kept at least 7 days. (22.16, 23.01)
+- A Jobs action opens one plain list; Enter opens Inspector. Keep original state, model/effort, reports, checks,
+  process and worktree facts, headless output, progress, Sonic children and observed native subagents. Keep focus,
+  answer-once, retry/land intent and confirmed stop; no panel briefing or dispatch. Project diagnostics keep ticket details, Changes/working tree and docs. `hud board`
+  still exports an offline static project board; its “Needs you” uses the same rule as the panel. (new)
+- Control keeps role chains and presets, harness switches, quotas, today's usage/dispatch health, local model
+  discovery/picker and configuration files. Disabling a place must not rewrite the role file. (14.04, 17.04, 20.01, 20.02)
+- Move EXP's optional native-line tracking, subscription proxy and calibrated API grants into resource settings.
+  Experiments default off: no collection/refresh, no lost balances. No vendor billing sync or request blocking. (new)
+- No display-side model calls. Panel, bars, notices and exports show observed facts and worker-declared summaries;
+  the orchestrator writes Objectives and owner requests in the owner's panel language. The Decision API stays only
+  on the execution side, each with its own switch: the quiet-job choice, Sonic thinking and imp `auto` routing.
+  (14.02, 21.05, 22.22, new)
 
-#### 2.1.6 Events, project scope and the worker surface
+### 2.3 Evidence beyond the current run
 
-- `hud_peek`: bounded recent pane output and optional `hud-progress` `progress.jsonl` entries; no state
-  changes. (18.03)
-- Whatever the panel shows about a job also reaches the session that dispatched it. `hud_create` returns
-  dispatch failures as failures. For clients without MCP tasks, each MCP response carries session job
-  `changes` since its last call and `watcher_alive` if a pane watcher is registered. `hud_wait` gives one
-  event watch for `any`/`all` settlements or open questions across named jobs or all open session jobs;
-  `hud watch` prints one line per job event for command watchers (Claude Code Monitor). Clients that
-  declare MCP tasks get task completions instead. A Claude Code session whose HUD mod event watch is live gets
-  them from the mod and no MCP tasks; when the watch is absent or stopped, MCP tasks or `changes` apply again.
-  (14.03, 18.03, 20.09, 22.09, 22.25)
-- Codex queues silently; pi uses its HUD extension's native session message queue. No main-pane typing with
-  native or watched delivery. The panel and MCP share a state reader. (14.03, 18.06)
-- A working Antigravity session gets job events through its `PreInvocation` hook. An idle session has them
-  typed into its prompt. (22.12)
-- A Claude Code main session may load the HUD mod (an install extension). It first keeps the main session's
-  context lean: it compacts what HUD tool results and job notices add to the conversation, merges duplicate
-  events and routes report reads through `hud_read`. Later slices add event wake, a band and toasts, slash
-  commands for owner actions and mechanical convention rules as hooks; the panel stays the herdr panel.
-  (22.23, 22.25)
-- Neutral workers do only their job, with one role text across harnesses. On any harness a worker may
-  choose to start sonic for a useful, simple, fully specified sub-task. If it does, it collects the report.
-  HUD refuses worker requests to start other roles. (17.06)
-- HUD identifies jobs from the worker environment; no protocol paths or commands in briefs or role texts.
-  Worker MCP lists only `hud_report` (report, optional one-line summary and file list, done receipt in one
-  step), `hud_ask`, `hud_sonic` (start without blocking, then collect; pi workers get a ready notice when a child settles), `hud_progress`
-  and `hud_lease` once leases exist. Pi gets the same worker tools natively. Scripts only for harnesses
-  without MCP or the Antigravity fallback (§2.1.3). (21.03, 21.07, 22.01, 22.08, 22.12)
-- Worker or main takes a named `hud_lease` before using a shared resource named in the brief (real install,
-  paid or live runs, shared browser). One holder; free on holder end. No resident process. (21.07)
-- `hud_create` may name check commands. HUD runs them once the worker declares completion, records them
-  against that report's signature and attaches results. Checks never settle, accept or fail a job. A project's
-  fast `worker_checks` are the exception: a red result refuses the code worker's report once so it fixes it in the
-  same turn, unless the worker gives a reason to skip. (21.08, 22.26)
-- Job lists are per project root, not pane. Same-project sessions adopt jobs whose recorded pane is gone.
-  Manual restart recovery: herdr resume loses job bindings; no relaunch of resumed sessions. (21.09)
+- Keep joinable live job/STATUS, flow receipts and monthly job archive rows, including native session IDs and land
+  repair causes. Preserve observed role/model/effort, lineage, ticket/package, times, checks, usage and reasons;
+  no full brief, report or transcript in the archive. (22.16, 23.01)
+- For associated work, link the ticket to the project-scoped Objective ID and stamp ID and title at attribution time
+  into job and archive facts. Keep the link through retries, repairs and child work; don't guess from a title or
+  package. Unattributed and older jobs stay unattributed. (new)
+- On a recorded Objective creation or material change, even with **no job**, expose ID, title, change kind, time and
+  the new state when declared. A revised goal is not a phase transition. For an explicit request record its ID and
+  scope, opened and resolved/withdrawn times, who acted and whether work waited on the owner. These are receipts of
+  recording the change, not another editable board. One decision counts once, not once per linked ticket. No second
+  manual entry, panel observer or Git timestamp needed; unrecorded edits have no measured history. (new)
+- After the resume window, prune clean jobs' raw stdout/stderr; failed/stopped jobs keep them until directory
+  expiry. Protect the only native copy (headless pi: at least seven days). (22.16, 23.01) Save observed facts before
+  pruning their last source. If the archive write fails, keep the source for the next sweep; an unknown field is
+  not a reason to retain every log. Save deliberately selected research/incident evidence as an owner-controlled
+  artifact outside auto-clean paths. No wait for a consumer acknowledgement. (new)
+- Toktrack reads HUD facts; it doesn't write them or schedule agents. Its own native parsers and prices supply
+  historical token/cost analysis. It may read a registered project's Objective record read-only, as it already
+  reads ticket files, so ticketless Objectives are visible; HUD also stamps Objective ID and title into job and
+  archive facts. No shared code. A live Objective or request can link an existing local analysis report;
+  no Insights page or automatic import. Keep `hud stats` and `hud day` frozen, usable without toktrack. Remove
+  either only after verifying its CLI use is covered and getting separate owner approval. (new)
 
-#### 2.1.7 Ticket method and dispatch convention
+Detail: [reference.md](reference.md#universal-cli-and-mcp) for retention, record fields and commands;
+[ARCHITECTURE](ARCHITECTURE.md) §§4, 5, 7 for collectors, outbound inputs and private state.
 
-- No role- or workflow-specific MCP logic except `hud_tickets`. With no operation it returns one shipped
-  method/template text for every MCP client, without per-client skills or additions to the convention.
-  Main drafts the slices. (20.03)
-- `add`: feature slug and drafted tickets (title, blocked-by numbers, deliverables, acceptance items) in
-  numbered Project-format files in `.scratch/<feature>/issues/`; reject unknown blocker numbers.
-  `update`: set status (including `claimed` and `done`), tick acceptance items or set blockers; blockers may
-  name `<feature>/<NN>`. `sync`: run `hud tickets sync`. `add` and `update` write
-  local trackers only; refuse GitHub mirrors and give the `gh` plus sync route. (20.03)
-- `hud_roster` returns roles and effective convention. Ship a short default, replaced whole by a project or
-  owner file. Only dispatch mechanics; methods (grilling, specs, tickets, design vocabulary, build recipes)
-  go in on-demand skills that may stay uninstalled, not every session's convention. (17.07)
-- Mutating MCP tools accept batch arrays with independent per-item results in input order: `hud_create` `jobs` for sessions without MCP tasks (with `brief_file` for task text inside `cwd`, each created job keeping its own notice; a task session sends parallel single creates, each with its own task, 22.22), `hud_tickets` `updates`, `hud_respond` `answers`, and `hud_send` `messages` (alongside fan-out `jobs`).
+### 2.4 Install, register and configure
 
-### 2.2 Observation, status bars and side panel
+One `./install` with chosen extensions and one `hud uninstall`; use official client registration where available.
+Keep the optional Claude mod and reversible Antigravity integration. (13.04, 22.12)
 
-#### 2.2.1 Status lines and themes
+`hud setup` detects, applies or removes registration. Load project roles, worker-only pi customizations and standing
+briefs only for registered roots; cloning grants no trust. `hud trust` separately adds the owner's chosen directory
+to supported CLI trust lists after backup. (13.01, 13.02, 20.08, 21.10)
 
-- Every status line shows output tokens/s. Each client keeps one always-on bottom line: Claude replaces
-  claude-hud (same owner fields), pi absorbs p10k-footer, `codexH` keeps its tmux bar. Pi ribbon stays at the
-  right end of the editor's top border; other extensions' statuses stay visible. (11.04, 12.01, 17.09)
-- Antigravity shows the HUD statusline through its `statusLine` command. (22.12)
-- Status bars and pi ribbon keep only `line` (default) and `p10k`; saved retired styles load as `line`.
-  The native renderer supports both. (22.27)
-
-#### 2.2.2 Side panel, tabs and layouts
-
-Reference: `docs/design/panel-v8/` (option 2) and `docs/design/panel-v8/notes.md`.
-
-- All clients: `/hud` alone opens the same standalone herdr sidebar with main-session jobs and state.
-  Delegation tools stay registered either way. No Codex tmux panel (F12/Shift-F12, prefix keys/setting,
-  gutter focus lock). (11.04, 17.09)
-- All clients: click selects tabs/rows/buttons, second click is Enter, wheel scrolls. Click a picker row to
-  set the model. Left/Right, Tab and clicks switch tabs, not numbers. (20.10, 19.03)
-- Settings → Panel → Layout: Classic (default), Split (list over selected-row preview). Only the notes
-  override Home/Project layout rules in Split. Never hide owner needs. Split ratio: `=` / `-`, no drag.
-  Compact the list on preview focus; zero-width right-edge scrollbar on scrollable previews. `/` filters
-  Home, Progress slices and Tickets live. (17.13, 18.08, 18.09, 19.03)
-- Main tabs: Home, Project, Control and experimental EXP. (11.04, 20.01, 22.02)
-- There is no panel-level Inbox tab; the Inbox is Project's hub (§2.2.4). (18.08, 22.05, 22.27)
-
-#### 2.2.3 Home and native subagents
-
-- One Home page: owner needs, then job cards in lanes. Group by optional `hud_create` package label, else
-  brief title; display only, not interpreted by MCP. Default: see, try and accept tasks (ledger milestones
-  or ticket features). A setting shows slices and tickets. (11.04, 11.08, 20.04)
-- Finished jobs hide after a short time; `a` reveals them in place. (11.04)
-- Collect worker decisions for the owner but do not show them. (20.04, 22.11)
-- Home uses its built-in order; no model ranks or folds cards. Never hide cards needing the owner. (22.27)
-- Read native subagents from transcripts (Claude Agent incl. custom, Codex, pi). One lane per main session
-  beside package lanes; one card per subagent with same hide rules. Indent nested agents one level; deeper
-  use flat `↳ parent`. External current-work summaries follow the master switch. No agent log, card label
-  or card summary settings. (12.03)
-- Spare rows: compact board and the milestone and ticket rollup (started features, unstarted folded into one row); cards win. (22.14) Top line counts STATE waiting items with questions.
-  Idle Home lists waiting items and, in Classic, recently accepted slices above progress. (12.04, 17.10, 22.27)
-
-#### 2.2.4 Project Inbox, progress and export
-
-Reference: `docs/design/project-ux/` (direction C: Inbox).
-
-- Project can switch among the panel's project and `hud setup` projects. Home stays local. Progress,
-  Tickets, Working tree and Docs each have a hub summary row and their own page. (12.04, 14.04, 22.02)
-- Working tree: branch, changes, editing job, last commit. Docs: spec milestone, STATE waiting items, newest
-  review. STATE keeps `Milestone:`, `## Now`, `## Waiting for the owner`, `## Next` and short notes, not slice rows.
-  Tickets (`to-tickets`) are the only slice ledger: derive status from ticket files and their landing records,
-  linked jobs and worktrees, commits naming the ticket and accepted tries. A ticket waiting only on unfinished
-  predecessors shows as queued, not blocked, alongside its blockers,
-  package lane links, checklist and latest comment. (12.04, 14.04)
-- Inbox hub: ranked Needs you (asking jobs, items the main session flagged in STATE Waiting, asking tickets,
-  blocked tickets, exhausted roles), then Running (one row per running job, sonic children counted on their parent),
-  last accepted and the page rows. Enter on a role alert opens that role on Control. (20.06, 22.27)
-- Progress takes its bar, legend, counts and latest acceptances from tickets and landing evidence, not STATE slice
-  rows. It keeps STATE's Now summary, milestone and Next. Progress groups tickets by feature and also shows
-  running project jobs; Tickets groups its rows by feature. (12.04, 14.04, 22.27)
-- The Inbox hub offers Accept all when the project has pending acceptance. It records all observed pending
-  tickets in one `accept` record under `$HUD_HOME/tries.jsonl` without editing project files.
-  The panel reflects acceptance from the log; `hud watch` and MCP `changes` still deliver it to the main
-  session. Old acceptance and flag records remain readable. There is no per-slice owner try action. (22.27)
-- A waiting item can end in `(waits on <feature>/<NN>, …)`. When all named tickets are done or dropped, hide it
-  and stop counting it without editing STATE. Legacy accept records can still settle old slice IDs. Wrap the
-  whole item where rows permit. (18.07, 20.05, 22.27)
-- The board model can translate waiting items, open worker questions and open ticket titles into the display
-  language when needed, with the original folded below. It does not write try briefs. (22.14, 22.27)
-- Inbox is the only Project layout in Classic and Split; old saved Project layout values are ignored. (22.27)
-- `hud board [--html] [--open]` or panel `w` exports self-contained static HTML for the project, using
-  ticket text for pending work, with no network fetches or resident server. (18.09, 22.27)
-
-#### 2.2.5 Control and model picker
-
-Reference: `docs/design/control-tab/design.md`, `docs/design/control-tab/index.html`, `.scratch/control-tab/`,
-`docs/design/model-picker/index.html`, `.scratch/model-picker/`, `docs/design/ux-pass/`, `.scratch/ux-pass/`.
-
-- Roles, Attention, Usage and Files for the selected project. Open on owner attention and next job place;
-  fold healthy roles. Show role/harness/model/thinking/source, convention/source, available keys, browser
-  availability, client quota watermarks, today's pi spend and today's per-role dispatch health, split by place, beside
-  presets. (12.04, 14.04, 18.09, 20.01, 22.02)
-- List HUD roles, pi-roles definitions (model/thinking), native custom agents (`~/.claude/agents`,
-  `.claude/agents`, `~/.codex/agents`), active convention, `CLAUDE.md`, `AGENTS.md`. Enter opens file beside
-  panel in herdr with `$EDITOR` (default `vim`). (12.04)
-- Toggle supported CLI agents, browser tools, pi runner and pi providers for future jobs via `disabled` in
-  `$HUD_HOME/harnesses.json`. Absent or new means on. Keep off places in chains; skip like exhausted places.
-  Don't rewrite role files. Panel, `hud_roster` and `hud_create` share evaluation. Unattributable provider:
-  report unknown, don't guess or block. (20.01)
-- One role-row key applies a preset. Show active preset and next place. Save current chain or empty draft as
-  a new preset; rename/remove presets. Add places with model/thinking; move/remove/save in place.
-  (17.04, 20.01)
-- Discover pi models on demand, not per key or tick. List all enabled providers' discovered models grouped by
-  provider. Click a place's model field or press `m` on role/place for same-pane picker (two columns from
-  about 100 columns; no zoom or web console). Save a place's model instantly; other edits stay drafts.
-  (20.02)
-- Likely first: current, role presets, providers roles use. Typing filters one ranked flat list. Pin current
-  and role preset models; show context, output, thinking, image facts and HUD state. No price without local
-  source. (20.02)
-
-#### 2.2.6 Micro-actions and visual cues
-
-- No panel briefing or chaining. Owner actions equivalent to local commands: `g` focuses selected job's
-  herdr tab; `1`–`4` or `d` on expanded question writes `qa/qN.answer.md` once, notifies main via `changes` /
-  `hud watch`; confirmed `X` reaps a runaway via `pi-role-reap`. (18.09)
-- `r` on a failed job requests a retry; the panel records the intent and the main session decides whether to act. In Claude Code with the HUD mod, the owner's explicit `/land <job>` on a settled worktree job starts the land flow directly; band buttons and `/retry` still record intent. (22.25, 22.27)
-- Split's unselected working rows show compact keyword and progress cues. Cards and Inspector show a 10-bucket
-  activity sparkline (`▁`–`█`), `hud-progress` milestones and nested `sonic` trees under their parent jobs.
-  Inspector, Working tree and Progress details for pending slices show a bounded safe Git `--numstat`
-  diff bar (top 12 files) for the job's worktree or slice commits. (18.09, 22.27)
-
-#### 2.2.7 Experimental EXP tab
-
-Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
-
-- EXP: machine-wide HUD usage settings. Settings → Panel → Experiments defaults off: no tab, collection
-  or refresh. (20.07)
-- Codex native line beside `codexH` tmux bar. Pi footer subscription proxy: bound Codex profile's rate-limit
-  windows, source and estimate `≈`; Claude-style bar, percent used, threshold colour and reset. (20.07)
-- Refresh only while used: pi footer draw starts one locked async refresh when the reading is older than
-  the interval. No timer or resident service. (20.07)
-- `anthropic-api`/`openai-api` grant ledgers: monthly grant, renewal day, manual calibration and estimated USD
-  remaining. Append-only JSONL in `$HUD_HOME/exp/` with a dedup key per request; balance on read. No vendor
-  billing sync, balance scraping, request blocking or admin keys. Zero estimate never stops a CLI. (20.07)
-
-#### 2.2.8 External models for display
-
-- Optional external Decision API text in panel and bars: summaries, recaps and sentences with owner keys
-  (`$HUD_HOME/credentials.env`). Read only job files and the project's STATE and ticket files; write only display text. Never prompt, brief or steer
-  workers. No consent or authority layer. (11.05, 12.02)
-- Settings API (default OpenAI) labels settled outcome, quiet repeated failures on running cards,
-  question category and review finding severity. Outcome is independent report judgement, never self-graded.
-  (12.02, 22.01, 22.27)
-- Signature-bound worker `hud_report` summary supplies the finished result line, notices and `hud_read`.
-  Model fallback only if absent, stale or wrong panel language. No two-minute hold on settled results.
-  (22.01)
-- Small external model: thin-card short name and third line (one sentence on current work), one-line finished result subject
-  to the rule above, 1–3 marked keywords for panel colour. On state change, in panel language, ≥2 minutes
-  apart per job except above. Factual line with no key or switch off. Settings: master switch (on with a key),
-  model and call cap; no per-feature switches. (11.05, 22.01)
-- Same approach on native cards: names, progress, result digest and failure cause. No consent setting or
-  "Job consent denied", no card progress used only by retired facade jobs, no model text only for hidden views
-  (main recap, approval words, change summary, session title, `S` overview). (11.05, 12.03)
-
-#### 2.2.9 Help
-
-- Help (`?`) shows shortcuts and marks, not the optional skills list. The shipped, uninstalled skills (§2.3.2)
-  are listed in [`docs/optional-skills.md`](optional-skills.md); the main session reads one at the owner's request. (22.27)
-- Keep Inspector (`v`), Settings and Help in Home's look. No Timeline page, Activity hub, Summary,
-  diagnostics pages or old Agents pane. Keep only the model-call count
-  from diagnostics in Settings → LLM. No Settings panel picture, Look presets, emoji icon
-  set, motion switch, stack/tabs layouts, foot status card or rows only they used. (11.06)
-- Icons: a Nerd Font set (Font Awesome glyphs in the Basic Multilingual Plane) is the default, with `unicode`
-  and `text` fallbacks. Home rows show no model or effort; the role icon leads the row. (22.24)
-- Changes: Git/worktree summary only (branch, ahead/behind, change counts, row per worktree); no file lists,
-  diffs or previews. (12.06)
-
-### 2.3 Project setup, skills and ticket sync
-
-#### 2.3.1 Setup and trust gate
-
-- One owner conversation via `hud-setup`, like claude-hud. `hud setup --detect | --apply PLAN | --remove`
-  writes `.hud/`. Load only for owner-set-up projects (`$HUD_HOME/projects.json`), never on clone alone.
-  (13.02)
-- Commit project roles in `.hud/roles`; set-up projects may hide others. Pi-only worker customization:
-  role-named skills linked under `.hud/skills`, prompt in `.hud/agents`, settings. Main sessions and official
-  CLIs (§2.1.3) keep their behaviour. Like owner files, project chains can name CLI places (agent, model,
-  thinking only, no extra args). (13.02, 20.08)
-- Optional `.hud/brief.md` for set-up projects; every brief there references it after the task. (21.10)
-
-#### 2.3.2 Skills policy
-
-- Use the HUD flow in `docs/delegation.md`: the `to-tickets` method (§2.1.7) and one review per milestone.
-  The Matt Pocock collection is inactive and on demand. The upstream plugin is off in Claude, Codex, pi and
-  all other harnesses. Install none of it; remove earlier `to-tickets` links in Claude, Codex and pi. Install
-  `hud-delegate`, `hud-setup` and `hud-handoff` for all three. (17.14, 20.03)
-- Keep adapted `grill-with-docs` (with `grilling` and `domain-modeling`), `to-spec`, `hud-build`, `tdd` and
-  `diagnosing-bugs` in `integrations/skills-optional/`. Keep verbatim `wayfinder`, `triage`,
-  `improve-codebase-architecture`, `wizard`, `teach`, `wait-what`, `writing-for-agents`, `to-questionnaire`,
-  `prototype`, `retro`, `pr`, `codebase-design` there too. Each names its upstream commit; we own adapted text
-  and do not track upstream. (17.14)
-- Do not install, link to workers or offer these in `hud setup`. No role, including oracle, loads them by
-  default.
-  The main session reads one at the owner's request or names it by path in a worker brief. (17.14)
-
-#### 2.3.3 One-way GitHub Issues mirror
-
-- `hud tickets sync` alone writes the one-way GitHub Issues mirror in `.scratch/` for Project and workers.
-  Read via `gh`: parent with sub-issues becomes title-slug feature, sub-issues its tickets. Use Project
-  format. Main syncs after each tracker write. No polling or panel network access. (17.15)
-
-### 2.4 Installation and uninstallation
-
-One command each: `./install` with core and chosen extensions (Claude, Claude mod, pi, Codex, `agy`, browser, herdr);
-`hud uninstall` removes them. Register via official client commands where available. The `agy` extension
-reversibly configures Antigravity's MCP, permission, statusline and `PreInvocation` hook. (13.04, 22.12)
+Ship `hud-delegate`, `hud-setup` and `hud-handoff`. Leave optional skills uninstalled, outside setup and workers'
+default context; main may read one on request or name its path in a brief. `hud tickets sync` alone writes the
+one-way GitHub Issues mirror via `gh`; no polling GitHub or contacting it from the panel. (17.14, 17.15, 20.03)
 
 ## 3. What it does not do
 
-- No own execution platform: no ledger database, no general process-supervision platform, no native host
-  or bridge, no SDK-driven sessions. herdr, pi-roles and the browser runtime already do execution. The
-  per-job CLI supervisor and on-demand watcher are allowed (§2.1.5 and §4). (10.01, 10.03, 14.02, 22.10)
-- No workflow engine or automatic role chaining. No multi-user or adversarial security model and no identity
-  proofs between local processes. (10.03)
-- No transactional installer: no plan IDs, receipts or byte-exact restore. A plain backup of each edited
-  client
-  file is enough. No vendor version pins. (10.03)
-- Do not track upstream for the ported claude-hud statusline or p10k-style footer. They are ours and change
-  only for our needs. Update pi and its extensions with `pi update` when useful. (10.01, 10.03)
-- No native Windows, npm publishing or cross-machine use. (10.03)
+- No new harness, general supervisor, workflow engine, ledger database or resident server. Local adapters and the
+  on-demand watcher suffice. No native Windows, multi-user identity, cross-machine control or npm publishing. (10.01, 10.03, 14.02, 22.10)
+- No transactional installer, vendor pins or upstream tracking for HUD-owned bars. Back up edited client files. (10.01, 10.03)
+- Not a replacement for Git, issues or project docs. No inferred attention score, human activity surveillance, ROI
+  or “intelligence” ranking. Historical comparisons belong in toktrack or a requested study. Teaching, preferences
+  and reusable standards live in external skills/repos, under owner control. (new)
 
 ## 4. Threat model and quality bar
 
-- Trust the owner, their configs and tools. Guard against only irreversible loss of the owner's data or
-  config,
-  and commands from an untrusted repository (e.g. Git config in a clone). (10.04)
-- Otherwise use the simplest implementation that works. New guards, options or abstractions require a concrete
-  reason in the brief. (10.04)
-- No resident service. `hud_create` starts the watcher on demand. It reacts to job-file and herdr events,
-  reaps
-  finished jobs and exits when none is open. Keep statusline and panel at least as fast as what they replace.
-  (11.03, 10.04)
-- Done means the owner can install and use it, not that tests are green. (10.04)
-- The owner's attention is the scarcest resource. Panel, bars and notices show what matters most and what
-  needs the owner now, not everything known; a change that adds detail must say what it lets the owner skip.
-  Owner acceptance is only for behaviour the owner must interact with to judge; the main session or a worker
-  verifies everything else live. (22.28)
+Trust the owner and local tools. Guard against irreversible data/config loss and commands from untrusted repos.
+Otherwise use the simplest thing that works. Done means installable and usable, not just green tests. (10.04)
+
+Keep panel and bars at least as fast as what they replace. Start the watcher on demand; exit when not needed.
+Owner attention is scarce: justify detail by what it lets the owner skip. Only ask the owner to try behaviour they
+must interact with to judge. (11.03, 10.04, 22.28)
+
+Keep [ARCHITECTURE §8](ARCHITECTURE.md#8-rules-every-change-keeps): pure exact-column frames; sanitize external
+text once; EN/ZH panel, English bar, accessible icon/text and no-colour modes. Drop optional fields before cutting.
+Bound local reads, disclose incomplete coverage, never invent a zero or clean state. No fetch or repo-provided Git
+commands/filters for status. No I/O or lifecycle change in paint.
+
+Keep state private and atomic. Bound any new HUD-home store by count or age; do not purge existing archives,
+config, keys or unrelated work. Document new outbound
+inputs in ARCHITECTURE §5 and the reference; never send private reasoning. Sonic thinking, imp routing and
+quiet-job decisions keep separate switches. Use synthetic data and temporary
+homes for tests. Detail: ARCHITECTURE §8.
 
 ## 5. Milestones
 
-- **M1, usable.** Repo `./install` (core + Claude, pi, Codex), `hud uninstall` (§2.4); MCP and skill
-  registered in all three clients; `hud panel`; M1's six tools work for imp, reviewer and sonic via herdr.
-  Claude statusline at claude-hud parity; pi footer replaces p10k-footer (§2.2.1). Owner installs and uses
-  it. (10.01)
-- **M2, clean.** Right after M1, acceptance: retired execution stack (R6b slice L), old role facade and its
-  identity/release checks (replaced by the thin layer), old hud-mcp default managed surface and `role-main`,
-  and their tests removed. (11.07)
-- **M3, extend.** Browser tasks and oracle jobs. (11.07)
-- **M3b, AI-THIN.** Small-model display text (§2.2.8). The owner tries real jobs on the real panel.
-  Card and result lines are one sentence each; keywords scan at a glance. (11.05, 20.04, 22.11)
-- **M4, project view.** Project after other open items, without waiting for Matt's skills. Frozen close:
-  whole-project review and fixes; three last slices (panel reloads itself after a new build, Settings shows
-  model calls per feature, one test snapshot-update command); release. New ideas go to M5 candidates,
-  not M4. (12.05)
-- **0.1.x**: 0.1.1 CLI workers and `hud trust`; 0.1.2 `hud setup` (`.scratch/hud-setup/spec.md`);
-  0.1.3 Project hub (`.scratch/project-hub/spec.md`); 0.1.4 roles apart from harnesses
-  (`.scratch/role-bind/spec.md`). (13.03, 14.05)
-- **0.2.0, MCP orchestration & Panel V2.** Current milestone. (22.07)
-- **MCP-ORCH, orchestration mechanics into the HUD.** After WORKER-MCP, in order: launch facts (supported
-  thinking per model, next place on failed launch, worker HUD home from job directory); derived keys, repair
-  of closed jobs, one send to multiple jobs and `retry_of`; standing brief and convention without per-harness
-  delivery text (that goes into tool results); leases; project scope and restart recovery; HUD-run checks;
-  MCP tasks; coalesce settlement notices arriving within seconds, with questions still immediate.
-  (21.11, 21.12, 22.06)
-  - MCP tasks for declaring clients (today Claude Code): first verify wake, cancel and `/tasks`. One task
-    per worker turn (`hud_create`, `hud_send`, `hud_respond`) until report or question. Result: state,
-    the hud_read call, one-line summary and check outcome, sent after HUD-run checks finish; not a read. Cancel closes the job. (20.09, 21.12, 22.06, 22.15, 22.21)
-  - Excludes general plan execution. Fixed HUD flows (land, scouted dispatch, ticket queue) chain their
-    listed steps, stop at the first judgement point or after two failed repairs, and hand back to the main
-    session in one notice (22.19). Also excludes a resident server
-    (on-demand watcher with short-lived helpers suffices) and project notes (only if repeated answers remain
-    after the standing brief). Done: The owner runs a real project day; compare its counts with the
-    2026-11-21 study using the same measures. (21.11)
-- **M5 candidates (not scheduled; the owner picks):** retention period for job directories and model caches
-  (owner sees the deletion list first); read transcripts tail-first on open for immediate status, filling
-  in nesting behind; fold rarely changed Settings rows under Advanced. (12.07)
+0.2.0 is the baseline. Agree the boundary and deletions first. M1 and M2 can proceed independently against shared
+job facts. Settle Objective and event semantics before building M3. No implied M4–M6. (new)
+
+- **M1, take workers off the owner's desk.** Current-project Home: explicit Waiting, STATE Now/Next, one scoped load
+  line where known. Keep Project details for now, but apply the request rule to its Inbox, notices, band and export.
+  **Try:** a routine worker question reaches main but not “Needs you”; a separately flagged decision is visible and
+  the worker's original question/report is still findable in Jobs → Inspector. (new)
+- **M2, see load without the panel.** Local CPU/RAM and machine-wide running/queued counts. Don't claim a global
+  owner count before the request source covers it. **Try:** with jobs in two projects and another queued, close the
+  panel: both bars show the same HUD load, labelled OS scope and their respective quotas where known; starting the
+  queued job changes the counts. (new)
+- **M3, manage outcomes across projects.** Portfolio Home, Objective Project and request receipts, independent of
+  tickets and toktrack. **Try:** from one session find a paused project and a ticketless research result in another;
+  open its evidence, answer its escalated decision and see it clear without opening a worker conversation. (new)
 
 ## 6. How work is done
 
-- Follow `docs/delegation.md`. Each brief names the spec line served, what is out of scope, a size budget
-  and a stop rule. Review at milestones and before the owner installs, not per package. Trying the build as
-  owner is the main review. (10.05)
+Grill → Slice → Build → Integrate → Review → Accept. Briefs name the spec clause, non-goals, size budget and stop
+rule. Review once per milestone and before owner install, not per package; keep extra review for real config, deletion
+of data, killing processes and the installer. Detail: [delegation.md](delegation.md). (10.05)
+
+The owner approves milestone scope and success criteria, each visible deletion **before its slice**, product/value
+and cross-project trade-offs, personal standards, and high-risk or irreversible acts unless already authorized. Main
+chooses ordinary slices, dependencies and order; verifies, integrates and accepts ordinary work. Workers decide
+implementation within the brief. Ask Oracle to investigate separately from designing a solution when the problem is
+unclear. Escalate only judgements or results that need the owner. This replaces ordinary slice-list approval. (new)
+
+## Removed by this spec
+
+Owner approval checklist; the owner approved all items on 2026-11-23 (D-2026-11-23-03). A moved entry loses its old placement, not its underlying facts. No item authorizes
+purging owner data. (new)
+
+- [x] Session-local worker cards as Home, card filter, inline expansion and on-card actions; use Jobs/Inspector.
+- [x] Home's package/brief-title lanes. Keep package attribution in receipts.
+- [x] Home's native-subagent lanes/cards. Keep the observed tree in diagnostics.
+- [x] Card auto-open/fold/hide, expiry settings, finished-job reveal and folded queued/read rows.
+- [x] Worker stage animations and activity sparklines; keep observed progress messages and timestamps.
+- [x] “Cards win,” the spare-row board, latest accepted slices, “done today” footer and Home tasks/tickets setting.
+- [x] Split list/preview layout, sizing/focus controls and layout selector. Ignore saved Split preference; keep Control's model picker.
+- [x] AI names and current-work/third lines for jobs and native agents, keyword colouring and sentence-interval control.
+- [x] AI finished-result/failure sentences, including generated fallback or translation for worker summaries.
+- [x] Model-judged outcome/confidence. Keep declared verdicts, observed state and historical values.
+- [x] Model looping warnings; do not remove execution-side quiet-job handling.
+- [x] Automatic question categories and review-severity tallies.
+- [x] Generated Inspector decision titles/rewrites and automatic translation of ordinary questions, ticket titles, route reasons and landed rows.
+- [x] Translation of owner requests and waiting items, and the Settings display-model controls (Model text master, model choice, call cap). Execution-side Decision API switches stay.
+- [x] Routine worker completions/notices as owner alerts. Orchestrator delivery stays.
+- [x] Worker questions, blocked tickets and exhausted roles as automatic owner Inbox items, including questions under “Needs you” in the static export.
+- [x] The bar's per-role worker icon counts, individual HUD job reminders and `!asking` as owner load. Real native permission prompts stay.
+- [x] Ticket Inbox with Running/last-accepted rows as Project's landing page; keep the underlying ticket and worktree diagnostics.
+- [x] Ticket-count percentages as **project** progress; ticket denominators still mean something in ticket detail.
+- [x] Routine owner approval of slice lists, order and dependencies.
+- [x] Routine ticket-level human acceptance and the default Project/Claude band “N to try / Accept all” prompt. Keep explicit diagnostic Accept all, `/try`, `hud act try` and old records.
+- [x] Standalone Changes entry. Merge its Git/worktree facts into project diagnostics.
+- [x] Standalone EXP tab. Move controls without deleting ledgers or disabling configured features.
