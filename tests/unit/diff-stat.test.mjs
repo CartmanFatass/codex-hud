@@ -76,9 +76,8 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
   f.put(file, 'alpha\nneo\nextra\nchanged\nx\n');
   f.put(join(f.cwd, 'asset.bin'), Buffer.from([0, 2]));
   fs.utimesSync(join(f.cwd, 'asset.bin'), 0, 0);
-  const state = join(f.cwd, 'docs/handoff/STATE.md');
-  f.put(state, '# State\n\nMilestone: M1\n\n## Slices\n' + Array.from({ length: 13 }, (_, i) =>
-    `- try · M1 · TRY-${i} · Synthetic slice (${a}, ${b}, ${a})`).join('\n') + `\n- accepted · M1 · DONE · Accepted (${b})\n`);
+  for (let i = 1; i <= 14; i++) f.put(join(f.cwd, `.scratch/try/issues/${i}-landed.md`),
+    `# ${i}: Synthetic slice\n**Status:** ${i === 14 ? 'done' : 'try'}\n**Blocked by:** none\n\n## Comments\n- Landed ${b}\n`);
   const diffs = new DiffStatCollector();
   const read = diffs.commits(f.cwd, `(${a}, ${b}, ${a})`, NOW);
   assert.strictEqual(diffs.commits(f.cwd, `(${b}, ${a})`, NOW + 6000), read, 'same hash set shares even an in-flight probe');
@@ -99,7 +98,7 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
   assert.equal(project.ledger.filter((row) => row.diff).length, 12);
   assert.equal(project.ledger[0].diff, undefined, 'older than the 12 newest tries');
   assert.equal(project.ledger.at(-1).diff, undefined, 'accepted slice');
-  assert.deepEqual(project.ledger.at(-2).diff, aggregate);
+  assert.deepEqual(project.ledger.at(-2).diff, await diffs.commits(f.cwd, b, NOW));
   assert.deepEqual(project.gitDiff.files, [
     { path: name, absPath: file, added: 2, deleted: 1 },
     { path: 'asset.bin', absPath: join(f.cwd, 'asset.bin'), added: null, deleted: null, binary: true },

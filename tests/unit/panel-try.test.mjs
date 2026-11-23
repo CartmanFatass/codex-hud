@@ -79,8 +79,12 @@ function panel(f, layout) {
   return { key, frame, painted, close, modelLog };
 }
 
-for (const layout of ['classic', 'split']) test(`${layout} Accept all records every pending slice once, leaves STATE alone and keeps its waiting item`, async (t) => {
-  const f = fixture(t), { key, frame, painted, close, modelLog } = panel(f, layout);
+for (const layout of ['classic', 'split']) test(`${layout} Accept all records every pending ticket once, leaves STATE alone and keeps its waiting item`, async (t) => {
+  const f = fixture(t), issues = join(f.cwd, '.scratch/demo/issues');
+  fs.mkdirSync(issues, { recursive: true });
+  for (const n of ['01', '02', '03']) writeFixtureFile(join(issues, `${n}-pending.md`),
+    `# ${n}: Pending change\n**Status:** ready-for-human\n**Blocked by:** none\n\n## Comments\n- Landed abc1234\n`);
+  const { key, frame, painted, close, modelLog } = panel(f, layout);
   await painted(/Choose the sample filename/);
   key('\x1b[C');
   await painted(/^Accept all +3 to try/m);
@@ -97,7 +101,7 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   assert.equal(f.records().length, 1);
   const [{ at, ...record }] = f.records();
   assert.ok(Number.isFinite(Date.parse(at)));
-  assert.deepEqual(record, { root: f.cwd, action: 'accept', milestone: '—', slices: ['OLDER', 'ONE', 'TWO'], milestones: ['0.1.3', '0.1.4', '0.1.4'] });
+  assert.deepEqual(record, { root: f.cwd, action: 'accept', milestone: 'demo', slices: ['DEMO-01', 'DEMO-02', 'DEMO-03'] });
   assert.equal(fs.statSync(f.file).mode & 0o777, 0o600);
   assert.equal(fs.readFileSync(f.state, 'utf8'), f.body);
   const features = fs.readFileSync(modelLog, 'utf8');
@@ -109,7 +113,7 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   await until(() => lines.length > 0, () => JSON.stringify(f.records()));
   abort.abort();
   assert.equal(await watching, 0);
-  assert.deepEqual(lines, ['try accepted SampleHUD: OLDER, ONE, TWO']);
+  assert.deepEqual(lines, ['try accepted SampleHUD demo: DEMO-01, DEMO-02, DEMO-03']);
 });
 
 test('hud watch skips reflected legacy tries on catch-up and emits each live record once', async (t) => {

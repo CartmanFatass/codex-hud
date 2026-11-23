@@ -8,6 +8,8 @@ export const ticketJobState = (job: { dispatch_exit_code?: unknown }, status: { 
   typeof status.state === 'string' && status.state ? status.state
     : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
 const live = (state: string | undefined) => !!state && !SETTLED_JOB_STATES.has(state);
+const sliceState = (t: ProjectTicket): LedgerSlice['state'] => t.state === 'done' ? 'accepted'
+  : t.state === 'ready' || t.state === 'queued' ? 'todo' : t.state;
 
 /** Both spellings denote one ticket; a token boundary keeps FEATURE-01 distinct from FEATURE-010 or OTHER-FEATURE-01. */
 const key = (feature: string, n: string) => targetKey(`${feature}/${n}`);
@@ -45,55 +47,38 @@ export class TicketRollup {
       if (typeof job.slice === 'string') this.linkedSlices.set(t, job.slice); else this.linkedSlices.delete(t);
     }
   }
-  derive(ledger: LedgerSlice[], landed: Set<string>, now: number, marks: ReadonlyMap<string, string>,
-    ticketCommits: ReadonlyMap<string, { sha: string; at: number }> = new Map()) {
-    const slices = new Map(ledger.map(r => [targetKey(r.id), r]));
-    const commitSlices = new Map<string, LedgerSlice>();
-    for (const r of ledger) if (r.commit) commitSlices.set(r.commit.slice(0, 7).toLowerCase(), r);
-    const milestoneFor = (feature: string) => ledger.find(r => r.milestone.toLowerCase() === feature.toLowerCase())?.milestone ?? feature;
-    const accepted = new Set([...marks].filter(([, mark]) => mark === 'accept').map(([id]) => targetKey(id)));
-    const running: LedgerSlice[] = [];
-    // Emit oldest features first so tie-broken ledger order treats newer features/tickets as more recent.
-    for (const { slug: feature, tickets } of [...this.features].reverse()) for (const t of tickets) {
-      const id = key(feature, t.number);
-      const alias = this.linkedSlices.get(t);
-      const aliasKey = targetKey(alias ?? ''), gitCommit = ticketCommits.get(id);
-      const linked = slices.get(aliasKey), numbered = slices.get(id);
-      const byCommit = (t.commit ? commitSlices.get(t.commit.slice(0, 7).toLowerCase()) : undefined)
-        ?? (gitCommit ? commitSlices.get(gitCommit.sha.slice(0, 7).toLowerCase()) : undefined);
-      const slice = linked ?? numbered ?? byCommit, states = [linked?.state, numbered?.state, byCommit?.state];
-      const ticketPath = `.scratch/${feature}/issues/${basename(t.path)}`;
-      const fileState = t.state;
-      if (t.state === 'done' || t.state === 'dropped') {
-        if (t.state === 'done' && !slice && (t.commit || t.recordedLanding)) {
-          const commit = gitCommit?.sha ?? t.commit;
-          running.push({ id: alias ?? `${feature.toUpperCase()}-${t.number}`, state: 'accepted', milestone: milestoneFor(feature),
-            text: commit ? `${t.title} (${commit.slice(0, 8)})` : t.title, ...(commit ? { commit } : {}),
-            ...(gitCommit ? { at: gitCommit.at } : {}), ticketPath, path: t.path });
-        }
-        continue;
+  derive(now: number, landed: ReadonlySet<string> = new Set(),
+    ticketCommits: ReadonlyMap<string, { sha: string; at: number }> = new Map(),
+    readMarks?: (rows: LedgerSlice[]) => ReadonlyMap<string, string>) {
+    const entries: { ticket: ProjectTicket; row: LedgerSlice }[] = [];
+    // Oldest features first; later rows win ties when showing the newest landings.
+    for (const { slug, tickets } of [...this.features].reverse()) for (const t of tickets) {
+      const id = key(slug, t.number), job = t.job?.state, claimed = live(job);
+      if (t.state !== 'done' && t.state !== 'dropped' && t.state !== 'try') {
+        if (landed.has(id)) t.state = 'try';
+        else if (job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
+        else if (claimed || this.trees.has(t)) t.state = 'working';
+        else if (/^claimed\b/i.test(t.status)) t.state = !job && now - t.at < 7200000 ? 'working' : 'blocked';
+        else if (/^needs-(info|triage)\b/i.test(t.status)) t.state = 'blocked';
       }
-      const state = slice?.state, job = t.job?.state, claimed = live(job);
-      if (states.includes('accepted') || accepted.has(id) || accepted.has(aliasKey)) t.state = 'done';
-      else if (states.includes('dropped')) t.state = 'dropped';
-      else if (states.includes('try') || landed.has(id) || t.state === 'try') t.state = 'try';
-      else if (state === 'blocked' || job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
-      else if (claimed || this.trees.has(t) || state === 'working') t.state = 'working';
-      else if (/^claimed\b/i.test(t.status)) t.state = !job && now - t.at < 7200000 ? 'working' : 'blocked';
-      else if (/^needs-(info|triage)\b/i.test(t.status)) t.state = 'blocked';
-      if ((t.state === 'working' || t.state === 'blocked') && (claimed || this.trees.has(t))) {
-        if (claimed && /^ready-for-agent$/i.test(t.status)) t.status = 'claimed';
-        // Legacy dispatches sometimes already have a working feature-level row rather than a numbered slice.
-        if (!slice && !alias && slices.get(feature)?.state === 'working') continue;
-        running.push({ id: slice?.id ?? alias ?? `${feature.toUpperCase()}-${t.number}`, state: t.state,
-          milestone: milestoneFor(feature), text: t.title, ticketPath, path: t.path });
-      } else if (!slice && fileState === 'try' && (t.state === 'try' || t.state === 'done')) {
-        const commit = gitCommit?.sha ?? t.commit;
-        const text = t.commit ? `${t.title} (${t.commit.slice(0, 8)})` : t.title;
-        running.push({ id: alias ?? `${feature.toUpperCase()}-${t.number}`, state: t.state === 'done' ? 'accepted' : 'try',
-          milestone: milestoneFor(feature), text, ...(commit ? { commit } : {}), ...(gitCommit ? { at: gitCommit.at } : {}),
-          ticketPath, path: t.path });
-      }
+      if ((t.state === 'working' || t.state === 'blocked') && claimed && /^ready-for-agent$/i.test(t.status)) t.status = 'claimed';
+      const hasLand = t.state === 'done' || t.state === 'try';
+      const gitCommit = hasLand ? ticketCommits.get(id) : undefined;
+      const commit = gitCommit?.sha ?? (hasLand ? t.commit : undefined);
+      entries.push({ ticket: t, row: { id: `${slug.toUpperCase()}-${t.number}`, state: sliceState(t), milestone: slug,
+        text: t.commit && hasLand ? `${t.title} (${t.commit.slice(0, 8)})` : t.title,
+        ...(commit ? { commit } : {}), ...(gitCommit ? { at: gitCommit.at } : {}),
+        ...(t.recordedLanding || t.state === 'try' ? { landed: true } : {}),
+        ticketPath: `.scratch/${slug}/issues/${basename(t.path)}`, path: t.path } });
+    }
+    // Keep old try records for explicitly linked slice IDs readable, but write new accepts against the ticket ID.
+    const marks = readMarks?.(entries.flatMap(({ ticket, row }) => {
+      const alias = this.linkedSlices.get(ticket);
+      return alias && targetKey(alias) !== targetKey(row.id) ? [row, { ...row, id: alias }] : [row];
+    })) ?? new Map<string, string>();
+    for (const { ticket, row } of entries) {
+      const alias = this.linkedSlices.get(ticket);
+      if (ticket.state === 'try' && (marks.get(row.id) === 'accept' || (alias && marks.get(alias) === 'accept'))) ticket.state = 'done';
     }
     const dependencies = new Map<ProjectTicket, (ProjectTicket | undefined)[]>();
     for (const { slug, tickets } of this.features) for (const t of tickets) {
@@ -126,6 +111,7 @@ export class TicketRollup {
     const totals = { doneTickets: [...this.index.values()].filter(resolved).length, totalTickets: this.index.size,
       doneFeatures, totalFeatures: this.features.length };
     let room = 16 - (totals.totalFeatures - doneFeatures);
-    return { totals, running, visible: this.features.filter(f => open(f) || room-- > 0) };
+    const rows = entries.map(({ ticket, row }) => ({ ...row, state: sliceState(ticket) }));
+    return { totals, rows, marks, visible: this.features.filter(f => open(f) || room-- > 0) };
   }
 }

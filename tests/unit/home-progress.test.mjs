@@ -40,11 +40,9 @@ test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary
     const text = plain(tall).join('\n');
     assert.match(text, /Synthetic milestone closing/);
     assert.match(text, /M3b/);
-    assert.match(text, /native-tree.*2\/12/);
-    assert.match(text, lang === 'en' ? /native-tree.*2\/12 · 2 working/ : /native-tree.*2\/12 · 2 工作中/);
+    assert.match(text, lang === 'en' ? /native-tree.*2\/13 · 2 working/ : /native-tree.*2\/13 · 2 工作中/);
     assert.doesNotMatch(text, /02 Home lanes|Vocabulary|03 Inspector|Settings cleanup/, 'Home keeps only feature rollups');
-    assert.match(text, lang === 'en' ? /◇ 1 to try/ : /◇ 1 待试用/, 'the legend is the current milestone\'s');
-    assert.doesNotMatch(text, lang === 'en' ? /blocked 1/ : /受阻 1/);
+    assert.match(text, lang === 'en' ? /◇ 1 (?:to )?try/ : /◇ 1 待试(?:用)?/, 'the legend counts pending tickets');
     assert.doesNotMatch(compact(tall).map((r) => stripAnsi(r.text)).join('\n'), /NATIVE-TREE|ORPHAN|now:|Next|retired-tools|07 Vocabulary resolved|08 Vocabulary wontfix/);
     let seenTickets = false, seenLegend = false;
     for (let spare = 30; spare >= -3; spare--) {
@@ -53,7 +51,7 @@ test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary
       assert.deepEqual(frame.workboard.rows.slice(0, base), baseline.workboard.rows, 'questions and job/native cards unchanged');
       assert.ok(frame.workboard.rows.length - base <= Math.max(0, spare), 'only whole spare rows, the separator included');
       const tickets = rows.some((r) => r.item.startsWith('home-progress:tickets:'));
-      const legend = rows.some((r) => stripAnsi(r.text).includes(lang === 'en' ? '◐ 1 working' : '◐ 1 工作中'));
+      const legend = rows.some((r) => (lang === 'en' ? /◐ 2 (working|now)/ : /◐ 2 (工作中|现在)/).test(stripAnsi(r.text)));
       if (tickets) { seenTickets = true; assert.ok(legend); }
       if (legend) seenLegend = true;
       if (spare < 3) assert.equal(rows.length, 0);
@@ -84,11 +82,10 @@ test('Home milestone bar, single-line slice legend and project meter precede fea
     assert.match(lines[head], lang === 'en' ? /Milestone M3b$/ : /里程碑 M3b$/);
     assert.match(summary[0], /^  Synthetic milestone closing/);
     assert.ok(summary.length >= 1 && summary.length <= 3);
-    assert.match(lines[bar], /^  ▒{12}█{12} 0\/2$/);
-    assert.match(legend[0], /◇ 1 .*◐ 1 /);
-    assert.doesNotMatch(legend[0], /◆|○/, 'no stalls or planned slices in this milestone');
-    assert.match(lines[bar + 2], /^  (Tickets|工单) ━━─{6} 4\/14 +1\/2 /);
-    assert.match(lines[bar + 4], /◐ native-tree ━─── +2\/12 · 2 /);
+    assert.match(lines[bar], /^  █+▒+█+░+ 3\/14$/);
+    assert.match(legend[0], /✓ 3.*◇ 1.*◐ 2.*◆ 2.*○ 6/);
+    assert.match(lines[bar + 2], /^  (Tickets|工单) ━━─{6} 4\/15 +1\/2 /);
+    assert.match(lines[bar + 4], /◐ native-tree ━─── +2\/13 · 2 /);
     assert.doesNotMatch(lines.join('\n'), /02 Home lanes|03 Inspector|05 Shortcuts/);
   }
 });
@@ -104,7 +101,7 @@ test('Split counts pending slices and all tickets before folded plans, without a
     assert.doesNotMatch(text, /plan-[ab]|Inspector|Settings cleanup/);
     const idle = { ...f.data, ledger: f.data.ledger.map(r => ({ ...r, state: 'accepted' })) };
     const state = withState(sliceState(), { prefs: { panelLayout: 'split' } });
-    assert.match(plain(f.render(40, lang, 36, state, idle)).join('\n'), lang === 'en' ? /M3b · 2\/2 accepted/ : /M3b · 2\/2 已验收/);
+    assert.match(plain(f.render(40, lang, 36, state, idle)).join('\n'), lang === 'en' ? /M3b · 15\/15 accepted/ : /M3b · 15\/15 已验收/);
   }
 });
 test('expanded questions/cards and notices claim space before progress; missing facts never get placeholders', async (t) => {

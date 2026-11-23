@@ -11,6 +11,7 @@ export function stateBullets(state: string, heading: string): string[] {
   return [...section.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].map((m) => m[1]);
 }
 
+/** Legacy reader for old try notifications and job supersession; not a Project progress source. */
 export function parseLedger(state: string) {
   return stateBullets(state, 'Slices').flatMap((row) => {
     const [status, milestone, id, ...rest] = row.replace(/\s+/g, ' ').trim().split(/(?<= )·(?= )/).map((part) => part.trim());
@@ -18,16 +19,13 @@ export function parseLedger(state: string) {
   });
 }
 
-function readTicketTryLedger(root: string, existing: ReturnType<typeof parseLedger>): ReturnType<typeof parseLedger> {
+function readTicketLedger(root: string): ReturnType<typeof parseLedger> {
   const scratch = join(root, '.scratch'), rows: ReturnType<typeof parseLedger> = [];
   let features: fs.Dirent[];
   try {
     if (!fs.lstatSync(scratch).isDirectory()) return [];
     features = fs.readdirSync(scratch, { withFileTypes: true }).filter((e) => e.isDirectory()).slice(0, 64);
   } catch { return []; }
-  const knownIds = new Set(existing.map((r) => targetKey(r.id)));
-  const knownCommits = new Set(existing.flatMap((r) => [...r.text.matchAll(/\b[0-9a-f]{7,40}\b/gi)].map((m) => m[0].slice(0, 7).toLowerCase())));
-  const milestoneFor = (slug: string) => existing.find((r) => r.milestone.toLowerCase() === slug.toLowerCase())?.milestone ?? slug;
   let budget = 512;
   for (const { name: slug } of features) {
     if (budget <= 0) break;
@@ -47,29 +45,29 @@ function readTicketTryLedger(root: string, existing: ReturnType<typeof parseLedg
         if (truncated || st.size > bytes.length) continue;
         const text = bytes.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
         const { status, blocked, landed, commit } = ticketFileEvidence(text);
-        if (!heading || !status || blocked === undefined || landed !== 'try') continue;
-        const id = `${slug.toUpperCase()}-${heading.number}`;
-        if (knownIds.has(targetKey(id)) || (commit && knownCommits.has(commit.slice(0, 7).toLowerCase()))) continue;
-        rows.push({ id, state: 'try', milestone: milestoneFor(slug), text: commit ? `${heading.title} (${commit.slice(0, 8)})` : heading.title });
+        if (!heading || !status || blocked === undefined) continue;
+        rows.push({ id: `${slug.toUpperCase()}-${heading.number}`, state: landed ?? 'todo', milestone: slug,
+          text: commit ? `${heading.title} (${commit.slice(0, 8)})` : heading.title });
       } catch { /* Unreadable ticket: skip. */ }
     }
   }
   return rows;
 }
 
-/** The watch and MCP need just the same bounded ledger read, not the rest of Project collection. */
-export function readStateLedger(root: string): ReturnType<typeof parseLedger> {
-  let stateRows: ReturnType<typeof parseLedger> = [];
+/** Catch up on old try events too, but let ticket files override legacy rows with the same ID. */
+export function readTryLedger(root: string): ReturnType<typeof parseLedger> {
+  const tickets = readTicketLedger(root), ids = new Set(tickets.map((row) => targetKey(row.id)));
+  let legacy: ReturnType<typeof parseLedger> = [];
   for (const path of statePaths(root)) {
     try {
       if (!fs.lstatSync(path).isFile()) continue;
       const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
       try {
         const bytes = Buffer.alloc(STATE_BYTES);
-        stateRows = parseLedger(bytes.toString('utf8', 0, fs.readSync(fd, bytes)));
+        legacy = parseLedger(bytes.toString('utf8', 0, fs.readSync(fd, bytes)));
         break;
       } finally { fs.closeSync(fd); }
     } catch { /* Missing/unreadable; try the next STATE path. */ }
   }
-  return [...stateRows, ...readTicketTryLedger(root, stateRows)];
+  return [...tickets, ...legacy.filter((row) => !ids.has(targetKey(row.id)))];
 }

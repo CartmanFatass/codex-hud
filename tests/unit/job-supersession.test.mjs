@@ -72,7 +72,7 @@ test('landed STATE slice, ticket or project-specific accepted trial supersedes w
   assert.deepEqual(jobs.map(({ job }) => workers()[job].superseded), [true, true, true, false]);
 });
 
-test('failures and ticket rollup agree on tracker, slice aliases, reopened rows and archived decisions', async (t) => {
+test('Project ignores legacy slice evidence still understood by the failed-job compatibility lookup', async (t) => {
   const { f, home, seed, workers } = await setup(t);
   const issues = join(f.root, '.scratch/demo/issues'); fs.mkdirSync(issues, { recursive: true });
   const ids = ['01', '02', '03', '04', '05', '06', '07', '08'];
@@ -87,7 +87,7 @@ test('failures and ticket rollup agree on tracker, slice aliases, reopened rows 
   mark(f.root, 'flag', 'demo/6'); mark(join(f.root, 'other'), 'accept', 'DEMO-07');
   const flags = workers(), board = { workers: Object.values(flags), lanes: [] };
   const snapshot = await new ProjectCollector(f.root, home).collect('home', board, Date.now());
-  assert.deepEqual(snapshot.tickets[0].tickets.map(t => t.state), ['try', 'done', 'try', 'blocked', 'done', 'blocked', 'blocked', 'done']);
+  assert.deepEqual(snapshot.tickets[0].tickets.map(t => t.state), ['try', 'done', 'blocked', 'blocked', 'blocked', 'blocked', 'blocked', 'blocked']);
   assert.deepEqual(jobs.map(({ job }) => flags[job].superseded), [true, true, true, false, true, false, false, true]);
 });
 

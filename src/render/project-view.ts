@@ -3,7 +3,7 @@ import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { ledgerTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
 import { projectWorkCard } from '../collectors/work-card.js';
-import { jobSentenceLine, jobSentenceRows, stemLines, workCardDetail, labelSummary } from './work-card.js';
+import { jobSentenceRows, stemLines, workCardDetail, labelSummary } from './work-card.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { projectPage } from './monitor-state.js';
 import { basename } from 'node:path';
@@ -89,7 +89,7 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
   const fraction = `${counts.accepted}/${cur.rows.length - counts.dropped}`;
   const summary = data.summary ? clampLines(data.summary, width - 2, 3).lines : [];
   const milestone = data.ladder.current && (cur.whole && cur.rows.length ? '' : data.ladder.current);
-  const head = section(t('Progress'), width, milestone ? `${t('Milestone')} ${monitorText(milestone)}` : cur.rows.length ? t('All slices') : '');
+  const head = section(t('Progress'), width, milestone ? `${t('Milestone')} ${monitorText(milestone)}` : cur.rows.length ? t('All tickets') : '');
   // What the block keeps as it shrinks: the bar and the first summary row, then the legend, then the summary's other rows.
   let room = spare - (gap ? 1 : 0) - 1;
   const bar = states.length && room > 0 ? (room--, 1) : 0, first = summary.length && room > 0 ? (room--, 1) : 0;
@@ -124,7 +124,7 @@ export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, 
       ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: `home-progress:wait:${i}` },
       ...originalRows(r.original, `original:wait:${i}`, state.home.expanded.has(`original:wait:${i}`), width)]), data.waiting.length, room),
     (room: number) => {
-      const landed = data.ledger.filter((r) => r.state === 'accepted').reverse().slice(0, width < 56 ? 3 : 5).map((r): MonitorRow[] => {
+      const landed = landedNewest(data).filter(({ r }) => r.state === 'accepted').slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow[] => {
         const right = theme.board.muted([t('accepted'), sinceText(r.at, now)].filter(Boolean).join(' '));
         return [{ text: inline(`  ${sliceInk('accepted')(mark('✓', '+'))} ${monitorText(r.id)}`, ledgerText(r), right, width), item: 'home-progress:latest' }];
       });
@@ -160,10 +160,7 @@ function updatedText(data: ProjectSnapshot, now: number): string {
 }
 /** What an open page says about itself on its crumb row, widest first; the first that fits is shown. */
 function pageMeta(page: ProjectPage, data: ProjectSnapshot, now: number): string[] {
-  if (page === 'progress') {
-    const drift = inFlight(data).filter((r) => r.drift).length, bang = drift ? theme.board.attention(`! ${drift}`) : '';
-    return [parts(updatedText(data, now), bang).join(' · '), bang];
-  }
+  if (page === 'progress') return [updatedText(data, now)];
   if (page === 'tickets' && data.tickets?.length) {
     const text = featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length);
     return [ticketTotalText(data, text), ...(data.ticketTotals?.partial ? [t('Partial')] : [])];
@@ -183,8 +180,8 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
     const blocked = tasks.filter((task) => task.slices.some((r) => r.state === 'blocked')).length;
     const working = tasks.filter((task) => task.slices.some((r) => r.state === 'working')).length;
     const milestone = showMilestone && data.ladder.current && monitorText(data.ladder.current);
-    return parts(tasks.length && taskCountText(tasks.length), milestone, blocked && `${blocked} ${t('blocked')}`,
-      working && `${working} ${t('working')}`, !data.statePath && !data.ledger.length && t('no STATE.md'));
+    return parts(data.ticketTotals?.partial && t('Partial'), tasks.length ? taskCountText(tasks.length) : !data.ticketTotals?.partial && t('No tickets'),
+      milestone, blocked && `${blocked} ${t('blocked')}`, working && `${working} ${t('working')}`);
   }
   if (page === 'tickets') return data.tickets.length ? [ticketTotalText(data, featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length))] : [];
   // Unlisted worktrees first: a short row keeps them and drops the facts after.
@@ -234,11 +231,12 @@ export const acceptedText = (counts: ProjectSnapshot['counts'], rows: number) =>
   t('{done}/{total} accepted', { done: counts.accepted, total: rows - counts.dropped });
 /** Jobs of this project that no slice shows: an imp working in the main checkout, say. */
 export const unsliced = (data: ProjectSnapshot) => data.active.filter((a) => !data.slices.some((r) => r.jobId === a.jobId));
-/** Worktrees with no ledger row: the Working tree page counts and lists them; Now is about work in flight. */
-export const unlisted = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift === 'not in ledger');
-export const inFlight = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift !== 'not in ledger');
+/** Unmanaged worktrees that have no linked ticket. */
+export const unlisted = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift);
+export const inFlight = (data: ProjectSnapshot) => data.slices.filter((r) => !r.drift);
 /** Landed slices (to try or accepted), the newest first by commit date; those with none last, the later ledger rows first. */
-export const landedNewest = (data: ProjectSnapshot) => data.ledger.flatMap((r, i) => r.state === 'try' || r.state === 'accepted' ? [{ r, i }] : [])
+export const landedNewest = (data: ProjectSnapshot) => data.ledger.flatMap((r, i) =>
+  r.state === 'try' || (r.state === 'accepted' && (r.landed || r.commit || r.at !== undefined)) ? [{ r, i }] : [])
   .sort((a, b) => (b.r.at ?? -1) - (a.r.at ?? -1) || b.i - a.i);
 /** The Projects list is what the tab shows: asked for, with several projects to list, and no page open. */
 export const projectListOpen = (state: MonitorState, projects?: unknown[]) =>
@@ -326,9 +324,8 @@ export function sliceDetailRows(r: LedgerSlice, data: ProjectSnapshot, width: nu
 export function progressTaskDetails(task: AcceptanceTask, data: ProjectSnapshot, width: number, now: number,
   board?: WorkboardSnapshot, modelEnabled = false): MonitorRow[] {
   return [...task.slices].sort((a, b) => PROGRESS_ORDER.indexOf(a.state) - PROGRESS_ORDER.indexOf(b.state)).flatMap((r) => {
-    const drift = data.slices.find((s) => s.label === r.id)?.drift;
     const glyph = progressMark(r.state);
-    const right = drift ? theme.board.attention(t(drift)) : theme.board.muted(t(r.state === 'try' ? 'to try' : r.state));
+    const right = theme.board.muted(t(r.state === 'try' ? 'to try' : r.state));
     return [boardRow(pair(`  ${glyph} ${monitorText(r.id)}`, right, width)), ...sliceDetailRows(r, data, width, now, board, modelEnabled)];
   });
 }
@@ -448,43 +445,18 @@ export function pageRows(
       text: fit(text, width), ...(path ? { item: `project:file:${path}:${key}`, files: [path] } : {}),
     });
     const head = (label: string, right: string | number = '') => rows.push(boardRow(''), section(t(label), width, String(right)));
-    if (!data.statePath && !data.ledger.length) rows.push(boardRow('  ' + theme.board.muted(t('no STATE.md'))));
-    else {
-      if (data.summary) for (const line of clampLines(data.summary, width - 2, 2).lines) fileRow('  ' + line, 'summary');
-      const tasks = progressTasks(data);
-      if (tasks.length) rows.push(progressTasksHeading(tasks.length, width));
-      for (const task of tasks) {
-        const row = progressTaskHeader(task, data, width, now);
-        rows.push(row);
-        if (folded.has(row.item!.slice('project:fold:'.length))) rows.push(...progressTaskDetails(task, data, width, now, board, modelEnabled)
-          .map((detail) => ({ ...row, ...detail, item: detail.item ?? row.item })));
-      }
+    if (data.summary) for (const line of clampLines(data.summary, width - 2, 2).lines) fileRow('  ' + line, 'summary');
+    const tasks = progressTasks(data);
+    if (tasks.length) rows.push(progressTasksHeading(tasks.length, width));
+    else rows.push(boardRow('  ' + theme.board.muted(t(data.ticketTotals?.partial ? 'Partial' : 'No tickets'))));
+    for (const task of tasks) {
+      const row = progressTaskHeader(task, data, width, now);
+      rows.push(row);
+      if (folded.has(row.item!.slice('project:fold:'.length))) rows.push(...progressTaskDetails(task, data, width, now, board, modelEnabled)
+        .map((detail) => ({ ...row, ...detail, item: detail.item ?? row.item })));
     }
-    const ledgerIds = new Set(data.ledger.map((r) => r.id));
-    const jobs = unsliced(data), slices = inFlight(data).filter((r) => !ledgerIds.has(r.label));
-    if (slices.length + jobs.length) head('Now', slices.length + jobs.length);
-    for (const [i, r] of slices.entries()) {
-      const path = r.path ?? data.statePath;
-      const reason = r.drift === 'ledger' ? t('ledger: {state}', { state: monitorText(t(r.ledgerState ?? '')) })
-        : r.drift ? t(r.drift) : '';
-      const glyph = r.drift ? theme.board.attention('!') : r.ledgerState === 'blocked'
-        ? sliceInk('blocked')(mark('◆', '!')) : sliceInk('working')(mark('◐', '@'));
-      for (const line of stacked(`  ${glyph} ${monitorText(r.label)}`, r.value, reason ? theme.board.attention(reason) : '', width, 4))
-        fileRow(line, `slice:${i}`, path);
-      if (!r.jobId) continue;
-      const worker = board?.workers.find((w) => w.evidence[0]?.sourceId === r.jobId);
-      const asking = worker?.homeNeedsHuman ?? r.asking;
-      const right = [monitorText(worker?.role ?? r.role ?? ''), asking ? `${t('asking')} ?`
-        : minuteAge(r.at ?? null, now)].filter(Boolean).join(' ');
-      const prefix = `    ${t('now:')} `, room = Math.max(1, width - visualLength(prefix) - visualLength(right) - 1);
-      const sentence = worker ? modelEnabled && worker.modelSentence
-        // Reuse Home's keyword painting and word cut, without its two-cell stem.
-        ? jobSentenceLine(worker.modelSentence, room + 3, (s) => s).slice(2).trimEnd()
-        : monitorText(workCardDetail(projectWorkCard(worker, now))) : '';
-      fileRow(pair(prefix + sentence, right, width), `slice:${i}:now`, path);
-      const labels = labelSummary(worker?.labels);
-      if (labels) fileRow('    ' + labels, `slice:${i}:labels`, path);
-    }
+    const jobs = unsliced(data);
+    if (jobs.length) head('Now', jobs.length);
     // Jobs of this project that no slice shows: an imp working in the main checkout, say. Each row is a stop of its own
     // (so a long list pages by keyboard); Enter or `o` opens its report, else its brief.
     for (const job of jobs) {
@@ -539,7 +511,7 @@ export function pageRows(
     if (data.last) item({ label: 'last', value: data.last.text, at: data.last.at }, 0);
     // Worktrees with no ledger row, counted on the hub's Working tree row.
     if (unlisted(data).length) rows.push(boardRow(''), section(t('Unlisted worktrees'), width, String(unlisted(data).length)),
-      ...unlisted(data).map((r) => boardRow(pair(`  ${theme.board.attention('!')} ${monitorText(r.label)}`, theme.board.muted(t('not in ledger')), width))));
+      ...unlisted(data).map((r) => boardRow(pair(`  ${theme.board.attention('!')} ${monitorText(r.label)}`, theme.board.muted(t('no linked ticket')), width))));
   } else if (page === 'docs') data.docs.forEach((r, i) => item(r, i));
   if (rows.length === 1) rows.push(boardRow('  ' + theme.board.muted(t('none'))));
   return rows;

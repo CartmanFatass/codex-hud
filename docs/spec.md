@@ -249,27 +249,29 @@ Reference: `docs/design/project-ux/` (direction C: Inbox).
 - Project can switch among the panel's project and `hud setup` projects. Home stays local. Progress,
   Tickets, Working tree and Docs each have a hub summary row and their own page. (12.04, 14.04, 22.02)
 - Working tree: branch, changes, editing job, last commit. Docs: spec milestone, STATE waiting items, newest
-  review. STATE carries `## Waiting for the owner` and `Milestone:`. Tickets (`to-tickets`): derive status at
-  read time from linked jobs, STATE slices, commits naming the ticket and accepted tries, else the file's own
-  status; a ticket waiting only on unfinished predecessors shows as queued, not blocked, alongside its blockers,
+  review. STATE keeps `Milestone:`, `## Now`, `## Waiting for the owner`, `## Next` and short notes, not slice rows.
+  Tickets (`to-tickets`) are the only slice ledger: derive status from ticket files and their landing records,
+  linked jobs and worktrees, commits naming the ticket and accepted tries. A ticket waiting only on unfinished
+  predecessors shows as queued, not blocked, alongside its blockers,
   package lane links, checklist and latest comment. (12.04, 14.04)
 - Inbox hub: ranked Needs you (asking jobs, items the main session flagged in STATE Waiting, asking tickets,
-  blocked slices, exhausted roles), then Running (one row per running job, sonic children counted on their parent),
+  blocked tickets, exhausted roles), then Running (one row per running job, sonic children counted on their parent),
   last accepted and the page rows. Enter on a role alert opens that role on Control. (20.06, 22.27)
-- Progress reads STATE's summary, milestone, slices and Next. Show tasks grouped by milestone and running
-  project jobs. Tickets groups its rows by feature. (12.04, 14.04, 22.27)
+- Progress takes its bar, legend, counts and latest acceptances from tickets and landing evidence, not STATE slice
+  rows. It keeps STATE's Now summary, milestone and Next. Progress groups tickets by feature and also shows
+  running project jobs; Tickets groups its rows by feature. (12.04, 14.04, 22.27)
 - The Inbox hub offers Accept all when the project has pending acceptance. It records all observed pending
-  slices across milestones in one `accept` record under `$HUD_HOME/tries.jsonl` without editing project files.
+  tickets in one `accept` record under `$HUD_HOME/tries.jsonl` without editing project files.
   The panel reflects acceptance from the log; `hud watch` and MCP `changes` still deliver it to the main
   session. Old acceptance and flag records remain readable. There is no per-slice owner try action. (22.27)
-- A waiting item can end in `(waits on <slice ID>, <feature>/<NN>)`. When all named slices are accepted or
-  dropped and tickets done or dropped, hide it and stop counting it without editing STATE. Wrap the whole
-  item where rows permit. (18.07, 20.05)
+- A waiting item can end in `(waits on <feature>/<NN>, …)`. When all named tickets are done or dropped, hide it
+  and stop counting it without editing STATE. Legacy accept records can still settle old slice IDs. Wrap the
+  whole item where rows permit. (18.07, 20.05, 22.27)
 - The board model can translate waiting items, open worker questions and open ticket titles into the display
   language when needed, with the original folded below. It does not write try briefs. (22.14, 22.27)
 - Inbox is the only Project layout in Classic and Split; old saved Project layout values are ignored. (22.27)
 - `hud board [--html] [--open]` or panel `w` exports self-contained static HTML for the project, using
-  ledger text for pending work, with no network fetches or resident server. (18.09, 22.27)
+  ticket text for pending work, with no network fetches or resident server. (18.09, 22.27)
 
 #### 2.2.5 Control and model picker
 

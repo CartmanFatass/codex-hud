@@ -141,11 +141,11 @@ test('the list reads no Git and re-reads only the files that changed', async (t)
   await pool.read(roots, l.board, NOW + 1000);
   assert.equal(opened.length, cold, 'unchanged files are not opened again');
   const state = join(roots[1], 'STATE.md');
-  fs.writeFileSync(state, fs.readFileSync(state, 'utf8') + '- todo · 0.2 · A-FIVE · more\n');
+  fs.writeFileSync(state, fs.readFileSync(state, 'utf8') + '## Slices\n- todo · 0.2 · A-FIVE · more\n');
   fs.utimesSync(state, new Date(NOW + 5000), new Date(NOW + 5000));
   const again = await pool.read(roots, l.board, NOW + 2000);
   assert.deepEqual(opened.slice(cold), [state], 'only the changed STATE.md is read again');
-  assert.equal(again.get(roots[1]).counts.todo, 2);
+  assert.equal(again.get(roots[1]).counts.todo, 0, 'legacy STATE rows do not affect the overview');
   assert.ok(Math.abs(again.get(roots[1]).at - (NOW + 5000)) < 2);
   assert.deepEqual(spawned, []);
   // A root that left the list drops its collector: coming back, its files are read afresh.

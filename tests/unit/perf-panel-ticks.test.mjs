@@ -243,7 +243,6 @@ test('ProjectCollector.collect memoizes Home and Overview on .scratch, ledger, t
   put(join(cwd, 'a.txt'), 'v1\n');
   git(['add', '.']);
   git(['commit', '-m', 'init']);
-  const sha = git(['rev-parse', '--short=7', 'HEAD']);
 
   const ticketFile = join(cwd, '.scratch/demo/issues/01-item.md');
   const claimedFile = join(cwd, '.scratch/demo/issues/02-claim.md');
@@ -252,7 +251,7 @@ test('ProjectCollector.collect memoizes Home and Overview on .scratch, ledger, t
   put(ticketFile, '# 01: First ticket\n**Status:** ready-for-agent\n**Blocked by:** none\n');
   put(claimedFile, '# 02: Claimed ticket\n**Status:** claimed\n**Blocked by:** none\n');
   fs.utimesSync(claimedFile, new Date(NOW - 1000), new Date(NOW - 1000));
-  put(stateFile, `# State\nMilestone: M4\n## Slices\n- try · M4 · DEMO-S1 · landed (${sha})\n`);
+  put(stateFile, '# State\nMilestone: M4\n');
   put(join(jobDir, 'job.json'), { job: 'j0000000000000001', role: 'imp', cwd, created_at: new Date(NOW).toISOString() });
   put(join(jobDir, 'STATUS.json'), { state: 'working', started_at: new Date(NOW).toISOString() });
 
@@ -288,18 +287,18 @@ test('ProjectCollector.collect memoizes Home and Overview on .scratch, ledger, t
   assert.strictEqual(ov2, ov1);
 
   // In-place ticket edit invalidates memo.
-  put(ticketFile, '# 01: First ticket\n**Status:** done\n**Blocked by:** none\n');
+  put(ticketFile, '# 01: First ticket\n**Status:** try\n**Blocked by:** none\n');
   const afterTicket = await collector.collect('home', board, NOW + 2000);
   assert.notStrictEqual(afterTicket, first);
-  assert.equal(afterTicket.tickets[0].tickets[0].state, 'done');
+  assert.equal(afterTicket.tickets[0].tickets[0].state, 'try');
 
   // In-place STATE.md edit invalidates memo.
-  put(stateFile, `# State\nMilestone: M4\n## Waiting for the owner\n- Check new item\n## Slices\n- try · M4 · DEMO-S1 · landed (${sha})\n`);
+  put(stateFile, '# State\nMilestone: M4\n## Waiting for the owner\n- Check new item\n');
   const afterState = await collector.collect('home', board, NOW + 3000);
   assert.equal(afterState.waiting.length, 1);
 
   // TryLog append invalidates memo.
-  appendTry(hud, cwd, 'accept', { milestone: 'M4', slices: [{ id: 'DEMO-S1', text: `landed (${sha})` }] });
+  appendTry(hud, cwd, 'accept', { milestone: 'demo', slices: [{ id: 'DEMO-01', text: 'First ticket' }] });
   const afterTry = await collector.collect('home', board, NOW + 4000);
   assert.equal(afterTry.counts.accepted, 1);
 

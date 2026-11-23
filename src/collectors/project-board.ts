@@ -9,7 +9,7 @@ import { controlFacts, type HarnessFact, type HarnessSwitchFact, type ModelLists
 import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
-import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
+import { STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { collectControlJobStats, type ControlJobStats } from './job-stats.js';
@@ -32,6 +32,7 @@ export type SliceState = typeof SLICE_STATES[number];
 export interface LedgerSlice {
   id: string; state: SliceState; milestone: string; release?: string; text: string; commit?: string; at?: number;
   diff?: DiffStatSummary;
+  landed?: true;
   /** Relative ticket path for ticket-derived slices (HTML board). */
   ticketPath?: string;
   /** Absolute file path for ticket-derived slices (opened on `o`). */
@@ -47,7 +48,7 @@ export interface ProjectTicket {
   number: string; title: string; originalTitle?: string; path: string; at: number; status: string;
   checked: number; total: number; items: TicketItem[]; comment?: string; commit?: string; recordedLanding?: boolean;
   blockers: string[]; state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
-  job?: { role: string; state: string; at?: number; created: number };
+  job?: { id?: string; role: string; state: string; at?: number; created: number };
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
 export interface ProjectSnapshot {
@@ -75,7 +76,7 @@ export interface ProjectSnapshot {
   /** Linked worktrees besides the main one; with `git`, one Git read per five seconds. */
   worktreeCount?: number;
   ladder: { ids: string[]; current?: string };
-  slices: (ProjectItem & { jobId?: string; role?: string; asking?: boolean; drift?: string; ledgerState?: string })[];
+  slices: (ProjectItem & { jobId?: string; role?: string; asking?: boolean; drift?: 'no linked ticket'; ledgerState?: SliceState })[];
   ledger: LedgerSlice[];
   active: ActiveJob[];
   counts: Record<SliceState, number>;
@@ -88,21 +89,10 @@ export interface ProjectSnapshot {
   next: ProjectItem[];
   editing: ProjectItem[];
 }
-/**
- * A waiting item that ends with `(waits on ID, feature/NN)` is settled once every reference is: a ledger slice
- * `accepted` or `dropped`, a ticket done or dropped. Unknown references keep the item; so does an item naming none.
- */
-export function waitSettled(text: string, ledger: ReadonlyMap<string, { state: string }>, tickets: readonly TicketFeature[]): boolean {
+/** Waits can name tickets (either spelling) or a legacy acceptance ID. Unknown references keep the item open. */
+export function waitSettled(text: string, settled: ReadonlySet<string>): boolean {
   const refs = [...text.matchAll(/[（(]waits on ([^()（）]+)[）)]/gi)].at(-1)?.[1].split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
-  return refs.length > 0 && refs.every((ref) => {
-    const ticket = ref.match(/^([\w.-]+)[/#](\d+)$/);
-    if (ticket) {
-      const found = tickets.find((f) => f.slug === ticket[1])?.tickets.find((t) => Number(t.number) === Number(ticket[2]));
-      return !!found && (found.state === 'done' || found.state === 'dropped');
-    }
-    const slice = ledger.get(ref);
-    return !!slice && (slice.state === 'accepted' || slice.state === 'dropped');
-  });
+  return refs.length > 0 && refs.every((ref) => settled.has(targetKey(ref)));
 }
 const canonicalPath = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
 export const insideRoot = (root: string, path: string) => {
@@ -440,26 +430,21 @@ export class ProjectCollector {
       this.ticketCommits.clear();
       if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) try {
         const log = await worktreeGit(this.cwd, ['log', '-n', '64', '--no-show-signature', '--name-only', '--format=%x1e%H%x00%ct%x00%s', sha, '--']);
-        const subjects: string[] = [];
         for (const chunk of log.split('\x1e')) {
           if (!chunk) continue;
           const [header, ...rest] = chunk.split(/\r?\n/);
           const [commitSha, ct, subject = ''] = header.split('\0');
-          subjects.push(subject);
-          if (!commitSha || /^Record landing\b/.test(subject)) continue;
+          const ids = ticketIds(subject), at = Number(ct) * 1000;
+          for (const id of ids) this.landed.add(id);
+          if (!commitSha || !Number.isFinite(at) || /^Record landing\b/.test(subject)) continue;
           const files = rest.filter(Boolean);
-          if (!files.some((p) => !p.startsWith('.scratch/'))) continue;
-          const ts = Number(ct) * 1000;
-          if (!Number.isFinite(ts)) continue;
-          for (const file of files) {
+          if (files.some((p) => !p.startsWith('.scratch/'))) for (const file of files) {
             const m = /^\.scratch\/([^/]+)\/issues\/(\d+)-[^/]+\.md$/.exec(file);
-            if (!m) continue;
-            const id = targetKey(`${m[1]}/${m[2]}`);
-            if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at: ts });
+            if (m) ids.push(targetKey(`${m[1]}/${m[2]}`));
           }
+          for (const id of ids) if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at });
         }
-        this.landed = new Set(ticketIds(subjects.join('\n')));
-      } catch { /* Git unavailable: rely on the ledger. */ }
+      } catch { /* Git unavailable: rely on ticket files. */ }
     }
     return { ids: this.landed, commits: this.ticketCommits };
   }
@@ -528,72 +513,35 @@ export class ProjectCollector {
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
     out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim()
       ?? state.match(/^## Now(?: \([^\r\n]+\))?[ \t]*\r?\n\s*[-*] ([^\r\n]+)/m)?.[1]?.trim() ?? '';
-    const ledger = new Map<string, { state: string; text: string }>();
-    const parsed = parseLedger(state);
-    const stateKeys = new Set(parsed.map((r) => targetKey(r.id)));
-    const stateCommits = new Set(parsed.flatMap((r) => [...r.text.matchAll(/\b[0-9a-f]{7,40}\b/gi)].map((m) => m[0].slice(0, 7).toLowerCase())));
-    const milestoneFor = (slug: string) => parsed.find((r) => r.milestone.toLowerCase() === slug.toLowerCase())?.milestone ?? slug;
-    const ticketTryRaw = out.tickets.flatMap(({ slug, tickets }) => tickets.flatMap((t) => {
-      if (t.state !== 'try') return [];
-      const id = `${slug.toUpperCase()}-${t.number}`;
-      if (stateKeys.has(targetKey(id)) || (t.commit && stateCommits.has(t.commit.slice(0, 7).toLowerCase()))) return [];
-      return [{ id, state: 'try', milestone: milestoneFor(slug), text: t.commit ? `${t.title} (${t.commit.slice(0, 8)})` : t.title }];
-    }));
-    const marks = this.tries.marks(this.cwd, [...parsed, ...ticketTryRaw], true);
-    for (const { state: raw, milestone, id, text } of parsed) {
-      const status = raw === 'done' || marks.get(id) === 'accept' ? 'accepted' : raw;
-      ledger.set(id, { state: status, text });
-      if (!SLICE_STATES.includes(status as SliceState)) continue;
-      const state = status as SliceState;
-      out.counts[state]++;
-      const commit = [...text.matchAll(/\b[0-9a-f]{7,40}\b/gi)].at(-1)?.[0];
-      out.ledger.push({ id, state, milestone, text, ...(commit ? { commit } : {}) });
-      if (state === 'working' || state === 'blocked') out.slices.push({
-        label: id, value: text, path: statePath, ledgerState: state,
-      });
-    }
-    // Accepted tries still settle their named waits and tickets after their STATE rows are archived.
-    for (const [id, action] of marks) if (action === 'accept' && !ledger.has(id)) ledger.set(id, { state: 'accepted', text: '' });
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
     out.ladder.current = milestone?.split(/\s+/)[0];
     const specPath = join(this.cwd, 'docs/spec.md'), specFile = shown === 'overview' ? null : this.read(specPath);
     if (specFile?.truncated) out.specTruncated = true;
     const spec = specFile?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
     out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M\d+[a-z]?|\d+\.\d+\.\d+),/gm)].map((m) => m[1]);
-    // Keep the raw scope for task grouping and TryLog identity, separately attribute the release bar.
-    let activeBlock = true;
-    for (const r of out.ledger) {
-      const prefix = r.milestone.split('/')[0];
-      if (out.ladder.ids.includes(prefix) || /^(?:M\d+[a-z]?|\d+\.\d+\.(?:\d+|x))$/i.test(prefix)) {
-        if (prefix !== r.milestone) r.release = prefix;
-        if (out.ladder.current && out.ladder.ids.includes(prefix)) activeBlock = out.ladder.ids.indexOf(prefix) >= out.ladder.ids.indexOf(out.ladder.current);
-      } else if (activeBlock && out.ladder.current) r.release = out.ladder.current;
-    }
     const refreshedGit = !home ? await this.fullDetails(out, board, now, specPath, milestone) : false;
     const rollup = new TicketRollup(out.tickets);
-    const liveSlices = shown === 'overview' ? [] : this.joinJobs(out, board, home, shown === 'export', rollup, ledger, prefetchedJobs);
-    const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup, gitRefs) : { ids: new Set<string>(), commits: new Map<string, { sha: string; at: number }>() };
-    const { totals, visible, running } = rollup.derive(out.ledger, landedInfo.ids, now, marks, landedInfo.commits);
-    for (const row of [...running, ...liveSlices]) {
-      const old = out.ledger.find(r => r.id === row.id);
-      if (old) {
-        if (old.state === row.state || !['todo', 'working'].includes(old.state)) continue;
-        out.counts[old.state]--;
-        old.state = row.state;
-      } else {
-        out.ledger.push(out.ladder.current ? { ...row, release: out.ladder.current } : { ...row });
-        ledger.set(row.id, { state: row.state, text: row.text });
-      }
+    if (shown !== 'overview') this.joinJobs(out, board, home, shown === 'export', rollup, prefetchedJobs);
+    const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup, gitRefs) : undefined;
+    const { totals, visible, rows, marks } = rollup.derive(now, landedInfo?.ids, landedInfo?.commits, (rows) => this.tries.marks(this.cwd, rows, true));
+    const active = new Map(out.active.map((job) => [job.jobId, job]));
+    const ticketJobs = new Map(out.tickets.flatMap(({ slug, tickets }) => tickets.map((t) => [targetKey(`${slug}/${t.number}`), t.job?.id] as const)));
+    const settled = new Set([...marks].filter(([, action]) => action === 'accept').map(([id]) => targetKey(id)));
+    out.ledger = rows;
+    for (const row of rows) {
+      if (out.ladder.current) row.release = out.ladder.current;
       out.counts[row.state]++;
+      const key = targetKey(row.id);
+      if (row.state === 'accepted' || row.state === 'dropped') settled.add(key);
       if (row.state === 'working' || row.state === 'blocked') {
-        const entry = out.slices.find(s => s.label === row.id);
-        if (entry) entry.ledgerState = row.state;
-        else out.slices.push({ label: row.id, value: row.text, ...(row.path ? { path: row.path } : {}), ledgerState: row.state });
+        const job = active.get(ticketJobs.get(key) ?? '');
+        out.slices.push({ label: row.id, value: row.text, path: job?.path ?? row.path, ledgerState: row.state,
+          ...(job ? { jobId: job.jobId, role: job.role, asking: job.asking, at: job.at } : {}) });
       }
     }
     if (!home) await this.fullLedgerDetails(out, now, shown === 'export', refreshedGit);
     out.ticketTotals = ticketsScan.partial ? { ...totals, partial: true } : totals;
-    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
+    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, settled));
     out.tickets = visible;
     if (home && memoKey !== undefined) {
       let claimFloor = -Infinity, claimExpiry = Infinity;
@@ -675,7 +623,7 @@ export class ProjectCollector {
     const toTry = out.ledger.filter((r) => r.state === 'try').reverse()
       .sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
     const attachDiff = async (row: LedgerSlice) => {
-      const diff = await this.diffs.commits(this.cwd, row.ticketPath && row.commit ? row.commit : row.text, now);
+      const diff = row.commit && await this.diffs.commits(this.cwd, row.commit, now);
       if (diff) row.diff = diff;
     };
     if (exporting) {
@@ -691,8 +639,7 @@ export class ProjectCollector {
     }
   }
 
-  private joinJobs(out: ProjectSnapshot, board: WorkboardSnapshot, home: boolean, exporting: boolean, rollup: TicketRollup, ledger: Map<string, {state: string; text: string}>, prefetchedJobs?: readonly { id: string }[]) {
-    const statePath = out.statePath;
+  private joinJobs(out: ProjectSnapshot, board: WorkboardSnapshot, home: boolean, exporting: boolean, rollup: TicketRollup, prefetchedJobs?: readonly { id: string }[]) {
     const canonCache = new Map<string, string>();
     const canonical = (p: string) => { let r = canonCache.get(p); if (r === undefined) { r = canonicalPath(p); canonCache.set(p, r); } return r; };
     const root = canonical(this.cwd);
@@ -702,10 +649,8 @@ export class ProjectCollector {
     const workersByJob = new Map(board.workers.map((w) => [w.evidence[0]?.sourceId, w]));
     // An export only joins receipts for the caller's already pane-scoped workers.
     const jobs = exporting ? [...workersByJob.keys()].filter((id): id is string => !!id && JOB_ID_RE.test(id)).map((id) => ({ id })) : (prefetchedJobs ?? this.recentJobs(jobCache));
-    const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
     const managed = new Map<string, string>();
     const active: { created: number; entry: ActiveJob }[] = [];
-    const liveSlices = new Map<string, LedgerSlice>();
     for (const { id } of jobs) {
       const dir = join(jobsRoot, id);
       const jobRes = jobCache.readJob<JobReceipt>(id);
@@ -716,14 +661,13 @@ export class ProjectCollector {
       const isolated = wt?.root === cwd && typeof wt.branch === 'string' && typeof wt.main_root === 'string';
       if (isolated) managed.set(cwd, wt.branch as string);
       const inside = inRoot(cwd) || (isolated && inRoot(wt.main_root as string));
-      if (!inside && (home || exporting)) continue;
+      if (!inside) continue;
       const created = Date.parse(String(job.created_at ?? '')) || 0;
-      if (!inside && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const statusRes = jobCache.readStatus<JobStatus>(id);
       const s = statusRes.status === 'ok' ? statusRes.value : {};
       const state = ticketJobState(job, s);
       const worker = workersByJob.get(id);
-      if (inside && !SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
+      if (!SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
         const at = Date.parse(String(s.started_at ?? job.created_at ?? ''));
         // The workboard's description, the job's own title or task; a job of another pane has neither, so its brief says.
         const title = [
@@ -732,10 +676,6 @@ export class ProjectCollector {
         ].find((v): v is string => typeof v === 'string' && v.trim().length > 0)?.replace(/\s+/g, ' ').trim()
           ?? (home ? undefined : this.briefTitle(join(dir, 'brief.md'), job.task_length));
         const file = home ? undefined : firstFile(join(dir, 'report.md'), join(dir, 'brief.md'));
-        if (typeof job.slice === 'string' && job.slice && !job.ticket && !rollup.hasTicket(job.slice)) {
-          liveSlices.set(job.slice, { id: job.slice, state: ['waiting_orchestrator', 'blocked'].includes(state) ? 'blocked' : 'working',
-            milestone: job.package ?? '—', text: title || job.slice });
-        }
         active.push({
           created,
           entry: {
@@ -746,36 +686,21 @@ export class ProjectCollector {
           },
         });
       }
-      const report = join(dir, 'report.md'), brief = join(dir, 'brief.md');
-      if (inside && out.tickets.length) {
+      if (out.tickets.length && !job.parent_job) {
+        const brief = join(dir, 'brief.md');
         const material = job.ticket || job.slice ? '' : job.task ?? job.brief_path ?? this.read(brief, 4096)?.text.slice(0, typeof job.task_length === 'number' ? job.task_length : 4096) ?? worker?.task ?? '';
         const at = Date.parse(String(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at ?? ''));
-        rollup.link(job, String(material), { role: typeof job.role === 'string' ? job.role : '',
+        rollup.link(job, String(material), { id, role: typeof job.role === 'string' ? job.role : '',
           state: job.reaped_at && !SETTLED_JOB_STATES.has(state) ? 'closed' : state,
           created, ...(Number.isFinite(at) ? { at } : {}) });
       }
-      if (home) continue;
-      // A sonic child runs in its parent's tree but never stands for it.
-      if (job.parent_job || (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
-      const path = firstFile(report, brief);
-      const at = Date.parse(String(s.started_at ?? job.created_at ?? ''));
-      byTree.set(cwd, { jobId: id, role: typeof job.role === 'string' ? job.role : '', created,
-        asking: s.state === 'waiting_orchestrator', path, ...(Number.isFinite(at) ? { at } : {}) });
     }
     out.active = active.sort((a, b) => b.created - a.created || a.entry.jobId.localeCompare(b.entry.jobId)).map((a) => a.entry);
-    if (home) return liveSlices.values();
-    for (const slice of out.slices) if (ledger.get(slice.label)?.state === 'working' &&
-      !this.worktrees.some((tree) => basename(tree.path) === slice.label)) slice.drift = 'no worktree';
-    for (const tree of this.worktrees) {
-      const path = canonical(tree.path), id = basename(path), job = byTree.get(path), entry = ledger.get(id);
-      let slice = out.slices.find((r) => r.label === id);
-      if (!slice) {
-        slice = { label: id, value: entry?.text ?? '', path: statePath,
-          drift: managed.get(path) === tree.branch ? undefined : entry ? 'ledger' : 'not in ledger', ledgerState: entry?.state };
-        out.slices.push(slice);
-      }
-      if (job) Object.assign(slice, job, { path: job.path ?? statePath });
+    if (!home) for (const tree of this.worktrees) {
+      const path = canonical(tree.path), branch = tree.branch?.replace(/^wt\//, '') ?? '';
+      if (!(managed.has(path) && managed.get(path) === tree.branch) && !rollup.hasTicket(branch)) out.slices.push({
+        label: basename(path), value: '', drift: 'no linked ticket',
+      });
     }
-    return liveSlices.values();
   }
 }

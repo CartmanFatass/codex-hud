@@ -45,7 +45,7 @@ const looseJobRows = (data: ProjectSnapshot, width: number, now: number): Monito
 function progressTaskPart(input: MonitorData, data: ProjectSnapshot, board: WorkboardSnapshot, width: number, now: number): Part {
   const tasks = progressTasks(data);
   const list: MonitorRow[] = tasks.length ? [progressTasksHeading(tasks.length, width), ...tasks.map((task) => progressTaskHeader(task, data, width, now))]
-    : [plain('  ' + muted(t(data.statePath ? 'none' : 'no STATE.md')), width)];
+    : [plain('  ' + muted(t(data.ticketTotals?.partial ? 'Partial' : 'No tickets')), width)];
   list.push(...looseJobRows(data, width, now));
   if (data.next.length) list.push({ item: 'split:next', ...(data.statePath ? { files: [data.statePath] } : {}),
     text: pair(`${muted(mark('→', '>'))} ${t('Next')}`, muted(String(data.next.length)), width) });
@@ -91,7 +91,7 @@ function factsPart(page: 'tree' | 'docs', data: ProjectSnapshot, width: number, 
   const git = data.git, facts = page === 'docs' ? data.docs : [
     ...(git ? [{ label: 'branch', value: [git.branch, t('{n} changed', { n: git.changed }), git.ahead === null ? '' : `${git.ahead} ${t('ahead')}`, git.behind ? `${git.behind} ${t('behind')}` : ''].filter(Boolean).join(' · ') }] : []),
     ...data.editing, ...(data.last ? [{ label: 'last', value: data.last.text, at: data.last.at }] : []),
-    ...unlisted(data).map((r) => ({ label: '!', value: `${r.label} · ${t('not in ledger')}` }))];
+    ...unlisted(data).map((r) => ({ label: '!', value: `${r.label} · ${t('no linked ticket')}` }))];
   const list = [...facts.map((r, i) => ({ ...projectItem(r, i, '', width, now), item: `project:row:${i}` }))];
   const preview = (cursor?: string): Shown => {
     const r = facts[Number(/^project:row:(\d+)$/.exec(cursor ?? '')?.[1])];

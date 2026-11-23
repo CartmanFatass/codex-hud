@@ -10,6 +10,7 @@ import { NOW, TREE, plain } from './project-page.mjs';
 import { join } from 'node:path';
 export async function homeFixture(root) {
   const f = await ticketFixture(root);
+  f.put(join(f.cwd, '.scratch/native-tree/issues/14-landed.md'), '# 14: Landed change\n**Status:** ready-for-human\n**Blocked by:** none\n\n## Comments\n- Landed 1234567\n', 1);
   f.put(join(f.job, 'qa/q1.md'), 'Question: Use the synthetic layout?\n\nOptions:\n- compact\n- wide\n\nDefault if unanswered: compact\n');
   f.put(join(f.job, 'qa/q1.answer.md'), 'compact\n');
   const lanes = readThinJobs(f.hud, { project: f.cwd, pane: 'w4E:p1' });

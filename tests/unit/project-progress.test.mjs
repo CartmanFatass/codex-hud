@@ -59,7 +59,7 @@ test('Progress folds through real input: a task shows slice details; Next shows 
   const short = frame.workboard.rows.find((r) => /:next:0$/.test(r.item ?? ''));
   for (const raw of ['\r', 'o']) assert.deepEqual(send(at(short.item), raw).action, { type: 'open-files', files: [f.data.statePath] });
 });
-test('a project with no STATE.md says so on Progress and its other pages work; its live jobs still show', async (t) => {
+test('a project without tickets gets an empty Progress message; its live jobs still show', async (t) => {
   const f = await fixture(t), bare = join(f.root, 'bare');
   fs.mkdirSync(bare);
   const collector = new ProjectCollector(bare, f.hud, f.env, f.home);
@@ -69,10 +69,10 @@ test('a project with no STATE.md says so on Progress and its other pages work; i
   for (const width of [40, 120]) for (const lang of ['en', 'zh']) {
     const progress = f.render(width, lang, 'progress', 40, withJob);
     for (const line of progress.lines) assert.equal(visualLength(line), width);
-    assert.match(text(progress), lang === 'en' ? /no STATE\.md/ : /无 STATE\.md/);
+    assert.match(text(progress), lang === 'en' ? /No tickets/ : /无工单/);
     assert.match(text(progress), /◉ imp/);
     assert.doesNotMatch(text(progress), /\(0\.1\.3\)|[█▒░]|● working|Next|To try/);
-    assert.match(text(f.render(width, lang, undefined, 24, data)), lang === 'en' ? /Progress +no STATE\.md/ : /进度 +无 STATE\.md/);
+    assert.match(text(f.render(width, lang, undefined, 24, data)), lang === 'en' ? /Progress +No tickets/ : /进度 +无工单/);
     for (const page of ['tickets', 'tree', 'docs', 'control']) for (const line of f.render(width, lang, page, 40, data).lines)
       assert.equal(visualLength(line), width);
   }
@@ -278,7 +278,7 @@ await runLivePage();
   child.stdin.write('G\r');
   await until(() => rows().some((r) => /⏎ accept all/.test(r)), 'the stale Accept all row is selected');
   fs.writeFileSync(release, '');
-  await until(() => rows().some((r) => /^Progress +no STATE\.md/.test(r)) && rows().some((r) => /^other-/.test(r)), 'the second project hub');
+  await until(() => rows().some((r) => /^Progress +No tickets/.test(r)) && rows().some((r) => /^other-/.test(r)), 'the second project hub');
   assert.ok(!fs.existsSync(join(f.hud, 'tries.jsonl')), 'a row painted for the previous root cannot record acceptance');
 });
 test('the live panel collects only the project it shows; Home and the other tab stay on its own project', async (t) => {

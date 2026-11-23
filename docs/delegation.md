@@ -19,7 +19,8 @@ agent proposes.
    use `op: add` to publish approved drafts into `.scratch/<slug>/issues/` (see `docs/agents/issue-tracker.md`).
    The Project tab tracks those tickets. Several small features one implementer can
    finish in one session are one slice with one brief and its acceptance list, no tickets (owner, 2026-11-12: "没有拆的
-   必要"). STATE.md changes only at milestone boundaries; the Project tab reads slice progress from tickets.
+   必要"). Tickets and their land records are the only slice ledger for Project. Keep only the milestone, Now,
+   Waiting for the owner, Next and short notes in STATE.md; do not add a slice row.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per
    slice. For ticketed work, call `hud_tickets({op: "ready"})` and pass the returned `ticket` and `path` to `hud_create`
    as `ticket` and `brief_file`. A live job claims the ticket; leave the file at `ready-for-agent` until `hud_land`

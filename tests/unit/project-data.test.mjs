@@ -10,7 +10,7 @@ import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
 import { clearJobIndexCaches } from '../../dist/roles/job-index-cache.js';
 import { appendTry, TryLog } from '../../dist/collectors/try-records.js';
-import { currentRows, homeProgressRows, pageRows } from '../../dist/render/project-view.js';
+import { currentRows, homeProgressRows, landedNewest, pageRows } from '../../dist/render/project-view.js';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -49,29 +49,20 @@ function initRepo(cwd, commits) {
   return hashes;
 }
 
-test('ledger parses ## Slices in order with milestone, commit and batched git commit date', async (t) => {
+test('a notes-only project keeps its milestone, Now, Waiting and Next but ignores any stale slice rows', async (t) => {
   const f = makeTemp(t);
-  const [h1, h2] = initRepo(f.cwd, [
-    { file: 'a.txt', msg: 'first', date: '2026-11-10T08:00:00Z' },
-    { file: 'b.txt', msg: 'second', date: '2026-11-12T09:30:00Z' },
-  ]);
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), [
-    '# State', '', '## Slices', '',
-    `- accepted · M1 · FIRST · landed first (${h1})`,
-    `- try · 0.1.3 · SECOND · multi hash (deadbee, ${h2})`,
-    '- working · M4 · NO-HASH · still building',
-    '- todo · M4 · UNKNOWN · bogus commit (0000000)',
-    '- mystery · M4 · IGNORED · unknown state',
+    '# State', 'Milestone: M4 · Sample', '## Now', '- Building the sample',
+    '## Waiting for the owner', '- Choose the filename', '## Next', '- Try the sample',
+    '## Slices', '- accepted · M4 · STALE · previously accepted', '- try · M4 · STALE-TRY · pending',
   ].join('\n'));
   const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect(true, EMPTY_BOARD, NOW);
-  assert.deepEqual(data.ledger, [
-    { id: 'FIRST', state: 'accepted', milestone: 'M1', text: `landed first (${h1})`, commit: h1, at: Date.parse('2026-11-10T08:00:00Z') },
-    { id: 'SECOND', state: 'try', milestone: '0.1.3', text: `multi hash (deadbee, ${h2})`, commit: h2, at: Date.parse('2026-11-12T09:30:00Z') },
-    { id: 'NO-HASH', state: 'working', milestone: 'M4', text: 'still building' },
-    { id: 'UNKNOWN', state: 'todo', milestone: 'M4', text: 'bogus commit (0000000)', commit: '0000000' },
-  ]);
-  assert.equal('at' in data.ledger[2], false);
-  assert.equal('at' in data.ledger[3], false);
+  assert.deepEqual(data.ledger, []);
+  assert.ok(Object.values(data.counts).every((count) => count === 0));
+  assert.equal(data.ladder.current, 'M4');
+  assert.equal(data.summary, 'Building the sample');
+  assert.deepEqual(data.waiting.map((item) => item.value), ['Choose the filename']);
+  assert.deepEqual(data.next.map((item) => item.value), ['Try the sample']);
 });
 
 test('active lists only unsettled jobs under project root; settled and other-root jobs excluded', async (t) => {
@@ -190,7 +181,7 @@ test('ticket items and latest ## Comments bullet parsed; absent comments omitted
   assert.equal(tickets[2].comment.length, 600);
 });
 
-test('Home and Project derive ledger, commit, job, and cross-feature dependency states without tracker writes', async (t) => {
+test('Home and Project derive ticket, commit, job, and cross-feature dependency states without tracker writes', async (t) => {
   const f = makeTemp(t);
   initRepo(f.cwd, [{ file: 'a', msg: 'deliver base/02; not OTHER-BASE-03', date: '2026-11-10T08:00:00Z' }]);
   const issue = (slug, n, blocked = 'none', state = 'ready-for-agent') => {
@@ -198,7 +189,7 @@ test('Home and Project derive ledger, commit, job, and cross-feature dependency 
     f.put(file, `# ${n}: Item ${n}\n**Status:** ${state}\n**Blocked by:** ${blocked}\n`);
     return file;
   };
-  const file = issue('base', '01');
+  const file = issue('base', '01', 'none', 'try');
   issue('base', '02'); issue('base', '03'); issue('next', '01', 'base/01, base/02');
   issue('next', '02', 'base/03'); issue('next', '03', '02'); issue('next', '04', 'absent/01');
   const receipt = (id, cwd, state) => {
@@ -217,17 +208,16 @@ test('Home and Project derive ledger, commit, job, and cross-feature dependency 
     assert.deepEqual(states(d, 'base'), ['try', 'try', 'working']);
     assert.deepEqual(states(d, 'next'), ['ready', 'queued', 'queued', 'blocked']);
     assert.deepEqual(d.ladder.ids, ['M1', 'M2']);
-    assert.deepEqual(currentRows(d).rows.map(r => [r.id, r.milestone]), [['BASE-01', 'STREAM'], ['BUILD-MODE', 'base']]);
+    assert.deepEqual(currentRows(d).counts, { accepted: 0, try: 2, working: 1, blocked: 1, todo: 3, dropped: 0 });
+    assert.ok(d.ledger.some(r => r.id === 'BASE-03' && r.state === 'working'));
+    assert.ok(d.ledger.every(r => r.id !== 'OLD' && r.release === 'M2'));
     assert.equal(d.waiting.length, 1);
   }
   const original = fs.readFileSync(file, 'utf8');
-  appendTry(f.hud, f.cwd, 'flag', { milestone: 'STREAM', slices: [{ id: 'BASE-01', text: 'delivered' }] });
-  assert.deepEqual((await get('home')).waiting.map(w => w.value), ['Try it (waits on BASE-01, base/01)']);
-  assert.equal(new TryLog(f.hud).marks(f.cwd, [{ id: 'BASE-01', state: 'try', milestone: 'STREAM', text: 'delivered' }]).get('BASE-01'), 'flag');
-  appendTry(f.hud, f.cwd, 'accept', { milestone: 'STREAM', slices: [{ id: 'BASE-01', text: 'delivered' }] });
+  appendTry(f.hud, f.cwd, 'accept', { milestone: 'base', slices: [{ id: 'BASE-01', text: 'Item 01' }] });
   f.put(join(job, 'STATUS.json'), { state: 'waiting_orchestrator' });
   const accepted = await get('home');
-  assert.equal(accepted.waiting.length, 0); assert.equal(accepted.counts.try, 0); assert.equal(accepted.counts.accepted, 2);
+  assert.equal(accepted.waiting.length, 0); assert.equal(accepted.counts.try, 1); assert.equal(accepted.counts.accepted, 1);
   assert.deepEqual(states(accepted, 'base'), ['done', 'try', 'blocked']);
   assert.deepEqual(states(accepted, 'next'), ['ready', 'blocked', 'blocked', 'blocked']);
   assert.equal(fs.readFileSync(file, 'utf8'), original);
@@ -245,7 +235,7 @@ test('a managed worktree without a job starts a ticket; stale claims, unknown ed
   execFileSync('git', ['worktree', 'add', '-b', 'wt/DEMO-01', tree], { cwd: f.cwd, stdio: 'pipe' });
   const start = await tick();
   assert.deepEqual(start.tickets[0].tickets.map(t => t.state), ['working', 'blocked', 'blocked', 'blocked']);
-  assert.deepEqual(start.ledger.map(r => [r.id, r.state]), [['DEMO-01', 'working']]);
+  assert.deepEqual(start.ledger.map(r => [r.id, r.state]), [['DEMO-01', 'working'], ['DEMO-02', 'blocked'], ['DEMO-03', 'blocked'], ['DEMO-04', 'blocked']]);
   execFileSync('git', ['worktree', 'remove', tree], { cwd: f.cwd, stdio: 'pipe' });
   assert.equal((await tick()).tickets[0].tickets[0].state, 'ready');
 });
@@ -310,8 +300,8 @@ test('projectList orders panel root first, deduplicates by realpath, drops missi
 test('Home shares the subject scan and project job facts; full working-tree probes retain their five-second gate', async (t) => {
   const f = makeTemp(t);
   const [h1] = initRepo(f.cwd, [{ file: 'a.txt', msg: 'init', date: '2026-11-12T10:00:00Z' }]);
-  f.put(join(f.cwd, 'docs/handoff/STATE.md'), `# State\n\n## Slices\n- try · M4 · SLICE · landed (${h1})\n`);
-  f.put(join(f.cwd, '.scratch/hub/issues/01-item.md'), '# 01: Item\n**Blocked by:** None\n**Status:** ready-for-agent\n- [ ] Check\n## Comments\n- note\n');
+  f.put(join(f.cwd, 'docs/handoff/STATE.md'), '# State\n\nMilestone: M4\n');
+  f.put(join(f.cwd, '.scratch/hub/issues/01-item.md'), `# 01: Item\n**Blocked by:** None\n**Status:** ready-for-human\n- [x] Check\n## Comments\n- Landed ${h1}\n- note\n`);
   const jobDir = join(f.hud, 'jobs', 'j0000000000000001');
   f.put(join(jobDir, 'job.json'), { job: 'j0000000000000001', role: 'imp', cwd: f.cwd, created_at: new Date(NOW).toISOString() });
   f.put(join(jobDir, 'STATUS.json'), { state: 'working' });
@@ -419,7 +409,7 @@ test('multiple ProjectCollectors, ProjectOverviews and Control share one JobInde
   assert.equal(updatedCtrl.radar.roleStats.imp.ok, 2);
 });
 
-test('Progress, Home, HTML board and TryLog read landed slices from .scratch tickets while keeping STATE rows as history', async (t) => {
+test('Progress, Home, HTML board and TryLog use ticket landings, not legacy STATE rows', async (t) => {
   const f = makeTemp(t);
   const git = (args, date) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
     cwd: f.cwd, stdio: 'pipe', encoding: 'utf8',
@@ -454,12 +444,10 @@ test('Progress, Home, HTML board and TryLog read landed slices from .scratch tic
 
   const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
   const full = await collector.collect(true, EMPTY_BOARD, NOW);
-  // Existing STATE history kept; ORCH-LEAN2-03 deduplicated by commit against t3; t1 (owner_try: no -> done) is accepted, NOT to-try; t2 (ready-for-human) is to-try.
   assert.deepEqual(full.ledger.map((r) => [r.id, r.state, r.milestone]), [
-    ['ORCH-LEAN2-03', 'try', 'ORCH-LEAN-2'],
-    ['LEGACY-OLD', 'accepted', 'M1'],
-    ['ORCH-LEAN-2-01', 'accepted', 'ORCH-LEAN-2'],
-    ['ORCH-LEAN-2-02', 'try', 'ORCH-LEAN-2'],
+    ['ORCH-LEAN-2-01', 'accepted', 'orch-lean-2'],
+    ['ORCH-LEAN-2-02', 'try', 'orch-lean-2'],
+    ['ORCH-LEAN-2-03', 'try', 'orch-lean-2'],
   ]);
   const s1 = full.ledger.find((r) => r.id === 'ORCH-LEAN-2-01');
   const s2 = full.ledger.find((r) => r.id === 'ORCH-LEAN-2-02');
@@ -469,8 +457,9 @@ test('Progress, Home, HTML board and TryLog read landed slices from .scratch tic
   assert.equal(s2.at, Date.parse('2026-11-12T10:00:00Z'));
   assert.equal(s2.diff?.totalFiles, 2);
   assert.equal(s2.ticketPath, t2);
-  assert.equal(full.counts.accepted, 2);
+  assert.equal(full.counts.accepted, 1);
   assert.equal(full.counts.try, 2);
+  assert.deepEqual(landedNewest(full).map(({ r }) => r.id), ['ORCH-LEAN-2-02', 'ORCH-LEAN-2-01', 'ORCH-LEAN-2-03']);
   assert.equal(full.slices.length, 0, 'landed ticket slices do not pollute in-flight Now slices');
 
   const home = await collector.collect('home', EMPTY_BOARD, NOW);
@@ -478,7 +467,7 @@ test('Progress, Home, HTML board and TryLog read landed slices from .scratch tic
   assert.match(homeText, /1\/3/);
   assert.match(homeText, /✓ 1 accepted.*◇ 2 to try/);
   const state = initialMonitorState();
-  state.project.folded = new Set(['task:milestone:ORCH-LEAN-2']);
+  state.project.folded = new Set(['task:milestone:orch-lean-2']);
   const progress = pageRows('progress', full, state, 80, NOW, EMPTY_BOARD).map((r) => stripAnsi(r.text)).join('\n');
   assert.match(progress, /ORCH-LEAN-2-02/);
   assert.match(progress, /ORCH-LEAN-2-01/);
@@ -493,17 +482,17 @@ test('Progress, Home, HTML board and TryLog read landed slices from .scratch tic
   assert.deepEqual(flagged.waiting.map(w => w.value), ['Verify UI change (waits on ORCH-LEAN-2-02)']);
   assert.deepEqual(new TryLog(f.hud).changes(f.cwd), [`try flagged project ${s2.id}`]);
 
-  appendTry(f.hud, f.cwd, 'accept', { milestone: s2.milestone, slices: [{ id: s2.id, text: s2.text }] });
+  appendTry(f.hud, f.cwd, 'accept', { milestone: 'ORCH-LEAN-2', slices: [{ id: s2.id, text: s2.text }] });
   const accepted = await collector.collect('home', EMPTY_BOARD, NOW + 2);
   assert.equal(accepted.ledger.find((r) => r.id === 'ORCH-LEAN-2-02').state, 'accepted');
   assert.equal(accepted.tickets[0].tickets.find((tk) => tk.number === '02').state, 'done');
   assert.equal(accepted.waiting.length, 0, 'accepting ticket-derived try slice settles waits-on item');
-  assert.deepEqual(new TryLog(f.hud).changes(f.cwd), [`try accepted project ${s2.milestone}: ${s2.id}`]);
+  assert.deepEqual(new TryLog(f.hud).changes(f.cwd), [`try accepted project ORCH-LEAN-2: ${s2.id}`]);
 
   // Projects list overview derives pending counts from tickets even with no STATE.md at all.
   fs.unlinkSync(join(f.cwd, 'docs/handoff/STATE.md'));
   const overviews = new ProjectOverviews((r) => new ProjectCollector(r, f.hud, f.env, f.home), f.cwd);
   const overview = (await overviews.read([f.cwd], EMPTY_BOARD, NOW + 3)).get(f.cwd);
   assert.equal(overview.hasState, true);
-  assert.equal(overview.counts.try, 2);
+  assert.equal(overview.counts.try, 1);
 });

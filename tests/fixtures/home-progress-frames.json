@@ -17,11 +17,11 @@
     "Progress ───────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in",
     "  worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                   1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 done ◇ 1 try ◐ 2 now ◆ 2 Stalled ○ 6 plan",
+    "  Tickets ━━────── 4/15                   1/2 closed",
     "Active & ready ─────────────────────────── 1 feature",
-    "  ◐ native-tree ━───                2/12 · 2 working",
+    "  ◐ native-tree ━───                2/13 · 2 working",
     "         g job tab  X stop  ⏎ expand  o file  ? help"
   ],
   "home-52-en-tickets-short": [
@@ -37,11 +37,11 @@
     "Progress ───────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in",
     "  worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                   1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 done ◇ 1 try ◐ 2 now ◆ 2 Stalled ○ 6 plan",
+    "  Tickets ━━────── 4/15                   1/2 closed",
     "Active & ready ─────────────────────────── 1 feature",
-    "  ◐ native-tree ━───                2/12 · 2 working",
+    "  ◐ native-tree ━───                2/13 · 2 working",
     "         g job tab  X stop  ⏎ expand  o file  ? help"
   ],
   "home-52-en-legend-short": [
@@ -57,8 +57,8 @@
     "Progress ───────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in",
     "  worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 done ◇ 1 try ◐ 2 now ◆ 2 Stalled ○ 6 plan",
     "         g job tab  X stop  ⏎ expand  o file  ? help"
   ],
   "home-52-en-bar-short": [
@@ -73,7 +73,7 @@
     "",
     "Progress ───────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
     "         g job tab  X stop  ⏎ expand  o file  ? help"
   ],
   "home-52-en-gone": [
@@ -107,11 +107,11 @@
     "进度 ──────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in",
     "  worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                        1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 完成 ◇ 1 待试 ◐ 2 现在 ◆ 2 受阻 ○ 6 规划",
+    "  工单 ━━────── 4/15                        1/2 完结",
     "进行与就绪 ──────────────────────────────── 1 个功能",
-    "  ◐ native-tree ━───                 2/12 · 2 工作中",
+    "  ◐ native-tree ━───                 2/13 · 2 工作中",
     "    g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  ? 帮助"
   ],
   "home-52-zh-tickets-short": [
@@ -127,11 +127,11 @@
     "进度 ──────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in",
     "  worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                        1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 完成 ◇ 1 待试 ◐ 2 现在 ◆ 2 受阻 ○ 6 规划",
+    "  工单 ━━────── 4/15                        1/2 完结",
     "进行与就绪 ──────────────────────────────── 1 个功能",
-    "  ◐ native-tree ━───                 2/12 · 2 工作中",
+    "  ◐ native-tree ━───                 2/13 · 2 工作中",
     "    g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  ? 帮助"
   ],
   "home-52-zh-legend-short": [
@@ -147,8 +147,8 @@
     "进度 ──────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in",
     "  worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 完成 ◇ 1 待试 ◐ 2 现在 ◆ 2 受阻 ○ 6 规划",
     "    g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  ? 帮助"
   ],
   "home-52-zh-bar-short": [
@@ -163,7 +163,7 @@
     "",
     "进度 ──────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
     "    g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  ? 帮助"
   ],
   "home-52-zh-gone": [
@@ -197,11 +197,11 @@
     "",
     "Progress ───────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                                               1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 accepted  ◇ 1 to try  ◐ 2 working  ◆ 2 Stalled  ○ 6 planned",
+    "  Tickets ━━────── 4/15                                               1/2 closed",
     "Active & ready ─────────────────────────────────────────────────────── 1 feature",
-    "  ◐ native-tree ━───                                            2/12 · 2 working",
+    "  ◐ native-tree ━───                                            2/13 · 2 working",
     "         g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-tickets-short": [
@@ -217,11 +217,11 @@
     "",
     "Progress ───────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                                               1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 accepted  ◇ 1 to try  ◐ 2 working  ◆ 2 Stalled  ○ 6 planned",
+    "  Tickets ━━────── 4/15                                               1/2 closed",
     "Active & ready ─────────────────────────────────────────────────────── 1 feature",
-    "  ◐ native-tree ━───                                            2/12 · 2 working",
+    "  ◐ native-tree ━───                                            2/13 · 2 working",
     "         g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-legend-short": [
@@ -236,9 +236,9 @@
     "",
     "Progress ───────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                                               1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 accepted  ◇ 1 to try  ◐ 2 working  ◆ 2 Stalled  ○ 6 planned",
+    "  Tickets ━━────── 4/15                                               1/2 closed",
     "         g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-bar-short": [
@@ -253,7 +253,7 @@
     "",
     "Progress ───────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
     "         g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-en-gone": [
@@ -287,11 +287,11 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                                                    1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 已验收  ◇ 1 待试用  ◐ 2 工作中  ◆ 2 受阻  ○ 6 已规划",
+    "  工单 ━━────── 4/15                                                    1/2 完结",
     "进行与就绪 ──────────────────────────────────────────────────────────── 1 个功能",
-    "  ◐ native-tree ━───                                             2/12 · 2 工作中",
+    "  ◐ native-tree ━───                                             2/13 · 2 工作中",
     "                g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-tickets-short": [
@@ -307,11 +307,11 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                                                    1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 已验收  ◇ 1 待试用  ◐ 2 工作中  ◆ 2 受阻  ○ 6 已规划",
+    "  工单 ━━────── 4/15                                                    1/2 完结",
     "进行与就绪 ──────────────────────────────────────────────────────────── 1 个功能",
-    "  ◐ native-tree ━───                                             2/12 · 2 工作中",
+    "  ◐ native-tree ━───                                             2/13 · 2 工作中",
     "                g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-legend-short": [
@@ -326,9 +326,9 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                                                    1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 已验收  ◇ 1 待试用  ◐ 2 工作中  ◆ 2 受阻  ○ 6 已规划",
+    "  工单 ━━────── 4/15                                                    1/2 完结",
     "                g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-bar-short": [
@@ -343,7 +343,7 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
     "                g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-80-zh-gone": [
@@ -377,11 +377,11 @@
     "",
     "Progress ───────────────────────────────────────────────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                                                                                       1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 accepted  ◇ 1 to try  ◐ 2 working  ◆ 2 Stalled  ○ 6 planned",
+    "  Tickets ━━────── 4/15                                                                                       1/2 closed",
     "Active & ready ─────────────────────────────────────────────────────────────────────────────────────────────── 1 feature",
-    "  ◐ native-tree ━───                                                                                    2/12 · 2 working",
+    "  ◐ native-tree ━───                                                                                    2/13 · 2 working",
     "                                                 g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-tickets-short": [
@@ -397,11 +397,11 @@
     "",
     "Progress ───────────────────────────────────────────────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                                                                                       1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 accepted  ◇ 1 to try  ◐ 2 working  ◆ 2 Stalled  ○ 6 planned",
+    "  Tickets ━━────── 4/15                                                                                       1/2 closed",
     "Active & ready ─────────────────────────────────────────────────────────────────────────────────────────────── 1 feature",
-    "  ◐ native-tree ━───                                                                                    2/12 · 2 working",
+    "  ◐ native-tree ━───                                                                                    2/13 · 2 working",
     "                                                 g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-legend-short": [
@@ -416,9 +416,9 @@
     "",
     "Progress ───────────────────────────────────────────────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 to try  ◐ 1 working",
-    "  Tickets ━━────── 4/14                                                                                       1/2 closed",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 accepted  ◇ 1 to try  ◐ 2 working  ◆ 2 Stalled  ○ 6 planned",
+    "  Tickets ━━────── 4/15                                                                                       1/2 closed",
     "                                                 g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-bar-short": [
@@ -433,7 +433,7 @@
     "",
     "Progress ───────────────────────────────────────────────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
     "                                                 g job tab  X stop  ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-en-gone": [
@@ -467,11 +467,11 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                                                                                            1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 已验收  ◇ 1 待试用  ◐ 2 工作中  ◆ 2 受阻  ○ 6 已规划",
+    "  工单 ━━────── 4/15                                                                                            1/2 完结",
     "进行与就绪 ──────────────────────────────────────────────────────────────────────────────────────────────────── 1 个功能",
-    "  ◐ native-tree ━───                                                                                     2/12 · 2 工作中",
+    "  ◐ native-tree ━───                                                                                     2/13 · 2 工作中",
     "                                                        g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-tickets-short": [
@@ -487,11 +487,11 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                                                                                            1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 已验收  ◇ 1 待试用  ◐ 2 工作中  ◆ 2 受阻  ○ 6 已规划",
+    "  工单 ━━────── 4/15                                                                                            1/2 完结",
     "进行与就绪 ──────────────────────────────────────────────────────────────────────────────────────────────────── 1 个功能",
-    "  ◐ native-tree ━───                                                                                     2/12 · 2 工作中",
+    "  ◐ native-tree ━───                                                                                     2/13 · 2 工作中",
     "                                                        g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-legend-short": [
@@ -506,9 +506,9 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
-    "  ◇ 1 待试用  ◐ 1 工作中",
-    "  工单 ━━────── 4/14                                                                                            1/2 完结",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
+    "  ✓ 3 已验收  ◇ 1 待试用  ◐ 2 工作中  ◆ 2 受阻  ○ 6 已规划",
+    "  工单 ━━────── 4/15                                                                                            1/2 完结",
     "                                                        g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-bar-short": [
@@ -523,7 +523,7 @@
     "",
     "进度 ──────────────────────────────────────────────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
-    "  ▒▒▒▒▒▒▒▒▒▒▒▒████████████ 0/2",
+    "  █████▒▒███████░░░░░░░░░░ 3/14",
     "                                                        g 任务页  X 停止  ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "home-120-zh-gone": [
@@ -555,7 +555,7 @@
     "  ✓ 14 done ◇ 4 try ◐ 2 now ○ 6 plan",
     "  Tickets ━━━━━━━─ 124/138  31/34 closed",
     "Active & ready ─────────────── 1 feature",
-    "  ◐ native-tree ━───    2/12 · 2 working",
+    "  ◐ native-tree ━───    2/13 · 2 working",
     "  ▸ 2 planned         2 ready · 2 queued",
     "",
     "",
@@ -593,7 +593,7 @@
     "  ✓ 14 完成 ◇ 4 待试 ◐ 2 现在 ○ 6 规划",
     "  工单 ━━━━━━━─ 124/138       31/34 完结",
     "进行与就绪 ──────────────────── 1 个功能",
-    "  ◐ native-tree ━───     2/12 · 2 工作中",
+    "  ◐ native-tree ━───     2/13 · 2 工作中",
     "  ▸ 已规划 2 个功能    2 就绪 · 2 待前序",
     "",
     "",

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
-import { readStateLedger, type parseLedger } from './state-ledger.js';
+import { readTryLedger, type parseLedger } from './state-ledger.js';
 
 import { targetKey } from './ticket-evidence.js';
 
@@ -13,7 +13,7 @@ interface TryRecord {
   at: string; root: string; action: TryAction; milestone: string; slices: string[]; revisions?: string[]; milestones?: string[];
 }
 export const TRIES_FILE = 'tries.jsonl';
-// STATE has no per-line timestamps. Fingerprint the parsed ledger text so unrelated edits don't clear a flag.
+// Fingerprint the ledger row's text so unrelated edits don't clear a legacy flag.
 const revision = (text: string) => createHash('sha256').update(text).digest('hex');
 
 function parseTry(line: string): TryRecord | undefined {
@@ -44,8 +44,11 @@ export function appendTry(home: string, root: string, action: TryAction, target:
   finally { fs.closeSync(fd); }
 }
 
-const pending = (record: TryRecord, slice: Slice, i: number) => slice.state === 'try' && slice.milestone === (record.milestones?.[i] ?? record.milestone) &&
-  (record.action === 'accept' || record.revisions?.[i] === revision(slice.text));
+const pending = (record: TryRecord, slice: Slice, i: number) => {
+  const milestone = record.milestones?.[i] ?? record.milestone;
+  return slice.state === 'try' && typeof milestone === 'string' && slice.milestone.toLowerCase() === milestone.toLowerCase() &&
+    (record.action === 'accept' || record.revisions?.[i] === revision(slice.text));
+};
 
 /** The HUD home is private and the log append-only. Idle reads never reopen its body. */
 export class TryLog {
@@ -67,7 +70,7 @@ export class TryLog {
     } catch { this.stamp = ''; this.records = []; }
     return this.records;
   }
-  /** Keep archived accepts, but never apply an old acceptance to a reopened STATE row. */
+  /** Keep archived accepts, but never apply an old acceptance to a reopened row. */
   accepted(root: string, ledger: Slice[] = []): string[] {
     return [...this.marks(root, ledger, true)].filter(([, action]) => action === 'accept').map(([id]) => id);
   }
@@ -91,7 +94,7 @@ export class TryLog {
       let ids = r.slices;
       // Live changes are events; catch-up asks only for the latest decisions not yet reflected in STATE or tickets.
       if (catchup) {
-        const ledger = ledgers.get(r.root) ?? new Map(readStateLedger(r.root).map((s) => [targetKey(s.id), s]));
+        const ledger = ledgers.get(r.root) ?? new Map(readTryLedger(r.root).map((s) => [targetKey(s.id), s]));
         ledgers.set(r.root, ledger);
         const handled = seen.get(r.root) ?? new Set<string>();
         seen.set(r.root, handled);

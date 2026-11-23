@@ -7,6 +7,7 @@ description: Write the fixed-form handoff that lets a fresh session (same or ano
 
 **Purpose.** A handoff is a brief for the successor, not a ledger object and not a chat summary. It carries the task
 state the successor needs, in a fixed form, so the successor can start without the predecessor's conversation.
+For ticketed work, point to the tickets and their land records for slice status; do not recreate a slice ledger in STATE.md.
 
 ## When
 

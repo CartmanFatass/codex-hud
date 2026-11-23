@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
@@ -38,7 +38,9 @@ for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspe
 
 test('the 40-column Project hub restores the selected Accept all row without running it', async (t) => {
   const f = live(t, (state) => ({ state: { ...state, activeTab: 'project' }, settings: null }), { columns: 40 });
-  writeFixtureFile(join(f.env.CODEX_HUD_CWD, 'STATE.md'), 'Milestone: M4\n\n## Slices\n- try · M4 · RELOAD-ONE · Synthetic reload slice\n');
+  const issues = join(f.env.CODEX_HUD_CWD, '.scratch/reload/issues');
+  mkdirSync(issues, { recursive: true });
+  writeFixtureFile(join(issues, '01-reload.md'), '# 01: Synthetic reload ticket\n**Status:** try\n**Blocked by:** none\n');
   await until(() => f.output().includes('Accept all'), 'the Inbox did not render');
   f.child.stdin.write('G');
   await until(() => f.output().includes('⏎ accept all'), 'Accept all was not selected');

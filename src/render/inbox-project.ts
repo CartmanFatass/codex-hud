@@ -35,7 +35,7 @@ const acceptAllRow = (data: ProjectSnapshot, width: number): MonitorRow[] => {
   const n = tryCount(data);
   if (!n) return [];
   const label = t('Accept all'), count = t('{n} to try', { n });
-  const partial = data.stateTruncated || data.ticketTotals?.partial ? t('Partial') : '';
+  const partial = data.ticketTotals?.partial ? t('Partial') : '';
   const facts = [partial, count].filter(Boolean).join(' · ');
   const right = [facts, partial].find((text) => visualLength(label) + 1 + visualLength(text) <= width) ?? '';
   return [{ item: ACCEPT_ALL, text: pair(theme.board.active(label), muted(right), width) }];
@@ -59,10 +59,14 @@ function buildNeeds(
   board?: WorkboardSnapshot,
 ): NeedEntry[] {
   const out: NeedEntry[] = [], path = data.statePath, files = path ? { files: [path] } : {};
-  for (const s of inFlight(data)) if (sliceAsking(s, board)) out.push({
-    askTarget: `project:slice:${s.label}`,
-    rows: [{ item: `inbox:ask:${s.jobId ?? s.label}`, ...(s.path ? { files: [s.path] } : files), text: pair(`  ${theme.board.attention('?')} ${monitorText(s.label)}`, theme.board.attention(t('asking')), width) }],
-  });
+  const asking = new Set<string>();
+  for (const s of inFlight(data)) if (sliceAsking(s, board)) {
+    asking.add(s.label);
+    out.push({
+      askTarget: `project:slice:${s.label}`,
+      rows: [{ item: `inbox:ask:${s.jobId ?? s.label}`, ...(s.path ? { files: [s.path] } : {}), text: pair(`  ${theme.board.attention('?')} ${monitorText(s.label)}`, theme.board.attention(t('asking')), width) }],
+    });
+  }
   for (const job of unsliced(data)) if (jobAsking(job, board)) {
     const lead = `  ${theme.board.attention('?')} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))}`, right = theme.board.attention(t('asking'));
     const title = cutProse(job.title ?? job.package ?? '', width - visualLength(lead) - 2 - visualLength(right) - 1);
@@ -73,16 +77,17 @@ function buildNeeds(
     out.push({ rows: [...lines.map((l, k) => ({ item, ...(r.path ? { files: [r.path] } : files), text: fit(`${k ? '    ' : `  ${theme.board.attention('?')} `}${l}`, width) })),
       ...(mode === 'classic' ? projectOriginal(r.original, `wait:${i}`, state.project.folded, width) : [])] });
   }
-  const features = data.tickets ?? [], codes = featureCodes(features);
+  const features = data.tickets ?? [], codes = featureCodes(features), shownTickets = new Set<string>();
   for (const f of features) for (const tk of f.tickets.filter(asksYou)) {
+    shownTickets.add(tk.path);
     const right = theme.board.attention(monitorText(t(tk.status))), prefix = `  ${theme.board.attention('?')} ${muted(codes.get(f.slug)!)} ${monitorText(tk.number)} `;
     const key = `${f.slug}:${basename(tk.path)}`;
     out.push({ rows: [{ item: `inbox:tk:${key}`, files: [tk.path], text: pair(prefix + cutProse(tk.title, width - visualLength(prefix) - visualLength(right) - 1), right, width) },
       ...(mode === 'classic' ? projectOriginal(tk.originalTitle, `ticket:${key}`, state.project.folded, width) : [])] });
   }
-  for (const r of data.ledger.filter((s) => s.state === 'blocked')) {
-    const item = mode === 'split' ? `project:slice:${r.id}` : path ? `project:file:${path}:slice:${r.id}` : undefined;
-    out.push({ rows: [{ ...(item ? { item } : {}), ...files, text: pair(`  ${sliceInk('blocked')(mark('◆', '!'))} ${monitorText(r.id)}`, sliceInk('blocked')(t('blocked')), width) }] });
+  for (const r of data.ledger.filter((s) => s.state === 'blocked' && !asking.has(s.id) && !(s.path && shownTickets.has(s.path)))) {
+    const item = mode === 'split' ? `project:slice:${r.id}` : r.path ? `project:file:${r.path}:slice:${r.id}` : undefined;
+    out.push({ rows: [{ ...(item ? { item } : {}), ...(r.path ? { files: [r.path] } : {}), text: pair(`  ${sliceInk('blocked')(mark('◆', '!'))} ${monitorText(r.id)}`, sliceInk('blocked')(t('blocked')), width) }] });
   }
   for (const role of data.roles) {
     const dead = role.places.find((p) => p.state === 'exhausted');
@@ -112,7 +117,7 @@ function lastAcceptedRow(data: ProjectSnapshot, width: number, now: number, sele
   if (!last) return undefined;
   const head = `  ${sliceInk('accepted')(mark('✓', '+'))} ${muted(t('last accepted'))} ${monitorText(last.id)}`, age = muted(sinceText(last.at, now));
   const text = visualLength(head) + (age ? 1 + visualLength(age) : 0) <= width ? fit(`${head}${age ? ' ' + age : ''}`, width) : pair(head, age, width);
-  return { text, ...(selectable ? { item: `project:slice:${last.id}`, ...(data.statePath ? { files: [data.statePath] } : {}) } : {}) };
+  return { text, ...(selectable ? { item: `project:slice:${last.id}`, ...(last.path ? { files: [last.path] } : {}) } : {}) };
 }
 function hubPageRows(data: ProjectSnapshot, width: number, now: number, withMarks: boolean): MonitorRow[] {
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);

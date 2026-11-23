@@ -187,7 +187,7 @@ test('hud board writes the page atomically and prints its path', async (t) => {
   assert.match(html, /<h1>project<\/h1>/);
   // Synthetic project: its STATE waiting items, its ledger slice to try, its checkout's job, its newest review.
   assert.match(html, /Try the Project tab/);
-  assert.match(html, /<span class="id">LANDING<\/span>/);
+  assert.match(html, /<span class="id">NATIVE-TREE-02<\/span>/);
   assert.match(html, /Build the Project tab/);
   assert.match(html, /class="root">2026-11-12-review\.md<\/p><div class="review">Verdict: accept/);
   assert.match(html, /branch synthetic-project/);
@@ -204,7 +204,10 @@ test('hud board exports every To-try slice with diff bars, including the oldest 
   git(cwd, 'commit', '-qm', 'land synthetic changes');
   const commit = git(cwd, 'rev-parse', '--short', 'HEAD');
   const ids = Array.from({ length: 13 }, (_, i) => `TRY-${i + 1}`);
-  f.put(join(cwd, 'docs/handoff/STATE.md'), `## Slices\n\n${ids.map((id) => `- try · M5 · ${id} · synthetic change (${commit})`).join('\n')}\n`);
+  for (const id of ids) {
+    const n = id.slice(4);
+    f.put(join(cwd, `.scratch/try/issues/${n}-landed.md`), `# ${n}: Synthetic change\n**Status:** try\n**Blocked by:** none\n\n## Comments\n- Landed ${commit}\n`);
+  }
   const result = await f.run(['board', '--cwd', cwd]);
   assert.equal(result.code, 0, result.err);
   const html = fs.readFileSync(result.out.trim(), 'utf8');
@@ -220,7 +223,7 @@ test('hud board scopes questions and In flight to one project within the caller 
   const f = await cli(t), other = join(f.root, 'other-project');
   const receipt = join(f.sliceJob, 'job.json');
   f.put(receipt, { ...JSON.parse(fs.readFileSync(receipt, 'utf8')),
-    worktree: { root: f.linked[0], main_root: f.cwd, branch: 'wt/NATIVE-TREE' } });
+    worktree: { root: f.linked[0], main_root: f.cwd, branch: 'wt/NATIVE-TREE-01' } });
   for (const [n, cwd, pane, title] of [
     [3, other, 'w4E:p1', 'Other project'], [4, f.cwd, 'w4E:p2', 'Other pane'],
   ]) {

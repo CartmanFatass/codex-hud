@@ -1,7 +1,7 @@
 import { sliceState } from '../fixtures/state-helpers.mjs';
 import { homeAnchor } from '../../dist/render/monitor-state.js';
 import { projectPageOf } from '../../dist/render/project-view.js';
-/** Home tells the truth: the top line, the milestone's own counts, and the spare rows (synthetic STATE only). */
+/** Home's waiting items, ticket counts and spare rows, from synthetic files. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,9 +15,12 @@ async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'home-truth-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await homeFixture(root);
+  f.put(f.paths.status, fs.readFileSync(f.paths.status, 'utf8') + '\n## Comments\n- Landed abc1234\n', 30);
+  const data = await f.collector.collect('home', f.board, NOW);
+  const render = (width, lang, height, state, snapshot = data, extra) => f.render(width, lang, height, state, snapshot, extra);
   // No jobs, no cards: Home's own rows are only the top line.
   const idle = { ...f.board, lanes: [], workers: [], decisions: [] };
-  return { ...f, idle, quiet: (width, lang, height, state, data = f.data) => f.render(width, lang, height, state, data, { workboard: idle }) };
+  return { ...f, data, render, quiet: (width, lang, height, state, snapshot) => render(width, lang, height, state, snapshot, { workboard: idle }) };
 }
 const press = (frame, input) => handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW, standalone: true });
 const legend = (lines) => lines[lines.findIndex(l => /^  [█▒░]/.test(l)) + 1];
@@ -72,21 +75,18 @@ test('Enter or a click on a waiting item on Home opens its whole text on the Pro
   }
 });
 
-test('Home counts the current milestone\'s slices while Accept all counts the full ledger; without a milestone Home labels it accordingly', async (t) => {
+test('Home counts tickets and uses the milestone only as a label; Accept all counts pending tickets', async (t) => {
   const f = await fixture(t);
   for (const width of [38, 80]) {
     const home = plain(f.quiet(width, 'en', 46)), hub = plain(f.quiet(width, 'en', 46, { ...sliceState(), activeTab: 'project' }));
     assert.match(hub.find((l) => /^Accept all /.test(l)), /^Accept all +1 to try$/);
-    assert.match(legend(home), /◐ 1 working/);
-    assert.match(legend(home), /◇ 1 to try/);
-    assert.doesNotMatch(legend(home), /blocked|todo|accepted|dropped/);
+    assert.match(legend(home), /✓ 3.*◇ 1.*◐ 2.*◆ 2.*○ 6/);
+    assert.doesNotMatch(legend(home), /dropped/);
     assert.match(home.find((l) => /^Progress ─/.test(l)), /Milestone M3b$/);
   }
-  for (const ladder of [{ ids: [] }, { ids: [], current: 'M99' }]) {
-    const lines = plain(f.quiet(80, 'zh', 46, undefined, { ...f.data, ladder })), text = legend(lines);
-    assert.match(lines.find((l) => /^进度 ─/.test(l)), /全部切片$/);
-    for (const word of ['◐ 2 工作中', '◆ 1 受阻', '○ 1 已规划', '✓ 1 已验收']) assert.ok(text.includes(word), word);
-  }
+  const lines = plain(f.quiet(80, 'zh', 46, undefined, { ...f.data, ladder: { ids: [] } }));
+  assert.match(lines.find((l) => /^进度 ─/.test(l)), /全部工单$/);
+  for (const word of ['◐ 2 工作中', '◆ 2 受阻', '○ 6 已规划', '✓ 3 已验收']) assert.ok(legend(lines).includes(word), word);
 });
 
 test('an idle Home at 38×46 shows waiting items and the newest landed slices above the progress block, whose summary wraps', async (t) => {
@@ -100,12 +100,12 @@ test('an idle Home at 38×46 shows waiting items and the newest landed slices ab
     // One row an item: the two waiting items, then only accepted work.
     assert.deepEqual(lines.slice(waiting + 1, waiting + 3).map((l) => l.slice(0, 2)), ['? ', '? ']);
     assert.match(lines[waiting + 1], /Try the Project tab/);
-    assert.match(lines[latest + 1], /SHIPPED/);
+    assert.match(lines[latest + 1], /RETIRED-TOOLS-01/);
     assert.deepEqual(lines.slice(latest + 2, progress).filter(Boolean), [], 'no pending rows between');
     // The summary is cut after three rows, not one; the bar follows it.
     assert.match(lines[progress + 1], /^  Synthetic milestone closing/);
     assert.match(lines[progress + 2], /^  building in worktrees$/);
-    assert.match(lines[progress + 3], /^  ▒/);
+    assert.match(lines[progress + 3], /^  █+▒/);
     assert.equal(lines.findIndex((l) => /^  (Tickets|工单) [━─]/.test(l)), progress + 5, 'summary (2 rows), bar, legend (1 row), then the tickets');
   }
 });

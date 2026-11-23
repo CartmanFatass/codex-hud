@@ -81,7 +81,7 @@ export function readyTickets(cwd: string, jobs: JobIndexCache) {
     if (!SETTLED_JOB_STATES.has(state)) rollup.link({ ticket: job.ticket, package: job.package }, '',
       { role: job.role, state, created: Date.parse(job.created_at) || 0 });
   }
-  rollup.derive([], new Set(), Date.now(), new Map());
+  rollup.derive(Date.now());
   return { ok: true, tickets: features.flatMap(({ slug, tickets }) => tickets.flatMap(t =>
     t.state === 'ready' && /^ready-for-agent$/i.test(t.status)
       ? [{ ticket: `${slug}/${nn(Number(t.number))}`, path: t.path, title: t.title, what: t.what }] : [])) };

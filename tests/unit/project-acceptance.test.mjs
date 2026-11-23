@@ -53,27 +53,19 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     `# ${n}: ${title}\n**Status:** ${status}\n**Blocked by:** None\n- [${checklist ? 'x' : ' '}] Inspect the sample output\n`);
   issue('export', '01', 'Save as text', 'resolved', true);
   const oldest = issue('export', '02', 'Choose columns', 'needs-info', false);
-  const newer = issue('export', '03', 'Download CSV', 'ready-for-agent', false);
+  const newer = issue('export', '03', 'Download CSV', 'try', false);
   fs.utimesSync(oldest, NOW / 1000, NOW / 1000); // more recently edited, but created first
   fs.utimesSync(newer, NOW / 1000 - 60, NOW / 1000 - 60);
   issue('search', '01', 'Find phrases', 'resolved', true);
   issue('search', '02', 'Add fuzzy search', 'wontfix', false);
-  put(['STATE.md'], [
-    'Milestone: M-EXPORT', '## Waiting for the owner', '- Bring a sample file.', '## Slices',
-    '- accepted · M-EXPORT · SAVE · Save the report as text.',
-    '- try · M-EXPORT · CSV · Download a report as CSV.',
-    '- working · M-EXPORT · COLUMNS · Add the column chooser.',
-    '- working · M-EXPORT · LABELS · Label the export settings.',
-    '- todo · — · SOLO · Add a standalone help link.',
-    '- dropped ·  · SKIP · Superseded standalone work.',
-  ].join('\n'));
+  put(['STATE.md'], 'Milestone: M-EXPORT\n## Waiting for the owner\n- Bring a sample file.\n');
   const project = await new ProjectCollector(cwd, join(cwd, 'hud')).collect('home', board, NOW);
   const draw = (page, state, width, lang) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }), previous = setLanguage(lang);
     try { return renderMonitor({ state: onPage(page, state), tree: TREE, workboard: board, project, width, height: 23, nowMs: NOW }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
-  const feature = 'project:fold:feature:export', milestone = 'project:fold:task:milestone:M-EXPORT';
+  const feature = 'project:fold:feature:export', milestone = 'project:fold:task:milestone:export';
   const frames = [];
   const record = (label, frame, width, lang) => {
     assert.ok(frame.lines.every((line) => visualLength(line) === width));
@@ -97,15 +89,14 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     record(`Tickets — ${panelLayout}`, tickets, width, lang);
 
     const progress = render('progress', milestone);
-    assert.match(text(progress), /◐ M-EXPORT\s+◐ 2  ◇ 1  ✓ 1/);
-    assert.match(text(progress), /○ — SOLO\s+○ 1/);
-    assert.match(text(progress), /– — SKIP\s+– 1/);
+    assert.match(text(progress), /◆ export\s+◆ 1  ◇ 1  ✓ 1/);
+    assert.match(text(progress), /✓ search\s+✓ 1  – 1/);
     const progressDetail = panelLayout === 'classic' ? draw('progress', press(progress, 'enter').state, width, lang) : progress;
-    for (const id of ['COLUMNS', 'LABELS', 'CSV', 'SAVE']) assert.match(text(progressDetail), new RegExp(id));
+    for (const id of ['EXPORT-01', 'EXPORT-02', 'EXPORT-03']) assert.match(text(progressDetail), new RegExp(id));
     for (const key of ['space', 'y', 'n', 'm', 't']) assert.equal(press(progress, '', key).action, undefined);
-    const filtered = render('progress', milestone, { project: { filter: { query: 'column chooser', editing: false } } });
+    const filtered = render('progress', milestone, { project: { filter: { query: 'choose columns', editing: false } } });
     const filteredDetail = panelLayout === 'classic' ? draw('progress', press(filtered, 'enter').state, width, lang) : filtered;
-    assert.match(text(filteredDetail), /Download a report as CSV/);
+    assert.match(text(filteredDetail), /Download CSV/);
     const hub = render(undefined, 'project:accept-all');
     assert.match(text(hub), lang === 'en' ? /Accept all\s+1 to try/ : /全部验收\s+1 待试用/);
     assert.match(text(hub), lang === 'en' ? /Tickets\s+2 features/ : /工单\s+2 个功能/);

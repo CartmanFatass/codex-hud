@@ -13,7 +13,7 @@ export const ticketVocabulary = [
   ['13', 'ready-for-agent', 'ready', [' '], '08'],
 ];
 export async function ticketFixture(root) {
-  const f = await projectFixture(root);
+  const f = await projectFixture(root, { progressTickets: false });
   const issue = (feature, number, slug, title, status = 'ready-for-agent', blocked = 'None (can start immediately)', boxes = [' '], age = 1, comment = '') => {
     const path = join(f.cwd, '.scratch', feature, 'issues', `${number}-${slug}.md`);
     f.put(path, `# ${number}: ${title}\n\n**What to build:** A synthetic vertical slice.\n\n**Blocked by:** ${blocked}\n\n**Status:** ${status}\n\n${boxes.map((x, i) => `- [${x}] Criterion ${i + 1}`).join('\n')}\n${comment ? `\n## Comments\n\n- An earlier note.\n- ${comment}\n` : ''}`, age);

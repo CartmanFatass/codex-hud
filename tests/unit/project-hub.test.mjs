@@ -37,14 +37,16 @@ test('Running omits asking jobs and unlisted worktrees, and says when there is n
   assert.ok(block(plain(idle.render(38, 'zh', undefined, 46)), /^运行中 /).includes('  没有进行中的工作'));
 });
 
-test('the Working tree row counts the worktrees with no ledger row, and its page lists them', async (t) => {
+test('the Working tree row counts unlinked worktrees and its page lists them', async (t) => {
   const f = await fixture(t);
   const rows = (lang, state) => plain(f.render(38, lang, state, 46));
   assert.ok(rows('en').some((line) => /^Working tree +3 unlisted worktrees$/.test(line)));
   assert.ok(rows('zh').includes('工作区 3 个未登记工作树'));
-  assert.deepEqual(block(rows('en', 'tree'), /^Unlisted worktrees/), ['Unlisted worktrees ───────────────── 3',
-    '  ! EXTRA-ONE            not in ledger', '  ! EXTRA-TWO            not in ledger', '  ! NO-JOB               not in ledger']);
-  assert.ok(rows('zh', 'tree').includes('  ! NO-JOB                  未记入清单'));
+  const listed = block(rows('en', 'tree'), /^Unlisted worktrees/);
+  assert.match(listed[0], /^Unlisted worktrees ─+ 3$/);
+  assert.deepEqual(listed.slice(1).map(l => l.trim().replace(/ +/g, ' ')),
+    ['! EXTRA-ONE no linked ticket', '! EXTRA-TWO no linked ticket', '! NO-JOB no linked ticket']);
+  assert.match(rows('zh', 'tree').join('\n'), /! NO-JOB +未关联工单/);
 });
 
 test('the name row identifies the project switch; try and accepted keep distinct inks in every theme', async (t) => {

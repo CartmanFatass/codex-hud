@@ -71,7 +71,7 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): width, ranked Needs yo
       assert.equal(click(), undefined, 'first click only selects');
       assert.equal(d.state.project.nav.cursor, 'project:accept-all');
       assert.deepEqual(click(), { type: 'accept-all' });
-      const partial = busy.render(40, lang, 42, state, { ...data, stateTruncated: true });
+      const partial = busy.render(40, lang, 42, state, { ...data, ticketTotals: { ...data.ticketTotals, partial: true } });
       const action = partial.workboard.rows.find(r => r.item === 'project:accept-all');
       assert.match(stripAnsi(action.text), lang === 'zh' ? /^全部验收 +不完整 · / : /^Accept all +Partial · /);
     }
@@ -101,11 +101,11 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): width, ranked Needs yo
 });
 
 test('Inbox Running is one row per running job: an imp in a worktree with two sonic children is one row (role, ticket title, ⚡2, age), never a worktree, slice or sonic row', async () => {
-  const f = await projectFixture(join(sharedRoot, 'running')), iso = (m) => new Date(NOW - m * 60000).toISOString();
+  const f = await projectFixture(join(sharedRoot, 'running'), { progressTickets: false }), iso = (m) => new Date(NOW - m * 60000).toISOString();
   // The base fixture's imp works in the NATIVE-TREE worktree: give it a ticket and no open question, then run two sonic children in that tree.
-  f.put(join(f.cwd, '.scratch/native-tree/issues/02-home-lanes.md'), '# 02: Home lanes, one per session\n\n**Status:** claimed\n');
+  f.put(join(f.cwd, '.scratch/native-tree/issues/02-home-lanes.md'), '# 02: Home lanes, one per session\n\n**Status:** claimed\n**Blocked by:** none\n');
   f.put(join(f.sliceJob, 'job.json'), { job: 'j0000000000000002', role: 'imp', cwd: f.linked[0], herdr_pane: 'w4E:p1', ticket: 'native-tree/02', created_at: iso(12),
-    worktree: { root: f.linked[0], branch: 'wt/NATIVE-TREE', main_root: f.cwd } });
+    worktree: { root: f.linked[0], branch: 'wt/NATIVE-TREE-01', main_root: f.cwd } });
   fs.rmSync(join(f.sliceJob, 'qa'), { recursive: true, force: true });
   for (const n of [3, 4]) {
     const id = `j000000000000000${n}`;
@@ -115,7 +115,7 @@ test('Inbox Running is one row per running job: an imp in a worktree with two so
   const lanes = readThinJobs(f.hud, { project: f.cwd, pane: 'w4E:p1' }), board = { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers) };
   const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect(true, board, NOW);
   // A sonic never labels its parent's worktree.
-  assert.deepEqual(['jobId', 'role'].map((k) => data.slices.find((x) => x.label === 'NATIVE-TREE')[k]), ['j0000000000000002', 'imp']);
+  assert.deepEqual(['jobId', 'role'].map((k) => data.slices.find((x) => x.label === 'NATIVE-TREE-02')[k]), ['j0000000000000002', 'imp']);
   assert.equal(sonicChildrenRunning(board.workers, board.workers.find((w) => w.evidence[0].sourceId === 'j0000000000000002').id), 2, 'Home folds the same two');
   const running = (lines, header) => { const at = lines.findIndex((l) => header.test(l)); return lines.slice(at, lines.findIndex((l, i) => i > at && l === '')); };
   const age = { en: ['12m', '20m'], zh: ['12分', '20分'] };
@@ -147,7 +147,7 @@ test('Inbox Projects list at 40/80/120 cols EN and ZH: Needs you / Running / Qui
     // Quiet projects are one row each (bare-project, quiet-project, old-project).
     const quietStart = lines.findIndex((l) => l.startsWith(lang === 'zh' ? '安静' : 'Quiet'));
     const quietRows = lines.slice(quietStart + 1, quietStart + 4);
-    assert.match(quietRows[0], lang === 'zh' ? /bare-project\s+无 STATE\.md\s+2天/ : /bare-project\s+no STATE\.md\s+2d/);
+    assert.match(quietRows[0], lang === 'zh' ? /bare-project\s+2天/ : /bare-project\s+2d/);
     assert.match(quietRows[1], lang === 'zh' ? /quiet-project\s+0\.2\s+3天/ : /quiet-project\s+0\.2\s+3d/);
     assert.match(quietRows[2], lang === 'zh' ? /old-project\s+M1\s+40天/ : /old-project\s+M1\s+40d/);
     // Counts come from the project overview.
