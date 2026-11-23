@@ -198,7 +198,7 @@ is ignored; it does not widen the pane scope.
 
 A job whose receipt names a `ticket` (`feature/NN`, or a `package` and a number) also gets `ticketTitle`, the heading of `<project_root>/.scratch/<feature>/issues/NN-*.md`: the first 512 bytes of one regular file in an unlinked directory, cached for 30 seconds per ticket (`ticket-title.ts`); a missing or unreadable file is no title. Home displays it and never sends it to a model.
 
-`readThinJobs` selects the newest 200 job directories and filters to the caller's
+`readThinJobs` selects up to 200 top-level jobs plus up to 200 of their children and filters to the caller's
 recorded pane. It excludes jobs settled before the panel's original `openedAt`
 before reading their artifacts or planning model requests. Active/unknown jobs
 remain eligible. It reads job/STATUS, brief heading, report, newest review and QA.
@@ -208,6 +208,7 @@ Single-job reads reuse the summary and file list. Task notices use the summary a
 `changes` lines and list reads carry only a clipped summary. Metadata writes do not wake `hud watch` on their own.
 Working-session target mtime contributes activity. For a running job's stage, the collector reuses that stat (or stats `stdout.jsonl` for a headless job) and reads only appended bytes, capped at the newest 32 KiB on first sight or after a gap. An unchanged file is not opened. The stage is absent without a recognised tool call and clears at the card's stall threshold.
 The thin-job signature cache is shared disposable display state, never job authority.
+Ranked display windows check at most 1,024 cached receipts for parent links and follow selected parents’ `.sonic` markers. Omitted directories keep Home coverage incomplete.
 Job directory enumeration/stat/ranking still grows with retained history; the body
 limits are not a claim of constant total scan cost.
 
@@ -225,7 +226,7 @@ and explicit choices win. All states and lifetimes are presentation, not accepta
 
 `ProjectCollector` reads STATE, spec milestone, reviews, roles/convention/instructions,
 key-presence booleans, local tickets, current jobs and Git/worktree facts. Full reads
-run only while Project is shown without a modal. Home reads the same progress facts, not the control plane or working-tree diff. STATE, spec, try records, tickets and the newest 64 job directories are signature-cached; the last 64 commit subjects are cached by checkout HEAD SHA. Tickets come from `.scratch/<feature>/issues/<NN>-<slug>.md` (64 feature directories, 512 files total, 64 KiB each). Derive ticket states and resolve local and cross-feature dependencies before limiting detail to open features plus the newest finished ones up to 16. No collector writes project files.
+run only while Project is shown without a modal. Home reads the same progress facts, not the control plane or working-tree diff. STATE, spec, try records, tickets and the newest 64 top-level jobs (plus up to 64 children) are signature-cached; the last 64 commit subjects are cached by checkout HEAD SHA. Tickets come from `.scratch/<feature>/issues/<NN>-<slug>.md` (64 feature directories, 512 files total, 64 KiB each). Derive ticket states and resolve local and cross-feature dependencies before limiting detail to open features plus the newest finished ones up to 16. No collector writes project files.
 
 The panel owns one `ProjectCollector` per project the Project tab has shown
 (`ProjectVisits`: at most four, its own never dropped, the oldest other one first) and
@@ -290,6 +291,7 @@ LLM reservations under `display/model-cache/`. Endpoint identity includes the ac
 model but never a key. Exact Mistral/OpenAI HTTPS origins receive only the matching
 key from the environment or private HUD credential file; custom origins get neither.
 Userinfo and redirects refuse. Wrong-language text is rejected rather than cached.
+Deterministic HTTP 4xx errors pause that feature on that route for five minutes in the current panel; the last failed request records only time, feature, error class and available HTTP status in private `last-failure.json`. The job sentence cache publishes usable replies, not retry timestamps or refusals.
 
 | Feature / collector | Public input that can leave the machine |
 |---|---|

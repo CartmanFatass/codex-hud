@@ -41,7 +41,7 @@ export class HomeRecommendation {
   }
   stop(): void { this.active?.abort(); this.brief?.cancel(); this.brief = undefined; this.key = ''; }
   private workers(board: WorkboardSnapshot): OwnerWorker[] {
-    return board.workers.filter((w) => currentWorker(w, this.clock(), this.life)).slice(0, 200).sort((a, b) => a.id.localeCompare(b.id));
+    return board.workers.filter((w) => !w.parentJobId && currentWorker(w, this.clock(), this.life)).slice(0, 200).sort((a, b) => a.id.localeCompare(b.id));
   }
   private fingerprint(workers: OwnerWorker[]): string {
     return hash(JSON.stringify([this.language, this.provider, workers.map((w) => [w.id, w.laneId, w.state, w.settledAt, !!protectedCard(w), w.work?.requestId, w.ask])]));

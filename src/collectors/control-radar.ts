@@ -136,7 +136,7 @@ const fallbackPlace = (job: Record<string, unknown>): string | null => {
 function roleRadar(hudHome: string, today: string): ControlRadar['roleStats'] {
   const groups = new Map<string, Omit<RoleRadar, 'places'> & { elapsed: number; timed: number; places: Map<string, PlaceRadar> }>();
   const jobCache = getJobIndexCache(hudHome);
-  const { dirs: jobs } = jobCache.listJobDirsByMtime({ limit: 200, sortBy: 'birthtime' });
+  const jobs = jobCache.recentJobFamilies(jobCache.listJobDirsByMtime({ sortBy: 'birthtime' }).dirs, 200);
   for (const { id } of jobs) {
     const jobRes = jobCache.readJob(id);
     const job = jobRes.status === 'ok' ? jobRes.value : undefined;

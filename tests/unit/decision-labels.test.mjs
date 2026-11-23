@@ -104,6 +104,15 @@ for (const [report, evidence, outcome, excluded] of [
   f.now += 1000; f.put(id, 'STATUS.json', { state: 'done', settled_at: new Date(f.now).toISOString() });
   await f.pump(); assert.equal(f.calls.length, 2, 'a new settlement is eligible');
 });
+test('a parented job spends neither sentence nor decision-label budget', async (t) => {
+  const f = fixture(t), id = f.job();
+  f.put(id, 'report.md', 'Synthetic result'); f.put(id, 'brief.md', '# Synthetic title');
+  const board = f.board(); board.workers[0].parentJobId = 'thin-job:j0000000000000002';
+  await f.pump(() => board);
+  assert.equal(f.calls.length, 0);
+  const sentences = new JobSentences({ submit() { assert.fail('submitted child sentence'); } }, join(f.dir, 'sentences.json'));
+  sentences.configure(true, 'en'); sentences.update(board, f.home);
+});
 test('01: off and no-key hide labels and send nothing', async (t) => {
   for (const mode of ['off', 'no-key']) {
     const f = fixture(t, mode === 'off' ? undefined : {});

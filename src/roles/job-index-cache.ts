@@ -19,6 +19,7 @@ export const MAX_CACHED_HOMES = 8;
 
 const NS_PER_SEC = 1_000_000_000n;
 const MAX_PID_BYTES = 256;
+const MAX_FAMILY_LOOKUPS = 1024;
 const FACT_REL_RE = /^j[0-9a-f]{16}\/(job|STATUS)\.json$/;
 const QUESTION_FILE_RE = /^q(\d+)\.md$/;
 const EMPTY_STRING_ARRAY: readonly string[] = Object.freeze([]);
@@ -375,6 +376,55 @@ export class JobIndexCache {
     }
     const dirs = opts?.limit !== undefined && opts.limit >= 0 ? metas.slice(0, opts.limit) : metas;
     return { dirs, totalValid };
+  }
+
+  /** Display window over already-ranked directories. Bound receipt discovery separately from
+   * expensive card/status reads: up to N roots and N of their children, never N mixed jobs. */
+  recentJobFamilies(dirs: readonly JobDirMeta[], limit: number, parse?: (text: string) => unknown): readonly JobDirMeta[] {
+    if (dirs.length <= limit) return dirs;
+    const roots = new Set<string>(), children = new Map<string, string>();
+    let scanned = 0;
+    const parentOf = (id: string) => {
+      const job = this.readJob(id, { acceptFacts: true, parse });
+      return job.status === 'ok' && typeof job.value.parent_job === 'string' ? job.value.parent_job.trim() : '';
+    };
+    for (const { id } of dirs) {
+      if (roots.size === limit || scanned === MAX_FAMILY_LOOKUPS) break;
+      scanned++;
+      const parent = parentOf(id);
+      if (parent) children.set(id, parent);
+      else roots.add(id); // An unreadable receipt is not evidence of a child.
+    }
+    const selected = new Set(roots);
+    for (const [id, parent] of children) {
+      if (selected.size - roots.size === limit) break;
+      if (roots.has(parent)) selected.add(id);
+    }
+    // A parent's directory may have been touched after its children. Follow its durable
+    // .sonic links beyond the root cutoff without opening unrelated historical receipts.
+    if (scanned < Math.min(dirs.length, MAX_FAMILY_LOOKUPS) && selected.size - roots.size < limit) {
+      const linked = new Set<string>();
+      let markerBudget = MAX_FAMILY_LOOKUPS;
+      for (const id of roots) {
+        if (!markerBudget) break;
+        const path = join(this.jobsRoot, id, '.sonic');
+        try {
+          if (!fs.lstatSync(path, { throwIfNoEntry: false })?.isDirectory()) continue;
+          const index = fs.opendirSync(path);
+          try {
+            for (let e; markerBudget && (e = index.readSync()); markerBudget--)
+              if (JOB_ID_RE.test(e.name)) linked.add(e.name);
+          } finally { index.closeSync(); }
+        } catch { /* Optional parent index; no unverified children. */ }
+      }
+      for (let i = scanned; linked.size && i < dirs.length && scanned < MAX_FAMILY_LOOKUPS && selected.size - roots.size < limit; i++) {
+        const { id } = dirs[i];
+        if (!linked.has(id)) continue;
+        scanned++;
+        if (roots.has(parentOf(id))) selected.add(id);
+      }
+    }
+    return dirs.filter(({ id }) => selected.has(id));
   }
 
   // --- Layer 2: Structured metadata files ---

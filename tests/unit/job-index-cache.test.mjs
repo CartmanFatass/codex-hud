@@ -66,6 +66,21 @@ function spyFs(t, method, onCall) {
   return original;
 }
 
+test('older children follow a selected parent; stale markers cannot pull in another family', (t) => {
+  const home = tempHome(t), cache = new JobIndexCache(home);
+  const other = seedJob(home, jobId(1)), parent = seedJob(home, jobId(2));
+  const child = seedJob(home, jobId(3), { job: { parent_job: jobId(2) } });
+  const unrelated = seedJob(home, jobId(4), { job: { parent_job: jobId(1) } });
+  for (const id of [jobId(3), jobId(4)]) writePrivateFile(join(parent, '.sonic', id), '');
+  [other, child, unrelated, parent].forEach((dir, i) => fs.utimesSync(dir, i + 10, i + 10));
+  const selected = () => cache.recentJobFamilies(cache.listJobDirsByMtime().dirs, 1).map(d => d.id);
+  assert.deepEqual(selected(), [jobId(2), jobId(3)]);
+  let reads = 0;
+  spyFs(t, 'openSync', (open, ...args) => { reads++; return open(...args); });
+  assert.deepEqual(selected(), [jobId(2), jobId(3)]);
+  assert.equal(reads, 0, 'unchanged receipts are not reopened');
+});
+
 test('S1.1 same-millisecond atomic replacement with identical byte length penetrates cache, and writeJsonAtomic writes through atomic-fs', (t) => {
   const home = tempHome(t);
   const id = jobId(1);

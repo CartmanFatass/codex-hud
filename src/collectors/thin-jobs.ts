@@ -66,7 +66,7 @@ function restore(home: string, idx: JobIndexCache): void {
     const st = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
     if (!st || !st.isFile() || st.size > 1048576n) return;
     const text = fs.readFileSync(file, 'utf8'), rows = JSON.parse(text);
-    if (!Array.isArray(rows) || rows.length > 400) return;
+    if (!Array.isArray(rows) || rows.length > 800) return;
     const facts: PersistedFactRow[] = [];
     const stamps = new Map<string, string>();
     let allCurrent = true;
@@ -690,9 +690,9 @@ export function readThinJobs(
     return null;
   };
   const readArt = (path: string) => readArtifact(path, 65536, artifacts, seenArtifacts, markIncomplete);
-  const { dirs, totalValid } = inventory ?? idx.listJobDirsByMtime({ limit: 200, onDirError: markIncomplete, onStatError: markIncomplete });
-  const candidates = dirs.slice(0, 200);
-  if (totalValid > 200) complete = false;
+  const { dirs, totalValid } = inventory ?? idx.listJobDirsByMtime({ onDirError: markIncomplete, onStatError: markIncomplete });
+  const candidates = idx.recentJobFamilies(dirs, 200, parse);
+  if (totalValid > candidates.length) complete = false;
   const landFlows = new Map<string, WorkFlow | null>();
   const landFor = (id: string) => {
     if (!landFlows.has(id)) landFlows.set(id, readLandFlow(idx, home, id, parse, markIncomplete));
@@ -701,7 +701,13 @@ export function readThinJobs(
   const receipts: Receipt[] = [], outsideTimeWindow: string[] = [];
   const jobs = candidates
     .flatMap(({ id }) => {
-      // Filter from STATUS facts before reading receipts or artifacts; active/unknown jobs always stay.
+      // Overflow discovery already loaded these receipts to identify parents. Persist their
+      // facts and skip STATUS entirely on other panes. Small windows retain the status-first path.
+      const receipt = dirs.length > 200 ? readFact(join(root, id, 'job.json')) : null;
+      if (receipt?.v.job === id && typeof receipt.v.role === 'string' && receipt.v.herdr_pane !== scope.pane) {
+        receipts.push(receipt.v);
+        return [];
+      }
       const status = options ? readFact(join(root, id, 'STATUS.json')) : null;
       const land = options ? landFor(id) : null;
       if (
@@ -711,7 +717,7 @@ export function readThinJobs(
         (Math.max(when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.settledBefore ?? -Infinity) ||
           Math.max(when(status.v.settled_at) ?? when(status.v.ended_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.openedAt ?? -Infinity))
       ) { outsideTimeWindow.push(id); return []; }
-      const file = readFact(join(root, id, 'job.json')),
+      const file = receipt ?? readFact(join(root, id, 'job.json')),
         job = file?.v;
       // Bars may have read STATUS before the directory vanished during the receipt read.
       if (!file) seenStamps.delete(join(root, id, 'STATUS.json'));

@@ -79,6 +79,7 @@ export class DecisionLabels {
     const add = (key: string, input: unknown, questions: JudgmentChoice[], revision = hash(JSON.stringify(input))) =>
       plans.push({ key, input, questions, revision });
     for (const w of [...board.workers].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))) {
+      if (w.parentJobId) continue;
       const thin = /^thin-job:j[0-9a-f]{16}$/.test(w.id), dir = join(home, 'jobs', w.id.slice(9));
       if (thin) {
         const report = w.settledAt !== null ? readJobReport(join(dir, 'report.md')) : undefined;

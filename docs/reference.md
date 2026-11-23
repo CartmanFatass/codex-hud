@@ -556,7 +556,7 @@ repair, newer job of the same role on the same target, or landed slice/ticket su
 `a` shows it muted as `superseded`. An observed failure follows the ordinary fold/hide times.
 An unhandled failure stays unfolded with its reason row and leaves Home after 30 minutes in either mode; use `hud_read({job})` to inspect it by job ID.
 Running/asking cards stay. `a` reveals hidden cards in place as muted one-row titles; Enter
-expands them. The job scan considers the newest 200 directories.
+expands them. The job scan considers up to 200 top-level jobs and, separately, up to 200 of their children. Child jobs do not request card sentences, labels or Home recommendations.
 
 Answered questions are still collected but have no Home block or dedicated panel view.
 The Inspector still lists job files, including answers and their default/departure marks.
@@ -691,7 +691,7 @@ Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, every feature with open 
 (open parent issues with sub-issues, plus already-mirrored parents so closed features
 receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files
 with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
-An accepted linked slice (including a recorded owner acceptance), a done/closed/complete/resolved status or a fully checked nonempty checklist completes a ticket. Dropped tickets count as resolved in ratios. A linked landed slice or a ticket ID in the latest 64 commit subjects shows **to try**, and releases its dependents. Local numbers/titles and `feature/NN` blockers resolve across the scanned project. Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Stalled**. Working jobs and managed worktrees are linked at read time, never written back to the tracker. The newest-64-directory job lookup is shared with slice blocks.
+An accepted linked slice (including a recorded owner acceptance), a done/closed/complete/resolved status or a fully checked nonempty checklist completes a ticket. Dropped tickets count as resolved in ratios. A linked landed slice or a ticket ID in the latest 64 commit subjects shows **to try**, and releases its dependents. Local numbers/titles and `feature/NN` blockers resolve across the scanned project. Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Stalled**. Working jobs and managed worktrees are linked at read time, never written back to the tracker. The lookup of the newest 64 top-level jobs and up to 64 of their children is shared with slice blocks.
 **Tickets page**: a done/total meter for every ticket and a short code for each feature (`hp hub-pages 4/7`),
 then the tickets in lanes by state across features, one row each (`◐ hp 06 Projects list  imp 12m  1/3`:
 state mark, the feature's code, number and title; on the right what matters for the lane, then
@@ -839,7 +839,7 @@ the rest, each group newest first. Enter or one click opens that project's hub. 
 returns to the list. On the Project tab's root hub, Esc does nothing. The cursor marks both rows of an
 entry. The list is read only while it is visible: for each listed project STATE and
 tickets as Home reads them (cached by file signature) and, in one pass over the newest
-64 job directories, the unsettled jobs per root, at most once every five seconds while
+64 top-level jobs and up to 64 of their children, the unsettled jobs per root, at most once every five seconds while
 the list stays open (opening it again reads at once). No Git, no roles, no full collection;
 the shown project's own full collection pauses while the list is open. The last-touched
 time reads `12m`, `3h`, `4d` (`12分`, `3小时`, `4天` in Chinese).

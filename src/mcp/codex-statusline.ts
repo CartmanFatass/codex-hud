@@ -55,7 +55,7 @@ interface Fact {
 function workReminder(home: string, pane: string | null, now: number): string | undefined {
   if (!pane) return;
   const rows = readJson(join(home, 'display', 'thin-jobs.json'), 1_048_576);
-  if (!Array.isArray(rows) || rows.length > 400) return;
+  if (!Array.isArray(rows) || rows.length > 800) return;
   const receipts = new Map<string, Fact>();
   const statuses = new Map<string, Fact>();
   for (const entry of rows) {

@@ -279,9 +279,9 @@ export class ProjectCollector {
     features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
     return (this.ticketsMemo = { stamp, features, paths, claimTimes });
   }
-  /** The newest 64 job directories: the one lookup behind Project's Now section and the Projects list. */
+  /** The newest 64 top-level jobs and their bounded children: the one lookup behind Project's Now section and the Projects list. */
   private recentJobs(cache = getJobIndexCache(this.hudHome)) {
-    return cache.listJobDirsByMtime({ limit: 64 }).dirs;
+    return cache.recentJobFamilies(cache.listJobDirsByMtime().dirs, 64);
   }
   /** A job's short factual title: the task's first heading, else its first line. Signature-cached, size-bounded. */
   private briefTitle(path: string, taskLength: unknown): string | undefined {

@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { collectControlRadar } from '../../dist/collectors/control-radar.js';
 import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { recordClaudeQuota } from '../../dist/statusline-parity/quota-cache.js';
@@ -121,6 +123,28 @@ test('bounded scan reads at most 16 pi session directories, 64 JSONL tails and 2
   const radar = collect(now + 5000);
   assert.deepEqual(radar.piToday, { costUsd: 64, tokens: 66, sessions: 64, sampled: true });
   assert.equal(radar.roleStats.imp.total, 200);
+});
+
+test('300 children do not displace the day’s top-level jobs from Control, Home or Project', (t) => {
+  const { job, home, env, collect, root } = fixture(t), pane = 'w4E:p1';
+  const id = (n) => `j${n.toString(16).padStart(16, '0')}`;
+  for (let n = 0; n < 304; n++) {
+    const child = n >= 4, state = child ? 'closed' : 'done';
+    const dir = job(n, child ? 'sonic' : 'imp', MINUTE, { state, settled_at: iso(now) }, {
+      job: id(n), herdr_pane: pane, cwd: root, ...(child && { parent_job: id(0) }),
+    });
+    fs.utimesSync(dir, n + 1, n + 1);
+  }
+  const radar = collect();
+  assert.equal(radar.roleStats.imp.ok, 4); assert.equal(radar.roleStats.sonic.ok, 200);
+  const observation = { complete: true };
+  const workers = readThinJobs(home, { pane, project: root }, JSON.parse, undefined, observation).flatMap((l) => l.workers);
+  assert.deepEqual(workers.filter(w => !w.parentJobId && w.state === 'done').map(w => w.id).sort(),
+    [0, 1, 2, 3].map(n => `thin-job:${id(n)}`));
+  assert.equal(workers.filter(w => w.parentJobId === `thin-job:${id(0)}`).length, 200);
+  assert.equal(observation.complete, false, 'bounded children are not complete coverage');
+  for (let n = 0; n < 4; n++) fs.writeFileSync(join(home, 'jobs', id(n), 'STATUS.json'), '{"state":"working"}');
+  assert.deepEqual(new ProjectCollector(root, home, env).liveCwds(), Array(4).fill(root));
 });
 
 test('full Project collection and both Control views include radar without changing the empty baseline', async (t) => {

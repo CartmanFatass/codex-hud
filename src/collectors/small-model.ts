@@ -21,6 +21,8 @@ import { readHudCredentials } from '../jev/ask/config.js';
 import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { join } from 'node:path';
+import { writePrivateFile } from '../utils/atomic-fs.js';
 import { t, type Language } from '../render/i18n.js';
 import { wrongLanguage } from './reply-language.js';
 import { ModelRuntimeStore, callsByFeature, type ModelCall } from './model-runtime-store.js';
@@ -231,14 +233,12 @@ export function modelHttpRequest(
 /** The reply text of a chat completion; some servers send content as parts. */
 export function completionText(json: unknown): string | null {
   const content = (json as { choices?: Array<{ message?: { content?: unknown } }> })?.choices?.[0]?.message?.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : ''))
-      .join('');
-    return text || null;
-  }
-  return null;
+  const text = typeof content === 'string' ? content : Array.isArray(content) ? content
+    .map((part) => typeof part === 'string' ? part
+      : (!part?.type || part.type === 'text' || part.type === 'output_text') && typeof part?.text === 'string' ? part.text : '')
+    .join('') : '';
+  // Some compatible servers put reasoning in a leading block instead of a separate field.
+  return text.replace(/^\s*<think>[\s\S]*?(?:<\/think>|$)\s*/i, '') || null;
 }
 
 /** Colour codes and runs of blank lines out; the text itself as written. */
@@ -351,6 +351,7 @@ interface Job {
   env?: NodeJS.ProcessEnv;
   store?: ModelRuntimeStore | null;
   http?: ReturnType<typeof modelHttpRequest>;
+  httpStatus?: number;
   digest: string | null;
   resolve: (result: ModelResult) => void;
   settled: boolean;
@@ -384,6 +385,7 @@ export class SmallModel {
   private active: Job | null = null;
   private cache = new Map<string, { text: string; at: number }>();
   private calls: ModelCall[] = [];
+  private cooldowns = new Map<string, { until: number; failure: ModelResult }>();
   private priorityBurst = 0;
   private nextOrder = 0;
   private wakeTimer?: ReturnType<typeof setTimeout>;
@@ -403,7 +405,7 @@ export class SmallModel {
     const backend = patch.backend ?? this.backend;
     const api = patch.api ?? this.api;
     const changed = backend !== this.backend || JSON.stringify(api) !== JSON.stringify(this.api);
-    if (changed) this.cancelAll();
+    if (changed) { this.cancelAll(); this.cooldowns.clear(); }
     this.backend = backend;
     this.api = api;
     if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap >= 0)
@@ -646,6 +648,10 @@ export class SmallModel {
     if (backend === 'off') return { ok: false, error: 'model backend off', refused: true };
     const http = job.http;
     if (http && 'error' in http) return { ok: false, error: http.error, classification: 'invalid-response' };
+    const route = JSON.stringify([http?.url, http?.model, job.request.feature]);
+    const cooldown = this.cooldowns.get(route);
+    if (cooldown && this.clock() < cooldown.until) return cooldown.failure;
+    this.cooldowns.delete(route);
     if (store) {
       const reservation = await store.reserve(
         job.digest,
@@ -703,6 +709,17 @@ export class SmallModel {
     } finally {
       job.stop = undefined;
     }
+    if (!outcome.ok && !job.settled && outcome.classification) {
+      const { classification } = outcome, { httpStatus } = job;
+      // Do not spend a reservation per queued card on the same deterministic rejection.
+      if (httpStatus && httpStatus >= 400 && httpStatus < 500 && ![408, 409, 425, 429].includes(httpStatus)) {
+        this.cooldowns.set(route, { until: this.clock() + 300000, failure: outcome });
+        if (this.cooldowns.size > CACHE_LIMIT) this.cooldowns.delete(this.cooldowns.keys().next().value!);
+      }
+      if (this.dir) try {
+        writePrivateFile(join(this.dir, 'last-failure.json'), JSON.stringify({ at: this.clock(), feature: job.request.feature, classification, httpStatus }));
+      } catch { /* Diagnostics never prevent settlement. */ }
+    }
     if (store && job.digest) {
       // Cancellation holds the claim until the underlying transport settles.
       await store.finish(
@@ -735,6 +752,7 @@ export class SmallModel {
         signal: abort.signal,
         redirect: 'error',
       });
+      job.httpStatus = response.status;
       const raw = (await response.text()).slice(0, MAX_OUTPUT_BYTES);
       if (timedOut) return { ok: false, error: 'api stopped', classification: 'timeout' };
       let json: unknown = null;
@@ -752,8 +770,6 @@ export class SmallModel {
         };
       }
       const content = completionText(json) ?? '';
-      if (!validFormat(job.request, content))
-        return { ok: false, error: 'Invalid response', classification: 'invalid-response' };
       const text = cleanOutput(content);
       if (
         !text &&
@@ -761,6 +777,8 @@ export class SmallModel {
       ) {
         return { ok: false, error: 'api output limit reached', classification: 'output-limit' };
       }
+      if (!validFormat(job.request, content))
+        return { ok: false, error: 'Invalid response', classification: 'invalid-response' };
       return text
         ? { ok: true, text }
         : {

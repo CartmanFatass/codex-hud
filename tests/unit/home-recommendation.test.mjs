@@ -41,7 +41,7 @@ function fixture(t, keys = true) {
     if (f.invalid) answers.pop();
     return new Response(JSON.stringify({ answers }));
   };
-  f.model = new SmallModel({ dir, env, fetch: f.fetch });
+  f.model = new SmallModel({ dir, env, fetch: f.fetch, clock: () => f.now });
   f.model.configure({ backend: 'api', hourlyCap: 60 });
   f.service = new HomeRecommendation(dir, f.model, () => {}, env, f.fetch, () => f.now);
   f.configure = (on = true, lang = 'en', minutes = 5) => f.service.configure(on, lang, 0, 'openai', minutes);
@@ -107,6 +107,18 @@ test('Default is byte-identical; ranking reorders cards/lanes, folds low settled
   assert.equal(f.briefs[0].messages[1].content, input.input[0].content[1].data.page.text);
   f.configure(false);
   assert.deepEqual(f.render(f.service.apply(source)).lines, baseline, 'off hides a cached ranking and brief too');
+});
+test('children alone submit neither Home request, and do not enter either parent digest', async (t) => {
+  const f = fixture(t), child = f.job(1), board = f.board();
+  board.workers[0].parentJobId = 'thin-job:j0000000000000002';
+  await f.pump(board);
+  assert.equal(f.briefs.length + f.calls.length, 0);
+  const parent = f.job(2), mixed = f.board();
+  mixed.workers.find((w) => w.id === child).parentJobId = parent;
+  await f.pump(mixed);
+  for (const digest of [f.briefs[0].messages[1].content, f.calls[0].body.input[0].content[1].data.page.text]) {
+    assert.ok(digest.includes(parent)); assert.ok(!digest.includes(child));
+  }
 });
 test('brief wraps at 80/120 in EN and ZH, under the Nothing needs you line', async (t) => {
   for (const lang of ['en', 'zh']) {

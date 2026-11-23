@@ -834,6 +834,45 @@ for (const mode of ['off', 'no-key'])
     assert.equal(f.calls.length, 0);
   });
 
+test('only usable sentences are published; cap refusals do not replace a saved sentence or masquerade as a final', async (t) => {
+  const f = fixture(t);
+  f.model.configure({ hourlyCap: 1 });
+  let release;
+  f.hold = new Promise((r) => { release = r; });
+  await f.update();
+  assert.equal(fs.existsSync(f.file), false, 'a pending call is not a saved sentence');
+  release(); await settle();
+  const saved = fs.readFileSync(f.file, 'utf8');
+  f.put('STATUS.json', { state: 'closed', settled_at: new Date(++f.now).toISOString() });
+  assert.equal((await f.update()).workers[0].modelSentence, undefined, 'no running text on a settled card');
+  assert.equal(f.model.diagnostics().lastFailure.reason, 'hourly-cap');
+  assert.equal(fs.readFileSync(f.file, 'utf8'), saved);
+  f.now += 3600000; f.reply = 'Checks passed.';
+  assert.equal((await f.update()).workers[0].modelSentence, f.reply);
+  assert.equal(JSON.parse(fs.readFileSync(f.file))[0][1].final, true);
+});
+
+test('deterministic HTTP errors cool down queued sentences before reservation and log no backend text', async (t) => {
+  const f = fixture(t), dir = join(f.home, 'model');
+  let status = 422, sent = 0;
+  const model = new SmallModel({ dir, env: { MISTRAL_API_KEY: 'synthetic' }, clock: () => f.now,
+    fetch: async () => { sent++; return status === 200
+      ? Response.json({ choices: [{ message: { content: [{ type: 'thinking', text: 'PRIVATE' }, { type: 'text', text: 'Ready.' }] } }] })
+      : Response.json({ error: { message: 'PRIVATE' } }, { status }); } });
+  model.configure({ backend: 'api' });
+  const request = (prompt) => model.submit({ feature: 'job-sentence', cacheKey: prompt, prompt, system: 'synthetic' }).result;
+  const results = await Promise.all([request('one'), request('two')]);
+  assert.ok(results.every((r) => !r.ok && r.classification === 'invalid-response'));
+  assert.equal(sent, 1); assert.equal(model.usage().today, 1);
+  const file = join(dir, 'last-failure.json');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)), { at: f.now, feature: 'job-sentence', classification: 'invalid-response', httpStatus: 422 });
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  f.now += 300000; status = 429;
+  assert.equal((await request('two')).classification, 'rate-limit');
+  status = 200; assert.equal((await request('two')).text, 'Ready.');
+  assert.equal(sent, 3);
+});
+
 test('a cut-off JSON reply is no sentence, and a cached one is dropped on load', async (t) => {
   const { sentenceReply } = await import('../../dist/collectors/job-sentences.js');
   assert.deepEqual(sentenceReply('{"name":"Keys","sentence":"Keys mean one thing."}'), { name: 'Keys', sentence: 'Keys mean one thing.' });
