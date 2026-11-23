@@ -6,11 +6,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { jobChanges, jobRow, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { answerJobQuestion } from '../../dist/collectors/panel-actions.js';
-import { readCodexStatusline } from '../../dist/mcp/codex-statusline.js';
-import { clearJobIndexCaches, getJobIndexCache, legacyFileStampOf } from '../../dist/roles/job-index-cache.js';
+import { collectWorkSummary } from '../../dist/collectors/work-summary-snapshot.js';
+import { clearJobIndexCaches, getJobIndexCache, isFileStampCurrent, legacyFileStampOf } from '../../dist/roles/job-index-cache.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { renderBar } from '../../dist/render/layout/bar-fields.js';
-import { workSignals } from '../../dist/render/work-summary.js';
 test('newest 200 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-scan-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -348,24 +347,24 @@ test('a settled job is not on the worker zone, unread, read or failed; a running
   const bar = () => {
     const now = Date.now();
     const lanes = readThinJobs(home, scope);
-    const line = renderBar({ model: { name: 'M' }, workers: workSignals(lanes, now).workers }, 120, now).line;
+    const line = renderBar({ model: { name: 'M' }, work: collectWorkSummary(home).global }, 120, now).line;
     return {
       unread: lanes[0].workers[0].reportUnread,
       line: line.replace(/\x1b\[[0-9;]*m/g, ''),
     };
   };
   // The card keeps the report's unread dot; the zone counts nothing that has settled.
-  assert.deepEqual(bar(), { unread: true, line: 'M' });
-  // hud_read stamps read_at after the report was written: the dot goes, the zone stays empty.
+  const zero = 'M │ HUD (OS): 0 running, 0 queued';
+  assert.deepEqual(bar(), { unread: true, line: zero });
   receipt({ read_at: new Date(Date.now() + 1000).toISOString() });
-  assert.deepEqual(bar(), { unread: undefined, line: 'M' });
+  assert.deepEqual(bar(), { unread: undefined, line: zero });
   receipt({ parent_job: 'j0000000000000001' });
-  assert.deepEqual(bar(), { unread: true, line: 'M' }, "a child's settlement stays off the bar; its card keeps the report");
+  assert.deepEqual(bar(), { unread: true, line: zero }, "a child's settlement stays off the bar; its card keeps the report");
   write('STATUS.json', JSON.stringify({ state: 'failed', ended_at: settled }));
-  assert.equal(bar().line, 'M');
+  assert.equal(bar().line, zero);
   // A job still running is counted however long it has run.
   write('STATUS.json', JSON.stringify({ state: 'working', started_at: new Date(Date.now() - 30 * 60_000).toISOString() }));
-  assert.equal(bar().line, 'M │ \uF0AD1');
+  assert.equal(bar().line, 'M │ HUD (OS): 1 running, 0 queued');
 });
 
 test('readThinJobs and readThinJobRows share JobIndexCache cleanly, jobRow stats report.md once, and panel answers invalidate qa', (t) => {
@@ -421,7 +420,7 @@ test('readThinJobs and readThinJobRows share JobIndexCache cleanly, jobRow stats
   assert.equal(reportStats, 1);
 });
 
-test('codex-statusline accepts both 5-field and legacy 3-field thin-jobs.json stamps and clears after job.json updates', (t) => {
+test('thin-jobs cache stamps detect job changes in both formats', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'codex-stamps-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const id = 'j0000000000000c01', dir = join(home, 'jobs', id), pane = 'w4E:p1';
@@ -433,19 +432,14 @@ test('codex-statusline accepts both 5-field and legacy 3-field thin-jobs.json st
   fs.writeFileSync(statusFile, JSON.stringify({ state: 'waiting_orchestrator', blocked: true, harness: 'cli' }));
   readThinJobs(home, { project: null, pane });
 
-  const footerText = () => JSON.parse(readCodexStatusline({}, home, pane, now).contents[0].text).children.map((c) => c.children.join(''));
-  const cacheFile = join(home, 'display/thin-jobs.json');
-  const persisted = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-  assert.equal(persisted[0][1].split(':').length, 5, 'persisted cache writes 5-field BigInt stamp');
-  assert.deepEqual(footerText(), ['HUD: imp asks']);
-
-  // Rewrite thin-jobs.json with legacy 3-field mtimeMs:size:ino stamps; codex-statusline still validates both formats.
-  const legacyRows = persisted.map(([rel, _stamp, snap]) => [rel, legacyFileStampOf(fs.lstatSync(join(home, 'jobs', rel), { bigint: true })), snap]);
-  fs.writeFileSync(cacheFile, JSON.stringify(legacyRows));
-  assert.deepEqual(footerText(), ['HUD: imp asks']);
-
-  // Updating job.json (e.g. hud_read stamping read_at) invalidates the cached reminder immediately.
+  const persisted = JSON.parse(fs.readFileSync(join(home, 'display/thin-jobs.json'), 'utf8'));
+  const stamp = persisted.find(([rel]) => rel === `${id}/job.json`)[1];
+  const legacy = legacyFileStampOf(fs.lstatSync(jobFile, { bigint: true }));
+  assert.equal(stamp.split(':').length, 5);
+  assert.ok(isFileStampCurrent(jobFile, stamp));
+  assert.ok(isFileStampCurrent(jobFile, legacy));
   fs.writeFileSync(jobFile + '.tmp', JSON.stringify({ ...receipt, read_at: new Date(now + 1000).toISOString() }));
   fs.renameSync(jobFile + '.tmp', jobFile);
-  assert.deepEqual(footerText(), []);
+  assert.equal(isFileStampCurrent(jobFile, stamp), false);
+  assert.equal(isFileStampCurrent(jobFile, legacy), false);
 });

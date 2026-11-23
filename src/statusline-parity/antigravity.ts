@@ -1,6 +1,8 @@
 import { renderBar, type BarQuotaWindow } from '../render/layout/bar-fields.js';
 import { displayConfig } from '../render/hud-config.js';
-import type { WorkSignals } from '../render/work-summary.js';
+import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
+import { formatMachineWork } from '../render/work-summary.js';
+import { visualLength } from '../render/colors.js';
 import { monitorText } from '../render/monitor-text.js';
 import { formatWindowLabel } from '../render/quota.js';
 import { renderStatuslineDetails } from '../render/statusline-details.js';
@@ -16,7 +18,7 @@ export function renderAntigravity(
   input: unknown,
   width: number,
   options: StatuslineSessionOptions,
-  work?: WorkSignals
+  work?: MachineWorkCounts
 ): string {
   const value = record(input), model = record(value.model), context = record(value.context_window);
   const id = label(model.id), displayName = label(model.display_name);
@@ -40,7 +42,7 @@ export function renderAntigravity(
   const workspace = record(value.workspace);
   if (options.details) {
     const language = options.language ?? 'en';
-    return renderStatuslineDetails({
+    const native = renderStatuslineDetails({
       model: { display_name: modelName },
       cwd: label(workspace.current_dir) || label(value.cwd),
       context_window: {
@@ -51,6 +53,8 @@ export function renderAntigravity(
         total_output_tokens: context.total_output_tokens,
       },
     }, width, language, windows.map((w) => `${w.label} ${w.shown}`));
+    const load = work && formatMachineWork(work);
+    return load && visualLength(load) <= width ? `${native}\n${load}` : native;
   }
   const cwd = label(workspace.project_dir) || label(value.cwd);
   const project = cwd.split(/[/\\]/).filter(Boolean).at(-1) || (cwd.startsWith('/') ? '/' : '');
@@ -60,6 +64,6 @@ export function renderAntigravity(
     context: used === undefined ? undefined : { percent: used, shown: `${used}%`, window },
     project: project ? { name: project, branch: null } : undefined,
     quota: windows.length ? { windows, trailing: true } : undefined,
-    workers: work?.workers,
+    work,
   }, width).line;
 }

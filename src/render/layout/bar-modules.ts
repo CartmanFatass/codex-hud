@@ -1,7 +1,7 @@
 /**
  * The Codex bar's facts, from `HudData`, as `renderBar` (`bar-fields.ts`) takes them: the model and its effort, the
  * context against the point where Codex compacts (else the model's window), the repository and its branch, the
- * account's usage, what needs the person (an approval, a job's question) and what just happened, and what Codex loaded.
+ * account's usage, machine-wide HUD load, native approvals and events, and what Codex loaded.
  * A field with no trustworthy data is left out, so nothing shows a zero it does not have.
  */
 
@@ -72,7 +72,7 @@ export function barFacts(data: HudData, nowMs: number): BarFacts {
       nowMs
     ),
     events: (data.notices ?? []).map(eventOf),
-    workers: data.work?.workers,
+    work: data.work,
     loaded: {
       counts: [
         ['MCP', data.project.mcpCount],

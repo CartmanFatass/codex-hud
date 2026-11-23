@@ -234,7 +234,7 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
   assert.equal(json(claudeSettings).statusLine.command, path.join(bin, 'hud-statusline'));
   const statusline = path.join(bin, 'hud-statusline');
   const fixture = '{"model":{"id":"claude-sonnet-4-6"},"context_window":{"used_percentage":42}}';
-  const scope = { running: 0, asking: 0, roles: {} };
+  const scope = { running: 0, queued: 0, asking: 0, roles: {} };
   fs.mkdirSync(path.join(hud, 'display'), { recursive: true });
   fs.writeFileSync(path.join(hud, 'display/work-summary.v1.json'), JSON.stringify({
     version: 1, producer: 'hud-watch', pid: process.pid, pid_start: null, generation: 1,

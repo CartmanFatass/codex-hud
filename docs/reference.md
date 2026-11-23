@@ -687,7 +687,7 @@ Running jobs with unanswered questions need you; an unanswered question left on 
 A report is not proof of success, and display labels are not acceptance or a merge decision.
 Unknown evidence stays unknown.
 
-Home draws **one row per job**: the role's icon (the statusline's), a state mark in a fixed column that shows exceptions only (`?` asking, `✗` failed, `✓●` unread report, `○` queued, `◷` stalled, `✓` done, `−` stopped; ASCII `? x +* o ~ + -`; a running job has none), the ticket id (a job with no ticket: its lane's short name, the package or the head of the brief), then the **stage strip**, `⚡N`, the age and the silence.
+Home draws **one row per job**: the role's icon, a state mark in a fixed column that shows exceptions only (`?` asking, `✗` failed, `✓●` unread report, `○` queued, `◷` stalled, `✓` done, `−` stopped; ASCII `? x +* o ~ + -`; a running job has none), the ticket id (a job with no ticket: its lane's short name, the package or the head of the brief), then the **stage strip**, `⚡N`, the age and the silence.
 A row has no model, effort or route mark (the Inspector has them) and no title (it is in the lane header and the Inspector), and the ids pad to one column so the strips line up.
 Rows of one role that show the same id (jobs dispatched from one brief) get their model's short name after it, dim (`Open review: ho… sol-fast`, `… neon`); a row whose id is its own has none.
 The marks here are the Unicode set; the default Nerd Font set draws the role and state icons as listed under Icons in Settings.
@@ -700,7 +700,7 @@ The marks here are the Unicode set; the default Nerd Font set draws the role and
 - **A job that needs the owner** shows a short reason in the strip's place, coloured: `asks N opts` with the question's option count (and the model's category, `[owner authorisation]`), `✗ <reason>` for a failed job, `✗ gate red` for a land that failed at that step, `● report unread` (with the model's outcome label when it is not `done`), `queued #N`, `stopped` or `superseded`.
   An asking job's row is amber and its question is the line below it (one line, two from 100 columns, cut with `…`); Enter or a click opens it into the full slab with the answer keys.
   Asking rows come first, as the slabs did.
-- **Role icon**, first on the row, in the role's ink: imp, frontend-imp, general, oracle, reviewer, sonic (the statusline's table; ASCII `I F G O R *`), `•` for a role with no icon of its own.
+- **Role icon**, first on the row, in the role's ink: imp, frontend-imp, general, oracle, reviewer, sonic (ASCII `I F G O R *`), `•` for a role with no icon of its own.
   Then, at the right, `⚡N` (the sonic icon and the active sonic children).
 - **Order.**
   Jobs keep the order they were dispatched in while their progress changes: a running job going quiet or moving a stage never swaps rows.
@@ -774,7 +774,7 @@ A saved `homeMode` setting is ignored; previously selecting Recommended does not
 **Top line.**
 Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering).
 The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear.
-The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in the statusline's order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker).
+The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in role order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker).
 The counts live in the panel's memory only, so a panel restart starts from zero, and nothing shows until a worker has started; the left side takes its shorter forms before the counts go.
 With STATE waiting items, Enter or a click on the top line in Classic opens the Project Inbox.
 The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
@@ -1123,7 +1123,7 @@ Each page retains its scroll/selection.
 Icons (Settings → Display → Advanced → Icons, `icons`) are `nerd` (the default), `unicode` or `text`; an old or unknown saved value loads as the default.
 `nerd` draws Font Awesome glyphs from the Basic Multilingual Plane, which a Nerd Font such as MesloLGS NF has; the codepoints: roles imp U+F0AD (wrench), frontend-imp U+F1FC (paint brush), general U+F013 (cog), oracle U+F0EB (light bulb), reviewer U+F002 (search), sonic U+F0E7 (bolt); states asking U+F059 (question circle, amber), failed U+F057 (times circle, red), unread report U+F0E0 (envelope, green), done U+F058 (check circle), queued U+F252 (hourglass half), stalled U+F186 (moon), stopped U+F04D (stop).
 `unicode` is the earlier set (`⚒ ✎ ✦ ◈ ⚖ ⚡`, `? ✗ ✓● ✓ ○ ◷ −`) and `text` is ASCII letters and words.
-The role icons are one table for Home, the Claude, Codex and pi statuslines (TypeScript and native) and the pi footer, all following the saved setting (the bar reads `icons` from `hud-settings.json`, else `HUD_ICONS`); the stage strip `●◐○` is the same in every set.
+The panel's role icons follow the saved setting; the stage strip `●◐○` is the same in every set.
 
 After a new installed entry is stable for two seconds, a bounded child import validates it before the panel restarts in the same pane.
 Selection, scroll, folds, show-all, modal, Settings cursor, opening time and width override survive.
@@ -1356,24 +1356,23 @@ model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s �
 Context is ten cells, green below 70%, yellow from 70%, red from 85%, measured against the client's compaction window when known.
 Claude/Codex show only their own tightest quota window, blue then magenta from 75%, red from 90%; pi has session cost instead (in its top-right editor ribbon, not duplicated below).
 Missing facts are absent.
-The notice zone is, in order: what needs the owner, the HUD's workers, then what the client itself tells (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
+The notice zone is, in order: native approvals, machine-wide HUD job counts, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
 
-The workers are counts, never titles, and only those running now: one icon and its count per role, in the order imp `⚒`, frontend-imp `✎`, general `✦`, oracle `◈`, reviewer `⚖`, any other role `•`, sonic `⚡` (`⚒3  ✦2  ◈1  ⚡4`; the default Nerd Font set draws the glyphs listed under Icons in Settings), two spaces between groups; a role with no worker running is absent.
-Text icons draw `I`, `F`, `G`, `O`, `R`, `.` and `*` (`I3  G2  O1  *4`).
-No provider, model or thinking level appears.
-The zone reads a census of this pane's live jobs, so a worker that runs for hours is still counted; a settled one is not (the zone does not read settled jobs), and neither is a queued one; with none running the zone is absent.
-After the last group, one `!N` (the bar's alert badge) counts the workers asking the owner across all roles, until they are answered; working has no mark, and there is no mark for a finished or failed worker.
-`⚡` is two columns wide where `visualLength` counts it, and the bar fits by that count.
+`HUD (OS): 2 running, 1 queued` counts jobs across all projects under the same `$HUD_HOME`.
+Panes show the same counts, even if a pane has no jobs of its own. Model, context, project and quotas are still session-local.
+Running jobs include workers waiting for the main session; those questions are not owner requests and do not add an alert badge.
+Queued jobs have not started. Settled jobs and native client subagents are not counted.
+If the machine census is missing, stale or incomplete, the load is omitted rather than showing a pane count or guessing zero.
 Open approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others, `! 3 needs` when even that does not fit; nothing open, nothing pinned.
 No clock, task count, hooks count, tool-at-work or idle fallback.
 
 - Claude statusline: `~N t/s` estimates the latest response from transcript output tokens and elapsed time since its prompt or tool result.
   On Linux x64/WSL, the installed `hud-statusline` launcher can render the compact `line` and `p10k` looks with a native binary.
   It reads fresh stdin every time.
-  Missing or stale work/cache evidence, an unavailable binary, live transcript notices, forwarding, admin commands and `--details`/`--source` use the TypeScript renderer.
+  Missing or stale work/cache evidence, an unavailable binary, live transcript notices, forwarding, admin commands and `--details`/`--source` use the TypeScript renderer, which also omits unavailable machine counts.
   Claude quota facts are still published locally; stdin is not stored for replay.
   A source install can build the binary with Cargo; a Linux x64 release built with Cargo carries it, so Cargo is not needed on the receiving machine.
-- Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same worker zone (this pane's jobs, read as Claude's is), without reading its transcript or forwarding its payload.
+- Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same machine-wide job counts, without reading its transcript or forwarding its payload.
   `--details --lang en|zh` also shows reported input and output totals.
   With the Linux x64 native binary, the launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws.
   A change may appear on the next refresh; without the binary, TypeScript renders each call.
@@ -1386,7 +1385,7 @@ With colour disabled, the bar uses `line`.
 If you use a field allowlist, include `tps` to show the rate.
 Narrow bars (a main pane beside the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts; both gauges' cells together; the quota's reset and the branch's `↑n`; a subagent's title (a few words, then none); the rate; the older of two subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context.
 The model is never dropped.
-The worker zone has one form and never narrows; the numbers keep their forms while a worker starts, which takes room from the extras.
+The two machine counts stay together. If the load label and both numbers still do not fit, the segment is omitted whole.
 pi keeps the same editor ribbon in both styles, and other extensions' statuses remain visible.
 The bars stay English-only apart from a subagent's own description.
 
@@ -1398,7 +1397,7 @@ To switch back, select **Default status line** from the same picker.
 EXP’s **Track native status line** switch only records when MyHUD was last seen for each local profile; it does not change what Codex displays.
 
 The compact footer puts model and effort, context, then quota first.
-A HUD work reminder, when available, is scoped to the pane.
+It shows the same machine-wide HUD job counts when a fresh census is available.
 On a narrow footer, Codex cuts the right end with `…`; `codexH`'s tmux bar keeps its width-aware layout.
 
 ### pi controls

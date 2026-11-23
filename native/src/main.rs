@@ -130,7 +130,7 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
     let policy = Policy::load(&home)?;
     let width = policy.width(args)?;
     let now = state::now_ms();
-    let workers = state::work(&home, now)?;
+    let work = state::work(&home, now)?;
     if bytes.len() > LIMIT {
         return Some(render::unavailable(width));
     }
@@ -172,7 +172,7 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
             compact,
             git: &git,
             transcript: &transcript.value,
-            workers,
+            work,
             mcp,
         },
         &policy,

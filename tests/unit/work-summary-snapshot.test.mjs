@@ -1,25 +1,27 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { EventEmitter, once } from 'node:events';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import {
   collectWorkSummary,
   createWorkSummaryPublisher,
   readFreshWorkSummary,
+  readMachineWork,
   WORK_SUMMARY_MAX_BYTES,
   WORK_SUMMARY_MCP_TTL_MS,
   workSummaryPath,
 } from '../../dist/collectors/work-summary-snapshot.js';
 import { createPiSegment } from '../../dist/harness/pi/segment.js';
-import {
-  workSignals,
-  workSignalsFromSummary,
-} from '../../dist/render/work-summary.js';
+import { readCodexStatusline } from '../../dist/mcp/codex-statusline.js';
+import { fitStatusBar } from '../../dist/render/header.js';
+import { stripAnsi } from '../../dist/render/colors.js';
+import { DEFAULT_LAYOUT } from '../../dist/types.js';
+import { makeHudData } from '../../dist-test/fixtures/hud-data.js';
+import { parityFixture } from '../../dist-test/fixtures/pi-footer.js';
 import { writePrivateFile } from '../../dist/utils/atomic-fs.js';
 import { until } from '../helpers/until.mjs';
 
@@ -39,6 +41,7 @@ function makeFixture(t) {
       job: id,
       role: opts.role ?? 'imp',
       herdr_pane: opts.pane ?? PANE_A,
+      project_root: opts.project ?? '/synthetic/first',
       created_at,
       ...(opts.cli ? { cli: { agent: 'codex', can_continue: true, idle_grace_s: 30 } } : {}),
     };
@@ -60,7 +63,7 @@ async function waitFor(predicate, timeoutMs = 5_000, stepMs = 10) {
   throw new Error('waitFor timed out');
 }
 
-test('collectWorkSummary matches workSignals across roles, panes, asking, queued and settled jobs', (t) => {
+test('collectWorkSummary separates queued and settled jobs and counts asking workers as live', (t) => {
   const { home, addJob } = makeFixture(t);
   const j1 = addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
   const j2 = addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
@@ -94,14 +97,7 @@ test('collectWorkSummary matches workSignals across roles, panes, asking, queued
   });
   assert.equal(summary.global.running, 6);
   assert.equal(summary.global.asking, 3);
-
-  const now = Date.now();
-  const lanesA = readThinJobs(home, { project: null, pane: PANE_A });
-  const sortWorkers = (ws) => [...ws].sort((a, b) => a.role.localeCompare(b.role) || a.state.localeCompare(b.state));
-  assert.deepEqual(
-    sortWorkers(workSignalsFromSummary(summary.panes[PANE_A]).workers),
-    sortWorkers(workSignals(lanesA, now).workers)
-  );
+  assert.equal(summary.global.queued, 1);
 });
 
 test('publisher writes private bounded snapshots only on meaningful changes and reader rejects corrupt, oversize or stale data', (t) => {
@@ -139,8 +135,12 @@ test('publisher writes private bounded snapshots only on meaningful changes and 
   assert.equal(readFreshWorkSummary(home, PANE_A, t0), null);
   writePrivateFile(file, JSON.stringify({ ...fresh.snapshot, complete: false }));
   assert.equal(readFreshWorkSummary(home, PANE_A, t0), null);
-  writePrivateFile(file, JSON.stringify({ ...fresh.snapshot, global: { running: 1, asking: 2, roles: { imp: { running: 1, asking: 2 } } } }));
+  writePrivateFile(file, JSON.stringify({ ...fresh.snapshot, global: { ...fresh.snapshot.global, asking: 2 } }));
   assert.equal(readFreshWorkSummary(home, PANE_A, t0), null);
+  for (const queued of [undefined, -1, 0.5, '1']) {
+    writePrivateFile(file, JSON.stringify({ ...fresh.snapshot, global: { ...fresh.snapshot.global, queued } }));
+    assert.equal(readMachineWork(home, t0), undefined);
+  }
   writePrivateFile(file, ' '.repeat(WORK_SUMMARY_MAX_BYTES + 16));
   assert.equal(readFreshWorkSummary(home, PANE_A, t0), null);
 });
@@ -208,7 +208,7 @@ test('hud-watch updates work-summary.v1.json within 200 ms of job changes and st
   assert.equal(readFreshWorkSummary(home, null), null);
 });
 
-test('pi segment reads fresh work-summary.v1.json without scanning jobs and falls back when watcher exits', { timeout: 15_000 }, async (t) => {
+test('pi reads a fresh machine census without scanning jobs and omits it when the watcher exits', { timeout: 15_000 }, async (t) => {
   const { home, addJob } = makeFixture(t);
   const j1 = addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
   const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
@@ -232,14 +232,13 @@ test('pi segment reads fresh work-summary.v1.json without scanning jobs and fall
   };
   syncBuiltinESMExports();
 
-  const statuses = new EventEmitter();
   const signalsLog = [];
-  let timer, passive = false;
+  let timer;
   const segment = createPiSegment({
     env: { HUD_HOME: home, HERDR_PANE_ID: PANE_A },
     schedule(fn) { timer = fn; return () => {}; },
     onSignals(signals) { signalsLog.push(signals); },
-    statusVisible: () => passive,
+    statusVisible: () => false,
   });
   t.after(() => {
     segment.stop();
@@ -247,13 +246,11 @@ test('pi segment reads fresh work-summary.v1.json without scanning jobs and fall
     syncBuiltinESMExports();
   });
 
-  const ctx = { mode: 'tui', hasUI: true, ui: { setStatus(_k, v) { statuses.emit('status', v); } } };
   let lastStatus;
-  statuses.on('status', (v) => { lastStatus = v; });
-
-  segment.start(ctx, '/tmp', () => true);
-  assert.equal(lastStatus, undefined, 'the owned footer shows icons instead of passive text');
-  assert.deepEqual(signalsLog.at(-1), { workers: [{ role: 'imp', state: 'working' }] });
+  const ctx = { mode: 'tui', hasUI: true, ui: { setStatus(_k, v) { lastStatus = v; } } };
+  segment.start(ctx, () => true);
+  assert.equal(lastStatus, undefined, 'the owned footer already shows the load');
+  assert.deepEqual(signalsLog.at(-1), { running: 1, queued: 0 });
   assert.equal(jobsScans, 0, 'fresh snapshot path must not enumerate jobs/');
 
   // Update job -> watcher updates snapshot -> segment picks it up without scanning jobs/.
@@ -261,37 +258,54 @@ test('pi segment reads fresh work-summary.v1.json without scanning jobs and fall
   await waitFor(() => readFreshWorkSummary(home, PANE_A)?.scope.asking === 1);
   timer();
   assert.equal(lastStatus, undefined);
-  assert.deepEqual(signalsLog.at(-1), { workers: [{ role: 'imp', state: 'asking' }] });
+  assert.deepEqual(signalsLog.at(-1), { running: 1, queued: 0 }, 'asking keeps the worker live but is not an owner count');
   assert.equal(jobsScans, 0);
 
-  // Watcher exits -> snapshot becomes stale -> segment falls back to jobLaneSnapshot and sees answer.
   child.kill('SIGTERM');
   await exited;
-  assert.equal(readFreshWorkSummary(home, PANE_A), null);
-  writePrivateFile(join(j1.dir, 'qa', 'q1.answer.md'), 'Answered after watcher exit');
-  passive = true;
-  const next = once(statuses, 'status');
   timer();
-  // Wait until fallback scan publishes the updated running status.
-  await waitFor(() => lastStatus === 'Work: 1 running', 5_000, 15);
-  await next;
-  assert.deepEqual(signalsLog.at(-1), { workers: [{ role: 'imp', state: 'working' }] });
+  assert.equal(signalsLog.at(-1), undefined);
+  assert.equal(jobsScans, 0, 'do not substitute a pane scan for stale machine data');
 });
 
-test('fresh census supplies pi icons without erasing passive stalled and failed work', async (t) => {
+test('Claude, pi and Codex show the same machine counts in both projects and an idle pane', (t) => {
   const { home, addJob } = makeFixture(t);
-  addJob();
-  addJob({ status: { state: 'failed' } });
-  const now = Date.now() + 11 * 60_000; // Advance the display clock past the inactivity threshold.
-  createWorkSummaryPublisher(home, 'hud-mcp').publish({ now });
-  assert.equal(readFreshWorkSummary(home, PANE_A, now)?.scope.running, 1);
-  let text, signals;
-  const segment = createPiSegment({ env: { HUD_HOME: home, HERDR_PANE_ID: PANE_A }, now: () => now,
-    schedule: () => () => {}, onSignals: value => { signals = value; } });
-  t.after(() => segment.stop());
-  segment.start({ mode: 'tui', hasUI: true, ui: { setStatus(_key, value) { text = value; } } }, '/tmp', () => true);
-  assert.deepEqual(signals, { workers: [{ role: 'imp', state: 'working' }] });
-  await waitFor(() => text === 'Work: 1 stalled · 1 failed');
+  const asking = addJob();
+  writePrivateFile(join(asking.dir, 'qa', 'q1.md'), '# Synthetic question for main');
+  addJob({ pane: PANE_B, project: '/synthetic/second' });
+  const queued = addJob({ pane: PANE_B, project: '/synthetic/second', status: { state: 'queued' } });
+  const publisher = createWorkSummaryPublisher(home, 'hud-watch');
+  writePrivateFile(join(home, 'watch.pid'), `${process.pid}\n`);
+  const panes = [PANE_A, PANE_B, 'idle-pane'];
+  const clients = panes.map((pane, i) => {
+    const env = { ...process.env, HOME: home, HUD_HOME: home, HERDR_PANE_ID: pane, NO_COLOR: '1' };
+    const footer = parityFixture({ name: `machine-work-${i}`, width: 160, env: { HUD_HOME: home, HERDR_PANE_ID: pane, NO_COLOR: '1' } });
+    const segment = createPiSegment({ env, schedule: () => () => {}, statusVisible: () => false,
+      onSignals(work) { footer.controller.setWork(work); } });
+    segment.start(footer.ctx, () => true);
+    t.after(() => { segment.stop(); footer.dispose(); });
+    return () => {
+      segment.refresh();
+      const claude = spawnSync(process.execPath, [resolve('bin/hud-statusline'), '--width', '160'], {
+        env, encoding: 'utf8', input: JSON.stringify({ model: { display_name: 'Synthetic Claude' } }), timeout: 5000,
+      });
+      assert.equal(claude.status, 0, claude.stderr);
+      const codexNative = JSON.parse(readCodexStatusline({}, home).contents[0].text).children.map((node) => node.children.join('')).join(' ');
+      const codexBar = fitStatusBar(makeHudData({ work: readMachineWork(home, Date.now()) }), DEFAULT_LAYOUT, 160).line;
+      return [claude.stdout, footer.render()[0], codexNative, codexBar];
+    };
+  });
+  const assertCounts = (running, waiting) => {
+    assert.equal(publisher.publish({ watching: true }), true);
+    assert.equal(readFreshWorkSummary(home, panes[2]).scope.running, 0);
+    for (const render of clients) for (const line of render()) {
+      assert.ok(stripAnsi(line).includes(`HUD (OS): ${running} running, ${waiting} queued`), line);
+      assert.doesNotMatch(stripAnsi(line), /!1|needs you|asks/);
+    }
+  };
+  assertCounts(2, 1);
+  queued.setStatus({ state: 'working' });
+  assertCounts(3, 0);
 });
 
 test('hud-mcp updates work-summary.v1.json on hud_respond without overriding a fresh matching hud-watch snapshot', { timeout: 15_000 }, async (t) => {

@@ -277,17 +277,14 @@ test('pi footer prices provider-prefixed gateway model ids from the built-in cat
   assert.match(stripAnsi(f.top(160)), /~\$1\.51\b/);
 });
 
-test('pi footer counts the HUD workers by role, `!2` for the two asking; the zone is the same at every width', (t) => {
-  const f = parityFixture({ name: 'workers', width: 120, delegation: 'complete' });
+test('pi footer keeps the machine counts together and omits an unavailable census', (t) => {
+  const f = parityFixture({ name: 'machine-load', width: 120, work: { running: 5, queued: 2 } });
   t.after(() => f.dispose());
-  assert.match(stripAnsi(f.render(120)[0]!), /│ \uF0AD5 +!2 +MCP 2 +skills 3$/);
-  assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /imp|Question|Continue/);
-  // Narrower, the loaded counts go; the zone does not change.
-  assert.match(stripAnsi(f.render(60)[0]!), /│ \uF0AD5 +!2 *$/);
-  assert.match(stripAnsi(f.render(40)[0]!), /│ \uF0AD5 +!2 *$/);
-  // The jobs are gone: so is the group.
-  f.publish('unavailable');
-  assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /\uF0AD/);
+  assert.match(stripAnsi(f.render(160)[0]!), /│ HUD \(OS\): 5 running, 2 queued +MCP 2 +skills 3$/);
+  assert.match(stripAnsi(f.render(60)[0]!), /│ HUD \(OS\): 5 running, 2 queued *$/);
+  assert.doesNotMatch(stripAnsi(f.render(32)[0]!), /HUD|running|queued/);
+  f.controller.setWork(undefined);
+  assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /HUD \(OS\)/);
 });
 
 test('120 paced paints with EXP off read settings once, and turning EXP on or updating proxy is picked up without restart', async (t) => {

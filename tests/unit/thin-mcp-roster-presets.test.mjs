@@ -5,7 +5,8 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import test from 'node:test';
-import { readThinJobs, runningVerb } from '../../dist/collectors/thin-jobs.js';
+import { runningVerb } from '../../dist/collectors/thin-jobs.js';
+import { createWorkSummaryPublisher, workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
 import { expNativePath } from '../../dist/collectors/exp-native.js';
 import { readExpData } from '../../dist/collectors/exp-store.js';
 import { defaultExpConfig } from '../../dist/exp-config.js';
@@ -176,9 +177,10 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
     fs.writeFileSync(file, JSON.stringify({ state: 'waiting_orchestrator', harness: 'cli', blocked: true }));
     return file;
   };
-  const current = pendingJob('j0000000000000001', 'w4E:p1', 'imp');
+  pendingJob('j0000000000000001', 'w4E:p1', 'imp');
   pendingJob('j0000000000000002', 'w4E:p2', 'other');
-  readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' }, JSON.parse, {});
+  fs.writeFileSync(join(f.env.HUD_HOME, 'watch.pid'), `${process.pid}\n`);
+  assert.equal(createWorkSummaryPublisher(f.env.HUD_HOME, 'hud-watch').publish({ watching: true }), true);
   fs.writeFileSync(join(f.env.HOME, 'footer-reads'), '');
 
   const a = {
@@ -198,14 +200,15 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
       { limit_id: 'codex', primary_limit: windowOf(300, 115), secondary_limit: windowOf(10080, 99, 1) },
     ] },
   };
-  const ordered = ['6.2-sol high', 'ctx 38%', '5h 72% left', '7d 56% left', 'HUD: imp asks'];
+  const load = 'HUD (OS): 2 running, 0 queued';
+  const ordered = ['6.2-sol high', 'ctx 38%', '5h 72% left', '7d 56% left', load];
   assert.deepEqual(footerText(await readFooter(f, a)), ordered);
-  assert.deepEqual(footerText(await readFooter(f, b)), ['Example B', 'ctx 12%', '5h 0% left', 'HUD: imp asks']);
+  assert.deepEqual(footerText(await readFooter(f, b)), ['Example B', 'ctx 12%', '5h 0% left', load]);
   assert.deepEqual(footerText(await readFooter(f, a)), ordered);
   assert.deepEqual(footerText(await readFooter(f, {
     thread: { model: { id: null, display_name: null }, usage: { context: { used_percentage: -1 } } },
     account: { rate_limits: [{ limit_id: 'codex', primary_limit: windowOf(null, 9) }] },
-  })), ['HUD: imp asks']);
+  })), [load]);
 
   // Time across stdio with a warmed jobs cache and EXP enabled, including the first last-seen write.
   const exp = join(f.env.HUD_HOME, 'exp');
@@ -224,8 +227,8 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
     t.diagnostic(`footer stdio n=30 p50/p95/p99=max ${stats} ms`);
     assert.ok(samples.at(-1) < 250, `footer RPC too slow: ${stats} ms`);
   }
-  fs.writeFileSync(current, JSON.stringify({ state: 'done', output_written: true }));
-  assert.deepEqual(footerText(await readFooter(f)), [], 'no cached facts from another pane or stale STATUS');
+  fs.unlinkSync(workSummaryPath(f.env.HUD_HOME));
+  assert.deepEqual(footerText(await readFooter(f)), [], 'no fallback to job scans or stale counts');
   assert.equal(fs.existsSync(join(f.env.HOME, 'footer-scans')), false);
   assert.deepEqual(f.commands(), []);
   assert.deepEqual(f.socketRequests, []);

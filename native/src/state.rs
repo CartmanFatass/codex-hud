@@ -258,21 +258,11 @@ pub fn transcript(home: &Path, path: Option<&str>) -> Option<Transcript> {
     Some(Transcript { value: v, identity })
 }
 
-#[derive(Default)]
-pub struct Workers {
-    pub counts: [u64; 7],
-    pub asking: u64,
+pub struct MachineWork {
+    pub running: u64,
+    pub queued: u64,
 }
-pub const ROLES: [&str; 7] = [
-    "imp",
-    "frontend-imp",
-    "general",
-    "oracle",
-    "reviewer",
-    "other",
-    "sonic",
-];
-fn workers(v: &Value) -> Option<Workers> {
+fn running_count(v: &Value) -> Option<u64> {
     let running = v.get("running").count()?;
     let asking = v.get("asking").count()?;
     if asking > running {
@@ -282,7 +272,7 @@ fn workers(v: &Value) -> Option<Workers> {
     if roles.len() > 33 {
         return None;
     }
-    let mut result = Workers::default();
+    let (mut total, mut waiting_total) = (0, 0);
     for (role, c) in roles {
         if role.is_empty() {
             return None;
@@ -292,13 +282,10 @@ fn workers(v: &Value) -> Option<Workers> {
         if waiting > n {
             return None;
         }
-        let role = role
-            .trim_matches(crate::render::js_whitespace)
-            .to_lowercase();
-        result.counts[ROLES.iter().position(|r| *r == role).unwrap_or(5)] += n;
-        result.asking += waiting;
+        total += n;
+        waiting_total += waiting;
     }
-    (running == result.counts.iter().sum() && asking == result.asking).then_some(result)
+    (running == total && asking == waiting_total).then_some(running)
 }
 fn pane_id(pane: &str) -> bool {
     !pane.is_empty()
@@ -306,7 +293,7 @@ fn pane_id(pane: &str) -> bool {
             .chars()
             .any(|c| matches!(c, '\0'..='\u{1f}' | '\u{7f}'..='\u{9f}'))
 }
-pub fn work(home: &Path, now: f64) -> Option<Workers> {
+pub fn work(home: &Path, now: f64) -> Option<MachineWork> {
     let snapshot = read(
         &home.join("display/work-summary.v1.json"),
         65_536,
@@ -350,25 +337,19 @@ pub fn work(home: &Path, now: f64) -> Option<Workers> {
         "hud-mcp" if now - at <= 5_000. => {}
         _ => return None,
     }
-    workers(snapshot.get("global"))?;
+    let global = snapshot.get("global");
     let panes = snapshot.get("panes").obj()?;
     if panes.len() > 128 {
         return None;
     }
-    let pane = env("HERDR_PANE_ID");
-    if pane.as_deref().is_some_and(|p| !pane_id(p)) {
-        return None;
-    }
-    let mut found = Workers::default();
     for (id, scope) in panes {
         if !pane_id(id) {
             return None;
         }
-        let counts = workers(scope)?;
-        if pane.as_ref() == Some(id) {
-            found = counts;
-        }
+        running_count(scope)?;
     }
-    // A Claude bar is pane-local, including when it has no pane.
-    (found.counts.iter().sum::<u64>() <= 4096).then_some(found)
+    Some(MachineWork {
+        running: running_count(global)?,
+        queued: global.get("queued").count()?,
+    })
 }

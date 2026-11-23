@@ -600,7 +600,7 @@ export interface HudData {
   /** What just happened, newest first, as the bar process saw it change (`collectors/bar-notices.ts`). */
   notices?: BarNotice[];
   /** What this pane's HUD jobs ask of the person and what they just did (`render/work-summary.ts`). */
-  work?: import('./render/work-summary.js').WorkSignals;
+  work?: import('./collectors/work-summary-snapshot.js').MachineWorkCounts;
   /** Safe model lifecycle facts; never includes credentials, endpoints or prompts. */
   modelHealth?: {
     queued: number;

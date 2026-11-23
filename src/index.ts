@@ -30,8 +30,7 @@ import { colors } from './render/colors.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { BarNoticeTracker } from './collectors/bar-notices.js';
-import { jobLaneSnapshot } from './collectors/job-snapshot.js';
-import { workSignals, type WorkSignals } from './render/work-summary.js';
+import { readMachineWork } from './collectors/work-summary-snapshot.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
 import type { HudData } from './types.js';
@@ -90,20 +89,7 @@ const sessionFinder = new SessionFinder(
 // for one event is worse than none.
 const notifier = new Notifier(resolveNotifierOptions());
 const notices = new BarNoticeTracker();
-// The running jobs in this pane, read at most every 5 s.
-const barJobs = jobLaneSnapshot(
-  getHudHome(),
-  { project: null, pane: process.env.HERDR_PANE_ID ?? null },
-  { settledBefore: 'now' }
-);
-let jobSignals: { at: number; signals?: WorkSignals } = { at: 0 };
-async function readJobSignals(now: number): Promise<WorkSignals | undefined> {
-  if (now - jobSignals.at >= 5000) {
-    const snapshot = await barJobs.read().catch(() => undefined);
-    jobSignals = { at: now, signals: snapshot && workSignals(snapshot.lanes, now) };
-  }
-  return jobSignals.signals;
-}
+const hudHome = getHudHome();
 
 // The same tick that draws the bar also publishes what it drew, so a click,
 // a script or another pane can read the state the reader is looking at.
@@ -228,7 +214,9 @@ async function mainLoop(): Promise<void> {
 
   await timeAsync('tick', async () => {
     const scopeKey = sessionFinder.getCurrentSession()?.sessionId ?? '';
-    if (!adaptivePollDue(adaptive, scopeKey, Date.now())) {
+    const now = Date.now();
+    if (!adaptivePollDue(adaptive, scopeKey, now)) {
+      if (cachedHudData) cachedHudData.work = readMachineWork(hudHome, now);
       repaintCached();
       return;
     }
@@ -236,7 +224,7 @@ async function mainLoop(): Promise<void> {
     try {
       const data = await collectData();
       data.notices = notices.observe(data, Date.now());
-      data.work = await readJobSignals(Date.now());
+      data.work = readMachineWork(hudHome, Date.now());
       renderToStdout(data, HUD_PANE_HEIGHT);
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.
@@ -287,7 +275,6 @@ function shutdown(): void {
   stopProfiling();
   // Clean up watchers
   sessionFinder.stop();
-  barJobs.close();
   hudFileWatcher.stop().catch(() => {
     // Ignore cleanup errors
   });

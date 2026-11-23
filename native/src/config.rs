@@ -99,8 +99,6 @@ pub struct Display {
     pub theme: String,
     pub capsules: bool,
     pub ascii: bool,
-    /// Nerd Font glyphs for the role icons: the default, unless the icons are `unicode`, `emoji` or `text`.
-    pub nerd: bool,
     pub fields: [bool; 7],
 }
 impl Display {
@@ -158,7 +156,6 @@ impl Display {
             capsules: theme != "none" && style == "p10k",
             theme,
             ascii: icons == "text",
-            nerd: !matches!(icons.as_str(), "text" | "unicode" | "emoji"),
             fields,
         })
     }

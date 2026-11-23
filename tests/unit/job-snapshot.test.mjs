@@ -9,6 +9,7 @@ import test from 'node:test';
 import { JobSnapshotIndex } from '../../dist/collectors/job-snapshot-index.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { watchJobChanges } from '../../dist/collectors/job-changes.js';
+import { createWorkSummaryPublisher } from '../../dist/collectors/work-summary-snapshot.js';
 import { createPiSegment } from '../../dist/harness/pi/segment.js';
 import { writePrivateFile } from '../../dist/utils/atomic-fs.js';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
@@ -67,31 +68,20 @@ test('equivalent fact snapshots keep the published thin-jobs inode', (t) => {
   assert.equal(same.mtimeNs, initial.mtimeNs);
 });
 
-test('pi footer fills asynchronously, follows local question and answer changes, and fences a stopped read', { timeout: 10_000 }, async (t) => {
-  const { home, job } = fixture(t), { dir } = job(1);
-  const statuses = new EventEmitter();
+test('passive pi status follows the machine census and clears on stop', (t) => {
+  const { home, job } = fixture(t);
+  job(1, 'queued');
   let timer, text;
-  const segment = createPiSegment({ env: { HUD_HOME: home, HERDR_PANE_ID: pane }, schedule(fn) { timer = fn; return () => {}; } });
+  const segment = createPiSegment({ env: { HUD_HOME: home }, schedule(fn) { timer = fn; return () => {}; } });
   t.after(() => segment.stop());
-  const ctx = { mode: 'tui', hasUI: true, ui: { setStatus(_key, value) { text = value; statuses.emit('status', value); } } };
-  const initial = once(statuses, 'status');
-  segment.start(ctx, 'pi-synthetic/synthetic', () => true);
-  assert.deepEqual(await initial, [undefined], 'start publishes before any worker scan finishes');
-  assert.deepEqual(await once(statuses, 'status'), ['Work: 1 running']);
-  const awaitChange = async (expected) => {
-    const next = once(statuses, 'status');
-    // Use the independent five-second refresh port without a wall-clock wait.
-    await new Promise((done) => setTimeout(done, 50));
-    timer();
-    assert.deepEqual(await next, [expected]);
-  };
-  writePrivateFile(join(dir, 'qa', 'q1.md'), '# Question\n\nSynthetic choice?');
-  await awaitChange('Work: 1 needs you');
-  writePrivateFile(join(dir, 'qa', 'q1.answer.md'), 'Synthetic answer');
-  await awaitChange('Work: 1 running');
+  const ctx = { mode: 'tui', hasUI: true, ui: { setStatus(_key, value) { text = value; } } };
+  segment.start(ctx, () => true);
+  assert.equal(text, undefined);
+  createWorkSummaryPublisher(home, 'hud-mcp').publish();
   timer();
+  assert.equal(text, 'HUD (OS): 0 running, 1 queued');
   segment.stop();
-  await new Promise((done) => setTimeout(done, 50));
+  timer();
   assert.equal(text, undefined);
 });
 

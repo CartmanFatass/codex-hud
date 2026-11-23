@@ -4,8 +4,7 @@
  *
  *   model effort │ context %/window │ repo branch │ quota │ ~N t/s │ notice zone ········ MCP n  skills n
  *
- * The notice zone is the HUD's workers as an icon and a count per role (`⚒3  ✦2  ⚡4`), then what the client itself
- * tells (a subagent's events, a skill load, an approval).
+ * The notice zone includes native approvals, machine-wide HUD load, and the client's recent events.
  *
  * Fields a client cannot supply are left out, never shown as zero. The fields shown are `barFields`; the style is
  * `barStyle`: `│` separators (`line`), or powerline capsules (`p10k`: each segment padded by a space on its own
@@ -16,8 +15,9 @@
 
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
-import { activeBarStyle, displayConfig, iconSet, type BarField, type IconMode } from '../hud-config.js';
-import { ROLE_GLYPHS, roleIcon } from '../model-glyphs.js';
+import { activeBarStyle, displayConfig, iconSet, type BarField } from '../hud-config.js';
+import { formatMachineWork } from '../work-summary.js';
+import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import { providerMark } from '../providers.js';
 
 /**
@@ -84,12 +84,6 @@ export interface BarEvent {
   key?: string;
 }
 
-/** One HUD worker as the worker zone counts it: only a live one, working or asking the owner. */
-export interface BarWorker {
-  role: string;
-  state: 'working' | 'asking';
-}
-
 export interface BarQuotaWindow {
   label: string;
   /** Percent used; absent when there is no reading to meter. */
@@ -114,8 +108,8 @@ export interface BarFacts {
   /** What needs the owner now (an approval): pinned while it is open. */
   needs?: string[];
   events?: BarEvent[];
-  /** The HUD's workers: the zone's counts per role. */
-  workers?: BarWorker[];
+  /** Fresh machine-wide HUD load. */
+  work?: MachineWorkCounts;
   loaded?: { counts: ReadonlyArray<readonly [string, number | null | undefined]>; words?: Form[] };
 }
 
@@ -155,7 +149,6 @@ export function agentEvent(
 }
 
 /** A job asking the owner, as the Codex footer's reminder says it: `imp asks`. */
-export const askOf = (name: string): string => `${name} asks`;
 
 // ─── Painting ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -498,44 +491,15 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
   }
 }
 
-// ─── The worker zone ───────────────────────────────────────────────────────────────────────────────────────────────
-
-/**
- * The census of live workers as one segment of one form, null when none is running: an icon and a count per role in
- * `ROLE_GLYPHS`' order (`⚒3  ✦2  ◈1  ⚡4` in the Unicode set; a role without an icon of its own counts under `•`), then one `!N` for the
- * workers asking the owner (the bar's alert badge, with its own padding on a coloured bar). Nothing narrows it.
- */
-function rosterSeg(workers: readonly BarWorker[] | undefined, pad: string, icons: IconMode): Seg | null {
-  if (!workers?.length) return null;
-  const counts = new Map<string, number>();
-  for (const worker of workers) {
-    const role = worker.role.trim().toLowerCase();
-    const key = Object.hasOwn(ROLE_GLYPHS, role) ? role : 'other';
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const asking = workers.filter((worker) => worker.state === 'asking').length;
-  const form: Form = [
-    ...Object.entries(ROLE_GLYPHS)
-      .filter(([role]) => counts.has(role))
-      .flatMap(([role], i): Form => [
-        ...(i ? ([['  ']] as Form) : []),
-        [roleIcon(role, icons), role === 'sonic' ? 'warn' : 'info'],
-        [String(counts.get(role)), 'count'],
-      ]),
-    ...(asking ? ([['  '], [`${pad}!${asking}${pad}`, pad ? 'alert' : 'warn']] as Form) : []),
-  ];
-  return { id: 'notice', forms: [form], ink: P10K.info, at: 0 };
-}
-
 // ─── Fit and layout ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
  * Who gives up the next form when the line is too wide, cheapest loss first. The vitals' numbers outrank everything
- * round them, and the worker zone's marks and counts outrank its words, so the order is: the loaded counts; both gauges'
+ * round them, so the order is: the loaded counts; both gauges'
  * cells (`meters`: the two go together); the quota's reset; the branch's marks; a subagent's title (`title`, twice: a few
  * words, then altogether); the output rate; the older of two subagent items (`notice`, which also cuts the newest at a word, and shortens a pinned
  * need to `N needs`); the effort; the context's window; the branch; the quota; the project; the context. The model alone
- * is never dropped. The worker zone has one form and is never narrowed.
+ * is never dropped. The load is omitted whole if it still cannot fit.
  */
 const LADDER: Array<BarField | 'meters' | 'title'> = [
   'loaded',
@@ -572,7 +536,9 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
   // Several needs: `first +2`, then `N needs` when the notice has to give way.
   if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
-  const roster = on.has('notice') ? rosterSeg(facts.workers, pad, iconSet()) : null;
+  const load: Seg | null = on.has('notice') && facts.work
+    ? { id: 'notice', forms: [[[formatMachineWork(facts.work), 'value']]], ink: P10K.info, at: 0 }
+    : null;
   const left = [
     on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
@@ -580,7 +546,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
     on.has('tps') ? tpsSeg(facts.tps) : null,
     alertSeg,
-    roster,
+    load,
   ].filter((seg): seg is Seg => seg !== null);
   const right = on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null;
   const all = right ? [...left, right] : left;
@@ -631,8 +597,9 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
       continue;
     }
     const seg = all.find((candidate) => candidate.id === id);
-    if (seg && seg.at < seg.forms.length) seg.at = (zone || roster) && id === 'loaded' ? seg.forms.length : seg.at + 1;
+    if (seg && seg.at < seg.forms.length) seg.at = (zone || load) && id === 'loaded' ? seg.forms.length : seg.at + 1;
   }
+  if (load && room(0) < 0) load.at = load.forms.length;
   const shown = fields();
   if (zone) {
     const events = zone.events;

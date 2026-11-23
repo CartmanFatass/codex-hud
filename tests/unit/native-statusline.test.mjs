@@ -30,7 +30,7 @@ function setup(hud) {
   const file = join(hud, 'display/work-summary.v1.json');
   const write = (extra = {}) => fs.writeFileSync(file, JSON.stringify({
     version: 1, producer: 'hud-watch', pid: process.pid, pid_start: start, generation: 1,
-    observed_at: 1000, watching: true, complete: true, global: scope, panes: { 'synthetic-pane': scope }, ...extra,
+    observed_at: 1000, watching: true, complete: true, global: { ...scope, queued: 1 }, panes: { 'synthetic-pane': scope }, ...extra,
   }), { mode: 0o600 });
   fs.writeFileSync(join(hud, 'watch.pid'), `${process.pid}\n`);
   write();
@@ -71,7 +71,7 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     ['unicode icons', base, { HUD_ICONS: 'unicode', COLUMNS: '86' }, []],
     ['narrow width from the environment', base, { COLUMNS: '5' }, []],
     ['powerline, no capsule parity regressions', base, { HUD_BAR_STYLE: 'p10k' }, []],
-    ['scoped workers and RGB palette', base, { HUD_THEME: 'mocha' }, []],
+    ['machine load and RGB palette', base, { HUD_THEME: 'mocha' }, []],
     ['fields and hide Bedrock quota', { ...base, model: { id: 'us.anthropic.claude-sonnet-4-20250514-v1:0' } },
       { HUD_BAR_FIELDS: 'model,quota' }, []],
     ['zero reset/cost are still facts', { cost: { total_cost_usd: 0 }, context_window: { context_window_size: 200000 } }, {}, []],
@@ -95,7 +95,7 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     fs.writeFileSync(file, JSON.stringify({ barStyle: style }));
     assert.deepEqual(rust(capsuleEnv, base), line, `retired ${style} renders as native line`);
   }
-  // The panel's saved Icons setting wins over the environment, as the bar's own settings reader does: Nerd glyphs by default.
+  // The Icons setting may change presentation, but never the machine-load text.
   const bar = (extra, icons) => {
     if (icons) fs.writeFileSync(file, JSON.stringify({ icons }), { mode: 0o600 });
     else fs.rmSync(file, { force: true });
@@ -103,18 +103,16 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     assert.deepEqual(rust(childEnv, base), ts(childEnv, base), `icons ${icons}`);
     return ts(childEnv, base).toString();
   };
-  assert.match(bar({}), /│ \uF0AD1 +\uF0E72 +!1/, 'no setting: the Nerd Font glyphs');
-  assert.match(bar({}, 'unicode'), /│ ⚒1 +⚡2 +!1/);
-  assert.match(bar({ HUD_ICONS: 'unicode' }, 'text'), /│ I1 +\*2 +!1/);
-  assert.match(bar({ HUD_ICONS: 'text' }, 'emoji'), /│ I1 +\*2 +!1/, 'an unknown saved value is no setting: the environment decides');
-  assert.match(bar({}, 'emoji'), /│ \uF0AD1 +\uF0E72 +!1/, 'and with none, the default');
+  for (const icons of [undefined, 'unicode', 'text', 'emoji']) {
+    assert.match(bar({}, icons), /│ HUD \(OS\): 3 running, 1 queued/);
+  }
   fs.rmSync(join(env.HUD_HOME, 'hud-settings.json'), { force: true });
   const exact = Buffer.from(JSON.stringify(base).padEnd(65536, ' '));
   assert.deepEqual(run(launcher, [], env, exact), rust(env, exact), 'exactly 64 KiB remains valid');
   assert.deepEqual(run(launcher, [], env, Buffer.concat([exact, Buffer.from([0])])), ts(env, Buffer.alloc(65537, 32)));
 });
 
-test('Claude outside herdr shows no workers from another pane', { timeout: 60000 }, async (t) => {
+test('Claude shows the same machine counts inside herdr, outside herdr and in an idle pane', { timeout: 60000 }, async (t) => {
   const { env, entry } = localInstall(t);
   env.NO_COLOR = '1';
   const renderers = [[process.execPath, [entry]]];
@@ -129,9 +127,9 @@ test('Claude outside herdr shows no workers from another pane', { timeout: 60000
       assert.equal(stderr.length, 0);
       return stdout;
     };
-    assert.match((await render('synthetic-pane')).toString(), /!1/);
     const outside = await render();
-    assert.doesNotMatch(outside.toString(), /!1/);
+    assert.match(outside.toString(), /HUD \(OS\): 3 running, 1 queued/);
+    assert.deepEqual(outside, await render('synthetic-pane'));
     assert.deepEqual(outside, await render('empty-pane'));
   }
 });
@@ -184,7 +182,10 @@ test('dispatcher never reuses a frame and declines missing, stale, incompatible 
   const wanted = ts(env, second);
   assert.notDeepEqual(run(launcher, [], env, base), wanted);
   assert.deepEqual(run(launcher, [], env, second), wanted);
-  for (const bad of [{ version: 2 }, { complete: false }, { producer: 'hud-mcp' }, { pid_start: '0' }]) {
+  for (const bad of [
+    { version: 2 }, { complete: false }, { producer: 'hud-mcp' }, { pid_start: '0' },
+    { global: { running: 0, asking: 0, roles: {} } }, // Older v1 snapshots lack queued counts.
+  ]) {
     write(bad);
     assert.equal(rust(env, base, [], 75).length, 0);
     assert.deepEqual(run(launcher, [], env, base), ts(env, base));

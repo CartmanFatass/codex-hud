@@ -19,9 +19,10 @@ export const WORK_SUMMARY_DEGRADED_TTL_MS = 5_000;
 export const WORK_SUMMARY_CLOCK_SKEW_MS = 5_000;
 
 export type WorkSummaryProducer = 'hud-watch' | 'hud-mcp';
-/** Live workers of one role: `running` is total live (working + asking); `asking` is the subset waiting on the owner. */
+/** Live workers of one role: `asking` is the subset of `running` waiting on main. */
 export interface WorkSummaryRoleCounts { running: number; asking: number; }
 export interface WorkSummaryScope { running: number; asking: number; roles: Record<string, WorkSummaryRoleCounts>; }
+export interface MachineWorkCounts { running: number; queued: number; }
 export interface WorkSummarySnapshot {
   version: 1;
   producer: WorkSummaryProducer;
@@ -31,7 +32,7 @@ export interface WorkSummarySnapshot {
   observed_at: number;
   watching: boolean;
   complete: boolean;
-  global: WorkSummaryScope;
+  global: WorkSummaryScope & MachineWorkCounts;
   panes: Record<string, WorkSummaryScope>;
 }
 
@@ -58,7 +59,7 @@ export function collectWorkSummary(
   cache: JobIndexCache = getJobIndexCache(home),
   options?: { ids?: readonly string[]; jobs?: readonly (Job & Record<string, unknown>)[] }
 ) {
-  let complete = true;
+  let complete = true, queued = 0;
   const global = emptyWorkSummaryScope();
   const rawPanes: Record<string, WorkSummaryScope> = {};
   const considerJob = (id: string, job: Job & Record<string, unknown>) => {
@@ -70,6 +71,7 @@ export function collectWorkSummary(
     if (statusRes.status !== 'ok' && statusRes.status !== 'missing') { complete = false; return; }
     const status = statusRes.status === 'ok' ? statusRes.value : null;
     const row = jobRow(job, status);
+    if (row.display_state === 'queued') queued += 1;
     if (row.display_state !== 'working') return;
     let openQuestions = 0;
     try { openQuestions = cache.readQa(join(home, 'jobs', id)).openIds.length; }
@@ -97,7 +99,7 @@ export function collectWorkSummary(
     }
   }
   const panes = Object.fromEntries(Object.keys(rawPanes).sort().map((p) => [p, sortScope(rawPanes[p]!)]));
-  return { global: sortScope(global), panes, complete };
+  return { global: { ...sortScope(global), queued }, panes, complete };
 }
 
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
@@ -121,7 +123,7 @@ export function parseWorkSummarySnapshot(raw: unknown): WorkSummarySnapshot | nu
   if ((raw.producer !== 'hud-watch' && raw.producer !== 'hud-mcp') || !isValidPid(raw.pid)) return null;
   if (raw.pid_start !== null && (typeof raw.pid_start !== 'string' || !/^\d+$/.test(raw.pid_start))) return null;
   if (!isCount(raw.generation) || raw.generation < 1 || typeof raw.observed_at !== 'number' || !Number.isFinite(raw.observed_at) || raw.observed_at <= 0) return null;
-  if (typeof raw.watching !== 'boolean' || typeof raw.complete !== 'boolean' || !isValidScope(raw.global) || !isPlain(raw.panes)) return null;
+  if (typeof raw.watching !== 'boolean' || typeof raw.complete !== 'boolean' || !isPlain(raw.global) || !isCount(raw.global.queued) || !isValidScope(raw.global) || !isPlain(raw.panes)) return null;
   const paneEntries = Object.entries(raw.panes);
   if (paneEntries.length > WORK_SUMMARY_MAX_PANES || paneEntries.some(([p, s]) => !herdrId(p) || !isValidScope(s))) return null;
   return raw as unknown as WorkSummarySnapshot;
@@ -145,6 +147,12 @@ export function readFreshWorkSummary(home: string, pane: string | null, now = Da
     if (!snapshot.watching && now - snapshot.observed_at > WORK_SUMMARY_DEGRADED_TTL_MS) return null;
   } else if (now - snapshot.observed_at > WORK_SUMMARY_MCP_TTL_MS) return null;
   return { scope: pane === null ? snapshot.global : (snapshot.panes[pane] ?? emptyWorkSummaryScope()), snapshot };
+}
+
+/** Display only a complete, fresh machine census, never a pane-local substitute. */
+export function readMachineWork(home: string, now: number): MachineWorkCounts | undefined {
+  const global = readFreshWorkSummary(home, null, now)?.snapshot.global;
+  return global && { running: global.running, queued: global.queued };
 }
 
 export function createWorkSummaryPublisher(home: string, producer: WorkSummaryProducer, cache: JobIndexCache = getJobIndexCache(home)) {
@@ -201,7 +209,7 @@ export function createWorkSummaryPublisher(home: string, producer: WorkSummaryPr
       lastCollected = collected;
       const watching = producer === 'hud-watch' && options?.watching === true;
       const now = options?.now ?? Date.now();
-      const jobsExist = Boolean(options?.jobsExist || options?.jobs?.length || options?.ids?.length || collected.global.running > 0);
+      const jobsExist = Boolean(options?.jobsExist || options?.jobs?.length || options?.ids?.length || collected.global.running > 0 || collected.global.queued > 0);
       return writeSnapshot(collected, watching, now, jobsExist);
     },
     markDegraded(now = Date.now()): boolean {

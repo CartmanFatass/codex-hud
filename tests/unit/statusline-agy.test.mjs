@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
+import { createWorkSummaryPublisher } from '../../dist/collectors/work-summary-snapshot.js';
 
 const bin = resolve('bin/hud-statusline');
 const email = 'user@example.invalid';
@@ -99,10 +100,11 @@ test('Antigravity renders fresh/mid-turn/quotas, EN/ZH details and the caller wi
   ]);
 });
 
-test('Antigravity draws the same worker zone from this pane\'s jobs, long-running ones included, with no title', async (t) => {
-  const { hud, env, run } = fixture(t);
+test('Antigravity draws machine-wide counts, including long-running jobs outside the caller pane', async (t) => {
+  const { hud, run } = fixture(t);
+  const publisher = createWorkSummaryPublisher(hud, 'hud-watch');
+  fs.writeFileSync(join(hud, 'watch.pid'), `${process.pid}\n`);
   const pane = 'w4E:p1', id = 'j0000000000000001';
-  env.HERDR_PANE_ID = pane;
   const dir = join(hud, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
   const ago = (seconds) => new Date(Date.now() - seconds * 1000).toISOString();
@@ -112,7 +114,9 @@ test('Antigravity draws the same worker zone from this pane\'s jobs, long-runnin
   );
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', started_at: ago(1800) }));
   fs.writeFileSync(join(dir, 'brief.md'), '# Secret heading');
-  assert.equal(await run(payload), `${wide} │ \uF0AD1`);
+  assert.equal(publisher.publish({ watching: true }), true);
+  assert.equal(await run(payload), `${wide} │ HUD (OS): 1 running, 0 queued`);
+  assert.match(await run(payload, ['--details']), /\nHUD \(OS\): 1 running, 0 queued$/);
   // A job settled seconds ago, report unread, is not counted: only the running one is.
   const done = 'j0000000000000002', doneDir = join(hud, 'jobs', done);
   fs.mkdirSync(doneDir, { recursive: true });
@@ -122,10 +126,11 @@ test('Antigravity draws the same worker zone from this pane\'s jobs, long-runnin
   );
   fs.writeFileSync(join(doneDir, 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: ago(10) }));
   fs.writeFileSync(join(doneDir, 'report.md'), 'Done.');
-  assert.equal(await run(payload), `${wide} │ \uF0AD1`);
-  // With nothing running the zone is absent.
+  assert.equal(publisher.publish({ watching: true }), false);
+  assert.equal(await run(payload), `${wide} │ HUD (OS): 1 running, 0 queued`);
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: ago(5) }));
-  assert.equal(await run(payload), wide);
+  assert.equal(publisher.publish({ watching: true }), true);
+  assert.equal(await run(payload), `${wide} │ HUD (OS): 0 running, 0 queued`);
 });
 
 test('Antigravity quota follows the model id or display name without falling back to another family', async (t) => {

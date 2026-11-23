@@ -4,11 +4,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expNativePath, readExpNativeSeen } from '../collectors/exp-native.js';
 import { writePrivateFile, readFileBounded } from '../utils/atomic-fs.js';
-import { jobRow } from '../collectors/thin-jobs.js';
-import { jobCallerPane } from '../roles/job-pane.js';
-import { isFileStampCurrent } from '../roles/job-index-cache.js';
+import { readMachineWork } from '../collectors/work-summary-snapshot.js';
 import { truncateAnsi } from '../render/colors.js';
-import { askOf, NOTICE_MS } from '../render/layout/bar-fields.js';
+import { formatMachineWork } from '../render/work-summary.js';
 import { monitorText } from '../render/monitor-text.js';
 import { shortModel } from '../render/providers.js';
 import { formatWindowLabel } from '../render/quota.js';
@@ -45,57 +43,6 @@ function readJson(file: string, maxBytes: number): unknown {
   }
 }
 
-interface Fact {
-  path: string;
-  stamp: string;
-  at: number;
-  json: JsonObject;
-}
-
-/** The bars scope HUD jobs to the inherited pane, not the foreground Codex thread or cwd. */
-function workReminder(home: string, pane: string | null, now: number): string | undefined {
-  if (!pane) return;
-  const rows = readJson(join(home, 'display', 'thin-jobs.json'), 1_048_576);
-  if (!Array.isArray(rows) || rows.length > 800) return;
-  const receipts = new Map<string, Fact>();
-  const statuses = new Map<string, Fact>();
-  for (const entry of rows) {
-    if (!Array.isArray(entry)) continue;
-    const [rel, stamp, raw] = entry;
-    const match = typeof rel === 'string' ? /^(j[0-9a-f]{16})\/(job|STATUS)\.json$/.exec(rel) : null;
-    const snap = obj(raw), json = obj(snap?.json);
-    if (!match || typeof stamp !== 'string' || !json || snap?.whole !== true || !nonnegative(snap.at)) continue;
-    const [, id, kind] = match;
-    if (kind === 'job' && (json.job !== id || jobCallerPane(json) !== pane)) continue;
-    (kind === 'job' ? receipts : statuses).set(id, { path: join(home, 'jobs', rel), stamp, at: snap.at, json });
-  }
-  let best: { reminder: string; priority: number; at: number; receipt: Fact; status: Fact } | undefined;
-  for (const [id, receipt] of receipts) {
-    const status = statuses.get(id);
-    if (!status) continue;
-    const row = jobRow(receipt.json, status.json);
-    const role = compact(row.role, 10);
-    if (!row.state || !role || row.display_state === 'stopped') continue;
-    const asks = row.display_state === 'working' && (row.blocked || row.state === 'waiting_orchestrator');
-    const date =
-      row.display_state === 'working' || row.display_state === 'queued'
-        ? (status.json.started_at ?? receipt.json.created_at)
-        : (status.json.settled_at ?? status.json.ended_at);
-    const parsed = typeof date === 'string' ? Date.parse(date) : NaN;
-    const at = Number.isFinite(parsed) ? parsed : status.at;
-    if (!asks && (at > now || now - at >= NOTICE_MS)) continue;
-    const priority = asks ? 1 : 0;
-    if (best && (priority < best.priority || (priority === best.priority && at <= best.at))) continue;
-    const reminder = asks
-      ? askOf(role)
-      : `${role} ${row.display_state === 'working' ? 'started' : row.display_state}`;
-    best = { reminder, priority, at, receipt, status };
-  }
-  // An unrefreshed cache must not keep a question pinned after the job changes or disappears.
-  if (best && isFileStampCurrent(best.receipt.path, best.receipt.stamp) && isFileStampCurrent(best.status.path, best.status.stamp))
-    return `HUD: ${best.reminder}`;
-}
-
 function recordLastSeen(home: string, now: number): void {
   const dir = join(home, 'exp');
   const enabled = () => {
@@ -130,7 +77,7 @@ function recordLastSeen(home: string, now: number): void {
 
 const text = (color: string, value: string) => ({ type: 'text', props: { color }, children: [value] });
 
-export function readCodexStatusline(meta: unknown, home: string, pane: string | null, now = Date.now()) {
+export function readCodexStatusline(meta: unknown, home: string, now = Date.now()) {
   const state = obj(obj(meta)?.['com.openai/codex-statusline-state']);
   const thread = obj(state?.thread);
   const model = obj(thread?.model);
@@ -163,8 +110,8 @@ export function readCodexStatusline(meta: unknown, home: string, pane: string | 
     children.push(text('status-limit', `${formatWindowLabel(minutes)} ${left}% left`));
   }
 
-  const reminder = workReminder(home, pane, now);
-  if (reminder) children.push(text('status-state', reminder));
+  const work = readMachineWork(home, now);
+  if (work) children.push(text('status-state', formatMachineWork(work)));
   const tree = { type: 'row', props: { gap: 2, wrap: 'nowrap' }, children };
   if (state) recordLastSeen(home, now);
   return { contents: [{ uri: URI, mimeType: MIME, text: JSON.stringify(tree) }] };

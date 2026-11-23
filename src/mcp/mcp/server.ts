@@ -9,7 +9,7 @@ import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js'
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
-import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
+import { session, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
   resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, flowReceipt, tasks,
   evictTask, activeTasks, loadTaskReceipt, TASK_TTL, saveTaskReceipt, stopBatchDelivery, beginHandoff,
@@ -114,7 +114,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         rpcError(request.id, -32002, 'Resource not found');
         return;
       }
-      result = readCodexStatusline(request.params._meta, hudHome, callerPane);
+      result = readCodexStatusline(request.params._meta, hudHome);
       break;
     case 'tools/call': {
       // Antigravity and Codex expose session identity only in tools/call metadata.

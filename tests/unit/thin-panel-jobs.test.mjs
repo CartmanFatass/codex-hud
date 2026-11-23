@@ -381,7 +381,7 @@ test('Home → thin-job Inspector → Changes preserves summary mouse controls w
   assert.equal(frame.state.subpage, undefined);
 });
 
-test('statusline notices and explicit detail counts read job folders with no role-summary cache', (t) => {
+test('Claude compact and detail lines omit HUD job counts without a fresh census', (t) => {
   const f = fixture(t);
   assert.equal(existsSync(join(f.env.HUD_HOME, 'display/role-summary')), false);
   const clock = join(f.env.HOME, 'clock.mjs');
@@ -394,13 +394,10 @@ test('statusline notices and explicit detail counts read job folders with no rol
   });
   const result = run();
   assert.equal(result.status, 0, result.stderr);
-  // The three live imps in this pane (another pane's, settled and old ones stay out): one asking.
-  assert.match(stripAnsi(result.stdout), /│ \uF0AD3 +!1\s*$/, 'the shared bar counts live workers by role; the asking one is a `!1`');
-  assert.doesNotMatch(result.stdout, /thin job cards|asks|imp/, 'no job title or role in the zone');
+  assert.doesNotMatch(stripAnsi(result.stdout), /HUD \(OS\)|!1|thin job cards|asks/);
   const details = run(['--details']);
   assert.equal(details.status, 0, details.stderr);
-  // A settled job is done, read or not: no "report ready" count.
-  assert.match(details.stdout, /Work: 1 needs you · 1 stalled · 1 failed · 1 running/);
+  assert.doesNotMatch(details.stdout, /HUD \(OS\)|Work:|needs you/);
 });
 
 test('a queued land names the job it waits on: its ticket id, else the holder’s flow id (panel-polish/04)', async (t) => {

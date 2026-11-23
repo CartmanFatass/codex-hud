@@ -3,7 +3,6 @@ import { PiRoleClient, PI_ROLE_TOOLS } from './role-client.js';
 import { createPiSegment, isPiTui } from './segment.js';
 import type { PiPackageBinding, PiPackageContext } from './package-context.js';
 export type { PiPackageBinding, PiPackageContext } from './package-context.js';
-import { displayTarget } from '../../integrations/panel/receipt.js';
 import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
 import { startSessionWatch } from '../../cli/watch.js';
 import { herdrId } from '../../roles/herdr-run.js';
@@ -185,7 +184,7 @@ export function installPiPackage(
         if (!footer && host) footer = createP10kFooter(pi, host, env);
         if (s.footerOn) footer?.start(ctx);
       }
-      segment.start(ctx, displayTarget('pi', id, source).root, () => current(s));
+      segment.start(ctx, () => current(s));
     }
   }
   function on(event: string, handler: (event: unknown, ctx: PiPackageContext) => void | Promise<void>) {

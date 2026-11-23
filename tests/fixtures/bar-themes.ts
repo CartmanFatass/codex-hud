@@ -7,14 +7,10 @@ import { renderParity } from '../../dist/statusline-parity/render.js';
 import { fitStatusBar } from '../../dist/render/header.js';
 import { DEFAULT_LAYOUT } from '../../dist/types.js';
 import { setDisplayConfig, BAR_FIELDS, type BarStyle } from '../../dist/render/hud-config.js';
-import type { BarWorker } from '../../dist/render/layout/bar-fields.js';
 
 export const THEME_NOW = FOOTER_NOW;
 
-/** A synthetic HUD worker of a role, working unless it is asking. */
-export const worker = (role: string, state: BarWorker['state'] = 'working'): BarWorker => ({ role, state });
-/** The busy scenes' workers: two imps (one asking) and a sonic. */
-export const THEME_WORKERS: BarWorker[] = [worker('imp'), worker('imp', 'asking'), worker('sonic')];
+const WORK = { running: 3, queued: 1 };
 export function barThemeScene() {
   const footer = parityFixture({ name: 'bar-themes', width: 120, env: { NO_COLOR: '' } });
   footer.ctx.model!.id = 'deepseek-v4-1-flash-1017';
@@ -22,7 +18,7 @@ export function barThemeScene() {
   footer.ctx.getContextUsage = () => ({ contextWindow: 200000, percent: 72 });
   footer.ctx.sessionManager.getSessionName = () => 'example';
   footer.controller.update();
-  footer.controller.setWork({ workers: THEME_WORKERS });
+  footer.controller.setWork(WORK);
   const data = makeHudData({
     config: { ...makeHudData().config, model: 'gpt-5.6-astra', model_reasoning_effort: 'xhigh' },
     session: undefined,
@@ -39,7 +35,7 @@ export function barThemeScene() {
       },
       { kind: 'agent-done', subject: 'worker', ranMs: 95_000, at: new Date(THEME_NOW - 20000) },
     ],
-    work: { workers: THEME_WORKERS },
+    work: WORK,
   });
   return {
     footer,
@@ -81,7 +77,7 @@ export function barThemeScene() {
         },
         THEME_NOW,
         {},
-        { workers: THEME_WORKERS }
+        WORK
       );
       return {
         claude: claude.split('\n'),

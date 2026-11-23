@@ -24,22 +24,22 @@
       "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s"
     ],
     "one": [
-      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% │ ~42.7 t/s │ ⚒1"
+      "✻ opus-5.5 │ 41% │ example │ 5h 62% │ HUD (OS): 1 running, 0 queued"
     ],
     "busy": [
-      "✻ opus-5.5 │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ⚒3  ✎1  ✦1  ⚡3   !1 "
+      "✻ opus-5.5 │ 41% │ example │ 5h 62% │ HUD (OS): 8 running, 2 queued"
     ],
     "mixed": [
-      "✻ opus-5.5 │ 41% │ example │ 5h 62% │ ⚒3  ✎1  ✦1  ⚡3   !1  │ ◐ Explore Audit…"
+      "✻ opus-5.5 │ 41% │ example │ 5h 62% │ HUD (OS): 8 running, 2 queued │ ◐ Explore"
     ],
     "claude": [
-      "✻ opus-5.5 │ 86% │ ⚒2  ⚡1   !1  │ ◐ frontend-implementer │ ✦ skill hud-delegate"
+      "✻ opus-5.5 │ HUD (OS): 3 running, 1 queued │ ◐ frontend-implementer Synthetic"
     ],
     "pi": [
-      "≋ v4.1-flash high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ ⚒2  ⚡1   !1 "
+      "≋ v4.1-flash │ 72% │ example synthetic-main* │ HUD (OS): 3 running, 1 queued"
     ],
     "codex": [
-      "◎ 5.6-astra │ 88% │ example │ 5h 78% │ ⚒2  ⚡1   !1  │ ◐ explorer │ ✓ worker 1m"
+      "◎ 5.6-astra │ 88% │ HUD (OS): 3 running, 1 queued │ ◐ explorer │ ✓ worker 1m"
     ],
     "pi-quota": [
       "◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ≈43%"
@@ -65,22 +65,22 @@
       "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s"
     ],
     "one": [
-      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s │ ⚒1"
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ HUD (OS): 1 running, 0 queued"
     ],
     "busy": [
-      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% │ ~42.7 t/s │ ⚒3  ✎1  ✦1  ⚡3   !1 "
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ HUD (OS): 8 running, 2 queued"
     ],
     "mixed": [
-      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ⚒3  ✎1  ✦1  ⚡3   !1  │ ◐ Explore"
+      "✻ opus-5.5 │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ HUD (OS): 8 running, 2 queued │ ◐ Explore"
     ],
     "claude": [
-      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% │ ⚒2  ⚡1   !1  │ ◐ frontend-implementer"
+      "✻ opus-5.5 │ 86% │ HUD (OS): 3 running, 1 queued │ ◐ frontend-implementer │ ✦ skill hud-delegate"
     ],
     "pi": [
-      "≋ v4.1-flash high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ ⚒2  ⚡1   !1 "
+      "≋ v4.1-flash high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ HUD (OS): 3 running, 1 queued"
     ],
     "codex": [
-      "◎ 5.6-astra xhigh │ 88%/400K │ example main* │ 5h 78% │ ⚒2  ⚡1   !1  │ ◐ explorer │ ✓ worker 1m"
+      "◎ 5.6-astra xhigh │ 88%/400K │ example main* │ 5h 78% │ HUD (OS): 3 running, 1 queued │ ◐ explorer"
     ]
   },
   "120": {
@@ -88,22 +88,22 @@
       "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s"
     ],
     "one": [
-      "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s │ ⚒1"
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s │ HUD (OS): 1 running, 0 queued"
     ],
     "busy": [
-      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s │ ⚒3  ✎1  ✦1  ⚡3   !1 "
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s │ HUD (OS): 8 running, 2 queued"
     ],
     "mixed": [
-      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ~42.7 t/s │ ⚒3  ✎1  ✦1  ⚡3   !1  │ ◐ Explore Audit bar…"
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ~42.7 t/s │ HUD (OS): 8 running, 2 queued │ ◐ Explore"
     ],
     "claude": [
-      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% │ ⚒2  ⚡1   !1  │ ◐ frontend-implementer │ ✦ skill hud-delegate"
+      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% │ HUD (OS): 3 running, 1 queued │ ◐ frontend-implementer Synthetic"
     ],
     "pi": [
-      "≋ v4.1-flash high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ ⚒2  ⚡1   !1                 MCP 2  skills 3"
+      "≋ v4.1-flash high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ HUD (OS): 3 running, 1 queued"
     ],
     "codex": [
-      "◎ 5.6-astra xhigh │ 88%/400K │ example main*↑2 │ 5h 78% (1h19m) │ ⚒2  ⚡1   !1  │ ◐ explorer Synthetic… │ ✓ worker 1m"
+      "◎ 5.6-astra xhigh │ 88%/400K │ example main* │ 5h 78% │ HUD (OS): 3 running, 1 queued │ ◐ explorer │ ✓ worker 1m"
     ],
     "pi-quota": [
       "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h 11%"
@@ -129,22 +129,22 @@
       "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s                          MCP 4  skills 31"
     ],
     "one": [
-      "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s │ ⚒1                     MCP 4  skills 31"
+      "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s │ HUD (OS): 1 running, 0 queued"
     ],
     "busy": [
-      "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s │ ⚒3  ✎1  ✦1  ⚡3   !1 "
+      "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s │ HUD (OS): 8 running, 2 queued"
     ],
     "mixed": [
-      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s │ ⚒3  ✎1  ✦1  ⚡3   !1  │ ◐ Explore Audit bar fitting ladder"
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% │ ~42.7 t/s │ HUD (OS): 8 running, 2 queued │ ◐ Explore Audit bar fitting ladder"
     ],
     "claude": [
-      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% (41m) │ ⚒2  ⚡1   !1  │ ◐ frontend-implementer Synthetic │ ✦ skill hud-delegate"
+      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% │ HUD (OS): 3 running, 1 queued │ ◐ frontend-implementer Synthetic │ ✦ skill hud-delegate"
     ],
     "pi": [
-      "≋ v4.1-flash high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ ⚒2  ⚡1   !1                                         MCP 2  skills 3"
+      "≋ v4.1-flash high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ HUD (OS): 3 running, 1 queued                        MCP 2  skills 3"
     ],
     "codex": [
-      "◎ 5.6-astra xhigh │ █████████░ 88%/400K │ example main*↑2 │ 5h ████████░░ 78% (1h19m) │ ⚒2  ⚡1   !1  │ ◐ explorer Synthetic… │ ✓ worker 1m"
+      "◎ 5.6-astra xhigh │ 88%/400K │ example main*↑2 │ 5h 78% (1h19m) │ HUD (OS): 3 running, 1 queued │ ◐ explorer Synthetic search │ ✓ worker 1m"
     ],
     "pi-quota": [
       "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h 11%               lens ✓  MCP 2  skills 3"

@@ -18,7 +18,7 @@ import { stripAnsi } from '../../render/colors.js';
 import { activeBarStyle, displayConfig, type BarStyle } from '../../render/hud-config.js';
 import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
-import type { WorkSignals } from '../../render/work-summary.js';
+import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import { applyBarSettings } from '../../bar-settings.js';
 import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
@@ -485,7 +485,7 @@ export function createP10kFooter(
         dirty: marks.length > 0,
       },
       quota,
-      workers: work.workers,
+      work,
       loaded: {
         counts: [
           ['MCP', enabled('mcp') ? capturedLoaded.mcp : 0],
@@ -526,8 +526,8 @@ export function createP10kFooter(
     }
   }
   let capturedLoaded: LoadedCounts = { mcp: 0, skills: 0 };
-  /** What the HUD jobs ask and just did, pushed by the Work segment's timer. */
-  let work: WorkSignals = { workers: [] };
+  /** Machine-wide HUD load, pushed by the Work segment's timer. */
+  let work: MachineWorkCounts | undefined;
   let repaint: (() => void) | null = null;
   let mounted = false;
   let live = true;
@@ -702,7 +702,7 @@ export function createP10kFooter(
     current = ctx;
     mounted = true;
     config = fromSettings();
-    work = { workers: [] };
+    work = undefined;
     applyBarSettings();
     lensFiles.clear();
     lensAnalyzed = false;
@@ -734,8 +734,8 @@ export function createP10kFooter(
     requestStarted: subscription.requestStarted,
     requestWindows: subscription.requestWindows,
     /** Work signals also refresh idle ledger balances (other workers or cycle rollover); no new timer. */
-    setWork(signals: WorkSignals) {
-      work = signals;
+    setWork(counts: MachineWorkCounts | undefined) {
+      work = counts;
       apiQuota = readApiQuota(current);
       repaint?.();
     },

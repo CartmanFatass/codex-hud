@@ -1,7 +1,6 @@
 import { getHudHome } from '../hud-home.js';
-import { collectJobLanes } from '../collectors/job-snapshot.js';
-import { renderWorkSummary, workSignals, workSignalsFromSummary } from '../render/work-summary.js';
-import { readFreshWorkSummary } from '../collectors/work-summary-snapshot.js';
+import { formatMachineWork } from '../render/work-summary.js';
+import { readMachineWork } from '../collectors/work-summary-snapshot.js';
 import { fileURLToPath } from 'node:url';
 import { truncateAnsi, visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
@@ -33,7 +32,7 @@ export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--sourc
        hud statusline settings restore --backup ABSOLUTE_FILE
        hud-statusline [same arguments]
 
-Render stdin Claude or Antigravity facts. Claude also shows this pane's Work summary.
+Render stdin Claude or Antigravity facts and fresh machine-wide HUD job counts.
 Claude quota windows may be cached locally for the panel.
 No network access or installation by default.
 The shared bar uses HUD config.json statusline preferences, or defaults when absent.
@@ -152,34 +151,24 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
         const terminal = input.terminal_width;
         if (!widthArgs.length && typeof terminal === 'number' && Number.isSafeInteger(terminal) && terminal > 0)
           width = Math.max(1, Math.min(500, terminal - (parity?.widthMargin ?? 0)));
-        if (options.details) return renderAntigravity(input, width, options);
-        applyBarSettings();
-        // The same worker zone as Claude's bar; a failed read leaves it out and the line stays.
-        const now = Date.now();
-        const scope = { project: null, pane: io.env.HERDR_PANE_ID ?? null };
-        const snapshot = await collectJobLanes(getHudHome(io.env), scope, { settledBefore: now }).catch(() => undefined);
-        const frame = renderAntigravity(input, width, options, snapshot && workSignals(snapshot.lanes, now));
+        const work = readMachineWork(getHudHome(io.env), Date.now());
+        if (!options.details) applyBarSettings();
+        const frame = renderAntigravity(input, width, options, work);
         return agyMode === 'cache' ? `hud-statusline-v1:${frame}` : frame;
       }
       if (agyMode || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
       const now = Date.now();
       recordClaudeQuota(value, io.env, now);
-      const home = getHudHome(io.env), pane = io.env.HERDR_PANE_ID ?? null;
-      // The compact renderers share the watcher/MCP census; only TS can recover from a stale one.
+      const work = readMachineWork(getHudHome(io.env), now);
       if (parity && !options.details) {
-        const fresh = sourceRoot === undefined && pane !== null ? readFreshWorkSummary(home, pane, now) : null;
-        const work = fresh && fresh.scope.running <= 4096
-          ? workSignalsFromSummary(fresh.scope)
-          : workSignals((await collectJobLanes(home, { project: null, pane }, { settledBefore: now })
-              .catch(() => undefined))?.lanes ?? [], now);
         applyBarSettings();
         return collectAndRenderParity(value, width, parity, io.env, now, work);
       }
-      const lanes = (await collectJobLanes(home, { project: null, pane }).catch(() => undefined))?.lanes ?? [];
       const first = renderStatuslineSession(value, width, options);
-      const work = renderWorkSummary(lanes, width, now);
-      if (options.details) return [first, work].filter(Boolean).join('\n');
-      const line = [first, work].filter(Boolean).join(' │ ');
+      const load = work ? formatMachineWork(work) : '';
+      if (!load || visualLength(load) > width) return first;
+      if (options.details) return [first, load].filter(Boolean).join('\n');
+      const line = [first, load].filter(Boolean).join(' │ ');
       return visualLength(line) <= width ? line : first;
     },
   });

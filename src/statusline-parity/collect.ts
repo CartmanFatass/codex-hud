@@ -1,7 +1,7 @@
 /** Shared default statusline I/O boundary. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import type { WorkSignals } from '../render/work-summary.js';
+import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
 import { collectTranscript } from './transcript.js';
 import { collectConfigCounts } from './config-counts.js';
 import { collectParityGit } from './git.js';
@@ -36,7 +36,7 @@ export async function collectAndRenderParity(
   settings: ParitySettings,
   env: NodeJS.ProcessEnv,
   now = Date.now(),
-  work?: WorkSignals
+  work?: MachineWorkCounts
 ): Promise<string> {
   const value = record(input),
     file =

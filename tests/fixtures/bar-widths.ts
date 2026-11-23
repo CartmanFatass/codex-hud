@@ -7,12 +7,11 @@ import {
   agentEvent,
   type BarFacts,
   type BarQuotaWindow,
-  type BarWorker,
 } from '../../dist/render/layout/bar-fields.js';
 import { renderPiBar } from '../../dist/harness/pi/p10k-footer.js';
 import { setDisplayConfig, BAR_FIELDS } from '../../dist/render/hud-config.js';
 import { stripAnsi } from '../../dist/render/colors.js';
-import { barThemeScene, THEME_NOW, worker } from './bar-themes.js';
+import { barThemeScene, THEME_NOW } from './bar-themes.js';
 
 export const BAR_WIDTHS = [144, 120, 100, 80] as const;
 export const PI_QUOTA_WIDTHS = [144, 120, 80, 36] as const;
@@ -71,22 +70,14 @@ const vitals: BarFacts = {
     ],
   },
 };
-/** The busy scenario: eight running workers of four roles, one of them asking. */
-export const BUSY_WORKERS: BarWorker[] = [
-  worker('imp'),
-  worker('imp'),
-  worker('imp', 'asking'),
-  worker('general'),
-  ...[1, 2, 3].map(() => worker('sonic')),
-  worker('frontend-imp'),
-];
+const BUSY_WORK = { running: 8, queued: 2 };
 const sub = agentEvent('started', { id: 'a', name: 'Explore', title: 'Audit bar fitting ladder' }, THEME_NOW - 10_000);
 /** Idle; one worker running; the sample's eight workers; those and a subagent that just started. */
 const WIDTH_SCENES: Record<string, BarFacts> = {
   quiet: vitals,
-  one: { ...vitals, workers: BUSY_WORKERS.slice(0, 1) },
-  busy: { ...vitals, workers: BUSY_WORKERS },
-  mixed: { ...vitals, workers: BUSY_WORKERS, events: [sub] },
+  one: { ...vitals, work: { running: 1, queued: 0 } },
+  busy: { ...vitals, work: BUSY_WORK },
+  mixed: { ...vitals, work: BUSY_WORK, events: [sub] },
 };
 
 /** Per width: the three scenes through `renderBar`, and the real Claude, pi and Codex paths of the themes' scene. */

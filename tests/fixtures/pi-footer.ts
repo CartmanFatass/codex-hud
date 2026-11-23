@@ -1,13 +1,12 @@
 /** Synthetic context for the real p10k port. Only the stock editor frame is a host fake. */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { visualWidth, truncateAnsi } from '../../dist/render/colors.js';
 import { createP10kFooter } from '../../dist/harness/pi/p10k-footer.js';
 import type { FooterContext, FooterHost, FooterComponent } from '../../dist/harness/pi/footer-host.js';
-import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-import { workSignals } from '../../dist/render/work-summary.js';
+import type { MachineWorkCounts } from '../../dist/collectors/work-summary-snapshot.js';
 const { createFooterHost } = await import(pathToFileURL(join(process.cwd(), 'tests/fakes/pi.mjs')).href);
 // Native pi-tui closes even plain truncated fragments with SGR resets. All fixture
 // fragments are plain text; ANSI is added later by the real port's painters.
@@ -29,7 +28,7 @@ export interface ParityRow {
   working?: boolean;
   env?: Record<string, string>;
   settings?: unknown;
-  delegation?: 'complete' | 'partial' | 'unavailable';
+  work?: MachineWorkCounts;
 }
 export function parityFixture(row: ParityRow, host = parityHost) {
   const home = mkdtempSync(join(tmpdir(), 'hud-footer-'));
@@ -119,37 +118,13 @@ export function parityFixture(row: ParityRow, host = parityHost) {
     }
   );
 
-  function publish(coverage: 'complete' | 'partial' | 'unavailable') {
-    const jobs = join(home, 'jobs');
-    rmSync(jobs, { recursive: true, force: true });
-    if (coverage !== 'unavailable')
-      for (let i = 1; i <= 5; i++) {
-        const id = `j${String(i).padStart(16, '0')}`,
-          dir = join(jobs, id);
-        mkdirSync(join(dir, 'qa'), { recursive: true });
-        writeFileSync(
-          join(dir, 'job.json'),
-          JSON.stringify({
-            job: id,
-            role: 'imp',
-            model: 'gpt-6.2-sol-fast',
-            thinking: 'high',
-            herdr_pane: env.HERDR_PANE_ID,
-            created_at: new Date(FOOTER_NOW).toISOString(),
-          })
-        );
-        if (i <= 2) writeFileSync(join(dir, 'qa/q1.md'), '# Question\n\nContinue?');
-      }
-    controller.setWork(workSignals(readThinJobs(home, { project: null, pane: env.HERDR_PANE_ID ?? null }), FOOTER_NOW));
-  }
   controller.start(ctx);
-  if (row.delegation) publish(row.delegation);
+  if (row.work) controller.setWork(row.work);
   return {
     controller,
     ctx,
     statuses,
     bus,
-    publish,
     counts: () => ({ reads, branches, gitCalls }),
     render(width = row.width) {
       return footer?.render(width) ?? [];

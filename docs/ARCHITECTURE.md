@@ -330,8 +330,9 @@ No old recap, session-title, approval-description or change-summary generator ru
 
 All three bars collect `BarFacts`; `render/layout/bar-fields.ts` fits and paints model/effort, context, repo/branch, client quota (pi cost in its ribbon), output rate (Claude and Codex; pi keeps its ribbon reading), the notice zone and loaded counts.
 Missing facts disappear.
-The zone counts the HUD's workers (`work-summary.ts` makes the census of live jobs; `bar-fields.ts` shows an icon (`roleIcon`: Nerd Font, Unicode or ASCII by the `icons` setting, which the bar reads in `bar-settings.ts` and `native/src/config.rs`) and a count per role from `ROLE_GLYPHS`, sonic last, one `!N` for the workers asking; no job title, provider, model or effort appears in the bar), then retains subagent starts/completions/failures and Claude skill loads for three minutes, with approvals pinned.
-The zone has one form; the `title` rungs of `LADDER` cut subagent titles only.
+The notice zone pins native approvals, shows `HUD (OS)` running and queued counts from the fresh global `work-summary-snapshot.ts` census, and retains native subagent events and Claude skill loads for three minutes.
+Workers waiting on main count as running but do not appear as owner requests. Readers never fall back to a pane-local job scan.
+The machine counts fit as one segment or are omitted whole; the `title` rungs of `LADDER` cut subagent titles only.
 No tool-at-work line or clock appears in the bar.
 The only styles are `line` and `p10k`, both one row.
 Retired style values load as `line`.

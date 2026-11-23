@@ -96,7 +96,7 @@ test('bar settings readers keep line and p10k, and load retired or unknown style
   );
 });
 
-test('the bar and the pi footer take their role icons from the saved Icons setting; the Nerd Font set is the default', (t) => {
+test('the saved Icons setting does not change the machine counts text', (t) => {
   const previous = setDisplayConfig({});
   t.after(() => setDisplayConfig(previous));
   const home = mkdtempSync(join(tmpdir(), 'bar-icons-'));
@@ -108,32 +108,12 @@ test('the bar and the pi footer take their role icons from the saved Icons setti
     if (old === undefined) delete process.env.HUD_SETTINGS_PATH;
     else process.env.HUD_SETTINGS_PATH = old;
   });
-  const workers = [
-    { role: 'imp', state: 'working' as const },
-    { role: 'frontend-imp', state: 'working' as const },
-    { role: 'sonic', state: 'working' as const },
-  ];
-  const zone = () => stripAnsi(renderBar({ model: { name: 'M' }, workers }, 80, THEME_NOW).line);
-  assert.equal(resolveDisplayConfig({}).icons, 'nerd');
-  const wanted: Record<string, string> = {
-    nerd: 'M │ \uF0AD1  \uF1FC1  \uF0E71',
-    unicode: 'M │ ⚒1  ✎1  ⚡1',
-    text: 'M │ I1  F1  *1',
-  };
-  for (const [icons, line] of Object.entries(wanted)) {
+  for (const icons of ['nerd', 'unicode', 'text']) {
     writeFileSync(file, JSON.stringify({ icons }));
     applyBarSettings();
-    assert.equal(zone(), line, icons);
+    const row = renderBar({ model: { name: 'M' }, work: { running: 3, queued: 1 } }, 80, THEME_NOW).line;
+    assert.equal(stripAnsi(row), 'M │ HUD (OS): 3 running, 1 queued', icons);
   }
-  // A missing or unknown value is the default; the environment still decides when the file says nothing.
-  writeFileSync(file, JSON.stringify({ icons: 'emoji' }));
-  applyBarSettings();
-  assert.equal(zone(), wanted.nerd);
-  writeFileSync(file, JSON.stringify({ barStyle: 'line' }));
-  process.env.HUD_ICONS = 'text';
-  t.after(() => delete process.env.HUD_ICONS);
-  applyBarSettings();
-  assert.equal(zone(), wanted.text);
 });
 
 test('pi quota uses Claude level inks; dim and pending states stay legible without color', (t) => {

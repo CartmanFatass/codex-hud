@@ -3,7 +3,7 @@ use crate::{
     config::{Display, Policy},
     json::{self, Value},
     quota::WINDOWS,
-    state::{self, Workers},
+    state::{self, MachineWork},
 };
 
 const RESET: &str = "\x1b[0m";
@@ -18,12 +18,9 @@ enum Role {
     Ok,
     Warn,
     Bad,
-    Info,
     Usage,
     High,
-    Count,
     Lead,
-    Alert,
 }
 use Role::*;
 struct Piece {
@@ -205,19 +202,17 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
     }
     match role {
         Lead => return mark.map_or_else(|| s.into(), |n| format!("{}{s}{RESET}", fg(n))),
-        Count => return sgr("1", s),
         Usage => return sgr("94", s),
         High => return sgr("95", s),
         _ => {}
     }
-    let (palette, bold, badge) = match theme {
+    let (palette, bold) = match theme {
         "titanium" => (
             [
                 0x9ca3b0, 0xe8ecf4, 0xd4c090, 0xe8ecf4, 0xd06fed, 0x00ff88, 0xffb347, 0xff4757,
                 0x00b4ff,
             ],
             true,
-            0x0f0f11,
         ),
         "mocha" => (
             [
@@ -225,7 +220,6 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                 0x89dceb,
             ],
             false,
-            0x11111b,
         ),
         "latte" => (
             [
@@ -233,7 +227,6 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                 0x04a5e5,
             ],
             false,
-            0xeff1f5,
         ),
         "arctic" => (
             [
@@ -241,7 +234,6 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                 0x8fbcbb,
             ],
             true,
-            0x2a303b,
         ),
         "ember" => (
             [
@@ -249,7 +241,6 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                 0x7acbc0,
             ],
             true,
-            0x1d2021,
         ),
         "contrast" => (
             [
@@ -257,7 +248,6 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                 0x4de8f5,
             ],
             true,
-            0x050505,
         ),
         "paper" => (
             [
@@ -265,7 +255,6 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                 0x08566a,
             ],
             true,
-            0xffffff,
         ),
         _ => {
             return sgr(
@@ -278,20 +267,12 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                     Ok => "32",
                     Warn => "33",
                     Bad => "31",
-                    Info => "36",
-                    Alert => "1;7;31",
                     _ => unreachable!(),
                 },
                 s,
             )
         }
     };
-    if role == Alert {
-        return sgr(
-            &format!("1;48;2;{};38;2;{}", rgb(palette[7]), rgb(badge)),
-            s,
-        );
-    }
     let color = palette[role as usize - 1];
     sgr(
         &format!(
@@ -651,46 +632,15 @@ fn quota(input: &Value, now: f64) -> Option<Segment> {
         vec![form(true, true), form(false, true), form(false, false)],
     ))
 }
-fn roster(workers: Workers, display: &Display) -> Option<Segment> {
-    // The same table as `ROLE_GLYPHS` in src/render/model-glyphs.ts; the Nerd glyphs are Font Awesome's, in the BMP.
-    let glyphs = if display.ascii {
-        ["I", "F", "G", "O", "R", ".", "*"]
-    } else if display.nerd {
-        [
-            "\u{F0AD}", "\u{F1FC}", "\u{F013}", "\u{F0EB}", "\u{F002}", "•", "\u{F0E7}",
-        ]
-    } else {
-        ["⚒", "✎", "✦", "◈", "⚖", "•", "⚡"]
-    };
-    let mut form = vec![];
-    for (i, n) in workers.counts.into_iter().enumerate() {
-        if n == 0 {
-            continue;
-        }
-        if !form.is_empty() {
-            form.push(piece("  ", Plain));
-        }
-        form.push(piece(glyphs[i], if i == 6 { Warn } else { Info }));
-        form.push(piece(n.to_string(), Count));
-    }
-    if form.is_empty() {
-        return None;
-    }
-    if workers.asking > 0 {
-        let pad = !display.capsules && display.theme != "none";
-        form.extend([
-            piece("  ", Plain),
-            piece(
-                if pad {
-                    format!(" !{} ", workers.asking)
-                } else {
-                    format!("!{}", workers.asking)
-                },
-                if pad { Alert } else { Warn },
-            ),
-        ]);
-    }
-    Some(Segment::new(Field::Notice, (110, 235), vec![form]))
+fn machine_load(work: MachineWork) -> Segment {
+    Segment::new(
+        Field::Notice,
+        (110, 235),
+        vec![vec![piece(
+            format!("HUD (OS): {} running, {} queued", work.running, work.queued),
+            ValueRole,
+        )]],
+    )
 }
 
 // JS's `toPrecision(1)` is used only for tiny, positive transcript rates.
@@ -713,7 +663,7 @@ pub struct Evidence<'a> {
     pub compact: f64,
     pub git: &'a Value,
     pub transcript: &'a Value,
-    pub workers: Workers,
+    pub work: MachineWork,
     pub mcp: u64,
 }
 pub fn bar(
@@ -771,7 +721,7 @@ pub fn bar(
                 vec![vec![piece(format!("~{} t/s", tps_number(n)), ValueRole)]],
             )
         }),
-        roster(e.workers, display),
+        Some(machine_load(e.work)),
         None,
     ]
     .into_iter()
@@ -841,9 +791,10 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
         Some(Quota),
         Some(Project),
         Some(Context),
+        Some(Notice),
     ]
     .into_iter();
-    let roster = list.iter().any(|s| s.field == Notice);
+    let load = list.iter().any(|s| s.field == Notice);
     while total(&list) > width {
         match ladder.next() {
             Some(Some(id)) => {
@@ -851,7 +802,7 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
                     .iter_mut()
                     .find(|s| s.field == id && s.at < s.forms.len())
                 {
-                    s.at = if id == Loaded && roster {
+                    s.at = if id == Loaded && load {
                         s.forms.len()
                     } else {
                         s.at + 1
