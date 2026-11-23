@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fixture, cliState, taskCall, taskJob, taskRpc, until, workerFor } from '../helpers/thin-mcp-harness.mjs';
+import { fixture, cliState, resultValue, taskCall, taskJob, taskRpc, until, workerFor } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
 
@@ -36,6 +36,14 @@ const prompt = args.at(-1);
 assert.equal(hooks.input({}, ctx), undefined);
 fs.appendFileSync(file, JSON.stringify({ prompt }) + '\\n');
 console.log(JSON.stringify({ id, prompt }));
+const gate = fresh ? 'first' : 'next', home = process.env.HOME;
+if (fs.existsSync(join(home, 'hold-' + gate))) {
+  const { waitUntilFs } = await import(${JSON.stringify(moduleUrl('../../dist/utils/fs-wait.js'))});
+  assert.ok(await waitUntilFs({ targets: [{ dir: home }], timeoutMs: 10000, check: ({ timedOut }) => {
+    const value = fs.existsSync(join(home, 'release-' + gate));
+    return value || timedOut ? { done: true, value } : { done: false };
+  } }));
+}
 await tools.hud_progress.execute('progress', { message: 'Synthetic progress.' });
 if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
   const event = { toolName: 'hud_ask', input: { mode: 'async', question: 'Which value?', default: 'A' } };
@@ -108,20 +116,64 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.ok(noTab(f));
 });
 
-test('answering a headless question while the original MCP task is live carries that task through the resumed report', async t => {
+test('queued pi sends run in order after a report and keep the original MCP task', async t => {
+  const f = await fixture(t), rpc = taskRpc(f.rpc);
+  f.overrideBin('pi', fakePi);
+  const signal = file => write(join(f.env.HOME, file), '');
+  signal('hold-first');
+  signal('hold-next');
+  await rpc('server/discover');
+  const task = await taskCall(rpc, 'hud_create', { role: 'imp', mode: 'headless', task: 'Synthetic intermediate report.' });
+  const job = taskJob(f, task), dir = job.task_dir;
+  const firstPid = cliState(dir).pid;
+  const send = args => taskCall(rpc, 'hud_send', args).then(resultValue);
+  const get = () => rpc('tasks/get', { taskId: task.taskId });
+  const first = { job: job.job, text: 'First queued follow-up.', message_key: 'first' };
+  assert.deepEqual(await send(first), { ok: true, sent: true, queued: true });
+  assert.equal(await send(first).then(reply => reply.sent), false);
+  assert.deepEqual(await send({ jobs: [job.job], text: 'Second queued follow-up.' }),
+    { sent: [job.job], skipped: [], queued: [job.job] });
+  assert.equal(fs.statSync(join(dir, 'headless-sends.json')).mode & 0o777, 0o600);
+  assert.equal((await get()).status, 'working');
+  signal('release-first');
+  const stdout = join(dir, 'stdout.jsonl');
+  await until(() => fs.readFileSync(stdout, 'utf8').includes('Second queued follow-up.'));
+  assert.notEqual(cliState(dir).pid, firstPid);
+  assert.ok(!isProcAlive(firstPid));
+  assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Synthetic intermediate report/);
+  assert.equal((await get()).status, 'working');
+  const lines = fs.readFileSync(stdout, 'utf8').trimEnd().split('\n').map(JSON.parse);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[1].id, lines[0].id);
+  assert.equal(lines[1].prompt, 'First queued follow-up.\n\nSecond queued follow-up.');
+  signal('release-next');
+  await closed(job);
+  const result = await get();
+  assert.equal(result.status, 'completed');
+  assert.match(result.result.content[0].text, /First queued follow-up/);
+  assert.equal(await send(first).then(reply => reply.sent), false);
+  assert.ok(!fs.existsSync(join(dir, 'headless-sends.json')) && noTab(f));
+});
+
+test('queued pi sends accompany the answer when the working turn ends with a question', async t => {
   const f = await fixture(t), rpc = taskRpc(f.rpc);
   f.overrideBin('pi', fakePi);
   write(join(f.env.HOME, 'ask'), '');
+  write(join(f.env.HOME, 'hold-first'), '');
   await rpc('server/discover');
   const task = await taskCall(rpc, 'hud_create', { role: 'imp', mode: 'headless', task: 'Synthetic task chain.' });
   const job = taskJob(f, task);
+  const queued = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Also check the fixture.' });
+  assert.equal(resultValue(queued).queued, true);
+  write(join(f.env.HOME, 'release-first'), '');
   await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator');
   const response = await taskCall(rpc, 'hud_respond', { job: job.job, request_id: 'q1', answer: 'Keep going.' });
   assert.equal(response.resultType, 'complete');
   await closed(job);
   const result = await rpc('tasks/get', { taskId: task.taskId });
   assert.equal(result.status, 'completed');
-  assert.match(JSON.stringify(result.result), /Keep going/);
+  assert.match(result.result.content[0].text, /Keep going/);
+  assert.match(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), /Keep going\.\n\nAlso check the fixture\./);
 });
 
 test('the panel Answer action resumes the paused session and records who answered', async t => {

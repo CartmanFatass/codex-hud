@@ -34,6 +34,7 @@ export interface Job extends PiOptions {
   route?: JobRoute;
   scout_question?: string;
   headless?: boolean; // Older sonic receipts may own a herdr tab.
+  headless_task_fence?: string; // Automatic follow-ups are part of the caller's existing task.
   package?: string;
   title?: string;
   ticket?: string;

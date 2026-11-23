@@ -11,6 +11,8 @@ import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
+import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
+import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.js';
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
@@ -434,11 +436,15 @@ function startReap(job: ReapInput) {
   inFlightReaps.set(id, entry);
 }
 function startQueued(id: string, targetRole: string, overflowed: boolean) {
-  if (inFlightStarts.has(id)) return;
-  const promise = Promise.resolve().then(() => startQueuedJob(id, targetRole, overflowed)).then((res) => {
+  trackStart(id, targetRole, async () => {
+    const res = await startQueuedJob(id, targetRole, overflowed);
     if (res.started) log(`queue start ${id} role=${targetRole}${overflowed ? ' (overflow from imp)' : ''}`);
     else if (res.failed) warn(`queue ${id}`, `queue start failed ${id}: ${res.reason ?? 'unknown'}`);
-  }).catch((error) => {
+  });
+}
+function trackStart(id: string, targetRole: string, launch: () => Promise<void>) {
+  if (inFlightStarts.has(id)) return;
+  const promise = Promise.resolve().then(launch).catch((error) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !stopped) {
       warn(`queue ${id}`, `queue start error ${id}: ${(error as Error).message}`);
     }
@@ -518,6 +524,22 @@ function scan(retryWatch = false) {
       if (status?.state === 'queued' && job && !job.reaped_at) {
         open = true;
         queuedJobs.push({ id, job, queuedAt: queuedTimestamp(job) });
+        continue;
+      }
+      if (job?.headless && job.reaped_at && headlessFollowupReady(status) && hasHeadlessSends(dir) &&
+          !fs.existsSync(join(dir, jobFiles.stopRequested))) {
+        open = true;
+        markBusy(job);
+        countWorking(job.role);
+        trackStart(id, job.role, async () => {
+          try {
+            const result = await resumeHeadlessQueue(id);
+            if (!result || result.code === 'worker_reopening') await delay(100);
+          } catch {
+            warn(`follow-up ${id}`, `resume queued sends ${id}: could not read or reopen this turn`);
+            await delay(1000);
+          }
+        });
         continue;
       }
       const tab = session?.fields.tab;
@@ -812,7 +834,7 @@ function startWatch() {
       const path = filename?.toString();
       jobChanges.change(path ?? '');
       if (path?.endsWith(`/${RUNNER_READY}`)) { runners.ready(join(jobs, dirname(path))); schedule(); return; }
-      if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-(?:exit|stop)\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
+      if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-(?:exit|stop)\.json|headless-sends\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;
       warn('watch error', `watch error: ${error.message}`);

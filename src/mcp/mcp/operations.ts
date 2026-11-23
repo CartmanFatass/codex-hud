@@ -374,12 +374,15 @@ async function sendJobs(args: Args) {
   if (args.job !== undefined || !Array.isArray(args.jobs) || !args.jobs.length ||
       args.jobs.some((id) => typeof id !== 'string' || !id)) throw new Error('invalid_arguments: jobs');
   const results = await Promise.all([...new Set<string>(args.jobs)].map(async (job) => ({ job, result: await send(job, true) })));
-  const sent: string[] = [], skipped: { job: string; reason: string }[] = [];
+  const sent: string[] = [], queued: string[] = [], skipped: { job: string; reason: string }[] = [];
   for (const { job, result } of results) {
-    if ('sent' in result && result.sent) sent.push(job);
-    else skipped.push({ job, reason: ('code' in result && result.code) || 'already_sent' });
+    if ('sent' in result && result.sent) {
+      sent.push(job);
+      // Tab sends have already handed off to herdr; headless sends are still on disk.
+      if ('queued' in result && result.queued && !('exit_code' in result)) queued.push(job);
+    } else skipped.push({ job, reason: ('code' in result && result.code) || 'already_sent' });
   }
-  return { sent, skipped };
+  return { sent, skipped, ...(queued.length && { queued }) };
 }
 
 export async function call(name: string, args: Args, scan: JobScan): Promise<unknown> {

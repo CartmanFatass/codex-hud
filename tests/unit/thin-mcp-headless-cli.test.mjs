@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { cliState, entry, fixture, until } from '../helpers/thin-mcp-harness.mjs';
+import { cliState, entry, fixture, resultValue, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
 
@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { rpcClient } from ${JSON.stringify(url('../helpers/thin-mcp-harness.mjs'))};
+import { rpcClient, until } from ${JSON.stringify(url('../helpers/thin-mcp-harness.mjs'))};
 const agent = ${JSON.stringify(agent)}, dir = process.env.HUD_JOB_DIR;
 const args = process.argv.slice(2), value = flag => args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
 const prompt = args.at(-1), resumed = value(agent === 'claude' ? '--resume' : '--conversation');
@@ -47,6 +47,10 @@ console.log(JSON.stringify({ type: 'assistant', event: 'step_update', session_id
 if (!prompt.startsWith('No init.')) console.log(JSON.stringify(init));
 console.log(JSON.stringify({ pid: process.pid, resumed, prompt: prompt.split('\\n')[0] }));
 if (prompt.startsWith('No init.') || prompt.startsWith('Wrong init.')) process.exit(0);
+if (!resumed && prompt.includes('Synthetic plain turn.')) {
+  await until(() => fs.existsSync(join(dir, 'release-first')));
+  process.exit(0);
+}
 const hud = JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers.hud;
 const child = spawn(hud.command, hud.args ?? [], { env: { ...process.env, ...hud.env }, stdio: ['pipe', 'pipe', 'inherit'] });
 const exited = once(child, 'exit');
@@ -73,6 +77,35 @@ try {
 } finally { child.stdin.end(); }
 assert.deepEqual(await exited, [0, null]);
 `;
+
+test('working headless Claude resumes queued input after a plain turn end', async t => {
+  const f = await fixture(t), rpc = taskRpc(f.rpc);
+  f.overrideBin('claude', fakeCli('claude'));
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  write(join(roles, 'frontend-imp.json'), JSON.stringify({ role: 'frontend-imp', harness: 'cli', agent: 'claude',
+    can_continue: true, instructions: 'frontend-implementer' }));
+  await rpc('server/discover');
+  const task = await taskCall(rpc, 'hud_create', { role: 'frontend-imp', mode: 'headless', task: 'Synthetic plain turn.' });
+  const { job, task_dir: dir } = taskJob(f, task);
+  const sent = await taskCall(rpc, 'hud_send', { jobs: [job], text: 'Synthetic next CLI turn.' });
+  assert.deepEqual(resultValue(sent), { sent: [job], skipped: [], queued: [job] });
+  write(join(dir, 'release-first'), '');
+  await until(() => {
+    const status = cliState(dir);
+    if (status?.state === 'failed' && status.exit_reason !== 'claude exited without a declared report')
+      assert.fail(`${status.exit_reason}: ${fs.readFileSync(join(dir, 'stderr.log'), 'utf8')}`);
+    return status?.state === 'closed' && read(join(dir, 'job.json')).reaped_at;
+  });
+  const invocations = fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trimEnd().split('\n').map(JSON.parse).filter(row => row.pid);
+  assert.equal(invocations.length, 2);
+  assert.notEqual(invocations[0].pid, invocations[1].pid);
+  assert.equal(invocations[1].resumed, fs.readFileSync(join(dir, 'fake-session'), 'utf8'));
+  assert.equal(invocations[1].prompt, 'Synthetic next CLI turn.');
+  const result = await rpc('tasks/get', { taskId: task.taskId });
+  assert.equal(result.status, 'completed');
+  assert.match(result.result.content[0].text, /Synthetic next CLI turn/);
+});
 
 for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
   test(`${agent} headless runs one MCP-enabled process per question, answer, send and repair turn`, async t => {

@@ -11,6 +11,7 @@ import { procStat } from '../../utils/proc.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { readTurn, turnToken } from '../cli-judge.js';
 import type { BatchNotice, Job, McpTaskMarker } from '../job-contracts.js';
+import { hasHeadlessSends, headlessFollowupReady } from '../headless-sends.js';
 import { readLand, activeLand, isFlowId } from '../land-state.js';
 import { landTask } from '../land.js';
 import { jobFiles } from '../paths.js';
@@ -188,6 +189,7 @@ export function beginTask(job: Job, reportBefore: number | null = null, answer?:
   return task;
 }
 export function taskFence(job: Job) {
+  if (job.headless_task_fence) return job.headless_task_fence;
   const turn = job.cli ? readTurn(directory(job.job)) : null;
   if (turn) return turn.caller_token ?? turnToken(turn);
   const sends = job.send_outcomes ?? [];
@@ -360,13 +362,16 @@ export function sampleTask(task: HudTask): TaskView {
     return updateTask(task, 'cancelled', message, message);
   }
   if (job.role !== task.role) task.role = job.role;
-  const dir = directory(job.job), { row, status, statusAt } = readRow(job, false);
+  const dir = directory(job.job), pending = job.headless && hasHeadlessSends(dir);
+  const { row, status, statusAt } = readRow(job, false);
   const state = row.state ?? row.display_state;
   if (state === 'queued') {
     const label = row.queue_position !== undefined ? `${taskLabel(task, 'queued')} (#${row.queue_position})` : taskLabel(task, 'queued');
     return updateTask(task, 'working', label);
   }
   const label = taskLabel(task, state);
+  if (pending && headlessFollowupReady(status) && !fs.existsSync(join(dir, jobFiles.stopRequested)))
+    return updateTask(task, 'working', taskLabel(task, 'queued follow-up'));
   if (state === 'failed' || state === 'stopped' || fs.existsSync(join(dir, jobFiles.stopRequested))) {
     const stopped = state !== 'failed';
     const message = `${taskLabel(task, stopped ? 'stopped' : state)} — ${row.reason ?? (stopped ? 'stop requested' : 'worker failed')}`;

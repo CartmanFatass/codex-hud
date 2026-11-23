@@ -25,6 +25,7 @@ import {
 } from '../cli-judge.js';
 import type { StandingBriefRef } from '../cli-worker-startup.js';
 import { repairImpRoute, pickImpRoute } from '../imp-routing.js';
+import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
 import type { Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
 import { routingTicketText } from '../local-tickets.js';
@@ -992,29 +993,49 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
   return row;
 }
 
-export async function resumeJob(current: Job, status: JobStatus, row: JobRow, message: string,
-  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest?: string) {
-  const dir = directory(current.job);
+async function withReopenLock<T>(dir: string, run: () => T | Promise<T>) {
   const fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
   try {
-    // A land helper and the main MCP can both see the same closure. Only one may reopen it.
+    // Serialize queued sends and resumes across MCP, land and the watcher.
     const lock = spawnSync('flock', ['-xn', '-E', '75', '3'], { stdio: ['ignore', 'ignore', 'ignore', fd], timeout: 1000 });
-    if (lock.status === 75) return { ok: false, code: 'worker_reopening' };
+    if (lock.status === 75) return { ok: false, code: 'worker_reopening' } as const;
     if (lock.status !== 0) return;
-    const latest = findJob(current.job);
-    const fresh = readCachedStatus(current.job).status;
-    const expected = answerRequest ? 'waiting_orchestrator' : 'closed';
-    if (!latest || latest.reaped_at !== current.reaped_at || !fresh || fresh.ended_at !== status.ended_at ||
-        fresh.state !== expected || fresh.pid !== status.pid)
-      return { ok: false, code: 'worker_reopening' };
-    return await reopenJob(latest, fresh, row, message, matchKey, explicitKey, land, batch, answerRequest);
+    return await run();
   } finally { fs.closeSync(fd); }
 }
 
+export async function resumeHeadlessQueue(id: string) {
+  const current = findJob(id);
+  if (!current?.reaped_at) return;
+  const { row, status } = readRow(current, false);
+  if (status && headlessFollowupReady(status)) return resumeJob(current, status, row, '', '', undefined, false, false, undefined, true);
+}
+
+export async function resumeJob(current: Job, status: JobStatus, row: JobRow, message: string,
+  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest?: string, automatic = false) {
+  const dir = directory(current.job);
+  return withReopenLock(dir, async () => {
+    const latest = findJob(current.job);
+    const fresh = readCachedStatus(current.job).status;
+    const expected = answerRequest ? 'waiting_orchestrator' : automatic ? status.state : 'closed';
+    if (!latest || latest.reaped_at !== current.reaped_at || !fresh || fresh.ended_at !== status.ended_at ||
+        fresh.state !== expected || fresh.pid !== status.pid)
+      return { ok: false, code: 'worker_reopening' };
+    const pending = latest.headless ? readHeadlessSends(dir) : [];
+    if (pending.length && !automatic && !answerRequest) return { ok: false, code: 'worker_reopening' };
+    if (automatic && !pending.length) return;
+    const result = await reopenJob(latest, fresh, row, message, matchKey, explicitKey, land, batch, answerRequest, automatic, pending);
+    if (automatic && !result && !fs.existsSync(join(dir, jobFiles.stopRequested)))
+      writeCreateStatus(dir, { ...fresh, state: 'failed', exit_reason: 'Could not resume queued headless sends' });
+    return result;
+  });
+}
+
 async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: string,
-  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest?: string) {
+  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest: string | undefined,
+  automatic: boolean, pending: ReturnType<typeof readHeadlessSends>) {
   const { job: id, place } = current, dir = directory(id);
-  const until = answerRequest ? Infinity : resumeDeadline(current, status);
+  const until = answerRequest || automatic ? Infinity : resumeDeadline(current, status);
   if (!until || Date.now() >= until || !place || (place.harness !== 'cli' && place.harness !== 'pi') ||
       !fs.statSync(current.cwd, { throwIfNoEntry: false })?.isDirectory()) return;
   const identity = resumeIdentity(current, status);
@@ -1032,8 +1053,10 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
   const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}),
     recorded_at: new Date().toISOString(), exit_code: null as number | null, stderr_tail: '', resumed: true as const };
+  const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
-    send_outcomes: [...(current.send_outcomes ?? []), outcome] };
+    headless_task_fence: automatic ? taskFence(current) : undefined,
+    send_outcomes: [...(current.send_outcomes ?? []), ...delivered, ...(automatic ? [] : [outcome])] };
   const answerFile = answerRequest && join(dir, jobFiles.qa, `${answerRequest}.answer.md`);
   if (answerRequest && answerFile) {
     if (!jobCache.readQa(dir).openIds.includes(answerRequest)) return { ok: false, code: 'question_not_open' };
@@ -1046,6 +1069,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     if (jobCache.readQa(dir).allQuestionFiles.length > 1)
       message = `Answer to ${answerRequest}: ${message}\nOther decisions are in ${join(dir, jobFiles.qa)}.`;
   }
+  if (pending.length) message = [message, ...pending.map(({ text }) => text)].filter(Boolean).join('\n\n');
   const taskEntry = session.taskClient && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;
   // The reaper has finished the old turn. Publish a nonterminal status before replacing its ownership.
   writeCreateStatus(dir, { state: 'working' });
@@ -1070,6 +1094,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   }
   save(latest);
   const ok = result.exit_code === 0;
+  if (ok && pending.length) clearHeadlessSends(dir);
   if (carryTask && activeTasks.get(id) === carryTask) {
     if (ok) {
       if (answerRequest) carryTask.seenQuestions.add(`${answerRequest}.md`);
@@ -1108,6 +1133,31 @@ export async function sendJob(id: string, message: string, explicitKey: string |
           ...(outcome && { key: outcome.key, exit_code: outcome.exit_code, stderr_tail: outcome.stderr_tail }) };
   }
   let { row, status, statusAt } = readRow(current);
+  if (!land && current.headless && status?.state === 'working') {
+    const job = current;
+    const queued = await withReopenLock(dir, () => {
+      const fresh = readCachedStatus(id).status;
+      if (fresh?.state !== 'working') return;
+      if (fresh.pid !== status?.pid) return { ok: false, code: 'worker_reopening' };
+      if (fs.existsSync(join(dir, jobFiles.stopRequested))) return { ok: false, code: 'not_continuable' };
+      const pending = readHeadlessSends(dir);
+      if (pending.some(item => explicitKey === undefined ? item.derived_key === matchKey && withinRetryWindow(item.recorded_at, now) : item.key === explicitKey))
+        return { ok: true, sent: false, queued: true };
+      if (message.includes('\0')) return { ok: false, code: 'invalid_arguments' };
+      const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
+      pending.push({ key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}),
+        text: message, recorded_at: new Date(now).toISOString(), exit_code: 0, stderr_tail: '' });
+      if (!writeHeadlessSends(dir, pending)) return { ok: false, code: 'queue_full' };
+      const task = activeTasks.get(id);
+      if (task?.view.status === 'working' && task.fence === taskFence(job)) extendTask(task, job);
+      return { ok: true, sent: true, queued: true };
+    });
+    if (queued) return queued;
+    current = findJobMutable(id) ?? current;
+    ({ row, status, statusAt } = readRow(current));
+  }
+  if (current.headless && !row.open_questions && hasHeadlessSends(dir) && headlessFollowupReady(status))
+    return { ok: false, code: 'worker_reopening' };
   const closingPi = current.resume_s !== undefined && row.state === 'idle_grace' && !row.open_questions && piReportSettlement(dir, current, status);
   if (!workingOnly && !row.open_questions && (closingPi || (closedReport(current, status) && !current.reaped_at && (current.headless || primary(id))))) {
     ensureWatcher();

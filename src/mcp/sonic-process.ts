@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ensureJobWatcher } from './watch-pid.js';
+import { hasHeadlessSends, noHeadlessReport } from './headless-sends.js';
 import { sonicSession } from './sonic-session.js';
 import { briefPrompt } from './brief-prompt.js';
 import { binScript, jobFiles } from './paths.js';
@@ -198,12 +199,12 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
     const turn = readTurn(dir), done = readDone(dir);
     return turn && receiptForTurn(turn, done) && done.report_sig === reportSignature(dir)
       ? { state: 'closed', exit_reason: REPORT_SETTLED_EXIT, agent_session_id: id, declared_report_sig: done.report_sig }
-      : { state: 'failed', exit_reason: `${agent} exited without a declared report`, agent_session_id: id };
+      : { state: 'failed', exit_reason: noHeadlessReport(agent), agent_session_id: id };
   }
   if (asking) return { state: 'waiting_orchestrator' };
   const sig = readDone(dir)?.report_sig;
   return sig && sig === reportSignature(dir) ? { state: 'closed', exit_reason: 'settled' }
-    : { state: 'failed', exit_reason: 'pi exited without a declared report' };
+    : { state: 'failed', exit_reason: noHeadlessReport() };
 }
 
 export async function killSonicRoot(dir: string, status: Partial<JobStatus>) {
@@ -220,7 +221,7 @@ export async function killSonicRoot(dir: string, status: Partial<JobStatus>) {
 export async function stopSonic(dir: string) {
   const read = () => (readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus).state;
   const terminal = (state: string) => ['closed', 'failed', 'stopped'].includes(state);
-  if (!fs.existsSync(join(dir, jobFiles.status)) || !terminal(read())) {
+  if (hasHeadlessSends(dir) || !fs.existsSync(join(dir, jobFiles.status)) || !terminal(read())) {
     const request = () => {
       writePrivateFile(join(dir, jobFiles.stopRequested), '', { mkdir: false });
       ensureJobWatcher(dirname(dirname(dir)));
