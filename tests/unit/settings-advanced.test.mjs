@@ -142,23 +142,26 @@ test('Folded unsaved changes and non-default values show * and active highlight 
 
 test('Collapsed navigation walks only visible rows plus ADVANCED; PageDown/PageUp/Home/End treat Advanced as one group', () => {
   const draft = defaultSettings();
-  const expectedVisible = [
-    ...SETTING_ROWS.flatMap((row, i) => (row.advanced ? [] : [i])),
-    ADVANCED,
-  ];
-  let state = { draft, original: draft, selected: 0, offset: 0, message: '' };
-  const visited = [state.selected];
-
-  // 4. Down from start to end visits only visible rows + ADVANCED.
-  for (let step = 0; step < SETTING_ROWS.length + 2; step++) {
-    const frame = renderSettingsPage(state, 80, 40);
-    const next = handleSettingsInput(state, { type: 'key', key: 'down' }, frame).state;
-    if (next.selected !== state.selected) visited.push(next.selected);
-    state = next;
+  const start = { draft, original: draft, selected: 0, offset: 0, message: '' };
+  for (const impPlacement of ['fixed', 'even', 'auto']) {
+    const expectedVisible = [
+      ...SETTING_ROWS.flatMap((row, i) => row.advanced || (row.key === 'impEvenPool' && impPlacement !== 'even') ? [] : [i]),
+      ADVANCED,
+    ];
+    let state = { ...start, draft: { ...draft, impPlacement } };
+    const visited = [state.selected];
+    // Down visits the pool row only in Even mode, and skips all folded rows.
+    for (let step = 0; step < SETTING_ROWS.length + 2; step++) {
+      const frame = renderSettingsPage(state, 80, 40);
+      const next = handleSettingsInput(state, { type: 'key', key: 'down' }, frame).state;
+      if (next.selected !== state.selected) visited.push(next.selected);
+      state = next;
+    }
+    assert.deepEqual(visited, expectedVisible, impPlacement);
   }
-  assert.deepEqual(visited, expectedVisible);
 
   // Home/End while collapsed.
+  let state = { ...start, selected: ADVANCED };
   state = handleSettingsInput(state, { type: 'key', key: 'home' }, renderSettingsPage(state, 80, 40)).state;
   assert.equal(state.selected, 0);
   state = handleSettingsInput(state, { type: 'key', key: 'end' }, renderSettingsPage(state, 80, 40)).state;

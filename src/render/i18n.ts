@@ -158,7 +158,7 @@ const ZH: Record<string, string> = {
   'Even pool': '均衡预设池',
   empty: '空', included: '已加入', excluded: '未加入',
   'No Imp presets': '无 Imp 预设',
-  '←→ choose': '←→ 选择', '⏎ toggle': '⏎ 切换',
+  '⏎ toggle': '⏎ 切换',
   'Choose an Imp preset with ←→; Enter includes or excludes it': '用 ←→ 选择 Imp 预设，按 Enter 加入或移出预设池',
   'Placement: even · {preset}': '运行位置：均衡 · {preset}',
   'active preset': '当前预设',
