@@ -4,7 +4,7 @@ import { adoptionAttention, jobRowReportMeta, type JobRow } from '../../collecto
 import { TryLog } from '../../collectors/try-records.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { adoptProjectJobs, projectJobFilter } from '../../roles/job-project.js';
-import { ensureQueueWatcher } from '../../roles/notify.js';
+import { ensureQueueWatcher, watchingMod } from '../../roles/notify.js';
 import { resumedWorkerRefusal } from '../../roles/resume-guard.js';
 import type { Job } from '../job-contracts.js';
 import { isWorker, hudHome, findJob, jobCache, scanForCall, readRow, directory, type JobScan } from '../store/job-store.js';
@@ -16,7 +16,7 @@ export const session = {
   callerHarness: undefined as 'agy' | 'claude' | 'codex' | 'pi' | undefined,
   sentConventionVersion: undefined as string | undefined,
   sentCreateHint: false,
-  discovered: false, taskClient: false, agyClient: false,
+  discovered: false, taskCapable: false, taskClient: false, agyClient: false,
   createdJobs: new Set<string>(),
   cursor: new Map<string, JobRow>(),
 };
@@ -32,6 +32,7 @@ export function rememberCallerHarness(agent: unknown): void {
   if (!session.callerHarness && (agent === 'agy' || agent === 'claude' || agent === 'codex' || agent === 'pi')) session.callerHarness = agent;
 }
 export function deliveryHint(watcherAlive: boolean): string {
+  if (watcherAlive && watchingMod(callerPane, hudHome)) return 'Claude mod owns event wake. Keep working until notified, then collect reports with `hud_read`; batch hud_create is available.';
   if (session.taskClient) return 'Worker-turn events arrive as MCP task completions; owner panel decisions arrive without hud watch. Use `hud_read` to collect reports and check jobs without a task.';
   const fallback = 'Without live delivery, questions may be typed; use `hud_wait` for settlement or attention.';
   const live = 'Keep working until notified, then collect reports with `hud_read`.';

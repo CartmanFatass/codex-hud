@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { main } from '../../dist/cli/hud-main.js';
+import { watchingMod } from '../../dist/roles/notify.js';
+import { appendPanelAction } from '../../dist/collectors/panel-actions.js';
+import { appendTry } from '../../dist/collectors/try-records.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
 import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
@@ -652,6 +655,51 @@ if (args[0] === 'pane' && args[1] === 'get') {
   };
   return { home, env, agentFile, statusFile, deliveries, onCleanup: (fn) => cleanups.push(fn) };
 }
+
+test('mod watcher marker requires the live --mod process, start time, pane and home', async (t) => {
+  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, file = join(f.home, 'watchers', `${pane}.pid`);
+  const child = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--mod'], { env: f.env, stdio: 'ignore' });
+  const exited = once(child, 'exit');
+  f.onCleanup(() => stopChild(child, exited));
+  await until(() => fs.existsSync(file));
+  const marker = JSON.parse(fs.readFileSync(file));
+  assert.deepEqual(marker, { pid: child.pid, start: procStat(child.pid).start, home: f.home, pane, client: 'claude-mod' });
+  assert.equal(watchingMod(pane, f.home), true);
+  assert.equal(watching(pane, f.home), true);
+  for (const bad of [{ start: '0' }, { pane: 'w4E:p2' }, { home: join(f.home, 'other') }, { client: 'other' }]) {
+    fs.writeFileSync(file, JSON.stringify({ ...marker, ...bad }));
+    assert.equal(watchingMod(pane, f.home), false);
+  }
+  fs.writeFileSync(file, JSON.stringify(marker));
+  child.kill('SIGKILL'); await exited;
+  assert.equal(watchingMod(pane, f.home), false);
+});
+
+test('mod JSONL uses shared actionable lines, sleeps only once clear, and resumes panel logs', { timeout: 10000 }, async (t) => {
+  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, id = 'j0000000000000001';
+  const dir = writeJob(f.home, id, pane, 'mod', { state: 'closed' }, true);
+  const ac = new AbortController();
+  t.after(() => ac.abort());
+  const records = [], run = (env) => watchCommand(['--mod'], { env, stdout: s => records.push(JSON.parse(s)), stderr: s => assert.fail(s) },
+    { signal: ac.signal, rescanMs: 50, queueIdleMs: 100, settlementWindowMs: 40 });
+  const running = run({ ...f.env, HUD_MOD_CURSOR: '' });
+  await until(() => records.some(r => r.type === 'wake'));
+  await wait(150);
+  assert.deepEqual(records, [{ type: 'ready' }, { type: 'wake', lines: [`${id} imp mod: closed | report | ${readHint(id)}`] }]);
+  const receipt = join(dir, 'job.json');
+  writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), read_at: new Date().toISOString() }));
+  assert.equal(await running, 0);
+  const sleep = records.at(-1);
+  assert.deepEqual(sleep, { type: 'sleep', cursor: '0:0', sizes: [0, 0] });
+  assert.equal(fs.existsSync(join(f.home, 'watchers', `${pane}.pid`)), false);
+  appendPanelAction(f.home, { type: 'retry', job: id });
+  appendTry(f.home, process.cwd(), 'accept', { milestone: 'M1', slices: [{ id: 'ONE' }] });
+  records.length = 0;
+  assert.equal(await run({ ...f.env, HUD_MOD_CURSOR: sleep.cursor }), 0);
+  assert.deepEqual(records.filter(r => r.type === 'wake').flatMap(r => r.lines), [
+    `try accepted ${process.cwd().split('/').at(-1)} M1: ONE`, `[${id}] Retry requested from panel`,
+  ]);
+});
 
 test('a live pi watcher suppresses fallback, but dead, reused and mismatched PIDs do not', async (t) => {
   const f = queueFixture(t, 'pi'), pane = f.env.HERDR_PANE_ID;

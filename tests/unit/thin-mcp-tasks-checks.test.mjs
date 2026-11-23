@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
@@ -101,6 +101,45 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   const repair = taskJob(f, await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic repair.' }));
   assert.notEqual(repair.job, job.job);
   assert.equal(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'))).repair_of, job.job);
+});
+
+test('late Claude mod watch stands down new tasks, enables batch create, and stops main-pane typing', async (t) => {
+  const f = await fixture(t), rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  const watch = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--mod'], { cwd: f.root, env: f.env, stdio: 'ignore' });
+  const exited = once(watch, 'exit');
+  t.after(() => stopChild(watch, exited));
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers', `${f.env.HERDR_PANE_ID}.pid`)));
+  const roster = resultValue(await taskCall(rpc, 'hud_roster'));
+  assert.equal(roster.watcher_alive, true);
+  assert.match(roster.hint, /Claude mod owns event wake/);
+  const batch = resultValue(await taskCall(rpc, 'hud_create', { jobs: [{ role: 'imp', task: 'Synthetic mod batch.' }] }));
+  const [job] = batch.jobs;
+  assert.match(job.job, /^j[0-9a-f]{16}$/);
+  assert.equal(fs.existsSync(join(job.task_dir, 'mcp-task.json')), false);
+  appendPanelAction(f.env.HUD_HOME, { type: 'retry', job: job.job });
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal(f.commands().some(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID), false);
+  watch.kill('SIGKILL'); await exited;
+  const fallback = resultValue(await taskCall(rpc, 'hud_roster'));
+  assert.equal(fallback.watcher_alive, false);
+  assert.ok((await rpc('tools/list')).tools.some(tool => tool.name === 'hud_wait'));
+});
+
+test('mod-negotiated connection with no live watcher exposes hud_wait and per-call changes', async (t) => {
+  const f = await fixture(t);
+  const child = spawn(process.execPath, [entry], { cwd: f.root, env: { ...f.env, HUD_CLAUDE_MOD: '1' }, stdio: ['pipe', 'pipe', 'inherit'] });
+  const exited = once(child, 'exit');
+  t.after(async () => { child.stdin.end(); await exited; });
+  const rpc = taskRpc(rpcClient(child));
+  await rpc('server/discover');
+  const list = await rpc('tools/list');
+  assert.ok(list.tools.some(tool => tool.name === 'hud_wait'));
+  assert.ok(list.tools.every(tool => !tool.execution));
+  appendPanelAction(f.env.HUD_HOME, { type: 'land', root: f.root, slices: ['ONE'] });
+  const roster = resultValue(await taskCall(rpc, 'hud_roster'));
+  assert.equal(roster.watcher_alive, false);
+  assert.match(roster.changes.join('\n'), /Land requested from panel: .*ONE/);
 });
 
 test('MCP tasks: scoped panel decisions wake the pane without a worker task; a reconnect collects offline intents once', async (t) => {

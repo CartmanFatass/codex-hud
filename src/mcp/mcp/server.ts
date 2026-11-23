@@ -1,4 +1,5 @@
 /** MCP request handling and generation handoff. */
+import { watchingMod } from '../../roles/notify.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import * as workerTools from '../../worker/tools.js';
 import { statuslineTool, statuslineResource, readCodexStatusline } from '../codex-statusline.js';
@@ -21,6 +22,16 @@ const worker = isWorker ? workerTools : undefined;
 const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
 
 const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
+
+// A mod loaded after discovery takes over this connection too. If it stops, use changes /
+// hud_wait: jobs already dispatched without tasks cannot start producing task completions.
+// Keep serving any task IDs issued before takeover until their original receipts expire.
+async function checkModTakeover() {
+  if (session.taskClient && watchingMod(callerPane, hudHome)) {
+    session.taskClient = false;
+    await syncPanelDelivery();
+  }
+}
 
 async function toolsListResult() {
   return {
@@ -55,8 +66,9 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
     case 'server/discover': {
       const meta = request.params?._meta;
       session.discovered = true;
-      session.taskClient = !worker && !session.resumeRefusal && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
+      session.taskCapable = !worker && !session.resumeRefusal && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
         Object.hasOwn(meta?.['io.modelcontextprotocol/clientCapabilities']?.extensions ?? {}, TASK_EXTENSION);
+      session.taskClient = session.taskCapable && process.env.HUD_CLAUDE_MOD !== '1' && !watchingMod(callerPane, hudHome);
       if (session.taskClient) resumeTaskReceipts();
       await syncPanelDelivery();
       result = { supportedVersions: ['2026-07-28'], ...privateCache,
@@ -64,7 +76,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       break;
     }
     case 'initialize':
-      session.discovered = session.taskClient = false;
+      session.discovered = session.taskCapable = session.taskClient = false;
       await syncPanelDelivery();
       const clientName = request.params?.clientInfo?.name;
       session.agyClient = clientName === 'antigravity-client';
@@ -82,11 +94,12 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       result = {};
       break;
     case 'tools/list':
+      await checkModTakeover();
       result = await toolsListResult();
       break;
     case 'tasks/get':
     case 'tasks/cancel':
-      if (!session.taskClient || session.resumeRefusal) { rpcError(request.id, -32601, 'Method not found'); return; }
+      if (!session.taskCapable || session.resumeRefusal) { rpcError(request.id, -32601, 'Method not found'); return; }
       if (typeof request.params?.taskId !== 'string') { rpcError(request.id, -32602, 'Invalid task id'); return; }
       try {
         result = await taskRequest(request.params.taskId, request.method === 'tasks/cancel', closeJob);
@@ -148,6 +161,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         result = { content: [{ type: 'text', text: `Codex statusline resource: ${statuslineResource.uri}` }] };
         break;
       }
+      await checkModTakeover();
       const scan = scanForCall();
       const invoke = () => writeScan.run(scan, () => call(name, args, scan));
       try {
@@ -199,7 +213,7 @@ async function snapshot() {
   pruneCreatedJobs(session.createdJobs, (id) => !!findJob(id));
   pruneLandTasks(landTasks, landActive);
   pruneTasks(tasks, Date.now(), evictTask);
-  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
+  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
     callerHarness: session.callerHarness, sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint, createdJobs: session.createdJobs, cursor: session.cursor, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
@@ -216,9 +230,11 @@ export function openRuntime() {
         resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal, callerHarness: session.callerHarness,
         sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint,
         createdJobs: session.createdJobs, cursor: session.cursor } = state);
+      session.taskCapable = state.taskCapable ?? state.taskClient;
       tries.delivered = state.triesAt;
       answers.offset = state.answersAt;
       restoreTaskMaps(state);
+      await checkModTakeover();
       if (session.taskClient) {
         for (const id of landTasks) {
           if (loadTaskReceipt(id)) continue;

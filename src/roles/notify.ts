@@ -18,12 +18,16 @@ type Pane = { agent?: string; agent_status?: string; agent_session?: { value?: s
 type Options = { signal?: AbortSignal };
 
 export function registerPiWatcher(pane: string, home: string) {
+  return registerWatcher(pane, home);
+}
+
+export function registerWatcher(pane: string, home: string, client?: 'claude-mod') {
   if (!pane || basename(pane) !== pane) return;
   const file = join(home, 'watchers', `${pane}.pid`);
   try {
     const start = procStat(process.pid)?.start;
     if (!start) return;
-    const marker = JSON.stringify({ pid: process.pid, start, pane, home: resolve(home) }) + '\n';
+    const marker = JSON.stringify({ pid: process.pid, start, pane, home: resolve(home), client }) + '\n';
     writePrivateFile(file, marker);
     return () => {
       try { if (fs.readFileSync(file, 'utf8') === marker) fs.unlinkSync(file); } catch { /* gone */ }
@@ -31,11 +35,16 @@ export function registerPiWatcher(pane: string, home: string) {
   } catch { /* Without a marker the ordinary delivery path stays in use. */ }
 }
 
-export function watching(pane: string | null, home = process.env.HUD_HOME || join(homedir(), '.hud')) {
+export function watchingMod(pane: string | null, home: string) {
+  return watching(pane, home, true);
+}
+
+export function watching(pane: string | null, home = process.env.HUD_HOME || join(homedir(), '.hud'), modOnly = false) {
   try {
     if (!pane || basename(pane) !== pane) return false;
     const text = fs.readFileSync(join(home, 'watchers', `${pane}.pid`), 'utf8').trim();
     const native = text.startsWith('{') ? JSON.parse(text) : null;
+    if (modOnly && native?.client !== 'claude-mod') return false;
     const pid = native ? native.pid : Number(text);
     if (!isValidPid(pid)) return false;
     const argv = readProcCmdline(pid), env = readProcEnviron(pid);
@@ -44,8 +53,11 @@ export function watching(pane: string | null, home = process.env.HUD_HOME || joi
       const piEntry = /(?:^|\/)pi$|\/(?:@earendil-works|@mariozechner)\/pi-coding-agent\/dist\/cli\.js$/;
       const isPi = basename(argv[0]) === 'pi' || (/^(node|nodejs)$/.test(basename(argv[0])) && piEntry.test(argv[1] ?? ''));
       // Pi's installed binding supplies the home when it wasn't exported at process launch.
-      return isPi && !env.HUD_JOB_DIR && native.pane === pane && native.home === resolve(home) &&
-        (!env.HUD_HOME || resolve(env.HUD_HOME) === resolve(home)) &&
+      const matches = native.client === 'claude-mod'
+        ? /^(node|nodejs)$/.test(basename(argv[0])) && basename(argv[1] ?? '') === 'hud' && argv[2] === 'watch' && argv[3] === '--mod' &&
+          resolve(env.HUD_HOME || join(env.HOME || homedir(), '.hud')) === resolve(home)
+        : native.client === undefined && isPi && (!env.HUD_HOME || resolve(env.HUD_HOME) === resolve(home));
+      return matches && !env.HUD_JOB_DIR && native.pane === pane && native.home === resolve(home) &&
         typeof native.start === 'string' && isProcAlive(pid, native.start);
     }
     return isProcAlive(pid) && argv.includes('watch') && argv.some((arg) => /(?:^|\/)hud$/.test(arg)) && !argv.includes('--all') &&

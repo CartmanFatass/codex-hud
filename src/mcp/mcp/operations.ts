@@ -12,7 +12,7 @@ import { CHECKS_FILE, jobChecks } from '../../roles/job-checks.js';
 import { JOB_ID_RE } from '../../roles/job-index-cache.js';
 import { projectJobFilter } from '../../roles/job-project.js';
 import { takeLease } from '../../roles/lease.js';
-import { ensureQueueWatcher, paneInfo, watching, notify } from '../../roles/notify.js';
+import { ensureQueueWatcher, paneInfo, watching, watchingMod, notify } from '../../roles/notify.js';
 import { piSwitches } from '../../roles/roster.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { reapWorkerTree } from '../../roles/worker-tree.js';
@@ -433,9 +433,10 @@ async function sendJobs(args: Args) {
 export async function call(name: string, args: Args, scan: JobScan): Promise<unknown> {
   if (name === 'hud_land') {
     const id = required(args, 'job'), job = findJob(id);
-    const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, session.taskClient);
+    const task = session.taskClient;
+    const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, task);
     ensureWatcher();
-    if (session.taskClient) {
+    if (task) {
       rememberLandTask(landTasks, flow.flow, landActive);
       saveTaskReceipt({ id: flow.flow, expiresAt: Date.parse(flow.created_at) + TASK_TTL });
       return { resultType: 'task', ...landTask(hudHome, flow) };
@@ -824,7 +825,7 @@ export async function withChanges(value: unknown, markExhaustion: boolean, scan:
     return changes.length ? { ...value, changes } : value;
   }
   const rows = sessionRows(markExhaustion, scan);
-  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...landEvents(hudHome, callerPane).lines];
+  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...(watchingMod(callerPane, hudHome) ? [] : landEvents(hudHome, callerPane).lines)];
   session.cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }

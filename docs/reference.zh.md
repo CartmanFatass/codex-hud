@@ -231,7 +231,7 @@ CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得�
 取自 `$HUD_HOME/panel-actions.jsonl`（读取方运行期间作出的回答；更早回答的问题只是不再出现）。
 主会话决定所有下一步，MCP 不知道工作流。工具参数见 [MCP README](../packages/hud-mcp/README.md)。
 
-协商了 MCP tasks 扩展的 Claude Code 会话中，新派发的 `hud_create`、单任务的 `hud_send`（包括修复）和恢复工作的
+未启用 [mod 事件唤醒](#claude-code-mod) 且协商了 MCP tasks 扩展的 Claude Code 会话中，新派发的 `hud_create`、单任务的 `hud_send`（包括修复）和恢复工作的
 `hud_respond` 会在 `/tasks` 中显示为后台任务。工作者的回合结算、提问、失败或停止时，Claude Code 无需 Monitor 就会收到通知。
 报告通知包含任务 ID、角色、状态、`hud_read` 调用方式和一行摘要（优先使用工作者摘要，否则摘取报告正文）。
 有 HUD 检查时，通知等检查结束后再发送，并附通过数与总数。提问不等检查，通知会给出问题编号和正文。
@@ -247,7 +247,7 @@ MCP 重启后，同一调用方仍可在任务有效期内查询已有的工作�
 
 其他客户端的 MCP 工具响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
 与 `hud watch` 用同一个 `jobRow` 推导任务状态，所以结论一致。`hud watch` 默认只打印需要关注的事件，如提问、结算、受阻或新的静置原因；
-`--verbose` 才打印所有变化。`hud watch` 和 `changes` 都附上有效的工作者摘要（最多 140 字符）。未读报告通知给出 `hud_read job=<id>`（用 `mode: "full"` 读取全文），而不是文件路径。范围是调用者窗格（`HERDR_PANE_ID`），`--all` 为所有任务；空闲时只每 30 秒重扫一次。监听会把三秒内到达的结算合并成一条通知；提问仍立即送达。未协商 MCP tasks 的 Claude Code 可用 Monitor 运行它。
+`--verbose` 才打印所有变化。`hud watch` 和 `changes` 都附上有效的工作者摘要（最多 140 字符）。未读报告通知给出 `hud_read job=<id>`（用 `mode: "full"` 读取全文），而不是文件路径。范围是调用者窗格（`HERDR_PANE_ID`），`--all` 为所有任务；空闲时只每 30 秒重扫一次。监听会把三秒内到达的结算合并成一条通知；提问仍立即送达。未协商 MCP tasks 且未启用 mod 唤醒的 Claude Code 可用 Monitor 运行它。
 Codex 通过 `codex queue` 自动静默接收；pi 的 HUD 扩展用原生消息唤醒空闲的主会话，或在当前批工具调用完成后、下次模型请求前送达通知，不改编辑器草稿，也不需要打开面板或 Monitor。
 Antigravity 也会自动启动后台监听：主会话工作时通过 `PreInvocation` 钩子接收任务事件，空闲时则将事件输入提示框。
 pi 工作者不会启动此监听。调用者有窗格时，`hud_roster` 和 `hud_create` 返回 `watcher_alive`；监听有效时不会直接向其他客户端的窗格输入，也不会显示 Monitor 提示。
@@ -273,9 +273,15 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或�
 
 ## Claude Code mod
 
-`integrations/claude-mod/` 是 Claude Code 的 function-hooks 插件（`hud-mod`），让主会话的上下文保持精简。它只改变本会话保存的内容：
-MCP 服务器返回给其他客户端的结果不变。面板、toast 与事件唤醒不在其中，`./install` 也尚未注册它；试用请运行
-`claude --plugin-dir integrations/claude-mod`，并对该目录执行 `claude plugin validate` 与 `claude plugin test` 检查。
+`integrations/claude-mod/` 是 Claude Code 的 function-hooks 插件（`hud-mod`），让主会话的上下文保持精简。用 `./install --with claude,claude-mod` 与 Claude 集成一起安装，或运行
+`claude --plugin-dir integrations/claude-mod` 试用。面板仍是 herdr 面板。
+
+- **事件唤醒。** 在 herdr 的交互式主会话中，进入 HUD 项目或首次调用 HUD 工具时，mod 启动 `hud watch --mod`。
+  它只发送监听器的状态行：任务与报告通知、提问、sonic 进度、落地与面板决定。三秒内的结算合并，提问不等窗口结束。
+  空闲时每批提交一次提示，不修改输入草稿；工作中则追加一条合并的备注。中断回合时，待送事件留到下次提示，不再唤醒。
+  mod 接管期间，不新建 MCP 后台任务，也不向主窗格输入面板消息；可用 `hud_create({jobs})` 批量派发。
+  连续十分钟无待办时子进程退出，下次调用 HUD 工具或休眠的 HUD 项目出现新面板决定时重启。监听中止时仍可用 `changes` 和 `hud_wait`；
+  未使用 mod 的会话保留原有 MCP tasks 或 Monitor 通知方式。
 
 - **精简结果。** 对 HUD MCP 工具的 `tool.call` 钩子把 JSON 结果改写成 `key: value` 行：去掉 null、空值和默认值（`blocked: false`、
   `open_questions: 0` 等），以及同级字段已表达的值（与 `state` 相同的 `display_state`、与 `progress` 末项相同的 `latest_progress`、

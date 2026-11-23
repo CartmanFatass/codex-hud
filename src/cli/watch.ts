@@ -10,15 +10,17 @@ import { getHudHome } from '../hud-home.js';
 import { watchJobChanges } from '../collectors/job-changes.js';
 import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-snapshot.js';
 import { landEvents } from '../mcp/land-state.js';
+import { registerWatcher } from '../roles/notify.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
 export const WATCH_HELP =
-  'Usage: hud watch [--all] [--verbose] [--queue]\n' +
+  'Usage: hud watch [--all] [--verbose] [--queue | --mod]\n' +
   'Stream pending questions and actionable job events for the caller pane (HERDR_PANE_ID), plus project try records.\n' +
   '--all: every pane; --verbose: every change, as in MCP changes.\n' +
+  '--mod: emit pane-scoped wake records as JSON lines for the Claude mod.\n' +
   '--queue: deliver through the Codex queue (typed fallback on failure) or Antigravity hook/idle prompt.\n';
 
 // Woken by file changes under jobs/; the slow rescan only covers a watch lost or not yet attachable.
@@ -218,13 +220,15 @@ export async function watchCommand(
     await io.stdout(WATCH_HELP);
     return 0;
   }
-  let all = false, verbose = false, queue = false;
+  let all = false, verbose = false, queue = false, mod = false;
   for (const arg of args) {
     if (arg === '--all') all = true;
     else if (arg === '--verbose') verbose = true;
     else if (arg === '--queue') queue = true;
-    else throw new CliError('usage: hud watch [--all] [--verbose] [--queue]');
+    else if (arg === '--mod') mod = true;
+    else throw new CliError('usage: hud watch [--all] [--verbose] [--queue | --mod]');
   }
+  if (mod && (all || verbose || queue)) throw new CliError('--mod requires a single pane and quiet events');
   if (queue && (all || verbose)) throw new CliError('--queue requires a single pane and quiet events');
 
   // Capture the pane once; the ephemeral PID marker below advertises only this watch.
@@ -234,8 +238,17 @@ export async function watchCommand(
     return 1;
   }
   const home = getHudHome(io.env), tries = new TryLog(home), answers = new PanelActionLog(home);
+  // A sleeping mod resumes its two log readers at the last completed scan, not the new EOF.
+  const modHandshake = mod && io.env.HUD_MOD_CURSOR !== undefined;
+  if (modHandshake) {
+    const [t, a] = (io.env.HUD_MOD_CURSOR ?? '').split(':').map(Number);
+    if (Number.isSafeInteger(t) && t >= 0 && Number.isSafeInteger(a) && a >= 0) {
+      tries.delivered = t;
+      answers.offset = a;
+    }
+  }
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
-  const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
+  const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue || mod ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
   if (options.signal?.aborted) return 0;
   const controller = new AbortController(), { signal } = controller;
@@ -290,14 +303,20 @@ export async function watchCommand(
     });
 
   const pidFile = !all && callerPane ? join(home, 'watchers', `${callerPane}.pid`) : null;
+  let unregister: (() => void) | undefined;
   const cleanup = () => {
+    if (mod) return unregister?.();
     if (pidFile) {
       try { if (fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(pidFile); } catch { /* gone */ }
     }
   };
   process.once('exit', cleanup);
   try {
-    if (pidFile) {
+    if (mod) {
+      unregister = registerWatcher(callerPane!, home, 'claude-mod');
+      if (!unregister) throw new Error('could not register Claude mod watcher');
+      if (modHandshake) await io.stdout('{"type":"ready"}\n');
+    } else if (pidFile) {
       writePrivateFile(pidFile, `${process.pid}\n`);
     }
     // Attach before catch-up so events during the scan are not lost.
@@ -322,17 +341,21 @@ export async function watchCommand(
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const flows = landEvents(home, callerPane, all);
-      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...checkpoints(rows)];
-      if (queue) {
-        const pending = flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
+      const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
+      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...checkpoints(rows)];
+      const events = first || !verbose ? actionable(home, prev, rows, first) : [];
+      if (queue || mod) {
+        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
           idleSince ??= Date.now();
-          if (Date.now() - idleSince >= queueIdleMs) break;
+          if (Date.now() - idleSince >= queueIdleMs) {
+            if (modHandshake) await io.stdout(JSON.stringify({ type: 'sleep', cursor: `${tries.delivered}:${answers.offset}`, sizes: [trySize, answers.offset] }) + '\n');
+            break;
+          }
         }
       }
-      const events = first || !verbose ? actionable(home, prev, rows, first) : [];
       const lines = verbose
         ? (first ? events.map((event) => event.line) : jobChanges(prev, rows)).concat(tryLines)
         : notices.collect(events, tryLines);
@@ -357,7 +380,8 @@ export async function watchCommand(
             const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
             if (stopped) break;
             if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
-          } else await io.stdout(`${line}\n`);
+          } else if (mod) await io.stdout(JSON.stringify({ type: 'wake', lines: line.split('\n') }) + '\n');
+          else await io.stdout(`${line}\n`);
         } catch (error) {
           if (isBrokenPipe(error)) {
             stop();
@@ -368,6 +392,9 @@ export async function watchCommand(
       }
     }
     return 0;
+  } catch (error) {
+    if (isBrokenPipe(error)) return 0;
+    throw error;
   } finally {
     cleanup();
     process.off('exit', cleanup);

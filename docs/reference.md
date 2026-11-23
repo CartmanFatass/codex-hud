@@ -109,7 +109,7 @@ registered project's `.hud/roles`. The first `hud-convention.md` in a registered
 project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
 
-Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
+Without [mod-owned wake](#claude-code-mod), Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
 `hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
 question, failure or stop without Monitor. A report notice gives the job ID, role, state, the `hud_read` call and a
 one-line summary (the worker's summary or, failing that, report prose). If the job has HUD-run checks, the notice waits
@@ -139,7 +139,7 @@ Unread report notices point to `hud_read job=<id>` (`mode: "full"` for the whole
 The watch groups settlements arriving within three seconds into one notice; questions are delivered immediately.
 On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
-without tasks runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
+without tasks or mod-owned wake runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
 `codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
 The watcher exits when the pane disappears or changes agent, or after 10 minutes with no unsettled job, unread attention/report
 or unanswered question.
@@ -421,9 +421,16 @@ Before deletion the watcher appends job facts, not the brief or report, to `$HUD
 ## Claude Code mod
 
 `integrations/claude-mod/` is a Claude Code function-hooks plugin (`hud-mod`) that keeps the main session's context lean.
-It changes only what this session stores: the MCP server's replies to other clients stay as they are. The panel, toasts and
-event wake are not part of it, and `./install` does not register it yet; try it with
-`claude --plugin-dir integrations/claude-mod`, check it with `claude plugin validate` and `claude plugin test` on that folder.
+Install it alongside the Claude integration with `./install --with claude,claude-mod`, or try it with
+`claude --plugin-dir integrations/claude-mod`. The panel remains the herdr panel.
+
+- **Event wake.** In an interactive herdr main session the mod starts `hud watch --mod` in a HUD project or on the first HUD tool call.
+  It sends only the watch's status lines: job and report notices, questions, sonic checkpoints, land and panel decisions. Settlements
+  share a three-second window; questions do not wait for it. One batch submits a prompt when idle, without editing the draft.
+  During work the mod appends a merged note; on interruption it parks pending events for the next prompt rather than waking again.
+  No MCP tasks are created or panel messages typed while the mod owns wake; `hud_create({jobs})` works. After ten minutes with
+  nothing pending the child exits. A HUD call starts it again, as does a new panel decision in a sleeping HUD project.
+  A dead watch leaves `changes` and `hud_wait` available. Sessions without the mod keep their existing MCP task or Monitor delivery.
 
 - **Compact results.** A `tool.call` hook on the HUD MCP tools rewrites a JSON result as `key: value` lines. It drops null, empty and
   default values (`blocked: false`, `open_questions: 0`, …) and values a sibling already says (`display_state` equal to `state`,
