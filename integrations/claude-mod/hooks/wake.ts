@@ -1,5 +1,5 @@
 import type { EngineInterface, On, Timer } from 'claude-code';
-import { compactResult, newTurn, type Turn } from './compact';
+import { mergeChanges, type Turn } from './compact';
 import { watchProcess } from './watch';
 
 const WAKE = { plugin: 'hud-mod', key: 'wake' } as const;
@@ -120,8 +120,8 @@ export function registerWake(on: On, turn: Turn) {
     if (hud && e.agentId === undefined) await lane?.start();
     const ran = await next(e);
     if (e.agentId === undefined) await lane?.afterTool();
-    if (!hud || ran.deny !== undefined || ran.isError || ran.text === undefined) return ran;
-    const text = compactResult(ran.text, e.agentId === undefined ? turn : newTurn());
+    if (!hud || e.agentId !== undefined || ran.deny !== undefined || ran.isError || ran.text === undefined) return ran;
+    const text = mergeChanges(ran.text, turn);
     return text === undefined ? ran : { result: text };
   });
 }

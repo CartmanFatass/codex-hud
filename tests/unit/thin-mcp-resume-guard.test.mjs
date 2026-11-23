@@ -42,7 +42,10 @@ function fixture(t, agent) {
 
 const refusal = (reply) => {
   assert.equal(reply.result.isError, true);
-  assert.match(reply.result.content[0].text, recovery);
+  const { ok, code, error } = JSON.parse(reply.result.content[0].text);
+  assert.equal(ok, false);
+  assert.equal(code, 'resume_refused');
+  assert.match(error, recovery);
 };
 
 test('Claude hides the main tools for a resumed worker and fails open for an unrelated session', async (t) => {

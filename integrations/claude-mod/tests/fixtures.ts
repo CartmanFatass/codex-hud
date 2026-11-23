@@ -1,5 +1,5 @@
 // Synthetic HUD results. The key sets are the real ones (dumped from src/mcp/mcp/operations.ts through the
-// tests/unit/thin-mcp-* harness); every id, path and sentence is made up. The server sends compact JSON.
+// tests/unit/thin-mcp-* harness); every id, path and sentence is made up.
 const home = '/hud-home';
 const [a1, a2, a3] = ['j00000000000000a1', 'j00000000000000a2', 'j00000000000000a3'];
 const readHint = (job: string) => `hud_read job=${job} (mode: "full" for the whole report)`;

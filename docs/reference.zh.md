@@ -94,6 +94,11 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 该命令不修改任何文件，也不连接 herdr 或网络。
 
 MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**、**hud_land**、**hud_lease** 与 **hud_tickets**。
+
+所有客户端的主会话工具结果均使用精简的 `key: value` 文本。嵌套记录仍为 JSON，状态事件放在末尾的 `changes:` 列表中。
+格式化时省略空值、默认值或重复字段，`changed_files` 只列出最多五个路径及总数；完整读取仍保留工作者报告的 `report_meta.files`
+及分页字段。错误仍为 JSON。测试中可在 MCP 服务器环境设置 `HUD_MCP_JSON=1`，以 JSON 返回结果字段。
+JSON-RPC 封装、任务协议以及工作者工具保持不变。
 首次分派或项目上下文失效时，调用 `hud_roster` 获取角色可用性、能否继续、生效的 `runs_on` 和约定；上下文仍有效时直接调用 `hud_create`。
 同一 MCP 会话再次调用时，若约定未变则省略正文，角色信息仍会刷新。
 `hud_roster` 和该会话的首个 `hud_create` 结果会按调用者的运行环境给出通知提示；无法识别时给出通用提示。
@@ -291,14 +296,9 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或�
   连续十分钟无待办时子进程退出，下次调用 HUD 工具或休眠的 HUD 项目出现新面板决定时重启。监听中止时仍可用 `changes` 和 `hud_wait`；
   未使用 mod 的会话保留原有 MCP tasks 或 Monitor 通知方式。
 
-- **精简结果。** 对 HUD MCP 工具的 `tool.call` 钩子把 JSON 结果改写成 `key: value` 行：去掉 null、空值和默认值（`blocked: false`、
-  `open_questions: 0` 等），以及同级字段已表达的值（与 `state` 相同的 `display_state`、与 `progress` 末项相同的 `latest_progress`、
-  `digest.state`）。超过五项的 `changed_files` 变为总数加前五项（`16: a, b, c, d, e +11 more`）；`hud_read({job, mode: "full"})`
-  仍带工作者自己报告的 `report_meta.files`。任务 ID、状态、问题及其 `hud_respond` 回复方式、`read_hint`、摘要和报告正文保持原样。
-  非 JSON 结果、失败（`ok: false`）以及其他服务器的工具不受影响。
-- **合并通知。** 同一回合内，已经由 Monitor 行或 `changes` 送达的 HUD 行不再重复。已保存的行无法删除，因此一个回合的第一条
-  Monitor 行保持完整；同一任务的后续行只保留新增的行，并去掉 task id 与摘要（没有新增时写 `(HUD events already shown this turn)`），
-  已显示过的 `changes` 行从工具结果中消失。不含 HUD 行的通知行不受影响。
+- **合并通知。** 同一回合内，已经由 Monitor 行、唤醒通道或 MCP 精简结果中的 `changes` 送达的 HUD 行不再重复。
+  同一任务的后续 Monitor 行只保留新增的行，并去掉 task id 与摘要（没有新增时写 `(HUD events already shown this turn)`）。
+  mod 只从工具结果中移除已经显示的 `changes` 行，不重新格式化其他字段。不含 HUD 行的通知行不受影响。
 - **报告读取。** 对 `…/jobs/<id>/report.md` 使用 `Read`，或 `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` 命令，会被拒绝并提示
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` 其他读取照常。工作者会话
   （设置了 `HUD_JOB_DIR`）没有 `hud_read`，可直接读取该文件，`from_jobs` 就是把报告作为文件交给工作者的。

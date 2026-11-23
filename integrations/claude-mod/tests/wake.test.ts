@@ -19,7 +19,7 @@ function harness(on: On, env: Record<string, string> = { HERDR_PANE_ID: 'w4E:p1'
   on('turn.start', (_, e) => ({ turnId: e.turnId }));
   on('turn.complete', () => ({ text: '' }));
   on('session.stop', (_, e) => ({ isTurnRunning: e.isTurnRunning }));
-  on('tool.call', () => ({ result: '', text: JSON.stringify({ ok: true, changes: [line] }) }));
+  on('tool.call', () => ({ result: '', text: `ok: true\nchanges:\n- ${line}` }));
   on('prompt.submit', (_, e) => { prompts.push(e.text); return { text: e.text }; });
   on('process.spawn', async function* (_, e) {
     spawns.push([...e.argv]);

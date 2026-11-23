@@ -272,7 +272,9 @@ test('MCP changes carry unreflected try lines once, only for the session cwd', a
   fs.writeFileSync(join(other, 'STATE.md'), f.body);
   appendTry(f.hud, other, 'accept', { milestone: '0.1.4', slices: [{ id: 'ONE' }] });
   f.record('flag', { id: 'TWO', text: 'second slice' });
-  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], { env: f.env, cwd: f.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
+    env: { ...f.env, HUD_MCP_JSON: '0' }, cwd: f.cwd, stdio: ['pipe', 'pipe', 'pipe'],
+  });
   const exited = once(child, 'exit');
   f.stops.push(() => stopChild(child, exited, { closeStdin: true }));
   const rpc = createInterface({ input: child.stdout });
@@ -281,14 +283,16 @@ test('MCP changes carry unreflected try lines once, only for the session cwd', a
   child.stderr.on('data', (d) => (stderr += d));
   // A child that exits (no dist/mcp: run `npm run build`) fails the test instead of leaving it waiting for a line.
   const died = exited.then(([code]) => { throw new Error(`hud-mcp exited (${code}) before answering: ${stderr.trim() || 'no stderr'}`); });
-  const roster = async () => {
+  const call = async (name) => {
     const next = Promise.race([once(rpc, 'line'), died]);
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: ++id, params: { name: 'hud_roster', arguments: {} } }) + '\n');
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: ++id, params: { name, arguments: {} } }) + '\n');
     const [line] = await next;
-    return JSON.parse(JSON.parse(line).result.content[0].text);
+    return JSON.parse(line).result.content.map(({ text }) => text);
   };
-  assert.deepEqual((await roster()).changes, ['try flagged SampleHUD TWO']);
-  assert.equal((await roster()).changes, undefined);
+  assert.match((await call('hud_roster'))[0], /\nchanges:\n- try flagged SampleHUD TWO$/);
+  assert.doesNotMatch((await call('hud_roster'))[0], /\nchanges:/);
   f.record('accept', { id: 'ONE' }, { id: 'TWO' });
-  assert.deepEqual((await roster()).changes, ['try accepted SampleHUD 0.1.4: ONE, TWO']);
+  const [guide, changes] = await call('hud_tickets');
+  assert.match(guide, /^# Ticket method/);
+  assert.equal(changes, 'changes:\n- try accepted SampleHUD 0.1.4: ONE, TWO');
 });

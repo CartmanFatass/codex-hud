@@ -65,7 +65,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const cleanups = [];
   cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
@@ -98,6 +98,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   const env = {
     ...process.env,
     HUD_MCP_SURFACE: 'roles',
+    HUD_MCP_JSON: '1',
     HUD_WATCH_FAILED_RETENTION_MS: String(failedRetentionMs),
     ...(watcherTickMs ? { HUD_WATCH_CLI_CHECK_MS: String(watcherTickMs) } : {}),
     PATH: routingOnly ? bin : `${bin}:${process.env.PATH}`,
@@ -105,6 +106,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     FAKE_LOG: log,
     HERDR_SOCKET_PATH: join(root, 'events.sock'),
   };
+  if (!mcpJson) delete env.HUD_MCP_JSON;
   if (routingOnly) env.FAKE_ROUTING_ONLY = '1';
   else {
     delete env.FAKE_ROUTING_ONLY;

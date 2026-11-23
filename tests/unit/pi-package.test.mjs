@@ -309,12 +309,12 @@ test('combined pi packages retain delegation after canceled navigation and displ
   await h.emit('session_start', c.ctx);
   const roster = () => h.tools.get('hud_roster').execute('synthetic', {}, undefined, undefined, c.ctx);
   const toolCount = h.tools.size;
-  assert.ok((await roster()).details.roles.length);
+  assert.match((await roster()).content[0].text, /^roles: \[\{/);
   for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree']) {
     await h.emit(event, c.ctx); // No successful transition follows: navigation was canceled.
     await h.commands.get('hud').handler('reconnect', c.ctx);
     assert.equal(h.calls.notices.at(-1), 'HUD: reconnected; panel_not_open');
-    assert.ok((await roster()).details.roles.length);
+    assert.match((await roster()).content[0].text, /^roles: \[\{/);
   }
   assert.equal(h.tools.size, toolCount);
   assert.equal(h.commands.size, 1);
@@ -800,7 +800,7 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   assert.deepEqual(messages, [notice(pending)], 'pending question wakes the idle session on catch-up');
 
   toolRunning = true;
-  assert.equal((await call('hud_respond', { job: id, request_id: 'q1', answer: 'rows' })).details.written, true);
+  assert.match((await call('hud_respond', { job: id, request_id: 'q1', answer: 'rows' })).content[0].text, /^written: true$/m);
   const live = question(2);
   fs.writeFileSync(
     path.join(dir, 'progress.jsonl'),
@@ -836,10 +836,10 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
 
   assert.equal(JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at, undefined);
   const peek = await call('hud_peek', { job: id });
-  assert.equal(peek.details.status.report_unread, true);
-  assert.equal(peek.details.pane_lines, undefined);
+  assert.match(peek.content[0].text, /^status: .*"report_unread":true/m);
+  assert.doesNotMatch(peek.content[0].text, /^pane_lines:/m);
   assert.equal(JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at, undefined);
-  assert.equal((await call('hud_read', { job: id })).details.digest.result, 'Synthetic report.');
+  assert.match((await call('hud_read', { job: id })).content[0].text, /^digest: .*"result":"Synthetic report\."/m);
   assert.ok(JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at);
   // hud_read started the detached job watcher as well as the in-process session watch.
   await until(() => fs.existsSync(path.join(home, 'watch.pid')));

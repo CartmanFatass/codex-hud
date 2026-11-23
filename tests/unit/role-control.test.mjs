@@ -446,7 +446,7 @@ test('quick model on a role saves only the model in the active preset and target
   assert.equal(fallback.action.modelIndex, 1);
   check(1, 'openai/gpt-6-astra', beforeFallback);
   const roster = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
-    cwd: s.cwd, env: { ...s.env, HUD_MCP_SURFACE: 'roles' }, stdio: ['pipe', 'pipe', 'pipe'],
+    cwd: s.cwd, env: { ...s.env, HUD_MCP_SURFACE: 'roles', HUD_MCP_JSON: '1' }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const exited = once(roster, 'exit');
   s.stops.push(() => stopChild(roster, exited, { closeStdin: true }));

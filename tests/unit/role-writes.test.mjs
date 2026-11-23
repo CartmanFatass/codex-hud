@@ -194,7 +194,7 @@ test('chain saves seed from the shipped role, preserve existing fields, set 0600
   // 3. hud_roster (through real MCP) sees the written place when no project override hides it.
   const child = spawn(process.execPath, [mcpEntry], {
     cwd: otherCwd,
-    env: { ...process.env, HUD_MCP_SURFACE: 'roles', HUD_HOME: s.hud, PATH: s.bin },
+    env: { ...process.env, HUD_MCP_SURFACE: 'roles', HUD_MCP_JSON: '1', HUD_HOME: s.hud, PATH: s.bin },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const exited = once(child, 'exit');

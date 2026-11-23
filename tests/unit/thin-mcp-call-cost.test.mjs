@@ -11,8 +11,8 @@ import { JobIndexCache } from '../../dist/roles/job-index-cache.js';
 // Keep queued jobs frozen and readiness pending while exercising the real MCP call path.
 test('MCP shares one receipt scan and global FIFO, and only wakes the watcher when needed', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'mcp-call-cost-'));
-  const prev = { HUD_HOME: process.env.HUD_HOME, HERDR_PANE_ID: process.env.HERDR_PANE_ID };
-  Object.assign(process.env, { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' });
+  const prev = { HUD_HOME: process.env.HUD_HOME, HERDR_PANE_ID: process.env.HERDR_PANE_ID, HUD_MCP_JSON: process.env.HUD_MCP_JSON };
+  Object.assign(process.env, { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1', HUD_MCP_JSON: '1' });
   const children = [];
   const spawn = cp.spawn;
   t.mock.method(cp, 'spawn', (file, args, ...rest) => {

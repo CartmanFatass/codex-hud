@@ -118,6 +118,12 @@ registered project's `.hud/roles`. The first `hud-convention.md` in a registered
 project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
 
+Main-session tool results use compact `key: value` text in every client. Nested rows stay JSON, and status events
+appear in a trailing `changes:` list. The formatter omits empty/default or repeated fields and shows at most five
+`changed_files` paths alongside the total; full reads still include the worker's `report_meta.files` and any paging
+fields. Errors stay JSON. Set `HUD_MCP_JSON=1` in the MCP server environment for JSON result fields in tests. The
+JSON-RPC envelope, task protocol and worker tools are unchanged.
+
 Without [mod-owned wake](#claude-code-mod), Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
 `hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
 question, failure or stop without Monitor. A report notice gives the job ID, role, state, the `hud_read` call and a
@@ -441,16 +447,10 @@ Install it alongside the Claude integration with `./install --with claude,claude
   nothing pending the child exits. A HUD call starts it again, as does a new panel decision in a sleeping HUD project.
   A dead watch leaves `changes` and `hud_wait` available. Sessions without the mod keep their existing MCP task or Monitor delivery.
 
-- **Compact results.** A `tool.call` hook on the HUD MCP tools rewrites a JSON result as `key: value` lines. It drops null, empty and
-  default values (`blocked: false`, `open_questions: 0`, …) and values a sibling already says (`display_state` equal to `state`,
-  `latest_progress` equal to the last `progress` entry, `digest.state`). A `changed_files` list of more than five becomes a count and the
-  first five (`16: a, b, c, d, e +11 more`); `hud_read({job, mode: "full"})` still has the worker's own `report_meta.files`. Job ids, states,
-  questions with their `hud_respond` reply, `read_hint`, summaries and report text are kept as sent. Results that are not JSON, failures
-  (`ok: false`) and other servers' tools are untouched.
-- **Merged notices.** Within one turn a HUD line already delivered, by a Monitor row or by `changes`, is not said again. A stored row
-  cannot be removed, so the first Monitor row of a turn stays whole; a later row of the same task shrinks to its new lines without
-  task id and summary (`(HUD events already shown this turn)` when none), and `changes` lines already shown leave the tool result.
-  Rows that are not HUD lines are untouched.
+- **Merged notices.** Within one turn a HUD line already delivered by a Monitor row, the wake lane or compact MCP `changes`
+  is not repeated. A later Monitor row of the same task shrinks to its new lines without task id and summary
+  (`(HUD events already shown this turn)` when none). The mod removes already-shown `changes` lines without reformatting
+  the rest of the tool result. Rows that are not HUD lines are untouched.
 - **Report reads.** A `Read`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command, on `…/jobs/<id>/report.md` is refused with
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` Other reads pass. A worker
   session (`HUD_JOB_DIR` set) has no `hud_read` and may read the file, as `from_jobs` hands reports to workers as files.

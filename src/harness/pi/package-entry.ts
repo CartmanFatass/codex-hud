@@ -314,13 +314,11 @@ export function installPiPackage(
         if (!s || !current(s) || ctx.sessionManager !== s.ctx.sessionManager) throw Error('pi_session_inactive');
         signal?.throwIfAborted();
         const result = await s.client.call(tool.name, args);
-        try {
-          // The ticket guide is plain Markdown, with changes (if any) in a separate text block.
-          const guide = tool.name === 'hud_tickets' && !result.isError && (args.op === undefined || args.op === 'guide');
-          return { ...result, details: JSON.parse(guide ? result.content[1]?.text ?? '{}' : result.content[0].text) };
-        } catch {
-          throw Error('invalid_mcp_response');
-        }
+        // Pass compact text through. JSON errors and the optional JSON result mode still expose details.
+        // The ticket guide is Markdown, with changes (if any) in a separate block.
+        const guide = tool.name === 'hud_tickets' && !result.isError && (args.op === undefined || args.op === 'guide');
+        const text = result.content[guide ? 1 : 0]?.text;
+        return { ...result, details: text?.startsWith('{') ? JSON.parse(text) : {} };
       },
     });
 }

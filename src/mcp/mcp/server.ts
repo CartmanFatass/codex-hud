@@ -10,6 +10,7 @@ import { locks, keyLock } from '../store/key-lock.js';
 import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js';
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
+import { compactResult } from './result-text.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows } from './session-state.js';
 import {
   resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, tasks,
@@ -22,6 +23,7 @@ const worker = isWorker ? workerTools : undefined;
 const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
 
 const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
+const resultText = process.env.HUD_MCP_JSON === '1' ? JSON.stringify : compactResult;
 
 // A mod loaded after discovery takes over this connection too. If it stops, use changes /
 // hud_wait: jobs already dispatched without tasks cannot start producing task completions.
@@ -132,7 +134,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       else checkResume('codex', meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id);
       if (session.resumeRefusal) {
         await syncPanelDelivery();
-        result = { ...taskContent(session.resumeRefusal), isError: true };
+        result = { ...taskContent(JSON.stringify({ ok: false, code: 'resume_refused', error: session.resumeRefusal })), isError: true };
         break;
       }
       const name = request.params?.name;
@@ -176,10 +178,10 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         } else if (typeof value === 'string') {
           const content = [{ type: 'text', text: value }];
           const delta = await withChanges({}, markExhaustion, scan) as { changes?: unknown[] };
-          if (delta.changes) content.push({ type: 'text', text: JSON.stringify(delta) });
+          if (delta.changes) content.push({ type: 'text', text: resultText(delta) });
           result = { content };
         } else {
-          result = { content: [{ type: 'text', text: JSON.stringify(await withChanges(value, markExhaustion, scan)) }] };
+          result = taskContent(resultText(await withChanges(value, markExhaustion, scan)));
         }
       } catch (error) {
         result = {

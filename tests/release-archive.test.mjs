@@ -270,7 +270,7 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
     { jsonrpc: '2.0', id: 2, method: 'tools/list' },
     { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'hud_roster', arguments: {} } },
   ];
-  const replies = run('hud-mcp', [], { input: requests.map(request => JSON.stringify(request)).join('\n') + '\n' })
+  const replies = run('hud-mcp', [], { input: requests.map(request => JSON.stringify(request)).join('\n') + '\n', override: { HUD_MCP_JSON: '1' } })
     .trim().split('\n').map(line => JSON.parse(line));
   assert.equal(replies.length, 3);
   assert.equal(replies.find(reply => reply.id === 1).result.serverInfo.name, 'hud-mcp-thin');
