@@ -7,10 +7,12 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
+import { isDeepStrictEqual } from 'node:util';
+import { withAbstractLock } from '../utils/abstract-lock.js';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { DEFAULT_LAND_TIMEOUT_S, isFlowId, landFile, readLand, writeLand, type LandFlow, type LandRerun } from './land-state.js';
+import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, readLand, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
@@ -70,15 +72,18 @@ function pathsOverlap(a: string[], b: string[]) {
   }
   return false;
 }
-async function execute(home: string, f: LandFlow, cleanup: string[]) {
-  const { wt, config: c } = f, main = wt.main_root;
+async function execute(home: string, own: LandFlow, cleanup: string[]) {
+  const { wt, config: c } = own, main = wt.main_root;
   const scratch = (id: string) => join(dirname(wt.root), `land-${id}`);
-  const integration = scratch(f.flow);
-  const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: f.flow };
-  const cancelled = () => fs.existsSync(`${landFile(home, f.flow)}.cancel`);
-  const step = (name: string) => { f.step = name; writeLand(home, f); };
+  let f = own, members = [own], integration = scratch(own.flow), publishing = false;
+  const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: own.flow };
+  // A queued helper can update its receipt without the checkout lease; serialize that with boarding.
+  const queueLock = <T>(run: () => T) => withAbstractLock('land-queue', `${home}\0${main}`, run);
+  const cancelled = (row: LandFlow) => fs.existsSync(`${landFile(home, row.flow)}.cancel`);
+  const step = (name: string) => { for (const row of members) { row.step = name; writeLand(home, row); } };
   const recordTiming = (name: string, t0: number, ok: boolean, extra?: { rerun?: true; skipped?: true }) => {
-    (f.timings ??= []).push({ step: name, ms: Math.max(0, Math.round(performance.now() - t0)), ok, ...extra });
+    // Shared work is timed only on the lead receipt, not counted once per passenger.
+    (f.timings ??= []).push({ step: name, ms: Math.max(0, Math.round(performance.now() - t0)), ok, ...extra, train: f.train });
     writeLand(home, f);
   };
   let activeStep: [string, number] | undefined;
@@ -88,22 +93,36 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     const [name, t0] = activeStep; activeStep = undefined;
     recordTiming(name, t0, ok);
   };
-  const checkCancel = () => { if (cancelled()) { f.state = 'cancelled'; throw Error('Cancelled before fast-forward'); } };
+  const checkCancel = () => {
+    if (!members.some(cancelled)) return;
+    if (!f.train) f.state = 'cancelled';
+    throw Error('Cancelled before fast-forward');
+  };
   const head = async (dir: string) => (await git(dir, ['rev-parse', '--verify', 'HEAD'])).trim();
   const tree = async (sha: string) => (await git(main, ['rev-parse', '--verify', `${sha}^{tree}`])).trim();
   const checkMain = async (sha: string) => {
     if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref || await head(main) !== sha)
       throw Error('Main checkout is not at the recorded base tip');
   };
-  const checkSource = async () => {
-    for (const id of new Set([f.job, f.repairs?.at(-1)?.job ?? f.job])) {
+  const checkSource = async (row: LandFlow) => {
+    const { wt } = row;
+    for (const id of new Set([row.job, row.repairs?.at(-1)?.job ?? row.job])) {
       const status = readJsonFile(join(home, 'jobs', id, jobFiles.status)) as JobStatus;
       if (!['closed', 'idle_grace', 'done'].includes(status.state)) throw Error(`Cannot land ${id}: job state is ${status.state ?? 'unknown'}`);
     }
-    if (await head(wt.root) !== f.source_sha ||
+    if (await head(wt.root) !== row.source_sha ||
         (await git(wt.root, ['symbolic-ref', 'HEAD'])).trim() !== `refs/heads/${wt.branch}`)
       throw Error('Source job is no longer settled at the recorded commit');
   };
+  const checkSources = () => Promise.all(members.map(checkSource));
+  const committer = async () => {
+    // includeIf and a wrapper's temporary HOME can give the detached checkout a different identity.
+    const identity = (await git(main, ['var', 'GIT_COMMITTER_IDENT'])).match(/^(.*) <([^<>]+)> \d+ [+-]\d+$/m);
+    if (!identity) throw Error('Missing checkout committer identity');
+    return ['-c', `user.name=${identity[1]}`, '-c', `user.email=${identity[2]}`];
+  };
+  const picksFor = async (base: string, source: string) =>
+    (await git(main, ['rev-list', '--reverse', '--topo-order', `${base}..${source}`, '--'])).trim().split(/\s+/).filter(Boolean);
   const deadlineMs = (c.timeout_s ?? DEFAULT_LAND_TIMEOUT_S) * 1000;
   async function commands(kind: 'gate' | 'after', cwd: string, reuse?: { tested: string; filters: string[] }) {
     for (const [i, cmd] of c[kind].entries()) {
@@ -135,7 +154,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         }
         recordTiming(label, t0, true, publish ? { skipped: true } : undefined);
       } catch (e) {
-        if (kind !== 'gate' || !(e instanceof CommandError)) { recordTiming(label, t0, false); throw e; }
+        if (kind !== 'gate' || f.train || !(e instanceof CommandError)) { recordTiming(label, t0, false); throw e; }
         const reruns = f.reruns ??= [];
         const prefix = `${landFile(home, f.flow)}.gate-${reruns.length + 1}`;
         const saveExcerpt = (error: CommandError, suffix = '') => {
@@ -167,17 +186,24 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
   async function gate(sha: string, treeId: string) {
     await commands('gate', integration);
     if (await head(integration) !== sha) throw Error('Gate changed integration HEAD');
-    f.tested_sha = sha;
-    f.tested_tree = treeId;
+    for (const row of members) { row.tested_sha = sha; row.tested_tree = treeId; }
   }
   let acquired = false;
   const acquire = async () => {
     while (!acquired) {
-      checkCancel();
       const r = await takeLease({ name: 'main-checkout', wait_s: 1 }, lease);
       if (!('granted' in r)) continue;
       acquired = r.granted;
-      if (!r.granted) {
+      const live = await queueLock(() => {
+        const latest = readLand(home, own.flow);
+        if (!latest || !activeLand(latest)) return false;
+        if (latest.state !== 'queued' || latest.pid !== process.pid) return !acquired;
+        Object.assign(own, latest);
+        if (cancelled(own)) {
+          own.state = 'cancelled'; own.error = 'Cancelled before fast-forward'; writeLand(home, own);
+          return false;
+        }
+        if (r.granted) return true;
         const { holder } = r.held_by;
         const blocker = isFlowId(holder) ? readLand(home, holder) : null;
         const gate = blocker && /^gate\[(\d+)\]:/.exec(blocker.step);
@@ -185,75 +211,56 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         const waiting = !blocker ? 'main-checkout lease' : gate && Number.isFinite(since)
           ? `waiting for ${holder} (gate step ${gate[1]}, ${Math.max(0, Math.floor((Date.now() - since) / 60000))} min)`
           : `waiting for ${holder}`;
-        if (f.step !== waiting) step(waiting);
-      }
+        if (own.step !== waiting) step(waiting);
+        return true;
+      });
+      if (!live) return false;
     }
+    return true;
   };
+  async function clearPrevious(ids: string[]) {
+    if (!ids.length) return;
+    const trees = parseWorktreeList(await git(main, ['worktree', 'list', '--porcelain', '-z']));
+    for (const id of ids) {
+      const old = trees.find(t => t.path === scratch(id));
+      if (!old) continue;
+      if (!old.detached || old.locked !== undefined) throw Error('Previous integration worktree is not disposable');
+      await git(main, ['worktree', 'remove', '--force', '--', old.path], 120000);
+    }
+  }
   async function prepare() {
     f.state = 'running'; step('prepare');
-    await checkSource();
-    if (cleanup.length) {
-      const trees = parseWorktreeList(await git(main, ['worktree', 'list', '--porcelain', '-z']));
-      for (const id of cleanup) {
-        const old = trees.find(t => t.path === scratch(id));
-        if (!old) continue;
-        if (!old.detached || old.locked !== undefined) throw Error('Previous integration worktree is not disposable');
-        await git(main, ['worktree', 'remove', '--force', '--', old.path], 120000);
-      }
-      cleanup.length = 0;
-    }
+    await checkSource(f);
+    await clearPrevious(cleanup);
+    cleanup.length = 0;
     f.base_sha = (await git(main, ['rev-parse', '--verify', `${ref}^{commit}`])).trim();
     await checkMain(f.base_sha);
     const ff = (await git(main, ['merge-base', f.base_sha, f.source_sha])).trim() === f.base_sha;
-    const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${f.base_sha}..${f.source_sha}`, '--'])).trim();
-    if (!picks) throw Error('Source has no commits to land');
+    const picks = await picksFor(f.base_sha, f.source_sha);
+    if (!picks.length) throw Error('Source has no commits to land');
     if (fs.lstatSync(integration, { throwIfNoEntry: false })) throw Error('Integration destination already exists');
     startStep('create integration');
     await git(main, ['worktree', 'add', '--detach', '--', integration, ff ? f.source_sha : f.base_sha], 120000);
     endStep();
-    // includeIf and a wrapper's temporary HOME can give the detached checkout a different identity.
-    const identity = (await git(main, ['var', 'GIT_COMMITTER_IDENT'])).match(/^(.*) <([^<>]+)> \d+ [+-]\d+$/m);
-    if (!identity) throw Error('Missing checkout committer identity');
-    const who = ['-c', `user.name=${identity[1]}`, '-c', `user.email=${identity[2]}`];
+    const who = await committer();
     if (!ff) {
       startStep('cherry-pick');
-      for (const sha of picks.split(/\s+/)) await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
+      for (const sha of picks) await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
       endStep();
     }
     const tested = await head(integration);
     await gate(tested, await tree(tested));
     return who;
   }
-  try {
-    let who: string[];
-    for (;;) {
-      await acquire();
-      try { who = await prepare(); break; }
-      catch (e) {
-        endStep(false);
-        const conflict = f.step === 'cherry-pick' && !!(await git(integration, ['ls-files', '-u']));
-        if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
-        const prior = f.repairs?.at(-1);
-        if (prior) prior.outcome = `failed at ${f.step}`;
-        if (e instanceof CommandTimeout || (f.repairs?.length ?? 0) >= 2) throw e;
-        checkCancel(); await checkSource();
-        f.error = e.message; f.tail = e.tail;
-        // Only the helper-created scratch checkout is disposable, never the source or main.
-        await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
-        await takeLease({ name: 'main-checkout', release: true }, lease); acquired = false;
-        await repairLand(home, f, checkCancel);
-        f.source_sha = await head(wt.root);
-        delete f.error; delete f.tail;
-        f.state = 'queued'; step('main-checkout lease');
-      }
-    }
-    const prior = f.repairs?.at(-1);
-    if (prior) prior.outcome = 'gate passed';
-    checkCancel(); await checkSource();
-    startStep('records');
+  async function publish(who: string[], trainTips?: Map<LandFlow, string>) {
+    checkCancel(); await checkSources();
     const tested = f.tested_sha!, base = f.base_sha!;
-    let landed = (await recordLanding(integration, join(home, 'jobs', f.job), base, c.gate.length, who)) ?? tested;
-    endStep();
+    let landed = tested;
+    if (!trainTips) {
+      startStep('records');
+      landed = (await recordLanding(integration, join(home, 'jobs', f.job), base, c.gate.length, who)) ?? tested;
+      endStep();
+    }
     checkCancel(); startStep('fast-forward');
     const touched = async (from: string, to: string) => [...new Set([
       ...fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', from, to, '--'])),
@@ -270,12 +277,14 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     };
     const paths = await touched(base, landed);
     await checkClean(paths);
-    checkCancel(); await checkSource();
+    checkCancel(); await checkSources();
     if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref)
       throw Error('Main checkout is not at the recorded base tip');
     let target = base;
     const current = await head(main);
     if (current !== base) {
+      // Fall back to singles (with normal replay/re-gate) rather than rebuild a moving train.
+      if (trainTips) throw Error('Main checkout is not at the recorded base tip');
       let ancestor = false;
       try { ancestor = (await git(main, ['merge-base', base, current])).trim() === base; } catch { /* not an ancestor */ }
       if (!ancestor) throw Error('Main checkout is not at the recorded base tip');
@@ -303,18 +312,26 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       target = current;
     }
     const landedPaths = target === base ? paths : await touched(target, landed);
-    f.published_tree = await tree(landed);
-    const regate = f.published_tree !== f.tested_tree && !await metadataOnly(main, f.tested_tree!, f.published_tree);
+    const published = await tree(landed);
+    for (const row of members) row.published_tree = published;
+    const regate = published !== f.tested_tree && !await metadataOnly(main, f.tested_tree!, published);
     if (regate) {
       // Disjoint paths can still interact. Gate the exact candidate, including the ticket update.
-      await gate(landed, f.published_tree);
+      await gate(landed, published);
       step('fast-forward');
     }
     if (target !== base || regate) await checkClean(landedPaths);
-    checkCancel(); await checkSource(); await checkMain(target);
+    checkCancel(); await checkSources(); await checkMain(target);
+    publishing = true;
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
-    if (target !== base) f.replayed_onto = target;
-    f.landed_sha = landed; f.landed_at = new Date().toISOString(); endStep();
+    const at = new Date().toISOString();
+    for (const row of members) {
+      if (target !== base) row.replayed_onto = target;
+      if (trainTips) row.published_sha = landed;
+      row.landed_sha = trainTips?.get(row) ?? landed; row.landed_at = at;
+      writeLand(home, row);
+    }
+    endStep();
     const checkLandingHead = async () => {
       const moved = Error('Main checkout is not at the recorded base tip');
       if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref) throw moved;
@@ -343,29 +360,147 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     };
     try { await git(main, ['worktree', 'remove', '--', integration], 120000); }
     catch (e) { note(e); }
-    try {
-      const receiptPath = join(home, 'jobs', f.job, jobFiles.job);
-      const result = await reapWorktree(f.job, { job: f.job, cwd: wt.root, worktree: wt }, home,
-        { source_sha: f.source_sha, landed_sha: landed });
-      const receipt = readJsonFile(receiptPath) as Job;
-      writePrivateFile(receiptPath, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mkdir: false });
-      if ('worktree_kept_reason' in result) notes.push(result.worktree_kept_reason);
-    } catch (e) { note(e); }
-    if (notes.length) f.cleanup_note = notes.join('; ');
+    const integrationNotes = notes.length;
+    for (const row of members) {
+      const { wt } = row;
+      try {
+        const receiptPath = join(home, 'jobs', row.job, jobFiles.job);
+        const result = await reapWorktree(row.job, { job: row.job, cwd: wt.root, worktree: wt }, home,
+          { source_sha: row.source_sha, landed_sha: row.landed_sha! });
+        const receipt = readJsonFile(receiptPath) as Job;
+        writePrivateFile(receiptPath, JSON.stringify({ ...receipt, worktree_kept_reason: undefined, worktree_checked_head: undefined, ...result }), { mkdir: false });
+        if ('worktree_kept_reason' in result) notes.push(result.worktree_kept_reason);
+      } catch (e) { note(e); }
+      if (notes.length) row.cleanup_note = notes.join('; ');
+      notes.length = integrationNotes;
+      row.after_note = f.after_note;
+      row.state = 'completed';
+    }
     endStep();
-    f.state = 'completed'; step('done');
-  } catch (e) {
+    step('done');
+  }
+  function fail(e: unknown) {
     endStep(false);
-    if (f.state !== 'cancelled') f.state = 'failed';
-    f.error = (e as Error).message.split('\n')[0];
-    f.tail = e instanceof CommandError ? e.tail : f.tail ?? (e as Error).message.trimEnd().split('\n').slice(-40);
-    writeLand(home, f);
-  } finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
+    for (const row of members) {
+      if (row.state !== 'cancelled') row.state = 'failed';
+      row.error = (e as Error).message.split('\n')[0];
+      row.tail = e instanceof CommandError ? e.tail : row.tail ?? (e as Error).message.trimEnd().split('\n').slice(-40);
+      writeLand(home, row);
+    }
+  }
+  async function train() {
+    const eligible = (row: LandFlow | null): row is LandFlow => !!row && row.state === 'queued' &&
+      row.wt.main_root === main && !row.single && !row.repairs?.length &&
+      isDeepStrictEqual(row.config, c) && !cancelled(row);
+    if (!eligible(own)) return false;
+    const ids = fs.readdirSync(join(home, 'flows')).filter(file => file.endsWith('.json')).map(file => file.slice(0, -5))
+      .filter(id => id !== own.flow && isFlowId(id) && eligible(readLand(home, id)));
+    if (!ids.length) return false;
+    const base = await head(main);
+    await checkMain(base);
+    const claimed = await queueLock(() => {
+      const queue = [...ids.map(id => readLand(home, id)).filter(eligible), own]
+        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.flow.localeCompare(b.flow));
+      if (queue.length < 2) return [];
+      return queue.map(row => {
+        // Point at the checkout owner while boarded, so a crash cannot silently replay a train.
+        const boarded: LandFlow = { ...row, boarded: { flow: own.flow, pid: own.pid, start: own.start }, base_sha: base, state: 'running', step: 'prepare' };
+        writeLand(home, boarded);
+        return { row, boarded };
+      });
+    });
+    if (!claimed.length) return false;
+    const tips = new Map<LandFlow, string>();
+    integration = scratch(`${own.flow}-train`);
+    let made = false;
+    try {
+      if (fs.lstatSync(integration, { throwIfNoEntry: false })) throw Error('Integration destination already exists');
+      await git(main, ['worktree', 'add', '--detach', '--', integration, base], 120000);
+      made = true;
+      const who = await committer();
+      for (const { boarded } of claimed) {
+        let picks: string[];
+        try {
+          await checkSource(boarded);
+          await clearPrevious(landAttempt(home, boarded.job).cleanup);
+          picks = await picksFor(base, boarded.source_sha);
+        } catch { continue; }
+        if (!picks.length || cancelled(boarded)) continue;
+        try {
+          await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', ...picks]);
+        } catch (e) {
+          if (!(e instanceof CommandError)) throw e;
+          await git(integration, ['cherry-pick', '--abort']);
+          continue;
+        }
+        // Fold each ticket into its own tip in the disposable checkout. Publish it only after green.
+        tips.set(boarded, (await recordLanding(integration, join(home, 'jobs', boarded.job), base, c.gate.length, who)) ?? await head(integration));
+      }
+      if (tips.size) {
+        members = [...tips.keys()]; f = members[0];
+        for (const row of members) row.train = f.flow;
+        const tested = await head(integration);
+        await gate(tested, await tree(tested));
+        await publish(who, tips);
+      }
+    } catch (e) {
+      if (publishing) fail(e);
+      // Nothing reached main: no train gate rerun or repair. Original helpers take the single path.
+      else endStep(false);
+    } finally {
+      let cleanupNote: string | undefined;
+      if (!publishing && made) {
+        try { await git(main, ['worktree', 'remove', '--force', '--', integration], 120000); }
+        catch (e) { cleanupNote = (e as Error).message.split('\n')[0]; }
+      }
+      for (const { row, boarded } of claimed) {
+        if (publishing && tips.has(boarded)) continue;
+        row.single = true;
+        row.timings = boarded.timings;
+        if (cleanupNote) row.cleanup_note = cleanupNote;
+        writeLand(home, row);
+      }
+    }
+    if (publishing && members.some(row => row.flow === own.flow)) return true;
+    f = own; members = [own]; integration = scratch(own.flow); publishing = false;
+    return false;
+  }
+  try {
+    for (;;) {
+      if (!await acquire() || await train()) return;
+      checkCancel();
+      let who: string[];
+      try { who = await prepare(); }
+      catch (e) {
+        endStep(false);
+        const conflict = f.step === 'cherry-pick' && !!(await git(integration, ['ls-files', '-u']));
+        if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
+        const prior = f.repairs?.at(-1);
+        if (prior) prior.outcome = `failed at ${f.step}`;
+        if (e instanceof CommandTimeout || (f.repairs?.length ?? 0) >= 2) throw e;
+        checkCancel(); await checkSource(f);
+        f.error = e.message; f.tail = e.tail;
+        // Only the helper-created scratch checkout is disposable, never the source or main.
+        await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
+        await takeLease({ name: 'main-checkout', release: true }, lease); acquired = false;
+        await repairLand(home, f, checkCancel);
+        f.source_sha = await head(wt.root);
+        delete f.error; delete f.tail;
+        f.state = 'queued'; step('main-checkout lease');
+        continue;
+      }
+      const prior = f.repairs?.at(-1);
+      if (prior) prior.outcome = 'gate passed';
+      await publish(who);
+      break;
+    }
+  } catch (e) { fail(e); }
+  finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
 }
 // The bootstrap reports ready only after this listener and the complete import graph are loaded.
 process.once('message', async ({ home, flow, cleanup }: { home: string; flow: string; cleanup: string[] }) => {
   const f = readLand(home, flow);
-  if (f?.state === 'queued' && f.pid === process.pid) {
+  if (f && activeLand(f) && f.pid === process.pid) {
     await publishRunnerLifetime(join(home, 'jobs', f.job));
     await execute(home, f, cleanup);
   }
