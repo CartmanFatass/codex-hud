@@ -87,6 +87,7 @@ export interface Job extends PiOptions {
   launch_agent_args?: { place: string; args: string[] }[];
   used_place?: string;
   dispatch_exit_code: number | null;
+  launcher?: { pid: number; start?: string }; // The process running the launch while dispatch_exit_code is null.
   dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments';
   dispatch_path?: string;
   stderr_tail: string;

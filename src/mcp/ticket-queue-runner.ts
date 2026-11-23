@@ -7,7 +7,7 @@ import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
-import { procStat } from '../utils/proc.js';
+import { isProcAlive, procStat } from '../utils/proc.js';
 import { readTurn, readDone, receiptForTurn } from '../roles/cli-turn.js';
 import { dispatchJob } from './dispatch/orchestrator.js';
 import type { Job, JobStatus } from './job-contracts.js';
@@ -20,7 +20,7 @@ import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/jo
 import { queueCancelled, queueFile, readTicketQueue, writeTicketQueue, type TicketQueue, type TicketQueueItem } from './ticket-queue-state.js';
 
 const cleanStates = ['idle_grace', 'done', 'closed'];
-const LAUNCH_GRACE_MS = 120_000;
+const LAUNCH_GRACE_MS = 120_000, LAUNCH_RECHECK_MS = 5_000;
 const errorLine = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0];
 function ticketHeader(path: string) {
   return readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
@@ -123,8 +123,10 @@ async function drive(q: TicketQueue) {
           else if (failedAttempt(row)) flag(row.reason ?? row.display_state);
           else if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) flag(row.reason ?? 'worker needs main');
           else if (!status && job.dispatch_exit_code === null) {
-            // A runner that took over mid-launch sees the job before its first status: give the launch time to finish.
-            const left = Date.parse(job.created_at) + LAUNCH_GRACE_MS - Date.now();
+            // A runner that took over mid-launch sees the job before its first status: wait while the launching
+            // process lives (launches under load can take minutes); legacy receipts without one get a fixed grace.
+            const left = job.launcher ? (isProcAlive(job.launcher.pid, job.launcher.start) ? LAUNCH_RECHECK_MS : 0)
+              : Date.parse(job.created_at) + LAUNCH_GRACE_MS - Date.now();
             if (left > 0) recheck = Math.min(recheck ?? left, left);
             else flag('dispatch interrupted before worker status was recorded');
           }

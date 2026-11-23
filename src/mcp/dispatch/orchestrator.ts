@@ -561,6 +561,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(presetName === undefined ? {} : { preset: presetName }),
       attempts: [],
       dispatch_exit_code: null,
+      launcher: launcherId(),
       stderr_tail: '',
     };
     if (enforceCap) {
@@ -759,6 +760,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   return reply;
 }
 
+function launcherId() {
+  const start = procStat(process.pid)?.start;
+  return { pid: process.pid, ...(start && { start }) };
+}
+
 /** Watcher entry point: claim a queued job atomically and start it on its first available place at start time. */
 export async function startQueuedJob(id: string, targetRole?: string, overflowed = false): Promise<{ started: boolean; failed?: boolean; reason?: string }> {
   const dir = directory(id);
@@ -830,7 +836,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       existing.overflow_from = existing.role;
       existing.role = role;
     }
-    const base: Job = { ...existing, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [] };
+    const base: Job = { ...existing, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [], launcher: launcherId() };
     const project = found.project();
     const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, existing.repair_of);
     const inline = first.prepared.place.harness === 'bro';

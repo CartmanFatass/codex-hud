@@ -146,8 +146,9 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   assert.match(result.changes[0], /worker question q1.*Still running:/);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 
-  // The answer to the stopping question resumes the queue with the same jobs.
-  const answered = await f.call('hud_respond', { job: first, request_id: 'q1', answer: 'Take the synthetic path.' });
+  // The answer to the stopping question resumes the queue with the same jobs, also through the batch form.
+  const batch = await f.call('hud_respond', { answers: [{ job: first, request_id: 'q1', answer: 'Take the synthetic path.' }] });
+  const answered = { queue_resumed: batch.queues_resumed?.[0] };
   assert.match(answered.queue_resumed, /^q[0-9a-f]{16}$/);
   assert.equal(f.flow(answered.queue_resumed).state, 'working');
   assert.deepEqual(f.flow(answered.queue_resumed).tickets.map(x => x.job), [first, peer]);
@@ -182,6 +183,18 @@ test('a resumed queue waits for a launch still in flight instead of failing it',
   const [, , third] = await f.jobs(flow, 3);
   await f.settle(third);
   assert.equal((await f.end(flow)).state, 'completed');
+});
+
+test('a queue fails a launch whose launching process is gone', { timeout: 30_000 }, async t => {
+  const f = await project(t);
+  const { flow } = await f.start();
+  const [first] = await f.jobs(flow, 1);
+  const gone = execFileSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+  fs.rmSync(join(f.dir(first), 'STATUS.json'), { force: true });
+  writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), dispatch_exit_code: null, launcher: { pid: Number(gone) } }));
+  const ended = await f.end(flow);
+  assert.equal(ended.state, 'failed');
+  assert.match(ended.reason, /dispatch interrupted before worker status was recorded/);
 });
 
 test('a resumed queue dispatches again a ticket whose launch failed before input', { timeout: 30_000 }, async t => {

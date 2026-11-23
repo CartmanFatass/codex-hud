@@ -578,7 +578,15 @@ export async function call(name: string, args: Args, scan: JobScan): Promise<unk
       }
     })));
     if (changed) publishWorkSummary(scan.summaryJobs());
-    return { answers };
+    // As for a single answer: the answer to the question that stopped a ticket queue resumes it.
+    const queues_resumed: string[] = [];
+    for (const a of answers as { ok?: boolean; job?: string; request_id?: string }[]) {
+      if (a.ok === false || !a.job || !a.request_id) continue;
+      const flow = await resumeQueueAfterAnswer(hudHome, a.job, a.request_id, callerPane);
+      if (flow) queues_resumed.push(flow);
+    }
+    if (queues_resumed.length && callerPane) void ensureQueueWatcher(callerPane, hudHome);
+    return { answers, ...(queues_resumed.length && { queues_resumed }) };
   }
   if (name === 'hud_wait') return waitJobs(args, scan);
   if (name === 'hud_read') {
