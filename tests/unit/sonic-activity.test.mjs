@@ -20,8 +20,7 @@ async function scene(t, { parent = {}, kids = [['check retry flags', null], ['li
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await splitFixture(join(root, 'busy'));
   const lane = f.board.lanes.find((l) => l.label === 'AUTH-REFRESH'), base = lane.workers[0];
-  // The parent has just written: a silence mark (home-compact/03) would take the row's room before the helper count at 40 columns.
-  const main = { ...base, work: { ...base.work, activityAt: NOW }, ...parent, ...(activity ? { activity } : {}) };
+  const main = { ...base, ...parent, ...(activity ? { activity } : {}) };
   const child = ([task, settledAt, progress], i) => ({
     ...base, id: `thin-job:j00000000000000c${i}`, parentJobId: base.id, role: 'sonic', task, startedAt: NOW - 3 * MIN, settledAt,
     latest_progress: progress && { text: progress }, state: settledAt === null ? 'working' : 'done', work: { ...base.work, activityAt: NOW, result: settledAt !== null },

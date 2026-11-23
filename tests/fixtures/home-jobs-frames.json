@@ -135,7 +135,7 @@
     "     Rewriting the graph cache invalidati…",
     "  ◉  perf-ts/05     ◐○○○○  ⚖✻●          3m",
     "     Reading the cache diff against the t…",
-    "◉  metrics-lite/01  ●◐○○○  ✦◎◕ 6m quiet 4m",
+    "◉  metrics-lite/01  ●◐○○○  ⚡2 6m quiet 4m",
     "   Trimming the idle poll interval in the…",
     "○  queued 3 · cache-v2/04 +2",
     "✓  done 2 · cache-v1/06 · export-csv/01"
@@ -155,7 +155,7 @@
     "     重写项目图缓存的失效逻辑，再把淘汰测…",
     "  ◉  perf-ts/05     ◐○○○○  ⚖✻●         3分",
     "     对照工单阅读缓存改动                 ",
-    "◉  metrics-lite/01  ●◐○○○  ✦◎◕   6分 静4分",
+    "◉  metrics-lite/01  ●◐○○○  ✦ ⚡2 6分 静4分",
     "   正在缩短监视器的空闲轮询间隔           ",
     "○  排队 3 · cache-v2/04 · export-csv/03 +1",
     "✓  完成 2 · cache-v1/06 · export-csv/01"
@@ -187,21 +187,21 @@
     "",
     "✗  export-csv/02          ✗ HTTP 429 r… 9m",
     "✓● stream-sync/05         ● report unr… 2m",
-    "◉  auto-route/08          ●●◐○○  ⚒◎◕ ▆∅ 0m",
+    "◉  auto-route/08          ●●◐○○  ⚒ ⚡2  0m",
     "   Adding the sonic liveness test to the …",
     "✓  hud-doctor/01          ●●●●◐  ⚒◎◕ ▄∅ 1m",
-    "◉  statusline-workers/03  ●◐○○○  ⚒      6m",
-    "◉  docs-sweep/04          ◐○○○○  ✦      6m"
+    "◉  statusline-workers/03  ●◐○○○         6m",
+    "◉  docs-sweep/04          ◐○○○○         6m"
   ],
   "zh-42-routes": [
     "✗ 1 失败           ▲◕1 ✗  ◎◕4 ✓●  ✻●1  ⚡2",
     "",
     "✗  export-csv/02          ✗ HTTP 429 … 9分",
     "✓● stream-sync/05         ● 报告未读   2分",
-    "◉  auto-route/08          ●●◐○○  ⚒◎◕   0分",
+    "◉  auto-route/08          ●●◐○○  ⚒ ⚡2 0分",
     "   正在给 ask 路径补 sonic 存活测试       ",
     "✓  hud-doctor/01          ●●●●◐  ⚒◎◕   1分",
-    "◉  statusline-workers/03  ●◐○○○  ⚒     6分",
-    "◉  docs-sweep/04          ◐○○○○  ✦     6分"
+    "◉  statusline-workers/03  ●◐○○○  6分 静5分",
+    "◉  docs-sweep/04          ◐○○○○  6分 静4分"
   ]
 }

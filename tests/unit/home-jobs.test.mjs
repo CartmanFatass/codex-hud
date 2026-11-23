@@ -121,7 +121,7 @@ test('a running job’s current sentence sits dim under its row: one line, two f
   assert.ok(!narrow.some((l) => /^ {3,5}Cache the tsc project graph/.test(l)), 'never the ticket title');
 });
 
-test('as a row narrows the right side loses ⚡N, then the route marks, the model, the silence and the role; the id, the strip and the age stay', () => {
+test('as a row narrows the right side loses the route marks, the model, the role, ⚡N and the silence; the id, the strip and the age stay', () => {
   const board = narrowBoard();
   const rows = (width) => jobFrame(width, 'en', board);
   for (const width of [48, 42]) {
@@ -131,10 +131,11 @@ test('as a row narrows the right side loses ⚡N, then the route marks, the mode
   }
   const [wide, narrow] = [rows(48), rows(42)], row = (lines, id) => lines.find((l) => l.includes(`${id} `));
   assert.match(row(wide, 'auto-route/08'), /●●◐○○ {2}⚒◎◕ ▆∅ ⚡2 +0m$/, '48: nothing dropped');
-  assert.match(row(narrow, 'auto-route/08'), /●●◐○○ {2}⚒◎◕ ▆∅ +0m$/, '42: the helper count goes first');
+  assert.match(row(narrow, 'auto-route/08'), /●●◐○○ {2}⚒ ⚡2 +0m$/, '42: the route marks and the model went; the helper count and the role stay');
   assert.match(row(wide, 'statusline-workers/03'), /●◐○○○ {2}⚒◎◕ 6m quiet 5m$/, '48, a 21-cell id: the route marks went before the model');
-  assert.match(row(narrow, 'statusline-workers/03'), /●◐○○○ {2}⚒ +6m$/, '42: the model and the silence went, the role stays');
-  assert.match(row(narrow, 'docs-sweep/04'), /◐○○○○ {2}✦ +6m$/);
+  assert.match(row(narrow, 'statusline-workers/03'), /●◐○○○ +6m$/, '42: the model, the role and last the silence went');
+  assert.match(row(narrow, 'docs-sweep/04'), /◐○○○○ +6m$/);
+  assert.match(jobFrame(42).find((l) => l.includes('metrics-lite/01 ')), /●◐○○○ {2}⚡2 6m quiet 4m$/, '42, a quiet sonic parent: the role went, the helper count and the silence stay');
   assert.match(row(wide, 'docs-sweep/04'), /◐○○○○ {2}✦✻● 6m quiet 4m$/);
 });
 

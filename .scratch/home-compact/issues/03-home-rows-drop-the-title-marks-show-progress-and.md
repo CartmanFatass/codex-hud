@@ -1,6 +1,6 @@
 # 03: Home rows drop the title; marks show progress and a short summary sits under each running job
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Owner try:** yes
 **Blocked by:** none
 
@@ -19,14 +19,16 @@
 4. Executor as one short group: role icon + provider glyph + effort, then route tier and headless marks (`⚒◎◕ ▆∅`); full model only in the Inspector.
 5. `⚡N` running sonic children.
 6. Time: total age, plus silence (`静4m` / `quiet 4m`) only after 3 minutes without output, dim then amber past the stalled threshold.
-Narrowing drops, in order: ⚡N → route marks → model → silence → role; ticket id, override reason and stage strip go last.
+Narrowing drops, in order: route marks → model → role → ⚡N → silence; ticket id, override reason, stage strip and age stay.
 Under each running job, by default, one dim summary line (two at ≥100 columns): the current sentence cut to fit, never the ticket title; none when there is no sentence yet. Settled jobs keep today's folds. Help (panel-polish/01's legend) gains the stage and silence marks. Not on the row: title, full model, provider text, worktree name.
 
-- [ ] Home job rows carry no title; ticket id, stage strip, executor group, ⚡N and time as above; every mark in Help in zh/en/ASCII
-- [ ] Stage strips align in one column; a land shows on the strip's 5th cell, no land sub-row
-- [ ] Asking/failed/unread rows show the reason in the strip's place and are coloured
-- [ ] Silence shows only after 3 min, amber past the stalled threshold
-- [ ] Running jobs show the one-line summary (two at ≥100 columns)
-- [ ] 42/80/120-column golden frames in zh and en; npm test and check:fixtures pass; reference EN/ZH updated
+- [x] Home job rows carry no title; ticket id, stage strip, executor group, ⚡N and time as above; every mark in Help in zh/en/ASCII
+- [x] Stage strips align in one column; a land shows on the strip's 5th cell, no land sub-row
+- [x] Asking/failed/unread rows show the reason in the strip's place and are coloured
+- [x] Silence shows only after 3 min, amber past the stalled threshold
+- [x] Running jobs show the one-line summary (two at ≥100 columns)
+- [x] 42/80/120-column golden frames in zh and en; npm test and check:fixtures pass; reference EN/ZH updated
 
 ## Comments
+
+- Landed in this commit (replay base 93484a33feb45750744bd936275e756e180f5d1e); gate 5/5 passed.

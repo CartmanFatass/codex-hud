@@ -28,8 +28,8 @@ type Job = readonly [OwnerWorker, WorkLane];
 const QUIET_MINUTES = 3;
 /** Cells a row's reason keeps before its right side narrows, the ticket-id column's floor, and the longest id a job without a ticket gets. */
 const MIN_REASON = 12, MIN_ID = 8, MAX_UNTICKETED_ID = 16;
-/** What the right side loses as a row narrows, first to last; the id, the strip (or the reason) and the age stay. */
-const DROPS = ['sonic', 'route', 'model', 'silence', 'role'] as const;
+/** What the right side loses as a row narrows, first to last (the sonic helper count outlasts the marks before it); the id, the strip (or the reason) and the age stay. */
+const DROPS = ['route', 'model', 'role', 'sonic', 'silence'] as const;
 /** The state glyph's fixed two-cell column, so ids start in the same column on every row. */
 const cell = (glyph: string) => glyph + ' '.repeat(Math.max(0, 2 - visualLength(glyph)));
 /** The job's id on its row: its ticket's, else its lane's short name (the package, or the head of the brief); a child under a lane header, which shares that name, gets the head of its own brief's heading. */
