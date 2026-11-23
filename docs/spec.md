@@ -99,6 +99,10 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   mode and a one-line reason. An overflow to `general` keeps the routed run chain; `retry_of` keeps the tier; a
   land repair of a light job runs as standard. Any failure, timeout or the toggle off runs the active preset in a
   tab. (22.22)
+- Imp placement mode (Settings, replacing the routing toggle; `imp` first, other roles later): `fixed` runs the
+  active preset; `even` rotates through presets the owner picks, so each gets about the same number of jobs over
+  the last day (spreading work across subscriptions); `auto` is the routing above. Overflow, retry and repair
+  keep the place they would have under the chosen mode. (22.30)
 - A headless worker runs a continuable role without a tab, in its harness's non-interactive mode, and keeps its
   native session. A question ends its turn and `hud_respond` resumes the session with the answer; `hud_send` and
   land repairs resume it the same way, within the same `resume_s` rules as a closed tab worker. The owner can read

@@ -135,6 +135,11 @@ The owner approved the lean spec and resolved the draft questions:
   seat, so it can borrow any role's instructions for one job (`instructions: "<role>"`), letting a model comparison
   or an owner-named model run with the implementer prompt without editing role files. `imp` still rejects
   placement options; its tier stays the MCP's routing.
+- **D-2026-11-22-30** (§2.1.4): The owner runs several subscriptions side by side. `imp` gets a placement mode:
+  `fixed` (one preset), `even` (rotate chosen presets by job count over the last day) or `auto` (routing). imp
+  first, other roles later. Comparisons on landed astra jobs showed sol found the same root causes at about 40%
+  of the cost, so tier is not model strength (astra is often unnecessary); the auto mapping is re-tuned after the
+  neon and hydrogen comparison results, owner approves the mapping.
 - **D-2026-11-21-01** (§2.1.2): Skip pre-input launch failures for that dispatch; report the places tried.
 - **D-2026-11-21-02** (§2.1.2): Grok paused; switch off `grok` and `xai`, remove Grok `imp` presets.
   The shipped `imp` combinations include Antigravity Hydrogen at high.
