@@ -7,6 +7,7 @@ const text = (t: string) => ({ type: 'text' as const, text: t });
 
 /** The engine beneath the mod: every tool call answers `raw()`, as the MCP server's one text block. */
 function engine(on: On, raw: () => string) {
+  mock.env(on, {});
   on('turn.start', (_, e) => ({ turnId: e.turnId }));
   on('tool.call', () => ({ result: raw(), text: raw(), ref: 1 }));
 }

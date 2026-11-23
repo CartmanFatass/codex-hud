@@ -49,7 +49,7 @@ export function mergeNotice(text: string, turn: Turn): string | undefined {
 }
 
 // A job id, or a shell variable/glob standing for one: another project's own jobs/ folder is not HUD's.
-const REPORT_PATH = /\/jobs\/(j[0-9a-f]{16}|[$*][^/\s]*)\/report\.md\b/;
+const REPORT_PATH = /(?:^|\/)jobs\/(j[0-9a-f]{16}|[$*][^/\s]*)\/report\.md\b/;
 const READER = /\b(?:cat|head|tail|less|more|bat|nl|tac|sed|awk|grep|rg|cut)\b/;
 
 /** The one-line refusal for a read of a job report file; undefined for any other read. */

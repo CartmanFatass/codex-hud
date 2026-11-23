@@ -518,7 +518,11 @@ Claude's user scope. Selecting `claude` alone does not install the mod. To try i
   (`ANSWERED qN from panel`); a retry records the request for the main session to decide; `/stop` asks first unless the job is
   finished. `/land <job>` starts the land flow itself with `hud_land` on the session's HUD connection, asking first when the job's report
   is unread. There is no per-slice try action.
-- **Report reads.** A `Read`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command, on `…/jobs/<id>/report.md` is refused with
+- **Dispatch convention.** The mod shortens only the shipped convention in `hud_roster`; project and owner conventions pass through unchanged.
+  In the main session, new `imp` and `frontend-imp` jobs require explicit `isolation` (not retries), read-only roles use no worktree,
+  and new tickets require explicit `owner_try`. A model call to `hud_close` on a running job asks the owner first.
+  While the mod watch is live, use its events instead of another `hud watch`, `hud_wait`, or `hud_read` with positive `wait_ms`.
+- **Report reads.** `Read`, `Grep`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command on `…/jobs/<id>/report.md` is refused with
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` Other reads pass. A worker
   session (`HUD_JOB_DIR` set) has no `hud_read` and may read the file, as `from_jobs` hands reports to workers as files.
 

@@ -6,7 +6,7 @@ export function watchProcess($: EngineInterface, cwd: string, home: string, proj
   lastDelivery: () => number, receive: (lines: string[], at: unknown) => Promise<void>,
   band: (record: Record<string, unknown>) => Promise<void>) {
   let child: ReturnType<typeof $.process.spawn> | undefined, ready: Promise<void> | undefined;
-  let retry: Timer | undefined, sleeper: Timer | undefined, stopped = false, failures = 0;
+  let retry: Timer | undefined, sleeper: Timer | undefined, stopped = false, live = false, failures = 0;
   // Empty starts a bounded catch-up. Only a clean sleep has a cursor to replay from.
   let cursor = '';
   const delays = [1000, 5000, 15000];
@@ -32,10 +32,10 @@ export function watchProcess($: EngineInterface, cwd: string, home: string, proj
         while ((nl = buffer.indexOf('\n')) >= 0) {
           const record = JSON.parse(buffer.slice(0, nl));
           buffer = buffer.slice(nl + 1);
-          if (record.type === 'ready') { cursor = ''; signal(); }
+          if (record.type === 'ready') { live = true; cursor = ''; signal(); }
           if (record.type === 'wake' && Array.isArray(record.lines) && record.lines.every((s: unknown) => typeof s === 'string')) await receive(record.lines, record.at);
           if (record.type === 'band') await band(record);
-          if (record.type === 'sleep') { cursor = record.cursor; sizes = record.sizes; }
+          if (record.type === 'sleep') { live = false; cursor = record.cursor; sizes = record.sizes; }
         }
       }
       if ((await child.result).code !== 0) throw new Error('hud watch exited unexpectedly');
@@ -56,12 +56,13 @@ export function watchProcess($: EngineInterface, cwd: string, home: string, proj
       }
     } finally {
       signal(); // Missing binary or failed registration must not block a tool call.
+      live = false;
       child = undefined;
       ready = undefined;
     }
   }
 
-  return { start, stop() {
+  return { start, live: () => live && !stopped, stop() {
     stopped = true;
     retry?.cancel(); sleeper?.cancel();
     void child?.return({ code: null, signal: 'SIGTERM' }).catch(() => {});

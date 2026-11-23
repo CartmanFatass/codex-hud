@@ -347,7 +347,11 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或�
   `/answer <job> <qN> <answer>`、`/try`（全部验收）、`/retry <job>` 和 `/stop <job>` 调用 `hud act`，效果与面板相同：回答只写一次
   `qa/qN.answer.md`、恢复无头任务并通知主会话（`ANSWERED qN from panel`）；重试只记录请求，由主会话决定；`/stop` 对未结束的任务先确认。
   `/land <job>` 通过会话的 HUD 连接直接调用 `hud_land` 开始合并，任务报告未读时先确认。没有逐条切片的试用操作。
-- **报告读取。** 对 `…/jobs/<id>/report.md` 使用 `Read`，或 `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` 命令，会被拒绝并提示
+- **派发惯例。** mod 只精简 `hud_roster` 返回的内置惯例，项目与负责人自定义的惯例原样保留。
+  在主会话中，新建 `imp` 或 `frontend-imp` 任务时须明确指定 `isolation`（重试除外），只读角色不使用工作树，
+  新建工单须明确指定 `owner_try`。模型通过 `hud_close` 关闭尚未结束的任务前，mod 会先请负责人确认。
+  mod 监听器运行时，等它送达事件，不另开 `hud watch`，也不用 `hud_wait` 或带正数 `wait_ms` 的 `hud_read`。
+- **报告读取。** 对 `…/jobs/<id>/report.md` 使用 `Read`、`Grep` 或 `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` 命令，会被拒绝并提示
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` 其他读取照常。工作者会话
   （设置了 `HUD_JOB_DIR`）没有 `hud_read`，可直接读取该文件，`from_jobs` 就是把报告作为文件交给工作者的。
 

@@ -1,7 +1,8 @@
 import type { EngineInterface, On, Timer } from 'claude-code';
 import { takeBand } from './band';
 import { offerCommands } from './commands';
-import { mergeChanges, type Turn } from './compact';
+import { mergeChanges, mergeNotice, type Turn } from './compact';
+import { registerConvention, waitRequest } from './convention';
 import { watchProcess } from './watch';
 
 const WAKE = { plugin: 'hud-mod', key: 'wake' } as const;
@@ -73,6 +74,7 @@ async function wakeLane($: EngineInterface, cwd: string, turn: Turn) {
   schedule(100);
   return {
     start: watch.start,
+    live: watch.live,
     stop() { watch.stop(); timer?.cancel(); },
     async stopTurn() { aborted = true; await save(); },
     async begin(id: string) {
@@ -94,6 +96,7 @@ async function wakeLane($: EngineInterface, cwd: string, turn: Turn) {
 
 export function registerWake(on: On, turn: Turn) {
   let lane: Awaited<ReturnType<typeof wakeLane>> | undefined;
+  registerConvention(on, () => lane?.live() ?? false);
   on('mcp.connect', { server: /(?:^|_)hud$/ }, async ($, e, next) => {
     if (await inPane($) && (await $.session.surfaces()).length) await $.env.set('HUD_CLAUDE_MOD', '1').catch(() => {});
     return next(e);
@@ -121,13 +124,25 @@ export function registerWake(on: On, turn: Turn) {
   });
   on('session.end', (_, e, next) => { if (e.reason !== 'clear') lane?.stop(); return next(e); });
   on('command.run', { command: 'hud' }, async (_, e, next) => { await lane?.start(); return next(e); });
-  on('tool.call', async (_, e, next) => {
+  on('tool.call', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e);
     const hud = /^mcp__(?:\w*_)?hud__hud_/.test(e.tool);
-    if (hud && e.agentId === undefined) await lane?.start();
+    // A fallback wait must not bring a sleeping/failed watch back just to compete with it.
+    if (hud && !waitRequest(e)) await lane?.start();
     const ran = await next(e);
-    if (e.agentId === undefined) await lane?.afterTool();
-    if (!hud || e.agentId !== undefined || ran.deny !== undefined || ran.isError || ran.text === undefined) return ran;
+    await lane?.afterTool();
+    if (!hud || ran.deny !== undefined || ran.isError || ran.text === undefined || await $.env.get('HUD_JOB_DIR') !== undefined) return ran;
     const text = mergeChanges(ran.text, turn);
     return text === undefined ? ran : { result: text };
-  });
+  }).catch((_, e, next) => next(e));
+
+  // Fallback job notices: repeated HUD lines in a Monitor row shrink to what is new.
+  on('session.append', { origin: { kind: 'task-notification' } }, async ($, e, next) => {
+    if (e.agentId !== undefined || await $.env.get('HUD_JOB_DIR') !== undefined) return next(e);
+    const content = e.message.content.map((block) => {
+      const text = block.type === 'text' && typeof block.text === 'string' ? mergeNotice(block.text, turn) : undefined;
+      return text === undefined ? block : { ...block, text };
+    });
+    return next(content.some((block, i) => block !== e.message.content[i]) ? { ...e, message: { ...e.message, content } } : e);
+  }).catch((_, e, next) => next(e));
 }
