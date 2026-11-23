@@ -190,7 +190,7 @@ HUD 排队取得 `main-checkout` 租约，在新的分离工作树中运行 `gat
 出现信任对话框则拒绝，失败原因写明 `hud trust <cwd>`。会话留在各 CLI 自己的存储里。
 herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
-对于 pi、Claude Code 或 Antigravity（`agy`）上可继续的角色，`hud_create({role, task, mode: "headless"})` 不打开标签页，仍可在面板查看进度或停止任务。每轮都启动新进程并沿用同一原生会话，输出追加到 `stdout.jsonl` 和 `stderr.log`。pi 的会话保存在任务的 `sessions/` 下；Claude Code 和 Antigravity 使用各自的原生会话存储。无界面 CLI 与标签页模式使用相同的提示词和工作者 MCP 配置：Claude Code 接收任务的 `--mcp-config`，Antigravity 使用已安装的 `hud` 服务并继承任务环境。它没有标签页可切换：在其任务卡上按 `g` 会打开详情，其中「输出」块显示 `stdout.jsonl` 的最新几行（工具调用、助手文字和错误，最多 12 行；任务运行时标注「运行中」），并按面板的采集节奏跟随日志；停止（`X`）与其他任务一样可用。提问即结束本轮；通过 `hud_respond` 或面板作答后，用答案恢复同一会话。提交报告后工作者关闭。无界面任务运行期间收到的后续消息按发送顺序排入下一轮；若本轮以提问结束，则与答案一起送达。关闭后，后续消息和落地修复在 `resume_s` 内恢复同一会话，超时则创建修复任务。
+对于 pi、Claude Code 或 Antigravity（`agy`）上可继续的角色，`hud_create({role, task, mode: "headless"})` 不打开标签页，仍可在面板查看进度或停止任务。每轮都启动新进程并沿用同一原生会话，输出追加到 `stdout.jsonl` 和 `stderr.log`。pi 的会话保存在任务的 `sessions/` 下；Claude Code 和 Antigravity 使用各自的原生会话存储。无界面 CLI 与标签页模式使用相同的提示词和工作者 MCP 配置：Claude Code 接收任务的 `--mcp-config`，Antigravity 使用已安装的 `hud` 服务并继承任务环境。它没有标签页可切换：在其任务卡上按 `g` 会打开详情，其中「输出」块显示 `stdout.jsonl` 的最新几行（工具调用、助手文字和错误，最多 12 行；任务运行时标注「运行中」），并按面板的采集节奏跟随日志；停止（`X`）与其他任务一样可用。提问即结束本轮；通过 `hud_respond` 或面板作答后，用答案恢复同一会话。有效声明报告后，工作者在回合结束时关闭，即使报告尚未读取。无界面任务运行期间收到的后续消息按发送顺序排入下一轮；若本轮以提问结束，则与答案一起送达。关闭后，后续消息和落地修复在 `resume_s` 内恢复同一会话，超时则创建修复任务。
 
 Sonic 以非交互方式运行一次 pi 查询，不打开工作标签页或窗格。主会话通过 `hud_create` 发起，工作任务通过 `hud_sonic` 发起并收取结果。两者都保留普通任务目录：`stdout.jsonl` 和 `stderr.log` 记录 pi 的输出，`report.md` 通常是已声明的报告。若运行器退出却未留下退出回执，`STATUS.json` 会记录可确认的退出码或信号、标准错误日志的末尾，以及是否观察到父会话重启。若尚无报告且会话末尾有助手文本，HUD 会将该文本写入 `report.md` 并标记为部分报告；任务状态仍为失败。Sonic 可以发布进度和获取租约，但不能提问或接收后续消息，也没有空闲宽限期。sonic 角色文件可设置 `check_s`（默认 600）、`stall_s`（180）和 `max_s`（1800），均为正整数秒；`hud_roster({detail:true})` 显示生效值。HUD 在每个检查点停止陷入循环的查询（`looping`），否则发布一条进度并让同一个 pi 进程继续运行。若 `stall_s` 内标准输出未增长且没有工作任务进度，则以 `stalled` 停止；达到硬上限则以 `timeout` 停止。这些失败会保留已有的标准输出和最新进度。用 `hud_create({role:"sonic", retry_of:job})` 重试已停止的查询。新任务以一条说明停止原因的简短消息，从原任务 `sonic-session.jsonl` 的私有副本继续。如果会话不可用或 pi 在接收输入前拒绝打开它，pi 将收到原简报，以及未完成报告末尾最多 8 KiB 的内容（没有报告时取标准输出）。
 
@@ -314,8 +314,10 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或�
 
 ## Claude Code mod
 
-`integrations/claude-mod/` 是 Claude Code 的 function-hooks 插件（`hud-mod`），让主会话的上下文保持精简。用 `./install --with claude,claude-mod` 与 Claude 集成一起安装，或运行
-`claude --plugin-dir integrations/claude-mod` 试用。面板仍是 herdr 面板。
+`integrations/claude-mod/` 是 Claude Code 的 function-hooks 插件（`hud-mod`），让主会话的上下文保持精简。
+运行 `./install --with claude,claude-mod` 可与 Claude 集成一起安装。`claude-mod` 扩展会将当前检出注册为
+`myhud-local` 插件市场，并在 Claude 的用户级范围内安装 `hud-mod@myhud-local`。仅选择 `claude` 不会安装此插件。
+如需试用，运行 `claude --plugin-dir integrations/claude-mod`。面板仍是 herdr 面板。
 
 - **事件唤醒。** 在 herdr 的交互式主会话中，进入 HUD 项目或首次调用 HUD 工具时，mod 启动 `hud watch --mod`。
   它只发送监听器的状态行：任务与报告通知、提问、sonic 进度、落地与面板决定。三秒内的结算合并，提问不等窗口结束。

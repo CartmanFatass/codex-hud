@@ -57,7 +57,7 @@ export const ROLE_TOOLS = [
         default: 'none',
         description: 'Managed local Git checkout from HEAD.',
       },
-      mode: { ...text, enum: ['tab', 'headless'], description: 'Headless: continuable pi/Claude/Antigravity roles.' },
+      mode: { ...text, enum: ['tab', 'headless'], description: 'Headless: continuable pi/Claude/Antigravity; Imp routing may select it.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI only.' },
       on: { ...text, description: 'Harness/provider: pi|agy|claude|codex|grok|chatgpt|gemini|argon|flow.' },
       preset: { ...text, description: 'Preset name; excludes on.' },
@@ -81,7 +81,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_read',
-    "List active project jobs + caller's unread settled reports or collect job/jobs. Default digest: summary, changed paths, open questions, check results, latest progress. Full adds paged report text/path/diagnostics. Reading settled reports closes workers; inspect via hud_peek.",
+    "List active project jobs + caller's unread settled reports or collect job/jobs. Digest: summary, paths, questions, checks, progress. Full: paged report/path/diagnostics. Pi/CLI close at turn end with a declared report, read or not; inspect via hud_peek.",
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1, description: 'Input order; per-item errors.' },
