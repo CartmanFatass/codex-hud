@@ -23,6 +23,9 @@ machine, inside herdr. (10.02, 22.12)
   `hud_wait` (hidden from MCP-task clients), `hud_peek`, `hud_tickets`, `hud_lease`, `hud_statusline`.
   (17.02, 21.07, 22.04)
 - `hud_land({ job })` lands a settled managed worktree through the project's configured gate, fast-forward, after commands, optional push and cleanup as one flow. (22.19)
+  Lands queued behind a running one ride one integration checkout and one gate run (a land train); a job that
+  conflicts drops out and lands alone, a red train falls back to one-by-one lands without repairs, and each job
+  keeps its own receipt. (22.26)
 - `hud_read` returns a digest by default (state, result line, changed files, verdict and blockers when the report gives them); `mode: "full"` returns the whole report; `jobs` reads several at once. (22.15)
 - Thin tools over local herdr and unbundled pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
   `pi-role-reap`). The MCP opens a herdr tab for interactive workers and none for headless ones. Jobs are plain JSON under `$HUD_HOME/jobs`. (10.01)
