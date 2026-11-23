@@ -16,11 +16,11 @@
   "convention": false,
   "worktree": {
     "disposable": [
-      ".tsbuild/**",
-      "dist-test/**",
       "dist/**",
-      "hud-*.tar.gz",
-      "tmp/**"
+      "dist-test/**",
+      ".tsbuild/**",
+      "tmp/**",
+      "hud-*.tar.gz"
     ]
   },
   "land": {
