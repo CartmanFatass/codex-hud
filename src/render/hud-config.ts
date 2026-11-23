@@ -36,7 +36,7 @@ export const BAR_FIELDS = ['model', 'context', 'project', 'quota', 'tps', 'notic
 export type BarField = (typeof BAR_FIELDS)[number];
 /** Shown unless the settings say otherwise: all of them. */
 export const DEFAULT_BAR_FIELDS: readonly BarField[] = BAR_FIELDS;
-/** The panel's buttons and titles: Unicode icons, Nerd Font icons, emoji for the panes, or words alone. */
+/** The icons everywhere: Nerd Font glyphs (the default), Unicode marks, or words and ASCII alone; `emoji` is an old value that draws as Unicode. */
 export type IconMode = 'unicode' | 'nerd' | 'emoji' | 'text';
 /**
  * How the panel draws its control bar and its panes' titles, after omp: its
@@ -90,7 +90,7 @@ export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudD
     density: pick(resolveHudEnv(env, 'HUD_DENSITY'), DENSITIES, 'balanced'),
     theme: resolveTheme(env),
     glyphs: pick(resolveHudEnv(env, 'HUD_GLYPHS'), GLYPH_MODES, 'both'),
-    icons: pick(resolveHudEnv(env, 'HUD_ICONS'), ['unicode', 'nerd', 'emoji', 'text'], 'unicode'),
+    icons: pick(resolveHudEnv(env, 'HUD_ICONS'), ['unicode', 'nerd', 'emoji', 'text'], 'nerd'),
     look: pick(resolveHudEnv(env, 'HUD_LOOK'), [...LOOKS], 'tab'),
     motion: resolveHudEnv(env, 'HUD_REDUCED_MOTION') === '1' ? 'reduced' : 'full',
     context: pick(resolveHudEnv(env, 'HUD_CONTEXT'), ['used', 'remaining'], 'used'),

@@ -6,9 +6,11 @@ import { boardInspectorRows } from './work-inspector.js';
 import { homeRows, newestCard } from './home-view.js';
 import { activeFilter, homeAnchor, homeCursor, homeTarget, onlyTry, type ClassicSplitNav, type HomeCursor } from './monitor-state.js';
 import { skillsRows } from './skills-view.js';
+import { roleIcon } from './model-glyphs.js';
+import { roleMark } from './work-jobs.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
-import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, homeDoneCount, mark, type FooterHints } from './workboard-rows.js';
+import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, homeDoneCount, mark, stateMark, type FooterHints } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
 import { modelInput, pickOf } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
@@ -107,12 +109,15 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const legend = (label: string, ...groups: string[][]) => groups.map((group, i) =>
     boardRow(`${theme.board.muted(fit(i ? '' : t(label).toLowerCase(), 7))} ${group.join('  ')}`));
   const entry = (symbol: string, label: string) => `${symbol} ${t(label).toLowerCase()}`;
+  const role = (name: string) => entry(roleMark(name), name);
   const { active, attention, danger, muted, stalled, success } = theme.board;
   const marks = [
     section(t('Marks'), half),
-    ...legend('Jobs', [entry(active(mark('◉', '@')), 'running'), entry(attention('?'), 'asking'), entry(stalled(mark('◷', '~')), 'stalled')],
-      [entry(success(mark('✓', '+')), 'done'), entry(danger(mark('✗', 'x')), 'failed'), entry(muted(mark('−', '-')), 'stopped')],
-      [entry(muted(mark('○', 'o')), 'queued'), entry(theme.board.roleInk.sonic(`${mark('⚡', '*')}N`), 'sonic running')]),
+    ...legend('Roles', [role('imp'), role('frontend-imp')], [role('general'), role('oracle')], [role('reviewer')]),
+    ...legend('Jobs', [entry(attention(stateMark.asking()), 'asking'), entry(danger(stateMark.failed()), 'failed'), entry(stalled(stateMark.stalled()), 'stalled')],
+      [entry(success(stateMark.unread()), 'report unread'), entry(success(stateMark.done()), 'done')],
+      [entry(muted(stateMark.stopped()), 'stopped'), entry(muted(stateMark.queued()), 'queued')],
+      [entry(theme.board.roleInk.sonic(`${roleIcon('sonic')}N`), 'sonic running')], [muted(t('a running job has no mark'))]),
     ...legend('Stages', [entry(muted(mark('●', '+')), 'passed'), entry(active(mark('◐', '@')), 'current')],
       [entry(muted(mark('○', 'o')), 'not reached'), entry(theme.board.frame(mark('○', 'o')), 'unknown')], [muted(['read', 'edit', 'test', 'report', 'land'].map((stage) => t(stage)).join(mark('▸', '>')))]),
     ...legend('Time', [muted(t('quiet {age}', { age: ageText(4) })) + ' ' + t('no output for 3m')], [stalled(t('quiet {age}', { age: ageText(12) })) + ' ' + t('no output, stalled')]),

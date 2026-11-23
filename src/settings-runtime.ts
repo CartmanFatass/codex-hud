@@ -9,7 +9,7 @@ export function runtimeSettings(): HudSettings {
     : {
         ...defaultSettings(),
         theme: display.theme,
-        icons: display.icons === 'text' ? ('text' as const) : ('unicode' as const),
+        icons: display.icons === 'nerd' || display.icons === 'text' ? display.icons : ('unicode' as const),
         barStyle: display.barStyle,
         barFields: display.barFields,
       };

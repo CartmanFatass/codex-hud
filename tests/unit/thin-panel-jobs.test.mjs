@@ -154,8 +154,8 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes and ten-min
     assert.ok(!text.includes('Folded old succ'));
     assert.ok(!text.includes('WRONG-PANE'));
     // A job row carries its lane's short name as its id (a child under a lane header: the head of its brief's heading), never the title.
-    for (const id of ['review car', 'list the s', 'check the ', '◉  PANEL-THIN']) {
-      const band = plain(frame).find((l) => l.includes(id));
+    for (const id of ['review car', 'list the s', 'check the ', 'PANEL-THIN']) {
+      const band = plain(frame).find((l) => l.includes(id) && !/asks|问/.test(l));
       assert.match(band, lang === 'en' ? /\d+m(?: quiet \d+m)?\s*$/ : /\d+分(?: 静\d+分)?\s*$/);
     }
     if (process.env.PANEL_DUMPS)
@@ -184,7 +184,7 @@ test('Home frame folds a running sonic child into ⚡1 on its parent row with no
   const board = f.pipeline.workboard(f.tree);
   const frame = f.render(board, 45);
   const lines = plain(frame);
-  const parent = lines.find((line) => /^◉ +PANEL-THIN/.test(line));
+  const parent = lines.find((line) => /^⚒ +PANEL-THIN/.test(line));
   assert.ok(parent && parent.includes('⚡1'), lines.join('\n'));
   assert.ok(!lines.some((line) => line.includes('Inspect synthetic')));
   assert.ok(!lines.some((line) => line.includes('SONIC-PRIVATE-LABEL')));
@@ -203,12 +203,12 @@ test('Home shows questions and lanes with cards without duplicating asking cards
   for (const width of [40, 56]) {
     const home = plain(f.render(board, 180, width));
     for (const line of home) assert.equal(visualLength(line), width, line);
-    const at = home.findIndex((l) => /^\? {2}PANEL-THIN/.test(l)), card = home.slice(at, at + 2);
+    const at = home.findIndex((l) => /^⚒ \? {2}PANEL-THIN/.test(l)), card = home.slice(at, at + 2);
     assert.match(card[0], /asks 3 opts +\d+m$/, `${width} columns: the question is a row with its option count`);
-    assert.match(card[1], /^ {3}Where should the model chip go/, 'and its text under it');
+    assert.match(card[1], /^ {5}Where should the model chip go/, 'and its text under it');
     assert.match(card[1], /…\s*$/, 'a long question is cut with an ellipsis');
     assert.doesNotMatch(card.join('\n'), /blocked|b\) beside|qa\/q3\.md|⏎|default:/);
-    const row = home.findIndex((l) => /^◉ +PANEL-THIN/.test(l)); // one job left in the lane: its row, no lane header
+    const row = home.findIndex((l) => /^⚒ +PANEL-THIN/.test(l)); // one job left in the lane: its row, no lane header
     assert.ok(at < row);
     assert.doesNotMatch(home.join('\n'), /Decided for you|PANEL-THIN · imp q[12]/);
     assert.equal(home.filter((l) => /asks 3 opts/.test(l)).length, 1, 'asking job stays in its row above, never duplicated in the lane');
@@ -339,9 +339,9 @@ test('a folded lane header ends in one state glyph per job it shows, oldest firs
   const row = (label) => lines().find((l) => l.startsWith(label + ' '));
   assert.match(row('STRIP'), /^STRIP\s+− ◉$/, 'the closed job is in the finished row, not the strip');
   assert.equal(row('BAD'), undefined, 'one job: its own row, no header to fold');
-  assert.match(lines(40, initialMonitorState()).find((l) => /^✗ +BAD /.test(l)), /✗ failed/);
+  assert.match(lines(40, initialMonitorState()).find((l) => /^⚒ ✗ +BAD /.test(l)), /✗ failed/);
   const home = lines(40, initialMonitorState());
-  assert.match(home[home.findIndex((l) => /^STRIP\s+/.test(l)) + 1], /^ {2}\S +STRIP job/, 'its jobs follow the header');
+  assert.match(home[home.findIndex((l) => /^STRIP\s+/.test(l)) + 1], /^ {2}\S( \S)? +STRIP job/, 'its jobs follow the header');
   setDisplayConfig({ theme: 'none', icons: 'text', glyphs: 'text' });
   assert.match(row('STRIP'), /^STRIP\s+- @$/);
 });
@@ -395,7 +395,7 @@ test('statusline notices and explicit detail counts read job folders with no rol
   const result = run();
   assert.equal(result.status, 0, result.stderr);
   // The three live imps in this pane (another pane's, settled and old ones stay out): one asking.
-  assert.match(stripAnsi(result.stdout), /│ ⚒3 +!1\s*$/, 'the shared bar counts live workers by role; the asking one is a `!1`');
+  assert.match(stripAnsi(result.stdout), /│ \uF0AD3 +!1\s*$/, 'the shared bar counts live workers by role; the asking one is a `!1`');
   assert.doesNotMatch(result.stdout, /thin job cards|asks|imp/, 'no job title or role in the zone');
   const details = run(['--details']);
   assert.equal(details.status, 0, details.stderr);

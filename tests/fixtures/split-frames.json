@@ -2,7 +2,7 @@
   "home-busy-40-en": [
     " Home ?1  Project ?2  Control",
     "",
-    "? 3 waiting for you · ✗1        ◉ 5 ? ✓●",
+    "? 3 waiting for you · ✗1",
     "? NATIVE-TREE                ⚒ asking 0m",
     "┃ Question: Which synthetic option?",
     "✗ EXPORT-CSV                ⚡ failed 9m",
@@ -44,7 +44,7 @@
   "home-short-40-en": [
     " Home ?1  Project ?2  Control",
     "",
-    "? 3 waiting for you · ✗1        ◉ 5 ? ✓●",
+    "? 3 waiting for you · ✗1",
     "? NATIVE-TREE                ⚒ asking 0m",
     "┃ Question: Which synthetic option?",
     "✗ EXPORT-CSV                ⚡ failed 9m",
@@ -70,7 +70,7 @@
   "home-idle-40-en": [
     " Home  Project ?2  Control    models off",
     "",
-    "? 2 waiting for you              ◉ 3 ✓●3",
+    "? 2 waiting for you",
     "✓● NATIVE-TR…                       ⚖ 2m",
     "? Waiting for you      2 asks · 1 to try",
     "◐ Progress    M3b · 1 to try · 1 working",
@@ -432,7 +432,7 @@
   "home-busy-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
     "",
-    "? 3 项等你处理 · ✗1             ◉ 5 ? ✓●",
+    "? 3 项等你处理 · ✗1",
     "? NATIVE-TREE               ⚒ 提问中 0分",
     "┃ Question: Which synthetic option?",
     "✗ EXPORT-CSV                 ⚡ 失败 9分",
@@ -474,7 +474,7 @@
   "home-short-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
     "",
-    "? 3 项等你处理 · ✗1             ◉ 5 ? ✓●",
+    "? 3 项等你处理 · ✗1",
     "? NATIVE-TREE               ⚒ 提问中 0分",
     "┃ Question: Which synthetic option?",
     "✗ EXPORT-CSV                 ⚡ 失败 9分",
@@ -500,7 +500,7 @@
   "home-idle-40-zh": [
     " 首页  项目 ?2  控制             模型 关",
     "",
-    "? 2 项等你处理                   ◉ 3 ✓●3",
+    "? 2 项等你处理",
     "✓● NATIVE-TR…                      ⚖ 2分",
     "? 等你处理           2 待决定 · 1 待试用",
     "◐ 进度         M3b · 1 待试用 · 1 工作中",
@@ -862,7 +862,7 @@
   "home-busy-80-en": [
     " Home ?1  Project ?2  Control                                         models off",
     "",
-    "? 3 waiting for you · ✗1                                                ◉ 5 ? ✓●",
+    "? 3 waiting for you · ✗1",
     "? NATIVE-TREE                                                        ⚒ asking 0m",
     "┃ Question: Which synthetic option?",
     "✗ EXPORT-CSV                                                        ⚡ failed 9m",
@@ -904,7 +904,7 @@
   "home-busy-120-en": [
     " Home ?1  Project ?2  Control                                                                                 models off",
     "",
-    "? 3 waiting for you · ✗1                                                                                        ◉ 5 ? ✓●",
+    "? 3 waiting for you · ✗1",
     "? NATIVE-TREE                                                                                                ⚒ asking 0m",
     "┃ Question: Which synthetic option?",
     "✗ EXPORT-CSV                                                                                                ⚡ failed 9m",

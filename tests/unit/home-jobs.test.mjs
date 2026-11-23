@@ -1,4 +1,4 @@
-/** home-compact/02 and /03: one row per job on Classic Home (glyph, id, stage strip, executor group, ⚡N, age, silence; a reason for a job that needs the owner), a running job's sentence under it, a header only for a lane of several jobs, folded queued and finished jobs. */
+/** home-compact/02, /03 and /06: one row per job on Classic Home (role icon, the state mark of an exception, id, stage strip, ⚡N, age, silence; a reason for a job that needs the owner; no model, effort or route mark), a running job's sentence under it, a header only for a lane of several jobs, folded queued and finished jobs. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -12,33 +12,36 @@ import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { ticketTitle } from '../../dist/collectors/ticket-title.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { workStateGlyph } from '../../dist/render/work-card.js';
+import { roleIcon } from '../../dist/render/model-glyphs.js';
 import { stageCells } from '../../dist/render/job-stages.js';
 import { homeRows } from '../../dist/render/home-view.js';
 import { theme } from '../../dist/render/colors.js';
 
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/home-jobs-frames.json', import.meta.url), 'utf8'));
 
-test('a busy run of 14 jobs: frames in EN/ZH at 120, 80, 50 and 42 columns, none wider than the panel, no title on any job row', () => {
+test('a busy run of 14 jobs: frames in EN/ZH at 120, 80, 50 and 42 columns (Nerd icons), at 80 and 42 in the Unicode and text sets too, none wider than the panel, no title on any job row', () => {
   const frames = jobFrames();
   assert.deepEqual(frames, expected);
   const titles = [...new Set(jobsBoard().workers.map((w) => w.ticketTitle))].filter((title) => title && title !== 'Queued synthetic ticket' && title !== 'Finished synthetic ticket');
   for (const [name, lines] of Object.entries(frames)) {
     const width = Number(name.split('-')[1]);
+    if (/-(unicode|text)$/.test(name)) assert.doesNotMatch(lines.join('\n'), /[\uE000-\uF8FF]/, `${name}: no Nerd glyph outside the nerd set`);
     for (const line of lines) assert.ok(visualLength(line) <= width, `${name}: ${line}`);
     assert.doesNotMatch(lines.join('\n'), /Implement the synthetic ticket/, `${name}: the raw task text is never a title`);
-    if (name.startsWith('en-') && !name.endsWith('routes')) {
+    if (name.startsWith('en-') && /^en-\d+$/.test(name)) {
       const shown = titles.filter((title) => lines.some((l) => l.includes(title.slice(0, 12))));
       assert.deepEqual(shown, ['Cache the tsc project graph'], `${name}: only the lane header names a ticket`);
     }
   }
 });
 
-test('a job row is its state glyph, ticket id, stage strip, executor group, ⚡N and age (and silence); a child under a header repeats the id', () => {
+test('a job row is its role icon, the state mark of an exception, ticket id, stage strip, ⚡N and age (and silence), with no model, effort or route; a child under a header repeats the id', () => {
   const lines = jobFrame(80);
   const row = (id) => lines.find((l) => l.includes(`${id} `) && /[●◐○]{5}/.test(l));
-  assert.match(row('metrics-lite/01'), /^◉ {2}metrics-lite\/01 {2}●◐○○○ {2}✦◎◕ ⚡2 +6m quiet 4m$/);
-  assert.match(lines.find((l) => /^ {2}◉ {2}perf-ts\/05 .*14m$/.test(l)), /^ {2}◉ {2}perf-ts\/05 {5}●●◐○○ {2}⚒◎◕ ⚡1 +14m$/, 'the imp under the header: id, strip, role + provider + effort, helper count');
-  assert.match(lines.find((l) => /^ {2}◉ {2}perf-ts\/05 .*3m$/.test(l)), /^ {2}◉ {2}perf-ts\/05 {5}◐○○○○ {2}⚖✻● +3m$/, 'the reviewer: another role icon, the read cell current');
+  assert.match(row('metrics-lite/01'), /^\uF013 {3}metrics-lite\/01 {2}●◐○○○ {2}\uF0E72 +6m quiet 4m$/, 'a running general: its icon, no state mark, no model');
+  assert.match(lines.find((l) => /^ {2}\uF0AD {3}perf-ts\/05 .*14m$/.test(l)), /^ {2}\uF0AD {3}perf-ts\/05 {5}●●◐○○ {2}\uF0E71 +14m$/, 'the imp under the header: its icon, id, strip, helper count');
+  assert.match(lines.find((l) => /^ {2}\uF002 {3}perf-ts\/05 .*3m$/.test(l)), /^ {2}\uF002 {3}perf-ts\/05 {5}◐○○○○ +3m$/, 'the reviewer: another role icon, the read cell current');
+  assert.doesNotMatch(lines.join('\n'), /[◉▂▄▆∅◎▲✻]|sol|neon/, 'no running glyph, model or route mark on a row');
   assert.equal(lines.filter((l) => /^\S+\/\d\d /.test(l)).length, 1, 'a header only where a lane shows several jobs');
   const column = lines.filter((l) => /[●◐○]{5}/.test(l)).map((l) => visualLength(l.slice(0, l.search(/[●◐○]{5}/))));
   assert.equal(column.length, 7, 'seven rows carry a strip: the folded and the reasoned ones do not');
@@ -48,7 +51,7 @@ test('a job row is its state glyph, ticket id, stage strip, executor group, ⚡N
 });
 
 test('rows keep their order while progress changes: a job going quiet, waking or moving a stage does not swap places (panel-polish/04)', () => {
-  const ids = (board) => jobFrame(80, 'en', board).flatMap((l) => /^\s*\S+\s+(\S+\/\d+)\s+[●◐○]{5}/.exec(l)?.slice(1) ?? []);
+  const ids = (board) => jobFrame(80, 'en', board).flatMap((l) => /^\s*\S\s+(?:\S\s+)?(\S+\/\d+)\s+[●◐○]{5}/.exec(l)?.slice(1) ?? []);
   const changed = (edit) => { const b = jobsBoard(), lanes = b.lanes.map((l) => ({ ...l, workers: l.workers.map(edit) })); return { ...b, lanes, workers: lanes.flatMap((l) => l.workers) }; };
   const before = ids(jobsBoard());
   const quiet = changed((w) => (w.state === 'working' && w.role !== 'sonic' ? { ...w, work: { ...w.work, activityAt: NOW - 40 * 60_000 } } : w));
@@ -83,17 +86,17 @@ test('a job that needs the owner shows the reason where the strip would be: the 
   byId('cache-v1/06').reportUnread = true;
   Object.assign(byId('auth-refresh/04'), { flow: { kind: 'land', state: 'failed', steps: [{ key: 'gate', state: 'failed' }, { key: 'merge', state: 'pending' }], step: 'gate[2]: npm run test:mjs', updatedAt: NOW - 60_000 } });
   const lines = jobFrame(80, 'en', board);
-  const asking = lines.findIndex((l) => l.startsWith('?  cache-v2/03'));
-  assert.match(lines[asking], /^\? {2}cache-v2\/03 {2}asks 2 opts +⚡1 4m$/, 'the row: asks, its option count');
-  assert.match(lines[asking + 1], /^ {3}Keep fallback TTL scan on startup\?\s*$/, 'and the question under it');
-  assert.match(lines.find((l) => l.startsWith('✗  export-csv/02')), /^✗ {2}export-csv\/02 {4}✗ HTTP 429 rate limit; no report written +9m$/);
-  assert.match(lines.find((l) => /^✓ {2}auth-refresh\/04/.test(l)), /^✓ {2}auth-refresh\/04 {2}✗ gate red +4m$/);
-  assert.match(lines.find((l) => /^✓● cache-v1\/06/.test(l)), /^✓● cache-v1\/06 {6}● report unread +3m$/);
+  const asking = lines.findIndex((l) => l.startsWith('\uF0AD \uF059 cache-v2/03'));
+  assert.match(lines[asking], /^\uF0AD \uF059 cache-v2\/03 {2}asks 2 opts +\uF0E71 4m$/, 'the row: role, asking mark, asks, its option count');
+  assert.match(lines[asking + 1], /^ {4}Keep fallback TTL scan on startup\?\s*$/, 'and the question under it');
+  assert.match(lines.find((l) => l.startsWith('\uF013 \uF057 export-csv/02')), /^\uF013 \uF057 export-csv\/02 {4}\uF057 HTTP 429 rate limit; no report written +9m$/);
+  assert.match(lines.find((l) => /^\uF013 \uF058 auth-refresh\/04/.test(l)), /^\uF013 \uF058 auth-refresh\/04 {2}\uF057 gate red +4m$/);
+  assert.match(lines.find((l) => /^\uF0AD \uF0E0 cache-v1\/06/.test(l)), /^\uF0AD \uF0E0 cache-v1\/06 {6}\uF0E0 report unread +3m$/);
   const zh = jobFrame(80, 'zh', Object.assign(jobsBoard('zh'), {}));
-  assert.match(zh.find((l) => l.startsWith('?  cache-v2/03')), /^\? {2}cache-v2\/03 {2}问 2选 +⚡1 4分$/);
+  assert.match(zh.find((l) => l.startsWith('\uF0AD \uF059 cache-v2/03')), /^\uF0AD \uF059 cache-v2\/03 {2}问 2选 +\uF0E71 4分$/);
   const unread = jobFrame(80, 'zh', (() => { const b = jobsBoard('zh'); b.workers.find((w) => w.displayId === 'cache-v1/06').reportUnread = true; return b; })());
-  assert.match(unread.find((l) => /^✓● cache-v1\/06/.test(l)), /● 报告未读 +3分$/);
-  for (const line of [...lines, ...zh]) if (/asks|问 |✗ |report unread/.test(line)) assert.doesNotMatch(line, /[●◐○]{5}/, 'no strip beside a reason');
+  assert.match(unread.find((l) => /^\uF0AD \uF0E0 cache-v1\/06/.test(l)), /\uF0E0 报告未读 +3分$/);
+  for (const line of [...lines, ...zh]) if (/asks|问 |\uF057 |report unread/.test(line)) assert.doesNotMatch(line, /[●◐○]{5}/, 'no strip beside a reason');
   // Enter opens the question into the slab; a row of its own again once closed.
   const key = targetKey({ kind: 'worker', laneId: jobsBoard().lanes[0].id, workerId: jobsBoard().workers[0].id });
   const slab = jobFrame(80, 'en', jobsBoard(), withState(initialMonitorState(), { home: { expanded: new Set([key]) } }));
@@ -122,59 +125,59 @@ test('a running job’s current sentence sits dim under its row: one line, two f
   const at = (frame, id) => frame.findIndex((l) => l.includes(`${id} `) && /[●◐○]{5}/.test(l));
   const wide = jobFrame(120), narrow = jobFrame(80), tight = jobFrame(42, 'zh');
   const imp = at(wide, 'perf-ts/05');
-  assert.deepEqual(wide.slice(imp + 1, imp + 3).map((l) => l.trimEnd()), ['     Rewriting the graph cache invalidation, then adding its eviction test to the tsc suite so a stale project graph can', '     never be served after a config change'], 'two lines at 120 columns');
-  assert.match(narrow[at(narrow, 'perf-ts/05') + 1], /^ {5}Rewriting the graph cache invalidation, then adding its eviction test to t…\s*$/, 'one line at 80, cut with …');
-  assert.match(narrow[at(narrow, 'metrics-lite/01') + 1], /^ {3}Trimming the idle poll interval in the watcher\s*$/, 'under the id, dim');
-  assert.match(narrow[narrow.findIndex((l) => l.includes('perf-ts/05 ') && l.includes('3m')) + 1], /^ {5}Reading the cache diff against the ticket\s*$/, 'the job’s own latest progress line when no model sentence');
+  assert.deepEqual(wide.slice(imp + 1, imp + 3).map((l) => l.trimEnd()), ['      Rewriting the graph cache invalidation, then adding its eviction test to the tsc suite so a stale project graph', '      can never be served after a config change'], 'two lines at 120 columns');
+  assert.match(narrow[at(narrow, 'perf-ts/05') + 1], /^ {6}Rewriting the graph cache invalidation, then adding its eviction test to .*…\s*$/, 'one line at 80, cut with …');
+  assert.match(narrow[at(narrow, 'metrics-lite/01') + 1], /^ {4}Trimming the idle poll interval in the watcher\s*$/, 'under the id, dim');
+  assert.match(narrow[narrow.findIndex((l) => l.includes('perf-ts/05 ') && l.includes('3m')) + 1], /^ {6}Reading the cache diff against the ticket\s*$/, 'the job’s own latest progress line when no model sentence');
   const docs = at(narrow, 'docs-sweep/04');
   assert.match(narrow[docs + 1], /^\S/, 'no sentence, no row: the next row is another job’s');
   for (const id of ['stream-sync/05', 'auth-refresh/04', 'export-csv/02']) assert.match(narrow[at(narrow, id) + 1] ?? narrow[narrow.findIndex((l) => l.includes(id)) + 1], /^\S/, `${id}: a settled job keeps its folds, no sentence`);
   assert.match(tight[at(tight, 'perf-ts/05') + 1], /…\s*$/, 'cut to fit at 42');
-  assert.ok(!narrow.some((l) => /^ {3,5}Cache the tsc project graph/.test(l)), 'never the ticket title');
+  assert.ok(!narrow.some((l) => /^ {4,6}Cache the tsc project graph/.test(l)), 'never the ticket title');
 });
 
-test('as a row narrows the right side loses the route marks, the model, the role, ⚡N and the silence; the id, the strip and the age stay', () => {
+test('as a row narrows the right side loses the silence then ⚡N; the role icon, the id, the strip and the age stay; no row carries a model or route mark', () => {
   const board = narrowBoard();
   const rows = (width) => jobFrame(width, 'en', board);
   for (const width of [48, 42]) {
     const lines = rows(width);
-    for (const id of ['auto-route/08', 'hud-doctor/01', 'statusline-workers/03', 'docs-sweep/04']) assert.match(lines.find((l) => l.includes(`${id} `)), /[●◐○]{5}.* \d+m(?: quiet \d+m)?$/, `${width} ${id}: id, strip and age stay`);
-    assert.match(lines.find((l) => /export-csv\/02/.test(l)), / ✗ HTTP .* 9m$/, `${width}: the failure's reason stays`);
+    for (const id of ['auto-route/08', 'hud-doctor/01', 'statusline-workers/03', 'docs-sweep/04']) assert.match(lines.find((l) => l.includes(`${id} `)), /^\S [\uF000-\uF2FF ] ?\S+\/\d+ +[●◐○]{5}.* \d+m(?: quiet \d+m)?$/u, `${width} ${id}: role, id, strip and age stay`);
+    assert.match(lines.find((l) => /export-csv\/02/.test(l)), / \uF057 HTTP .* 9m$/, `${width}: the failure's reason stays`);
+    assert.doesNotMatch(lines.join('\n'), /[▂▄▆∅◎▲✻]/, `${width}: the route marks and the model are the Inspector's`);
   }
   const [wide, narrow] = [rows(48), rows(42)], row = (lines, id) => lines.find((l) => l.includes(`${id} `));
-  assert.match(row(wide, 'auto-route/08'), /●●◐○○ {2}⚒◎◕ ▆∅ ⚡2 +0m$/, '48: nothing dropped');
-  assert.match(row(narrow, 'auto-route/08'), /●●◐○○ {2}⚒ ⚡2 +0m$/, '42: the route marks and the model went; the helper count and the role stay');
-  assert.match(row(wide, 'statusline-workers/03'), /●◐○○○ {2}⚒◎◕ 6m quiet 5m$/, '48, a 21-cell id: the route marks went before the model');
-  assert.match(row(narrow, 'statusline-workers/03'), /●◐○○○ +6m$/, '42: the model, the role and last the silence went');
+  assert.match(row(wide, 'auto-route/08'), /●●◐○○ {2}\uF0E72 +0m$/, '48: nothing dropped');
+  assert.match(row(narrow, 'auto-route/08'), /●●◐○○ {2}\uF0E72 +0m$/, '42: the helper count stays');
+  assert.match(row(wide, 'statusline-workers/03'), /●◐○○○ +6m quiet 5m$/, '48, a 21-cell id: the silence stays');
+  assert.match(row(narrow, 'statusline-workers/03'), /●◐○○○ +6m$/, '42: the silence went');
   assert.match(row(narrow, 'docs-sweep/04'), /◐○○○○ +6m$/);
-  assert.match(jobFrame(42).find((l) => l.includes('metrics-lite/01 ')), /●◐○○○ {2}⚡2 6m quiet 4m$/, '42, a quiet sonic parent: the role went, the helper count and the silence stay');
-  assert.match(row(wide, 'docs-sweep/04'), /◐○○○○ {2}✦✻● 6m quiet 4m$/);
+  assert.match(jobFrame(42).find((l) => l.includes('metrics-lite/01 ')), /●◐○○○ {2}\uF0E72 6m quiet 4m$/, '42, a quiet sonic parent: the helper count and the silence stay');
 });
 
 test('at 80 columns the 14 jobs take 16 rows (38 before 02), the sentences and the question included; folds list their ids', () => {
   const lines = jobFrame(80);
   assert.equal(lines.length - 2, 16, 'after the summary row and its blank line: 15 rows plus the asking job’s question');
-  assert.equal(lines.find((l) => l.startsWith('○')), '○  queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05');
-  assert.match(lines.find((l) => l.startsWith('✓  done')), /^✓ {2}done 2 · cache-v1\/06 · export-csv\/01/);
-  assert.match(jobFrame(50).find((l) => l.startsWith('○')), / \+1$/, 'ids that do not fit are +N');
-  assert.match(jobFrame(80, 'zh').find((l) => l.startsWith('○')), /^○ {2}排队 3 · /);
+  assert.equal(lines.find((l) => l.startsWith('\uF252')), '\uF252 queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05');
+  assert.match(lines.find((l) => l.startsWith('\uF058 done')), /^\uF058 done 2 · cache-v1\/06 · export-csv\/01/);
+  assert.match(jobFrame(50).find((l) => l.startsWith('\uF252')), / \+1$/, 'ids that do not fit are +N');
+  assert.match(jobFrame(80, 'zh').find((l) => l.startsWith('\uF252')), /^\uF252 排队 3 · /);
 });
 
 test('an unread report, a failed or asking job and the owner opening a fold keep their rows; Enter on a fold lists its jobs', () => {
   const board = jobsBoard(), done = board.workers.find((w) => w.displayId === 'cache-v1/06');
   done.reportUnread = true;
   const lines = jobFrame(80, 'en', board);
-  assert.match(lines.find((l) => /cache-v1\/06/.test(l) && l.startsWith('✓●')), /^✓● cache-v1\/06 /, 'unread: its own row');
-  assert.match(lines.find((l) => l.startsWith('✓  done')), /^✓ {2}done 1 · export-csv\/01/);
+  assert.match(lines.find((l) => /cache-v1\/06/.test(l) && l.startsWith('\uF0AD \uF0E0')), /^\uF0AD \uF0E0 cache-v1\/06 /, 'unread: its own row');
+  assert.match(lines.find((l) => l.startsWith('\uF058 done')), /^\uF058 done 1 · export-csv\/01/);
   const opened = jobsBoard(), key = (w) => targetKey({ kind: 'worker', laneId: opened.lanes.find((l) => l.workers.includes(w)).id, workerId: w.id });
   const kept = opened.workers.find((w) => w.displayId === 'export-csv/01');
-  assert.ok(!jobFrame(80, 'en', opened).some((l) => /^✓ {2}export-csv\/01/.test(l)), 'folded while nobody opened it');
+  assert.ok(!jobFrame(80, 'en', opened).some((l) => /^\uF0AD \uF058 export-csv\/01/.test(l)), 'folded while nobody opened it');
   const keptLines = jobFrame(80, 'en', opened, withState(initialMonitorState(), { home: { expanded: new Set([key(kept)]) } }));
-  assert.ok(keptLines.some((l) => /^✓ {2}export-csv\/01 /.test(l)), 'a job the owner opened is not folded away under them');
+  assert.ok(keptLines.some((l) => /^\uF0AD \uF058 export-csv\/01 /.test(l)), 'a job the owner opened is not folded away under them');
   const open = jobFrame(80, 'en', jobsBoard(), withState(initialMonitorState(), { home: { expanded: new Set(['fold:queued']) } }));
-  assert.equal(open.filter((l) => /^○ {2}\S+\/\d\d /.test(l)).length, 3, 'one row per queued job');
-  assert.match(open.find((l) => /^○ {2}cache-v2\/04/.test(l)), /^○ {2}cache-v2\/04 {6}queued #1 +1m$/, 'a queued job’s queue place sits where its strip would');
-  assert.match(open.find((l) => l.startsWith('○  queued')), /^○ {2}queued 3\s*$/, 'the opened fold drops its id list');
+  assert.equal(open.filter((l) => /^\uF0AD \uF252 \S+\/\d\d /.test(l)).length, 3, 'one row per queued job');
+  assert.match(open.find((l) => /^\uF0AD \uF252 cache-v2\/04/.test(l)), /^\uF0AD \uF252 cache-v2\/04 {6}queued #1 +1m$/, 'a queued job’s queue place sits where its strip would');
+  assert.match(open.find((l) => l.startsWith('\uF252 queued')), /^\uF252 queued 3\s*$/, 'the opened fold drops its id list');
 });
 
 test('the cursor stops on a fold, Enter opens it into one row per job and Enter again closes it', (t) => {
@@ -188,16 +191,16 @@ test('the cursor stops on a fold, Enter opens it into one row per job and Enter 
   assert.equal(state.home.cursor?.item, 'fold:queued');
   assert.equal(state.home.expanded.size, 0, 'arriving does not open it');
   press('enter');
-  assert.equal(draw().lines.map(stripAnsi).filter((l) => /^○ {2}\S+\/\d\d .*queued #\d/.test(l)).length, 3);
+  assert.equal(draw().lines.map(stripAnsi).filter((l) => /^⚒ ○ +\S+\/\d\d .*queued #\d/.test(l)).length, 3);
   press('enter');
   assert.equal(state.home.expanded.size, 0);
 });
 
-test('text mode keeps the role icons, the two-cell glyph column and an ASCII strip', () => {
+test('text mode keeps the role letters, the two-cell state column and an ASCII strip', () => {
   const lines = jobFrame(80, 'en', undefined, undefined, 'text');
-  assert.match(lines.find((l) => /^x {2}export-csv\/02/.test(l)), /^x {2}export-csv\/02 {4}x HTTP 429 rate limit; no report written +9m$/, 'a failure keeps its reason');
-  assert.match(lines.find((l) => /^\+\* stream-sync\/05 {3}/.test(l)), /^\+\* stream-sync\/05 {3}\+\+\+\+@ {2}I OAI +2m$/, 'imp is I, then its provider tag; the land is @');
-  assert.match(lines.find((l) => /^~ {2}docs-sweep\/04/.test(l)), /^~ {2}docs-sweep\/04 {4}ooooo {2}O Ant +21m quiet 12m$/, 'oracle is O; unknown and not reached are both o');
+  assert.match(lines.find((l) => /^G x {2}export-csv\/02/.test(l)), /^G x {2}export-csv\/02 {4}x HTTP 429 rate limit; no report written +9m$/, 'a failure keeps its reason');
+  assert.match(lines.find((l) => /^I \+\* stream-sync\/05 {3}/.test(l)), /^I \+\* stream-sync\/05 {3}\+\+\+\+@ +2m$/, 'imp is I; the land is @');
+  assert.match(lines.find((l) => /^O ~ {2}docs-sweep\/04/.test(l)), /^O ~ {2}docs-sweep\/04 {4}ooooo +21m quiet 12m$/, 'oracle is O; unknown and not reached are both o');
 });
 
 test('ticketTitle reads the heading of .scratch/<feature>/issues/NN-*.md, once per look, and never outside the project', (t) => {
@@ -215,11 +218,20 @@ test('ticketTitle reads the heading of .scratch/<feature>/issues/NN-*.md, once p
   assert.equal(ticketTitle(null, 'metrics-lite/01', '', NOW), undefined);
 });
 
-test('a queued job and a stalled job do not share a glyph, in icons or text mode', (t) => {
-  const queued = { worker: { state: 'running' }, state: 'queued' }, stalled = { worker: { state: 'running' }, state: 'stalled' };
-  for (const [icons, want] of [['unicode', ['○', '◷']], ['text', ['o', '~']]]) {
+test('the icon sets: the nerd glyphs are the owner’s codepoints, unicode is today’s set, text is ASCII; a queued and a stalled job never share a glyph', (t) => {
+  const state = (card) => workStateGlyph({ worker: { state: 'running' }, ...card });
+  const sets = {
+    nerd: { roles: [0xF0AD, 0xF1FC, 0xF013, 0xF0EB, 0xF002, 0xF0E7], states: { queued: 0xF252, stalled: 0xF186, 'needs-you': 0xF059 } },
+    unicode: { roles: [0x2692, 0x270E, 0x2726, 0x25C8, 0x2696, 0x26A1], states: { queued: 0x25CB, stalled: 0x25F7, 'needs-you': 0x3F } },
+    text: { roles: ['I', 'F', 'G', 'O', 'R', '*'].map((c) => c.charCodeAt(0)), states: { queued: 0x6F, stalled: 0x7E, 'needs-you': 0x3F } },
+  };
+  for (const [icons, want] of Object.entries(sets)) {
     const previous = setDisplayConfig({ theme: 'none', icons });
     t.after(() => setDisplayConfig(previous));
-    assert.deepEqual([workStateGlyph(queued), workStateGlyph(stalled)], want, icons);
+    const code = (text) => [...text].map((c) => c.codePointAt(0));
+    assert.deepEqual(['imp', 'frontend-imp', 'general', 'oracle', 'reviewer', 'sonic'].map((role) => code(roleIcon(role))[0]), want.roles, `${icons}: roles`);
+    for (const [kind, point] of Object.entries(want.states)) assert.deepEqual(code(state({ state: kind })), [point], `${icons}: ${kind}`);
+    assert.deepEqual(code(state({ worker: { state: 'stopped' }, state: 'x' })), icons === 'nerd' ? [0xF04D] : icons === 'text' ? [0x2D] : [0x2212]);
+    assert.deepEqual(code(state({ state: 'done', worker: { state: 'done', settledAt: 1 } })), icons === 'nerd' ? [0xF058] : icons === 'text' ? [0x2B] : [0x2713]);
   }
 });

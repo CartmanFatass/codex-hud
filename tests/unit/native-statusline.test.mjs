@@ -67,6 +67,7 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     ['CJK truncation', cjk, {}, ['--width', '9']],
     ['ANSI in external text', ansi, {}, ['--width', '70']],
     ['NO_COLOR and text icons', base, { NO_COLOR: '1', HUD_ICONS: 'text', COLUMNS: '86' }, []],
+    ['unicode icons', base, { HUD_ICONS: 'unicode', COLUMNS: '86' }, []],
     ['narrow width from the environment', base, { COLUMNS: '5' }, []],
     ['powerline, no capsule parity regressions', base, { HUD_BAR_STYLE: 'p10k' }, []],
     ['scoped workers and RGB palette', base, { HUD_THEME: 'mocha' }, []],
@@ -81,6 +82,21 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     const childEnv = { ...env, ...extra };
     assert.deepEqual(rust(childEnv, input, args), ts(childEnv, input, args), label);
   }
+  // The panel's saved Icons setting wins over the environment, as the bar's own settings reader does: Nerd glyphs by default.
+  const bar = (extra, icons) => {
+    const file = join(env.HUD_HOME, 'hud-settings.json');
+    if (icons) fs.writeFileSync(file, JSON.stringify({ icons }), { mode: 0o600 });
+    else fs.rmSync(file, { force: true });
+    const childEnv = { ...env, ...extra, NO_COLOR: '1', COLUMNS: '86' };
+    assert.deepEqual(rust(childEnv, base), ts(childEnv, base), `icons ${icons}`);
+    return ts(childEnv, base).toString();
+  };
+  assert.match(bar({}), /│ \uF0AD1 +\uF0E72 +!1/, 'no setting: the Nerd Font glyphs');
+  assert.match(bar({}, 'unicode'), /│ ⚒1 +⚡2 +!1/);
+  assert.match(bar({ HUD_ICONS: 'unicode' }, 'text'), /│ I1 +\*2 +!1/);
+  assert.match(bar({ HUD_ICONS: 'text' }, 'emoji'), /│ I1 +\*2 +!1/, 'an unknown saved value is no setting: the environment decides');
+  assert.match(bar({}, 'emoji'), /│ \uF0AD1 +\uF0E72 +!1/, 'and with none, the default');
+  fs.rmSync(join(env.HUD_HOME, 'hud-settings.json'), { force: true });
   const exact = Buffer.from(JSON.stringify(base).padEnd(65536, ' '));
   assert.deepEqual(run(launcher, [], env, exact), rust(env, exact), 'exactly 64 KiB remains valid');
   assert.deepEqual(run(launcher, [], env, Buffer.concat([exact, Buffer.from([0])])), ts(env, Buffer.alloc(65537, 32)));

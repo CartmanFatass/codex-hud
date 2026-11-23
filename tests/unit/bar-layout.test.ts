@@ -13,6 +13,9 @@ import { join } from 'node:path';
 import { agentEvent, renderBar, NOTICE_MS, type BarFacts } from '../../dist/render/layout/bar-fields.js';
 import { fitStatusBar } from '../../dist/render/header.js';
 import { BAR_STYLES, setDisplayConfig } from '../../dist/render/hud-config.js';
+
+// These tests are about layout and draw the Unicode set; the Nerd Font set has its own test below.
+setDisplayConfig({ icons: 'unicode' });
 import { stripAnsi, visualWidth } from '../../dist/render/colors.js';
 import { renderParity } from '../../dist/statusline-parity/render.js';
 import { compactWindow } from '../../dist/statusline-parity/collect.js';
@@ -77,7 +80,7 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
   // model [effort] │ context (its meter is the first thing to go) │ repo branch │ [quota] │ the worker zone (an icon and a
   // count per role), then what was loaded (which gives way to the zone). pi's session cost is off.
   const shape =
-    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?⚒1(?: +MCP \d+  skills \d+)?$/;
+    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?[⚒\uF0AD]1(?: +MCP \d+  skills \d+)?$/;
   for (const row of [claude, f.render()[0], codex]) {
     assert.match(stripAnsi(row), shape);
     assert.ok(visualWidth(row) <= 120 && !row.includes('\n'), 'one row that fits');
@@ -346,6 +349,11 @@ test('worker zone: an icon and a count per role in a fixed order, sonic last; no
   t.after(() => setDisplayConfig(previous));
   assert.equal(zoneOf(lanes), 'M │ I3  G2  O1  *4');
   assert.equal(zoneOf(every), 'M │ I1  F1  G1  O1  R1  .3  *1');
+  // The Nerd Font set (the default): Font Awesome glyphs by codepoint, one cell each; `•` stays for a role with no icon.
+  setDisplayConfig({ icons: 'nerd' });
+  assert.equal(zoneOf(every), 'M │ \uF0AD1  \uF1FC1  \uF0131  \uF0EB1  \uF0021  •3  \uF0E71');
+  assert.equal(zoneOf(lanes), 'M │ \uF0AD3  \uF0132  \uF0EB1  \uF0E74');
+  assert.equal(visualWidth(zoneOf(lanes)), zoneOf(lanes).length, 'a Nerd glyph is one cell');
 });
 
 test('worker zone: a worker running for 30 minutes is still counted; a settled one is not; queued is not live', (t) => {

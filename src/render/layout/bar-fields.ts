@@ -16,8 +16,8 @@
 
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
-import { activeBarStyle, displayConfig, iconSet, isLightTheme, type BarField, type BarStyle } from '../hud-config.js';
-import { ROLE_GLYPHS } from '../model-glyphs.js';
+import { activeBarStyle, displayConfig, iconSet, isLightTheme, type BarField, type BarStyle, type IconMode } from '../hud-config.js';
+import { ROLE_GLYPHS, roleIcon } from '../model-glyphs.js';
 import { providerMark } from '../providers.js';
 
 /**
@@ -504,10 +504,10 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
 
 /**
  * The census of live workers as one segment of one form, null when none is running: an icon and a count per role in
- * `ROLE_GLYPHS`' order (`⚒3  ✦2  ◈1  ⚡4`; a role without an icon of its own counts under `•`), then one `!N` for the
+ * `ROLE_GLYPHS`' order (`⚒3  ✦2  ◈1  ⚡4` in the Unicode set; a role without an icon of its own counts under `•`), then one `!N` for the
  * workers asking the owner (the bar's alert badge, with its own padding on a coloured bar). Nothing narrows it.
  */
-function rosterSeg(workers: readonly BarWorker[] | undefined, pad: string, ascii: boolean): Seg | null {
+function rosterSeg(workers: readonly BarWorker[] | undefined, pad: string, icons: IconMode): Seg | null {
   if (!workers?.length) return null;
   const counts = new Map<string, number>();
   for (const worker of workers) {
@@ -519,9 +519,9 @@ function rosterSeg(workers: readonly BarWorker[] | undefined, pad: string, ascii
   const form: Form = [
     ...Object.entries(ROLE_GLYPHS)
       .filter(([role]) => counts.has(role))
-      .flatMap(([role, glyph], i): Form => [
+      .flatMap(([role], i): Form => [
         ...(i ? ([['  ']] as Form) : []),
-        [glyph[+ascii], role === 'sonic' ? 'warn' : 'info'],
+        [roleIcon(role, icons), role === 'sonic' ? 'warn' : 'info'],
         [String(counts.get(role)), 'count'],
       ]),
     ...(asking ? ([['  '], [`${pad}!${asking}${pad}`, pad ? 'alert' : 'warn']] as Form) : []),
@@ -710,7 +710,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     return seg;
   });
   // The workers come after a pinned need and before the client's own events.
-  const roster = on.has('notice') ? rosterSeg(facts.workers, '', iconSet() === 'text') : null;
+  const roster = on.has('notice') ? rosterSeg(facts.workers, '', iconSet()) : null;
   const zoneSegments = [
     ...noticeSegments.slice(0, zone?.alert ? 1 : 0),
     ...(roster ? [roster] : []),
@@ -992,7 +992,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
   // Several needs: `first +2`, then `N needs` when the notice has to give way.
   if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
-  const roster = on.has('notice') ? rosterSeg(facts.workers, pad, ascii) : null;
+  const roster = on.has('notice') ? rosterSeg(facts.workers, pad, iconSet()) : null;
   const left = [
     on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,

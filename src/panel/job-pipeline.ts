@@ -8,6 +8,7 @@ import type { OwnerWorker, WorkboardSnapshot, WorkLane } from '../collectors/wor
 import { buildWorkboard } from '../collectors/workboard.js';
 import type { SubagentTree } from '../types.js';
 import { jobPanelObservation } from '../utils/collection-observation.js';
+import { WorkerCounts } from './worker-counts.js';
 
 /** Collect thin jobs and project them alongside the native tree. */
 export class PanelJobPipeline {
@@ -16,6 +17,8 @@ export class PanelJobPipeline {
   private thinJobs: WorkLane[] = [];
   private rings = new ActivityRings();
   private jobDiffs = new DiffStatCollector();
+  /** Workers per role since this pipeline (the panel process) started, for Home's top line. */
+  readonly workerCounts = new WorkerCounts(Date.now());
   private thinObservation = { complete: false };
   private generation = 0;
   private closed = false;
@@ -40,6 +43,7 @@ export class PanelJobPipeline {
       const swap = (w: OwnerWorker) => add.get(w) ?? w;
       board = { ...board, workers: board.workers.map(swap), lanes: board.lanes.map((l) => ({ ...l, workers: l.workers.map(swap) })) };
     }
+    this.workerCounts.observe(board.workers);
     this.boardCache = { tree, board };
     return board;
   }

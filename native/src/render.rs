@@ -652,8 +652,13 @@ fn quota(input: &Value, now: f64) -> Option<Segment> {
     ))
 }
 fn roster(workers: Workers, display: &Display) -> Option<Segment> {
+    // The same table as `ROLE_GLYPHS` in src/render/model-glyphs.ts; the Nerd glyphs are Font Awesome's, in the BMP.
     let glyphs = if display.ascii {
         ["I", "F", "G", "O", "R", ".", "*"]
+    } else if display.nerd {
+        [
+            "\u{F0AD}", "\u{F1FC}", "\u{F013}", "\u{F0EB}", "\u{F002}", "•", "\u{F0E7}",
+        ]
     } else {
         ["⚒", "✎", "✦", "◈", "⚖", "•", "⚡"]
     };

@@ -71,10 +71,10 @@ export function jobsBoard(lang = 'en') {
   return { revision: 'r', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
 }
 /** The job area of Home (`homeRows`, without the Waiting / Progress block below it) as plain lines. */
-export function jobFrame(width, lang = 'en', board = jobsBoard(lang), state = initialMonitorState(), icons = 'unicode') {
+export function jobFrame(width, lang = 'en', board = jobsBoard(lang), state = initialMonitorState(), icons = 'nerd', workerCounts = undefined) {
   const display = setDisplayConfig({ theme: 'none', icons }), previous = setLanguage(lang);
   try {
-    const input = { tree: { nodes: [] }, workboard: board, state, width, height: 40, nowMs: NOW };
+    const input = { tree: { nodes: [] }, workboard: board, workerCounts, state, width, height: 40, nowMs: NOW };
     return homeRows(board, state, width, NOW, input).map((r) => stripAnsi(r.text));
   } finally { setDisplayConfig(display); setLanguage(previous); }
 }
@@ -100,7 +100,10 @@ export function narrowBoard(lang = 'en') {
   ];
   return { revision: 'r', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
 }
+/** Role counts since the panel opened, for the top line. */
+export const COUNTS = new Map([['imp', 5], ['frontend-imp', 2], ['sonic', 7]]);
 export const jobFrames = () => Object.fromEntries([
-  ...[120, 80, 50, 42].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}`, jobFrame(width, lang)])),
+  ...[120, 80, 50, 42].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}`, jobFrame(width, lang, undefined, undefined, 'nerd', COUNTS)])),
+  ...[80, 42].flatMap((width) => ['unicode', 'text'].flatMap((icons) => ['en', 'zh'].map((lang) => [`${lang}-${width}-${icons}`, jobFrame(width, lang, undefined, undefined, icons, COUNTS)]))),
   ...[48, 42].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}-routes`, jobFrame(width, lang, narrowBoard(lang))])),
 ]);

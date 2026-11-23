@@ -112,7 +112,7 @@ test('Antigravity draws the same worker zone from this pane\'s jobs, long-runnin
   );
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', started_at: ago(1800) }));
   fs.writeFileSync(join(dir, 'brief.md'), '# Secret heading');
-  assert.equal(await run(payload), `${wide} │ ⚒1`);
+  assert.equal(await run(payload), `${wide} │ \uF0AD1`);
   // A job settled seconds ago, report unread, is not counted: only the running one is.
   const done = 'j0000000000000002', doneDir = join(hud, 'jobs', done);
   fs.mkdirSync(doneDir, { recursive: true });
@@ -122,7 +122,7 @@ test('Antigravity draws the same worker zone from this pane\'s jobs, long-runnin
   );
   fs.writeFileSync(join(doneDir, 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: ago(10) }));
   fs.writeFileSync(join(doneDir, 'report.md'), 'Done.');
-  assert.equal(await run(payload), `${wide} │ ⚒1`);
+  assert.equal(await run(payload), `${wide} │ \uF0AD1`);
   // With nothing running the zone is absent.
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: ago(5) }));
   assert.equal(await run(payload), wide);

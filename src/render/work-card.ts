@@ -6,7 +6,7 @@ import { theme, visualLength, truncateAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { displayConfig } from './hud-config.js';
-import { mark, originalRows } from './workboard-rows.js';
+import { mark, originalRows, stateMark } from './workboard-rows.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { isUnreadReport, routeBadge, sonicBadge, workerModelBadge } from './worker-roster.js';
 import { activeFlow } from './work-visibility.js';
@@ -27,14 +27,13 @@ export const workStateWord = (card: WorkCard) => {
   return '';
 };
 export const workStateGlyph = (card: WorkCard) => {
-  if (card.worker.state === 'stopped') return mark('−', '-');
-  if (card.state === 'queued') return mark('○', 'o');
-  if (failed(card)) return mark('✗', 'x');
-  if (card.state === 'needs-you') return '?';
-  if (card.state === 'stalled') return mark('◷', '~');
+  if (card.worker.state === 'stopped') return stateMark.stopped();
+  if (card.state === 'queued') return stateMark.queued();
+  if (failed(card)) return stateMark.failed();
+  if (card.state === 'needs-you') return stateMark.asking();
+  if (card.state === 'stalled') return stateMark.stalled();
   if (card.state === 'in-progress') return mark('◉', '@');
-  if (isUnreadReport(card.worker)) return mark('✓●', '+*');
-  return mark('✓', '+');
+  return isUnreadReport(card.worker) ? stateMark.unread() : stateMark.done();
 };
 export const workStateInk = (card: WorkCard) => {
   if (card.worker.superseded || card.worker.state === 'stopped' || card.state === 'queued') return theme.board.muted;

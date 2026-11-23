@@ -133,6 +133,8 @@ export interface MonitorData {
   hud?: HudData;
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
+  /** Workers per role since the panel opened (Home's top line); absent where nothing counts them. */
+  workerCounts?: ReadonlyMap<string, number>;
   project?: ProjectSnapshot;
   projectDisplayRoot?: string;
   projectWaiting?: number;

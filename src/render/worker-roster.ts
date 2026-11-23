@@ -7,7 +7,7 @@
 import { lookupModelEntry, SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import type { OwnerWorker, WorkLane } from '../collectors/workboard-types.js';
 import { theme, visualLength } from './colors.js';
-import { EFFORT_GLYPHS, classifyModelFamily, versionedModelLabel } from './model-glyphs.js';
+import { EFFORT_GLYPHS, classifyModelFamily, roleIcon, versionedModelLabel } from './model-glyphs.js';
 import { PROVIDERS, providerMark, shortModel } from './providers.js';
 import { activeFlow, unattendedFailure } from './work-visibility.js';
 import { asciiBoard, mark } from './workboard-rows.js';
@@ -107,7 +107,7 @@ export function laneSonicRunning(lane: WorkLane): number {
 
 /** Formatted `⚡N` (ASCII `*N`) badge in sonic role ink, or `''` when zero. */
 export function sonicBadge(count: number): string {
-  return count > 0 ? theme.board.roleInk.sonic(`${mark('⚡', '*')}${count}`) : '';
+  return count > 0 ? theme.board.roleInk.sonic(`${roleIcon('sonic')}${count}`) : '';
 }
 
 /** Headless: the job has no herdr tab (the record says so, or its route chose it). */

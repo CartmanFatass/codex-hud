@@ -67,7 +67,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     advanced: true,
     literal: true,
   },
-  { key: 'icons', group: 'Display', label: 'Icons', values: ['unicode', 'text'], help: 'Icons, or words (text)', advanced: true },
+  { key: 'icons', group: 'Display', label: 'Icons', values: ['nerd', 'unicode', 'text'], help: 'Nerd Font glyphs, Unicode marks, or words (text)', advanced: true },
   {
     key: 'language',
     group: 'Display',

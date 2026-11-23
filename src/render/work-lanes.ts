@@ -4,7 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { cardExpanded, failed, milestoneLine, pulseLine, renderWorkCard, workPhaseText } from './work-card.js';
-import { boardRow, mark } from './workboard-rows.js';
+import { boardRow, mark, stateMark } from './workboard-rows.js';
 import { pair, monitorText } from './monitor-text.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { currentWorker, foldedWorker, unattendedFailure, activeFlow } from './work-visibility.js';
@@ -52,14 +52,14 @@ export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room
     .map((w) => projectWorkCard(w, now, state.prefs.cardStallMinutes));
   if (!cards.length) return extra;
   const glyph = {
-    unread: theme.board.success(mark('✓●', '+*')),
-    done: theme.board.success(mark('✓', '+')),
+    unread: theme.board.success(stateMark.unread()),
+    done: theme.board.success(stateMark.done()),
     run: theme.board.active(mark('◉', '@')),
-    queue: theme.board.muted(mark('○', 'o')),
-    stall: theme.board.stalled(mark('◷', '~')),
-    ask: theme.board.attention('?'),
-    fail: theme.board.danger(mark('✗', 'x')),
-    stop: theme.board.muted(mark('−', '-')),
+    queue: theme.board.muted(stateMark.queued()),
+    stall: theme.board.stalled(stateMark.stalled()),
+    ask: theme.board.attention(stateMark.asking()),
+    fail: theme.board.danger(stateMark.failed()),
+    stop: theme.board.muted(stateMark.stopped()),
   };
   const tokens = cards.map((c) => {
     const kind =

@@ -53,7 +53,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
   notifyDesktop: boolean;
-  /** Unicode marks or their ASCII/text equivalents. Old icon sets load as unicode. */
+  /** Nerd Font glyphs (the default), Unicode marks or their ASCII/text equivalents. An old or unknown value loads as the default. */
   icons: IconMode;
   /** Per-role soft caps on concurrently working jobs; 0 or omitted means uncapped. */
   roleCaps: Record<string, number>;
@@ -103,7 +103,7 @@ export function defaultSettings(): HudSettings {
     summaryIntervalMinutes: 5,
     notify: false,
     notifyDesktop: false,
-    icons: 'unicode',
+    icons: 'nerd',
     roleCaps: { ...DEFAULT_ROLE_CAPS },
     impOverflow: true,
   };
@@ -155,7 +155,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   modelCallsPerHour: (value) => isIntegerBetween(value, 0, 1000),
   decisionCallsPerHour: (value) => isIntegerBetween(value, 0, 2000),
   summaryIntervalMinutes: (value) => isIntegerBetween(value, 1, 120),
-  icons: oneOf('unicode', 'text'),
+  icons: oneOf('nerd', 'unicode', 'text'),
   roleCaps: (value) =>
     !!value &&
     typeof value === 'object' &&

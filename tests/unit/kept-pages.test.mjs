@@ -96,7 +96,7 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
 });
 test('short Chinese minutes keep the Home ask slab and card rows clean at 38 and 40 columns', (t) => {
   const f = fixture(t);
-  const askRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.startsWith('?  R5-UX'));
+  const askRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => /^⚒ \? +R5-UX/.test(line));
   assert.match(askRow(38), /问 2选 +4分$/);
   assert.match(askRow(40), /问 2选 +4分$/);
   const cardRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.includes('Retry on HTTP'));
@@ -237,7 +237,7 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
     })
   );
   let draft = loadSettings();
-  assert.equal(draft.icons, 'unicode');
+  assert.equal(draft.icons, 'nerd', 'a retired value loads as the default');
   const retired = [
     'sort',
     'importantRoles',
@@ -372,7 +372,8 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 58, nowMs: NOW, ...options });
   const home = draw(f.states.home),
     text = plainFrame(home).join('\n');
-  assert.match(text, /@ {2}Retry/);
+  assert.match(text, /I {4}Retry/, 'a running job: its role letter and no state mark');
+  assert.doesNotMatch(text, /@ {2}Retry/);
   assert.doesNotMatch(text, /◉|●/);
   const asking = draw(f.states.asking),
     cursor = asking.state.subpage?.cursor;
@@ -380,9 +381,12 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   const opened = handleMonitorInput(asking.state, { type: 'key', key: 'help' }, ctx(asking)).state;
   const help = draw(opened, { mouse: false });
   const body = plainFrame(help).join('\n');
-  assert.match(body, /jobs\s+@ running\s+\? asking\s+~ stalled/);
-  assert.match(body, /\+ done\s+x failed\s+- stopped/);
-  assert.match(body, /o queued\s+\*N sonic running/);
+  assert.match(body, /roles\s+I imp\s+F frontend-imp/);
+  assert.match(body, /jobs\s+\? asking\s+x failed\s+~ stalled/);
+  assert.match(body, /\+\* report unread\s+\+ done/);
+  assert.match(body, /- stopped\s+o queued/);
+  assert.match(body, /\*N sonic running/);
+  assert.match(body, /a running job has no mark/);
   assert.match(body, /route\s+- light\s+= standard\s+# hard/);
   assert.match(body, /h headless: no herdr tab/);
   assert.match(body, /stages\s+\+ passed\s+@ current/);
@@ -390,7 +394,8 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(body, /read>edit>test>report>land/);
   assert.match(body, /time\s+quiet 4m no output for 3m/);
   assert.match(body, /quiet 12m no output, stalled/);
-  assert.match(body, /g\s+job: go to its herdr tab;\s+headless: its output in the\s+Inspector/);
+  assert.match(body, /g\s+job: go to its herdr tab;/);
+  assert.match(body, /headless: its output in the\s+Inspector/);
   assert.doesNotMatch(body, /click|Codex's own panel|Timeline|press .* first/);
   assert.match(body, /switch tab/);
   assert.equal(help.state.subpage?.cursor, cursor);
@@ -399,7 +404,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.equal(returned.subpage?.kind, 'inspector');
   assert.equal(draw(returned).state.subpage?.cursor, cursor);
   const withMouse = plainFrame(draw({ ...opened, subpage: undefined }, { mouse: true })).join('\n');
-  assert.match(withMouse, /click\s+select; again = ⏎; wheel\s+scrolls/);
+  assert.match(withMouse, /click\s+select; again = ⏎; wheel\s[^]*\sscrolls/);
   assert.doesNotMatch(withMouse, /press .* first/);
   setLanguage('zh');
   const chinese = plainFrame(draw({ ...opened, subpage: undefined }, { width: 120 })).join('\n');
@@ -409,7 +414,9 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(chinese, /Esc\s+选择器：先清空筛选，再关闭/);
   assert.match(chinese, /\^R\s+选择器：刷新模型列表/);
   assert.doesNotMatch(chinese, /On Control|pick a model/);
-  assert.match(chinese, /o 排队中\s+\*N sonic 运行中/);
+  assert.match(chinese, /- 已停止\s+o 排队中/);
+  assert.match(chinese, /\*N sonic 运行中/);
+  assert.match(chinese, /运行中的任务不带标记/);
   assert.match(chinese, /分流\s+- 轻量\s+= 标准\s+# 复杂/);
   assert.match(chinese, /h 无界面：没有 herdr 标签页/);
   assert.match(chinese, /阶段\s+\+ 已过\s+@ 当前/);
@@ -417,5 +424,6 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(chinese, /读>改>测>报告>落地/);
   assert.match(chinese, /时间\s+静4分 3 分钟没有输出/);
   assert.match(chinese, /静12分 没有输出，已停滞/);
-  assert.match(chinese, /无界面任务：在详情\s*页看输出/);
+  assert.match(chinese, /无界面任务：在详情/);
+  assert.match(chinese, /页看输出/);
 });

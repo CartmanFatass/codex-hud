@@ -2,25 +2,24 @@
 import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { boardRow, minuteAge, mark, footHints } from './workboard-rows.js';
+import { boardRow, minuteAge, mark, footHints, stateMark } from './workboard-rows.js';
 import { orderedLanes } from './work-lanes.js';
-import { askRows, jobRows } from './work-jobs.js';
+import { askRows, jobRows, roleMark } from './work-jobs.js';
 import { quietDecisionSummary, requestLines, questionOriginalRows, stemLines } from './work-card.js';
 import { theme, visualLength } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { activeFlow, currentWorker, foldedWorker, unattendedFailure } from './work-visibility.js';
-import {
-  hasRosterWorkers,
-  isUnreadReport,
-  renderWorkerRoster,
-  sonicChildrenRunning,
-  workerModelPlain,
-  type RosterRung,
-} from './worker-roster.js';
+import { isUnreadReport, sonicChildrenRunning, workerModelPlain } from './worker-roster.js';
 import { answerable, answerKeys } from './job-actions.js';
+import { ROLE_GLYPHS, roleIcon } from './model-glyphs.js';
 
-/** Top status + Variant A worker roster strip shared by Classic Home and Split Home. */
+/** `⚒ 5  ✎ 2  ⚡ 7`: the workers each role has started since the panel opened, an icon in the role's ink and the count, in `ROLE_GLYPHS`' order; none when nothing has started. */
+function roleCounts(counts: ReadonlyMap<string, number> | undefined): string {
+  return Object.keys(ROLE_GLYPHS).filter((role) => counts?.get(role)).map((role) => `${roleMark(role)} ${theme.board.text(String(counts!.get(role)))}`).join('  ');
+}
+
+/** Top status + per-role worker counts strip shared by Classic Home and Split Home. */
 export function homeSummaryRow(
   board: WorkboardSnapshot,
   input: MonitorData | undefined,
@@ -36,57 +35,35 @@ export function homeSummaryRow(
     (w) => !w.parentJobId && isUnreadReport(w) && !w.homeNeedsHuman && !unattendedFailure(w)
   ).length;
   const failTail = failCount
-    ? ` ${theme.board.muted('·')} ${theme.board.danger(`${mark('✗', 'x')}${failCount}`)}`
+    ? ` ${theme.board.muted('·')} ${theme.board.danger(`${stateMark.failed()}${failCount}`)}`
     : '';
   const leftForms =
     askCount > 0
       ? [
-          `${theme.board.attention(`? ${t('{n} waiting for you', { n: askCount })}`)}${failTail}`,
-          `${theme.board.attention(`? ${t('{n} waiting', { n: askCount })}`)}${failTail}`,
-          `${theme.board.attention(`?${askCount}`)}${failCount ? ' ' + theme.board.danger(`${mark('✗', 'x')}${failCount}`) : ''}`,
+          `${theme.board.attention(`${stateMark.asking()} ${t('{n} waiting for you', { n: askCount })}`)}${failTail}`,
+          `${theme.board.attention(`${stateMark.asking()} ${t('{n} waiting', { n: askCount })}`)}${failTail}`,
+          `${theme.board.attention(`${stateMark.asking()}${askCount}`)}${failCount ? ' ' + theme.board.danger(`${stateMark.failed()}${failCount}`) : ''}`,
         ]
       : failCount > 0
         ? [
-            theme.board.danger(`${mark('✗', 'x')} ${t('{n} failed', { n: failCount })}`),
-            theme.board.danger(`${mark('✗', 'x')}${failCount}`),
+            theme.board.danger(`${stateMark.failed()} ${t('{n} failed', { n: failCount })}`),
+            theme.board.danger(`${stateMark.failed()}${failCount}`),
           ]
         : unreadCount > 0
           ? [
-              theme.board.success(`${mark('✓●', '+*')} ${t('{n} unread', { n: unreadCount })}`),
-              theme.board.success(`${mark('✓●', '+*')}${unreadCount}`),
+              theme.board.success(`${stateMark.unread()} ${t('{n} unread', { n: unreadCount })}`),
+              theme.board.success(`${stateMark.unread()}${unreadCount}`),
             ]
           : [
-              theme.board.success(`${mark('✓', '+')} ${t('Nothing needs you')}`),
-              theme.board.success(`${mark('✓', '+')} ${t('Clear')}`),
-              theme.board.success(mark('✓', '+')),
+              theme.board.success(`${stateMark.done()} ${t('Nothing needs you')}`),
+              theme.board.success(`${stateMark.done()} ${t('Clear')}`),
+              theme.board.success(stateMark.done()),
             ];
 
-  const sourceWorkers = input?.workboard?.workers ?? board.workers;
-  let line = '';
-  if (!hasRosterWorkers(sourceWorkers, now)) {
-    const idleRight = theme.board.muted(t('{n} running', { n: 0 }));
-    const left = leftForms.find((l) => visualLength(l) + 2 + visualLength(idleRight) <= width) ?? leftForms.at(-1)!;
-    line = pair(left, visualLength(left) + 2 + visualLength(idleRight) <= width ? idleRight : '', width);
-  } else {
-    const combos: readonly [string, RosterRung][] = [
-      [leftForms[0], 'full'],
-      [leftForms[1] ?? leftForms[0], 'full'],
-      [leftForms[0], 'no-model'],
-      [leftForms[1] ?? leftForms[0], 'no-model'],
-      [leftForms[1] ?? leftForms[0], 'provider'],
-      [leftForms.at(-1)!, 'provider'],
-      [leftForms[1] ?? leftForms[0], 'compact'],
-      [leftForms.at(-1)!, 'compact'],
-    ];
-    for (const [left, rung] of combos) {
-      const right = renderWorkerRoster(sourceWorkers, rung, now);
-      if (right && visualLength(left) + 2 + visualLength(right) <= width) {
-        line = pair(left, right, width);
-        break;
-      }
-    }
-    if (!line) line = fit(leftForms.at(-1)!, width);
-  }
+  // The right side: the workers each role has started since the panel opened; the left gives way before it is dropped.
+  const right = roleCounts(input?.workerCounts);
+  const left = leftForms.find((l) => !right || visualLength(l) + 2 + visualLength(right) <= width) ?? leftForms.at(-1)!;
+  const line = pair(left, right && visualLength(left) + 2 + visualLength(right) <= width ? right : '', width);
   return {
     ...boardRow(line),
     ...(interactive && waiting ? { item: 'home-progress:waiting' } : {}),
@@ -112,7 +89,7 @@ export function askSlabRows(
   const left = `? ${worker.labels?.category ? `[${t(worker.labels.category)}] ` : ''}${monitorText(worker.role ?? '')}${underLane ? '' : ` · ${monitorText(lane?.label ?? '')}`}`;
   const askAge = `${t('asking')} ${minuteAge(worker.humanEndedAt, now)}`.trim();
   const sonic = sonicChildrenRunning(board.workers, worker.id);
-  const sonicStr = sonic > 0 ? `${mark('⚡', '*')}${sonic}` : '';
+  const sonicStr = sonic > 0 ? `${roleIcon('sonic')}${sonic}` : '';
   const modelFull = workerModelPlain(worker, 'full');
   const modelCompact = workerModelPlain(worker, 'compact');
   const rightCands = [

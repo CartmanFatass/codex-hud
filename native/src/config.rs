@@ -99,6 +99,8 @@ pub struct Display {
     pub theme: String,
     pub capsules: bool,
     pub ascii: bool,
+    /// Nerd Font glyphs for the role icons: the default, unless the icons are `unicode`, `emoji` or `text`.
+    pub nerd: bool,
     pub fields: [bool; 7],
 }
 impl Display {
@@ -114,7 +116,7 @@ impl Display {
             theme = "none".into();
         }
         let mut style = word("HUD_BAR_STYLE");
-        let ascii = word("HUD_ICONS") == "text";
+        let mut icons = word("HUD_ICONS");
         let named = state::hud_env("HUD_BAR_FIELDS").unwrap_or_default();
         let mut fields = FIELDS.map(|field| {
             named
@@ -130,6 +132,13 @@ impl Display {
             .unwrap_or_else(|| home.join("hud-settings.json"));
         if let Some(v) = state::read(&file, 65_536, false, false)? {
             style = v.get("barStyle").str().unwrap_or_default().into();
+            if let Some(set) = v
+                .get("icons")
+                .str()
+                .filter(|s| ["nerd", "unicode", "text"].contains(s))
+            {
+                icons = set.into();
+            }
             if v.get("theme").str() == Some("none") {
                 theme = "none".into();
             }
@@ -155,7 +164,8 @@ impl Display {
         Some(Self {
             theme,
             capsules,
-            ascii,
+            ascii: icons == "text",
+            nerd: !matches!(icons.as_str(), "text" | "unicode" | "emoji"),
             fields,
         })
     }

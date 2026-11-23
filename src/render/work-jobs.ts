@@ -1,6 +1,6 @@
 /**
- * Classic Home's jobs (`home-compact/03`): one row per job (state glyph, ticket id, the stage strip, the executor group, `⚡N`, the
- * age and the silence), the running job's current sentence under it, a lane header only when a lane shows several jobs, and the
+ * Classic Home's jobs (`home-compact/03`): one row per job (the role's icon, the state mark when the job is not simply running, the
+ * ticket id, the stage strip, `⚡N`, the age and the silence; no model, effort or route mark: the Inspector has them), the running job's current sentence under it, a lane header only when a lane shows several jobs, and the
  * queued and the finished-and-read jobs each folded into one row. A job that needs the owner (asking, failed, an unread report)
  * shows the reason where the strip would be (an asking job its question on the line below); a land has no sub-row, its fifth stage cell says it.
  */
@@ -10,12 +10,13 @@ import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { ageText, cardExpanded, cardSentence, failed, flowStepDetail, milestoneLine, pulseLine, renderWorkCard, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
 import { lanePhase, laneRows, laneStrip, workerPriority } from './work-lanes.js';
 import { activeFlow, currentWorker, unattendedFailure } from './work-visibility.js';
-import { isUnreadReport, laneSonicRunning, mainLaneWorkers, routeBadge, sonicBadge, sonicChildrenRunning, workerModelBadge } from './worker-roster.js';
-import { ROLE_GLYPHS } from './model-glyphs.js';
+import { isUnreadReport, laneSonicRunning, mainLaneWorkers, sonicBadge, sonicChildrenRunning } from './worker-roster.js';
+import { roleIcon } from './model-glyphs.js';
+import { iconSet } from './hud-config.js';
 import { roleInk } from './project-view.js';
 import { fit, flowLines, monitorText, pair } from './monitor-text.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
-import { mark, minuteAge } from './workboard-rows.js';
+import { mark, minuteAge, stateMark } from './workboard-rows.js';
 import { STRIP_CELLS, stageStrip } from './job-stages.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { t } from './i18n.js';
@@ -28,19 +29,19 @@ type Job = readonly [OwnerWorker, WorkLane];
 const QUIET_MINUTES = 3;
 /** Cells a row's reason keeps before its right side narrows, the ticket-id column's floor, and the longest id a job without a ticket gets. */
 const MIN_REASON = 12, MIN_ID = 8, MAX_UNTICKETED_ID = 16;
-/** What the right side loses as a row narrows, first to last (the sonic helper count outlasts the marks before it); the id, the strip (or the reason) and the age stay. */
-const DROPS = ['route', 'model', 'role', 'sonic', 'silence'] as const;
-/** The state glyph's fixed two-cell column, so ids start in the same column on every row. */
-const cell = (glyph: string) => glyph + ' '.repeat(Math.max(0, 2 - visualLength(glyph)));
+/** What the right side loses as a row narrows, first to last (the sonic helper count outlasts the silence); the role icon, the id, the strip (or the reason) and the age stay. */
+const DROPS = ['silence', 'sonic'] as const;
+/** The state mark's fixed column (a Nerd glyph is one cell, `✓●` and `+*` two), so ids start in the same column on every row. */
+const stateCols = () => (iconSet() === 'nerd' ? 1 : 2);
+const cell = (glyph: string) => glyph + ' '.repeat(Math.max(0, stateCols() - visualLength(glyph)));
+/** The columns before the id: the role icon, the state column and a space after each. */
+const headCols = () => 2 + stateCols() + 1;
 /** The job's id on its row: its ticket's, else its lane's short name (the package, or the head of the brief); a child under a lane header, which shares that name, gets the head of its own brief's heading. */
 const jobId = (w: OwnerWorker, lane: Pick<WorkLane, 'label'>, child = false) =>
   w.displayId ? monitorText(w.displayId) : truncateAnsi((child && jobTitle(w, true)) || monitorText(lane.label), MAX_UNTICKETED_ID);
 
-/** The role's statusline icon (`ROLE_GLYPHS`, ASCII in text mode) in the role's ink; a role with no icon of its own gets `•`. */
-export function roleMark(role: string): string {
-  const [glyph, ascii] = ROLE_GLYPHS[Object.hasOwn(ROLE_GLYPHS, role) ? role : 'other'];
-  return roleInk(role)(mark(glyph, ascii));
-}
+/** The role's icon (`ROLE_GLYPHS`, the statusline's) in the role's ink; a role with no icon of its own gets `•`. */
+export const roleMark = (role: string): string => roleInk(role)(roleIcon(role));
 
 /** The queued job or the read, settled job that folds into one row; everything else keeps its own (so does a settled job whose sonic children still run: their `⚡N` is on it, and one the owner opened). */
 function foldKind(w: OwnerWorker, lane: WorkLane, c: Ctx): FoldKind | undefined {
@@ -68,7 +69,7 @@ function scoutRow(w: OwnerWorker, c: Ctx): string {
  * the unread report, its queue place, its stop or its supersession. Empty when the strip says it all.
  */
 function reasonText(w: OwnerWorker, card: WorkCard): string {
-  const { danger, muted, success } = theme.board, cross = mark('✗', 'x');
+  const { danger, muted, success } = theme.board, cross = stateMark.failed();
   if (w.superseded) return muted(t('superseded'));
   if (w.state === 'stopped') return muted(t('stopped'));
   if (card.state === 'queued') return muted(workStateWord(card));
@@ -80,7 +81,7 @@ function reasonText(w: OwnerWorker, card: WorkCard): string {
   if (w.flow?.state === 'failed') return danger(`${cross} ${t('{step} red', { step: t(w.flow.steps.find((s) => s.state === 'failed')?.key ?? 'land') })}`);
   if (isUnreadReport(w) && !activeFlow(w)) {
     const outcome = w.labels?.outcome?.value;
-    return success(`${mark('●', '*')} ${t('report unread')}${outcome && outcome !== 'done' ? ` [${t(outcome)}]` : ''}`);
+    return success(`${mark('●', '*', '\uF0E0')} ${t('report unread')}${outcome && outcome !== 'done' ? ` [${t(outcome)}]` : ''}`);
   }
   return '';
 }
@@ -90,10 +91,10 @@ const sentenceOf = (w: OwnerWorker): string | undefined =>
   w.homeNeedsHuman ? w.work?.requestInfo?.display?.question ?? w.work?.requestInfo?.question ?? w.ask
     : w.settledAt === null && w.state === 'working' ? w.modelSentence ?? w.latest_progress?.text : undefined;
 
-/** The sentence under its row, in `ink` (dim for a running job, the ask colour for a question): one line, two from 100 columns, the last cut with …. */
+/** The sentence under its row, indented to the id, in `ink` (dim for a running job, the ask colour for a question): one line, two from 100 columns, the last cut with …. */
 function summaryRows(raw: string | undefined, room: number, wide: boolean, ink: (s: string) => string): string[] {
   if (!raw) return [];
-  const pad = '   ', text = keywordMarks(monitorText(raw)).plain.replace(/\s+/g, ' ').trim(), max = wide ? 2 : 1;
+  const pad = ' '.repeat(headCols()), text = keywordMarks(monitorText(raw)).plain.replace(/\s+/g, ' ').trim(), max = wide ? 2 : 1;
   let lines = flowLines(text, room - pad.length);
   if (lines.length > max) lines = [...lines.slice(0, max - 1), truncateAnsi(lines.slice(max - 1).join(' '), room - pad.length)];
   return lines.map((line) => fit(pad + ink(line), room));
@@ -105,7 +106,8 @@ function jobRow(w: OwnerWorker, lane: Pick<WorkLane, 'id' | 'label'>, c: Ctx, in
   const open = cardExpanded(c.state, key), ink = workStateInk(card), room = c.width - indent.length;
   const running = w.settledAt === null && w.state === 'working' && !w.homeNeedsHuman;
   const id = jobId(w, lane, !!indent), reason = reasonText(w, card);
-  const head = `${indent}${cell(ink(workStateGlyph(card)))} ${theme.board.identifier(c.idw ? fit(id, c.idw - indent.length) : id)}  `;
+  // A running job has no state mark: the column shows exceptions only.
+  const head = `${indent}${roleMark(card.role)} ${cell(card.state === 'in-progress' ? '' : ink(workStateGlyph(card)))} ${theme.board.identifier(c.idw ? fit(id, c.idw - indent.length) : id)}  `;
   // The age is the job's own; the silence is the time since it last wrote, dim, then amber once the card calls it stalled.
   const age = theme.board.muted(ageText(running ? workMinute(w.startedAt, c.now) ?? 0 : card.elapsedMinutes ?? 0));
   const quiet = running && (card.inactivityMinutes ?? 0) >= QUIET_MINUTES
@@ -121,9 +123,7 @@ function jobRow(w: OwnerWorker, lane: Pick<WorkLane, 'id' | 'label'>, c: Ctx, in
     // Narrow the right side one mark at a time before the strip or the id is cut.
     const parts = (drop: number): [string, string] => {
       const keep = (d: (typeof DROPS)[number]) => !DROPS.slice(0, drop).includes(d);
-      const [role, model] = [keep('role') ? roleMark(card.role) : '', keep('model') ? workerModelBadge(w, 'compact') : ''];
-      const executor = role + (role && model ? mark('', ' ') : '') + model;
-      const group = [executor, keep('route') ? routeBadge(w) : '', keep('sonic') ? sonicBadge(sonic) : ''].filter(Boolean).join(' ');
+      const group = keep('sonic') ? sonicBadge(sonic) : '';
       return [head + strip + (group ? '  ' + group : ''), [age, keep('silence') ? quiet : ''].filter(Boolean).join(' ')];
     };
     let drop = 0;
@@ -168,7 +168,7 @@ function headerRow(lane: WorkLane, shown: readonly OwnerWorker[], c: Ctx): Monit
 
 /** `○ queued 3 · cache-v2/04 · export-csv/03 +1`: whole ids while they fit, then `+N`; `open` leaves the ids to the rows below. */
 export function foldText(kind: FoldKind, ids: readonly string[], width: number, open = false): string {
-  const glyph = kind === 'queued' ? theme.board.muted(mark('○', 'o')) : theme.board.success(mark('✓', '+'));
+  const glyph = kind === 'queued' ? theme.board.muted(stateMark.queued()) : theme.board.success(stateMark.done());
   const head = t(kind === 'queued' ? 'queued {n}' : 'done {n}', { n: ids.length });
   const list = (n: number) => ids.slice(0, n).map((id) => ' · ' + id).join('') + (n < ids.length ? ` +${ids.length - n}` : '');
   let n = open ? 0 : ids.length;
@@ -206,7 +206,7 @@ export function jobRows(input: MonitorData, lanes: readonly WorkLane[], state: M
     ...groups.flatMap(({ lane, shown = [] }) => shown.map((w) => idWidth(w, lane, shown.length > 1 ? 2 : 0))),
     ...(['queued', 'done'] as const).flatMap((kind) => (state.home.expanded?.has(`fold:${kind}`) ? folds[kind].map(([w, lane]) => idWidth(w, lane, 0)) : [])),
   ];
-  c.idw = Math.min(Math.max(MIN_ID, ...wanted), Math.max(MIN_ID, width - 3 - 2 - STRIP_CELLS - 1 - ageText(0).length));
+  c.idw = Math.min(Math.max(MIN_ID, ...wanted), Math.max(MIN_ID, width - headCols() - 2 - STRIP_CELLS - 1 - ageText(0).length));
   const rows: MonitorRow[] = [];
   for (const { lane, shown } of groups) {
     if (!shown) { rows.push(...laneRows(input, lane, state, width, now, { skipAsking: true, allWorkers: pool })); continue; }

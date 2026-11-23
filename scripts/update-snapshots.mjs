@@ -85,7 +85,8 @@ const only = process.argv.slice(2);
 const changed = [];
 for (const [name, make] of Object.entries(writers)) {
   if (only.length && !only.includes(name)) continue;
-  const text = JSON.stringify(await make(), null, 2) + '\n';
+  // Private Use glyphs (the Nerd icons) are written as \u escapes: valid JSON, and no tool strips them from the file.
+  const text = JSON.stringify(await make(), null, 2).replace(/[\uE000-\uF8FF]/g, (c) => `\\u${c.charCodeAt(0).toString(16)}`) + '\n';
   if (fs.readFileSync(fixture(name), 'utf8') !== text) {
     fs.writeFileSync(fixture(name), text);
     changed.push(name);

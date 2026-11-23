@@ -12,6 +12,7 @@ import { TRY_ACTIONS } from './split-project.js';
 import { homeKeys } from './job-actions.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
 import { foldText, roleMark } from './work-jobs.js';
+import { roleIcon } from './model-glyphs.js';
 import { activeFlow, unattendedFailure } from './work-visibility.js';
 import { isUnreadReport, laneSonicRunning, mainLaneWorkers, routeBadge, sonicBadge, workerModelBadge } from './worker-roster.js';
 import type { WorkCard } from '../collectors/work-card.js';
@@ -168,7 +169,7 @@ export function homeScene(
         const ruleRight = [
           midText && midText !== jobs ? midText : '',
           jobs,
-          sonic > 0 ? `${mark('⚡', '*')}${sonic}` : '',
+          sonic > 0 ? `${roleIcon('sonic')}${sonic}` : '',
         ].filter(Boolean).join(' · ');
         return { label: names[i], right: ruleRight, rows: [...slabs, ...cards] };
       },

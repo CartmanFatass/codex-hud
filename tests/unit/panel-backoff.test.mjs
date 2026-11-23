@@ -298,8 +298,8 @@ test(
         const start = Date.now(),
           beforeQuestion = p.collections().length;
         f.put(join(f.dir, 'STATUS.json'), { state: 'working' });
-        f.put(join(f.dir, 'qa/q1.md'), '# Question\n\nSYNTHETIC_BACKOFF_QUESTION?\n\nDefault if unanswered: yes\n');
-        await p.until(() => p.output().includes('SYNTHETIC_BACKOFF_QUESTION'), LIVE_MAX_MS * 1.1);
+        f.put(join(f.dir, 'qa/q1.md'), '# Question\n\nBACKOFF_QUESTION?\n\nDefault if unanswered: yes\n');
+        await p.until(() => p.output().includes('BACKOFF_QUESTION'), LIVE_MAX_MS * 1.1);
         const elapsed = Date.now() - start;
         assert.ok(
           elapsed >= LIVE_MAX_MS * 0.9 && elapsed <= LIVE_MAX_MS * 1.1,

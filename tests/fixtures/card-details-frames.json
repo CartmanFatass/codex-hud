@@ -1,9 +1,9 @@
 {
   "en-80": [
     " Home  Project  Control                                                         ",
-    "✓ Nothing needs you                                      ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
+    "✓ Nothing needs you                                                             ",
     "                                                                                ",
-    "◉  SYNTHETIC  ●●●◐○  ⚒                                               4m quiet 4m",
+    "⚒    SYNTHETIC  ●●●◐○                                                4m quiet 4m",
     "┃ Checking report.md and src/tree-page.ts.                                      ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.   ",
     "Claude · this session                                                        ◉ ✓",
@@ -31,9 +31,9 @@
   ],
   "zh-80": [
     " 首页  项目  控制                                                               ",
-    "✓ 没有需要你处理的事                                     ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
+    "✓ 没有需要你处理的事                                                            ",
     "                                                                                ",
-    "◉  SYNTHETIC  ●●●◐○  ⚒                                                 4分 静4分",
+    "⚒    SYNTHETIC  ●●●◐○                                                  4分 静4分",
     "┃ 正在检查report.md和src/tree-page.ts。                                         ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.   ",
     "Claude · 本次会话                                                            ◉ ✓",
@@ -61,9 +61,9 @@
   ],
   "en-120": [
     " Home  Project  Control                                                                                                 ",
-    "✓ Nothing needs you                                                                              ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
+    "✓ Nothing needs you                                                                                                     ",
     "                                                                                                                        ",
-    "◉  SYNTHETIC  ●●●◐○  ⚒                                                                                       4m quiet 4m",
+    "⚒    SYNTHETIC  ●●●◐○                                                                                        4m quiet 4m",
     "┃ Checking report.md and src/tree-page.ts.                                                                              ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.                                           ",
     "Claude · this session                                                                                                ◉ ✓",
@@ -91,9 +91,9 @@
   ],
   "zh-120": [
     " 首页  项目  控制                                                                                                       ",
-    "✓ 没有需要你处理的事                                                                             ◉ 1  ✻ ant 2 ✓  ◎ oai 3",
+    "✓ 没有需要你处理的事                                                                                                    ",
     "                                                                                                                        ",
-    "◉  SYNTHETIC  ●●●◐○  ⚒                                                                                         4分 静4分",
+    "⚒    SYNTHETIC  ●●●◐○                                                                                          4分 静4分",
     "┃ 正在检查report.md和src/tree-page.ts。                                                                                 ",
     "┃ Factual details from report.md with enough words to wrap at a narrow width.                                           ",
     "Claude · 本次会话                                                                                                    ◉ ✓",

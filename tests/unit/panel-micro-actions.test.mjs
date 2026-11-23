@@ -258,10 +258,10 @@ test('Classic Home at 40 columns keeps a collapsed question as its row (lane, op
   const f = fixture(t);
   for (const lang of ['en', 'zh']) {
     const frame = f.render(initialMonitorState(), 40, lang), rows = plain(frame);
-    const at = rows.findIndex((line) => line.startsWith('?  IMP'));
+    const at = rows.findIndex((line) => /^\S \? {2}IMP /.test(line));
     assert.ok(at >= 0);
-    assert.match(rows[at], lang === 'en' ? /^\? {2}IMP {2}asks 2 opts +4m$/ : /^\? {2}IMP {2}问 2选 +4分$/);
-    assert.match(rows[at + 1], /^ {3}Keep the v1 shim for one more releas…\s*$/, 'the question, cut to the line');
+    assert.match(rows[at], lang === 'en' ? /^\S \? {2}IMP {2}asks 2 opts +4m$/ : /^\S \? {2}IMP {2}问 2选 +4分$/);
+    assert.match(rows[at + 1], /^ {5}Keep the v1 shim for one more rele…\s*$/, 'the question, cut to the line');
     assert.doesNotMatch(rows.join('\n'), /qa\/q1\.md|\[1\]|r reply|Stop |default:|默认:/);
     for (const row of frame.lines) assert.equal(visualLength(row), 40);
   }

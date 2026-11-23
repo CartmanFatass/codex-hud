@@ -132,6 +132,46 @@ test('all bar settings readers accept the six ids; malformed values remain line'
   );
 });
 
+test('the bar and the pi footer take their role icons from the saved Icons setting; the Nerd Font set is the default', (t) => {
+  const previous = setDisplayConfig({});
+  t.after(() => setDisplayConfig(previous));
+  const home = mkdtempSync(join(tmpdir(), 'bar-icons-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const file = join(home, 'hud-settings.json'),
+    old = process.env.HUD_SETTINGS_PATH;
+  process.env.HUD_SETTINGS_PATH = file;
+  t.after(() => {
+    if (old === undefined) delete process.env.HUD_SETTINGS_PATH;
+    else process.env.HUD_SETTINGS_PATH = old;
+  });
+  const workers = [
+    { role: 'imp', state: 'working' as const },
+    { role: 'frontend-imp', state: 'working' as const },
+    { role: 'sonic', state: 'working' as const },
+  ];
+  const zone = () => stripAnsi(renderBar({ model: { name: 'M' }, workers }, 80, THEME_NOW).line);
+  assert.equal(resolveDisplayConfig({}).icons, 'nerd');
+  const wanted: Record<string, string> = {
+    nerd: 'M │ \uF0AD1  \uF1FC1  \uF0E71',
+    unicode: 'M │ ⚒1  ✎1  ⚡1',
+    text: 'M │ I1  F1  *1',
+  };
+  for (const [icons, line] of Object.entries(wanted)) {
+    writeFileSync(file, JSON.stringify({ icons }));
+    applyBarSettings();
+    assert.equal(zone(), line, icons);
+  }
+  // A missing or unknown value is the default; the environment still decides when the file says nothing.
+  writeFileSync(file, JSON.stringify({ icons: 'emoji' }));
+  applyBarSettings();
+  assert.equal(zone(), wanted.nerd);
+  writeFileSync(file, JSON.stringify({ barStyle: 'line' }));
+  process.env.HUD_ICONS = 'text';
+  t.after(() => delete process.env.HUD_ICONS);
+  applyBarSettings();
+  assert.equal(zone(), wanted.text);
+});
+
 test('Stacked survives the actual Claude statusline command as two rows', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'stacked-statusline-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));

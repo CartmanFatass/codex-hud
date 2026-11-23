@@ -1,6 +1,6 @@
 import { lookupModelEntry, SHIPPED_MODELS_CATALOG, type ModelFamilyId } from '../models/catalog.js';
 import { colors, theme, visualLength } from './colors.js';
-import { displayConfig, type GlyphMode } from './hud-config.js';
+import { displayConfig, iconSet, type GlyphMode, type IconMode } from './hud-config.js';
 import { PROVIDERS, providerMark, shortModel } from './providers.js';
 
 export const MODEL_GLYPHS: Readonly<Record<ModelFamilyId, string>> = Object.fromEntries(
@@ -14,18 +14,25 @@ export const MODEL_LABELS: Readonly<Record<ModelFamilyId, string>> = Object.from
 export const EFFORT_GLYPHS: Record<string, string> = { ...SHIPPED_MODELS_CATALOG.effortGlyphs };
 
 /**
- * The worker zone's icon per HUD role, `[glyph, ascii]`, in the order the zone shows them: sonic last, and `other` (the
- * icon of any role not listed) before it. The one table, so Home can reuse it.
+ * The icon per HUD role, `[unicode, ascii, nerd]` (the `icons` setting picks one), in the order the worker zone and Home's top
+ * line show them: sonic last, and `other` (the icon of any role not listed) before it. The one table for the bar, the pi footer
+ * and Home; the native statusline carries a copy (`native/src/render.rs`). The nerd glyphs are Font Awesome's, in the BMP.
  */
-export const ROLE_GLYPHS: Readonly<Record<string, readonly [glyph: string, ascii: string]>> = {
-  imp: ['⚒', 'I'],
-  'frontend-imp': ['✎', 'F'],
-  general: ['✦', 'G'],
-  oracle: ['◈', 'O'],
-  reviewer: ['⚖', 'R'],
-  other: ['•', '.'],
-  sonic: ['⚡', '*'],
+export const ROLE_GLYPHS: Readonly<Record<string, readonly [unicode: string, ascii: string, nerd: string]>> = {
+  imp: ['⚒', 'I', '\uF0AD'],
+  'frontend-imp': ['✎', 'F', '\uF1FC'],
+  general: ['✦', 'G', '\uF013'],
+  oracle: ['◈', 'O', '\uF0EB'],
+  reviewer: ['⚖', 'R', '\uF002'],
+  other: ['•', '.', '•'],
+  sonic: ['⚡', '*', '\uF0E7'],
 };
+
+/** The role's icon in `set` (a role with no icon of its own gets `other`'s); `emoji` and `unicode` share the Unicode set. */
+export function roleIcon(role: string, set: IconMode = iconSet()): string {
+  const [unicode, ascii, nerd] = ROLE_GLYPHS[Object.hasOwn(ROLE_GLYPHS, role) ? role : 'other']!;
+  return set === 'text' ? ascii : set === 'nerd' ? nerd : unicode;
+}
 
 export type ModelFamily = ModelFamilyId;
 

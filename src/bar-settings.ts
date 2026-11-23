@@ -8,7 +8,7 @@ export function applyBarSettings(): void {
   let fd: number | undefined;
   try {
     const file = resolveHudEnv(process.env, 'HUD_SETTINGS_PATH') || join(getHudHome(), 'hud-settings.json');
-    let { barStyle, barFields, theme } = resolveDisplayConfig();
+    let { barStyle, barFields, theme, icons } = resolveDisplayConfig();
     if (fs.existsSync(file)) {
       let raw;
       try {
@@ -26,12 +26,14 @@ export function applyBarSettings(): void {
       barStyle = barStyleOf(values.barStyle);
       // Bar-only clients historically use the environment's palette; only an explicit no-colour preference overrides it.
       if (values.theme === 'none') theme = 'none';
+      // The panel's Icons setting, so the bar and the pi footer draw the same icons as the panel.
+      if (values.icons === 'nerd' || values.icons === 'unicode' || values.icons === 'text') icons = values.icons;
       barFields =
         Array.isArray(values.barFields) && values.barFields.every((f: unknown) => BAR_FIELDS.includes(f as never))
           ? values.barFields
           : [...BAR_FIELDS];
     }
-    setDisplayConfig({ barStyle, barFields, theme });
+    setDisplayConfig({ barStyle, barFields, theme, icons });
   } catch {
     /* An unreadable settings file leaves the bar as it was. */
   } finally {

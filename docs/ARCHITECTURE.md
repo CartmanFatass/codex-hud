@@ -353,7 +353,7 @@ All three bars collect `BarFacts`; `render/layout/bar-fields.ts` fits and paints
 model/effort, context, repo/branch, client quota (pi cost in its ribbon), output rate
 (Claude and Codex; pi keeps its ribbon reading), the notice zone and loaded counts.
 Missing facts disappear. The zone counts the HUD's workers (`work-summary.ts` makes the census
-of live jobs; `bar-fields.ts` shows an icon and a count per role from `ROLE_GLYPHS`, sonic last, one `!N`
+of live jobs; `bar-fields.ts` shows an icon (`roleIcon`: Nerd Font, Unicode or ASCII by the `icons` setting, which the bar reads in `bar-settings.ts` and `native/src/config.rs`) and a count per role from `ROLE_GLYPHS`, sonic last, one `!N`
 for the workers asking; no job title, provider, model or effort appears in the bar), then
 retains subagent starts/completions/failures and Claude skill loads for three minutes, with
 approvals pinned. The zone has one form; the `title` rungs of `LADDER` cut subagent titles only.

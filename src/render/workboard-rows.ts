@@ -7,7 +7,21 @@ import { pair, monitorText, fit, flowLines } from './monitor-text.js';
 import { ageText } from './work-card.js';
 import { t } from './i18n.js';
 export const asciiBoard = () => displayConfig().icons === 'text';
-export const mark = (unicode: string, ascii: string) => (asciiBoard() ? ascii : unicode);
+/** A mark in the icon set in use; `nerd` is the Font Awesome glyph where one is chosen (as `\uXXXX`), else the Unicode mark. */
+export const mark = (unicode: string, ascii: string, nerd = unicode) => {
+  const set = displayConfig().icons;
+  return set === 'text' ? ascii : set === 'nerd' ? nerd : unicode;
+};
+/** A job's state marks: one place for Home's rows, top line and folds, the cards and Help. */
+export const stateMark = {
+  asking: () => mark('?', '?', '\uF059'),
+  failed: () => mark('✗', 'x', '\uF057'),
+  unread: () => mark('✓●', '+*', '\uF0E0'),
+  done: () => mark('✓', '+', '\uF058'),
+  queued: () => mark('○', 'o', '\uF252'),
+  stalled: () => mark('◷', '~', '\uF186'),
+  stopped: () => mark('−', '-', '\uF04D'),
+};
 export const boardCursor = (text: string) =>
   theme.board.selected(text.replace(/\x1b\[48;[0-9;]+m|\x1b\[38;2;25;21;13m/g, ''));
 export function minuteAge(at: number | null, now: number): string {
