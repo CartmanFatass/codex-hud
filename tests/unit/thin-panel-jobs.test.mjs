@@ -15,6 +15,8 @@ import { Notifier } from '../../dist/notify.js';
 import { frameDiff } from '../../dist/render/frame-diff.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { collectJobLanes } from '../../dist/collectors/job-snapshot.js';
+import { buildWorkboard } from '../../dist/collectors/workboard.js';
 import { flowLine, flowSummary } from '../../dist/render/work-card.js';
 const now = new Date().setHours(12, 0, 0, 0);
 const question =
@@ -403,6 +405,9 @@ test('statusline notices and explicit detail counts read job folders with no rol
 
 test('work cards show land and scout flow steps and final outcomes in EN and ZH', async (t) => {
   const f = fixture(t);
+  // Test each on-disk transition, not whether a watch notification beats the next request.
+  const project = async () => buildWorkboard(f.tree, (await collectJobLanes(f.env.HUD_HOME,
+    { project: null, pane: f.env.HERDR_PANE_ID }, { openedAt: f.pipeline.openedAt })).lanes);
   const landId = 'j0000000000000081', flowId = 'f0000000000000081';
   const flowFile = join(f.env.HUD_HOME, 'flows', `${flowId}.json`);
   // Settled 10 minutes ago (past the 5m fold window): an active land must keep it visible and unfolded.
@@ -421,8 +426,7 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
   const scoutDir = f.job(82, 'FLOW-SCOUT', 'scout synthetic slice', 'working', 0, null, 'w4E:p1', { scout_state: 'scouting' });
   f.put(join(scoutDir, 'STATUS.json'), { state: 'working', reason: 'scouting', started_at: new Date(now - 60000).toISOString() }, 0);
 
-  await f.pipeline.refresh();
-  let board = f.pipeline.workboard(f.tree);
+  let board = await project();
   for (const [lang, scoutStep] of [['en', 'scouting'], ['zh', '侦察中']]) {
     setLanguage(lang);
     for (const width of [40, 80]) {
@@ -440,8 +444,7 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
   f.put(flowFile, { ...firstRun, state: 'failed', error: 'timeout' }, 0);
   const queued = { ...firstRun, flow: `${flowId}-2`, state: 'queued', step: 'waiting for f0000000000000099 (gate step 2, 3 min)' };
   f.put(retryFile, queued, 0);
-  await f.pipeline.refresh();
-  board = f.pipeline.workboard(f.tree);
+  board = await project();
   for (const [lang, narrow, wide] of [
     ['en', 'wait f0000000000000099 · gate 2, 3m', queued.step],
     ['zh', '等待 f0000000000000099 · 门禁 2，3分', '等待 f0000000000000099（门禁第 2 步，3 分钟）'],
@@ -465,8 +468,7 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
     created_at: new Date(now - 60000).toISOString(), scout_state: 'done',
   }, 0);
   f.put(join(scoutDir, 'STATUS.json'), { state: 'working', started_at: new Date(now - 60000).toISOString() }, 0);
-  await f.pipeline.refresh();
-  board = f.pipeline.workboard(f.tree);
+  board = await project();
   for (const [lang, landedText, runText] of [
     ['en', '✓ gate ▸ ✓ merge ▸ ✓ push · landed 1234567', '✓ scout ▸ ◉ run'],
     ['zh', '✓ 门禁 ▸ ✓ 合并 ▸ ✓ 推送 · 已落地 1234567', '✓ 侦察 ▸ ◉ 运行'],
@@ -482,8 +484,7 @@ test('work cards show land and scout flow steps and final outcomes in EN and ZH'
   // Failed land reports the failing stage and error.
   f.put(retryFile, { ...queued, config: { ...queued.config, push: false }, state: 'failed', step: 'fast-forward', error: 'base moved',
     updated_at: new Date(now - 2000).toISOString() }, 0);
-  await f.pipeline.refresh();
-  board = f.pipeline.workboard(f.tree);
+  board = await project();
   for (const [lang, failedText] of [
     ['en', '✓ gate ▸ ✗ merge · failed: base moved'],
     ['zh', '✓ 门禁 ▸ ✗ 合并 · 失败：base moved'],
