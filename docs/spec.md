@@ -427,6 +427,10 @@ reversibly configures Antigravity's MCP, permission, statusline and `PreInvocati
   finished jobs and exits when none is open. Keep statusline and panel at least as fast as what they replace.
   (11.03, 10.04)
 - Done means the owner can install and use it, not that tests are green. (10.04)
+- The owner's attention is the scarcest resource. Panel, bars and notices show what matters most and what
+  needs the owner now, not everything known; a change that adds detail must say what it lets the owner skip.
+  Owner acceptance is only for behaviour the owner must interact with to judge; the main session or a worker
+  verifies everything else live. (22.28)
 
 ## 5. Milestones
 

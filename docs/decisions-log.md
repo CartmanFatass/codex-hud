@@ -124,6 +124,10 @@ The owner approved the lean spec and resolved the draft questions:
   stay); Help drops the backup-skills list for `docs/optional-skills.md`; tickets become the only slice
   ledger and STATE keeps milestone, now, waiting and next. Each ticket updates its own spec lines.
   Tickets: `.scratch/trim/`.
+- **D-2026-11-22-28** (§4): Owner after many Home and statusline rounds: what matters is not how complete the
+  shown information is but showing the most important; attention is the scarcest resource. Most acceptance
+  does not need the owner: only explicitly interactive behaviour suits owner acceptance, otherwise a model's
+  live check does better. `owner_try` narrows accordingly in the convention.
 
 ## 2026-11-21
 
