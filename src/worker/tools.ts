@@ -2,10 +2,10 @@
 import { normalizeReportMeta, writeReportMeta } from '../roles/report-meta.js';
 import { DONE_FILE, readTurn, saveTurn, turnToken, reportSignature, withTurnLock, workerAlive } from '../mcp/cli-judge.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
-import { readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readJsonBounded, readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { takeLease, LEASE_TOOL } from '../roles/lease.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
-import type { Job, DoneReceipt } from '../mcp/job-contracts.js';
+import type { Job, DoneReceipt, ManagedWorktree } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -49,6 +49,54 @@ export function capturePiTree(dir: string) {
   if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
 }
 
+const commitId = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+
+function mergeConflictPaths(output: string): string[] {
+  const fields = output.split('\0'), paths = new Set<string>();
+  let i = 1; // The result tree comes first, then conflicted paths up to an empty field.
+  while (fields[i]) paths.add(fields[i++]);
+  // Logical conflicts (such as directory renames) may have no unmerged file entries.
+  // Each message is path count, paths, stable type, and human-readable message.
+  for (i++; i < fields.length - 1;) {
+    const count = Number(fields[i++]), end = i + count;
+    if (!Number.isSafeInteger(count) || count < 0 || end + 2 >= fields.length) break;
+    if (fields[end].startsWith('CONFLICT')) for (; i < end; i++) paths.add(fields[i]);
+    i = end + 2;
+  }
+  return [...paths];
+}
+
+async function reportConflict({ root, main_root, branch, base_head }: ManagedWorktree) {
+  try {
+    let baseRef = 'HEAD';
+    try {
+      const project = readJsonBounded(join(main_root, '.hud', 'project.json'), 256 * 1024) as
+        { land?: { base?: unknown } } | null;
+      const ref = project?.land?.base;
+      if (typeof ref === 'string' && ref) baseRef = `refs/heads/${ref}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const [base, head] = (await git(main_root, ['rev-parse', '--revs-only', `${baseRef}^{commit}`, `refs/heads/${branch}^{commit}`])).trim().split('\n');
+    if (!commitId.test(base) || !commitId.test(head) || head === base_head || head === base) return;
+    // Unlike status, a real merge can run repository-configured merge drivers. Only preview built-in merges.
+    try {
+      await git(root, ['config', '--name-only', '--get-regexp', '^merge\\..*\\.driver$']);
+      return;
+    } catch (error) {
+      if ((error as { code?: number }).code !== 1) throw error;
+    }
+    try {
+      await git(root, ['-c', 'merge.renormalize=false', 'merge-tree', '--write-tree', '--name-only', '-z', '--messages', base, head], 1000);
+    } catch (error) {
+      const { code, stdout } = error as { code?: number; stdout?: string };
+      if (code === 1 && stdout && commitId.test(stdout.split('\0', 1)[0])) {
+        return { base, paths: mergeConflictPaths(stdout) };
+      }
+    }
+  } catch { /* Best effort: an unavailable preview must not prevent land from doing the real check. */ }
+}
+
 // Omit text for the fallback command, which declares a report the worker wrote itself.
 export async function finishReport({ dir, job }: Worker, turn: unknown, text?: string, metadata: Parameters<typeof normalizeReportMeta>[0] = {}) {
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
@@ -64,6 +112,22 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
       throw new Error('Could not check the worktree for uncommitted changes', { cause });
     }
     if (status) throw new Error(`Commit your changes on ${branch} first (git -c user.name='HUD worker' -c user.email=worker@hud.invalid commit -- <paths>), then report.`);
+    const warned = join(dir, 'report-conflict-warned');
+    const conflict = !fs.existsSync(warned) && await reportConflict(job.worktree);
+    if (conflict) {
+      let first = true;
+      try { writePrivateFile(warned, '', { mkdir: false, exclusive: true }); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        first = false;
+      }
+      if (first) {
+        const { base, paths } = conflict;
+        const names = paths.slice(0, 20).map((name) => JSON.stringify(name)).join(', ');
+        const more = paths.length > 20 ? ` (+${paths.length - 20} more)` : '';
+        throw new Error(`Merge conflict with the current base${names ? ` in ${names}${more}` : ''}. Rebase onto ${base}, rerun tests, then report again. This check only refuses once.`);
+      }
+    }
   }
   const path = join(dir, jobFiles.report);
   if (job.cli) {

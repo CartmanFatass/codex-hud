@@ -65,7 +65,7 @@ export const worktreeGit: WorktreeGit = (cwd, args, timeoutMs = 5000) =>
           GIT_LITERAL_PATHSPECS: '1',
         },
       },
-      (error, stdout) => (error ? no(error) : yes(stdout))
+      (error, stdout) => (error ? no(Object.defineProperty(error, 'stdout', { value: stdout })) : yes(stdout))
     );
   });
 

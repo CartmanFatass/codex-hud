@@ -752,6 +752,62 @@ for (const refused of [false, true]) {
   });
 }
 
+for (const customDriver of [false, true]) {
+  test(customDriver ? 'hud_report does not run a configured merge driver' : 'hud_report refuses a conflict with the current base once', async (t) => {
+    const f = await fixture(t), main_root = initRepo(f.root);
+    // Keep main HEAD distinct so the check must resolve the configured integration branch.
+    const integration = join(f.root, 'integration');
+    git(main_root, 'worktree', 'add', '-qb', 'integration', integration);
+    fs.mkdirSync(join(main_root, '.hud'));
+    writeFixtureFile(join(main_root, '.hud', 'project.json'), JSON.stringify({ land: { base: 'integration' } }));
+    const names = ['tracked.txt', 'line\nbreak.txt'];
+    fs.writeFileSync(join(integration, names[1]), 'Synthetic base file.\n');
+    git(integration, 'add', '--', names[1]);
+    git(integration, 'commit', '-qm', 'Synthetic base file');
+    const base_head = git(integration, 'rev-parse', 'HEAD');
+    const root = join(f.root, 'demo-wt', 'synthetic-000001'), branch = 'wt/synthetic-000001';
+    git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
+    for (const [checkout, side] of [[integration, 'integration'], [root, 'worker']]) {
+      for (const name of names) fs.writeFileSync(join(checkout, name), `Synthetic ${side} change.\n`);
+      git(checkout, 'commit', '-qam', `Synthetic ${side} commit`);
+    }
+    const base = git(integration, 'rev-parse', 'HEAD');
+    const head = git(root, 'rev-parse', 'HEAD');
+    if (customDriver) {
+      git(root, 'config', 'merge.default', 'synthetic');
+      git(root, 'config', 'merge.synthetic.driver', 'touch driver-ran; false');
+    }
+    const { dir, receipt } = waitFixtureJob(f, 1, 'working', undefined, root);
+    const worktree = { root, branch, main_root, base_head };
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, worktree, cli: true }));
+    const current = { seq: 1, sent_at: receipt.created_at }, turn = turnToken(current);
+    writeFixtureFile(join(dir, 'turn.json'), JSON.stringify(current));
+    const report = join(dir, 'report.md'), done = join(dir, 'done.json');
+    const text = 'Synthetic implementation report.\n';
+    const call = workerClient(t, f, dir);
+    const result = await call('hud_report', { text, turn });
+    if (customDriver) {
+      assert.deepEqual(resultValue(result), { path: report });
+      assert.equal(fs.existsSync(join(root, 'driver-ran')), false);
+    } else {
+      assert.equal(result.isError, true);
+      const error = JSON.parse(result.content[0].text).error;
+      for (const name of names) assert.ok(error.includes(JSON.stringify(name)), error);
+      assert.ok(error.includes(`Rebase onto ${base}, rerun tests, then report again`), error);
+      assert.equal(fs.existsSync(report), false);
+      assert.equal(fs.existsSync(done), false);
+      // A separate process takes the retry even though no rebase was done.
+      writeFixtureFile(report, text);
+      const retry = runProgress(f, dir, '--done', '--turn', turn);
+      assert.equal(retry.status, 0, retry.stderr);
+    }
+    assert.equal(JSON.parse(fs.readFileSync(done, 'utf8')).seq, 1);
+    assert.equal(fs.readFileSync(report, 'utf8'), text);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+    assert.equal(git(root, 'status', '--porcelain'), '');
+  });
+}
+
 for (const mode of ['hud_report', 'shell fallback']) {
   test(`${mode} refuses dirty managed worktree reports until the changes are committed`, async (t) => {
     const f = await fixture(t), main_root = initRepo(f.root);
@@ -800,6 +856,9 @@ for (const mode of ['hud_report', 'shell fallback']) {
     git(root, 'add', '--', changed);
     assert.equal(await submit(), rejected, 'staged changes also block publishing');
     git(root, 'commit', '-qm', 'Synthetic work', '--', changed);
+    fs.writeFileSync(join(main_root, 'base-only.txt'), 'Synthetic nonconflicting base advance.\n');
+    git(main_root, 'add', 'base-only.txt');
+    git(main_root, 'commit', '-qm', 'Synthetic base advance', '--', 'base-only.txt');
     assert.equal(await submit(), undefined);
     assert.equal(JSON.parse(fs.readFileSync(done, 'utf8')).seq, 2);
     assert.equal(fs.readFileSync(report, 'utf8'), text);

@@ -30,9 +30,9 @@ Applies to every worker job in this repository, after its own task.
   report.
 - A choice the brief and `docs/spec.md` leave open that the owner would not see: take the simplest and list it under
   Decisions in the report. Ask only when the owner would see the difference or the brief contradicts the spec.
-- Do not rebase or merge main into your branch and do not wait for another job's land: build on your worktree's base
-  and say in the report what your change assumes. `hud_land` replays onto current main and sends conflicts back to
-  you as a repair; follow that repair's instructions.
+- Do not merge main into your branch or wait for another job's land: build on your worktree's base and say in the
+  report what your change assumes. Rebase only when the report tool asks you to or when following an explicit land
+  repair's instructions. `hud_land` replays onto current main and sends conflicts back to you as a repair.
 - Git: amend only your own unpushed commits; do not reformat code you did not change; never write git config. Commit
   as `git -c user.name='HUD worker' -c user.email=worker@hud.invalid commit ...`.
 - The owner's real `~/.hud`, `~/.claude`, `~/.codex`, `~/.gemini` and `~/.pi` may be read to learn formats; never
