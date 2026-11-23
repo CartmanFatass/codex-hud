@@ -105,6 +105,8 @@ The owner approved the lean spec and resolved the draft questions:
   `hud watch --mod` on demand and, while it is live, owns wake for that session in place of MCP tasks (Claude
   cannot drop an engine task-notification row, so running both would always duplicate); HUD jobs then leave
   Claude's `/tasks` list and batch `hud_create({ jobs })` works again.
+  Owner: an explicit `/land <job>` typed in Claude starts `hud_land` directly (no main-session turn); band
+  buttons and `/retry` keep recording intent.
 
 ## 2026-11-21
 

@@ -307,7 +307,7 @@ Reference: `docs/design/control-tab/design.md`, `docs/design/control-tab/index.h
 - No panel briefing or chaining. Owner actions equivalent to local commands: `g` focuses selected job's
   herdr tab; `1`–`4` or `d` on expanded question writes `qa/qN.answer.md` once, notifies main via `changes` /
   `hud watch`; confirmed `X` reaps a runaway via `pi-role-reap`. (18.09)
-- `r` on a failed job requests a retry and `m` on a to-try slice requests landing; the panel records the intent and the main session decides whether to act.
+- `r` on a failed job requests a retry and `m` on a to-try slice requests landing; the panel records the intent and the main session decides whether to act. In Claude Code with the HUD mod, the owner's explicit `/land <job>` on a settled worktree job starts the land flow directly; band buttons and `/retry` still record intent. (22.25)
 - Split's unselected working rows show compact keyword and progress cues. Cards and Inspector show a 10-bucket
   activity sparkline (`▁`–`█`), `hud-progress` milestones and nested `sonic` trees under their parent jobs.
   Inspector, Working tree and To-try previews show a bounded safe Git `--numstat` diff bar (top 12 files)
