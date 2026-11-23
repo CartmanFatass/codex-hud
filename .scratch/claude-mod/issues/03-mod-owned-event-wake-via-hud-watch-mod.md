@@ -1,7 +1,7 @@
 # 03: Mod-owned event wake via hud watch --mod
 
 **Status:** ready-for-human
-**Owner try:** yes
+**Owner try:** no
 **Blocked by:** 01, 02
 
 **What to build:** Design: oracle report of job j173e9f379178e359, section 'Slice 1: Mod-Owned Wake' (pass it with from_jobs). `hud watch --mod` emits JSONL wake records (shared jobRow/actionable, 3 s settlement coalescing, questions immediate), registers a claude-mod watcher marker, exits after 10 min with nothing pending. The mod spawns it on demand (main session in herdr only, not workers, not `claude -p`), wakes an idle session with `$.prompt.submit`, merges events into one `$.session.append` note while busy, parks events on an aborted turn. While the watch is live hud-mcp creates no MCP tasks (batch `hud_create({ jobs })` works) and stops panel typing; absent or dead watch falls back to MCP tasks / `changes` unchanged. Spec §2.1.6 line on MCP tasks (22.25).
