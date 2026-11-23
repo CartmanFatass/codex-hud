@@ -20,6 +20,8 @@ Keep this file well under 64 KiB (the Project page reads only that much).
   woken at its report) and SONIC-AUTO-THINKING (a sonic job shows `thinking_source: default` at high; with the
   Settings toggle on, `decision`). Then the milestone's done check: a real project day compared with the 2026-11-21 study counts.
 - CODE-HEALTH (owner 2026-11-21: run the docs/neon-proposal plans through imp): PRUNE-OBS-01..02, BUILD-DEDUP-01..02 landed; PRUNE-OBS-01..04 (neon 01 complete), TEST-SPLIT-01 landed; TEST-SPLIT-02, PROJECT-BOARD-LIMITS-01 landed; I18N-CHECK-01 and TEST-SPLIT-03 working. Proposals 10–16 (the rest of neon's report, reduced) wait for the owner to pick before tickets.
+- PERF + NATIVE-STATUSLINE (2026-11-22, owner skipped acceptance for the design): perf-ts/01-09 and native-statusline/01-02 landed; milestone review (astra max) found 6 blockers, fixed in perf-ts/09 (dd12b650). Measured: panel one process ~100 MB PSS ~1% CPU, watcher ~50 MB stable, Claude statusline native 4-6 ms / 3.6 MB vs TS 75 ms / 85 MB. No Rust panel (owner asked; numbers say no). Next: native-statusline/03 (Antigravity) when the owner has tried 02.
+- AUTO-ROUTE (2026-11-22): headless pi/claude/agy workers, Imp routing by role-file tiers (light hydrogen, standard = active preset, hard astra), only `general` takes model overrides; review found 8 blockers, fixed in auto-route/05 (776cb770). Routing is on in the owner's settings; takes effect after `/mcp` reconnect.
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
 ## Slices
