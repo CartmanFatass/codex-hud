@@ -117,8 +117,9 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 
 #### 2.1.5 Lifecycle, settlement and cleanup
 
-- Main decides each step except the quiet-job choice below, never manages workers. `hud_create` starts
-  them, the watcher closes them, `hud_close` only closes early. No HUD role chaining. (11.03, 14.02)
+- Main decides each step except the quiet-job choice below and the steps inside a ticket batch main started
+  (`hud_tickets` `op: "run"`, §5 MCP-ORCH), never manages workers. `hud_create` starts them, the watcher
+  closes them, `hud_close` only closes early. No HUD role chaining outside the fixed flows. (11.03, 14.02, 22.26)
 - Only facts end a CLI job. It fails only if its process is gone, its tab closes or dispatch is rejected
   before input. Exit after reporting means closed, not failed. Herdr screen status, absent report or dead
   supervisor hand live workers to main; never fail or quit them. (14.02, 22.10)
