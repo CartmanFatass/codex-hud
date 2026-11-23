@@ -37,14 +37,17 @@ const BAR_GLYPH: Record<SliceState, [string, string]> = { working: ['█', '#'],
 export const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number, order?: readonly SliceState[]) => progressSegments(data.counts, width, order).map(({ state, width: cells }) =>
   sliceInk(state)(mark(...BAR_GLYPH[state]).repeat(cells))).join('');
 const HOME_TICKETS = 6, HOME_WAITING = 5;
+const ticketTotalText = (data: ProjectSnapshot, text: string) =>
+  data.ticketTotals?.partial ? `${t('Partial')} · ${text}` : text;
 /** Group the collector's derived states for display; never infer activity from tracker files or jobs here. */
 function homeTicketRows(data: ProjectSnapshot, width: number, slices: boolean, expanded?: ReadonlySet<string>): MonitorRow[] {
   const totals = data.ticketTotals;
   if (!totals?.totalTickets) return [];
   const row = (text: string, key: string): MonitorRow => ({ text: fit(text, width), item: `home-progress:tickets:${key}` });
   const { doneTickets, totalTickets, doneFeatures, totalFeatures } = totals;
-  const closed = t('{done}/{total} closed', { done: doneFeatures, total: totalFeatures });
-  const label = `  ${t('Tickets')}`, ratio = `${doneTickets}/${totalTickets}`;
+  const label = `  ${t('Tickets')}`, ratio = ticketTotalText(data, `${doneTickets}/${totalTickets}`);
+  const closedText = t('{done}/{total} closed', { done: doneFeatures, total: totalFeatures });
+  const closed = totals.partial && visualLength(`${label} ${ratio} ${closedText}`) > width ? '' : closedText;
   const cells = Math.min(8, width - visualLength(`${label}  ${ratio} ${closed}`));
   const rows = [row(pair(`${label}${cells > 0 ? ' ' + meter(doneTickets, totalTickets, cells) : ''} ${ratio}`, closed, width), 'all')];
   let planned = 0, ready = 0, queued = 0;
@@ -170,9 +173,13 @@ function pageMeta(page: ProjectPage, data: ProjectSnapshot, now: number, accepta
     const drift = inFlight(data).filter((r) => r.drift).length, bang = drift ? theme.board.attention(`! ${drift}`) : '';
     return [parts(updatedText(data, now), bang).join(' · '), bang];
   }
-  if (page === 'tickets' && acceptance !== 'slice') return data.tickets?.length ? [featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length)] : [];
-  if (page === 'tickets') return data.tickets?.length ? [t('{features} features · {tickets} tickets', {
-    features: data.ticketTotals?.totalFeatures ?? data.tickets.length, tickets: data.ticketTotals?.totalTickets ?? data.tickets.reduce((n, f) => n + f.tickets.length, 0) })] : [];
+  if (page === 'tickets' && data.tickets?.length) {
+    const features = data.ticketTotals?.totalFeatures ?? data.tickets.length;
+    const text = acceptance !== 'slice' ? featureCountText(features) : t('{features} features · {tickets} tickets', {
+      features, tickets: data.ticketTotals?.totalTickets ?? data.tickets.reduce((n, f) => n + f.tickets.length, 0),
+    });
+    return [ticketTotalText(data, text), ...(data.ticketTotals?.partial ? [t('Partial')] : [])];
+  }
   return [];
 }
 /** `Project › Page` for the sub-page title row (the project's name instead of `Project` when there is a switch), with the page's own facts on the right when there is room. */
@@ -196,10 +203,10 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
       working && `${working} ${t('working')}`, !data.statePath && !data.ledger.length && t('no STATE.md'));
   }
   if (page === 'tickets') {
-    if (acceptance !== 'slice') return data.tickets.length ? [featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length)] : [];
+    if (acceptance !== 'slice') return data.tickets.length ? [ticketTotalText(data, featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length))] : [];
     const tickets = data.tickets.flatMap((f) => f.tickets);
     const working = tickets.filter(ticketWorking).length, blocked = tickets.filter((r) => r.state === 'blocked').length;
-    return tickets.length ? parts(t('{done}/{total} done', { done: data.ticketTotals?.doneTickets ?? tickets.filter((r) => r.state === 'done').length, total: data.ticketTotals?.totalTickets ?? tickets.length }),
+    return tickets.length ? parts(ticketTotalText(data, t('{done}/{total} done', { done: data.ticketTotals?.doneTickets ?? tickets.filter((r) => r.state === 'done').length, total: data.ticketTotals?.totalTickets ?? tickets.length })),
       working && `${working} ${t('working')}`, blocked && `${blocked} ${t('blocked')}`) : [];
   }
   // Unlisted worktrees first: a short row keeps them and drops the facts after.
@@ -500,7 +507,9 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
   const column = Math.max(...[...codes.values()].map(visualLength)), done = data.ticketTotals?.doneTickets ?? all.filter(({ ticket }) => ticket.state === 'done').length;
   const total = data.ticketTotals?.totalTickets ?? all.length;
   if (!feature) {
-    rows.push(boardRow(fit(`  ${meter(done, total, 16)} ${theme.board.muted(t('{done}/{total} done', { done, total }))}`, width)));
+    const label = ticketTotalText(data, t('{done}/{total} done', { done, total }));
+    const cells = data.ticketTotals?.partial ? Math.min(16, width - 3 - visualLength(label)) : 16;
+    rows.push(boardRow(fit(`  ${cells > 0 ? `${meter(done, total, cells)} ` : ''}${theme.board.muted(label)}`, width)));
     for (const line of pack(features.map((f) => `${theme.board.muted(codes.get(f.slug)!)} ${monitorText(f.slug)} ${theme.board.muted(`${f.tickets.filter(ticketResolved).length}/${f.tickets.length}`)}`), width))
       rows.push(boardRow(fit(line, width)));
   }

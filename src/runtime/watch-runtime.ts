@@ -34,7 +34,7 @@ import { RUNNER_READY } from '../utils/runner-lifetime.js';
 import { isProcAlive } from '../utils/proc.js';
 import { request } from '../runtime/herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
-import { pruneJobLogs, pruneProjectScratch } from './work-retention.js';
+import { JOB_RETENTION_MS, pruneJobLogs, pruneLandFlows, pruneProjectScratch } from './work-retention.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
 import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 
@@ -471,8 +471,8 @@ function scan(retryWatch = false) {
   clearTimeout(timer);
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   // Piggyback on the on-demand retention scan; never keep the watcher alive for housekeeping.
-  const scanAt = performance.now();
-  if (scanAt >= nextHomeRetention) {
+  const scanAt = performance.now(), housekeep = scanAt >= nextHomeRetention;
+  if (housekeep) {
     nextHomeRetention = scanAt + HOME_RETENTION_INTERVAL_MS;
     pruneDisplayFiles(join(home, 'display'));
     const removed = pruneLegacyTrustBackups(home);
@@ -701,7 +701,7 @@ function scan(retryWatch = false) {
         }
       }
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
-      const expires = (Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs)) + 86400000;
+      const expires = (Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs)) + JOB_RETENTION_MS;
       if (!landing && !checkingReport && !resumable && expires < Date.now() && (!tab || job?.reaped_at)) {
         // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
@@ -743,6 +743,8 @@ function scan(retryWatch = false) {
       }
     }
   }
+  // Archive expired jobs before dropping the flow receipts those archives read.
+  if (housekeep) pruneLandFlows(home);
   for (const id of [...reapRetries.keys()]) if (!liveIds.has(id)) reapRetries.delete(id);
   for (const id of checkRetries.keys()) if (!liveIds.has(id)) checkRetries.delete(id);
   for (const id of [...preflightHold.keys()]) if (!liveIds.has(id)) preflightHold.delete(id);

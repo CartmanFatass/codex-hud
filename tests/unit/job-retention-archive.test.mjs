@@ -32,8 +32,11 @@ test('retention appends one private facts-only line before removal, even if remo
   fs.mkdirSync(join(f.home, 'flows'));
   const flow = `f${id.slice(1)}`, sha = 'abc1234'.repeat(5) + 'abc12';
   for (const [name, facts] of [[flow, { state: 'failed', repairs: [{ outcome: secret }] }],
-    [`${flow}-2`, { state: 'completed', reruns: [{ tests: [secret] }], landed_sha: sha, updated_at: reaped }]])
-    fs.writeFileSync(join(f.home, 'flows', `${name}.json`), JSON.stringify({ job: id, ...facts }));
+    [`${flow}-2`, { state: 'completed', reruns: [{ tests: [secret] }], landed_sha: sha, updated_at: reaped }]]) {
+    const receipt = join(f.home, 'flows', `${name}.json`);
+    fs.writeFileSync(receipt, JSON.stringify({ job: id, ...facts }));
+    fs.utimesSync(receipt, Date.parse(reaped) / 1000, Date.parse(reaped) / 1000);
+  }
   fs.writeFileSync(join(dir, 'checks.json'), JSON.stringify({ state: 'done', turn: 'earlier', report_sig: 'earlier',
     results: [{ command: secret, exit_code: 1, output_tail: secret }] }));
   const labels = join(f.home, 'display', 'model-cache', 'decision-labels');
@@ -80,6 +83,7 @@ syncBuiltinESMExports();`);
   await second.exited;
   assert.equal(second.child.exitCode, 0);
   assert.equal(fs.existsSync(dir), false);
+  assert.deepEqual(fs.readdirSync(join(f.home, 'flows')), []);
   assert.equal(fs.readFileSync(file, 'utf8'), line);
 });
 

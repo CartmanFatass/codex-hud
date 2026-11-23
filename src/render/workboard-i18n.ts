@@ -137,6 +137,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Working tree': '工作区',
   Progress: '进度',
   Tickets: '工单',
+  Partial: '不完整',
   '{features} features · {tickets} tickets': '{features} 个功能 · {tickets} 个工单',
   '{done}/{total} done': '{done}/{total} 完成',
   'blocked by {tickets}': '受阻于 {tickets}',

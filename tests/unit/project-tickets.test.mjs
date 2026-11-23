@@ -267,10 +267,39 @@ test('ticket reads cap at 64 KiB and discovery at 512 files, last-changed featur
   assert.ok(data.tickets.some((f) => f.slug === 'feature-08') && !data.tickets.some((f) => f.slug === 'feature-05'));
   assert.ok(data.tickets.every((f) => f.tickets.length <= 64));
   assert.equal(data.tickets.find((f) => f.slug === 'feature-00').tickets.length, 63);
+  assert.equal(data.ticketTotals.partial, true);
   const opened = calls.openSync.map((args) => String(args[0])).filter((p) => p.includes('/.scratch/'));
   assert.equal(opened.length, 512);
   assert.ok(opened.every((p) => !p.includes('/feature-05/') && !p.endsWith('/65-ticket.md')));
   assert.ok(calls.readSync.every((args) => args[3] <= 65536));
+});
+test('the 64-feature scan marks partial meters without opening omitted tickets', async (t) => {
+  const f = await fixture(t), scratch = join(f.cwd, '.scratch');
+  fs.rmSync(scratch, { recursive: true });
+  const slug = (n) => `feature-${String(n).padStart(2, '0')}`;
+  for (let n = 0; n < 81; n++) {
+    f.issue(slug(n), '01', 'ticket', `Synthetic ${n}`, n % 2 ? 'ready-for-agent' : 'resolved');
+    const at = new Date(NOW - n * 1000);
+    fs.utimesSync(join(scratch, slug(n), 'issues'), at, at);
+  }
+  const calls = observe(t), data = await f.collector.collect(true, f.board, NOW + 2);
+  assert.deepEqual(data.ticketTotals, { doneTickets: 32, totalTickets: 64, doneFeatures: 32, totalFeatures: 64, partial: true });
+  const opened = calls.openSync.map(([path]) => String(path)).filter((path) => path.startsWith(scratch));
+  assert.equal(opened.length, 64);
+  assert.ok(opened.every((path) => Number(path.match(/feature-(\d+)/)[1]) < 64));
+  for (const [lang, word] of [['en', 'Partial'], ['zh', '不完整']]) {
+    for (const panelLayout of ['classic', 'split']) for (const page of [undefined, 'tickets']) {
+      const frame = f.render(40, lang, onPage(page, { prefs: { panelLayout } }), data);
+      assert.match(plain(frame).join('\n'), new RegExp(`${word} · 32/64`));
+      assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+    }
+  }
+  const home = await f.collector.collect('home', f.board, NOW + 3);
+  assert.match(stripAnsi(homeProgressRows(home, 32, 20, false, 'slice').find((r) => r.item === 'home-progress:tickets:all').text), /Tickets .*Partial · 32\/64/);
+  for (let n = 64; n < 81; n++) fs.rmSync(join(scratch, slug(n)), { recursive: true });
+  const complete = await f.collector.collect('home', f.board, NOW + 4);
+  assert.equal(complete.ticketTotals.totalFeatures, 64);
+  assert.equal(complete.ticketTotals.partial, undefined, 'an exact cap is not a partial scan');
 });
 test('features with open tickets always show; finished ones fill the rest of sixteen, newest first', async (t) => {
   const f = await fixture(t);

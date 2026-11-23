@@ -56,7 +56,7 @@ export interface ProjectTicket {
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
 export interface ProjectSnapshot {
   tickets: TicketFeature[];
-  ticketTotals?: { doneTickets: number; totalTickets: number; doneFeatures: number; totalFeatures: number };
+  ticketTotals?: { doneTickets: number; totalTickets: number; doneFeatures: number; totalFeatures: number; partial?: true };
   waiting: ProjectItem[];
   docs: ProjectItem[];
   control: ProjectItem[];
@@ -161,7 +161,7 @@ export class ProjectCollector {
   private packedHead?: { key: string; sha: string };
   private landed = new Set<string>();
   private ticketCommits = new Map<string, { sha: string; at: number }>();
-  private ticketsMemo?: { stamp: string; features: TicketFeature[]; paths: string[]; claimTimes: number[] };
+  private ticketsMemo?: { stamp: string; features: TicketFeature[]; paths: string[]; claimTimes: number[]; partial: boolean };
   private collectMemo = new Map<string, { key: string; claimFloor: number; claimExpiry: number; snapshot: ProjectSnapshot }>();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) { this.tries = new TryLog(hudHome); }
   /** Test seam: cached Home to-try commit timestamps currently retained. */
@@ -189,7 +189,7 @@ export class ProjectCollector {
     return names.sort();
   }) ?? [];
   /** Rank the whole directory, retaining only the requested prefix of matching names. */
-  private orderedNames(path: string, limit: number, keep: (entry: fs.Dirent) => boolean, descending = false, preStat?: fs.Stats | null): string[] {
+  private orderedNames(path: string, limit: number, keep: (entry: fs.Dirent) => boolean, descending = false, preStat?: fs.Stats | null): string[] | null {
     return this.cached(path, (st) => {
       if (!st.isDirectory()) return [];
       const dir = fs.opendirSync(path), names: string[] = [];
@@ -205,7 +205,7 @@ export class ProjectCollector {
         }
       } finally { dir.closeSync(); }
       return names;
-    }, preStat) ?? [];
+    }, preStat);
   }
   private body<T>(path: string, parse: (buffer: Buffer, truncated: boolean, st: fs.Stats) => T, preStat?: fs.Stats | null): T | null {
     return this.cached(path, (st) => {
@@ -223,23 +223,28 @@ export class ProjectCollector {
     const root = join(this.cwd, '.scratch'), rootSt = lstat(root);
     if (!rootSt || !rootSt.isDirectory()) {
       this.cache.delete(root);
-      return (this.ticketsMemo = { stamp: '', features: [], paths: [], claimTimes: [] });
+      return (this.ticketsMemo = { stamp: '', features: [], paths: [], claimTimes: [], partial: false });
     }
-    const ranked = this.orderedNames(root, 256, (entry) => entry.isDirectory(), false, rootSt)
+    // Retain an extra name to distinguish reaching a cap from omitting entries, without extra body reads.
+    const slugs = this.orderedNames(root, 257, (entry) => entry.isDirectory(), false, rootSt);
+    const ranked = (slugs ?? []).slice(0, 256)
       .map((slug) => { const issues = join(root, slug, 'issues'), st = lstat(issues); return { slug, issues, st, at: st?.mtimeMs ?? -1 }; })
-      .sort((a, b) => b.at - a.at || (a.slug < b.slug ? -1 : 1)).slice(0, 64);
-    // Bound the scan, not the totals to the subset of features displayed.
+      .sort((a, b) => b.at - a.at || (a.slug < b.slug ? -1 : 1));
+    let partial = !slugs || slugs.length > 256 || ranked.slice(64).some(({ st }) => st?.isDirectory());
     let budget = 512;
     const stamps: string[] = [stampOf(rootSt)], paths: string[] = [root];
     const groups: { slug: string; entries: { name: string; path: string; st: fs.Stats | undefined }[] }[] = [];
-    for (const { slug, issues, st } of ranked) {
-      if (budget <= 0) break;
+    for (const { slug, issues, st } of ranked.slice(0, 64)) {
       if (!st || !st.isDirectory()) { this.cache.delete(issues); continue; }
+      if (budget <= 0) { partial = true; break; }
       paths.push(issues);
       stamps.push(`${slug}:${stampOf(st)}`);
-      const names = this.orderedNames(issues, 64, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name), false, st).slice(0, budget);
-      budget -= names.length;
-      const entries = names.map((name) => {
+      const limit = Math.min(64, budget);
+      const names = this.orderedNames(issues, 65, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name), false, st);
+      if (!names || names.length > limit) partial = true;
+      const selected = (names ?? []).slice(0, limit);
+      budget -= selected.length;
+      const entries = selected.map((name) => {
         const path = join(issues, name), fst = lstat(path);
         paths.push(path);
         stamps.push(`${name}:${fst?.isFile() ? stampOf(fst) : ''}`);
@@ -247,6 +252,7 @@ export class ProjectCollector {
       });
       groups.push({ slug, entries });
     }
+    stamps.push(String(partial));
     const stamp = stamps.join('|');
     if (this.ticketsMemo?.stamp === stamp) {
       for (const p of this.ticketsMemo.paths) this.seen.add(p);
@@ -256,11 +262,11 @@ export class ProjectCollector {
     for (const { slug, entries } of groups) {
       const tickets: ProjectTicket[] = [];
       for (const { name, path, st } of entries) {
-        const ticket = this.body(path, (buffer, truncated, stat): ProjectTicket | null => {
+        const ticket = this.body(path, (buffer, truncated, stat): ProjectTicket | null | undefined => {
           if (truncated) return null;
           const text = buffer.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
           const { status, blocked, items, checked, landed, commit, recordedLanding } = ticketFileEvidence(text);
-          if (!heading || !status || blocked === undefined) return null;
+          if (!heading || !status || blocked === undefined) return undefined;
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
           const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
@@ -273,13 +279,13 @@ export class ProjectCollector {
         if (ticket) {
           tickets.push(ticket);
           if (/^claimed\b/i.test(ticket.status)) claimTimes.push(ticket.at);
-        }
+        } else if (ticket === null) partial = true; // Unreadable or truncated, not a known invalid ticket.
       }
       tickets.sort((a, b) => Number(a.number) - Number(b.number) || a.path.localeCompare(b.path));
       if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets });
     }
     features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
-    return (this.ticketsMemo = { stamp, features, paths, claimTimes });
+    return (this.ticketsMemo = { stamp, features, paths, claimTimes, partial });
   }
   /** The newest 64 top-level jobs and their bounded children: the one lookup behind Project's Now section and the Projects list. */
   private recentJobs(cache = getJobIndexCache(this.hudHome)) {
@@ -598,7 +604,7 @@ export class ProjectCollector {
       }
     }
     if (!home) await this.fullLedgerDetails(out, now, shown === 'export', refreshedGit);
-    out.ticketTotals = totals;
+    out.ticketTotals = ticketsScan.partial ? { ...totals, partial: true } : totals;
     out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
     out.tickets = visible;
     if (shown === 'home-tasks') {
@@ -643,7 +649,7 @@ export class ProjectCollector {
   private async fullDetails(out: ProjectSnapshot, board: WorkboardSnapshot, now: number, specPath: string, milestone?: string): Promise<boolean> {
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: specPath });
     const reviews = join(this.cwd, 'docs/reviews');
-    const review = this.orderedNames(reviews, 12, (entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(entry.name), true)
+    const review = (this.orderedNames(reviews, 12, (entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(entry.name), true) ?? [])
       .flatMap((n) => {
         const path = join(reviews, n);
         try {

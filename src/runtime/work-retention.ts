@@ -1,4 +1,4 @@
-/** On-demand cleanup of raw job logs and explicitly configured project scratch. */
+/** On-demand cleanup of raw job logs, land flows and explicitly configured project scratch. */
 import * as fs from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { projectRegistryRoots } from '../roles/projects.js';
@@ -9,6 +9,7 @@ import { DEFAULT_RESUME_S } from '../mcp/worker-resume.js';
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
+export const JOB_RETENTION_MS = DAY_MS;
 const CONFIG_LIMIT = 256 * 1024;
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 const hasParentStep = (path: string) => path.split(sep).includes('..');
@@ -52,6 +53,40 @@ export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, 
 
 function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
   return a.dev === b?.dev && a.ino === b.ino;
+}
+
+export function pruneLandFlows(home: string, now = Date.now()): void {
+  const cutoff = now - JOB_RETENTION_MS;
+  try {
+    inAbsoluteDir(join(home, 'flows'), (dir) => {
+      const jobs = new Map<string, string[]>();
+      for (const name of fs.readdirSync(dir)) {
+        const match = /^f([a-f0-9]{16})(?:-[1-9]\d*)?\.json(?:\.(?:cancel|noticed|observed|gate-[1-9]\d*(?:-rerun)?\.log))?$/.exec(name);
+        if (!match) continue;
+        const job = `j${match[1]}`, files = jobs.get(job);
+        if (files) files.push(name); else jobs.set(job, [name]);
+      }
+      for (const [job, names] of jobs) {
+        try {
+          // Keep all attempts until the job (and its archive read) is gone.
+          if (fs.lstatSync(join(home, 'jobs', job), { throwIfNoEntry: false })) continue;
+          const files = names.map((name) => ({ path: join(dir, name), stat: fs.lstatSync(join(dir, name)) }));
+          if (files.some(({ stat }) => !stat.isFile() || stat.mtimeMs >= cutoff)) continue;
+          if (files.some(({ path }) => {
+            if (!path.endsWith('.json')) return false;
+            const receipt = readJsonBounded(path, 128 * 1024) as { state?: unknown } | null;
+            return receipt?.state !== 'completed' && receipt?.state !== 'failed' && receipt?.state !== 'cancelled';
+          })) continue;
+          for (const { path, stat } of files) {
+            try {
+              const current = fs.lstatSync(path, { throwIfNoEntry: false });
+              if (sameInode(stat, current) && current?.ctimeMs === stat.ctimeMs) fs.unlinkSync(path);
+            } catch { /* Missing, replaced or inaccessible artifact; retry next pass. */ }
+          }
+        } catch { /* Unreadable receipt or job state: keep this flow family. */ }
+      }
+    });
+  } catch { /* Missing, unreadable or redirected flows directory. */ }
 }
 
 function oldEntry(path: string, cutoff: number, device: number, remove: boolean): boolean {

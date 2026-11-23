@@ -466,6 +466,7 @@ At settlement the watcher saves a bounded, best-effort snapshot of native usage 
 It reads pi session entries, CLI result streams, or native transcript usage records; it never prices missing tokens or treats a truncated per-request transcript as a total.
 Before deletion it appends job facts to `$HUD_HOME/archive/YYYY-MM.jsonl`, including ticket, route, question count, land outcome, available usage and the worker's bounded declared summary with home paths removed.
 It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
+In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.
 
 ## Claude Code mod
 
@@ -694,8 +695,9 @@ filter. No extra read: the ledger is the one already parsed.
 Rows wrap onto a second row rather than cut their only line at 40 columns. Enter or `o`
 on a row opens STATE.md; on a fold, Enter folds and `o` folds only where the row has no file.
 
-Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, every feature with open tickets plus the newest finished ones up to 16 features (totals cover up to 64 feature directories and 512 ticket files),
-64 KiB each. Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
+Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`. The list shows scanned features with open tickets, then the newest finished features to fill 16 slots.
+The scan enumerates feature names, checks up to 256 for an `issues` directory, then reads up to 64 of those directories by recency, at most 64 files per feature and 512 total, up to 64 KiB per file. Totals are marked `Partial` if a cap or a failed read leaves the scan incomplete.
+Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
 `hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh`
 (open parent issues with sub-issues, plus already-mirrored parents so closed features
 receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files

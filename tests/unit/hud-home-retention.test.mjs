@@ -102,3 +102,36 @@ test('hud-watch bounds synthetic cache churn, dead snapshots and legacy trust ba
   assert.match(fs.readFileSync(join(hud, 'watch.log'), 'utf8'), /pruned legacy trust backups: 505\n/);
   t.diagnostic(`synthetic legacy trust archives freed ${(505 * bytesPerBackup / MiB).toFixed(2)} MiB`);
 });
+
+test('hud-watch expires old land receipts and artifacts, not live or recent flow families', (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-flow-retention-')));
+  cleanupFixture(t, { root });
+  const hud = join(root, 'hud'), flows = join(hud, 'flows');
+  fs.mkdirSync(flows, { recursive: true });
+  const now = Date.now() / 1000;
+  const put = (name, body = '', age = DAY + 60) => {
+    const path = join(flows, name);
+    fs.writeFileSync(path, body);
+    fs.utimesSync(path, now - age, now - age);
+  };
+  for (const state of ['failed', 'completed']) put(`f0000000000000001${state === 'failed' ? '' : '-2'}.json`, JSON.stringify({ state }));
+  for (const suffix of ['cancel', 'noticed', 'observed', 'gate-1.log', 'gate-1-rerun.log']) put(`f0000000000000001-2.json.${suffix}`);
+  put('f0000000000000002.json.observed'); // A sidecar left behind without its receipt.
+  put('f0000000000000003.json', '{"state":"failed"}');
+  put('f0000000000000003-2.json', '{"state":"completed"}', DAY - 60);
+  put('f0000000000000004.json', '{"state":"running"}');
+  put('f0000000000000005.json', '{"state":"cancelled"}');
+  fs.mkdirSync(join(hud, 'jobs', 'j0000000000000005'), { recursive: true });
+  put('keep.json', '{"state":"completed"}');
+  fs.symlinkSync(join(flows, 'keep.json'), join(flows, 'f0000000000000006.json'));
+
+  const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+    env: { ...process.env, HOME: root, HUD_HOME: hud, HERDR_SOCKET_PATH: join(root, 'absent.sock') },
+    encoding: 'utf8', timeout: 10000,
+  });
+  assert.equal(watcher.status, 0, watcher.stderr || String(watcher.error));
+  assert.deepEqual(fs.readdirSync(flows).sort(), [
+    'f0000000000000003-2.json', 'f0000000000000003.json', 'f0000000000000004.json', 'f0000000000000005.json',
+    'f0000000000000006.json', 'keep.json',
+  ]);
+});
