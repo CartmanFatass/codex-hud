@@ -1,6 +1,6 @@
 # 03: Mod-owned event wake via hud watch --mod
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** no
 **Blocked by:** 01, 02
 
