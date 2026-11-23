@@ -197,6 +197,32 @@ await callWorkerTool('hud_report', { text: 'Finished in Pi PID ' + process.pid }
   assert.match((await f.call('hud_read', { job })).latest_progress.text, /^still working at \d+ s: tool read$/);
 });
 
+test('a running tool call with a declared timeout holds the stall and loop checks until it ends or times out', async (t) => {
+  const f = await fixture(t);
+  const started = Date.now();
+  const output = join(f.root, 'stdout.jsonl');
+  const event = (type, id, args) => JSON.stringify({ type, toolCallId: id, toolName: 'bash', args }) + '\n';
+  const check = monitorSonic(f.root, sonicLimitDefaults, started);
+  fs.writeFileSync(output, event('tool_execution_start', 'synthetic-1', { command: 'make check', timeout: 1200 }));
+  fs.utimesSync(output, new Date(started), new Date(started + 10000));
+  assert.deepEqual(check(started + 400000), {});
+  assert.ok(check(started + 600000).progress);
+  assert.ok(check(started + 1200000).progress);
+  assert.deepEqual(check(started + 1209999), {});
+  assert.deepEqual(check(started + 1210000), { stop: 'stalled' });
+  // Once the call ends, the ordinary stall window applies again.
+  const after = monitorSonic(f.root, sonicLimitDefaults, started);
+  fs.appendFileSync(output, event('tool_execution_end', 'synthetic-1', {}));
+  fs.utimesSync(output, new Date(started), new Date(started + 20000));
+  assert.deepEqual(after(started + 199999), {});
+  assert.deepEqual(after(started + 200000), { stop: 'stalled' });
+  // A call without a declared timeout gets no hold.
+  fs.writeFileSync(output, event('tool_execution_start', 'synthetic-2', { command: 'find .' }));
+  fs.utimesSync(output, new Date(started), new Date(started + 30000));
+  const plain = monitorSonic(f.root, sonicLimitDefaults, started);
+  assert.deepEqual(plain(started + 210000), { stop: 'stalled' });
+});
+
 test('a default checkpoint counts worker milestones but not its own progress or a reread of an old target', async (t) => {
   const f = await fixture(t);
   const started = Date.now();
