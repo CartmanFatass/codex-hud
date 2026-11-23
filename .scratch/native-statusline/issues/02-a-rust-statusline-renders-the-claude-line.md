@@ -1,6 +1,6 @@
 # 02: A Rust statusline renders the Claude line
 
-**Status:** ready-for-human
+**Status:** done
 **Blocked by:** 01, perf-ts/06
 **Owner try:** yes
 

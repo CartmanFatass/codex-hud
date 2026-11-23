@@ -15,12 +15,13 @@ Keep this file well under 64 KiB (the Project page reads only that much).
 
 - HOME-PROGRESS（owner 2026-11-22：推荐方案、翻译、显示时推算、保留 AI 摘要并严格失效、失败 30 分钟）：01–04 全部落地，等 owner 试用 → 03 HOME-ROLLUP-UI → 04 PANEL-LOCALE（含 WaitingBriefs 与工单标题翻译）。
 - ORCH-LEAN（owner 2026-11-22：A/B/C 全做）：A 已做（本仓库禁用不用的工具、全局去掉 codegraph 提示钩子、STATE 归档、习惯）；B：01 合入交给 sonic + 回收已 cherry-pick 的 worktree（已落地 8cf766b6，首次由 sonic 合入）、02 hud_read 摘要、03 通知等检查并瘦身（均已落地 406fa959）；C：04 面板操作送达任务客户端 + r/m 意图键、05 批量 MCP 调用。
-- MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. Two follow-ups to
-  try after `/mcp` reconnect: FANOUT-TASK (dispatch a job, `hud_send({jobs:[it]})` while it works, the session is still
-  woken at its report) and SONIC-AUTO-THINKING (a sonic job shows `thinking_source: default` at high; with the
-  Settings toggle on, `decision`). Then the milestone's done check: a real project day compared with the 2026-11-21 study counts.
+- MCP-ORCH tried live by the main session for the owner (2026-11-21); every original slice accepted. After the 2026-11-22
+  `/mcp` reconnect: SONIC-AUTO-THINKING verified live (toggle on → sonic job `thinking_source: decision`, picked high).
+  FANOUT-TASK not testable yet: sonic is one-shot and routed imps now start headless, and `hud_send` to a working
+  headless job returns `not_continuable` → auto-route/06 (blocked by mcp-split/03, both touch thin-main's send path);
+  retest fan-out on a tab job after it lands. Then the milestone's done check: a real project day compared with the 2026-11-21 study counts.
 - CODE-HEALTH (owner 2026-11-21: run the docs/neon-proposal plans through imp): PRUNE-OBS-01..02, BUILD-DEDUP-01..02 landed; PRUNE-OBS-01..04 (neon 01 complete), TEST-SPLIT-01 landed; TEST-SPLIT-02, PROJECT-BOARD-LIMITS-01 landed; I18N-CHECK-01 and TEST-SPLIT-03 working. Proposals 10–16 (the rest of neon's report, reduced) wait for the owner to pick before tickets.
-- PERF + NATIVE-STATUSLINE (2026-11-22, owner skipped acceptance for the design): perf-ts/01-09 and native-statusline/01-02 landed; milestone review (astra max) found 6 blockers, fixed in perf-ts/09 (dd12b650). Measured: panel one process ~100 MB PSS ~1% CPU, watcher ~50 MB stable, Claude statusline native 4-6 ms / 3.6 MB vs TS 75 ms / 85 MB. No Rust panel (owner asked; numbers say no). Next: native-statusline/03 (Antigravity) when the owner has tried 02.
+- PERF + NATIVE-STATUSLINE (2026-11-22, owner skipped acceptance for the design): perf-ts/01-09 and native-statusline/01-02 landed; milestone review (astra max) found 6 blockers, fixed in perf-ts/09 (dd12b650). Measured: panel one process ~100 MB PSS ~1% CPU, watcher ~50 MB stable, Claude statusline native 4-6 ms / 3.6 MB vs TS 75 ms / 85 MB. No Rust panel (owner asked; numbers say no). Owner saw the native Claude statusline working after reconnect (2026-11-22, native-statusline/02 done); native-statusline/03 (Antigravity) working.
 - AUTO-ROUTE (2026-11-22): headless pi/claude/agy workers, Imp routing by role-file tiers (light hydrogen, standard = active preset, hard astra), only `general` takes model overrides; review found 8 blockers, fixed in auto-route/05 (776cb770). Routing is on in the owner's settings; takes effect after `/mcp` reconnect.
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
