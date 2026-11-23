@@ -1,4 +1,5 @@
 import type { EngineInterface, On, Timer } from 'claude-code';
+import { takeBand } from './band';
 import { mergeChanges, type Turn } from './compact';
 import { watchProcess } from './watch';
 
@@ -66,7 +67,7 @@ async function wakeLane($: EngineInterface, cwd: string, turn: Turn) {
     if (typeof at === 'number' && Number.isSafeInteger(at) && at > lastDelivery) lastDelivery = at;
     schedule(100);
     await save();
-  });
+  }, record => takeBand($, record));
   if (project || pending.length) await watch.start();
   schedule(100);
   return {

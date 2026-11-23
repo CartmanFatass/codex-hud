@@ -3,7 +3,8 @@ import type { EngineInterface, Timer } from 'claude-code';
 // The child owns filesystem watches. The mod only stats the two append-only logs while a
 // registered project sleeps. Hand their cursors back on restart: PanelActionLog starts at EOF.
 export function watchProcess($: EngineInterface, cwd: string, home: string, project: boolean,
-  lastDelivery: () => number, receive: (lines: string[], at: unknown) => Promise<void>) {
+  lastDelivery: () => number, receive: (lines: string[], at: unknown) => Promise<void>,
+  band: (record: Record<string, unknown>) => Promise<void>) {
   let child: ReturnType<typeof $.process.spawn> | undefined, ready: Promise<void> | undefined;
   let retry: Timer | undefined, sleeper: Timer | undefined, stopped = false, failures = 0;
   // Empty starts a bounded catch-up. Only a clean sleep has a cursor to replay from.
@@ -33,6 +34,7 @@ export function watchProcess($: EngineInterface, cwd: string, home: string, proj
           buffer = buffer.slice(nl + 1);
           if (record.type === 'ready') { cursor = ''; signal(); }
           if (record.type === 'wake' && Array.isArray(record.lines) && record.lines.every((s: unknown) => typeof s === 'string')) await receive(record.lines, record.at);
+          if (record.type === 'band') await band(record);
           if (record.type === 'sleep') { cursor = record.cursor; sizes = record.sizes; }
         }
       }

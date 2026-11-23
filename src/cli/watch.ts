@@ -15,12 +15,13 @@ import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
+import { bandReader } from './watch-band.js';
 
 export const WATCH_HELP =
   'Usage: hud watch [--all] [--verbose] [--queue | --mod]\n' +
   'Stream pending questions and actionable job events for the caller pane (HERDR_PANE_ID), plus project try records.\n' +
   '--all: every pane; --verbose: every change, as in MCP changes.\n' +
-  '--mod: emit pane-scoped wake records as JSON lines for the Claude mod.\n' +
+  '--mod: emit pane-scoped wake records and, when it changes, the owner band (what waits for the owner) as JSON lines for the Claude mod.\n' +
   '--queue: deliver through the Codex queue (typed fallback on failure) or Antigravity hook/idle prompt.\n';
 
 // Woken by file changes under jobs/; the slow rescan only covers a watch lost or not yet attachable.
@@ -271,6 +272,7 @@ export async function watchCommand(
     }
   }
   if (freshMod) tries.seekEnd();
+  const readBand = modHandshake ? bandReader(process.cwd(), home, io.env) : undefined;
   const lastDelivery = Number(io.env.HUD_MOD_LAST_DELIVERY);
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue || mod ? queueIdleMs : Infinity));
@@ -375,6 +377,8 @@ export async function watchCommand(
       const events = first || !verbose ? actionable(home, prev, rows, modCatchup ? modCutoff : first, lastScanAt) : [];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
+      const band = readBand && await readBand(scanAt);
+      if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
         const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
           actionable(home, new Map(), rows, true).length > 0;

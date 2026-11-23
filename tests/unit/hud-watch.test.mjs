@@ -756,7 +756,7 @@ test('mod JSONL uses shared actionable lines, sleeps only once clear, and resume
   const dir = writeJob(f.home, id, pane, 'mod', { state: 'closed', settled_at: new Date(Date.now() - 3 * 60 * 60_000).toISOString() }, true);
   const ac = new AbortController();
   t.after(() => ac.abort());
-  const records = [], run = (env) => watchCommand(['--mod'], { env, stdout: s => records.push(JSON.parse(s)), stderr: s => assert.fail(s) },
+  const records = [], run = (env) => watchCommand(['--mod'], { env, stdout: s => { const r = JSON.parse(s); if (r.type !== 'band') records.push(r); }, stderr: s => assert.fail(s) },
     { signal: ac.signal, rescanMs: 50, queueIdleMs: 100, settlementWindowMs: 40 });
   const running = run({ ...f.env, HUD_MOD_CURSOR: '' });
   await until(() => records.some(r => r.type === 'wake'));
@@ -799,7 +799,7 @@ test('mod retention does not announce old settlements entering the watch window'
   const newerJobs = Array.from({ length: 200 }, (_, i) => oldJob(i + 4, newer, { read_at: seen }));
   const ac = new AbortController(), records = [];
   const run = watchCommand(['--mod'], { env: { ...f.env, HUD_MOD_CURSOR: '' },
-    stdout: s => records.push(JSON.parse(s)), stderr: s => assert.fail(s) },
+    stdout: s => { const r = JSON.parse(s); if (r.type !== 'band') records.push(r); }, stderr: s => assert.fail(s) },
     { signal: ac.signal, rescanMs: 50, settlementWindowMs: 40 });
   try {
     await until(() => records.some(r => r.type === 'ready'));

@@ -498,6 +498,14 @@ Claude's user scope. Selecting `claude` alone does not install the mod. To try i
   is not repeated. A later Monitor row of the same task shrinks to its new lines without task id and summary
   (`(HUD events already shown this turn)` when none). The mod removes already-shown `changes` lines without reformatting
   the rest of the tool result. Rows that are not HUD lines are untouched.
+- **Owner band.** Above the prompt the mod shows only what needs the owner now, and nothing otherwise: up to two rows, cut to the band's
+  width, in the panel's language. `? N waiting for you · <first item>` counts STATE's `Waiting for the owner` items (items whose
+  `(waits on …)` tickets are done drop out, as in the Project Inbox); `N to try · Accept all in the panel` is the Inbox's Accept all count.
+  Running workers, failures and worker questions are not shown (the statusline and the main session carry those). The watch sends
+  a `band` record after `ready` and again only when it changes; the band is drawn from the session's state with no I/O and stays
+  empty while a survey holds it. One toast (`Needs you: …`) appears when a new item or slice arrives, once per record and never
+  for what was already there when the watch started. The band refreshes while the watch runs; after the ten-minute idle exit it
+  updates at the next restart (a HUD call or panel decision).
 - **Report reads.** A `Read`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command, on `…/jobs/<id>/report.md` is refused with
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` Other reads pass. A worker
   session (`HUD_JOB_DIR` set) has no `hud_read` and may read the file, as `from_jobs` hands reports to workers as files.

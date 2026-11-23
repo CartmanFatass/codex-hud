@@ -332,6 +332,12 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或�
 - **合并通知。** 同一回合内，已经由 Monitor 行、唤醒通道或 MCP 精简结果中的 `changes` 送达的 HUD 行不再重复。
   同一任务的后续 Monitor 行只保留新增的行，并去掉 task id 与摘要（没有新增时写 `(HUD events already shown this turn)`）。
   mod 只从工具结果中移除已经显示的 `changes` 行，不重新格式化其他字段。不含 HUD 行的通知行不受影响。
+- **负责人横条。** 输入框上方只显示此刻需要负责人处理的事，没有则不显示：最多两行，按横条宽度截断，语言跟随面板。
+  `? N 项等你处理 · <第一项>` 统计 STATE「Waiting for the owner」中的条目（`(waits on …)` 所列工单已完成的条目会消失，与项目收件箱一致）；
+  `N 待试用 · 在面板中全部验收` 即收件箱「全部验收」的数量。运行中的工作者、失败和工作者提问不显示（状态栏和主会话负责）。
+  监听器在 `ready` 之后发送一条 `band` 记录，之后仅在内容变化时再发；横条只读取会话状态绘制，不做 I/O，问卷占用横条时保持为空。
+  出现新条目或待试用切片时弹出一次提示（`需要你: …`），每条记录最多一次，监听器启动时已有的内容不提示。
+  监听器运行期间横条会刷新；十分钟空闲退出后，要到下次重启（调用 HUD 或出现面板决定）才更新。
 - **报告读取。** 对 `…/jobs/<id>/report.md` 使用 `Read`，或 `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` 命令，会被拒绝并提示
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` 其他读取照常。工作者会话
   （设置了 `HUD_JOB_DIR`）没有 `hud_read`，可直接读取该文件，`from_jobs` 就是把报告作为文件交给工作者的。
