@@ -20,6 +20,7 @@ import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/jo
 import { queueCancelled, queueFile, readTicketQueue, writeTicketQueue, type TicketQueue, type TicketQueueItem } from './ticket-queue-state.js';
 
 const cleanStates = ['idle_grace', 'done', 'closed'];
+const LAUNCH_GRACE_MS = 120_000;
 const errorLine = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0];
 function ticketHeader(path: string) {
   return readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
@@ -89,7 +90,8 @@ async function drive(q: TicketQueue) {
         ...q.tickets.flatMap(item => item.job && !item.landed ? [{ dir: directory(item.job), recursive: true,
           filter: (file: string | null) => !file || /^(?:qa(?:\/q\d+\.md)?|STATUS\.json(?:\.stop-requested)?|report\.md|checks\.json|job\.json|done\.json|turn\.json)$/.test(file) }] : [])],
       check: async () => {
-        let issue = dispatchError, changed = false;
+        let issue = dispatchError, changed = false, recheck: number | undefined;
+        const later = () => ({ done: false as const, ...(recheck !== undefined && { minDelayMs: recheck }) });
         const clean: { item: TicketQueueItem; job: Job; state: JobStatus['state']; retry?: string }[] = [];
         for (const item of q.tickets) {
           if (!item.job || item.landed) continue;
@@ -120,7 +122,12 @@ async function drive(q: TicketQueue) {
           else if (fs.existsSync(join(directory(job.job), jobFiles.stopRequested))) flag('worker stop requested');
           else if (failedAttempt(row)) flag(row.reason ?? row.display_state);
           else if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) flag(row.reason ?? 'worker needs main');
-          else if (!status && job.dispatch_exit_code === null) flag('dispatch interrupted before worker status was recorded');
+          else if (!status && job.dispatch_exit_code === null) {
+            // A runner that took over mid-launch sees the job before its first status: give the launch time to finish.
+            const left = Date.parse(job.created_at) + LAUNCH_GRACE_MS - Date.now();
+            if (left > 0) recheck = Math.min(recheck ?? left, left);
+            else flag('dispatch interrupted before worker status was recorded');
+          }
           else if (status && cleanStates.includes(status.state)) {
             const verdict = judgeSettlement(item, job, status);
             if (verdict) flag(verdict);
@@ -141,10 +148,10 @@ async function drive(q: TicketQueue) {
           const failed = results.find(result => result.status === 'rejected');
           if (failed) return finish('failed', errorLine(failed.reason));
           save();
-          return { done: false };
+          return later();
         }
         const active = q.tickets.filter(item => !item.landed).length;
-        if (dispatching || (q.max_parallel && active >= q.max_parallel && q.tickets.every(item => item.job))) return { done: false };
+        if (dispatching || (q.max_parallel && active >= q.max_parallel && q.tickets.every(item => item.job))) return later();
         let item = q.tickets.find(item => !item.job);
         const eligible = ready();
         if (item && !eligible.some(t => t.ticket === item!.ticket && t.path === item!.path))
@@ -158,7 +165,7 @@ async function drive(q: TicketQueue) {
           q.tickets.push(item);
           save(); // Record intent before dispatch so the request key is recoverable.
         }
-        if (!item) return active ? { done: false } : finish('completed');
+        if (!item) return active ? later() : finish('completed');
         // Observe the other workers while launch is in flight. Admission rechecks the stop before writing a job.
         const launching = dispatching = item;
         pending = (async () => {
@@ -178,7 +185,7 @@ async function drive(q: TicketQueue) {
             catch (error) { dispatchError ??= errorLine(error); }
           }
         })();
-        return { done: false };
+        return later();
       },
     });
   } catch (error) { finish('failed', errorLine(error)); }

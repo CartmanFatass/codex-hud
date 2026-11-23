@@ -167,6 +167,23 @@ test('a note sent to a working queue job keeps the job in its queue', { timeout:
   assert.equal((await f.end(flow)).state, 'completed');
 });
 
+test('a resumed queue waits for a launch still in flight instead of failing it', { timeout: 30_000 }, async t => {
+  const f = await project(t);
+  const { flow } = await f.start();
+  const [first] = await f.jobs(flow, 1);
+  // A runner that takes over mid-launch sees the job before its first status.
+  fs.rmSync(join(f.dir(first), 'STATUS.json'), { force: true });
+  writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), dispatch_exit_code: null }));
+  await new Promise(resolve => setTimeout(resolve, 500));
+  assert.equal(f.flow(flow).state, 'working');
+  await f.settle(first);
+  const [, second] = await f.jobs(flow, 2);
+  await f.settle(second);
+  const [, , third] = await f.jobs(flow, 3);
+  await f.settle(third);
+  assert.equal((await f.end(flow)).state, 'completed');
+});
+
 test('ticket queue keeps going past an answered worker question', { timeout: 30_000 }, async t => {
   const f = await project(t);
   const { flow } = await f.start();
