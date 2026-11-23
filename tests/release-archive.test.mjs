@@ -71,7 +71,8 @@ function audit(tree) {
     count++;
     broadCount += [...text.matchAll(broad)].length;
     assert.deepEqual([...text.matchAll(secretText)], [], `credential-like value in ${name}`);
-    const hits = [...text.matchAll(privateText)];
+    // The synthetic worker identity (RFC 2606 .invalid) is public by design.
+    const hits = [...text.matchAll(privateText)].filter(hit => hit[0] !== 'worker@hud.invalid');
     if (name.startsWith('node_modules/')) {
       if (hits.length) upstream.push({ member: name, hits: hits.map(hit => hit[0]) });
       continue;
