@@ -86,7 +86,9 @@ export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, ins
     if (place.args?.some((arg) => /^--mcp-config(?:=|$)/.test(arg)))
       throw new Error('use the role mcp_servers field instead of --mcp-config');
     const file = join(dir, jobFiles.workerMcp);
-    writePrivateFile(file, JSON.stringify({ mcpServers: Object.fromEntries([['hud', hud], ...claudeServers(names)]) }));
+    // Exempt only the bundled worker tools from Claude Code's tool-search deferral.
+    // https://code.claude.com/docs/en/mcp#exempt-a-server-from-deferral
+    writePrivateFile(file, JSON.stringify({ mcpServers: Object.fromEntries([['hud', { ...hud, alwaysLoad: true }], ...claudeServers(names)]) }));
     const args = ['--strict-mcp-config', '--mcp-config', file];
     return isHerdrAgentArg(instructions)
       ? { args: [...args, '--append-system-prompt-file', instructions], prompt }

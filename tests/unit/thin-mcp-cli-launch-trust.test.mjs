@@ -479,7 +479,8 @@ for (const agent of ['claude', 'codex']) test(`${agent}: role allowlist survives
   if (agent === 'claude') {
     const { mcpServers } = JSON.parse(fs.readFileSync(args[args.indexOf('--mcp-config') + 1]));
     assert.deepEqual(Object.keys(mcpServers).sort(), ['chrome-devtools', 'hud']);
-    assert.deepEqual(mcpServers['chrome-devtools'].args, ['private-value']);
+    assert.equal(mcpServers.hud.alwaysLoad, true);
+    assert.deepEqual(mcpServers['chrome-devtools'], { command: 'synthetic', args: ['private-value'] });
     const prompt = f.commands().find((c) => c.args[1] === 'prompt').args[3];
     assert.ok(prompt.startsWith(`Read ${join(job.task_dir, 'brief.md')} and do exactly what it asks.`));
     assert.ok(!prompt.includes(task));

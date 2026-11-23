@@ -48,6 +48,7 @@ if (!prompt.startsWith('No init.')) console.log(JSON.stringify(init));
 console.log(JSON.stringify({ pid: process.pid, resumed, prompt: prompt.split('\\n')[0] }));
 if (prompt.startsWith('No init.') || prompt.startsWith('Wrong init.')) process.exit(0);
 const hud = JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers.hud;
+assert.equal(hud.alwaysLoad, agent === 'claude' ? true : undefined);
 const child = spawn(hud.command, hud.args ?? [], { env: { ...process.env, ...hud.env }, stdio: ['pipe', 'pipe', 'inherit'] });
 const exited = once(child, 'exit');
 const rpc = rpcClient(child);
