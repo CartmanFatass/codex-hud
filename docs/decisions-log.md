@@ -115,6 +115,15 @@ The owner approved the lean spec and resolved the draft questions:
   authorized ticket batch that lands clean settles and hands back at the first judgement point. The last two
   of these change the spec (checks may refuse a report; main does not decide each step inside an authorized
   batch); the spec lines change when those tickets are dispatched. Tickets: `.scratch/review-next/`.
+- **D-2026-11-22-27** (§2.2.1, §2.2.3, §2.2.4, §2.2.6, §2.2.8, §2.2.9): After the open reviews the owner approved
+  six trims, each listed with what disappears: Project keeps only the Inbox layout (Timeline and Board go);
+  the per-slice try flow (y/n marks, model try briefs and steps, try detail, `m` land intent) shrinks to
+  accept-all plus the main session's flagged items, since every try record was an accept and the main session
+  now accepts; bars keep only `line` and `p10k` (six BAR-THEMES go; native covers only those two); the job
+  `kind` label and Home's Recommended ranking go (outcome, question category, review severity and routing
+  stay); Help drops the backup-skills list for `docs/optional-skills.md`; tickets become the only slice
+  ledger and STATE keeps milestone, now, waiting and next. Each ticket updates its own spec lines.
+  Tickets: `.scratch/trim/`.
 
 ## 2026-11-21
 
