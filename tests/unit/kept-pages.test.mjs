@@ -48,7 +48,7 @@ test("frames: Home, Jobs, Inspector, Settings and Help", (t) => {
       assert.doesNotMatch(text, /Time basis|Source details|Evidence time/);
     }
     if (page === 'settings') {
-      assert.match(text, /Advanced \(10\)/);
+      assert.match(text, /Advanced \(9\)/);
       assert.doesNotMatch(text, /Bar style|imp cap|Home mode/);
       assert.match(text, /Calls this hour\s+██▍░░░░░░░ 14\/60/);
       assert.match(text, /\* Call cap\s+‹ 120\/h ›/);

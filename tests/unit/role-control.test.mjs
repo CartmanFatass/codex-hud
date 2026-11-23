@@ -876,7 +876,7 @@ test('40-col EN/ZH frames 5a–5e follow the Control sample', async (t) => {
   const normalize = (row) => row.trim().replace(/^[›>] +/, '').replace(/─+/g, '─').replace(/’/g, "'").replace(/ +/g, ' ').replace(/ Off$/, ' off');
   const body = (rows) => rows.slice(rows.findIndex((row) => /^imp ─/.test(row)), -1).filter((row) => row.trim()).map(normalize);
   for (const panelLayout of ['classic']) {
-    s.session.state = onControl(nav, { prefs: { panelLayout, experiments: true } });
+    s.session.state = onControl(nav);
     for (const [id, keys] of shots) {
       await s.keys(...[keys].flat());
       for (const lang of ['en', 'zh']) {

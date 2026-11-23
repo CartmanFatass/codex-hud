@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { encodePanelPlace, PanelReload, readPanelPlace } from '../../dist/utils/panel-reload.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
-import { DEFAULT_PANEL_VIEW } from '../../dist/settings.js';
 import { delay, until, fixture, launch, encode, live, QUIET_MS } from '../helpers/panel-reload-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { until as untilRendered } from '../helpers/until.mjs';
@@ -52,11 +51,11 @@ test('reload place retains opening time; legacy handoffs use their consumption t
   }
 });
 
-function readPlace(raw, settings) {
+function readPlace(raw) {
   const previous = process.env.HUD_PANEL_RELOAD_PLACE;
   try {
     process.env.HUD_PANEL_RELOAD_PLACE = raw;
-    return readPanelPlace(settings);
+    return readPanelPlace();
   } finally {
     if (previous !== undefined) process.env.HUD_PANEL_RELOAD_PLACE = previous;
   }
@@ -75,8 +74,7 @@ test('v1 migrates the Project view, cursor, saved pages and nested Control nav',
       notice: { kind: 'preset', role: 'imp', name: 'not restored' } },
     focus: 'agents', filterQuery: 'slice', filterOpen: false,
     panelLayout: 'classic', cardHideMinutes: 30, splitRatio: 0.4 };
-  const place = readPlace(encode({ state, settings: { selected: 2, offset: 1 }, openedAt: 42, widthOverride: 56 }),
-    { ...DEFAULT_PANEL_VIEW, panelLayout: 'split' });
+  const place = readPlace(encode({ state, settings: { selected: 2, offset: 1 }, openedAt: 42, widthOverride: 56 }));
   const { activeTab, selectedProject, project, control, prefs, home } = place.state;
   assert.equal(activeTab, 'project');
   assert.equal(selectedProject, state.projectRoot);
@@ -148,7 +146,7 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   const raw = encodePanelPlace({ state, settings, widthOverride: null, openedAt: 42, extra: rawArgs });
   assert.doesNotMatch(raw, /overlay|confirm-leave|discarded-mark|trySelection|expandedTasks|onlyTry|SYNTHETIC_|synthetic-secret-flag|revealed|draft|panelSet|notice|retired/);
   assert.doesNotMatch(encodePanelPlace({ state: { ...state, overlay: { kind: 'confirm-stop', dir: secret } }, settings: null }), /confirm-stop|SYNTHETIC_/);
-  const place = readPlace(raw, { ...DEFAULT_PANEL_VIEW, panelLayout: 'split' });
+  const place = readPlace(raw);
   assert.equal(JSON.parse(raw).schemaVersion, 2);
   assert.equal(JSON.parse(raw).state, undefined, 'a rollback reader must not see a legacy state slot');
   assert.equal(JSON.parse(raw).settings, undefined, 'a rollback reader must not reopen Settings');
@@ -161,7 +159,7 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   assert.equal(project.nav.scroll, 4);
   assert.deepEqual(project.filter, state.project.filter);
   assert.deepEqual(home, { scroll: 6 });
-  assert.deepEqual(prefs, DEFAULT_PANEL_VIEW);
+  assert.equal(prefs, undefined, 'obsolete display preferences are not restored');
   assert.deepEqual(project.folded, state.project.folded);
   assert.deepEqual(project.savedPages, { docs: { cursor: 'doc', scroll: 1 } });
   assert.deepEqual(control.roles.folded, state.control.roles.folded);
@@ -170,6 +168,20 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   assert.equal(encodePanelPlace(place), raw);
   const edited = { ...state, home: { ...state.home, filter: { query: secret, editing: true } }, subpage: { kind: 'changes', scroll: 3 } };
   const changed = readPlace(encodePanelPlace({ state: edited, settings: null })).state;
+});
+
+test('legacy EXP navigation reopens in Control Resources, and the new location round-trips', () => {
+  const exp = { detail: 'openai-api', cursor: 'calibration', scroll: 2 };
+  for (const handoff of [
+    { state: { mainTab: 'exp', expPage: exp } },
+    { schemaVersion: 2, stateV2: { activeTab: 'exp', exp } },
+  ]) {
+    const place = readPlace(JSON.stringify(handoff));
+    assert.equal(place.state.activeTab, 'control');
+    assert.equal(place.state.control.subTab, 'resources');
+    assert.deepEqual(place.state.exp, { ...exp, revealed: exp.cursor });
+    assert.deepEqual(readPlace(encodePanelPlace(place)).state, place.state);
+  }
 });
 
 test('broken and unknown handoffs fall back safely, retaining a valid opening time', () => {

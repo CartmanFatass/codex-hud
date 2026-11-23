@@ -208,6 +208,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'In Harnesses, remove means off. Add back: type to filter, Enter restores, Esc cancels.':
     '宿主的「移除」就是停用。「添加回」：输入筛选，Enter 恢复，Esc 取消。',
   'h harnesses': 'h 宿主',
+  'h resources': 'h 资源',
   'h roles': 'h 角色',
   'Space on/off': 'Space 开关',
   'i add back': 'i 添加回',

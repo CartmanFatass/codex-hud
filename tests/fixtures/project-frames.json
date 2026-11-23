@@ -374,7 +374,7 @@
   "control-40-en": [
     " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────── 1",
     "  ! bad.json            unparseable JSON",
@@ -416,7 +416,7 @@
   "control-120-en": [
     " Home  Project ?2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 1",
     "  ! bad.json                                                                                            unparseable JSON",
@@ -830,7 +830,7 @@
   "control-40-zh": [
     " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "",
     "需要处理 ───────────────────────────── 1",
     "  ! bad.json               JSON 无法解析",
@@ -872,7 +872,7 @@
   "control-120-zh": [
     " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "",
     "需要处理 ───────────────────────────────────────────────────────────────────────────────────────────────────────────── 1",
     "  ! bad.json                                                                                               JSON 无法解析",
@@ -1572,7 +1572,7 @@
   "control-rich-40-en": [
     " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────── 4",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1622,7 +1622,7 @@
   "control-rich-120-en": [
     " Home  Project ?2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 4",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1672,7 +1672,7 @@
   "control-rich-40-zh": [
     " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "",
     "需要处理 ───────────────────────────── 4",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1722,7 +1722,7 @@
   "control-rich-120-zh": [
     " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "",
     "需要处理 ───────────────────────────────────────────────────────────────────────────────────────────────────────────── 4",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1772,7 +1772,7 @@
   "control-rich-open-40-en": [
     " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────── 4",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1830,7 +1830,7 @@
   "control-chain-40-en": [
     " Home  Project ?2  Control",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "  ✗ imp → agy gemini-4-hydrogen-high",
     "      pi/openai exhausted 42m",
     "imp ────────────────────────────────────",
@@ -1858,7 +1858,7 @@
   "control-rich-open-40-zh": [
     " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "",
     "需要处理 ───────────────────────────── 4",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1916,7 +1916,7 @@
   "control-chain-40-zh": [
     " 首页  项目 ?2  控制",
     "demo-project ───────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "  ✗ imp → agy gemini-4-hydrogen-high",
     "      pi/openai 已耗尽 42分",
     "imp ────────────────────────────────────",
@@ -1944,7 +1944,7 @@
   "control-rich-open-120-en": [
     " Home  Project ?2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 4",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -2002,7 +2002,7 @@
   "control-rich-40-text": [
     " Home  Project ?2  Control",
     "demo-project ---------------------------",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ---------------------- 4",
     "  x imp > agy gemini-4-hydrogen-high",
@@ -2308,7 +2308,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-order-browse-40-en": [
-    " Home  Project ?2  Control  EXP         ",
+    " Home  Project ?2  Control              ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   88",
     "› ◉ xai/grok-4.7                        ",
@@ -2334,7 +2334,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-order-filter-40-en": [
-    " Home  Project ?2  Control  EXP         ",
+    " Home  Project ?2  Control              ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ grok▌                                8",
     "›   xai/grok-4.5                        ",
@@ -2360,7 +2360,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-order-browse-40-zh": [
-    " 首页  项目 ?2  控制  EXP               ",
+    " 首页  项目 ?2  控制                    ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   88",
     "› ◉ xai/grok-4.7                        ",
@@ -2386,7 +2386,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-order-filter-40-zh": [
-    " 首页  项目 ?2  控制  EXP               ",
+    " 首页  项目 ?2  控制                    ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ grok▌                                8",
     "›   xai/grok-4.5                        ",
@@ -2412,7 +2412,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-order-browse-120-en": [
-    " Home  Project ?2  Control  EXP                                                                                         ",
+    " Home  Project ?2  Control                                                                                              ",
     " Model · imp [daily] place #1 · pi                                                              88 models · list 2h old ",
     "/ ▌                                                                 88│ xai/grok-4.7                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -2438,7 +2438,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "pick-order-filter-120-en": [
-    " Home  Project ?2  Control  EXP                                                                                         ",
+    " Home  Project ?2  Control                                                                                              ",
     " Model · imp [daily] place #1 · pi                                                              88 models · list 2h old ",
     "/ grok▌                                                              8│ xai/grok-4.5                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -2464,7 +2464,7 @@
     "                                                                            ⏎ set  esc clear  ^R refresh  type to filter"
   ],
   "pick-order-browse-120-zh": [
-    " 首页  项目 ?2  控制  EXP                                                                                               ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               88 个模型 · 列表 2小时前 ",
     "/ ▌                                                                 88│ xai/grok-4.7                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -2490,7 +2490,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "pick-order-filter-120-zh": [
-    " 首页  项目 ?2  控制  EXP                                                                                               ",
+    " 首页  项目 ?2  控制                                                                                                    ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               88 个模型 · 列表 2小时前 ",
     "/ grok▌                                                              8│ xai/grok-4.5                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -2620,9 +2620,9 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "preset-row-40-split-en": [
-    " Home  Project ?2  Control  EXP",
+    " Home  Project ?2  Control",
     "harbor-api ─────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────── 3",
     "  ✗ pro → gemini",
@@ -2656,9 +2656,9 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-list-40-split-en": [
-    " Home  Project ?2  Control  EXP",
+    " Home  Project ?2  Control",
     "harbor-api ─────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "imp ────────────────────── choose preset",
     "/ ▌                                    4",
     "    default   → pi/openai",
@@ -2681,9 +2681,9 @@
     "     type to filter  ⏎ apply  Esc cancel"
   ],
   "preset-delete-40-split-en": [
-    " Home  Project ?2  Control  EXP",
+    " Home  Project ?2  Control",
     "harbor-api ─────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "imp ────────────────────── delete preset",
     "Delete daily?",
     "Use file chain next",
@@ -2706,9 +2706,9 @@
     "                    ⏎ delete  Esc cancel"
   ],
   "preset-row-40-split-zh": [
-    " 首页  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制",
     "harbor-api ─────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "",
     "需要处理 ───────────────────────────── 3",
     "  ✗ pro → gemini",
@@ -2742,9 +2742,9 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "preset-list-40-split-zh": [
-    " 首页  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制",
     "harbor-api ─────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "imp ─────────────────────────── 选择预设",
     "/ ▌                                    4",
     "    default   → pi/openai",
@@ -2767,9 +2767,9 @@
     "              输入筛选  ⏎ 应用  Esc 取消"
   ],
   "preset-delete-40-split-zh": [
-    " 首页  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制",
     "harbor-api ─────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "imp ─────────────────────────── 删除预设",
     "删除 daily？",
     "下次使用文件链",
@@ -2792,9 +2792,9 @@
     "                        ⏎ 删除  Esc 取消"
   ],
   "preset-row-40-classic-en": [
-    " Home  Project ?2  Control  EXP",
+    " Home  Project ?2  Control",
     "harbor-api ─────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "",
     "Needs attention ────────────────────── 3",
     "  ✗ pro → gemini",
@@ -2828,9 +2828,9 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-list-40-classic-en": [
-    " Home  Project ?2  Control  EXP",
+    " Home  Project ?2  Control",
     "harbor-api ─────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "imp ────────────────────── choose preset",
     "/ ▌                                    4",
     "    default   → pi/openai",
@@ -2853,9 +2853,9 @@
     "     type to filter  ⏎ apply  Esc cancel"
   ],
   "preset-delete-40-classic-en": [
-    " Home  Project ?2  Control  EXP",
+    " Home  Project ?2  Control",
     "harbor-api ─────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "imp ────────────────────── delete preset",
     "Delete daily?",
     "Use file chain next",
@@ -2878,9 +2878,9 @@
     "                    ⏎ delete  Esc cancel"
   ],
   "preset-row-40-classic-zh": [
-    " 首页  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制",
     "harbor-api ─────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "",
     "需要处理 ───────────────────────────── 3",
     "  ✗ pro → gemini",
@@ -2914,9 +2914,9 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "preset-list-40-classic-zh": [
-    " 首页  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制",
     "harbor-api ─────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "imp ─────────────────────────── 选择预设",
     "/ ▌                                    4",
     "    default   → pi/openai",
@@ -2939,9 +2939,9 @@
     "              输入筛选  ⏎ 应用  Esc 取消"
   ],
   "preset-delete-40-classic-zh": [
-    " 首页  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制",
     "harbor-api ─────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "imp ─────────────────────────── 删除预设",
     "删除 daily？",
     "下次使用文件链",
@@ -2964,9 +2964,9 @@
     "                        ⏎ 删除  Esc 取消"
   ],
   "preset-switched-40-split-en": [
-    " Home  Project ?2  Control  EXP",
+    " Home  Project ?2  Control",
     "harbor-api ─────────────────────────────",
-    " Roles  Harnesses",
+    " Roles  Harnesses  Resources",
     "✓ imp · preset applied",
     "",
     "Needs attention ────────────────────── 3",
@@ -3000,9 +3000,9 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-switched-40-split-zh": [
-    " 首页  项目 ?2  控制  EXP",
+    " 首页  项目 ?2  控制",
     "harbor-api ─────────────────────────────",
-    " 角色  宿主",
+    " 角色  宿主  资源",
     "✓ imp · 已应用预设",
     "",
     "需要处理 ───────────────────────────── 3",
@@ -3038,7 +3038,7 @@
   "quick-model-row-40-split-en": [
     " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses                       ",
+    " Roles  Harnesses  Resources            ",
     "                                        ",
     "Needs attention ────────────────────── 0",
     "                                        ",
@@ -3094,7 +3094,7 @@
   "quick-model-saved-40-split-en": [
     " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses                       ",
+    " Roles  Harnesses  Resources            ",
     "✓ imp #1 → xai/grok-4.7-fast            ",
     "                                        ",
     "Needs attention ────────────────────── 0",
@@ -3124,7 +3124,7 @@
   "quick-model-row-40-split-zh": [
     " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
-    " 角色  宿主                             ",
+    " 角色  宿主  资源                       ",
     "                                        ",
     "需要处理 ───────────────────────────── 0",
     "                                        ",
@@ -3180,7 +3180,7 @@
   "quick-model-saved-40-split-zh": [
     " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
-    " 角色  宿主                             ",
+    " 角色  宿主  资源                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast       ",
     "                                        ",
     "需要处理 ───────────────────────────── 0",
@@ -3210,7 +3210,7 @@
   "quick-model-row-40-classic-en": [
     " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses                       ",
+    " Roles  Harnesses  Resources            ",
     "                                        ",
     "Needs attention ────────────────────── 0",
     "                                        ",
@@ -3266,7 +3266,7 @@
   "quick-model-saved-40-classic-en": [
     " Home  Project ?2  Control              ",
     "demo-project ───────────────────────────",
-    " Roles  Harnesses                       ",
+    " Roles  Harnesses  Resources            ",
     "✓ imp #1 → xai/grok-4.7-fast            ",
     "                                        ",
     "Needs attention ────────────────────── 0",
@@ -3296,7 +3296,7 @@
   "quick-model-row-40-classic-zh": [
     " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
-    " 角色  宿主                             ",
+    " 角色  宿主  资源                       ",
     "                                        ",
     "需要处理 ───────────────────────────── 0",
     "                                        ",
@@ -3352,7 +3352,7 @@
   "quick-model-saved-40-classic-zh": [
     " 首页  项目 ?2  控制                    ",
     "demo-project ───────────────────────────",
-    " 角色  宿主                             ",
+    " 角色  宿主  资源                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast       ",
     "                                        ",
     "需要处理 ───────────────────────────── 0",
@@ -3382,7 +3382,7 @@
   "quick-model-row-120-split-en": [
     " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " Roles  Harnesses                                                                                                       ",
+    " Roles  Harnesses  Resources                                                                                            ",
     "                                                                                                                        ",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 0",
     "                                                                                                                        ",
@@ -3438,7 +3438,7 @@
   "quick-model-saved-120-split-en": [
     " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " Roles  Harnesses                                                                                                       ",
+    " Roles  Harnesses  Resources                                                                                            ",
     "✓ imp #1 → xai/grok-4.7-fast                                                                                            ",
     "                                                                                                                        ",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 0",
@@ -3468,7 +3468,7 @@
   "quick-model-row-120-split-zh": [
     " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " 角色  宿主                                                                                                             ",
+    " 角色  宿主  资源                                                                                                       ",
     "                                                                                                                        ",
     "需要处理 ───────────────────────────────────────────────────────────────────────────────────────────────────────────── 0",
     "                                                                                                                        ",
@@ -3524,7 +3524,7 @@
   "quick-model-saved-120-split-zh": [
     " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " 角色  宿主                                                                                                             ",
+    " 角色  宿主  资源                                                                                                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast                                                                                       ",
     "                                                                                                                        ",
     "需要处理 ───────────────────────────────────────────────────────────────────────────────────────────────────────────── 0",
@@ -3554,7 +3554,7 @@
   "quick-model-row-120-classic-en": [
     " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " Roles  Harnesses                                                                                                       ",
+    " Roles  Harnesses  Resources                                                                                            ",
     "                                                                                                                        ",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 0",
     "                                                                                                                        ",
@@ -3610,7 +3610,7 @@
   "quick-model-saved-120-classic-en": [
     " Home  Project ?2  Control                                                                                              ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " Roles  Harnesses                                                                                                       ",
+    " Roles  Harnesses  Resources                                                                                            ",
     "✓ imp #1 → xai/grok-4.7-fast                                                                                            ",
     "                                                                                                                        ",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 0",
@@ -3640,7 +3640,7 @@
   "quick-model-row-120-classic-zh": [
     " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " 角色  宿主                                                                                                             ",
+    " 角色  宿主  资源                                                                                                       ",
     "                                                                                                                        ",
     "需要处理 ───────────────────────────────────────────────────────────────────────────────────────────────────────────── 0",
     "                                                                                                                        ",
@@ -3696,7 +3696,7 @@
   "quick-model-saved-120-classic-zh": [
     " 首页  项目 ?2  控制                                                                                                    ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    " 角色  宿主                                                                                                             ",
+    " 角色  宿主  资源                                                                                                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast                                                                                       ",
     "                                                                                                                        ",
     "需要处理 ───────────────────────────────────────────────────────────────────────────────────────────────────────────── 0",

@@ -4,7 +4,6 @@ import type { DraftPlace, PlaceFact, RoleFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { filterScope } from './filter.js';
 import type { WorkTarget } from '../collectors/workboard-types.js';
-import type { HudSettings } from '../settings.js';
 import type { MainTab } from './main-tabs.js';
 import type { PresetInput } from './preset-input.js';
 
@@ -44,7 +43,6 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
 
 export type SubpageState = JobsState | InspectorState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
 export interface HelpOverlay { scroll?: number }
-export type ViewPrefs = Pick<HudSettings, 'experiments'>;
 export interface MonitorState {
   activeTab: MainTab;
   selectedProject?: string;
@@ -52,8 +50,7 @@ export interface MonitorState {
   jobs: RowNav;
   project: ProjectTabState;
   control: ControlTabState;
-  exp: ExpTabState;
-  prefs: ViewPrefs;
+  exp: ExpFormState;
   overlay?: OverlayState;
   subpage?: SubpageState;
   help?: HelpOverlay;
@@ -70,8 +67,9 @@ export type ControlNotice =
   | { kind: 'model'; role: string; index: number; model: string | null }
   | { kind: 'harness'; id: string; off: boolean };
 
+export const CONTROL_VIEWS = ['roles', 'harnesses', 'resources'] as const;
 export interface ControlTabState {
-  subTab: 'roles' | 'harnesses';
+  subTab: (typeof CONTROL_VIEWS)[number];
   roles: ControlViewState;
   harnesses: ControlViewState;
   notice?: ControlNotice;
@@ -84,7 +82,7 @@ export const harnessFold = `project:fold:${HARNESS_OFF}`;
 export const controlRoleOf = (item?: string) => /^project:role:([^:]+)(?::\d+)?$/.exec(item ?? '')?.[1];
 export const controlRoleItem = (role: string) => `project:role:${role}`;
 
-export function initialControlView(subTab: ControlTabState['subTab']): ControlViewState {
+export function initialControlView(subTab: 'roles' | 'harnesses'): ControlViewState {
   return { nav: emptyNav(),
     folded: new Set(subTab === 'roles' ? CONTROL_FOLDS : [HARNESS_OFF]) };
 }
@@ -95,18 +93,19 @@ export function initialControlTab(): ControlTabState {
 
 /** Input edits only the active Control view. */
 export function copyControlTab(control: ControlTabState): ControlTabState {
+  if (control.subTab === 'resources') return { ...control };
   const view = control[control.subTab];
   return { ...control, [control.subTab]: { ...view, nav: { ...view.nav } } };
 }
 
 export type ExpDetail = ExpAccount | 'codex-help' | 'proxy-status';
 
-export interface ExpTabState {
+export interface ExpFormState {
   detail?: ExpDetail;
   cursor?: string;
   scroll: number;
   revealed?: string;
-  notice?: 'Saved' | 'Could not save EXP setting' | 'Invalid value';
+  notice?: 'Saved' | 'Could not save resource setting' | 'Invalid value';
 }
 
 export interface ModelPickerState {
@@ -154,8 +153,7 @@ export function backFromSubpage(state: MonitorState): MonitorState {
   return { ...state, subpage: sub?.kind === 'native-inspector' ? sub.back ?? jobsPage(state)
     : sub?.kind === 'inspector' ? jobsPage(state) : undefined };
 }
-export function transitionTab(state: MonitorState, tab: MainTab): MonitorState {
-  const activeTab = tab === 'exp' && !state.prefs.experiments ? 'home' : tab;
+export function transitionTab(state: MonitorState, activeTab: MainTab): MonitorState {
   const base = { ...state, subpage: undefined };
   // The Projects list is a layer above the hub, not a destination when entering from Home.
   const resetList = state.activeTab !== 'control' && activeTab !== 'control';
@@ -185,21 +183,6 @@ export function transitionProjectView(state: MonitorState, view: ProjectView, op
     filter: project.view.kind === view.kind ? project.filter : undefined,
     fromProjectsList: options.fromProjectsList ?? project.fromProjectsList,
     nav: { ...project.nav, cursor, scroll: kept?.scroll ?? 0, revealed: kept?.cursor } } };
-}
-
-export function viewPrefs(settings: HudSettings): ViewPrefs {
-  return { experiments: settings.experiments };
-}
-export function applyViewPrefs(state: MonitorState, settings: HudSettings): MonitorState {
-  return reconcileMonitor({ ...state, prefs: viewPrefs(settings) });
-}
-
-export function reconcileMonitor(state: MonitorState): MonitorState {
-  if (state.prefs.experiments) return state;
-  const activeTab = state.activeTab === 'exp' ? 'home' : state.activeTab;
-  const exp = state.exp.detail || state.exp.cursor || state.exp.scroll || state.exp.notice || state.exp.revealed ? { scroll: 0 } : state.exp;
-  const overlay = state.overlay?.kind === 'exp-edit' ? undefined : state.overlay;
-  return activeTab === state.activeTab && exp === state.exp && overlay === state.overlay ? state : { ...state, activeTab, exp, overlay };
 }
 
 export function hasUnsavedDraft(state: MonitorState): boolean {

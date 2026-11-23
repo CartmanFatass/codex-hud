@@ -103,7 +103,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format: seconds,
   },
   { key: 'mouse', group: 'Panel', label: 'Mouse', values: [true, false], help: 'Click and scroll the panel', advanced: true },
-  { key: 'experiments', group: 'Panel', label: 'Experiments', values: [false, true], help: 'Show EXP usage settings for this machine', advanced: true },
   {
     key: 'modelEnabled',
     group: 'Models',
@@ -233,7 +232,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
+  Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'impPlacement', 'impEvenPool', 'summaryIntervalMinutes'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],

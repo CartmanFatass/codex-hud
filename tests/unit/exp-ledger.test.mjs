@@ -72,7 +72,7 @@ test('balance dedups, uses completion time against the latest calibration, keeps
   for (const lang of ['en', 'zh'])
     for (const panelLayout of ['classic', 'split']) {
       setLanguage(lang);
-      const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true }, exp: { detail: account, cursor: 'calibration', scroll: 0 } });
+      const state = withState(initialMonitorState(), { activeTab: 'control', control: { subTab: 'resources' }, prefs: { panelLayout }, exp: { detail: account, cursor: 'calibration', scroll: 0 } });
       const frame = renderMonitor({ state, tree, expData: data, width: 40, height: 24, nowMs: Date.parse(now) });
       for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
       const rows = frame.lines.map((line) => stripAnsi(line).trimEnd()).join('\n');

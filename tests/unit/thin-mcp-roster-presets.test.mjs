@@ -266,11 +266,11 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
     data.codex.aliases[fs.realpathSync(own)] = 'Local';
     fs.writeFileSync(join(exp, 'config.json'), JSON.stringify(data));
   };
-  const master = (experiments) => fs.writeFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ experiments }));
+  const legacySettings = (experiments) => fs.writeFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ experiments }));
   const state = { config: { profile: other }, thread: { model: { display_name: 'Example' } } };
   const firstAt = 1_768_000_000_000;
   clock(firstAt);
-  master(true);
+  legacySettings(true);
   assert.deepEqual(footerText(await readFooter(f, state)), ['Example']);
   assert.equal(fs.existsSync(exp), false);
   fs.mkdirSync(exp);
@@ -278,11 +278,6 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
   await readFooter(f, state);
   assert.equal(fs.existsSync(seen), false);
   config(true);
-  master(false);
-  await readFooter(f, state);
-  assert.equal(fs.existsSync(seen), false);
-  master(true);
-
   await readFooter(f);
   assert.equal(fs.existsSync(seen), false, 'a discovery read without statusline state is not a native observation');
   await readFooter(f, state);
@@ -292,22 +287,24 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
   clock(firstAt + 59_999);
   await readFooter(f, state);
   assert.equal(fs.statSync(seen).ino, first.ino);
+  legacySettings(false);
   clock(firstAt + 60_000);
-  await readFooter(f, state);
+  assert.deepEqual(footerText(await readFooter(f, state)), ['Example']);
   const second = fs.statSync(seen);
   assert.notEqual(second.ino, first.ino, 'update atomically replaces the file');
   assert.deepEqual(JSON.parse(fs.readFileSync(seen, 'utf8')), { version: 1, lastSeenAt: firstAt + 60_000 });
-  master(false);
+  config(false);
   clock(firstAt + 120_000);
-  await readFooter(f, state);
+  assert.deepEqual(footerText(await readFooter(f, state)), ['Example']);
   assert.equal(fs.statSync(seen).ino, second.ino);
+  config(true);
   assert.deepEqual(fs.readdirSync(exp).sort(), [basename(seen), 'config.json']);
   const expData = readExpData(f.env.HUD_HOME, f.env, firstAt + 120_000);
   assert.deepEqual(expData.profiles.map(({ home, lastNativeSeenAt }) => [home, lastNativeSeenAt]), [
     [fs.realpathSync(own), firstAt + 60_000], [fs.realpathSync(other), undefined],
   ]);
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
-  const frame = renderMonitor({ tree, state: withState(initialMonitorState(), { activeTab: 'exp', prefs: { experiments: true } }),
+  const frame = renderMonitor({ tree, state: withState(initialMonitorState(), { activeTab: 'control', control: { subTab: 'resources' } }),
     expData, width: 40, height: 24, nowMs: firstAt + 120_000 });
   const date = new Date(firstAt + 60_000).toISOString().slice(5, 16).replace('T', ' ');
   const lines = frame.lines.map((line) => stripAnsi(line).trimEnd()).join('\n');

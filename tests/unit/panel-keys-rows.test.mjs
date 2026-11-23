@@ -106,13 +106,13 @@ test('Help opens at the source tab, scrolls back to Everywhere, and closes to th
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
     for (const panelLayout of ['classic', 'split']) for (const width of [40, 120]) for (const height of [24, 160]) {
-      for (const [lang, titles] of [['en', ['Everywhere', 'Project', 'Control', 'Everywhere']], ['zh', ['通用', '项目', '控制', '通用']]]) {
+      for (const [lang, titles] of [['en', ['Everywhere', 'Project', 'Control']], ['zh', ['通用', '项目', '控制']]]) {
         const previous = setLanguage(lang);
         try {
-          for (const [i, mainTab] of ['home', 'project', 'control', 'exp'].entries()) {
+          for (const [i, mainTab] of ['home', 'project', 'control'].entries()) {
             const draw = (state) => renderMonitor({ tree: TREE, width, height, state, nowMs: NOW });
             const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW }).state;
-            const from = draw(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout, experiments: true } }));
+            const from = draw(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout } }));
             const help = draw(press(from, '?'));
             assert.equal(help.state.activeTab, mainTab);
             const anchored = i === 1 || i === 2;
@@ -189,13 +189,13 @@ test('top row names each tab once and shows a model-text switch only when off an
   for (const [lang, tabs, off] of [['en', 'Home Project Control', 'models off'], ['zh', '首页 项目 控制', '模型 关']]) {
     const previous = setLanguage(lang);
     try {
-      for (const panelLayout of ['classic', 'split']) for (const experiments of [false, true]) for (const width of [40, 80, 120]) {
-        const state = withState(initialMonitorState(), { prefs: { panelLayout, experiments } });
+      for (const panelLayout of ['classic', 'split']) for (const width of [40, 80, 120]) {
+        const state = withState(initialMonitorState(), { prefs: { panelLayout } });
         for (const modelEnabled of [true, false]) {
           const frame = renderMonitor({ tree: TREE, state, modelEnabled, width, height: 16, nowMs: NOW });
           assert.equal(visualLength(frame.lines[0]), width);
           assert.equal(stripAnsi(frame.lines[0]).trim().replace(/ +/g, ' '),
-            tabs + (experiments ? ' EXP' : '') + (modelEnabled ? '' : ` ${off}`));
+            tabs + (modelEnabled ? '' : ` ${off}`));
           const ctx = { tree: TREE, frame, nowMs: NOW };
           const press = (raw) => handleMonitorInput(frame.state, decode(raw)[0], ctx);
           assert.equal(press('b').action?.type, 'brief-toggle');
@@ -209,27 +209,31 @@ test('top row names each tab once and shows a model-text switch only when off an
       }
     } finally { setLanguage(previous); }
   }
-  const narrow = renderMonitor({ tree: TREE, state: withState(initialMonitorState(), { prefs: { experiments: true } }),
-    modelEnabled: false, projectWaiting: 2, width: 40, height: 16, nowMs: NOW });
-  assert.equal(stripAnsi(narrow.lines[0]).trim(), 'Home  Project ?2  Control  EXP');
+  const narrow = renderMonitor({ tree: TREE, state: initialMonitorState(),
+    modelEnabled: false, projectWaiting: 2, width: 34, height: 16, nowMs: NOW });
+  assert.equal(stripAnsi(narrow.lines[0]).trim(), 'Home  Project ?2  Control');
   assert.equal(narrow.controls.some((c) => c.kind === 'brief'), false);
 });
 
 test('Esc at every tab root leaves the cursor and tab unchanged; q closes the panel', () => {
   const expData = { config: defaultExpConfig(), profiles: [] };
-  for (const panelLayout of ['classic', 'split']) for (const mainTab of ['home', 'project', 'control', 'exp']) {
+  for (const view of ['home', 'project', 'control', 'resources']) {
     const render = (state) => busy.render(40, 'en', 40, state, busy.control, { expData });
     const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW, standalone: true });
-    const root = render(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout, experiments: true } }));
+    const root = render(view === 'resources'
+      ? onControl({}, {}, { subTab: 'resources' })
+      : withState(initialMonitorState(), { activeTab: view }));
     const moved = render(press(root, '\x1b[B').state);
     const cursor = ({ home: (s) => s.home.scroll,
-      project: (s) => s.project.nav.cursor, control: (s) => s.control.roles.nav.cursor, exp: (s) => s.exp.cursor })[mainTab];
-    if (mainTab !== 'home') assert.ok(cursor(moved.state), `${panelLayout} ${mainTab} has a cursor`);
-    if (mainTab !== 'home') assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${panelLayout} ${mainTab} moved off its first row`);
+      project: (s) => s.project.nav.cursor, control: (s) => s.control.roles.nav.cursor, resources: (s) => s.exp.cursor })[view];
+    if (view !== 'home') {
+      assert.ok(cursor(moved.state), `${view} has a cursor`);
+      assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${view} moved off its first row`);
+    }
     const escaped = press(moved, '\x1b');
     assert.equal(escaped.close, false);
     assert.equal(escaped.action, undefined);
-    assert.deepEqual(escaped.state, moved.state, `${panelLayout} ${mainTab} root is unchanged`);
+    assert.deepEqual(escaped.state, moved.state, `${view} root is unchanged`);
     assert.equal(press(moved, 'q').close, true);
   }
 });

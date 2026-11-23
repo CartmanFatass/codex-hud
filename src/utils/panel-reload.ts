@@ -3,18 +3,16 @@ import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { deserializePanelPlace, serializePanelPlace, type PanelPlace } from '../render/monitor-reload-codec.js';
-import { viewPrefs } from '../render/monitor-state.js';
-import { DEFAULT_PANEL_VIEW, type HudSettings } from '../settings.js';
 import { installationRoot } from '../cli/compat.js';
 
 const PLACE = 'HUD_PANEL_RELOAD_PLACE', SUPERVISED = 'HUD_PANEL_RELOAD_SUPERVISED', RESTART = 75;
 export { serializePanelPlace as encodePanelPlace };
 
-export function readPanelPlace(settings?: HudSettings) {
+export function readPanelPlace() {
   const raw = process.env[PLACE];
   delete process.env[PLACE];
   if (!raw) return;
-  const place = deserializePanelPlace(raw, settings ? viewPrefs(settings) : DEFAULT_PANEL_VIEW);
+  const place = deserializePanelPlace(raw);
   // Legacy handoffs without an opening time start their lifetime when consumed.
   if (place) return { ...place, openedAt: place.openedAt ?? Date.now() };
 }

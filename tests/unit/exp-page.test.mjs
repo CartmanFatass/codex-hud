@@ -1,20 +1,14 @@
-import { applyViewPrefs } from '../../dist/render/monitor-state.js';
 import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
+import { loadSettings } from '../../dist/settings.js';
 import { knownExpProfiles, readExpConfig, readExpData, saveExpEdit } from '../../dist/collectors/exp-store.js';
 import { appendExpEvent } from '../../dist/collectors/exp-ledger.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
-import {
-  handleSettingsInput,
-  renderSettingsPage,
-  resetSettingsGroup,
-  SETTING_ROWS,
-} from '../../dist/render/settings-page.js';
+import { SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
@@ -44,7 +38,12 @@ function fixture(t) {
   return { env, main, other, dir: join(env.HUD_HOME, 'exp') };
 }
 
-function panel(f, state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { experiments: true } })) {
+const onResources = (patch) => {
+  const base = initialMonitorState();
+  return withState(base, { activeTab: 'control', control: { ...base.control, subTab: 'resources' } }, patch);
+};
+
+function panel(f, state = onResources()) {
   const data = () => readExpData(f.env.HUD_HOME, f.env, NOW);
   const decoder = new WorkbenchInputDecoder('workboard');
   let expData = data(),
@@ -80,81 +79,54 @@ function panel(f, state = withState(initialMonitorState(), { activeTab: 'exp', p
   return { press, select, type, edit, frame: () => frame };
 }
 
-test('EXP returns to its detail and cursor after visiting Control in either panel layout', (t) => {
+test('Control Resources returns to its detail and cursor after visiting another main tab', (t) => {
   const f = fixture(t), expData = readExpData(f.env.HUD_HOME, f.env, NOW);
-  for (const panelLayout of ['classic', 'split']) {
-    const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true }, exp: { detail: 'openai-api', cursor: 'calibration', scroll: 0 } });
-    const before = draw(state, expData);
-    const control = draw(send(before, key('shift-tab')).state, expData);
-    assert.equal(control.state.activeTab, 'control');
-    const after = draw(send(control, key('tab')).state, expData);
-    assert.deepEqual(after.state.exp, before.state.exp);
-    assert.deepEqual(after.lines, before.lines);
-    const edit = send(after, key('enter'));
-    assert.equal(edit.state.overlay?.kind, 'exp-edit');
-    assert.equal(edit.state.overlay.entryId, 'calibration');
-  }
+  const state = onResources({ exp: { detail: 'openai-api', cursor: 'calibration', scroll: 0 } });
+  const before = draw(state, expData);
+  const project = draw(send(before, key('shift-tab')).state, expData);
+  assert.equal(project.state.activeTab, 'project');
+  const after = draw(send(project, key('tab')).state, expData);
+  assert.deepEqual(after.state.exp, before.state.exp);
+  assert.deepEqual(after.lines, before.lines);
+  const edit = send(after, key('enter'));
+  assert.equal(edit.state.overlay?.kind, 'exp-edit');
+  assert.equal(edit.state.overlay.entryId, 'calibration');
 });
 
-test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP but digits do not', (t) => {
+test('legacy Experiments settings add no tab; keyboard and mouse open Control Resources', (t) => {
   const f = fixture(t);
-  for (const name of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'HUD_SETTINGS_PATH']) {
-    const old = process.env[name];
-    t.after(() => {
-      if (old === undefined) delete process.env[name];
-      else process.env[name] = old;
-    });
-    if (f.env[name]) process.env[name] = f.env[name];
-    else delete process.env[name];
-  }
-  const settings = loadSettings();
-  assert.equal(settings.experiments, false);
+  fs.mkdirSync(f.env.HUD_HOME);
+  const path = join(f.env.HUD_HOME, 'hud-settings.json');
+  const legacy = JSON.stringify({ experiments: true });
+  fs.writeFileSync(path, legacy);
+  const settings = loadSettings(f.env);
+  assert.equal(settings.experiments, undefined);
+  assert.ok(!SETTING_ROWS.some((row) => row.key === 'experiments'));
   const expData = readExpData(f.env.HUD_HOME, f.env);
-  let frame = draw({ ...initialMonitorState(settings), activeTab: 'exp' }, expData);
-  assert.equal(frame.state.activeTab, 'home');
+  let frame = draw(initialMonitorState(), expData);
+  const go = (input) => { frame = draw(send(frame, input).state, expData); };
+  const press = (name) => go(key(name));
+  assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind),
+    ['board-home', 'board-project', 'board-control']);
   assert.equal(frame.expData, undefined);
-  assert.deepEqual(
-    frame.controls.filter((c) => ['board-home', 'board-project', 'board-control', 'board-exp'].includes(c.kind)).map((c) => c.kind),
-    ['board-home', 'board-project', 'board-control']
-  );
-  assert.equal(send(frame, key('left')).state.activeTab, 'control');
-
-  const selected = SETTING_ROWS.findIndex((row) => row.key === 'experiments');
-  assert.equal(SETTING_ROWS[selected].group, 'Panel');
-  const settingsFrame = renderSettingsPage({ draft: settings, selected, offset: 0, message: '' }, 40, 24);
-  assert.match(plain(settingsFrame), /Experiments\s+‹ off ›/);
-  const enabled = handleSettingsInput(settingsFrame.state, key('right'), settingsFrame).state.draft;
-  assert.equal(enabled.experiments, true);
-  assert.equal(resetSettingsGroup(enabled, 'Panel').experiments, false);
-  saveSettings(enabled);
-  assert.equal(loadSettings().experiments, true);
-  frame = draw(initialMonitorState(loadSettings()), expData);
-  const go = (input) => {
-    frame = draw(send(frame, input).state, expData);
-    return frame.state.activeTab;
-  };
-  assert.equal(go(key('right')), 'project');
-  assert.equal(go(key('tab')), 'control');
-  assert.equal(go(key('tab')), 'exp');
-  assert.match(plain(frame), /Codex native status line/);
-  const decoder = new WorkbenchInputDecoder('workboard');
-  for (const input of decoder.push(Buffer.from('1234567890'))) assert.equal(go(input), 'exp');
-  assert.equal(go(key('right')), 'home');
-  assert.equal(go(key('shift-tab')), 'exp');
-  assert.equal(go(key('left')), 'control');
-  const { x, y } = frame.controls.find((c) => c.kind === 'board-exp');
-  assert.equal(go({ type: 'mouse', button: 'left', x, y }), 'exp');
-  assert.equal(go(key('escape')), 'exp');
-  assert.equal(fs.existsSync(f.dir), false, 'showing EXP does not write');
-  saveSettings({ experiments: false });
-  frame = draw(applyViewPrefs(frame.state, loadSettings()), expData);
-  assert.equal(
-    frame.controls.some((c) => c.kind === 'board-exp'),
-    false
-  );
+  press('shift-tab');
+  assert.equal(frame.state.activeTab, 'control');
+  const h = new WorkbenchInputDecoder('workboard').push(Buffer.from('h'))[0];
+  for (const view of ['harnesses', 'resources', 'roles']) {
+    go(h);
+    assert.equal(frame.state.control.subTab, view);
+  }
+  const { x, y } = frame.controls.find((c) => c.kind === 'control-resources');
+  go({ type: 'mouse', button: 'left', x, y });
+  assert.equal(frame.state.control.subTab, 'resources');
+  assert.match(plain(frame), /Track native status line\s+off/);
+  assert.equal(fs.existsSync(f.dir), false, 'showing Resources does not write');
+  assert.equal(fs.readFileSync(path, 'utf8'), legacy);
+  press('tab');
+  assert.equal(frame.state.activeTab, 'home');
 });
 
-test('EXP edits every group, Esc drops drafts, and another project sees the same saved values', (t) => {
+test('Resources edits every group, Esc drops drafts, and another project sees the same saved values', (t) => {
   const f = fixture(t);
   assert.deepEqual(knownExpProfiles(f.env), [
     { home: f.main, name: '.codex' },
@@ -233,7 +205,7 @@ test('EXP edits every group, Esc drops drafts, and another project sees the same
   assert.ok(cfg.grants['anthropic-api'].schedule.startsAt > NOW);
   assert.equal(cfg.grants['openai-api'].grantMicros, 12_345_678);
   assert.equal(cfg.grants['openai-api'].enabled, false);
-  const reloaded = panel(f, withState(initialMonitorState(), { activeTab: 'exp', selectedProject: '/synthetic/other-project', prefs: { panelLayout: 'split', experiments: true } }));
+  const reloaded = panel(f, onResources({ selectedProject: '/synthetic/other-project' }));
   assert.match(plain(reloaded.frame()), /Second profile \(\.codex-secondary\)/);
   assert.match(plain(reloaded.frame()), /60 min/);
   assert.match(plain(reloaded.frame()), /anthropic-api\s+on · uncalibrated/);
@@ -284,7 +256,7 @@ test('calibration previews before any write, cancels cleanly, then appends one p
   assert.equal(fs.statSync(f.dir).mode & 0o777, 0o700);
 });
 
-test('40-column EXP form indents its rows and gives up blanks before sections in both languages and layouts', (t) => {
+test('40-column Resources form indents its rows and gives up blanks before sections in both languages', (t) => {
   const f = fixture(t);
   const data = readExpData(f.env.HUD_HOME, f.env, NOW);
   const expData = { ...data, profiles: data.profiles.slice(0, 1) };
@@ -297,24 +269,24 @@ test('40-column EXP form indents its rows and gives up blanks before sections in
   for (const lang of ['en', 'zh']) {
     setLanguage(lang);
     const en = lang === 'en';
-    for (const panelLayout of ['classic', 'split']) {
-      const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true } });
+    {
+      const state = onResources();
       const frame = draw(state, expData);
       const lines = plain(frame).split('\n');
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
-      assert.equal(lines[1], en ? 'This machine · all projects' : '本机 · 所有项目');
-      assert.deepEqual([lines[2], lines[7], lines[13]], ['', '', '']);
-      assert.match(lines[3], en ? /^Codex native status line ─+$/ : /^Codex 原生栏 ─+$/);
-      assert.match(lines[4], en ? /^  Track native status line +off$/ : /^  记录原生状态栏 +关$/);
-      assert.match(lines[5], en ? /^  \.codex +bar not seen yet$/ : /^  \.codex +尚未见到原生栏$/);
-      assert.match(lines[8], en ? /^pi subscription proxy ─+$/ : /^pi 订阅代理 ─+$/);
-      assert.match(lines[11], en ? /^  Interval +15 min$/ : /^  刷新间隔 +15 分$/);
-      assert.match(lines[14], en ? /^API grants ─+$/ : /^API 赠额 ─+$/);
-      assert.match(lines[16], en ? /^  openai-api +off · uncalibrated$/ : /^  openai-api +关 · 未校准$/);
-      assert.match(lines.at(-1), en ? /⏎ edit  \? help$/ : /⏎ 编辑  \? 帮助$/);
+      assert.equal(lines[2], en ? 'This machine · all projects' : '本机 · 所有项目');
+      assert.deepEqual([lines[3], lines[8], lines[14]], ['', '', '']);
+      assert.match(lines[4], en ? /^Codex native status line ─+$/ : /^Codex 原生栏 ─+$/);
+      assert.match(lines[5], en ? /^  Track native status line +off$/ : /^  记录原生状态栏 +关$/);
+      assert.match(lines[6], en ? /^  \.codex +bar not seen yet$/ : /^  \.codex +尚未见到原生栏$/);
+      assert.match(lines[9], en ? /^pi subscription proxy ─+$/ : /^pi 订阅代理 ─+$/);
+      assert.match(lines[12], en ? /^  Interval +15 min$/ : /^  刷新间隔 +15 分$/);
+      assert.match(lines[15], en ? /^API grants ─+$/ : /^API 赠额 ─+$/);
+      assert.match(lines[17], en ? /^  openai-api +off · uncalibrated$/ : /^  openai-api +关 · 未校准$/);
+      assert.match(lines.at(-1), en ? /⏎ edit  h roles  \? help$/ : /⏎ 编辑  h 角色  \? 帮助$/);
 
-      const short = draw(state, expData, 16);
-      assert.equal(short.lines.length, 16);
+      const short = draw(state, expData, 17);
+      assert.equal(short.lines.length, 17);
       assert.ok(short.lines.every((line) => visualLength(line) === 40));
       const compact = plain(short).split('\n');
       assert.deepEqual(compact.filter(Boolean), lines.filter(Boolean));
@@ -326,7 +298,7 @@ test('40-column EXP form indents its rows and gives up blanks before sections in
   }
 });
 
-test('EXP options show every profile with a count and separate cursor/current marks; a second click saves', (t) => {
+test('Resources options show every profile with a count and separate cursor/current marks; a second click saves', (t) => {
   const f = fixture(t);
   saveExpEdit(f.env.HUD_HOME, {
     field: 'alias', profile: f.other, value: 'Documentation Account for Model Experiments',
@@ -341,20 +313,20 @@ test('EXP options show every profile with a count and separate cursor/current ma
   for (const lang of ['en', 'zh']) {
     setLanguage(lang);
     const en = lang === 'en';
-    for (const panelLayout of ['classic', 'split']) {
-      const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true }, exp: { cursor: 'binding', scroll: 0 } });
+    {
+      const state = onResources({ exp: { cursor: 'binding', scroll: 0 } });
       const opened = send(draw(state, expData), key('enter'));
       assert.equal(opened.action, undefined);
       const sheet = draw(opened.state, expData, 16);
       const lines = plain(sheet).split('\n');
       assert.ok(sheet.lines.every((line) => visualLength(line) === 40));
-      assert.match(lines[1], en ? /^Codex profile ─+ 4$/ : /^Codex 配置 ─+ 4$/);
-      assert.deepEqual(lines.slice(2, 4), [en ? '› ◉ Unbound' : '› ◉ 未绑定', '    .codex']);
-      assert.match(lines[4], /^    Documentation Account…[^…]+secondary\)$/);
-      assert.equal(lines[5], '    selected');
+      assert.match(lines[2], en ? /^Codex profile ─+ 4$/ : /^Codex 配置 ─+ 4$/);
+      assert.deepEqual(lines.slice(3, 5), [en ? '› ◉ Unbound' : '› ◉ 未绑定', '    .codex']);
+      assert.match(lines[5], /^    Documentation Account…[^…]+secondary\)$/);
+      assert.equal(lines[6], '    selected');
       assert.match(lines.at(-1), en ? /⏎ save  Esc cancel$/ : /⏎ 保存  Esc 取消$/);
-      const clicked = { type: 'mouse', button: 'left', x: 4, y: 4 };
-      assert.equal(send(sheet, { ...clicked, y: 2 }).action, undefined, 'even the initial choice requires confirmation');
+      const clicked = { type: 'mouse', button: 'left', x: 4, y: 5 };
+      assert.equal(send(sheet, { ...clicked, y: 3 }).action, undefined, 'even the initial choice requires confirmation');
       const selected = send(sheet, clicked);
       assert.equal(selected.action, undefined, 'the first click only moves the cursor');
       const moved = draw(selected.state, expData, 16);
@@ -366,14 +338,14 @@ test('EXP options show every profile with a count and separate cursor/current ma
   }
 
   const crowded = { ...expData, profiles: Array.from({ length: 20 }, (_, i) => ({ home: `/synthetic/profile-${i}`, name: `profile-${i}` })) };
-  const state = withState(initialMonitorState(), { activeTab: 'exp', prefs: { experiments: true }, exp: { cursor: 'binding', scroll: 0 } });
+  const state = onResources({ exp: { cursor: 'binding', scroll: 0 } });
   const sheet = draw(send(draw(state, crowded), key('enter')).state, crowded, 16);
   const wrapped = draw(send(sheet, key('up')).state, crowded, 16);
   assert.match(plain(wrapped), /^Codex 配置 ─+ 21$/m);
   assert.match(plain(wrapped), /^›   profile-19$/m);
 });
 
-test('40 columns in EN and ZH: both layouts show whole control labels, both ledgers, and the calibration preview', async (t) => {
+test('40 columns in EN and ZH: Resources shows whole control labels, both ledgers, and the calibration preview', async (t) => {
   const f = fixture(t);
   const oldLanguage = setLanguage('en');
   const oldDisplay = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
@@ -395,10 +367,9 @@ test('40 columns in EN and ZH: both layouts show whole control labels, both ledg
     type: 'cost', id: 'synthetic-cost', at: new Date(NOW).toISOString(), model: 'synthetic-claude',
     tokens: { input: 10, output: 3, cacheRead: 2, cacheWrite: 5 }, source: 'priced', costMicros: 350_000,
   });
-  for (const lang of ['en', 'zh'])
-    for (const panelLayout of ['classic', 'split']) {
+  for (const lang of ['en', 'zh']) {
       setLanguage(lang);
-      const p = panel(f, withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true } }));
+      const p = panel(f);
       const exact = () => {
         const frame = p.frame();
         assert.equal(frame.lines.length, 24);
@@ -406,7 +377,7 @@ test('40 columns in EN and ZH: both layouts show whole control labels, both ledg
         return plain(frame);
       };
       const overview = exact();
-      assert.match(overview, lang === 'en' ? /Home\s+Project\s+Control\s+EXP/ : /首页\s+项目\s+控制\s+EXP/);
+      assert.match(overview, lang === 'en' ? /Home\s+Project\s+Control.*\n Roles\s+Harnesses\s+Resources/ : /首页\s+项目\s+控制.*\n 角色\s+宿主\s+资源/);
       assert.match(overview, /^  Secondary wor?…[^…]+\) +(?:bar not seen yet|尚未见到原生栏)$/m);
       assert.match(overview, /anthropic-api\s+(on|开) · ≈\$7\.65\s+openai-api\s+(on|开) · ≈\$12\.75/);
       p.select('proxy-status');

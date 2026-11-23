@@ -7,7 +7,7 @@ import { chainInputKey, quickModelKey } from './chain-input.js';
 import { jobModalInput } from './job-actions.js';
 import { clearFilter, filterInput, filterScope } from './filter.js';
 import { expInput } from './exp-view.js';
-import { expShown } from './main-tabs.js';
+import { resourcesShown } from './main-tabs.js';
 import { hasUnsavedDraft } from './monitor-state.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
@@ -58,7 +58,7 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   }
   const overlay = state.overlay;
   switch (overlay?.kind) {
-    case 'exp-edit': if (expShown(state)) return expInput(state, input, ctx)!; break;
+    case 'exp-edit': if (resourcesShown(state)) return expInput(state, input, ctx)!; break;
     case 'control-preset': return presetInputKey(state, overlay.sheet, input, ctx);
     case 'control-quick-model': return quickModelKey(state, overlay, input, ctx);
     case 'control-chain': return chainInputKey(state, overlay, input, ctx, route);
@@ -75,7 +75,7 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   if (key === 'close') return result(undefined, true);
   const modal = jobModalInput(state, input);
   if (modal) return modal;
-  if (key === 'export-board' && !next.subpage && !expShown(next)) return result({ type: 'export-board' });
+  if (key === 'export-board' && !next.subpage && !resourcesShown(next)) return result({ type: 'export-board' });
   const board = workboardInput(next, input, ctx);
   if (board) return board;
   if (key === 'settings') return result({ type: 'settings' });

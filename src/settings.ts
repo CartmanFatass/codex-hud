@@ -23,7 +23,6 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   treeWidth: number;
   worktreeRoot: string;
   modelEnabled: boolean;
-  experiments: boolean;
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
   sonicAutoThinking: boolean;
@@ -52,9 +51,6 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
 
 export const DEFAULT_ROLE_CAPS: Readonly<Record<string, number>> = Object.freeze({ imp: 3, general: 3 });
 
-/** Display defaults shared by settings and the pure panel initializer. */
-export const DEFAULT_PANEL_VIEW = { experiments: false } as const;
-
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
   return {
@@ -75,7 +71,6 @@ export function defaultSettings(): HudSettings {
         return false;
       }
     })(),
-    ...DEFAULT_PANEL_VIEW,
     language: 'auto',
     briefingApiBase: SHIPPED_MODELS_CATALOG.defaults.summary.apiBase,
     model: SHIPPED_MODELS_CATALOG.defaults.summary.model,
@@ -120,7 +115,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
-  experiments: isBoolean,
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   sonicAutoThinking: isBoolean,
   impPlacement: oneOf('fixed', 'even', 'auto'),
@@ -188,8 +182,6 @@ function readSettings(file: string): HudSettings {
     throw error;
   }
 }
-
-export const experimentsEnabled = (env = process.env): boolean => readSettings(settingsPath(env)).experiments;
 
 function decisionApi(env = process.env): DecisionProviderId {
   try { return resolveDecisions(readHudConfig(path.join(getHudHome(env), 'config.json'))).primary; }

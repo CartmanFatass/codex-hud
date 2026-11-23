@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { appendExpEvent, type ExpCost, type ExpTokens } from '../../collectors/exp-ledger.js';
 import { readExpConfig } from '../../collectors/exp-store.js';
 import { expMicros, type ExpAccount } from '../../exp-config.js';
-import { experimentsEnabled } from '../../settings.js';
 import type { PiPackageContext } from './package-context.js';
 import { piExpAccount } from './exp-route.js';
 
@@ -89,12 +88,12 @@ function completed(reply: Reply, model: RequestModel | undefined, now: number): 
 }
 
 /** Delegate entry only: no dependency on TUI, footer, or persisted history scans. */
-export function piExpUsage(hudHome: string, env: NodeJS.ProcessEnv) {
+export function piExpUsage(hudHome: string) {
   const activeGrants = () => {
     try {
-      if (experimentsEnabled(env)) return readExpConfig(hudHome).grants;
+      return readExpConfig(hudHome).grants;
     } catch {
-      // Unknown settings do not authorize collection.
+      // Unknown grant configuration does not authorize collection.
     }
   };
   const record = async (account: ExpAccount, cost: Cost, id: string) => {

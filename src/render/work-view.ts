@@ -14,7 +14,7 @@ import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { inspectorKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterProject, filterRow, filterScope } from './filter.js';
-import { controlShown, expShown, mainTabs } from './main-tabs.js';
+import { controlShown, resourcesShown, MAIN_TABS } from './main-tabs.js';
 import { controlHeader, controlHints, controlRows, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
 import { chainSheet } from './chain-input.js';
@@ -70,7 +70,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['^R', 'picker: refresh model lists'],
     ['x', 'place: clear its exhausted mark'],
     ['s', 'draft: save and select it'],
-    ['h', 'Roles / Harnesses'],
+    ['h', 'Roles / Harnesses / Resources'],
     ['Space', 'harness: on / off'],
     ['r', 'refresh the model lists'],
     ['', 'Saved to $HUD_HOME/roles; the next job uses it. Project role files are read-only here.'],
@@ -131,11 +131,11 @@ export function renderWorkboardFrame(
   const native = subpage?.kind === 'native-inspector' ? subpage : undefined;
   const sub = subpage || help;
   const project = !sub && state.activeTab === 'project';
-  const control = controlShown(state), exp = expShown(state);
-  const controlView = control ? state.control[state.control.subTab] : undefined;
+  const control = controlShown(state), resources = resourcesShown(state);
+  const controlView = control && state.control.subTab !== 'resources' ? state.control[state.control.subTab] : undefined;
   const withControlNav = (nav: RowNav) => ({ ...state.control, [state.control.subTab]: { ...controlView!, nav } });
   const harnesses = control && state.control.subTab === 'harnesses';
-  const roles = control && !harnesses;
+  const roles = control && state.control.subTab === 'roles';
   let overlay = state.overlay;
   const addingHarness = harnesses && overlay?.kind === 'control-harness-add' ? overlay : undefined;
   if (roles) {
@@ -156,10 +156,10 @@ export function renderWorkboardFrame(
       mode: overlay.mode.kind === 'sheet' ? { ...overlay.mode, input: undefined } : { kind: 'places' } };
   }
   const chain = roles && overlay?.kind === 'control-chain' ? overlay : undefined;
-  const experiment = exp ? state.exp : undefined;
-  const expEdit = exp && overlay?.kind === 'exp-edit' ? overlay : undefined;
-  if (exp) frame.expData = input.expData;
-  const home = !sub && !project && !control && !exp;
+  const resourcePage = resources ? state.exp : undefined;
+  const expEdit = resources && overlay?.kind === 'exp-edit' ? overlay : undefined;
+  if (resources) frame.expData = input.expData;
+  const home = !sub && !project && !control;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   // The Project filter narrows the snapshots for Progress and Tickets.
@@ -170,8 +170,8 @@ export function renderWorkboardFrame(
     input = { ...input, project: found.data };
     matches = found.count;
   }
-  const bar = filter ? filterRow(state, matches, width) : experiment?.notice ? boardRow(
-    (experiment.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(experiment.notice))
+  const bar = filter ? filterRow(state, matches, width) : resourcePage?.notice ? boardRow(
+    (resourcePage.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(resourcePage.notice))
   ) : undefined;
   const controlTop = control && !pick ? controlHeader(input, state, width) : [];
   const truncatedFiles = project && !list && [input.project?.stateTruncated && 'STATE.md', input.project?.specTruncated && 'spec.md'].filter(Boolean).join(', ');
@@ -201,8 +201,8 @@ export function renderWorkboardFrame(
     const count = input.homeWaiting?.length ?? (home ? input.project?.waiting.length ?? 0 : 0);
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
-    const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0, exp: 0 };
-    const tabs = mainTabs(state);
+    const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0 };
+    const tabs = MAIN_TABS;
     const labels = (badges: boolean) => tabs.map((tab) => ` ${t(tab.label)}${badges ? badge(counts[tab.id]) : ''} `);
     let titles = labels(true);
     let models = input.modelEnabled === false ? t('models off') : '';
@@ -265,10 +265,11 @@ export function renderWorkboardFrame(
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.worktrees)
+          : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
-          : experiment ? expRows(experiment, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.error) - Number(!!input.publicationNotice))) : homeRows(input.homeWaiting ?? input.project?.waiting ?? [], input.project, input.paneLoad, width);
+          : homeRows(input.homeWaiting ?? input.project?.waiting ?? [], input.project, input.paneLoad, width);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const actions = rows.filter((r) => r.item);
@@ -283,19 +284,19 @@ export function renderWorkboardFrame(
   const cursor = nav && !hasCursor(nav.cursor) && (project || (!addingHarness && !sheet && input.project))
     ? ((project && !page && !list ? rows.find((r) => r.item && r.item !== 'project:switch') : undefined)
       ?? rows.find((r) => r.item))?.item : nav?.cursor;
-  const expCursor = experiment && !expEdit && !hasCursor(experiment.cursor) ? rows.find((r) => r.item)?.item : experiment?.cursor;
+  const expCursor = resourcePage && !expEdit && !hasCursor(resourcePage.cursor) ? rows.find((r) => r.item)?.item : resourcePage?.cursor;
   const key = addingHarness ? harnessAdd?.pick : sheet ? sheet.cursor : nav ? cursor : inspect ? inspectCursor
-    : experiment ? expEdit ? undefined : expCursor : jobsCursor;
+    : resourcePage ? expEdit ? undefined : expCursor : jobsCursor;
   const room = Math.max(0, height - 2 - top);
   const helpStart = helpContent?.anchor ? rows.indexOf(helpContent.anchor) : 0;
   const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(helpStart, rows.length - room);
   const scroll = help
     ? (help.scroll ?? helpStart)
     : sheet ? chainTop + Number(!!input.publicationNotice && !!anchor)
-    : addingHarness ? 0 : subpage?.scroll ?? nav?.scroll ?? experiment?.scroll ?? state.home.scroll;
+    : addingHarness ? 0 : subpage?.scroll ?? nav?.scroll ?? resourcePage?.scroll ?? state.home.scroll;
   let offset = Math.max(0, Math.min(max, scroll));
   if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
-  let revealed = nav ? nav.revealed : inspect ? inspect.revealed : experiment ? experiment.revealed : jobs?.revealed;
+  let revealed = nav ? nav.revealed : inspect ? inspect.revealed : resourcePage ? resourcePage.revealed : jobs?.revealed;
   if (!help && !sheet && key && (addingHarness || revealed !== key) && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
@@ -311,7 +312,7 @@ export function renderWorkboardFrame(
   }
   else if (nav && project) state = { ...state, project: { ...state.project, nav: { ...nav, cursor, scroll: offset, revealed } } };
   else if (nav && !addingHarness && !sheet && input.project) state = { ...state, control: withControlNav({ ...nav, cursor, scroll: offset, revealed }) };
-  else if (experiment) state = { ...state, exp: { ...experiment, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
+  else if (resourcePage) state = { ...state, exp: { ...resourcePage, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
   else if (home) state = { ...state, home: { scroll: offset } };
   frame.state = state;
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
@@ -329,6 +330,7 @@ export function renderWorkboardFrame(
     ? { modal: ['Esc back'] }
     : inspector ? inspectorKeys(worker)
       : native ? ['Esc back'] : jobs ? [...(jobsCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
+        : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
@@ -336,9 +338,9 @@ export function renderWorkboardFrame(
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
           : ['⏎ open', ...projectSwitch])
-        : experiment ? expHints(experiment, expEdit) : ['v Jobs'];
+        : ['v Jobs'];
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
-  if (control && !harnesses && height > 1) presetFooterControls(frame, hints, width, height - 1);
+  if (roles && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1) {
     const footer = filterHints(state, hints);
     frame.lines[height - 1] = footRow('', footer, width);

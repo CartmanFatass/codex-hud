@@ -767,7 +767,7 @@ Enter expands the numbered chain and its source under the role; Esc returns to t
 Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed.
 `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
 
-**Harnesses** (`h`, or click the Roles / Harnesses headings) lists the pi runner, compiled CLI agents, browser tools and pi providers for **this machine, all projects**.
+**Harnesses** (`h` from Roles, or click the Harnesses heading) lists the pi runner, compiled CLI agents, browser tools and pi providers for **this machine, all projects**.
 Space or Enter toggles the selected switch; Del removes an enabled entry by turning it off, not uninstalling it.
 Enter on **Off** expands or folds the disabled entries.
 `i` opens **Add back**: type part of a switch ID, use ↑↓ to select, Enter to restore or Esc to cancel.
@@ -957,14 +957,14 @@ In the panel `w` (Home or Project, not in a picker or Settings) does the same fo
 
 ## The panel
 
-### Frame and reload
+### Control resources
 
-Home, Project, and Control are the default main tabs.
-Settings → Panel → **Experiments** (`experiments` in `hud-settings.json`, off by default) adds the experimental **EXP** tab.
+Open **Control → Resources** for Codex native status-line tracking, the pi subscription proxy and API grants. Press `h` in Control to cycle Roles → Harnesses → Resources, or click a heading.
+Each feature is off until enabled in Resources. Existing feature settings and ledgers carry over unchanged; the old `experiments` preference is ignored.
 Use ↑/↓ to select and Enter to edit or open an account; Enter saves, and Esc cancels.
 For calibration, Enter first previews the change, then Enter saves the new base.
 Settings apply to all projects on this machine, and are stored under `$HUD_HOME/exp/`.
-Codex profile choices are local; EXP does not change CLI configuration.
+Codex profile choices are local; Resources does not change CLI configuration.
 
 In **pi subscription proxy**, choose a Codex profile and turn on Auto-refresh.
 When pi draws its HUD footer, a due refresh uses that profile's existing login to read quota from Codex; it sends no prompt and does not run while pi is unused.
@@ -975,15 +975,18 @@ Stale estimates are dim and end in `?`; a window past its reset shows `↻`.
 Other routes such as `oapi` do not show subscription quota.
 Open **Proxy readings** for both windows and their reset times, source, last success and error, and next eligible attempt.
 If the proxy pauses for sign-in, sign in to the bound profile and turn Auto-refresh off and back on.
-Experiments off stops refreshes.
+Turning off Auto-refresh stops proxy refreshes.
 
 **API grants** shows the two ledgers together.
 The pi footer shows only the enabled ledger for the current API route, with a bar for the share spent, approximate dollars left and days to renewal (`API ████████░░ ≈$12.34 (12d)`, for example).
 `openai-api` counts `oapi` requests; `anthropic-api` counts only requests the installed pi HUD can identify as direct Anthropic API-key usage.
 Claude OAuth, third-party gateways, and unknown routes are not charged.
 The Claude Code status line is unchanged.
-Turning Experiments off preserves both ledgers and stops collection.
+Turning off an API grant stops collection for that account and preserves its ledger.
 
+### Frame and reload
+
+Home, Project and Control are the main tabs.
 The panel keeps footer hints whole: the selected row's actions take priority, then Enter with its verb, `Esc back` where applicable, and page actions.
 Hints drop from the right to make room, but `? help` stays last.
 Movement, tab switching and the Settings shortcut remain available without taking footer space.
@@ -1011,12 +1014,12 @@ Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
-| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control → EXP (if enabled). Digits switch no tab. The tab's count is `?` and a number (`Project ?4`: what waits for you) |
+| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control. Digits switch no tab. The tab's count is `?` and a number (`Project ?4`: what waits for you) |
 | `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
 | Enter, `i` `Del` `K` `J`, `s`, `x`, `r` | Control: focus the chain / edit the place; add / remove / move up / move down; save the draft; clear the saved place's quota mark; refresh model lists |
 | `c` / `C`, `p` | Control role row: next / previous named preset, or filter presets and choose a name or Custom |
 | `N`, `I`, `R`, `D` | Control role row: start a copied or empty draft, rename the selected preset, or preview and confirm deletion |
-| `h` | Control: switch Roles / Harnesses (or click the view heading) |
+| `h` | Control: cycle Roles → Harnesses → Resources (or click the view heading) |
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the picker, one click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
@@ -1031,7 +1034,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
 | `/` | Filter Project Progress and Tickets by a case-insensitive substring. Backspace edits, Enter keeps the query, Esc stops editing then clears it. Leaving the view clears it; reload retains a kept query |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
-| Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Control or EXP, Esc does nothing |
+| Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project or Control, Esc does nothing |
 | `q` | Close panel |
 
 Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Project hub links, job rows and Inspector file links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
@@ -1040,7 +1043,7 @@ The model picker is an exception: one click sets a model and scrolling keeps the
 ### Help
 
 Press `?` for shortcuts grouped by where they work.
-From Project or Control, Help opens at that tab’s section; from Home, EXP or Settings it opens at Everywhere.
+From Project or Control, Help opens at that tab’s section; from Home or Settings it opens at Everywhere.
 Marks are grouped by route (the tier bars `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places.
 `g` is the job's herdr tab, or the Inspector's Output for a headless job.
 At 80 columns and wider, Marks sit to the right of the shortcuts.
@@ -1060,7 +1063,7 @@ Press `n` or click **subagents** from Jobs or a job Inspector to inspect the cal
 | Group | Rows |
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
-| Panel | Width, Notifications; in **Advanced**: Refresh, Mouse, Experiments |
+| Panel | Width, Notifications; in **Advanced**: Refresh, Mouse |
 | Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter), Summary interval |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
@@ -1205,12 +1208,12 @@ The two machine counts stay together. If the load label and both numbers still d
 pi keeps the same editor ribbon in both styles, and other extensions' statuses remain visible.
 The bars stay English-only apart from a subagent's own description.
 
-### EXP · Codex native status line (experimental)
+### Codex native status line
 
 In ordinary Codex with the `hud` MCP server registered, open `/experimental`, turn on **Custom status line**, then restart Codex.
 Open `/statusline` → **Choose a status line provider** → **MyHUD**.
 To switch back, select **Default status line** from the same picker.
-EXP’s **Track native status line** switch only records when MyHUD was last seen for each local profile; it does not change what Codex displays.
+The **Track native status line** switch in **Control → Resources** only records when MyHUD was last seen for each local profile; it does not change what Codex displays.
 
 The compact footer puts model and effort, context, then quota first.
 It shows the same machine-wide HUD job counts when a fresh census is available, followed by available Linux/WSL load.

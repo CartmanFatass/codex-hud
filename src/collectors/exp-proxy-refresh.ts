@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import { getHudHome } from '../hud-home.js';
-import { settingsPath } from '../settings.js';
 import type { ExpConfig } from '../exp-config.js';
 import {
   proxyDueAt,
@@ -20,38 +19,17 @@ import { readCodexProxy, type ProxyRpcResult } from './exp-codex-rpc.js';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 
-const stamp = (s: fs.Stats) => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
 export type ProxyObservation = ExpProxyReading & {
-  settingsVersion: string;
   proxy: ExpConfig['proxy'] & { profile: string };
 };
 
-async function experimentVersion(env: NodeJS.ProcessEnv): Promise<string | undefined> {
-  const file = await fs.promises.open(settingsPath(env), 'r');
-  try {
-    const s = await file.stat();
-    if (!s.isFile() || s.size > 64 * 1024) return;
-    const raw = JSON.parse(await file.readFile('utf8')) as { experiments?: unknown } | null;
-    if (raw?.experiments === true) return stamp(s);
-  } finally {
-    await file.close();
-  }
-}
-
-export async function observeProxy(
-  env: NodeJS.ProcessEnv,
-  onEnabled?: (enabled: boolean) => void
-): Promise<ProxyObservation | undefined> {
+export async function observeProxy(env: NodeJS.ProcessEnv): Promise<ProxyObservation | undefined> {
   const home = getHudHome(env);
   try {
-    const settingsVersion = await experimentVersion(env).catch(() => undefined);
-    onEnabled?.(Boolean(settingsVersion));
-    if (!settingsVersion) return;
     const { proxy } = await readExpConfigAsync(home);
     if (!proxy.enabled || !proxy.profile) return;
     const raw = await fs.promises.readFile(expProxyPath(home), 'utf8').catch(() => '');
     return {
-      settingsVersion,
       proxy: { ...proxy, profile: proxy.profile },
       intervalMinutes: proxy.intervalMinutes,
       snapshot: parseProxySnapshot(raw, proxy),
@@ -85,9 +63,10 @@ export async function refreshProxyIfDue(
     const current = await observeProxy(env);
     if (!current || !active() || !sameBinding(observed.proxy, current.proxy) || !due(current, now())) return false;
     const { proxy, snapshot } = current;
-    const canCommit = () =>
-      stamp(fs.statSync(settingsPath(env))) === current.settingsVersion &&
-      sameBinding(proxy, readExpConfig(home).proxy);
+    const canCommit = () => {
+      const latest = readExpConfig(home).proxy;
+      return sameBinding(proxy, latest) && proxy.intervalMinutes === latest.intervalMinutes;
+    };
     const signal = AbortSignal.timeout(timeoutMs); // One bounded RPC, not a scheduler.
     let result: ProxyRpcResult;
     try {

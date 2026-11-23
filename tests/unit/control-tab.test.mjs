@@ -9,10 +9,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { chainOverlay, projectFixture, onControl, onPage, plain, presetFrames, quickModelFrames, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
 import { build } from '../../docs/design/control-tab/gen/frames.mjs';
-import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { readPanelPlace } from '../../dist/utils/panel-reload.js';
-import { DEFAULT_PANEL_VIEW, loadSettings } from '../../dist/settings.js';
+import { loadSettings } from '../../dist/settings.js';
 import { finishChain } from '../../dist/render/chain-input.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
@@ -33,22 +33,21 @@ const tabClick = (frame, id) => {
 
 test('Control is the third whole tab at 40 columns, with arrows, Tab, click and separate navigation', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
-  for (const lang of ['en', 'zh']) for (const experiments of [false, true]) for (const panelLayout of ['classic']) {
+  for (const lang of ['en', 'zh']) {
     const draw = (state) => f.render(40, lang, state, 36, data, true, 'unicode', 'none', { projects: PROJECTS });
-    let frame = draw(onPage(undefined, { selectedProject: PROJECTS[1].root, project: { nav: { cursor: 'project:page:docs' } }, prefs: { panelLayout, experiments } }));
-    const keys = ['home', 'project', 'control', ...(experiments ? ['exp'] : [])];
-    assert.deepEqual(frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind), keys.map((key) => `board-${key}`));
+    let frame = draw(onPage(undefined, { selectedProject: PROJECTS[1].root, project: { nav: { cursor: 'project:page:docs' } } }));
+    const keys = ['home', 'project', 'control'];
+    assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind), keys.map((key) => `board-${key}`));
     frame = draw(send(frame, 'tab').state);
     assert.equal(frame.state.activeTab, 'control');
     assert.equal(frame.state.selectedProject, PROJECTS[1].root);
     assert.match(plain(frame)[0], lang === 'zh' ? /首页.*项目.*控制/ : /Home.*Project.*Control/);
-    if (experiments) assert.match(plain(frame)[0], /EXP/);
     const decoder = new WorkbenchInputDecoder('workboard');
     for (const input of decoder.push(Buffer.from('1234567890'))) assert.equal(send(frame, input).state.activeTab, 'control');
     assert.equal(tabState(send(frame, 'filter').state)?.filter?.editing, undefined, 'the Home filter is not a Control view');
     assert.deepEqual(send(frame, 'export-board').action, { type: 'export-board' });
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
-    assert.equal(send(frame, 'right').state.activeTab, experiments ? 'exp' : 'home');
+    assert.equal(send(frame, 'right').state.activeTab, 'home');
     assert.equal(send(frame, 'shift-tab').state.activeTab, 'project');
     const ctrl = draw(send(frame, 'end').state);
     const project = draw(send(ctrl, 'left').state);
@@ -110,7 +109,7 @@ test('legacy Project/control continuation returns to the selected role on Contro
   for (const panelLayout of ['classic']) {
     const projectCursor = 'project:role:reviewer:0';
     process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: { mainTab: 'project', projectPage: 'control', projectRoot: PROJECTS[1].root, projectCursor } });
-    const place = readPanelPlace({ ...DEFAULT_PANEL_VIEW, panelLayout });
+    const place = readPanelPlace();
     assert.equal(place.state.activeTab, 'control');
     assert.equal(projectPageOf(place.state), undefined);
     assert.equal(place.state.selectedProject, PROJECTS[1].root);
@@ -140,14 +139,14 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     const data = await f.collector.collect('control', f.board, NOW);
     const roles = { cursor: 'project:role:imp' };
     const draw = (state) => {
-      const frame = f.render(40, lang, state, 38, data, true, 'unicode', 'none', { projectName: 'harbor-api', prefs: { experiments: true } });
+      const frame = f.render(40, lang, state, 38, data, true, 'unicode', 'none', { projectName: 'harbor-api' });
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
       return frame;
     };
     const decoder = new WorkbenchInputDecoder('workboard');
     const h = decoder.push(Buffer.from('h'))[0];
     const classic = panelLayout === 'classic', zh = lang === 'zh';
-    let frame = draw(send(draw(onControl(roles, { prefs: { panelLayout, experiments: true } })), h).state);
+    let frame = draw(send(draw(onControl(roles, { prefs: { panelLayout } })), h).state);
     assert.equal(frame.state.activeTab, 'control');
     assert.equal(frame.state.control.subTab, 'harnesses');
     assert.match(caption(frame), zh ? /本机 · 所有项目/ : /This machine · all projects/);
@@ -245,7 +244,7 @@ test('Control model picker works after loading a retired Split preference', asyn
   fs.writeFileSync(settingsPath, JSON.stringify({ ...legacy, language: 'en' }));
   const saved = loadSettings({ ...f.env, HUD_SETTINGS_PATH: settingsPath });
   for (const key of Object.keys(legacy)) assert.equal(Object.hasOwn(saved, key), false, key);
-  const state = onControl({ cursor: 'project:role:imp' }, { prefs: initialMonitorState(saved).prefs });
+  const state = onControl({ cursor: 'project:role:imp' });
   const frame = f.render(80, 'en', state, 36, data);
   assert.equal(frame.panes.length, 1);
   const opened = send(frame, 'place-model').state;
@@ -450,7 +449,13 @@ test('live panel: no discovery on Home or Project, Control reads only the displa
   await wait(() => !disabled().includes('pi:demo'), 'Add back restored provider from the panel');
   assert.deepEqual(fs.readFileSync(role), roleBytes, 'project role stays byte-identical');
   assert.equal(count(), 2, 'Harnesses and Add back did not run discovery');
-  child.stdin.write('h');
+  child.stdin.write('h'); // Resources; the first row edits native tracking.
+  await wait(() => /Track native status line/.test(stripAnsi(stdout)), 'Resources displayed');
+  child.stdin.write('\n\x1b[B\n');
+  const resources = join(f.hud, 'exp', 'config.json');
+  await wait(() => fs.existsSync(resources) && JSON.parse(fs.readFileSync(resources, 'utf8')).codex.enabled, 'native tracking saved');
+  assert.equal(fs.statSync(resources).mode & 0o777, 0o600);
+  child.stdin.write('h'); // back to Roles
   const left = stdout.length;
   child.stdin.write('['); // Control can change the same choice without leaving
   await wait(() => /own-role/.test(stripAnsi(stdout.slice(left))), 'own role displayed');

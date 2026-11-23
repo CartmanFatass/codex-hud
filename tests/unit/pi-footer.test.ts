@@ -94,12 +94,6 @@ function quotaFixture(t: test.TestContext) {
 
 test('the actual subscription footer matches S1 at 144, 120, 80 and 36 with pi’s short model name', async (t) => {
   const { f, home, expectQuota } = quotaFixture(t);
-  // Dotfiles managers commonly keep the preferences in a separate directory.
-  const settings = join(home, 'hud-settings.json'), target = join(home, 'dotfiles', 'settings');
-  mkdirSync(join(home, 'dotfiles'));
-  fsMutable.renameSync(settings, target);
-  writeFileSync(target, '{"experiments":false}');
-  fsMutable.symlinkSync(target, settings);
   const profile = join(home, '.codex');
   const min = 60_000;
   mkdirSync(profile);
@@ -120,11 +114,18 @@ test('the actual subscription footer matches S1 at 144, 120, 80 and 36 with pi�
     }),
     { mode: 0o600 }
   );
+  // An edit to a symlink target outside exp/ is not covered by its directory watch.
+  const config = join(home, 'exp', 'config.json'), target = join(home, 'dotfiles', 'config.json');
+  const enabled = readExpConfig(home);
+  mkdirSync(join(home, 'dotfiles'));
+  fsMutable.renameSync(config, target);
+  writeFileSync(target, JSON.stringify({ ...enabled, proxy: { ...enabled.proxy, enabled: false } }));
+  fsMutable.symlinkSync(target, config);
   f.ctx.modelRegistry = { isUsingOAuth: () => true };
   f.controller.update();
   assert.doesNotMatch(f.render(120)[0]!, /≈43%/);
   await sleep(20); // Allow the initial off observation to finish.
-  writeFileSync(target, '{"experiments":true}');
+  writeFileSync(target, JSON.stringify(enabled));
   for (let attempt = 0; attempt < 100 && !f.render(120)[0]?.includes('≈43%'); attempt++) await sleep(5);
   assert.match(f.render(120)[0]!, /^◎ 6\.2-sol high .*≈43%/);
   const direct = (percent: number, resetInMinutes: number) => {
@@ -287,28 +288,24 @@ test('pi footer keeps the machine counts together and omits an unavailable censu
   assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /HUD \(OS\)/);
 });
 
-test('120 paced paints with EXP off read settings once, and turning EXP on or updating proxy is picked up without restart', async (t) => {
+test('120 paced paints without proxy config read it once, and enabling or updating the proxy is picked up without restart', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: quotaNow });
   const f = fixture(t, undefined, { NO_COLOR: '1' });
   const home = join(f.ctx.sessionManager.getCwd(), '../..');
-  const settingsFile = join(home, 'hud-settings.json');
-  writeFileSync(settingsFile, JSON.stringify({ experiments: false }), { mode: 0o600 });
-
-  const open = t.mock.method(fsMutable.promises, 'open');
-  const openSync = t.mock.method(fsMutable, 'openSync');
-  const settingsReads = () =>
-    open.mock.calls.filter((c) => c.arguments[0] === settingsFile).length +
-    openSync.mock.calls.filter((c) => c.arguments[0] === settingsFile).length;
+  writeFileSync(join(home, 'hud-settings.json'), JSON.stringify({ experiments: false }), { mode: 0o600 });
+  const configFile = join(home, 'exp', 'config.json');
+  const readFile = t.mock.method(fsMutable.promises, 'readFile');
+  const configReads = () => readFile.mock.calls.filter((c) => c.arguments[0] === configFile).length;
 
   f.render(120);
-  for (let attempt = 0; attempt < 50 && settingsReads() < 1; attempt++) await sleep(2);
+  for (let attempt = 0; attempt < 50 && configReads() < 1; attempt++) await sleep(2);
   await sleep(10);
-  assert.equal(settingsReads(), 1);
+  assert.equal(configReads(), 1);
   for (let i = 1; i < 120; i++) {
     f.render(120);
     await sleep(2);
   }
-  assert.equal(settingsReads(), 1, '120 paced paints with EXP off read settings only once');
+  assert.equal(configReads(), 1, '120 paced paints with proxy off read configuration only once');
 
   const profile = join(home, '.codex');
   mkdirSync(profile);
@@ -329,31 +326,30 @@ test('120 paced paints with EXP off read settings once, and turning EXP on or up
   f.ctx.model!.id = 'gpt-6.2-sol';
   f.ctx.modelRegistry = { isUsingOAuth: () => true };
 
-  writeFileSync(settingsFile, JSON.stringify({ experiments: true }), { mode: 0o600 });
   for (let attempt = 0; attempt < 100 && !f.render(120)[0]?.includes('≈43%'); attempt++) await sleep(5);
   assert.match(f.render(120)[0]!, /≈43%/);
 
   await sleep(10);
-  const readsAfterEnable = settingsReads();
+  const readsAfterEnable = configReads();
   for (let i = 0; i < 20; i++) {
     f.render(120);
     await sleep(2);
   }
-  assert.equal(settingsReads(), readsAfterEnable, 'cached enabled state does not reread settings on paint');
+  assert.equal(configReads(), readsAfterEnable, 'cached enabled state does not reread configuration on paint');
 
   writeFileSync(expProxyPath(home), proxyPayload(77), { mode: 0o600 });
   for (let attempt = 0; attempt < 100 && !f.render(120)[0]?.includes('≈77%'); attempt++) await sleep(5);
   assert.match(f.render(120)[0]!, /≈77%/);
 });
 
-test('missing settings directory retries on draw until the watch attaches, then caches', async (t) => {
+test('missing HUD home retries on draw until the watch attaches, then caches', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: quotaNow });
   const root = mkdtempSync(join(tmpdir(), 'hud-missing-watch-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const hudHome = join(root, 'hud');
-  const settingsFile = join(hudHome, 'hud-settings.json');
-  const open = t.mock.method(fsMutable.promises, 'open');
-  const reads = () => open.mock.calls.filter((c) => c.arguments[0] === settingsFile).length;
+  const configFile = join(hudHome, 'exp', 'config.json');
+  const readFile = t.mock.method(fsMutable.promises, 'readFile');
+  const reads = () => readFile.mock.calls.filter((c) => c.arguments[0] === configFile).length;
 
   let footer: FooterComponent | undefined;
   const ctx = {
@@ -411,7 +407,6 @@ test('missing settings directory retries on draw until the watch attaches, then 
     }),
     { mode: 0o600 }
   );
-  writeFileSync(settingsFile, JSON.stringify({ experiments: true }), { mode: 0o600 });
 
   for (let attempt = 0; attempt < 100 && !footer!.render(120)[0]?.includes('≈55%'); attempt++) await sleep(5);
   assert.match(footer!.render(120)[0]!, /≈55%/);

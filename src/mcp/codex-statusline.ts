@@ -12,7 +12,6 @@ import { formatMachineWork } from '../render/work-summary.js';
 import { monitorText } from '../render/monitor-text.js';
 import { shortModel } from '../render/providers.js';
 import { formatWindowLabel } from '../render/quota.js';
-import { settingsPath } from '../settings.js';
 
 const URI = 'ui://myhud/codex-statusline';
 const MIME = 'application/json';
@@ -49,11 +48,7 @@ function recordLastSeen(home: string, now: number): void {
   const dir = join(home, 'exp');
   const enabled = () => {
     const config = obj(readJson(join(dir, 'config.json'), 65_536));
-    return (
-      config?.version === 1 &&
-      obj(config.codex)?.enabled === true &&
-      obj(readJson(settingsPath(), 65_536))?.experiments === true
-    );
+    return config?.version === 1 && obj(config.codex)?.enabled === true;
   };
   try {
     if (!fs.lstatSync(dir).isDirectory() || !enabled()) return;

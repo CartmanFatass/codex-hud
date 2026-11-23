@@ -17,9 +17,9 @@ import { Notifier, resolveNotifierOptions } from '../notify.js';
 import { theme } from '../render/colors.js';
 import { frameDiff } from '../render/frame-diff.js';
 import { t, setLanguage, resolveLanguage } from '../render/i18n.js';
-import { controlShown, expShown } from '../render/main-tabs.js';
+import { controlShown, resourcesShown } from '../render/main-tabs.js';
 import { renderMonitor, fit, initialMonitorState, handleMonitorInput, type MonitorFrame, type MonitorState } from '../render/monitor.js';
-import { acceptsMonitorInput, applyViewPrefs, blocksReload, filterBatchInputs, reconcileMonitor } from '../render/monitor-state.js';
+import { acceptsMonitorInput, blocksReload, filterBatchInputs } from '../render/monitor-state.js';
 import { projectListOpen } from '../render/project-view.js';
 import { projectList } from '../roles/projects.js';
 import { roleRegistry } from '../roles/roster.js';
@@ -82,7 +82,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   } catch (err) {
     settingsFailure = err;
   }
-  const place = readPanelPlace(settings), openedAt = place?.openedAt ?? Date.now();
+  const place = readPanelPlace(), openedAt = place?.openedAt ?? Date.now();
   const jobPipeline = new PanelJobPipeline(getHudHome(), {
     project: HUD_CWD_REAL,
     pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
@@ -104,8 +104,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   applyDisplaySettings(settings);
   setLanguage(resolveLanguage(settings.language));
   if (settingsFailure) settingsError = t('Settings: {reason}', { reason: String(settingsFailure) });
-  let state = reconcileMonitor(place?.state ?? initialMonitorState(settings));
-  let expData = expShown(state) ? readExpData(jobPipeline.home) : undefined;
+  let state = place?.state ?? initialMonitorState();
+  let expData = resourcesShown(state) ? readExpData(jobPipeline.home) : undefined;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
   const emptyTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
@@ -170,8 +170,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       setLanguage(resolveLanguage(settings.language));
       models.configure(settings);
       scheduler.armCollect(settings.refreshMs);
-      state = applyViewPrefs(framePlace(state), settings);
-      if (!settings.experiments) expData = undefined;
+      state = framePlace(state);
       worktrees = null;
       void scheduler.refreshGit();
       notifier.configure(resolveNotifierOptions(process.env, settings));
@@ -181,13 +180,14 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     repaint: () => render(),
     repaintAll: () => repaintAll(),
   }, () => roleRegistry(jobPipeline.home, shownRoot()).roles().get('imp')?.presets?.map(p => p.name) ?? []);
-  const syncModelListDiscovery = () => models.syncDiscovery(controlShown(state, settingsFlow.open));
+  const projectControlShown = (state: MonitorState, modal = false) => controlShown(state, modal) && state.control.subTab !== 'resources';
+  const syncModelListDiscovery = () => models.syncDiscovery(projectControlShown(state, settingsFlow.open));
 
   const render = () => {
     if (isClosed() || (place && !collected)) return;
     const source = state, painted = framePlace(source);
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
-    const control = controlShown(painted, settingsFlow.open), chosen = shownRoot();
+    const control = projectControlShown(painted, settingsFlow.open), chosen = shownRoot();
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
       : painted.activeTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
     const output = time('render', () => {
@@ -210,7 +210,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         mouse: settings.mouse,
         state: painted,
         worktrees: worktreesRoot === chosen && shown.root === chosen ? worktrees : undefined,
-        expData: expShown(painted) ? expData : undefined,
+        expData: resourcesShown(painted) ? expData : undefined,
         project: control ? shown.snapshot : models.waitingBriefs.project(shown.snapshot),
         projectDisplayRoot: shown.root,
         projectWaiting: control ? visits.snapshot(chosen)?.waiting.length : undefined,
@@ -287,7 +287,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       if (isClosed()) return;
       const rootId = main?.session?.id ?? session?.sessionId ?? selectedRoot ?? '';
       if (rootId !== sessionRoot) {
-        if (sessionRoot !== undefined) state = initialMonitorState(settings);
+        if (sessionRoot !== undefined) state = initialMonitorState();
         sessionRoot = rootId;
         worktrees = null;
         models.leaveRoot();
@@ -316,12 +316,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       if (!nativeInspector()) tree = undefined;
       if (isClosed()) return;
       stage = 'status';
-      state = reconcileMonitor(framePlace(state));
+      state = framePlace(state);
       const board = boardFacts();
       const live = liveEvidence(board);
       models.update(live, emptyTree, inspector());
       // Only the shown project is collected; the list of projects is read again at most every five seconds.
-      const shown = projectShown(state, settingsFlow.open), control = controlShown(state, settingsFlow.open);
+      const shown = projectShown(state, settingsFlow.open), control = projectControlShown(state, settingsFlow.open);
       if ((shown || control) && Date.now() - projectsAt >= 5000) {
         projectsAt = Date.now();
         projects = projectList(jobPipeline.home, HUD_CWD_REAL);
@@ -374,7 +374,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       }
     }
     // Collect both EXP readings together; paint only consumes cached facts.
-    if (expShown(state) && !settingsFlow.open) reloadExp();
+    if (resourcesShown(state) && !settingsFlow.open) reloadExp();
     render();
     const observed = tree;
     if (observed && nativeInspector()) void agentContext.refresh(observed.nodes, frame, () => {
@@ -455,7 +455,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     for (const key of inputs) {
       if (isClosed()) break;
       state = framePlace(state);
-      if (actions.expSaving && expShown(state)) continue;
+      if (actions.expSaving && resourcesShown(state)) continue;
       if (key.type === 'mouse' && !settings.mouse) continue;
       const fromSettings = settingsFlow.open;
       if (!acceptsMonitorInput(fromSettings ? undefined : state, key)) continue;
@@ -465,12 +465,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const wasWorkingTree = workingTree(), priorRoot = shownRoot(), wasNative = nativeInspector();
       const result = handleMonitorInput(state, input, { frame, navigationOverlay: fromSettings });
       state = result.state;
-      if (expShown(state) && !expShown(previous)) reloadExp();
+      if (resourcesShown(state) && !resourcesShown(previous)) reloadExp();
       if (workingTree() && (!wasWorkingTree || priorRoot !== shownRoot())) void scheduler.refreshGit();
       if (!nativeInspector()) tree = undefined;
       if (wasNative !== nativeInspector()) void scheduler.collect(true);
       if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state) || priorRoot !== shownRoot())) ||
-        (controlShown(state) && (!controlShown(previous) || state.selectedProject !== previous.selectedProject)) ||
+        (projectControlShown(state) && (!projectControlShown(previous) || state.selectedProject !== previous.selectedProject)) ||
         ((state.subpage?.kind === 'inspector' || previous.subpage?.kind === 'inspector') &&
           (state.subpage?.kind !== previous.subpage?.kind || !!state.help !== !!previous.help ||
             (state.subpage?.kind === 'inspector' && previous.subpage?.kind === 'inspector' && state.subpage.target !== previous.subpage.target)))) void scheduler.collect(true);

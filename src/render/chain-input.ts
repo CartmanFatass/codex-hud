@@ -190,7 +190,7 @@ export function chainInputKey(state: MonitorState, chain: ChainInput, input: Wor
     return draft ? { state: { ...state, help: {} }, close: false } : route(finishChain(state), input, ctx);
   const leave = (!sheet || (!choice && !cancelKey)) && (
     ['escape', 'close', 'tab', 'shift-tab', 'left', 'right', 'project-prev', 'project-next', 'settings'].includes(key) ||
-    hit?.kind.startsWith('board-') || hit?.kind === 'control-harnesses' || (!sheet && hit?.kind === 'chain-back'));
+    hit?.kind.startsWith('board-') || hit?.kind === 'control-harnesses' || hit?.kind === 'control-resources' || (!sheet && hit?.kind === 'chain-back'));
   if (leave) {
     const destination = hit?.kind === 'chain-back' ? { type: 'key' as const, key: 'escape' } : input;
     if (draft) return out({ mode: { kind: 'confirm-leave', leave: destination, resume: mode } });

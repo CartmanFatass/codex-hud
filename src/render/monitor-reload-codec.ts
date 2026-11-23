@@ -2,7 +2,7 @@ import type { MainTab } from './main-tabs.js';
 import { filterScope } from './filter.js';
 import {
   CONTROL_FOLDS, HARNESS_OFF, controlRoleItem, controlRoleOf,
-  type ExpDetail, type InspectorState, type MonitorState, type ProjectView, type SubpageState, type ViewPrefs,
+  type ExpDetail, type InspectorState, type MonitorState, type ProjectView, type SubpageState,
 } from './monitor-state.js';
 
 export const RELOAD_SCHEMA_VERSION = 2;
@@ -51,7 +51,7 @@ function expDetail(value: unknown): ExpDetail | undefined {
   if (value === 'anthropic-api' || value === 'openai-api' || value === 'codex-help' || value === 'proxy-status') return value;
 }
 function mainTab(value: unknown): MainTab {
-  return value === 'project' || value === 'control' || value === 'exp' ? value : 'home';
+  return value === 'exp' ? 'control' : value === 'project' || value === 'control' ? value : 'home';
 }
 
 /** Project only the live fields; old Split and card state is not restored. */
@@ -66,7 +66,8 @@ function projectReloadState(value: unknown) {
     help: help && { scroll: offset(help.scroll) }, home: { scroll: rowPlace(raw.home).scroll }, jobs: rowPlace(raw.jobs),
     project: { view: projectView(project.view), fromProjectsList: project.fromProjectsList === true, nav: rowPlace(project.nav),
       savedPages: savedPages(project.savedPages), folded: strings(project.folded) ?? [], filterQuery: text(project.filterQuery) || undefined },
-    control: { subTab: control.subTab === 'harnesses' ? 'harnesses' as const : 'roles' as const,
+    control: { subTab: raw.activeTab === 'exp' || control.subTab === 'resources' ? 'resources' as const
+      : control.subTab === 'harnesses' ? 'harnesses' as const : 'roles' as const,
       roles: { nav: rowPlace(roles.nav), folded: strings(roles.folded) ?? [...CONTROL_FOLDS] },
       harnesses: { nav: rowPlace(harnesses.nav), folded: strings(harnesses.folded) ?? [HARNESS_OFF] }, modelPrevious },
     exp: { ...rowPlace(exp), detail: expDetail(exp.detail) },
@@ -78,11 +79,11 @@ export function serializeReloadState(state: MonitorState): ReloadStateV2 {
   const filter = state.project.filter;
   return projectReloadState({ ...state, project: { ...state.project, filterQuery: filter?.editing === false ? filter.query : undefined } });
 }
-function hydrate(raw: ReloadStateV2, prefs: ViewPrefs): MonitorState {
+function hydrate(raw: ReloadStateV2): MonitorState {
   const { project, control, exp, subpage } = raw;
   const { filterQuery, ...projectPlace } = project;
   const nav = <P extends { cursor?: string }>(place: P) => ({ ...place, revealed: place.cursor });
-  return { activeTab: raw.activeTab, selectedProject: raw.selectedProject, prefs,
+  return { activeTab: raw.activeTab, selectedProject: raw.selectedProject,
     subpage: subpage && nav(subpage), help: raw.help, home: raw.home, jobs: nav(raw.jobs),
     project: { ...projectPlace, nav: nav(project.nav), folded: new Set(project.folded), filter: filterQuery ? { query: filterQuery, editing: false } : undefined },
     control: { subTab: control.subTab, modelPrevious: control.modelPrevious,
@@ -104,7 +105,7 @@ function legacyControlView(value: unknown, nested: boolean) {
 }
 
 /** Pre-S4 flat state (including the older Skills and Project/Control locations). */
-function migrateV1ToV2(old: Record<string, unknown>, basePrefs: ViewPrefs): MonitorState {
+function migrateV1ToV2(old: Record<string, unknown>): MonitorState {
   const nestedControl = object(old.control), control = fields(old.control), scroll = fields(old.scroll);
   let activeTab = mainTab(old.mainTab);
   let roles = legacyControlView(nestedControl ? control.roles : old.controlNav, !!nestedControl);
@@ -122,7 +123,7 @@ function migrateV1ToV2(old: Record<string, unknown>, basePrefs: ViewPrefs): Moni
   }
   const page = old.projectPage;
   const restored = hydrate(projectReloadState({
-    activeTab, selectedProject: old.projectRoot,
+    activeTab: old.mainTab === 'exp' ? 'exp' : activeTab, selectedProject: old.projectRoot,
     subpage: old.focus === 'details' ? { kind: 'inspector', target: old.boardInspect, cursor: old.inspectCursor, scroll: scroll.details } : undefined,
     help: old.help === true ? { scroll: old.helpScroll } : undefined,
     project: { view: { kind: page ?? (old.projectList === true ? 'projects-list' : 'hub'), index: old.projectWait },
@@ -132,7 +133,7 @@ function migrateV1ToV2(old: Record<string, unknown>, basePrefs: ViewPrefs): Moni
       harnesses: legacyControlView(nestedControl ? control.harnesses : old.controlHarnessNav, !!nestedControl),
       modelPrevious: nestedControl ? control.modelPrevious : old.modelPrevious },
     exp: old.exp ?? old.expPage,
-  }), basePrefs);
+  }));
   const query = text(old.filterQuery);
   if (!old.filterOpen && query && filterScope(restored) && (old.focus === undefined || old.focus === 'agents'))
     restored.project.filter = { query, editing: false };
@@ -161,7 +162,7 @@ export function serializePanelPlace(place: PanelPlace): string {
     settingsView: settingsPlace(place.settings), openedAt: offset(place.openedAt), widthOverride: width(place.widthOverride) });
 }
 
-export function deserializePanelPlace(json: string, prefs: ViewPrefs): (Omit<PanelPlace, 'state'> & { state?: MonitorState }) | undefined {
+export function deserializePanelPlace(json: string): (Omit<PanelPlace, 'state'> & { state?: MonitorState }) | undefined {
   let raw: Record<string, unknown> | undefined;
   try { raw = object(JSON.parse(json)); } catch { return; }
   if (!raw) return;
@@ -169,6 +170,6 @@ export function deserializePanelPlace(json: string, prefs: ViewPrefs): (Omit<Pan
   const current = version === RELOAD_SCHEMA_VERSION, old = version === undefined || version === 0 || version === 1;
   const state = object(current ? raw.stateV2 : old ? raw.state : undefined);
   if (!state) return openedAt === undefined ? undefined : { openedAt, settings: null };
-  return { state: current ? hydrate(projectReloadState(state), prefs) : migrateV1ToV2(state, prefs),
+  return { state: current ? hydrate(projectReloadState(state)) : migrateV1ToV2(state),
     settings: settingsPlace(current ? raw.settingsView : raw.settings), openedAt, widthOverride: width(raw.widthOverride) };
 }

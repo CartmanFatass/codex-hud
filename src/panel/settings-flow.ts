@@ -157,7 +157,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
         // `q` returns to Settings too, so an unsaved draft is not lost.
         help = !result.close && result.state.help ? result.state : undefined;
       } else if (input.type === 'key' && input.key === 'help') {
-        help = { ...initialMonitorState(page.draft), help: {} };
+        help = { ...initialMonitorState(), help: {} };
       } else {
         const result = handleSettingsInput(page, input, settingsFrame);
         page = result.state;

@@ -326,8 +326,7 @@ test('delegation collects live oapi requests, using request-time prices and pers
     h = host(),
     c = context(f, h, 'synthetic-worker', 'rpc');
   const pathToLedger = path.join(f.binding.hudHome, 'exp', 'ledger-openai-api.jsonl');
-  const settings = (experiments) =>
-    fs.writeFileSync(path.join(f.binding.hudHome, 'hud-settings.json'), JSON.stringify({ experiments }));
+  const legacySettings = path.join(f.binding.hudHome, 'hud-settings.json');
   const now = Date.parse('2026-11-20T10:30:00Z');
   t.mock.timers.enable({ apis: ['Date'], now });
   const grant = (field, value) =>
@@ -360,14 +359,12 @@ test('delegation collects live oapi requests, using request-time prices and pers
   c.ctx.sessionManager.getBranch = c.ctx.sessionManager.getEntries;
   await load(f, h, { options: { env: f.env } });
   await h.emit('session_start', c.ctx);
-  settings(true);
+  fs.writeFileSync(legacySettings, JSON.stringify({ experiments: true }));
   await start();
   await finish(reply());
   assert.equal(fs.existsSync(pathToLedger), false, 'account disabled');
-  grant('grant-enabled', true);
-  settings(false);
   await start();
-  settings(true);
+  grant('grant-enabled', true);
   await finish(reply());
   assert.equal(fs.existsSync(pathToLedger), false, 'no collection for requests started before enable');
   for (const provider of ['openai', 'openai-codex', 'anthropic', 'synthetic-gateway']) {
@@ -396,6 +393,7 @@ test('delegation collects live oapi requests, using request-time prices and pers
   await start();
   await finish(reply());
   assert.equal(readOpenAiBalance(f.binding.hudHome, Date.now()).remainingMicros, 12_750_000);
+  fs.writeFileSync(legacySettings, JSON.stringify({ experiments: false }));
   const fallback = reply({
     responseId: undefined,
     model: 'synthetic-unknown',
@@ -444,9 +442,9 @@ test('delegation collects live oapi requests, using request-time prices and pers
   await finish(reply());
   assert.equal(lines().length, count, 'startup/resume does not replay');
   await start();
-  settings(false);
+  grant('grant-enabled', false);
   await finish(reply({ responseId: 'disabled-in-flight' }));
-  assert.equal(lines().length, count, 'closing EXP stops writes and preserves history');
+  assert.equal(lines().length, count, 'disabling the grant stops writes and preserves history');
   await h.emit('session_shutdown', c.ctx);
 });
 
@@ -549,7 +547,7 @@ test('delegation isolates the Anthropic API-key ledger from OAuth, gateways, unk
   assert.equal(h.calls.footer, 0);
 });
 
-test('40-column pi footer switches among subscription proxy, oapi, and Anthropic API grants, and clears on master off', async (t) => {
+test('40-column pi footer switches among subscription proxy, oapi, and Anthropic API grants, and clears a disabled grant', async (t) => {
   const f = setup(t),
     h = host(),
     c = context(f, h),
@@ -666,6 +664,9 @@ test('40-column pi footer switches among subscription proxy, oapi, and Anthropic
   await select('anthropic');
   assert.match(row(), /API ≈\$7\.65/);
   settings(false);
+  p.advance(5000);
+  assert.match(row(), /API ≈\$7\.65/, 'the legacy setting has no effect');
+  saveExpEdit(home, { field: 'grant-enabled', account: 'anthropic-api', value: false }, Date.now(), f.env);
   p.advance(5000); // The existing Work refresh clears an idle footer.
   assert.doesNotMatch(row(), /API/);
 });

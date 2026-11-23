@@ -23,7 +23,6 @@ import type { LocalLoad } from '../../collectors/local-load.js';
 import { applyBarSettings } from '../../bar-settings.js';
 import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
-import { experimentsEnabled } from '../../settings.js';
 import { getHudHome } from '../../hud-home.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
 import { HUD_STATUS_KEY } from './segment.js';
@@ -506,7 +505,7 @@ export function createP10kFooter(
   function readApiQuota(ctx: FooterContext | null): typeof apiQuota {
     try {
       const account = piExpAccount(ctx);
-      if (!account || !experimentsEnabled(env)) return;
+      if (!account) return;
       const balance = readExpFooterGrant(getHudHome(env), account, Date.now());
       if (!balance) return;
       const { remainingMicros, grantMicros, endDate, timeZone } = balance;

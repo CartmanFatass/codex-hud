@@ -1,7 +1,6 @@
 /** Pure Home, Project and retained passive pages. No legacy Agents layout. */
 import type { HudData, SubagentTree } from '../types.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
-import { DEFAULT_PANEL_VIEW, type HudSettings } from '../settings.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
@@ -9,7 +8,7 @@ import type { ProjectItem, ProjectSnapshot } from '../collectors/project-board.j
 import type { PaneLoad } from './home-view.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import { initialHomeTab, initialProjectTab, initialControlTab, viewPrefs, reconcileMonitor, type MonitorState } from './monitor-state.js';
+import { initialHomeTab, initialProjectTab, initialControlTab, type MonitorState } from './monitor-state.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { MainTab } from './main-tabs.js';
@@ -84,6 +83,7 @@ export interface MonitorControl {
     | 'board-native'
     | 'control-roles'
     | 'control-harnesses'
+    | 'control-resources'
     | 'control-open-file'
     | 'control-model'
     | 'role-toggle'
@@ -180,12 +180,12 @@ export interface MonitorOutcome {
     /** `w` on Home or Project: the panel writes the shown project's HTML review board and opens it. */
     | { type: 'export-board' };
 }
-export function initialMonitorState(settings?: HudSettings): MonitorState {
+export function initialMonitorState(): MonitorState {
   return { activeTab: 'home', home: initialHomeTab(), project: initialProjectTab(), control: initialControlTab(),
-    jobs: { scroll: 0 }, exp: { scroll: 0 }, prefs: settings ? viewPrefs(settings) : { ...DEFAULT_PANEL_VIEW } };
+    jobs: { scroll: 0 }, exp: { scroll: 0 } };
 }
 export function renderMonitor(input: MonitorData): MonitorFrame {
   const now = input.nowMs ?? Date.now();
   const board = input.workboard ?? buildWorkboard({ rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(now) });
-  return renderWorkboardFrame(input, reconcileMonitor(input.state), board, now);
+  return renderWorkboardFrame(input, input.state, board, now);
 }

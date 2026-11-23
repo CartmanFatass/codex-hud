@@ -10,7 +10,6 @@ import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { sonicChildrenRunning } from '../../dist/render/worker-roster.js';
 import { tryCount } from '../../dist/render/project-view.js';
 import { loadSettings } from '../../dist/settings.js';
-import { viewPrefs } from '../../dist/render/monitor-state.js';
 import { SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { panelProjectFixture, panelState, layoutDriver, assertWidth, assertNoMidWordCut } from '../fixtures/panel-project.mjs';
 import { listFixture } from '../fixtures/project-list.mjs';
@@ -36,7 +35,7 @@ test('Project uses Inbox for old saved layouts and no longer offers a layout set
     assert.equal('panelLayout' in settings, false);
     assert.ok(!Object.hasOwn(settings, 'projectLayout'));
     assert.equal(fs.readFileSync(path, 'utf8'), saved, 'loading does not rewrite owner settings');
-    const frame = busy.render(40, 'en', 36, onPage(undefined, { prefs: viewPrefs(settings) }));
+    const frame = busy.render(40, 'en', 36, onPage());
     assert.match(plain(frame).join('\n'), /^Needs you ─/m);
     assert.equal(frame.panes.some((pane) => pane.id === 'preview'), false);
   }

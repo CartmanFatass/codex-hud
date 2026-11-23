@@ -241,9 +241,9 @@ export function presetFrames(f, control) {
   };
   const frames = {};
   for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) for (const [name, extra] of Object.entries(views))
-    frames[`preset-${name}-40-${panelLayout}-${lang}`] = plain(f.render(40, lang, onControl(nav, withState({ prefs: { panelLayout, experiments: true } }, extra)),
+    frames[`preset-${name}-40-${panelLayout}-${lang}`] = plain(f.render(40, lang, onControl(nav, withState({ prefs: { panelLayout } }, extra)),
       name === 'row' ? 34 : 23, withImp(imp), true, 'unicode', 'none', { projectName: 'harbor-api' }));
-  for (const lang of ['en', 'zh']) frames[`preset-switched-40-split-${lang}`] = plain(f.render(40, lang, onControl(nav, { prefs: { panelLayout: 'split', experiments: true } }, { notice: { kind: 'preset', role: 'imp', name: 'default' } }), 34, withImp({ ...imp, preset: 'default', places: fileChain }), true, 'unicode', 'none', { projectName: 'harbor-api' }));
+  for (const lang of ['en', 'zh']) frames[`preset-switched-40-split-${lang}`] = plain(f.render(40, lang, onControl(nav, { prefs: { panelLayout: 'split' } }, { notice: { kind: 'preset', role: 'imp', name: 'default' } }), 34, withImp({ ...imp, preset: 'default', places: fileChain }), true, 'unicode', 'none', { projectName: 'harbor-api' }));
   return frames;
 }
 
@@ -338,7 +338,7 @@ export function modelPickerSample(f) {
     harnessSwitches: [{ id: 'pi:deepseek', name: 'deepseek', group: 'provider', off: true }], radar: undefined };
   const state = (layout = 'split') => onControl({
     folded: new Set(['usage', 'files']), cursor: 'project:role:imp',
-  }, { prefs: { panelLayout: layout, experiments: true }, overlay: chainOverlay(roles.find((r) => r.role === 'imp')) });
+  }, { prefs: { panelLayout: layout }, overlay: chainOverlay(roles.find((r) => r.role === 'imp')) });
   const draw = (lang, state, height = 28, snapshot = data) => f.render(40, lang, state, height, snapshot, true, 'unicode', 'none', {
     projectName: 'harbor-api', projects: PROJECTS, projectWaiting: 2,
   });
@@ -365,7 +365,7 @@ export function pickerOrderSample(f) {
     projectWaiting: 2,
   });
   const open = (width, lang, panelLayout = 'split') => {
-    const state = onControl({ cursor: 'project:role:imp' }, { prefs: { panelLayout, experiments: true } });
+    const state = onControl({ cursor: 'project:role:imp' }, { prefs: { panelLayout } });
     const shipped = { ...role, source: 'default', path: '/synthetic/shipped/roles/imp.json', places: oldPlaces, editor: mockEditor(oldPlaces) };
     const before = send(draw(width, lang, state, { ...data, roles: [shipped, reviewer] }), 'place-model');
     rememberModel(state, before.state, role, active.model);

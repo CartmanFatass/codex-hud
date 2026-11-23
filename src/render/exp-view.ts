@@ -1,4 +1,4 @@
-/** Shared EXP form for Classic and Split. Data comes from the panel; input returns edits, never writes. */
+/** Control's Resources form, shared by Classic and Split. Input returns edits, never writes. */
 import { basename } from 'node:path';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import {
@@ -23,7 +23,7 @@ import {
   type ExpProxyWindow,
 } from '../exp-proxy.js';
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import type { ExpDetail, ExpTabState, OverlayState } from './monitor-state.js';
+import type { ExpDetail, ExpFormState, OverlayState } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import { theme, visualLength } from './colors.js';
 import { flowLines, monitorText, pair, squeeze } from './monitor-text.js';
@@ -296,7 +296,7 @@ function groups(
 }
 
 export function expRows(
-  page: ExpTabState,
+  page: ExpFormState,
   editor: ExpEditor | undefined,
   data: ExpData | undefined,
   width: number,
@@ -358,7 +358,7 @@ export function expRows(
   }
   const header = [
     ...text(t('This machine · all projects'), theme.board.muted),
-    ...(data.unreadable ? text(t('Could not read EXP configuration'), theme.board.danger) : []),
+    ...(data.unreadable ? text(t('Could not read resource settings'), theme.board.danger) : []),
   ];
   const blocks = sections.map(({ label, entries, notes, readings }) => [
     section(t(label), width),
@@ -379,9 +379,9 @@ export function expRows(
   return [...header, ...blocks.flatMap((rows, i) => (i < spare ? [boardRow(''), ...rows] : rows))];
 }
 
-export const expHints = (page: ExpTabState, edit: ExpEditor | undefined): FooterHints => {
+export const expHints = (page: ExpFormState, edit: ExpEditor | undefined): FooterHints => {
   if (page.detail === 'proxy-status') return ['Esc back'];
-  if (!edit) return page.detail ? ['⏎ edit', 'Esc back'] : ['⏎ edit'];
+  if (!edit) return page.detail ? ['⏎ edit', 'Esc back'] : ['⏎ edit', 'h roles'];
   return { modal: [edit.entryId === 'calibration' && !edit.draft.preview ? '⏎ preview' : '⏎ save', 'Esc cancel'] };
 };
 

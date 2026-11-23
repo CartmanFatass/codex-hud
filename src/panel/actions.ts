@@ -9,7 +9,7 @@ import { finishChain } from '../render/chain-input.js';
 import { effectiveModel } from '../render/control-view.js';
 import { harnessItem } from '../render/harness-page.js';
 import { language, t } from '../render/i18n.js';
-import { expShown } from '../render/main-tabs.js';
+import { resourcesShown } from '../render/main-tabs.js';
 import { rememberModel } from '../render/model-input.js';
 import { controlRoleItem } from '../render/monitor-state.js';
 import type { MonitorOutcome, MonitorState } from '../render/monitor.js';
@@ -115,13 +115,13 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           });
           break;
         case 'exp-save': {
-          if (!expShown(state)) break;
+          if (!resourcesShown(state)) break;
           const saved = () => {
             host.reloadExp();
             const latest = host.state;
             host.state = { ...latest, overlay: undefined, exp: { ...latest.exp, notice: 'Saved' } };
           };
-          const failed = () => { host.state.exp = { ...host.state.exp, notice: 'Could not save EXP setting' }; };
+          const failed = () => { host.state.exp = { ...host.state.exp, notice: 'Could not save resource setting' }; };
           try {
             const pending = saveExpEdit(home, action.edit, Date.now());
             if (pending) {

@@ -68,9 +68,7 @@ const ZH: Record<string, string> = {
   'Native tree unavailable': '无法读取原生子代理树',
   'No subagents observed': '未观察到子代理',
   'This session': '当前会话',
-  Experiments: '实验功能',
-  'Show EXP usage settings for this machine': '显示本机的 EXP 用量设置',
-  EXP: 'EXP',
+  Resources: '资源',
   'Codex native status line': 'Codex 原生栏',
   'Track native status line': '记录原生状态栏',
   'Tracking records observations only; /statusline controls what Codex displays.': '此开关仅记录观察时间；Codex 的显示由 /statusline 控制。',
@@ -135,8 +133,8 @@ const ZH: Record<string, string> = {
   'Old estimate → new base': '旧估算 → 新基准',
   'This does not change the next grant.': '不改变下期赠额。',
   'Invalid value': '数值或格式无效',
-  'Could not read EXP configuration': '无法读取 EXP 设置',
-  'Could not save EXP setting': 'EXP 设置未保存',
+  'Could not read resource settings': '无法读取资源设置',
+  'Could not save resource setting': '资源设置未保存',
   '↑↓ pick': '↑↓ 选择', // Legacy model picker.
   'esc cancel': 'esc 取消', // Legacy model picker.
   'Esc cancel': 'Esc 取消',
@@ -419,7 +417,7 @@ const ZH: Record<string, string> = {
   'picker: clear filter, then close': '选择器：先清空筛选，再关闭',
   'picker: refresh model lists': '选择器：刷新模型列表',
   'draft: save and select it': '草稿：保存并选中',
-  'Roles / Harnesses': '角色 / 宿主',
+  'Roles / Harnesses / Resources': '角色 / 宿主 / 资源',
   'harness: on / off': '宿主：开 / 关',
   'refresh the model lists': '刷新模型列表',
   'Saved to $HUD_HOME/roles; the next job uses it. Project role files are read-only here.':

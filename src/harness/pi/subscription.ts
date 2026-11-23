@@ -1,5 +1,5 @@
 import { lstatSync, realpathSync, watch, type FSWatcher } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   observeProxy,
   refreshProxyIfDue,
@@ -7,7 +7,6 @@ import {
   type ProxyRefreshOptions,
 } from '../../collectors/exp-proxy-refresh.js';
 import { getHudHome } from '../../hud-home.js';
-import { settingsPath } from '../../settings.js';
 import {
   proxyDueAt,
   proxyObject,
@@ -57,14 +56,14 @@ function streamWindows(event: unknown, model: FooterContext['model']): ExpProxyW
 /** The component's draw only enqueues I/O. File notifications invalidate cached readings and request a new draw. */
 export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void, options: ProxyRefreshOptions = {}) {
   const now = options.now ?? Date.now;
-  const preferences = settingsPath(env);
-  const expDir = join(getHudHome(env), 'exp');
-  let settingsWatch: FSWatcher | undefined;
+  const home = getHudHome(env);
+  const expDir = join(home, 'exp');
+  const config = join(expDir, 'config.json');
+  let homeWatch: FSWatcher | undefined;
   let expWatch: FSWatcher | undefined;
   let epoch = 0;
   let revision = 0;
   let observed = false;
-  let expEnabled = false;
   let poll: Promise<void> | undefined;
   let refresh: Promise<boolean> | undefined;
   let reading: ProxyObservation | undefined;
@@ -105,7 +104,7 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
   }
   function observe() {
     if (poll) return;
-    if (observed && settingsWatch && (!expEnabled || expWatch)) return;
+    if (observed) return;
     const mounted = epoch;
     const captured = revision;
     const active = () => mounted === epoch;
@@ -113,25 +112,43 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
     // Attach before reading, so even an atomic replacement during the read invalidates it.
     poll = Promise.resolve().then(() => {
       if (!active()) return;
-      settingsWatch ??= watchDir(
-        dirname(preferences),
+      homeWatch ??= watchDir(
+        home,
         (file) => {
-          if (!file || file === basename(preferences)) invalidate();
-          else if (expEnabled && !expWatch && file === 'exp') invalidate(false);
+          if (file && file !== 'exp') return;
+          const watcher = expWatch;
+          expWatch = undefined;
+          watcher?.close();
+          invalidate();
         },
         (watcher) => {
-          if (active() && settingsWatch === watcher) {
-            settingsWatch = undefined;
-            observed = false;
+          if (active() && homeWatch === watcher) {
+            homeWatch = undefined;
+            invalidate();
           }
         }
       );
-      // A watch on a link's parent cannot see edits to its target in a dotfiles directory.
+      expWatch ??= watchDir(
+        expDir,
+        (file) => {
+          if (!file || file === 'config.json') invalidate();
+          else if (file === 'proxy.json') invalidate(false);
+        },
+        (watcher) => {
+          if (active() && expWatch === watcher) {
+            expWatch = undefined;
+            invalidate();
+          }
+        }
+      );
+      // A watch on a link's parent cannot see edits to its target.
       try {
-        covered = !!settingsWatch && realpathSync(dirname(preferences)) === resolve(dirname(preferences)) &&
-          !lstatSync(preferences, { throwIfNoEntry: false })?.isSymbolicLink();
+        covered = !!homeWatch && realpathSync(home) === resolve(home) &&
+          (expWatch
+            ? realpathSync(expDir) === resolve(expDir) && !lstatSync(config, { throwIfNoEntry: false })?.isSymbolicLink()
+            : !lstatSync(expDir, { throwIfNoEntry: false }));
       } catch { /* Unknown watch coverage: read on the next draw too. */ }
-      return observeProxy(env, enabledChanged);
+      return observeProxy(env);
     }).then(
       (next) => {
         if (!active()) return;
@@ -152,30 +169,6 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
         if (active()) poll = undefined;
       }
     );
-    function enabledChanged(enabled: boolean) {
-      if (!active()) return;
-      expEnabled = enabled;
-      if (enabled) {
-        expWatch ??= watchDir(
-          expDir,
-          (file) => {
-            if (!file || file === 'config.json') invalidate();
-            else if (file === 'proxy.json') invalidate(false);
-          },
-          (watcher) => {
-            if (active() && expWatch === watcher) {
-              expWatch = undefined;
-              observed = false;
-            }
-          }
-        );
-      } else {
-        const watcher = expWatch;
-        expWatch = undefined;
-        watcher?.close();
-        clearRequest();
-      }
-    }
   }
   function clearRequest() {
     request = undefined;
@@ -187,13 +180,12 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
       poll = undefined;
       refresh = undefined;
       observed = false;
-      expEnabled = false;
       reading = undefined;
       clearRequest();
-      const sw = settingsWatch;
+      const hw = homeWatch;
       const ew = expWatch;
-      settingsWatch = expWatch = undefined;
-      sw?.close();
+      homeWatch = expWatch = undefined;
+      hw?.close();
       ew?.close();
     },
     draw(ctx: FooterContext): BarQuotaWindow[] {

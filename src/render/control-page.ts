@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { placeDestination, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
-import { controlRoleItem, controlRoleOf, type ControlViewState } from './monitor-state.js';
+import { CONTROL_VIEWS, controlRoleItem, controlRoleOf, type ControlViewState } from './monitor-state.js';
 import { glyph, needsAttention, presetName,
   radarFacts, radarRows, radarSummary, roleModelDestination, roleName, harnessErrorRow } from './control-view.js';
 import { projectItem } from './project-view.js';
@@ -25,8 +25,16 @@ const reason = (place: PlaceFact, now: number) => place.state === 'off' ? t('off
 
 export function controlHeader(input: MonitorData, state: MonitorState, width: number): MonitorRow[] {
   const projects = input.projects ?? [], at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
-  const roles = ` ${t('Roles')} `, harnesses = ` ${t('Harnesses')} `, x = visualLength(roles);
   const { subTab, notice } = state.control, showingHarnesses = subTab === 'harnesses';
+  const labels = { roles: 'Roles', harnesses: 'Harnesses', resources: 'Resources' };
+  const controls: NonNullable<MonitorRow['controls']> = [];
+  let x = 0;
+  const tabs = CONTROL_VIEWS.map((id) => {
+    const text = ` ${t(labels[id])} `, span = visualLength(text);
+    if (x < width) controls.push({ kind: `control-${id}`, x, width: Math.min(span, width - x) });
+    x += span;
+    return (id === subTab ? theme.board.title : muted)(text);
+  });
   const change = notice?.kind === 'harness' ? notice : undefined;
   const role = notice && notice.kind !== 'harness' ? monitorText(notice.role) : '';
   const name = notice?.kind === 'preset' ? presetName(notice.name) : '';
@@ -36,12 +44,11 @@ export function controlHeader(input: MonitorData, state: MonitorState, width: nu
   const scope = t('This machine · all projects');
   const caption = change ? pair(theme.board.success(`${mark('✓', '+')} ${t(change.off ? 'off {id}' : 'Restored {id}', { id: monitorText(change.id) })}`), muted(scope), width)
     : muted(scope);
+  const switcher = { text: tabs.join(''), controls };
+  if (subTab === 'resources') return [switcher];
   return [section(monitorText(input.projectName ?? '') || t('Project'), width,
-    projects.length > 1 ? `${t('project')} ${at + 1}/${projects.length}` : ''), {
-    text: (showingHarnesses ? muted : theme.board.title)(roles) + (showingHarnesses ? theme.board.title : muted)(harnesses),
-    controls: [{ kind: 'control-roles', x: 0, width: Math.min(width, x) },
-      ...(width > x ? [{ kind: 'control-harnesses' as const, x, width: Math.min(width - x, visualLength(harnesses)) }] : [])],
-  }, ...(showingHarnesses ? [boardRow(caption)] : saved ? [boardRow(theme.board.success(`${mark('✓', '+')} ${saved}`))] : [])];
+    projects.length > 1 ? `${t('project')} ${at + 1}/${projects.length}` : ''), switcher,
+    ...(showingHarnesses ? [boardRow(caption)] : saved ? [boardRow(theme.board.success(`${mark('✓', '+')} ${saved}`))] : [])];
 }
 
 export function controlHints(data: ProjectSnapshot | undefined, item?: string): string[] {

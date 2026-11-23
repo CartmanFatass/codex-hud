@@ -1,14 +1,14 @@
 /** Main-tab routing. It mutates nothing: the owner's micro-actions on a job leave as actions (`job-actions.ts`) for the panel to run. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
-import { backFromSubpage, copyControlTab, controlRoleItem, controlRoleOf, harnessFold, jobsPage,
+import { backFromSubpage, CONTROL_VIEWS, copyControlTab, controlRoleItem, controlRoleOf, harnessFold, jobsPage,
   switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import { ACCEPT_ALL, projectPageOf, projectListOpen } from './project-view.js';
 import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
 import { openJobAction } from './job-actions.js';
-import { controlShown, mainTabOf, mainTabs, type MainTab } from './main-tabs.js';
+import { controlShown, resourcesShown, MAIN_TABS, type MainTab } from './main-tabs.js';
 import { expInput } from './exp-view.js';
 import { harnessId, restoreId } from './harness-page.js';
 
@@ -54,7 +54,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     case 'home': break;
     case 'project': next.project = { ...state.project, nav: { ...state.project.nav } }; break;
     case 'control': next.control = copyControlTab(state.control); break;
-    case 'exp': break;
   }
   const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
   const frame = ctx.frame,
@@ -104,20 +103,21 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   const tab = clickKind(input, ctx);
   const control = controlShown(next);
-  const harnessKey = input.type === 'key' && input.text === 'h';
-  if (control && (harnessKey || tab === 'control-roles' || tab === 'control-harnesses')) {
-    next.control.subTab = (harnessKey ? next.control.subTab === 'roles' : tab === 'control-harnesses') ? 'harnesses' : 'roles';
+  const viewKey = input.type === 'key' && input.text === 'h';
+  const controlView = CONTROL_VIEWS.find((id) => tab === `control-${id}`);
+  if (control && (viewKey || controlView)) {
+    next.control.subTab = controlView ?? CONTROL_VIEWS[(CONTROL_VIEWS.indexOf(next.control.subTab) + 1) % CONTROL_VIEWS.length];
     next.control.notice = undefined;
     return result();
   }
-  const tabs = mainTabs(next), clicked = tabs.find(({ id }) => tab === `board-${id}`);
+  const tabs = MAIN_TABS, clicked = tabs.find(({ id }) => tab === `board-${id}`);
   if (clicked || (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
-    const at = tabs.findIndex(({ id }) => id === mainTabOf(next));
+    const at = tabs.findIndex(({ id }) => id === next.activeTab);
     const step = key === 'left' || key === 'shift-tab' ? -1 : 1;
     goTab(clicked?.id ?? tabs[(at + step + tabs.length) % tabs.length].id);
     return result();
   }
-  if (main && mainTabOf(next) === 'exp') {
+  if (resourcesShown(next)) {
     if (['help', 'settings', 'brief-toggle'].includes(key)) return null;
     if (tab === 'brief') return result({ type: 'brief-toggle' });
     return expInput(next, input, ctx) ?? result();
@@ -129,7 +129,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   // Project and Control share list navigation, but own their views and actions.
   if (control || (main && next.activeTab === 'project')) {
-    const view = control ? next.control[next.control.subTab] : undefined;
+    const view = control && next.control.subTab !== 'resources' ? next.control[next.control.subTab] : undefined;
     const nav = view?.nav ?? next.project.nav, cursor = nav.cursor;
     const select = (item?: string) => { nav.cursor = item; };
     const toggleFold = (id: string) => {

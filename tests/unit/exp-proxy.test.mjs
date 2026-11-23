@@ -30,22 +30,16 @@ function fixture(t, enabled = true, bound = true) {
   for (const path of [profile, other, env.HUD_HOME, env.PATH]) fs.mkdirSync(path, { recursive: true });
   for (const path of [profile, other]) fs.writeFileSync(join(path, 'config.toml'), '# synthetic profile\n');
   let now = START;
-  const setMaster = (experiments) => {
-    const file = join(env.HUD_HOME, 'hud-settings.json');
-    fs.writeFileSync(file + '.tmp', JSON.stringify({ experiments }), { mode: 0o600 });
-    fs.renameSync(file + '.tmp', file);
-  };
-  setMaster(enabled);
+  fs.writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ experiments: true }), { mode: 0o600 });
   const edit = (field, value) => saveExpEdit(env.HUD_HOME, { field, value }, now, env);
   edit('interval', 5);
-  edit('proxy-enabled', true);
+  edit('proxy-enabled', enabled);
   if (bound) edit('binding', profile);
   const file = expProxyPath(env.HUD_HOME);
   return {
     env,
     profile,
     other,
-    setMaster,
     edit,
     file,
     now: () => now,
@@ -183,7 +177,7 @@ test('the total deadline kills a fake app-server with an outstanding quota RPC',
   assert.equal(f.snapshot().nextAttemptMs, START + 5 * MIN);
 });
 
-test('rebind (including ABA), unbind and disable during an RPC fence the old result', async (t) => {
+test('rebind (including ABA), unbind, disable and interval edits during an RPC fence the old result', async (t) => {
   const f = fixture(t);
   for (const change of [
     () => {
@@ -192,7 +186,7 @@ test('rebind (including ABA), unbind and disable during an RPC fence the old res
     },
     () => f.edit('binding', null),
     () => f.edit('proxy-enabled', false),
-    () => f.setMaster(false),
+    () => f.edit('interval', 15),
   ]) {
     const pending = Promise.withResolvers();
     const started = Promise.withResolvers();
@@ -205,7 +199,6 @@ test('rebind (including ABA), unbind and disable during an RPC fence the old res
     pending.resolve({ windows });
     assert.equal(await result, false);
     assert.equal(fs.existsSync(f.file), false, 'old result was not written');
-    f.setMaster(true);
     f.edit('binding', f.profile);
     f.edit('proxy-enabled', true);
   }
@@ -305,7 +298,7 @@ test('only openai OAuth shows windows; direct data wins and never survives its m
   await until(() => !quota.test(p.draw(100)));
 });
 
-test('EXP off or unbound causes zero RPCs and leaves the 40-column footer unchanged', async (t) => {
+test('proxy disabled or unbound causes zero RPCs and leaves the 40-column footer unchanged', async (t) => {
   const off = fixture(t, false);
   const unbound = fixture(t, true, false);
   const enabled = fixture(t);
@@ -321,14 +314,14 @@ test('EXP off or unbound causes zero RPCs and leaves the 40-column footer unchan
   await until(() => footers[2].draw().includes('≈'));
   for (const p of footers.slice(0, 2)) assert.equal(p.draw(), before);
   assert.equal(calls, 1);
-  enabled.setMaster(false);
+  enabled.edit('proxy-enabled', false);
   await until(() => footers[2].draw() === before);
   enabled.advance(20 * MIN);
   assert.equal(footers[2].draw(), before);
   assert.equal(calls, 1);
 });
 
-test('EXP shows live proxy and OpenAI grant readings at 40 columns', async (t) => {
+test('Control Resources shows live proxy and OpenAI grant readings at 40 columns', async (t) => {
   const f = fixture(t);
   await refresh(f, async () => ({ windows }));
   f.advance(6 * MIN);
@@ -348,7 +341,7 @@ test('EXP shows live proxy and OpenAI grant readings at 40 columns', async (t) =
       const draw = (detail) => {
         const frame = renderMonitor({
           tree,
-          state: withState(initialMonitorState(), { activeTab: 'exp', prefs: { panelLayout, experiments: true }, exp: { detail, scroll: 0 } }),
+          state: withState(initialMonitorState(), { activeTab: 'control', control: { subTab: 'resources' }, prefs: { panelLayout }, exp: { detail, scroll: 0 } }),
           width: 40,
           height: 24,
           nowMs: f.now(),

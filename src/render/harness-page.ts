@@ -64,14 +64,14 @@ export function harnessHints(data: ProjectSnapshot | undefined, view: ControlVie
   return [...(entry ? ['Space on/off'] : item === harnessFold ? [offFolded(view) ? '⏎ expand' : '⏎ fold']
     : data?.harnessSwitchError ? ['⏎ open file'] : []),
     ...(data?.harnessSwitches?.some((h) => h.off) ? ['i add back'] : []),
-    'h roles', ...(entry && !entry.off ? ['Del remove'] : []), 'r refresh'];
+    'h resources', ...(entry && !entry.off ? ['Del remove'] : []), 'r refresh'];
 }
 
 /** Whole fitted footer hints are actions too. The shared footer right-aligns the same text. */
 export function harnessFooterControls(frame: MonitorFrame, hints: FooterHints, width: number, y: number): void {
   const kinds: Record<string, MonitorControl['kind']> = {
     'Space on/off': 'harness-toggle', 'Del remove': 'harness-remove', 'i add back': 'harness-add',
-    'h roles': 'control-roles', '⏎ expand': 'harness-fold', '⏎ fold': 'harness-fold',
+    'h resources': 'control-resources', '⏎ expand': 'harness-fold', '⏎ fold': 'harness-fold',
     '⏎ restore': 'harness-restore', 'Esc back': 'harness-back', 'r refresh': 'harness-refresh', '? help': 'help',
   };
   for (const { key, x, width: span } of footerLayout(hints, width)) {

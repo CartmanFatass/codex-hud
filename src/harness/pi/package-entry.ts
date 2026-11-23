@@ -297,7 +297,7 @@ export function installPiPackage(
     },
   });
   if (mode !== 'delegate') return;
-  const expUsage = piExpUsage(binding.hudHome, env);
+  const expUsage = piExpUsage(binding.hudHome);
   on('context', expUsage.requestStart);
   on('message_end', expUsage.messageEnd);
   on('turn_end', expUsage.turnEnd);
