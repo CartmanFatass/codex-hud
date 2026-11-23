@@ -40,22 +40,21 @@ function picked(out, value) {
   assert.equal(state.overlay.draft, undefined);
 }
 
-test('40-column entry and ranked picker keep the quick model route in EN/ZH and both layouts', async (t) => {
+test('40-column Control and ranked picker keep the quick model route in EN/ZH', async (t) => {
   const f = await fixture(t), { draw, state } = modelPickerSample(f);
-  for (const layout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
+  for (const lang of ['en', 'zh']) {
     const en = lang === 'en';
     const sample = (id) => build(lang).frames.find((f) => f.id === id).frame.rows.map((r) => r.segs.map((s) => s.t).join('').trimEnd());
     const normalize = (line) => line.trim().replace(/ +/g, ' ');
     const compare = (actual, sampleId, re) => assert.deepEqual(plain(actual).filter((l) => re.test(l)).map(normalize),
       sample(sampleId).filter((l) => re.test(l)).map(normalize));
-    if (layout === 'split') {
-      const roleRow = draw(lang, { ...state(layout), overlay: undefined });
-      const hit = field(roleRow);
-      const quick = click(roleRow, hit.x, hit.y);
-      assert.equal(quick.state.overlay.kind, 'control-quick-model');
-      assert.deepEqual(quick.state.overlay, send(roleRow, 'place-model').state.overlay);
-    }
-    const entry = draw(lang, state(layout), 22);
+    const roleRow = draw(lang, { ...state(), overlay: undefined });
+    const hit = roleRow.controls.find((c) => c.kind === 'control-model' && c.y === roleRow.lines.length - 1);
+    assert.ok(hit, 'the Control footer offers the selected role’s model picker');
+    const quick = click(roleRow, hit.x, hit.y);
+    assert.equal(quick.state.overlay.kind, 'control-quick-model');
+    assert.deepEqual(quick.state.overlay, send(roleRow, 'place-model').state.overlay);
+    const entry = draw(lang, state(), 22);
     compare(entry, '1a', /^\s*(?:› )?\s*[123] [◉○].*\[.* ▾\]/);
     assert.match(entry.lines.at(-1).trimStart(), en ? /^m model/ : /^m 模型/);
     const open = click(entry, field(entry).x, field(entry).y);

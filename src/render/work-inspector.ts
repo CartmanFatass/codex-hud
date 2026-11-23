@@ -18,7 +18,7 @@ import {
   asciiBoard,
 } from './workboard-rows.js';
 import { theme, visualLength } from './colors.js';
-import { monitorText, fit } from './monitor-text.js';
+import { monitorText, fit, squeeze } from './monitor-text.js';
 import { providerMark } from './providers.js';
 import { t } from './i18n.js';
 import { diffStatRows } from './diff-stat-rows.js';
@@ -193,8 +193,13 @@ export function nativeInspectorRows(tree: SubagentTree | undefined, width: numbe
         facts.pop();
         detail = [status, ...facts].join(' · ');
       }
-      const row = itemRow(lead, label, detail, width);
+      const row = itemRow(' ' + lead, label, detail, width);
       rows.push(node.rolloutPath ? { ...row, item: `native:${node.id}`, files: [node.rolloutPath] } : row);
+      // Claude's bounded tail replay exposes one observed step, never a generated summary.
+      if (node.transcriptStep) {
+        const indent = lead + '    ';
+        rows.push(boardRow(fit(indent + theme.board.muted(squeeze(monitorText(node.transcriptStep), width - indent.length)), width)));
+      }
       add(node.children, depth + 1);
     }
   };

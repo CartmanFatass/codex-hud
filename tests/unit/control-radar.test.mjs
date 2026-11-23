@@ -148,7 +148,7 @@ test('300 children do not displace the day’s top-level jobs from Control, Home
   assert.deepEqual(new ProjectCollector(root, home, env).liveCwds(), Array(4).fill(root));
 });
 
-test('full Project collection and both Control views include radar without changing the empty baseline', async (t) => {
+test('full Project collection and Control Usage include radar without changing the empty baseline', async (t) => {
   const { root } = fixture(t);
   const f = await projectFixture(join(root, 'view'));
   assert.equal((await f.collector.collect('home', f.board, NOW)).radar, undefined);
@@ -160,24 +160,23 @@ test('full Project collection and both Control views include radar without chang
     piToday: { costUsd: 1.42, tokens: 184000, sessions: 2 },
     roleStats: { imp: { total: 6, ok: 5, failed: 1, quietEscalated: 1, avgMinutes: 6 } },
   } };
-  const split = (projectCursor, projectFolded) => onControl({ cursor: projectCursor, folded: projectFolded }, { prefs: { panelLayout: 'split' } });
+  const usage = onControl({ cursor: 'project:fold:usage', folded: new Set(['healthy', 'files', 'agents']) });
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
     const render = (snapshot, state) => f.render(width, lang, state, 80, snapshot);
-    for (const state of ['control', split('project:role:imp')]) assert.deepEqual(render(empty, state).lines, render(baseline, state).lines);
-    const classic = render(rich, 'control'), radar = render(rich, split('project:fold:usage', new Set(['healthy', 'files', 'agents']))), role = render(rich, split('project:role:imp'));
-    for (const frame of [classic, radar, role]) assert.ok(frame.lines.every((line) => visualLength(line) === width));
-    const lines = plain(classic), i = lines.findIndex((line) => /^(Usage|用量)/.test(line));
-    assert.ok(i === -1 && lines.some((line) => /^▸ (Usage|用量) .*68%/.test(line)), lines.join('\n'));
-    const preview = plain(radar).join('\n');
+    for (const state of ['control', usage]) assert.deepEqual(render(empty, state).lines, render(baseline, state).lines);
+    const closed = render(rich, 'control'), radar = render(rich, usage);
+    for (const frame of [closed, radar]) assert.ok(frame.lines.every((line) => visualLength(line) === width));
+    const lines = plain(closed);
+    assert.ok(lines.some((line) => /^▸ (Usage|用量) .*68%/.test(line)), lines.join('\n'));
+    assert.doesNotMatch(lines.join('\n'), /Dispatch today|今日派发/);
+    const detail = plain(radar).join('\n');
     assert.equal(radar.state.control.roles.nav.cursor, 'project:fold:usage');
-    assert.match(preview, /\$1\.42.*184K/);
-    assert.match(preview, width === 80 ? /5 ok · 1 failed|5 成功 · 1 失败/ : / jobs · 5✓ 1✗| 个任务 · 5✓ 1✗/, 'counts as words while they fit, else as marks, on the role\'s one row');
-    assert.match(preview, /Quota|额度/);
-    assert.match(preview, /2026-11-12\s+12:36Z/);
-    assert.match(preview, /Pi today|pi 今日/);
-    assert.match(preview, /Dispatch today|今日派发/);
-    assert.match(plain(role).join('\n'), lang === 'en' ? /today\s+5 ok · 1 failed · avg 6m/ : /今日\s+5 成功 · 1 失败/);
-    assert.doesNotMatch(plain(render(rich, split('project:role:oracle'))).join('\n'), /today|今日/);
+    assert.match(detail, /\$1\.42.*184K/);
+    assert.match(detail, width === 80 ? /5 ok · 1 failed · avg 6m|5 成功 · 1 失败 · 平均 6分/ : / jobs · 5✓ 1✗| 个任务 · 5✓ 1✗/);
+    assert.match(detail, /Quota|额度/);
+    assert.match(detail, /2026-11-12\s+12:36Z/);
+    assert.match(detail, /Pi today|pi 今日/);
+    assert.match(detail, /Dispatch today|今日派发/);
   }
 });
 

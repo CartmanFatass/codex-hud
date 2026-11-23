@@ -5,14 +5,13 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { longClaudeTranscript, nativeFixture, NOW } from '../fixtures/native-tree.mjs';
-import { withState } from '../fixtures/state-helpers.mjs';
 import { JobSentences } from '../../dist/collectors/job-sentences.js';
-import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 
 const CHUNK = 1048576;
 const TAIL = 65536;
+const inspector = { ...initialMonitorState(), subpage: { kind: 'native-inspector', scroll: 0 } };
 const READ_BUDGET = 4 * (CHUNK + 8192) + 16 * (TAIL + 8192);
 const message = (content, at = NOW - 60000) =>
   JSON.stringify({
@@ -38,13 +37,13 @@ function drain(f) {
   assert.fail('a few-MB transcript must finish replay within ten refreshes');
 }
 
-test('5 MB Claude parent shows its latest step in the first frame, then fills in nesting without flashing back', (t) => {
+test('5 MB Claude parent shows its latest step in the first native Inspector frame, then fills in nesting without flashing back', (t) => {
   const f = fixture(t), body = longClaudeTranscript();
   assert.ok(Buffer.byteLength(body) > 4 * CHUNK && Buffer.byteLength(body) <= 5 * CHUNK);
   f.put(f.file, body);
   const first = f.claude();
   assert.equal(first.incomplete, true);
-  assert.equal(first.nodes.length, 1, 'unresolved nested child is not a top-level card during replay');
+  assert.equal(first.nodes.length, 1, 'unresolved nested child is not a top-level node during replay');
   assert.equal(first.nodes[0].children.length, 0);
   assert.equal(first.nodes[0].startedAt, undefined);
   assert.equal(first.nodes[0].replaying, true);
@@ -71,28 +70,23 @@ test('5 MB Claude parent shows its latest step in the first frame, then fills in
   assert.equal(tree.nodes.length, 1);
   assert.equal(tree.nodes[0].children[0].ref.threadId, 'child');
   assert.equal(tree.nodes[0].children[0].depth, 2);
-  const lead = f.board(first).workers[0];
-  const expanded = withState(initialMonitorState(), {
-    home: { expanded: new Set([targetKey({ kind: 'worker', laneId: lead.laneId, workerId: lead.id })]) },
-  });
   for (const width of [80, 120])
     for (const lang of ['en', 'zh']) {
-      const initial = f.render(width, lang, expanded, first);
-      assert.match(initial.lines.map(stripAnsi).join('\n'), /SYNTH-LATEST/);
+      const initial = f.render(width, lang, inspector, first);
+      const preview = initial.lines.map(stripAnsi).join('\n');
+      assert.match(preview, /SYNTH-LATEST/);
+      assert.doesNotMatch(preview, /Check parser tests/);
+      assert.match(preview, /Partial|不完整/);
       for (const line of initial.lines) assert.equal(visualLength(line), width);
-      const frame = f.render(width, lang, expanded, tree),
-        lines = frame.lines.map(stripAnsi);
+      const frame = f.render(width, lang, inspector, tree), lines = frame.lines.map(stripAnsi);
       for (const line of frame.lines) assert.equal(visualLength(line), width);
       assert.match(lines.join('\n'), /SYNTH-NEWER/);
-      assert.match(lines.join('\n'), /Claude ·/);
-      const parent = lines.findIndex((line) => /^◉ custom-builder/.test(line));
-      const child = lines.findIndex((line) => /^  ✓ custom-tester/.test(line));
-      assert.ok(child > parent && parent >= 0, `${width} ${lang}: child follows its parent card`);
-      assert.equal(
-        lines[child].indexOf('✓'),
-        lines[parent].indexOf('◉') + 2,
-        `${width} ${lang}: child indents two cells`
-      );
+      assert.doesNotMatch(lines.join('\n'), /SYNTH-LATEST/);
+      const parent = lines.findIndex((line) => line.includes('Repair parser'));
+      const child = lines.findIndex((line) => line.includes('Check parser tests'));
+      assert.ok(child > parent && parent >= 0, `${width} ${lang}: child follows its parent`);
+      assert.equal(lines[child].indexOf('Check parser tests'), lines[parent].indexOf('Repair parser') + 2,
+        `${width} ${lang}: child indents two cells`);
     }
   fs.appendFileSync(f.file, padding());
   const grown = drain(f);
@@ -266,11 +260,7 @@ test('Claude tail window drops the crossing line and does not let a previewed to
   assert.equal(first.nodes[0].lastReport, undefined);
   assert.equal(first.nodes[0].action.name, 'Agent');
   assert.equal(first.nodes[0].children.length, 0);
-  const lead = f.board(first).workers[0];
-  const expanded = withState(initialMonitorState(), {
-    home: { expanded: new Set([targetKey({ kind: 'worker', laneId: lead.laneId, workerId: lead.id })]) },
-  });
-  assert.match(f.render(80, 'en', expanded, first).lines.map(stripAnsi).join('\n'), /┃ Agent/);
+  assert.match(f.render(80, 'en', inspector, first).lines.map(stripAnsi).join('\n'), /^\s+Agent\s*$/m);
   assert.equal(drain(f).nodes[0].children.length, 1, 'a partial preview line is not omitted forward evidence');
 });
 

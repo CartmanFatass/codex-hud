@@ -9,7 +9,6 @@ const untranslated = new Set(); // Literal panel keys intentionally left in Engl
 const dictionaries = [
   ['src/render/i18n.ts', 'ZH'],
   ['src/render/workboard-i18n.ts', 'WORKBOARD_ZH'],
-  ['src/render/split-i18n.ts', 'SPLIT_ZH'],
 ];
 
 function location(node) {

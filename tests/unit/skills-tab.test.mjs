@@ -21,7 +21,7 @@ test('main tabs cycle Home → Project → Control; 5 does not switch and old Sk
     }
   }
   const frame = render(initialMonitorState(), { width: 40 });
-  assert.deepEqual(frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind), ['board-home', 'board-project', 'board-control']);
+  assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind), ['board-home', 'board-project', 'board-control']);
   const decoder = new WorkbenchInputDecoder('workboard');
   const five = send(frame, decoder.push(Buffer.from('5'))[0]);
   assert.equal(five.state.activeTab, 'home');
@@ -36,7 +36,7 @@ test('main tabs cycle Home → Project → Control; 5 does not switch and old Sk
   const before = setLanguage('en');
   try {
     const narrow = render(initialMonitorState(), { width: 36, modelEnabled: false }), brief = narrow.controls.find((c) => c.kind === 'brief');
-    assert.ok(narrow.controls.filter((c) => c.kind.startsWith('board-')).every((c) => c.x + c.width < brief.x));
+    assert.ok(narrow.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).every((c) => c.x + c.width < brief.x));
     assert.deepEqual(send(narrow, { type: 'mouse', button: 'left', x: brief.x, y: 0 }).action, { type: 'brief-toggle' });
   } finally { setLanguage(before); }
 });
