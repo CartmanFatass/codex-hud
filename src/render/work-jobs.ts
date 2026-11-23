@@ -212,7 +212,7 @@ export function jobRows(input: MonitorData, lanes: readonly WorkLane[], state: M
     if (!shown) { rows.push(...laneRows(input, lane, state, width, now, { skipAsking: true, allWorkers: pool })); continue; }
     if (shown.length > 1) rows.push(headerRow(lane, shown, c));
     if (shown.length > 1 && state.home.foldedLanes?.has(lane.id)) continue;
-    const ordered = state.home.showAll ? shown : [...shown].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
+    const ordered = state.home.showAll ? shown : [...shown].sort((a, b) => workerPriority(a, now, true) - workerPriority(b, now, true));
     for (const w of ordered) rows.push(...jobRow(w, lane, c, shown.length > 1 ? '  ' : ''));
   }
   for (const kind of ['queued', 'done'] as const) if (folds[kind].length) rows.push(...foldRows(kind, folds[kind], c));

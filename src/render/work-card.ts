@@ -189,11 +189,13 @@ export function workPhaseText(phase: string): string {
 function landWait(step: string) {
   return /^waiting for (f[a-f0-9]{16}(?:-[1-9]\d*)?)(?: \(gate step (\d+), (\d+) min\))?$/.exec(step);
 }
-export function flowStepDetail(step: string): string {
+/** The wait names the job it waits on (its ticket id, else a short title) when the board has it, else the holder's flow id. */
+const holderName = (flow: string, waitsOn?: string) => (waitsOn ? truncateAnsi(monitorText(waitsOn), 24) : flow);
+export function flowStepDetail(step: string, waitsOn?: string): string {
   const safe = monitorText(step);
   const wait = landWait(safe);
   if (wait) {
-    const [, flow, n, m] = wait;
+    const [, id, n, m] = wait, flow = holderName(id, waitsOn);
     return n === undefined ? t('waiting for {flow}', { flow }) : t('waiting for {flow} (gate step {n}, {m} min)', { flow, n, m });
   }
   if (safe === 'main-checkout lease') return t('queued');
@@ -217,7 +219,7 @@ function flowOutcome(flow: WorkFlow): string {
       const fail = error ? t('{label}: {value}', { label: t('failed'), value: error }) : t('failed');
       return flow.landedSha ? `${t('landed')} ${flow.landedSha} · ${fail}` : fail;
     }
-    return flow.step ? flowStepDetail(flow.step) : '';
+    return flow.step ? flowStepDetail(flow.step, flow.waitsOn) : '';
   }
   if (flow.state === 'completed') return t('done');
   if (flow.state === 'failed') return t('failed');
@@ -239,7 +241,7 @@ export function flowSummary(flow: WorkFlow): string {
 export function flowLine(flow: WorkFlow, width: number, ink: (s: string) => string): string {
   const wait = flow.kind === 'land' && flow.state === 'queued' && landWait(flow.step ?? '');
   if (wait) {
-    const tail = flowOutcome(flow), [, holder, n, m] = wait;
+    const tail = flowOutcome(flow), [, id, n, m] = wait, holder = holderName(id, flow.waitsOn);
     const detail = n !== undefined && visualLength(tail) > width - 2 ? t('wait {flow} · gate {n}, {m}m', { flow: holder, n, m }) : tail;
     return fit(`${ink(mark('┃', '|'))} ${theme.board.muted(truncateAnsi(detail, width - 2))}`, width);
   }

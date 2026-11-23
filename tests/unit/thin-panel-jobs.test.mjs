@@ -403,6 +403,31 @@ test('statusline notices and explicit detail counts read job folders with no rol
   assert.match(details.stdout, /Work: 1 needs you · 1 stalled · 1 failed · 1 running/);
 });
 
+test('a queued land names the job it waits on: its ticket id, else the holder’s flow id (panel-polish/04)', async (t) => {
+  const f = fixture(t);
+  const wait = (holder) => ({ flow: 'f0000000000000092', job: 'j0000000000000092', pane: 'w4E:p1', task: false, state: 'queued', step: `waiting for ${holder} (gate step 2, 3 min)`,
+    wt: { main_root: '/synthetic/repo', root: '/synthetic/wt', branch: 'wt/wait', base_head: 'aaaaaaa' }, config: { base: 'main', gate: ['npm test'], after: [], push: false },
+    source_sha: 'bbbbbbb', pid: 999999, start: '1', created_at: new Date(now - 60000).toISOString(), updated_at: new Date(now - 10000).toISOString() });
+  f.job(91, 'HOLD', 'HOLD-07: keep the lease', 'closed', 3, 3);
+  f.job(92, 'WAIT', 'WAIT-02: land behind it', 'closed', 3, 3);
+  const flowFile = join(f.env.HUD_HOME, 'flows', 'f0000000000000092.json');
+  const waiting = async () => (await f.pipeline.refresh(), f.pipeline.workboard(f.tree).workers.find((w) => w.flow?.state === 'queued').flow);
+  f.put(flowFile, wait('f0000000000000091'), 0);
+  let flow = await waiting();
+  assert.equal(flow.waitsOn, 'HOLD-07');
+  for (const [lang, narrow, wide] of [['en', 'wait HOLD-07 · gate 2, 3m', 'waiting for HOLD-07 (gate step 2, 3 min)'], ['zh', '等待 HOLD-07 · 门禁 2，3分', '等待 HOLD-07（门禁第 2 步，3 分钟）']]) {
+    setLanguage(lang);
+    assert.ok(stripAnsi(flowLine(flow, 80, (x) => x)).includes(wide), `${lang}: ${stripAnsi(flowLine(flow, 80, (x) => x))}`);
+    assert.ok(stripAnsi(flowLine(flow, 30, (x) => x)).includes(narrow), `${lang} narrow`);
+    assert.ok(flowSummary(flow).includes(wide), `${lang}: the Inspector's flow row`);
+  }
+  setLanguage('en');
+  f.put(flowFile, wait('f0000000000000077-2'), 0);
+  flow = await waiting();
+  assert.equal(flow.waitsOn, undefined, 'a holder this board does not have stays its flow id');
+  assert.ok(flowSummary(flow).includes('waiting for f0000000000000077-2'));
+});
+
 test('work cards show land and scout flow steps and final outcomes in EN and ZH', async (t) => {
   const f = fixture(t);
   // Test each on-disk transition, not whether a watch notification beats the next request.

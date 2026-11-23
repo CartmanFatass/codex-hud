@@ -198,7 +198,7 @@ export function homeRows(
     const ordered =
       state.home.showAll && !board.workers.some((w) => w.homeRank !== undefined)
         ? board.lanes
-        : orderedLanes(board, now);
+        : orderedLanes(board, now, true);
     rows.push(...jobRows(input, ordered, state, width, now, allWorkers));
   }
   const source = input?.workboard;

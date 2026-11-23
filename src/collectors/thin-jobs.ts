@@ -780,6 +780,7 @@ export function readThinJobs(
       )
     : new Map<string, number>();
   const labels = new Map(cards.map(({ id, label }) => [id, label]));
+  const labelOf = new Map(cards.map(({ id, displayId, title }) => [id, displayId ?? title]));
   for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label: ownLabel, land } of cards) {
     const parent = word(job.parent_job);
     const parentLabel = parent && parent !== id ? labels.get(parent) : undefined;
@@ -900,7 +901,9 @@ export function readThinJobs(
               ? 'done'
               : 'failed'
           : null);
-    const flow = land ?? (scoutState ? scoutWorkFlow(scoutState, word(job.scout_error), state, s, at) : undefined);
+    const holder = land?.state === 'queued' ? /^waiting for f([a-f0-9]{16})(?:-[1-9]\d*)?(?: |$)/.exec(land.step ?? '')?.[1] : undefined;
+    const waitsOn = holder ? labelOf.get(`j${holder}`) : undefined;
+    const flow = (waitsOn && land ? { ...land, waitsOn } : land) ?? (scoutState ? scoutWorkFlow(scoutState, word(job.scout_error), state, s, at) : undefined);
     const phase =
       state === 'stopped'
         ? 'stopped'

@@ -227,6 +227,18 @@ test('06: a reviewer job classifies findings from its own report', async (t) => 
   const board = await f.pump(); assert.equal(f.calls.length, 2); assert.deepEqual(board.workers[0].labels.severity, [1, 0, 0]);
 });
 
+test('01: the Inspector’s kind row lists the first two kinds, in EN and ZH (panel-polish/04)', async (t) => {
+  const f = fixture(t), id = f.job();
+  f.put(id, 'brief.md', '# Synthetic UI feature\n\nGoal: build interface');
+  const w = { ...(await f.pump()).workers[0], labels: { kinds: ['ui', 'bug fix', 'feature', 'docs', 'chore', 'review'] } };
+  const previous = setLanguage('en'); t.after(() => setLanguage(previous));
+  for (const lang of ['en', 'zh']) {
+    setLanguage(lang);
+    const row = workInspectorRows(w, initialMonitorState(), 80, f.now).map((r) => stripAnsi(r.text)).find((l) => l.startsWith(tr('kind')));
+    assert.ok(row.includes(`${tr('ui')} · ${tr('bug fix')}`) && !row.includes(tr('feature')), `${lang}: ${row}`);
+  }
+});
+
 test('01–06: Home, Inspector and progress rows in EN/ZH at 80 and 120 columns', async (t) => {
   const f = fixture(t), id = f.job();
   f.put(id, 'brief.md', '# Synthetic UI feature\n\nGoal: build interface');

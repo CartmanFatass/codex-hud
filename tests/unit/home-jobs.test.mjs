@@ -47,6 +47,17 @@ test('a job row is its state glyph, ticket id, stage strip, executor group, ⚡N
   for (const id of ['stream-sync/05', 'stream-sync/06', 'auth-refresh/04']) assert.match(lines.find((l) => l.includes(`${id} `)), /●●●●◐/, `${id}: the land is the strip's 5th cell`);
 });
 
+test('rows keep their order while progress changes: a job going quiet, waking or moving a stage does not swap places (panel-polish/04)', () => {
+  const ids = (board) => jobFrame(80, 'en', board).flatMap((l) => /^\s*\S+\s+(\S+\/\d+)\s+[●◐○]{5}/.exec(l)?.slice(1) ?? []);
+  const changed = (edit) => { const b = jobsBoard(), lanes = b.lanes.map((l) => ({ ...l, workers: l.workers.map(edit) })); return { ...b, lanes, workers: lanes.flatMap((l) => l.workers) }; };
+  const before = ids(jobsBoard());
+  const quiet = changed((w) => (w.state === 'working' && w.role !== 'sonic' ? { ...w, work: { ...w.work, activityAt: NOW - 40 * 60_000 } } : w));
+  const woke = changed((w) => (w.displayId === 'docs-sweep/04' ? { ...w, stage: 'test', work: { ...w.work, activityAt: NOW - 1000 } } : w.stage ? { ...w, stage: 'read' } : w));
+  assert.ok(before.indexOf('docs-sweep/04') > before.indexOf('metrics-lite/01'), 'a stalled job is not lifted above the jobs dispatched after it');
+  assert.deepEqual(ids(quiet), before, 'every running job gone quiet');
+  assert.deepEqual(ids(woke), before, 'the stalled job woke and the stages moved');
+});
+
 test('the stage cells come from the report, the checks receipt, the land flow and the job’s stage; what the card cannot know is unknown', () => {
   const cells = (w) => stageCells(w).map((c) => ({ passed: '●', current: '◐', todo: '○', unknown: '?' })[c]).join('');
   const running = { state: 'working', settledAt: null };
@@ -116,7 +127,7 @@ test('a running job’s current sentence sits dim under its row: one line, two f
   assert.match(narrow[at(narrow, 'metrics-lite/01') + 1], /^ {3}Trimming the idle poll interval in the watcher\s*$/, 'under the id, dim');
   assert.match(narrow[narrow.findIndex((l) => l.includes('perf-ts/05 ') && l.includes('3m')) + 1], /^ {5}Reading the cache diff against the ticket\s*$/, 'the job’s own latest progress line when no model sentence');
   const docs = at(narrow, 'docs-sweep/04');
-  assert.match(narrow[docs + 1], /^✗ /, 'no sentence, no row');
+  assert.match(narrow[docs + 1], /^\S/, 'no sentence, no row: the next row is another job’s');
   for (const id of ['stream-sync/05', 'auth-refresh/04', 'export-csv/02']) assert.match(narrow[at(narrow, id) + 1] ?? narrow[narrow.findIndex((l) => l.includes(id)) + 1], /^\S/, `${id}: a settled job keeps its folds, no sentence`);
   assert.match(tight[at(tight, 'perf-ts/05') + 1], /…\s*$/, 'cut to fit at 42');
   assert.ok(!narrow.some((l) => /^ {3,5}Cache the tsc project graph/.test(l)), 'never the ticket title');

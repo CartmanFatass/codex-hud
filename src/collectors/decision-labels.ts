@@ -177,7 +177,8 @@ export class DecisionLabels {
       const findings = this.answers(w.id + ':severity');
       return { ...w, labels: {
         outcome: outcome ? { value: outcome.choice, confidence: outcome.confidence } : undefined,
-        kinds: this.answers(w.id + ':kind').flatMap((a) => a.kind === 'choice' && a.choice === 'included' ? [a.name] : []),
+        // Most confident first: the Inspector shows the first two.
+        kinds: this.answers(w.id + ':kind').flatMap((a) => a.kind === 'choice' && a.choice === 'included' ? [a] : []).sort((a, b) => b.confidence - a.confidence).map((a) => a.name),
         looping: loop?.choice === 'looping' ? loop.confidence : undefined,
         category: value(w.id + ':' + w.work?.requestInfo?.evidence?.relativePath)?.choice,
         severity: findings.length ? SEVERITIES.map((s) => findings.filter((a) => a.kind === 'choice' && a.choice === s).length) : undefined,

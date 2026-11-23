@@ -11,31 +11,32 @@ import { currentWorker, foldedWorker, unattendedFailure, activeFlow } from './wo
 import { isUnreadReport, laneSonicRunning, mainLaneWorkers, sonicBadge, sonicChildrenRunning } from './worker-roster.js';
 import { t } from './i18n.js';
 
-export function workerPriority(w: OwnerWorker, now: number): number {
+/** `steady` is Classic Home's order: a stall is no class of its own (a running job going quiet and waking would swap rows), so rows move only when a job's state does; ties keep the collector's dispatch order. */
+export function workerPriority(w: OwnerWorker, now: number, steady = false): number {
   if (w.superseded) return 7;
   if (w.failureObserved) return 6;
   if (w.homeRank !== undefined) return -w.homeRank;
   const card = projectWorkCard(w, now);
   return w.homeNeedsHuman
     ? 0
-    : card.state === 'stalled'
+    : card.state === 'stalled' && !steady
       ? 1
       : unattendedFailure(w)
         ? 2
         : isUnreadReport(w) || card.state === 'awaiting-acceptance'
           ? 3
-          : card.state === 'in-progress' || activeFlow(w)
+          : card.state === 'in-progress' || card.state === 'stalled' || activeFlow(w)
             ? 4
             : card.state === 'queued'
               ? 4.5
               : 5;
 }
 
-export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] {
+export function orderedLanes(board: WorkboardSnapshot, now: number, steady = false): WorkLane[] {
   const rank = (lane: WorkLane) => {
     const main = mainLaneWorkers(lane);
     const list = main.length ? main : lane.workers;
-    return list.length ? Math.min(...list.map((w) => workerPriority(w, now))) : 99;
+    return list.length ? Math.min(...list.map((w) => workerPriority(w, now, steady))) : 99;
   };
   return [...board.lanes].sort((a, b) => rank(a) - rank(b));
 }

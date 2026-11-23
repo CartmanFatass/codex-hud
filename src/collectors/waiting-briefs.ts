@@ -14,6 +14,10 @@ const request = (w: OwnerWorker) => {
   const r = w.work?.requestInfo;
   return w.homeNeedsHuman && /^qa\/q\d+\.md$/.test(r?.evidence?.relativePath ?? '') ? r : undefined;
 };
+/** The route reason the card shows (the fallback, else the mode's, else the tier's) and the field it is in. */
+const whyKey = (r: NonNullable<OwnerWorker['route']>): 'fallback' | 'mode_reason' | 'reason' => r.fallback !== undefined ? 'fallback' : r.mode_reason !== undefined ? 'mode_reason' : 'reason';
+/** The newest landed slices, which Home's and the hub's Latest rows name by their ledger text. */
+const latest = (p: ProjectSnapshot) => p.ledger.filter((r) => r.state === 'accepted' || r.state === 'try').slice(-6);
 const keyOf = (lang: Language, text: string) => createHash('sha256').update(lang).update('\0').update(text).digest('hex');
 
 export class WaitingBriefs {
@@ -50,6 +54,7 @@ export class WaitingBriefs {
     };
     for (const [key, until] of this.retry) if (until <= now) this.retry.delete(key);
     for (const w of board.workers) {
+      if (w.route) add(w.route[whyKey(w.route)], 512);
       if (!thin(w) || !w.homeNeedsHuman) continue;
       const r = request(w);
       if (r) {
@@ -59,6 +64,7 @@ export class WaitingBriefs {
       for (const f of w.files ?? []) if (f.kind === 'question' && f.state === 'open' && /^qa\/q\d+\.md$/.test(f.rel)) add(f.title, 4096);
     }
     project?.waiting.slice(0, 8).forEach(r => add(r.text ?? r.value, 2048));
+    if (project) latest(project).forEach(r => add(r.text, 512));
     if (titles) project?.tickets.forEach(f => f.tickets.forEach(t => { if (open(t)) add(t.title, 512); }));
     if (!batch.size) return;
     const texts = [...batch.values()], lang = this.lang;
@@ -88,7 +94,8 @@ export class WaitingBriefs {
   }
   project(snapshot?: ProjectSnapshot): ProjectSnapshot | undefined {
     if (!this.on || !snapshot) return snapshot;
-    return { ...snapshot, waiting: snapshot.waiting.map(r => {
+    const shown = new Set(latest(snapshot));
+    return { ...snapshot, ledger: snapshot.ledger.map(r => { const text = shown.has(r) && this.translation(r.text); return text ? { ...r, text } : r; }), waiting: snapshot.waiting.map(r => {
       const original = r.text ?? r.value, text = this.translation(original);
       return text ? { ...r, text, value: text.replace(/\s+/g, ' '), original } : r;
     }), tickets: snapshot.tickets.map(f => ({ ...f, tickets: f.tickets.map(t => {
@@ -98,7 +105,9 @@ export class WaitingBriefs {
   }
   board(board: WorkboardSnapshot): WorkboardSnapshot {
     if (!this.on) return board;
-    const lanes = board.lanes.map(l => ({ ...l, workers: l.workers.map(w => {
+    const lanes = board.lanes.map(l => ({ ...l, workers: l.workers.map(routed => {
+      const route = routed.route, key = route && whyKey(route), why = key && this.translation(route[key]!);
+      const w = why ? { ...routed, route: { ...route, [key]: why } } : routed;
       if (!thin(w) || !w.homeNeedsHuman) return w;
       const r = request(w);
       const files = w.files?.map(f => f.kind === 'question' && f.state === 'open' && f.title ? { ...f, title: this.translation(f.title) ?? f.title } : f);

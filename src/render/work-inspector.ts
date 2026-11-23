@@ -116,7 +116,7 @@ export function workInspectorRows(
             .join(' · '),
         ],
         ['outcome', worker.labels?.outcome ? `${t(worker.labels.outcome.value)} ${Math.round(worker.labels.outcome.confidence * 100)}%` : ''],
-        ['kind', worker.labels?.kinds?.map((k) => t(k)).join(' · ') ?? ''],
+        ['kind', worker.labels?.kinds?.slice(0, 2).map((k) => t(k)).join(' · ') ?? ''],
         ['looping', worker.labels?.looping !== undefined ? `${Math.round(worker.labels.looping * 100)}%` : ''],
         ['category', t(worker.labels?.category ?? '')],
         ['findings', labelSummary({ severity: worker.labels?.severity })],
