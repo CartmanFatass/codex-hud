@@ -8,14 +8,21 @@ The functions receive exported environment variables `REPO` (checkout root), `HU
 (default `$HOME/.hud`) and `BIN_DIR` (`$HOME/.local/bin`). Hooks should be idempotent;
 a failing hook stops the installer.
 
-`./install --uninstall` calls `hud_ext_uninstall` for every `install.d/*.sh` present;
-`--with name,...` limits it to those extensions. Core uninstall keeps HUD data.
+`./install` refreshes the extensions remembered in `$HUD_HOME` using the current
+client home settings. Use `--with name,...` once to register extensions installed by
+older installers. The `browser` and `herdr` checks are not remembered. Unless
+`--skip-build` is set, the installer runs `npm ci` if the checkout has no recorded
+hash for its current `package-lock.json`.
 
-Run `CODEX_HOME=... ./install --with codex` once per Codex home (default `~/.codex`).
-Before the full uninstall, remove each extra Codex home's registration with
-`CODEX_HOME=<home> ./install --uninstall --with codex`, then run the full uninstall
-for the remaining home. The first uninstall removes the shared commands, so use the
-repository's `./install` (not `hud uninstall`) for subsequent homes and the full uninstall.
+`./install --uninstall` calls `hud_ext_uninstall` for every `install.d/*.sh` present
+and removes the core command links. `--with name,...` removes and forgets only
+those extensions, leaving core commands intact. Both forms keep HUD data.
+
+Run `CODEX_HOME=... ./install --with codex` to install or refresh each additional
+Codex home (default `~/.codex`). The installer remembers the extension name, not
+individual Codex homes. Before the full uninstall, remove each extra home's
+registration with `CODEX_HOME=<home> hud uninstall --with codex`, then run the full
+uninstall for the remaining home.
 
 ## Status lines are always on; only the panel is opt-in
 

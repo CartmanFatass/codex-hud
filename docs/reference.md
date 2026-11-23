@@ -30,9 +30,12 @@ Use **Node ≥24.0.0** (Node 24 is the tested supported line; see
 
 Choose any of **claude**, **claude-mod**, **pi**, **codex**, **agy**, **browser**, **herdr**; core is always
 included. The installer checks Node before extension hooks/builds/changes, builds
-the HUD and MCP, and links commands into `~/.local/bin`. `--skip-build` uses existing
-build output. Keep the checkout/extraction directory: installed commands and client
-bindings point into it. No shell rc file is edited.
+the HUD and MCP, and links commands into `~/.local/bin`. A bare `./install` refreshes
+remembered extensions using the current client home settings. For an install made
+with an older installer, specify its extensions with `--with` once. The installer
+refreshes dependencies when it has no matching lockfile hash; `--skip-build` skips
+both dependency installation and the build. Keep the checkout/extraction directory:
+installed commands and client bindings point into it. No shell rc file is edited.
 
 External tools are checked, not installed or authenticated. herdr/pi-roles/pi are
 separate prerequisites for workers. The herdr extension reports their PATH locations
@@ -52,7 +55,8 @@ codexH
 
 Only the panel is opt-in: `/hud` opens it in Claude, Codex and pi; it never opens
 at launch. Uninstall with `hud uninstall` or `./install --uninstall`; `--with names`
-limits extension removal. HUD data and unrelated owner settings remain. Claude
+removes only those extensions, leaving core commands intact. HUD data and unrelated
+owner settings remain. Claude
 settings follow symlinks with a one-time plain backup; Codex backs up resolved
 `config.toml` before official MCP commands and warns if comments are dropped.
 Pi registers delegation and display packages and excludes the old p10k-footer.

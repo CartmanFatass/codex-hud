@@ -24,7 +24,7 @@ function fixture(t, seed = originals) {
   const bin = path.join(home, '.local/bin');
   const tools = path.join(temp, 'tools');
   fs.mkdirSync(tools);
-  for (const name of ['bash', 'dirname', 'readlink', 'mkdir', 'ln', 'rm']) {
+  for (const name of ['bash', 'dirname', 'readlink', 'mkdir', 'ln', 'rm', 'cat', 'mktemp', 'mv']) {
     fs.symlinkSync(`/usr/bin/${name}`, path.join(tools, name));
   }
   fs.symlinkSync(process.execPath, path.join(tools, 'node'));
@@ -53,6 +53,24 @@ function fixture(t, seed = originals) {
   const calls = () => read(log).trim().split('\n').map(JSON.parse);
   return { temp, home, hud, bin, files, fake, run, calls, env };
 }
+
+test('Claude and Antigravity keep their shared statusline until both are uninstalled', (t) => {
+  for (const order of [['claude', 'agy'], ['agy', 'claude']]) {
+    const { temp, env, bin } = fixture(t, {});
+    const run = (...args) => {
+      const result = spawnSync('./install', ['--skip-build', ...args], {
+        cwd: root, env: { ...env, CLAUDE_CONFIG_DIR: path.join(temp, 'claude') }, encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    };
+    run('--with', 'claude,agy');
+    run('--uninstall', '--with', order[0]);
+    const link = path.join(bin, 'hud-statusline');
+    assert.equal(fs.readlinkSync(link), path.join(root, 'bin/hud-statusline'));
+    run('--uninstall', '--with', order[1]);
+    assert.equal(exists(link), false);
+  }
+});
 
 for (const foreignEdits of [false, true]) {
   test(`agy install, reinstall and byte-exact uninstall${foreignEdits ? ' with intervening owner edits' : ''}`, (t) => {
@@ -174,7 +192,7 @@ test('agy preflight refuses a missing CLI and install rejects an unexpected stag
   run(['--uninstall']);
   fs.unlinkSync(fake);
   assert.match(run([], 1), /agy is required/);
-  assert.equal(exists(path.join(bin, 'hud')), false);
+  assert.equal(fs.readlinkSync(path.join(bin, 'hud')), path.join(root, 'bin/hud'));
 });
 
 test('agy reads an empty config file as an empty object and leaves it on uninstall', (t) => {

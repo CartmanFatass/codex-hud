@@ -29,7 +29,9 @@ hud_ext_uninstall() {
   node "$REPO/install.d/agy-config.mjs" uninstall
   if [[ -L "$hook" && "$(readlink "$hook")" == "$REPO/integrations/agy/pre-invocation.sh" ]]; then
     rm -- "$hook"
-    if [[ -L "$status" && "$(readlink "$status")" == "$REPO/bin/hud-statusline" ]]; then
+    # Claude also uses this launcher; its installer leaves a settings backup.
+    if [[ -L "$status" && "$(readlink "$status")" == "$REPO/bin/hud-statusline" &&
+          ! -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json.hud-backup" ]]; then
       rm -- "$status"
     fi
   fi

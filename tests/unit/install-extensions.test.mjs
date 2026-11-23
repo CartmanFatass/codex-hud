@@ -19,7 +19,7 @@ function fixture(t) {
   fs.mkdirSync(bin);
   for (const file of ['install', 'install.d/browser.sh', 'install.d/herdr.sh']) fs.copyFileSync(path.join(root, file), path.join(repo, file));
   // An isolated PATH cannot accidentally discover the owner's real external CLIs.
-  for (const name of ['bash', 'basename', 'dirname', 'readlink', 'mkdir', 'ln', 'rm']) fs.symlinkSync(`/usr/bin/${name}`, path.join(bin, name));
+  for (const name of ['bash', 'basename', 'dirname', 'readlink', 'mkdir', 'ln', 'rm', 'mktemp', 'mv']) fs.symlinkSync(`/usr/bin/${name}`, path.join(bin, name));
   fs.symlinkSync(process.execPath, path.join(bin, 'node'));
   const env = { ...process.env, HOME: home, HUD_HOME: hud, PATH: bin,
     CODEX_HOME: path.join(temp, 'codex'), CLAUDE_CONFIG_DIR: path.join(temp, 'claude'), PI_CODING_AGENT_DIR: path.join(temp, 'pi') };

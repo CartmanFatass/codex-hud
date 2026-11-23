@@ -10,6 +10,24 @@ skip_build=false
 selected=false
 extensions=()
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+valid_extension() { [[ "$1" =~ ^[a-zA-Z0-9_-]+$ && -f "$REPO/install.d/$1.sh" ]]; }
+
+write_private() (
+  target="$1"
+  shift
+  tmp="$(mktemp -- "$target.XXXXXX")"
+  trap 'rm -f -- "$tmp"' EXIT
+  printf '%s\n' "$@" > "$tmp"
+  mv -Tf -- "$tmp" "$target"
+)
+
+save_extensions() {
+  if ((${#installed[@]})); then
+    write_private "$extension_file" "${!installed[@]}"
+  else
+    rm -f -- "$extension_file"
+  fi
+}
 
 while (($#)); do
   case "$1" in
@@ -32,12 +50,23 @@ if $uninstall && ! $selected; then
 fi
 # Validate every requested extension before building or changing anything.
 for name in "${extensions[@]}"; do
-  [[ "$name" =~ ^[a-zA-Z0-9_-]+$ && -f "$REPO/install.d/$name.sh" ]] || fail "Missing or invalid extension: $name"
+  valid_extension "$name" || fail "Missing or invalid extension: $name"
 done
 
 # Refuse unsupported runtimes before invoking any extension or changing files.
 command -v node >/dev/null || fail 'Node is required'
 node -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)' || fail 'Node >=24.0.0 required'
+
+extension_file="$HUD_HOME/installed-extensions"
+declare -A installed=()
+if [[ -f "$extension_file" ]]; then
+  while IFS= read -r name; do
+    if valid_extension "$name"; then installed[$name]=1; fi
+  done < "$extension_file"
+fi
+if ! $uninstall && ! $selected; then
+  extensions=("${!installed[@]}")
+fi
 
 if ! $uninstall; then
   for name in "${extensions[@]}"; do
@@ -49,7 +78,16 @@ if $uninstall; then
   for name in "${extensions[@]}"; do
     printf 'Uninstalling extension: %s\n' "$name"
     ( source "$REPO/install.d/$name.sh"; hud_ext_uninstall )
+    if [[ ${installed[$name]+x} ]]; then
+      unset 'installed[$name]'
+      save_extensions
+    fi
   done
+  if $selected; then
+    printf 'Selected extensions uninstalled; core commands and data kept\n'
+    exit 0
+  fi
+  rm -f -- "$extension_file"
   printf 'Removing command symlinks owned by this repo\n'
   for name in hud hud-mcp; do
     link="$BIN_DIR/$name"
@@ -65,9 +103,15 @@ cd "$REPO"
 if $skip_build; then
   printf 'Skipping dependencies and build (--skip-build)\n'
 else
-  if [[ ! -d node_modules ]]; then
+  # Keep the hash with the dependency tree, not with the user's HUD configuration.
+  lock_hash="$(sha256sum -- package-lock.json)"
+  lock_hash="${lock_hash%% *}"
+  lock_stamp=node_modules/.hud-package-lock-hash
+  if [[ ! -f "$lock_stamp" || "$(< "$lock_stamp")" != "$lock_hash" ]]; then
     printf 'Installing dependencies (npm ci)\n'
+    rm -f -- "$lock_stamp"
     npm ci
+    write_private "$lock_stamp" "$lock_hash"
   else
     printf 'Dependencies already present\n'
   fi
@@ -95,6 +139,12 @@ done
 for name in "${extensions[@]}"; do
   printf 'Installing extension: %s\n' "$name"
   ( source "$REPO/install.d/$name.sh"; hud_ext_install )
+  # Preflight-only extensions do not install anything to refresh.
+  case "$name" in browser|herdr) continue ;; esac
+  if [[ ! ${installed[$name]+x} ]]; then
+    installed[$name]=1
+    save_extensions
+  fi
 done
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

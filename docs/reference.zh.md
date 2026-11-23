@@ -27,7 +27,9 @@ Claude Code、Codex 与 pi 的当前操作说明。[English](./reference.md) ·
 
 可任选 **claude**、**claude-mod**、**pi**、**codex**、**agy**、**browser**、**herdr**；核心始终安装。
 安装器先检查 Node，再运行扩展检查、构建或修改文件，构建 HUD 与 MCP，将命令链接到 `~/.local/bin`。
-`--skip-build` 使用已有构建。保留检出／解压目录：已安装命令和客户端绑定均指向它。不修改 shell rc。
+直接运行 `./install` 会按当前客户端目录设置更新已记录的扩展。旧版安装器安装的扩展需先用 `--with` 指定一次。
+没有匹配的锁文件哈希时会重新安装依赖；`--skip-build` 跳过依赖安装和构建。
+保留检出／解压目录：已安装命令和客户端绑定均指向它。不修改 shell rc。
 
 外部工具只检查，不安装、不鉴权。工作者另需 herdr、pi-roles 和 pi。herdr 扩展报告 PATH 中的位置，
 仅缺少 herdr 时失败。browser 扩展要求 `google-chrome` 与 `jev-ask`，另报告可选的 `jev-aistudio`、
@@ -43,7 +45,7 @@ codexH
 ```
 
 只有面板按需打开：Claude、Codex 和 pi 都用 `/hud`，启动时不展开。用 `hud uninstall` 或
-`./install --uninstall` 卸载；`--with names` 限定扩展。保留 HUD 数据和无关设置。
+`./install --uninstall` 卸载；`--with names` 只卸载指定扩展，保留核心命令。保留 HUD 数据和无关设置。
 Claude 设置跟随符号链接并保留一次性普通备份；Codex 在官方 MCP 命令前备份解析后的 `config.toml`，
 丢失注释时警告。pi 注册委派与显示两个包，并排除旧 p10k-footer。
 

@@ -101,7 +101,7 @@ hud_ext_install() {
 }
 
 hud_ext_uninstall() {
-  local link command_file
+  local link command_file agy_hook="$HUD_HOME/integrations/agy/pre-invocation.sh"
   if command -v claude >/dev/null; then
     claude mcp remove -s user hud 2>/dev/null || true
   fi
@@ -117,12 +117,17 @@ hud_ext_uninstall() {
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/to-spec" \
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/to-tickets" \
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-handoff" \
-    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-build" \
-    "$BIN_DIR/hud-statusline"; do
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-build"; do
     if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* ]]; then
       rm -- "$link"
     elif [[ "${link##*/}" == to-tickets && ( -L "$link" || -e "$link" ) ]]; then
       printf 'Warning: keeping existing skill not owned by HUD: %s\n' "$link" >&2
     fi
   done
+  # Antigravity uses the same launcher while its HUD hook is installed.
+  link="$BIN_DIR/hud-statusline"
+  if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* &&
+        ! ( -L "$agy_hook" && "$(readlink "$agy_hook")" == "$REPO/integrations/agy/pre-invocation.sh" ) ]]; then
+    rm -- "$link"
+  fi
 }

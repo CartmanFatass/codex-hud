@@ -92,6 +92,49 @@ test('public launchers refuse Node below 24 before imports, uninstall or Codex l
   }
 });
 
+test('installer runs npm ci only when dependency state does not match the lockfile', (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-deps-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const repo = path.join(temp, 'checkout');
+  const tools = path.join(temp, 'tools');
+  const home = path.join(temp, 'home');
+  const log = path.join(temp, 'npm.log');
+  fs.mkdirSync(path.join(repo, 'node_modules'), { recursive: true });
+  fs.mkdirSync(tools);
+  fs.copyFileSync(path.join(root, 'install'), path.join(repo, 'install'));
+  fs.writeFileSync(path.join(tools, 'npm'), `#!/bin/bash
+printf '%s\\n' "$*" >> "$NPM_LOG"
+if [[ "$*" == ci && "$FAIL_CI" == 1 ]]; then exit 23; fi
+`, { mode: 0o755 });
+  const lockfile = path.join(repo, 'package-lock.json');
+  const run = (args = [], status = 0) => {
+    const result = spawnSync('./install', args, {
+      cwd: repo,
+      env: {
+        ...process.env,
+        HOME: home,
+        HUD_HOME: path.join(temp, 'hud'),
+        PATH: `${tools}:${process.env.PATH}`,
+        NPM_LOG: log,
+        FAIL_CI: status === 23 ? '1' : '0',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, status, `${result.stdout}\n${result.stderr}`);
+  };
+  fs.writeFileSync(lockfile, '{"name":"synthetic-v1"}\n');
+  run(); // Existing node_modules without a hash must be refreshed once.
+  run();
+  fs.writeFileSync(lockfile, '{"name":"synthetic-v2"}\n');
+  run(['--skip-build']);
+  run([], 23);
+  run();
+  run();
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
+    'ci', 'run build', 'run build', 'ci', 'ci', 'run build', 'run build',
+  ]);
+});
+
 // Breaks if install removes the explicit "Command already exists" refusal, even if ln itself still fails safely.
 test('core installer refuses an existing regular hud command without changing its content', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-existing-'));
@@ -124,7 +167,7 @@ test('core installer refuses an existing regular hud command without changing it
   }
 });
 
-test('core installer links commands, runs extension hooks, and uninstalls without deleting data', () => {
+test('installer refreshes only remembered extensions and selective uninstall keeps shared commands', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-'));
   try {
     const repo = path.join(temp, 'checkout with spaces');
@@ -160,29 +203,50 @@ test('core installer links commands, runs extension hooks, and uninstalls withou
     fs.writeFileSync(path.join(hudHome, 'keep.txt'), 'owner data');
     fs.writeFileSync(
       path.join(repo, 'install.d/x.sh'),
-      `hud_ext_install() { printf '%s\\n' "$REPO" "$HUD_HOME" "$BIN_DIR" > "$HUD_HOME/installed"; }
-hud_ext_uninstall() { printf 'removed' > "$HUD_HOME/uninstalled"; }
+      `hud_ext_install() { printf '%s\\n' "$REPO" "$HUD_HOME" "$BIN_DIR" > "$HUD_HOME/x"; }
+hud_ext_uninstall() { rm -f -- "$HUD_HOME/x"; }
 `
     );
+    const writeY = (version) => fs.writeFileSync(
+      path.join(repo, 'install.d/y.sh'),
+      `hud_ext_install() { printf '%s' '${version}' > "$HUD_HOME/y"; }
+hud_ext_uninstall() { rm -f -- "$HUD_HOME/y"; }
+`
+    );
+    writeY('v1');
     run('./install', ['--skip-build', '--with', 'x']);
-    run('./install', ['--skip-build', '--with', 'x']);
-    assert.equal(fs.readFileSync(path.join(hudHome, 'installed'), 'utf8'), `${repo}\n${hudHome}\n${bin}\n`);
-    const removed = run('./install', ['--uninstall', '--skip-build']);
-    assert.match(removed.stdout, /data kept/);
-    assert.equal(fs.readFileSync(path.join(hudHome, 'uninstalled'), 'utf8'), 'removed');
-    for (const name of ['hud', 'hud-mcp']) {
-      assert.throws(() => fs.lstatSync(path.join(bin, name)), { code: 'ENOENT' });
-    }
+    run('./install', ['--skip-build', '--with', 'y']);
+    const x = path.join(hudHome, 'x'), y = path.join(hudHome, 'y');
+    assert.equal(fs.readFileSync(x, 'utf8'), `${repo}\n${hudHome}\n${bin}\n`);
+    assert.equal(fs.readFileSync(y, 'utf8'), 'v1');
+    assert.equal(fs.statSync(path.join(hudHome, 'installed-extensions')).mode & 0o777, 0o600);
+    writeY('v2');
+    fs.unlinkSync(x);
     run('./install', ['--skip-build']);
-    fs.unlinkSync(path.join(hudHome, 'uninstalled'));
+    assert.equal(fs.readFileSync(x, 'utf8'), `${repo}\n${hudHome}\n${bin}\n`, 'installing y did not forget x');
+    assert.equal(fs.readFileSync(y, 'utf8'), 'v2', 'bare install used the new hook');
+
+    run(path.join(bin, 'hud'), ['uninstall', '--with', 'x', '--skip-build']);
+    assert.equal(fs.existsSync(x), false);
+    assert.equal(fs.readFileSync(y, 'utf8'), 'v2');
+    assert.equal(fs.readlinkSync(path.join(bin, 'hud')), path.join(repo, 'bin/hud'));
+    assert.equal(fs.readlinkSync(path.join(bin, 'hud-mcp')), path.join(repo, 'packages/hud-mcp/bin/hud-mcp.mjs'));
+    writeY('v3');
+    run('./install', ['--skip-build']);
+    assert.equal(fs.existsSync(x), false, 'bare install does not reinstall an uninstalled extension');
+    assert.equal(fs.readFileSync(y, 'utf8'), 'v3');
+
     fs.unlinkSync(path.join(bin, 'hud-mcp'));
     const foreign = path.join(temp, 'other-command');
     fs.symlinkSync(foreign, path.join(bin, 'hud-mcp'));
-    run(path.join(bin, 'hud'), ['uninstall', '--with', 'x', '--skip-build']);
+    assert.match(run(path.join(bin, 'hud'), ['uninstall', '--skip-build']).stdout, /data kept/);
     assert.throws(() => fs.lstatSync(path.join(bin, 'hud')), { code: 'ENOENT' });
     assert.equal(fs.readlinkSync(path.join(bin, 'hud-mcp')), foreign);
-    assert.equal(fs.readFileSync(path.join(hudHome, 'uninstalled'), 'utf8'), 'removed');
+    assert.equal(fs.existsSync(y), false);
     assert.equal(fs.readFileSync(path.join(hudHome, 'keep.txt'), 'utf8'), 'owner data');
+    fs.unlinkSync(path.join(bin, 'hud-mcp'));
+    run('./install', ['--skip-build']);
+    assert.equal(fs.existsSync(y), false, 'full uninstall also forgets extensions');
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
