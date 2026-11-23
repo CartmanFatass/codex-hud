@@ -1,7 +1,7 @@
 # HUD reference
 
-Current controls for Claude Code, Codex and pi. [中文](./reference.zh.md) ·
-[Quick start](../README.md) · [Architecture](./ARCHITECTURE.md)
+Current controls for Claude Code, Codex and pi.
+[中文](./reference.zh.md) · [Quick start](../README.md) · [Architecture](./ARCHITECTURE.md)
 
 - [Installing](#installing)
 - [Universal CLI and MCP](#universal-cli-and-mcp)
@@ -15,56 +15,50 @@ Current controls for Claude Code, Codex and pi. [中文](./reference.zh.md) ·
 - [Machine-readable state](#machine-readable-state)
 - [Configuration](#configuration)
 
-Earlier activation, bootstrap and owned-worker designs live in git history and
-[dated reviews](https://github.com/CartmanFatass/codex-hud/tree/universal-hud/docs/reviews),
-not in the current setup instructions.
+Earlier activation, bootstrap and owned-worker designs live in git history and [dated reviews](https://github.com/CartmanFatass/codex-hud/tree/universal-hud/docs/reviews), not in the current setup instructions.
 
 ## Installing
 
-Use **Node ≥24.0.0** (Node 24 is the tested supported line; see
-[runtime evidence](./ARCHITECTURE.md#3-launch-and-installation)). From the checkout:
+Use **Node ≥24.0.0** (Node 24 is the tested supported line; see [runtime evidence](./ARCHITECTURE.md#3-launch-and-installation)).
+From the checkout:
 
 ```sh
 ./install --with claude,pi,codex,browser,herdr
 ```
 
-Choose any of **claude**, **claude-mod**, **pi**, **codex**, **agy**, **browser**, **herdr**; core is always
-included. The installer checks Node before extension hooks/builds/changes, builds
-the HUD and MCP, and links commands into `~/.local/bin`. A bare `./install` refreshes
-remembered extensions using the current client home settings. For an install made
-with an older installer, specify its extensions with `--with` once. The installer
-refreshes dependencies when it has no matching lockfile hash; `--skip-build` skips
-both dependency installation and the build. Keep the checkout/extraction directory:
-installed commands and client bindings point into it. No shell rc file is edited.
+Choose any of **claude**, **claude-mod**, **pi**, **codex**, **agy**, **browser**, **herdr**; core is always included.
+The installer checks Node before extension hooks/builds/changes, builds the HUD and MCP, and links commands into `~/.local/bin`.
+A bare `./install` refreshes remembered extensions using the current client home settings.
+For an install made with an older installer, specify its extensions with `--with` once.
+The installer refreshes dependencies when it has no matching lockfile hash; `--skip-build` skips both dependency installation and the build.
+Keep the checkout/extraction directory: installed commands and client bindings point into it.
+No shell rc file is edited.
 
-External tools are checked, not installed or authenticated. herdr/pi-roles/pi are
-separate prerequisites for workers. The herdr extension reports their PATH locations
-(only missing herdr fails). The browser extension requires `google-chrome` and
-`jev-ask`; it also reports optional `jev-aistudio` and `jev-flow`. It writes no
-browser configuration and launches nothing. Configure Chrome/login/keys through
-those external CLIs. The panel and Decision API need no browser extension.
+External tools are checked, not installed or authenticated.
+herdr/pi-roles/pi are separate prerequisites for workers.
+The herdr extension reports their PATH locations (only missing herdr fails).
+The browser extension requires `google-chrome` and `jev-ask`; it also reports optional `jev-aistudio` and `jev-flow`.
+It writes no browser configuration and launches nothing.
+Configure Chrome/login/keys through those external CLIs.
+The panel and Decision API need no browser extension.
 
-Ordinary `claude` uses the global HUD statusline unless an owner-defined non-HUD
-statusline already exists; ordinary `pi` loads the HUD footer. Codex's tmux bar
-uses the installer's printed shell function:
+Ordinary `claude` uses the global HUD statusline unless an owner-defined non-HUD statusline already exists; ordinary `pi` loads the HUD footer.
+Codex's tmux bar uses the installer's printed shell function:
 
 ```sh
 codexH() { hud codex "$@"; }
 codexH
 ```
 
-Only the panel is opt-in: `/hud` opens it in Claude, Codex and pi; it never opens
-at launch. Uninstall with `hud uninstall` or `./install --uninstall`; `--with names`
-removes only those extensions, leaving core commands intact. HUD data and unrelated
-owner settings remain. Claude
-settings follow symlinks with a one-time plain backup; Codex backs up resolved
-`config.toml` before official MCP commands and warns if comments are dropped.
+Only the panel is opt-in: `/hud` opens it in Claude, Codex and pi; it never opens at launch.
+Uninstall with `hud uninstall` or `./install --uninstall`; `--with names` removes only those extensions, leaving core commands intact.
+HUD data and unrelated owner settings remain.
+Claude settings follow symlinks with a one-time plain backup; Codex backs up resolved `config.toml` before official MCP commands and warns if comments are dropped.
 Pi registers delegation and display packages and excludes the old p10k-footer.
 
 For Antigravity, put `agy` on `PATH`, then run `./install --with agy`.
 It registers the HUD MCP, permission and hook, and leaves an existing non-HUD statusline alone.
-It writes the main-session MCP instructions to `~/.gemini/antigravity-cli/mcp/hud/instructions.md`
-without replacing owner instructions.
+It writes the main-session MCP instructions to `~/.gemini/antigravity-cli/mcp/hud/instructions.md` without replacing owner instructions.
 Remove the integration with `./install --uninstall --with agy`.
 
 See [installer extensions](../install.d/README.md) for backups and multiple Codex homes.
@@ -96,25 +90,22 @@ hud board [--cwd DIR] [--out FILE] [--open]  # write the project's HTML review b
 hud codex --model gpt-5    # Codex arguments pass through to the tmux launcher
 ```
 
-`hud codex-hud` aliases `hud codex`. Panel selection accepts
-`--root <namespace/session-id>` or `--harness claude|pi|codex --session ID --source ABS`;
-these select observations, not execution identity. Without explicit selection,
-`HERDR_PANE_ID` permits a one-second `herdr pane current` lookup for the caller's
-Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
+`hud codex-hud` aliases `hud codex`.
+Panel selection accepts `--root <namespace/session-id>` or `--harness claude|pi|codex --session ID --source ABS`; these select observations, not execution identity.
+Without explicit selection, `HERDR_PANE_ID` permits a one-second `herdr pane current` lookup for the caller's Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
 
-`hud doctor` checks Node, local herdr reachability, the pi commands on PATH, installed dependency versions,
-client HUD bindings (resolved checkout and Node), registered project trust, the dist build stamp and live
-MCP/watcher generations, leases, and managed worktrees without owning job receipts. It only checks the mode
-of `credentials.env` (0600 if present); it never opens the file. Each failed check has one fix hint and any
-failure makes the exit status non-zero. A service that starts on demand need not be running, but an older live
-process that does not report its generation cannot be verified. The command does not apply any fixes.
+`hud doctor` checks Node, local herdr reachability, the pi commands on PATH, installed dependency versions, client HUD bindings (resolved checkout and Node), registered project trust, the dist build stamp and live MCP/watcher generations, leases, and managed worktrees without owning job receipts.
+It only checks the mode of `credentials.env` (0600 if present); it never opens the file.
+Each failed check has one fix hint and any failure makes the exit status non-zero.
+A service that starts on demand need not be running, but an older live process that does not report its generation cannot be verified.
+The command does not apply any fixes.
 
-`hud doctor <jobId>` reads one directory under `$HUD_HOME/jobs`. It shows identity, the shared job state, raw
-`STATUS.json`, open questions, checks, last progress, stop/close markers and recorded process liveness when
-applicable. For CLI workers it compares the turn, completion receipt and current report signature; it does not
-print the report body. Missing or unreadable evidence is labeled. The command changes nothing and does not
-contact herdr or the network.
+`hud doctor <jobId>` reads one directory under `$HUD_HOME/jobs`.
+It shows identity, the shared job state, raw `STATUS.json`, open questions, checks, last progress, stop/close markers and recorded process liveness when applicable.
+For CLI workers it compares the turn, completion receipt and current report signature; it does not print the report body.
+Missing or unreadable evidence is labeled.
+The command changes nothing and does not contact herdr or the network.
 
 `hud stats` is a read-only scoreboard for jobs created in the last seven local calendar days, including today (`--days` accepts 1–90).
 The default groups by role, place and mode; `--by` can group by role, model, route tier/mode or ticket feature.
@@ -124,125 +115,162 @@ It shows median dispatch-to-settlement time, question and sonic counts, land rep
 The commands merge retained jobs, monthly archives and land receipts, without double-counting a job; known/observed counts and scan limits are shown.
 Missing cost is unknown, not free: sums include only jobs with reported totals, and harness-reported USD is not necessarily a bill.
 
-The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
-**hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
-It returns role availability, continuation, effective `runs_on` and the convention. For presets, fallbacks,
-model/thinking sources and accepted options, pass `detail: true`. The MCP omits an unchanged convention on
-subsequent roster calls in the same session; role rows are always refreshed.
-Bundled role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a
-registered project's `.hud/roles`. The first `hud-convention.md` in a registered
-project's `.hud/`, the cwd, HUD home, then the package wins whole.
+The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**, **hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, and **hud_tickets**.
+Call `hud_roster` when project dispatch context is missing or stale.
+It returns role availability, continuation, effective `runs_on` and the convention.
+For presets, fallbacks, model/thinking sources and accepted options, pass `detail: true`.
+The MCP omits an unchanged convention on subsequent roster calls in the same session; role rows are always refreshed.
+Bundled role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a registered project's `.hud/roles`.
+The first `hud-convention.md` in a registered project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
 
-Main-session tool results use compact `key: value` text in every client. Nested rows stay JSON, and status events
-appear in a trailing `changes:` list. The formatter omits empty/default or repeated fields and shows at most five
-`changed_files` paths alongside the total; full reads still include the worker's `report_meta.files` and any paging
-fields. Errors stay JSON. Set `HUD_MCP_JSON=1` in the MCP server environment for JSON result fields in tests. The
-JSON-RPC envelope, task protocol and worker tools are unchanged.
+Main-session tool results use compact `key: value` text in every client.
+Nested rows stay JSON, and status events appear in a trailing `changes:` list.
+The formatter omits empty/default or repeated fields and shows at most five `changed_files` paths alongside the total; full reads still include the worker's `report_meta.files` and any paging fields.
+Errors stay JSON.
+Set `HUD_MCP_JSON=1` in the MCP server environment for JSON result fields in tests.
+The JSON-RPC envelope, task protocol and worker tools are unchanged.
 
-Without [mod-owned wake](#claude-code-mod), Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job
-`hud_send` (including a repair), or `hud_respond` that resumes work. Claude Code wakes on a settled report,
-question, failure or stop without Monitor. A report notice gives the job ID, role, state, the `hud_read` call and a
-one-line summary (the worker's summary or, failing that, report prose). If the job has HUD-run checks, the notice waits
-for them and includes the number passed. Questions do not wait: their notices give the question ID and text.
-MCP delivers one result per task; only the client can combine those notices into a single wake. The notice does
-not mark a report read; collect it with `hud_read({job})`. Launch details remain in `hud_read({job, detail:true})`.
+Without [mod-owned wake](#claude-code-mod), Claude Code sessions that negotiate MCP tasks see a task under `/tasks` for a new `hud_create`, single-job `hud_send` (including a repair), or `hud_respond` that resumes work.
+Claude Code wakes on a settled report, question, failure or stop without Monitor.
+A report notice gives the job ID, role, state, the `hud_read` call and a one-line summary (the worker's summary or, failing that, report prose).
+If the job has HUD-run checks, the notice waits for them and includes the number passed.
+Questions do not wait: their notices give the question ID and text.
+MCP delivers one result per task; only the client can combine those notices into a single wake.
+The notice does not mark a report read; collect it with `hud_read({job})`.
+Launch details remain in `hud_read({job, detail:true})`.
 A successful fan-out send keeps the job’s existing active task instead of starting a new one.
 The same caller can poll existing worker and land tasks after an MCP restart until their task TTL expires.
-Cancelling a still-current task on its original connection stops the worker like `hud_close`; repeating cancel,
-cancelling an old task or cancelling from a fresh connection does nothing. To start several jobs in a task session,
-send one `hud_create` per job in parallel. `hud_create({jobs})` returns an error without creating any jobs.
-Dispatch failures, duplicates and fan-out sends return immediately. Batch `hud_send({messages})` and
-`hud_respond({answers})` still return per-item results in input order. For each new turn started by one of
-those batches, the live MCP connection delivers the same compact notice (waiting for checks on report,
-immediate on question, failure or stop) once to the caller pane (or in `changes` if delivery fails), and falls back to
-normal `hud-notify`/`changes` delivery if the connection ends first. Use `hud_read` for jobs without a
-task or whose task has expired. Task clients do not get `hud_wait`, `changes` (beyond panel and undelivered batch notices), `watcher_alive`, or the
-`hud watch` delivery hint.
+Cancelling a still-current task on its original connection stops the worker like `hud_close`; repeating cancel, cancelling an old task or cancelling from a fresh connection does nothing.
+To start several jobs in a task session, send one `hud_create` per job in parallel.
+`hud_create({jobs})` returns an error without creating any jobs.
+Dispatch failures, duplicates and fan-out sends return immediately.
+Batch `hud_send({messages})` and `hud_respond({answers})` still return per-item results in input order.
+For each new turn started by one of those batches, the live MCP connection delivers the same compact notice (waiting for checks on report, immediate on question, failure or stop) once to the caller pane (or in `changes` if delivery fails), and falls back to normal `hud-notify`/`changes` delivery if the connection ends first.
+Use `hud_read` for jobs without a task or whose task has expired.
+Task clients do not get `hud_wait`, `changes` (beyond panel and undelivered batch notices), `watcher_alive`, or the `hud watch` delivery hint.
 
-For other clients, MCP tool responses carry `changes`: one line per state change of the jobs this pane dispatched since
-the last response (omitted when there is none). Panel, statusline, pi footer, MCP and `hud watch` derive a job's
-state through one shared `jobRow`, so they agree. `hud watch` defaults to actionable events: new questions
-(with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker
-reasons. It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps
-all MCP change lines. Both `hud watch` and `changes` append a current worker summary, clipped to 140 characters.
+For other clients, MCP tool responses carry `changes`: one line per state change of the jobs this pane dispatched since the last response (omitted when there is none).
+Panel, statusline, pi footer, MCP and `hud watch` derive a job's state through one shared `jobRow`, so they agree.
+`hud watch` defaults to actionable events: new questions (with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker reasons.
+It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps all MCP change lines.
+Both `hud watch` and `changes` append a current worker summary, clipped to 140 characters.
 Unread report notices point to `hud_read job=<id>` (`mode: "full"` for the whole report), not to a file.
 The watch groups settlements arriving within three seconds into one notice; questions are delivered immediately.
 On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
-It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
-without tasks or mod-owned wake runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
-`codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
-The watcher exits when the pane disappears or changes agent, or after 10 minutes with no unsettled job, unread attention/report
-or unanswered question.
+It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan.
+Claude Code without tasks or mod-owned wake runs it under Monitor; re-arm after expiry.
+Codex receives the same quiet events automatically through `codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
+The watcher exits when the pane disappears or changes agent, or after 10 minutes with no unsettled job, unread attention/report or unanswered question.
 Antigravity uses the same detached watcher: events reach a working session through its `PreInvocation` hook and are typed into the prompt when idle.
-The pi HUD package delivers actionable notices natively, waking an idle main session
-or delivering before the next model request after the current tool batch, without touching the editor draft.
-No Monitor or panel is needed; pi workers do not start this watch. A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid`
-while active. `hud_roster` and `hud_create` report `watcher_alive` when the caller has a pane; a live watch
-suppresses direct pushes. `hud_roster` and the first `hud_create` result in a session give a delivery hint
-for the caller's harness (or general guidance when the harness is unknown).
-Without an active MCP task or live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions
-receive typed questions and can use `hud_wait` for settlement. Queue delivery uses the pane's Codex
-process `CODEX_HOME` (default `~/.codex`), not the MCP account. A missing thread id or any queue failure falls
-back to typing that line, which can touch a draft or fire prompt hooks. Stale PIDs never suppress delivery.
-MCP `changes` stays the fuller, query-only stream; a `report` token always means unread. With live events, keep
-working until notified instead of polling or waiting. A report-ready notice leaves the report unread; collect it explicitly.
+The pi HUD package delivers actionable notices natively, waking an idle main session or delivering before the next model request after the current tool batch, without touching the editor draft.
+No Monitor or panel is needed; pi workers do not start this watch.
+A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid` while active.
+`hud_roster` and `hud_create` report `watcher_alive` when the caller has a pane; a live watch suppresses direct pushes.
+`hud_roster` and the first `hud_create` result in a session give a delivery hint for the caller's harness (or general guidance when the harness is unknown).
+Without an active MCP task or live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions receive typed questions and can use `hud_wait` for settlement.
+Queue delivery uses the pane's Codex process `CODEX_HOME` (default `~/.codex`), not the MCP account.
+A missing thread id or any queue failure falls back to typing that line, which can touch a draft or fire prompt hooks.
+Stale PIDs never suppress delivery.
+MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
+With live events, keep working until notified instead of polling or waiting.
+A report-ready notice leaves the report unread; collect it explicitly.
 
-`hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) to link progress. `slice` is a legacy target label. In sessions without MCP tasks, pass `jobs: [...]` instead of single-create fields to dispatch several jobs in one call; each item accepts the same fields as a single create, returns its result in input order, and one item's error does not block the others (each created job keeps its own notice). The optional `request_key`
-defaults to a hash of the caller pane, role, cwd and task. By default it dispatches on the role's first available place (`runs_on`).
-`hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields
-can override them, subject to the same rules as a new create. Without new placement options, the retry keeps the
-original job’s placement options and selects an available place through the role or preset chain (rather than
-pinning the old harness).
+`hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) to link progress.
+`slice` is a legacy target label.
+In sessions without MCP tasks, pass `jobs: [...]` instead of single-create fields to dispatch several jobs in one call; each item accepts the same fields as a single create, returns its result in input order, and one item's error does not block the others (each created job keeps its own notice).
+The optional `request_key` defaults to a hash of the caller pane, role, cwd and task.
+By default it dispatches on the role's first available place (`runs_on`).
+`hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields can override them, subject to the same rules as a new create.
+Without new placement options, the retry keeps the original job’s placement options and selects an available place through the role or preset chain (rather than pinning the old harness).
 
-Pass `scout: "<question>"` to run sonic first in the target's working directory (including its managed worktree),
-with the same `context_files` and sonic's normal role settings. `hud_create` returns the target job ID or one MCP task
-immediately; HUD starts the target after the scout and adds the dossier to `from_jobs` (leave one of the 16 slots free).
-There is no separate scout notice. If sonic fails or needs attention, HUD proceeds without the
-dossier, notes the failure in the target brief and closes a still-running scout. `role: "sonic"` rejects `scout`.
-The question becomes the sonic task text (including for Sonic auto-thinking if enabled). A browser target receives
-the dossier subject to the usual context byte limits.
+Pass `scout: "<question>"` to run sonic first in the target's working directory (including its managed worktree), with the same `context_files` and sonic's normal role settings.
+`hud_create` returns the target job ID or one MCP task immediately; HUD starts the target after the scout and adds the dossier to `from_jobs` (leave one of the 16 slots free).
+There is no separate scout notice.
+If sonic fails or needs attention, HUD proceeds without the dossier, notes the failure in the target brief and closes a still-running scout.
+`role: "sonic"` rejects `scout`.
+The question becomes the sonic task text (including for Sonic auto-thinking if enabled).
+A browser target receives the dossier subject to the usual context byte limits.
 
-Pass `checks` for up to five shell commands you would otherwise run yourself in the job's `cwd`. The HUD runs them
-in order with `bash -lc` after a declared pi or CLI settlement, with a ten-minute timeout per command. Retries and
-closed-job repairs inherit them. `hud_read({job})` shows check outcomes; `mode: "full"` includes the bounded failure tail; a new turn or rewritten
-report marks the previous results stale. `hud watch` adds `checks 2/3` on settlement or in a follow-up notice when the
-results arrive. The job card and Inspector show the same count of passed/total checks (`✓` pass, `✗` fail, `↻` running,
-`~` stale). Checks do not settle jobs or decide acceptance.
+Pass `checks` for up to five shell commands you would otherwise run yourself in the job's `cwd`.
+The HUD runs them in order with `bash -lc` after a declared pi or CLI settlement, with a ten-minute timeout per command.
+Retries and closed-job repairs inherit them.
+`hud_read({job})` shows check outcomes; `mode: "full"` includes the bounded failure tail; a new turn or rewritten report marks the previous results stale.
+`hud watch` adds `checks 2/3` on settlement or in a follow-up notice when the results arrive.
+The job card and Inspector show the same count of passed/total checks (`✓` pass, `✗` fail, `↻` running, `~` stale).
+Checks do not settle jobs or decide acceptance.
 
-Role files and Control decide where each role runs. Only `general` accepts `preset`, `on`, `model` or `thinking`,
-for one job when the user requests it. For `general`, `preset` selects the first available, non-exhausted place in a
-named preset without saving it. Alternatively, `on` overrides the harness/provider (defaults from shipped
-`harnesses.json` overridden by `$HUD_HOME/harnesses.json`). `preset` and `on` are mutually exclusive.
-`model` and `thinking` override the selected `pi` or `cli` place. Other roles reject these four fields before launch,
-including in batch items and retry overrides. A detailed job read or peek shows the selected `preset`.
-Only `general` can also set `instructions: "imp"` (or another role visible in `hud_roster`). The borrowed role's
-instructions go to the selected pi or CLI worker instead of general's; on pi this also selects the borrowed role's
-first pi role in its active chain, or its instructions name if there is no pi place. The job keeps general's
-placement and concurrency slot. `hud_read` shows `instructions_from`; retrying as general and resuming the
-native session retain the borrowed role.
+Role files and Control decide where each role runs.
+Only `general` accepts `preset`, `on`, `model` or `thinking`, for one job when the user requests it.
+For `general`, `preset` selects the first available, non-exhausted place in a named preset without saving it.
+Alternatively, `on` overrides the harness/provider (defaults from shipped `harnesses.json` overridden by `$HUD_HOME/harnesses.json`).
+`preset` and `on` are mutually exclusive.
+`model` and `thinking` override the selected `pi` or `cli` place.
+Other roles reject these four fields before launch, including in batch items and retry overrides.
+A detailed job read or peek shows the selected `preset`.
+Only `general` can also set `instructions: "imp"` (or another role visible in `hud_roster`).
+The borrowed role's instructions go to the selected pi or CLI worker instead of general's; on pi this also selects the borrowed role's first pi role in its active chain, or its instructions name if there is no pi place.
+The job keeps general's placement and concurrency slot.
+`hud_read` shows `instructions_from`; retrying as general and resuming the native session retain the borrowed role.
 A repeated explicit key returns the original job; a derived key only reuses a job created within the last 10 minutes.
-`kind` selects `image` (default) or `video` for `flow`. Optional `idle_grace_s` (integer 60–3600) overrides
-CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
-Pi-only overrides:
-boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128
-strings, ≤4096 chars each, verbatim, no shell). Omitted switches keep pi-role
-defaults; split defaults to the place. `ui_ext: false` disables UI extensions;
-`skills: true` includes personal skills. A true split reserves a right helper pane.
-`--orchestrator`/`--notify` pi-argument overrides refuse. Only `general` accepts caller Pi model/provider and thinking flags. Retrying as another role drops the old placement overrides. Browser (`bro`) places
-reject pi options.
+`kind` selects `image` (default) or `video` for `flow`.
+Optional `idle_grace_s` (integer 60–3600) overrides CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
+Pi-only overrides: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128 strings, ≤4096 chars each, verbatim, no shell).
+Omitted switches keep pi-role defaults; split defaults to the place.
+`ui_ext: false` disables UI extensions; `skills: true` includes personal skills.
+A true split reserves a right helper pane.
+`--orchestrator`/`--notify` pi-argument overrides refuse.
+Only `general` accepts caller Pi model/provider and thinking flags.
+Retrying as another role drops the old placement overrides.
+Browser (`bro`) places reject pi options.
 
-For a continuable role on pi, Claude Code or Antigravity (`agy`), `hud_create({role, task, mode: "headless"})` opens no tab. Progress and Stop work as usual. Each turn runs in a new process on the same native session and appends output to `stdout.jsonl` and `stderr.log`. Pi keeps its session under the job’s `sessions/`; Claude Code and Antigravity keep theirs in their native stores. Headless CLI turns use the same prompts and worker MCP setup as tab workers: Claude Code gets the job’s `--mcp-config`; Antigravity uses its installed `hud` server and inherits the job environment. The job has no tab to focus: `g` on its card opens the Inspector, where an `Output` section shows the newest lines of `stdout.jsonl` (tool calls, assistant text and errors, up to 12 rows; labelled `live` while the job runs) and follows the log at the panel's collection cadence; Stop (`X`) works as for any job. A question ends the turn; `hud_respond` or an answer from the panel restarts it with the decision. With a valid report declaration, the worker closes at turn end even if the report is unread. Follow-ups sent while a headless worker is running queue in send order for its next turn, alongside the answer if it asked. After closure, follow-ups and land repairs resume that session within `resume_s`, otherwise they start a repair job.
+For a continuable role on pi, Claude Code or Antigravity (`agy`), `hud_create({role, task, mode: "headless"})` opens no tab.
+Progress and Stop work as usual.
+Each turn runs in a new process on the same native session and appends output to `stdout.jsonl` and `stderr.log`.
+Pi keeps its session under the job’s `sessions/`; Claude Code and Antigravity keep theirs in their native stores.
+Headless CLI turns use the same prompts and worker MCP setup as tab workers: Claude Code gets the job’s `--mcp-config`; Antigravity uses its installed `hud` server and inherits the job environment.
+The job has no tab to focus: `g` on its card opens the Inspector, where an `Output` section shows the newest lines of `stdout.jsonl` (tool calls, assistant text and errors, up to 12 rows; labelled `live` while the job runs) and follows the log at the panel's collection cadence; Stop (`X`) works as for any job.
+A question ends the turn; `hud_respond` or an answer from the panel restarts it with the decision.
+With a valid report declaration, the worker closes at turn end even if the report is unread.
+Follow-ups sent while a headless worker is running queue in send order for its next turn, alongside the answer if it asked.
+After closure, follow-ups and land repairs resume that session within `resume_s`, otherwise they start a repair job.
 
-Sonic runs one non-interactive pi query, with no worker tab or pane. A main session uses `hud_create`; a worker uses `hud_sonic` and collects the result. Both use a normal job directory: `stdout.jsonl` and `stderr.log` hold pi's output; `report.md` normally holds the declared result. If the runner disappears without an exit receipt, `STATUS.json` records its exit code or signal when known, a bounded stderr tail, and whether a parent session restart was observed. If the session tail contains assistant text and no report exists, HUD saves that text in `report.md` marked partial; the job remains failed. Sonic can publish milestones and take a lease, but it cannot ask questions or receive follow-ups. There is no idle grace. The sonic role file accepts `check_s` (600), `stall_s` (180) and `max_s` (1800), all positive whole seconds; `hud_roster({detail:true})` shows the effective values. At each checkpoint HUD stops a repeating query (`looping`), or sends a progress line and lets the same pi process continue. No stdout growth or worker progress for `stall_s` stops it as `stalled`; the hard cap stops it as `timeout`. These failures retain partial stdout and the latest progress line. To retry a stopped query, use `hud_create({role:"sonic", retry_of:job})`. The new job resumes a private copy of the stopped job’s `sonic-session.jsonl` with a short continuation naming the stop reason. If the session is unavailable or rejected before input, pi gets the original brief plus up to 8 KiB from the end of the partial report (or stdout if there is no report).
+Sonic runs one non-interactive pi query, with no worker tab or pane.
+A main session uses `hud_create`; a worker uses `hud_sonic` and collects the result.
+Both use a normal job directory: `stdout.jsonl` and `stderr.log` hold pi's output; `report.md` normally holds the declared result.
+If the runner disappears without an exit receipt, `STATUS.json` records its exit code or signal when known, a bounded stderr tail, and whether a parent session restart was observed.
+If the session tail contains assistant text and no report exists, HUD saves that text in `report.md` marked partial; the job remains failed.
+Sonic can publish milestones and take a lease, but it cannot ask questions or receive follow-ups.
+There is no idle grace.
+The sonic role file accepts `check_s` (600), `stall_s` (180) and `max_s` (1800), all positive whole seconds; `hud_roster({detail:true})` shows the effective values.
+At each checkpoint HUD stops a repeating query (`looping`), or sends a progress line and lets the same pi process continue.
+No stdout growth or worker progress for `stall_s` stops it as `stalled`; the hard cap stops it as `timeout`.
+These failures retain partial stdout and the latest progress line.
+To retry a stopped query, use `hud_create({role:"sonic", retry_of:job})`.
+The new job resumes a private copy of the stopped job’s `sonic-session.jsonl` with a short continuation naming the stop reason.
+If the session is unavailable or rejected before input, pi gets the original brief plus up to 8 KiB from the end of the partial report (or stdout if there is no report).
 
 Pi notifies workers when a sonic child is ready, unless a `hud_sonic` wait in the same session collects its report.
 
-Callers leave sonic's thinking at the role default (`high` as shipped). The optional **Sonic auto-thinking** setting (`sonicAutoThinking`, off by default) sends the task to the Decision API to choose `none`, `low`, `high` or `max` using the role file's `thinking_choices`. Use `none` for running an exact command and reporting its output, copying exact text, or listing files; narrow fact lookups in named files use `low`. Pi calls `none` `off`. If no key is available, the call cap is reached, the decision times out (about five seconds), or the provider refuses or returns an invalid answer, the role default applies. Neither `hud_create` for `sonic` nor `hud_sonic` accepts a thinking override. Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
+Callers leave sonic's thinking at the role default (`high` as shipped).
+The optional **Sonic auto-thinking** setting (`sonicAutoThinking`, off by default) sends the task to the Decision API to choose `none`, `low`, `high` or `max` using the role file's `thinking_choices`.
+Use `none` for running an exact command and reporting its output, copying exact text, or listing files; narrow fact lookups in named files use `low`.
+Pi calls `none` `off`.
+If no key is available, the call cap is reached, the decision times out (about five seconds), or the provider refuses or returns an invalid answer, the role default applies.
+Neither `hud_create` for `sonic` nor `hud_sonic` accepts a thinking override.
+Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
 
-**Imp placement** (`impPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset. For `even`, use the **Even pool** row (`impEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it. HUD chooses the available preset with the fewest imp starts in the last 24 hours, breaking ties in role-file order. It reports skipped presets and uses the active preset if the pool is empty or unavailable. The create result and job record include `route.placement: "even"` and `route.preset`; the card shows `Placement: even` and the preset. Queueing, overflow, retry and land repair keep the preset selected at create in fixed and even modes. Legacy `impRouting: true` loads as `auto`; `false` loads as `fixed`.
+**Imp placement** (`impPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset.
+For `even`, use the **Even pool** row (`impEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
+HUD chooses the available preset with the fewest imp starts in the last 24 hours, breaking ties in role-file order.
+It reports skipped presets and uses the active preset if the pool is empty or unavailable.
+The create result and job record include `route.placement: "even"` and `route.preset`; the card shows `Placement: even` and the preset.
+Queueing, overflow, retry and land repair keep the preset selected at create in fixed and even modes.
+Legacy `impRouting: true` loads as `auto`; `false` loads as `fixed`.
 
-**Auto** uses one Decision API judgment, independent of Model text. The winning `imp` role file must define `routing`; the block is not inherited from a lower-priority role file. For example:
+**Auto** uses one Decision API judgment, independent of Model text.
+The winning `imp` role file must define `routing`; the block is not inherited from a lower-priority role file.
+For example:
 
 ```json
 "routing": {
@@ -253,224 +281,278 @@ Callers leave sonic's thinking at the role default (`high` as shipped). The opti
 }
 ```
 
-Only configured tiers are offered. Auto-routing chooses the `light` or `hard` role preset; the detailed roster shows these for information, not as `hud_create` inputs for `imp`. `standard` has no `preset` and follows the active Control choice. Routing sends at most the first 4000 characters of the brief and the named local ticket (`feature/NN`, up to 4 KiB), the relative names (up to 512 characters each) and byte sizes of up to 32 `context_files`, and the configured use texts. It does not send context bodies, the standing brief, prior reports, or preset/model IDs. The chosen descriptions become the one-line reason.
+Only configured tiers are offered.
+Auto-routing chooses the `light` or `hard` role preset; the detailed roster shows these for information, not as `hud_create` inputs for `imp`.
+`standard` has no `preset` and follows the active Control choice.
+Routing sends at most the first 4000 characters of the brief and the named local ticket (`feature/NN`, up to 4 KiB), the relative names (up to 512 characters each) and byte sizes of up to 32 `context_files`, and the configured use texts.
+It does not send context bodies, the standing brief, prior reports, or preset/model IDs.
+The chosen descriptions become the one-line reason.
 
-An unavailable tier falls back to the standard chain; failed or timed-out decisions use the active preset in a tab. If an automatic standard/headless launch is rejected before input, HUD tries the active preset in a tab. Explicit `mode: "tab"` or `mode: "headless"` wins and routing then chooses only the tier. Automatic headless runs only on a supported continuable place (pi, Claude Code, or Antigravity); otherwise HUD uses a tab. Overflow to `general` keeps the imp chain. `retry_of` keeps the tier without another decision, and a light job's land repair starts on standard. The job record, create result and per-job `hud_read` show `route` with `tier`, `mode`, `reason`, `source`, and any `fallback` or `mode_reason`; the job card shows the route and why: the tier and headless marks on the Split list row and the Inspector header (Classic Home rows carry none), and in the Inspector a `Route: light · headless — <reason>` row.
+An unavailable tier falls back to the standard chain; failed or timed-out decisions use the active preset in a tab.
+If an automatic standard/headless launch is rejected before input, HUD tries the active preset in a tab.
+Explicit `mode: "tab"` or `mode: "headless"` wins and routing then chooses only the tier.
+Automatic headless runs only on a supported continuable place (pi, Claude Code, or Antigravity); otherwise HUD uses a tab.
+Overflow to `general` keeps the imp chain.
+`retry_of` keeps the tier without another decision, and a light job's land repair starts on standard.
+The job record, create result and per-job `hud_read` show `route` with `tier`, `mode`, `reason`, `source`, and any `fallback` or `mode_reason`; the job card shows the route and why: the tier and headless marks on the Split list row and the Inspector header (Classic Home rows carry none), and in the Inspector a `Route: light · headless — <reason>` row.
 
-Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic). With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap uses a free `general` slot while retaining the `imp` chain (with the selected placement). It is counted as `general` and returns `overflowed: true` and `overflow_from: "imp"`. When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel). The watcher starts the oldest queued job when a slot frees or a cap is raised in Settings, picking the first available place at start time. `hud_close` (or panel `X`) removes a queued job.
+Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic).
+With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap uses a free `general` slot while retaining the `imp` chain (with the selected placement).
+It is counted as `general` and returns `overflowed: true` and `overflow_from: "imp"`.
+When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel).
+The watcher starts the oldest queued job when a slot frees or a cap is raised in Settings, picking the first available place at start time.
+`hud_close` (or panel `X`) removes a queued job.
 
-Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs,
-each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
-or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch. Pi and CLI
-workers read the paths listed after the task in their briefs. Browser (`bro`) briefs send the labeled file contents
-to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`). Any `sonic`
-report attached through `from_jobs` (including a scout dossier) is prefixed with a one-line reminder in the brief's
-language that sonic facts are unverified starting points and code behind any decision must be read directly. The optional
-project-root `.hud/brief.md` is included automatically only for registered projects: a reference after the task
-for local workers, or its contents within the same byte limits for browser jobs. Keep it safe to send to the selected
-browser service. Attaching an upstream report does not mark it read or close its worker.
+Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs, each referring to its `report.md` in `$HUD_HOME/jobs`).
+Use readable UTF-8 text files that resolve inside `cwd` or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch.
+Pi and CLI workers read the paths listed after the task in their briefs.
+Browser (`bro`) briefs send the labeled file contents to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`).
+Any `sonic` report attached through `from_jobs` (including a scout dossier) is prefixed with a one-line reminder in the brief's language that sonic facts are unverified starting points and code behind any decision must be read directly.
+The optional project-root `.hud/brief.md` is included automatically only for registered projects: a reference after the task for local workers, or its contents within the same byte limits for browser jobs.
+Keep it safe to send to the selected browser service.
+Attaching an upstream report does not mark it read or close its worker.
 
-`isolation: "worktree"` runs the job in its own linked Git checkout beside the repository (`<repo>-wt/<slug>-<id6>`,
-branch `wt/<slug>-<id6>` from HEAD, `node_modules` linked, the CLI's trust of the main checkout copied). It is
-refused for browser roles and outside Git. `hud_read` in full mode adds the `worktree` receipt (including the checkout path) and `git_summary`.
-Its `overlaps` lists other managed jobs and paths they also changed, excluding committed paths whose versions already match
-the main checkout's HEAD. An empty list means no overlaps found, `null` means the job's own Git summary failed, and
-`overlaps_incomplete` flags partial coverage. After the job closes, the watcher removes the checkout and branch only
-if the worktree is clean and its branch is unchanged, merged, or every slice commit has a patch-equivalent commit
-on the base branch. It keeps dirty worktrees and those with unpicked or amended patches, recording
-`worktree_kept_reason`, including up to five paths that made the worktree dirty. A later scan can reconsider an unpicked branch if the base HEAD changed; regular scans don't retry dirty checkouts. A registered project's `worktree.disposable` in `.hud/project.json` lists globs of **ignored** build outputs that cleanup may discard (for example `["dist/**"]`, default `[]`). A `dir/**` glob covers hidden descendants too. When tracked files live under `node_modules/`, worktree setup links the untracked entries from the main checkout and cleanup treats ignored entries under `node_modules/` as removable dependency state. Other ignored files and untracked or tracked changes are preserved. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
+`isolation: "worktree"` runs the job in its own linked Git checkout beside the repository (`<repo>-wt/<slug>-<id6>`, branch `wt/<slug>-<id6>` from HEAD, `node_modules` linked, the CLI's trust of the main checkout copied).
+It is refused for browser roles and outside Git.
+`hud_read` in full mode adds the `worktree` receipt (including the checkout path) and `git_summary`.
+Its `overlaps` lists other managed jobs and paths they also changed, excluding committed paths whose versions already match the main checkout's HEAD.
+An empty list means no overlaps found, `null` means the job's own Git summary failed, and `overlaps_incomplete` flags partial coverage.
+After the job closes, the watcher removes the checkout and branch only if the worktree is clean and its branch is unchanged, merged, or every slice commit has a patch-equivalent commit on the base branch.
+It keeps dirty worktrees and those with unpicked or amended patches, recording `worktree_kept_reason`, including up to five paths that made the worktree dirty.
+A later scan can reconsider an unpicked branch if the base HEAD changed; regular scans don't retry dirty checkouts.
+A registered project's `worktree.disposable` in `.hud/project.json` lists globs of **ignored** build outputs that cleanup may discard (for example `["dist/**"]`, default `[]`).
+A `dir/**` glob covers hidden descendants too.
+When tracked files live under `node_modules/`, worktree setup links the untracked entries from the main checkout and cleanup treats ignored entries under `node_modules/` as removable dependency state.
+Other ignored files and untracked or tracked changes are preserved.
+Project lists these checkouts as the jobs' own, not as unlisted worktrees.
 
-Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace`, `done` or `closed`). Configure `land` in the registered main checkout's `.hud/project.json`, for example:
+Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace`, `done` or `closed`).
+Configure `land` in the registered main checkout's `.hud/project.json`, for example:
 
 ```json
 {"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh","timeout_s":900}}
 ```
 
-HUD queues behind the `main-checkout` lease and runs the gate in a fresh detached checkout. If the job is already based on the current tip, HUD tests the job's exact commit; otherwise it cherry-picks only commits not reachable from the base. Commands are shell strings; the optional wrapper is an executable relative to the main checkout, passed `sh -c <command>` in the target checkout. Each `gate` and `after` command, including an immediate rerun, has its own `timeout_s` deadline (default 900 seconds). At the deadline HUD kills the command's process group, records `timeout` with up to 40 lines of failure output, and releases the lease without dispatching a repair. A red gate command, including one reporting a Node.js per-test timeout, gets one immediate rerun there. If the output has Node.js `test at <file>:…` failure locations, HUD reruns only those files with `node --test` through the same wrapper; otherwise it reruns the whole command. If the rerun passes, HUD continues and names the flaky tests in the notice when available. On a persistent red gate or a cherry-pick conflict, HUD sends the failing step and up to 40 lines (8 KiB) of its failure output to the source worker with instructions to rebase onto the current base, fix and commit. It uses the same native-resume window as `hud_send`; if it cannot continue the source worker, it creates a local job of the same role with `retry_of`, in the source checkout. The checkout lease is released during repair. A fresh settlement starts a fresh integration and gate; a worker question goes to the main session and ends the flow. There are at most two worker repairs.
+HUD queues behind the `main-checkout` lease and runs the gate in a fresh detached checkout.
+If the job is already based on the current tip, HUD tests the job's exact commit; otherwise it cherry-picks only commits not reachable from the base.
+Commands are shell strings; the optional wrapper is an executable relative to the main checkout, passed `sh -c <command>` in the target checkout.
+Each `gate` and `after` command, including an immediate rerun, has its own `timeout_s` deadline (default 900 seconds).
+At the deadline HUD kills the command's process group, records `timeout` with up to 40 lines of failure output, and releases the lease without dispatching a repair.
+A red gate command, including one reporting a Node.js per-test timeout, gets one immediate rerun there.
+If the output has Node.js `test at <file>:…` failure locations, HUD reruns only those files with `node --test` through the same wrapper; otherwise it reruns the whole command.
+If the rerun passes, HUD continues and names the flaky tests in the notice when available.
+On a persistent red gate or a cherry-pick conflict, HUD sends the failing step and up to 40 lines (8 KiB) of its failure output to the source worker with instructions to rebase onto the current base, fix and commit.
+It uses the same native-resume window as `hud_send`; if it cannot continue the source worker, it creates a local job of the same role with `retry_of`, in the source checkout.
+The checkout lease is released during repair.
+A fresh settlement starts a fresh integration and gate; a worker question goes to the main session and ends the flow.
+There are at most two worker repairs.
 
-Each failing gate run (first run or immediate rerun) keeps a private excerpt of up to 8 KiB beside the flow receipt: blank lines and HUD panel frames are removed, and the first recognized Node.js test assertion or error from each failing file takes priority over stack traces or other output. If no assertion block is recognized, the excerpt keeps the last nonblank output lines. Repair prompts use the same evidence from the command that failed. `hud_read` shows the paths under `reruns`, and the terminal notice links the excerpts. Successful runs write no excerpt. Excerpts are kept with their flow receipt and swept if it is removed.
+Each failing gate run (first run or immediate rerun) keeps a private excerpt of up to 8 KiB beside the flow receipt: blank lines and HUD panel frames are removed, and the first recognized Node.js test assertion or error from each failing file takes priority over stack traces or other output.
+If no assertion block is recognized, the excerpt keeps the last nonblank output lines.
+Repair prompts use the same evidence from the command that failed.
+`hud_read` shows the paths under `reruns`, and the terminal notice links the excerpts.
+Successful runs write no excerpt.
+Excerpts are kept with their flow receipt and swept if it is removed.
 
-On green, HUD folds the update to the job's local `ticket` (`feature/NN`), if present, into the last tested commit in the integration checkout. The ticket is marked `done` if it says `**Owner try:** no`, or `ready-for-human` if it says `yes` or omits the field. Its acceptance boxes are ticked, and a comment says `Landed in this commit`, with the replay base and passed/total gate commands. On the base branch, `git blame -- <ticket-path>` identifies the commit that added that line; `hud_read` on the flow also returns its `landed_sha`. This does not update `STATE.md` or use the owner's index. HUD fast-forwards the checked-out base only when touched paths are clean and either the base tip is unchanged or every new base commit touches only unrelated paths; in the latter case it cherry-picks the tested commits onto the new base tip in a fresh detached checkout and reapplies the ticket update (refusing on any overlap or conflict), and notes the replay in the notice. HUD reuses the green gate only if the candidate tree matches the tested tree or differs only in plain ticket or `STATE.md` metadata (including `docs/handoff/STATE.md`). Otherwise it runs the gate once on the exact candidate before fast-forward. A persistent replay gate failure stops the land without dispatching a repair. HUD then runs `after` in the main checkout (when an `after` main build command matches the integration checkout's tested build inputs, compiler and config exactly, HUD publishes the tested `dist` through `scripts/build.mjs`'s staged publisher instead of recompiling). If pushing is enabled, HUD pushes only the approved landed SHA to the base branch on `origin`, even if the local branch has since advanced. The checked-out base must still contain the landed commit and the landed paths must be clean. HUD then removes the integration checkout and, when clean and still at the exact source commit this flow landed, the job worktree and branch (even if the cherry-picked patch differed from the source). A cleanup error after landing still completes the flow with `cleanup_note` rather than failing it. A failure after fast-forward includes the landed SHA.
+On green, HUD folds the update to the job's local `ticket` (`feature/NN`), if present, into the last tested commit in the integration checkout.
+The ticket is marked `done` if it says `**Owner try:** no`, or `ready-for-human` if it says `yes` or omits the field.
+Its acceptance boxes are ticked, and a comment says `Landed in this commit`, with the replay base and passed/total gate commands.
+On the base branch, `git blame -- <ticket-path>` identifies the commit that added that line; `hud_read` on the flow also returns its `landed_sha`.
+This does not update `STATE.md` or use the owner's index.
+HUD fast-forwards the checked-out base only when touched paths are clean and either the base tip is unchanged or every new base commit touches only unrelated paths; in the latter case it cherry-picks the tested commits onto the new base tip in a fresh detached checkout and reapplies the ticket update (refusing on any overlap or conflict), and notes the replay in the notice.
+HUD reuses the green gate only if the candidate tree matches the tested tree or differs only in plain ticket or `STATE.md` metadata (including `docs/handoff/STATE.md`).
+Otherwise it runs the gate once on the exact candidate before fast-forward.
+A persistent replay gate failure stops the land without dispatching a repair.
+HUD then runs `after` in the main checkout (when an `after` main build command matches the integration checkout's tested build inputs, compiler and config exactly, HUD publishes the tested `dist` through `scripts/build.mjs`'s staged publisher instead of recompiling).
+If pushing is enabled, HUD pushes only the approved landed SHA to the base branch on `origin`, even if the local branch has since advanced.
+The checked-out base must still contain the landed commit and the landed paths must be clean.
+HUD then removes the integration checkout and, when clean and still at the exact source commit this flow landed, the job worktree and branch (even if the cherry-picked patch differed from the source).
+A cleanup error after landing still completes the flow with `cleanup_note` rather than failing it.
+A failure after fast-forward includes the landed SHA.
 
-The main `after` build checks the native statusline's source and binary hashes before publishing it to `dist/native/`. It uses the tested artifact when valid, otherwise keeps a matching local artifact or builds one with Cargo. If Cargo is unavailable and no matching artifact exists on a supported platform, the build still succeeds and the land result reports once (`after_note`) that the TypeScript statusline stays in use.
+The main `after` build checks the native statusline's source and binary hashes before publishing it to `dist/native/`.
+It uses the tested artifact when valid, otherwise keeps a matching local artifact or builds one with Cargo.
+If Cargo is unavailable and no matching artifact exists on a supported platform, the build still succeeds and the land result reports once (`after_note`) that the TypeScript statusline stays in use.
 
-The call returns a flow ID (one task for MCP-task clients) without waiting for the gate. The helper loads one build before running any steps. If it cannot load the build, the flow fails with `HUD was rebuilt; retry the land`. Calling `hud_land` again returns the existing flow if it is active or has already fast-forwarded the base. If it failed or was cancelled before fast-forward, the call starts a new flow, keeps the old receipt under its original ID and removes the old integration worktree once it holds the lease. `hud_read({job: "<flow ID>"})` gives any attempt's state, current step and per-step wall-clock `timings` (including reruns and skipped `after` rebuilds). The receipt records `tested_tree` (the latest green tree) and `published_tree` (the candidate tree, even if fast-forward or push does not happen). While another land holds the lease, the queued flow names the holder in `hud_read` and on its panel card; when the holder is in the gate, it also shows the step number and elapsed minutes. One terminal notice per attempt reports the SHA or the failing step, up to three known failing tests, and up to 40 lines of failure output, with one line per repair attempt. The helper survives a watcher restart; an interrupted helper is reported, not replayed. Receipts live under `$HUD_HOME/flows/`.
+The call returns a flow ID (one task for MCP-task clients) without waiting for the gate.
+The helper loads one build before running any steps.
+If it cannot load the build, the flow fails with `HUD was rebuilt; retry the land`.
+Calling `hud_land` again returns the existing flow if it is active or has already fast-forwarded the base.
+If it failed or was cancelled before fast-forward, the call starts a new flow, keeps the old receipt under its original ID and removes the old integration worktree once it holds the lease.
+`hud_read({job: "<flow ID>"})` gives any attempt's state, current step and per-step wall-clock `timings` (including reruns and skipped `after` rebuilds).
+The receipt records `tested_tree` (the latest green tree) and `published_tree` (the candidate tree, even if fast-forward or push does not happen).
+While another land holds the lease, the queued flow names the holder in `hud_read` and on its panel card; when the holder is in the gate, it also shows the step number and elapsed minutes.
+One terminal notice per attempt reports the SHA or the failing step, up to three known failing tests, and up to 40 lines of failure output, with one line per repair attempt.
+The helper survives a watcher restart; an interrupted helper is reported, not replayed.
+Receipts live under `$HUD_HOME/flows/`.
 
-A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s`
-(CLI quiet-job grace, default 600), optional `resume_s` (default 1620 seconds; `0` disables native resume), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
-or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
-files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
-`imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one),
-plus the optional `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
+A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s` (CLI quiet-job grace, default 600), optional `resume_s` (default 1620 seconds; `0` disables native resume), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude` or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place files load as `run[0]` and `"harness": "jev"` loads as `"bro"`.
+Shipped roles: `imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one), plus the optional `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
 Optional roles are off by default: `hud_roster` omits them and `hud_create` refuses them with an enablement hint.
 An existing valid role file under `$HUD_HOME/roles` enables the role by name unless an explicit switch says otherwise.
-A `cli` place requires `instructions/<instructions>.md`
-(shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns
-`unsupported_harness`. Quota or rate-limit failures mark the place exhausted in
-`$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never
-auto-retries. Register custom roles as `$HUD_HOME/roles/<name>.json`, for example
-a design role with `"agent": "claude"` and a Claude model alias. List models with
-`grok models`, `agy models`, `claude --help` or `codex -m`. The HUD passes only
-the model flag, the effort flag, that CLI's permission-bypass flag, `args`, and the HUD worker binding.
+A `cli` place requires `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns `unsupported_harness`.
+Quota or rate-limit failures mark the place exhausted in `$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never auto-retries.
+Register custom roles as `$HUD_HOME/roles/<name>.json`, for example a design role with `"agent": "claude"` and a Claude model alias.
+List models with `grok models`, `agy models`, `claude --help` or `codex -m`.
+The HUD passes only the model flag, the effort flag, that CLI's permission-bypass flag, `args`, and the HUD worker binding.
 A native resume adds the recorded session identifier; launches keep the configured CLI home.
-HUD never trusts a directory while dispatching: a trust dialog is declined and the
-launch fails, naming `hud trust <cwd>`. Sessions stay in each CLI's own store.
+HUD never trusts a directory while dispatching: a trust dialog is declined and the launch fails, naming `hud trust <cwd>`.
+Sessions stay in each CLI's own store.
 herdr starts the CLI through the interactive shell, so that shell's functions apply.
 
-`hud trust <dir>` adds that directory to the trust files of grok, agy and claude
-after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is skipped.
+`hud trust <dir>` adds that directory to the trust files of grok, agy and claude after a backup under `$HUD_HOME`.
+A missing CLI file is not created.
+Codex is skipped.
 
-`hud_read({})` (or `view: "compact"`) lists active project jobs and the caller's settled jobs with unread reports,
-newest first. It shows `job`, `role`, `state` and, when applicable, `report_unread: true`, `blocked: true`, pending
-`question_ids` and a block, wait or failure `reason`. To keep the snapshot near 2 KiB, older unread reports fold into
-`older_unread_reports`; active jobs stay visible. Worker-started children appear as `child_count` on their parent.
-Use `view: "recent"` for the newest 20 full rows, including child jobs and handled history. Both views can include a
-settled job's current `summary` (up to 120 characters; no file list). Neither marks anything read; `changes` still
-includes events for jobs hidden from the snapshot. `view` cannot be combined with `job` or `jobs`.
+`hud_read({})` (or `view: "compact"`) lists active project jobs and the caller's settled jobs with unread reports, newest first.
+It shows `job`, `role`, `state` and, when applicable, `report_unread: true`, `blocked: true`, pending `question_ids` and a block, wait or failure `reason`.
+To keep the snapshot near 2 KiB, older unread reports fold into `older_unread_reports`; active jobs stay visible.
+Worker-started children appear as `child_count` on their parent.
+Use `view: "recent"` for the newest 20 full rows, including child jobs and handled history.
+Both views can include a settled job's current `summary` (up to 120 characters; no file list).
+Neither marks anything read; `changes` still includes events for jobs hidden from the snapshot.
+`view` cannot be combined with `job` or `jobs`.
 
-`hud_wait({ jobs?, mode?, wait_ms? })` watches several jobs at once. Omit `jobs` to take the caller session's
-unsettled jobs at the start of the call. `mode: "any"` (default) returns when one settles or needs attention;
-`"all"` waits for every target to settle, but a question, block, orchestrator wait or failure returns early.
-`wait_ms` is an integer from 0 to 120000 (default 60000; `0` checks once). The response includes `ready`, `timed_out`,
-`triggered` job IDs and compact `jobs` rows. No targets returns ready with empty lists. Waiting does not read
-report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID to collect the report.
+`hud_wait({ jobs?, mode?, wait_ms? })` watches several jobs at once.
+Omit `jobs` to take the caller session's unsettled jobs at the start of the call.
+`mode: "any"` (default) returns when one settles or needs attention; `"all"` waits for every target to settle, but a question, block, orchestrator wait or failure returns early.
+`wait_ms` is an integer from 0 to 120000 (default 60000; `0` checks once).
+The response includes `ready`, `timed_out`, `triggered` job IDs and compact `jobs` rows.
+No targets returns ready with empty lists.
+Waiting does not read report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID to collect the report.
 
 Main sessions in herdr and workers use `hud_lease({name, release?, wait_s?})` before using a named shared resource.
-Waits stay inside the caller's turn (120 seconds by default, capped at 300; `0` checks once). Use the resource
-only on `granted: true`; otherwise `held_by` gives the holder and acquisition time. Release with `release: true`
-when done; releasing someone else's lease is a no-op. Leases are scoped to the caller's repository, shared by the main checkout and its linked
-worktrees (cwd outside Git). A waiter wakes on release and reclaims a lease left by a terminal worker or an exited process.
+Waits stay inside the caller's turn (120 seconds by default, capped at 300; `0` checks once).
+Use the resource only on `granted: true`; otherwise `held_by` gives the holder and acquisition time.
+Release with `release: true` when done; releasing someone else's lease is a no-op.
+Leases are scoped to the caller's repository, shared by the main checkout and its linked worktrees (cwd outside Git).
+A waiter wakes on release and reclaims a lease left by a terminal worker or an exited process.
 No background process or time expiry is involved.
 
-`hud_peek({ job })` returns compact `status` and progress without fetching the pane. Request `lines` (1–120) to
-fetch the pane tail as `pane_lines`; if unavailable, that field is `null` with a `pane_reason`. `detail: true` adds
-launch `diagnostics`. Peeking does not read the report, mark the job seen or close the worker. Workers
-can use `hud_progress` to log milestones (one line, up to 240 characters;
-newest 50 stored). Peek and full-mode reads show the newest 10 as `progress`; ordinary reads show only `latest_progress`;
-ordinary reads omit empty progress, and list/wait rows omit all progress. Milestones do not emit watch events.
+`hud_peek({ job })` returns compact `status` and progress without fetching the pane.
+Request `lines` (1–120) to fetch the pane tail as `pane_lines`; if unavailable, that field is `null` with a `pane_reason`.
+`detail: true` adds launch `diagnostics`.
+Peeking does not read the report, mark the job seen or close the worker.
+Workers can use `hud_progress` to log milestones (one line, up to 240 characters; newest 50 stored).
+Peek and full-mode reads show the newest 10 as `progress`; ordinary reads show only `latest_progress`; ordinary reads omit empty progress, and list/wait rows omit all progress.
+Milestones do not emit watch events.
 
-`hud_read({ job })` returns state and a `digest` for an unread report. Its `result` is the signature-bound worker summary
-when current and settled. Otherwise it uses the same fallback as the task notice: the first prose line in the first
-2 KiB, skipping headings and blank lines, or `Report ready` if there is none. The digest gives the `hud_read` hint,
-byte size, Git changed-file count for a managed worktree, and explicit `Verdict:` and `Blockers:` lines when present in the first 64 KiB.
-The response keeps open questions, one line per completed check and the latest milestone. For worktrees it lists up to
-20 changed paths, then `+N more`, and warns about overlaps. Already-read reports return `report_unchanged: true` without
-reopening the body. `mode: "full"` (or `full: true`) returns the report even if already read, its `report_path`, and
-the usual metadata, progress, checks and worktree diagnostics. Report text is capped at 24 KiB per page after JSON
-escaping. If more remains, the result includes `report_bytes` (total file size), `report_truncated: true` and
-`next_offset`. Pass that byte offset to `hud_read({ job, mode: "full", offset: next_offset })` and append each
-`report` until `next_offset` is absent. Use `jobs: [id, …]` instead of `job` to get results in input order;
-all use the same mode, and an unknown ID returns an error only for that entry. Continue each paged report separately.
-`detail: true` includes launch diagnostics such as effective CLI `idle_grace_s` and `launch_agent_args`
-(bounded arguments from recent CLI tab starts, not the submitted prompt). If Herdr reports a busy worker pane,
-HUD closes that tab and retries once in a fresh tab after a short delay. Failed launches keep a short `exit_reason`
-and the command output in `stderr_tail`.
-Use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
-question or timeout. Collecting either the digest or the report body stamps `read_at` (including during work and idle grace), not
-acceptance. With a current-turn declaration, the worker process and pane close at turn end, even if the report is unread.
-A CLI that has not ended within 120 seconds of declaring is handed back to main, not cut off. An open question
-or open or uncollected sonic child holds closure. Jobs launched before this change keep their original idle grace.
+`hud_read({ job })` returns state and a `digest` for an unread report.
+Its `result` is the signature-bound worker summary when current and settled.
+Otherwise it uses the same fallback as the task notice: the first prose line in the first 2 KiB, skipping headings and blank lines, or `Report ready` if there is none.
+The digest gives the `hud_read` hint, byte size, Git changed-file count for a managed worktree, and explicit `Verdict:` and `Blockers:` lines when present in the first 64 KiB.
+The response keeps open questions, one line per completed check and the latest milestone.
+For worktrees it lists up to 20 changed paths, then `+N more`, and warns about overlaps.
+Already-read reports return `report_unchanged: true` without reopening the body.
+`mode: "full"` (or `full: true`) returns the report even if already read, its `report_path`, and the usual metadata, progress, checks and worktree diagnostics.
+Report text is capped at 24 KiB per page after JSON escaping.
+If more remains, the result includes `report_bytes` (total file size), `report_truncated: true` and `next_offset`.
+Pass that byte offset to `hud_read({ job, mode: "full", offset: next_offset })` and append each `report` until `next_offset` is absent.
+Use `jobs: [id, …]` instead of `job` to get results in input order; all use the same mode, and an unknown ID returns an error only for that entry.
+Continue each paged report separately.
+`detail: true` includes launch diagnostics such as effective CLI `idle_grace_s` and `launch_agent_args` (bounded arguments from recent CLI tab starts, not the submitted prompt).
+If Herdr reports a busy worker pane, HUD closes that tab and retries once in a fresh tab after a short delay.
+Failed launches keep a short `exit_reason` and the command output in `stderr_tail`.
+Use peek instead when you do not want to collect.
+`wait_ms` waits at most 120000 ms, stopping at settlement, a question or timeout.
+Collecting either the digest or the report body stamps `read_at` (including during work and idle grace), not acceptance.
+With a current-turn declaration, the worker process and pane close at turn end, even if the report is unread.
+A CLI that has not ended within 120 seconds of declaring is handed back to main, not cut off.
+An open question or open or uncollected sonic child holds closure.
+Jobs launched before this change keep their original idle grace.
 Reading a failure/block separately marks that attention as seen.
-Workers finish with `hud_report`, which publishes the report without repeating it in chat. They may supply a
-one-line `summary` (up to 160 Unicode code points) and a `files` list of up to 50 relative paths. Claude and Codex
-use their HUD MCP and pass the token from the prompt they are answering; pi has native tools and needs no token.
-Antigravity and Grok Build use the fallback commands in their briefs. Both `hud_report` and `hud-progress --done`
-refuse to declare a report while the managed worktree has uncommitted changes. Ignored files do not block the report,
-and a clean worktree may report a no-op without making a commit. For a committed branch, the report tool attempts a
-merge preview against the current base tip. If it detects conflicts, it refuses once per job, listing the conflicting paths
-and asking the worker to rebase onto the given commit and rerun tests. A later report is not blocked by this preview;
-`hud_land` still performs its own replay and repair.
+Workers finish with `hud_report`, which publishes the report without repeating it in chat.
+They may supply a one-line `summary` (up to 160 Unicode code points) and a `files` list of up to 50 relative paths.
+Claude and Codex use their HUD MCP and pass the token from the prompt they are answering; pi has native tools and needs no token.
+Antigravity and Grok Build use the fallback commands in their briefs.
+Both `hud_report` and `hud-progress --done` refuse to declare a report while the managed worktree has uncommitted changes.
+Ignored files do not block the report, and a clean worktree may report a no-op without making a commit.
+For a committed branch, the report tool attempts a merge preview against the current base tip.
+If it detects conflicts, it refuses once per job, listing the conflicting paths and asking the worker to rebase onto the given commit and rerun tests.
+A later report is not blocked by this preview; `hud_land` still performs its own replay and repair.
 
-A registered main checkout can set `worker_checks` in `.hud/project.json`, for example
-`"worker_checks": { "imp": ["npm run build", "npm run build:test"] }`. For the named code role, HUD runs the
-commands in order in the managed worktree before publishing a report, using `land.wrapper` if configured.
-Read-only roles and worktrees without new commits skip them. The commands share a 60-second limit. The first
-failure or timeout refuses that report attempt and returns the failing command and up to 2 KiB of trailing output
-to the same worker. The worker can fix the failure and retry, or report while blocked with a nonblank
-`skip_checks_reason` (`hud-progress --done --skip-checks-reason` for the fallback). That reason appears in the
-`hud_read` digest. These checks are separate from `hud_create` checks and the land gate.
+A registered main checkout can set `worker_checks` in `.hud/project.json`, for example `"worker_checks": { "imp": ["npm run build", "npm run build:test"] }`.
+For the named code role, HUD runs the commands in order in the managed worktree before publishing a report, using `land.wrapper` if configured.
+Read-only roles and worktrees without new commits skip them.
+The commands share a 60-second limit.
+The first failure or timeout refuses that report attempt and returns the failing command and up to 2 KiB of trailing output to the same worker.
+The worker can fix the failure and retry, or report while blocked with a nonblank `skip_checks_reason` (`hud-progress --done --skip-checks-reason` for the fallback).
+That reason appears in the `hud_read` digest.
+These checks are separate from `hud_create` checks and the land gate.
 
-Workers use `hud_sonic` to start sonic sub-tasks without waiting, then collect their reports; HUD prompts once
-if they finish without collecting.
-`hud_send` queues a message for a working pi or CLI job. After a worker closes on its report, HUD checks the
-clock and native session. Within `resume_s`, it can open the same pi, Claude, Codex or Antigravity session in a
-new pane in the same checkout, as a new turn of the same job (`continuation: "resumed"`). After the window or if
-native resume is unavailable, it starts a repair with references to the original brief and report
-(`continuation: "repair"`, new job ID in `continued_as`). Repairing a managed-worktree job—or retrying a failed
-repair with `retry_of` without overriding `cwd` or `isolation`—reuses the source worktree if it still exists and
-is clean; otherwise it creates a fresh worktree. Use `jobs` instead of `job` to send one text only to working
-jobs; the response lists `sent` job IDs and `skipped` entries with reasons. Use `messages: [{job, text, message_key?}]`
-to send distinct messages (including native resumes and closed-job repairs) in one call, returning `messages`
-in input order with per-item errors. An explicit `message_key` deduplicates sends;
-if omitted, the same job and text are treated as a retry only within 10 minutes. Workers ask with `hud_ask`; the question arrives through
-an active MCP task or the `QUESTION` notice, and `hud_respond` answers it. A synchronous question waits up to 20 minutes;
-pi can ask asynchronously and continue unrelated work. A blocked CLI marks the job as needing the owner; task clients can see it
-in `hud_read`, and other clients receive it through `changes` or their live job notices. `hud_respond` writes a
-`qN.answer.md` once (or pass `answers: [{job, request_id, answer}]` to answer several in one call, returning `answers`
-in input order with per-item errors). `hud_close` reaps early. A stopped Pi worker is recorded as `stopped` even if it
-exits during startup without publishing its final status. Normal cleanup belongs to the watcher, which also
-records `stopped` on its next scan if a stop was requested and the recorded Pi process is gone. The owner can also answer
-an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line,
-`[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the
-reader runs; a question answered earlier is simply gone).
+Workers use `hud_sonic` to start sonic sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
+`hud_send` queues a message for a working pi or CLI job.
+After a worker closes on its report, HUD checks the clock and native session.
+Within `resume_s`, it can open the same pi, Claude, Codex or Antigravity session in a new pane in the same checkout, as a new turn of the same job (`continuation: "resumed"`).
+After the window or if native resume is unavailable, it starts a repair with references to the original brief and report (`continuation: "repair"`, new job ID in `continued_as`).
+Repairing a managed-worktree job—or retrying a failed repair with `retry_of` without overriding `cwd` or `isolation`—reuses the source worktree if it still exists and is clean; otherwise it creates a fresh worktree.
+Use `jobs` instead of `job` to send one text only to working jobs; the response lists `sent` job IDs and `skipped` entries with reasons.
+Use `messages: [{job, text, message_key?}]` to send distinct messages (including native resumes and closed-job repairs) in one call, returning `messages` in input order with per-item errors.
+An explicit `message_key` deduplicates sends; if omitted, the same job and text are treated as a retry only within 10 minutes.
+Workers ask with `hud_ask`; the question arrives through an active MCP task or the `QUESTION` notice, and `hud_respond` answers it.
+A synchronous question waits up to 20 minutes; pi can ask asynchronously and continue unrelated work.
+A blocked CLI marks the job as needing the owner; task clients can see it in `hud_read`, and other clients receive it through `changes` or their live job notices.
+`hud_respond` writes a `qN.answer.md` once (or pass `answers: [{job, request_id, answer}]` to answer several in one call, returning `answers` in input order with per-item errors).
+`hud_close` reaps early.
+A stopped Pi worker is recorded as `stopped` even if it exits during startup without publishing its final status.
+Normal cleanup belongs to the watcher, which also records `stopped` on its next scan if a stop was requested and the recorded Pi process is gone.
+The owner can also answer an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line, `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the reader runs; a question answered earlier is simply gone).
 The main session chooses all next steps; the MCP never chains work.
 See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool arguments.
 
-`hud_tickets` provides the ticket method in every client without a separate skill. `cwd` defaults to the server's
-working directory; pass the project directory to target another project.
+`hud_tickets` provides the ticket method in every client without a separate skill.
+`cwd` defaults to the server's working directory; pass the project directory to target another project.
 
 - **`guide`** (or no `op`): returns the slicing method and local ticket template as Markdown.
 - **`ready`**: lists unblocked `ready-for-agent` tickets with no live job as `tickets: [{ticket, path, title, what}]`.
-  `what` is one line from the ticket's What to build section. Pass `ticket` (`feature/NN`) and `path` (as `brief_file`)
-  to `hud_create`. The live job claims the ticket in the panel and Home progress without a claim commit;
-  `hud_land` folds the ticket update into the landed commit (`done` when `**Owner try:** no`, else `ready-for-human`) without touching `STATE.md`.
+  `what` is one line from the ticket's What to build section.
+  Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
+  The live job claims the ticket in the panel and Home progress without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` when `**Owner try:** no`, else `ready-for-human`) without touching `STATE.md`.
 - **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?}]`.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
-  An unknown blocker rejects the entire batch without writing. `acceptance` is a list of checklist item strings.
+  An unknown blocker rejects the entire batch without writing.
+  `acceptance` is a list of checklist item strings.
   Optional `owner_try` writes `**Owner try:** yes` or `no` under Status (`yes` or omitted requires owner trial on land; `no` lands straight to `done`).
   The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
 - **`update`**: pass `feature`, `ticket` (number), and any of `status`, `owner_try`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers); or pass `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
   An invalid acceptance item reports the valid range and leaves that ticket unchanged, even if other ticks in the same update are valid.
 - **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
 
-The default status is `ready-for-agent`; other allowed labels are `needs-triage`, `needs-info`, `ready-for-human`,
-`claimed`, `done`, and `wontfix`. This is a main-session tool. For GitHub-mirrored `.scratch/`, `add` and `update` refuse:
-edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
+The default status is `ready-for-agent`; other allowed labels are `needs-triage`, `needs-info`, `ready-for-human`, `claimed`, `done`, and `wontfix`.
+This is a main-session tool.
+For GitHub-mirrored `.scratch/`, `add` and `update` refuse: edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 
-Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
-`${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to
-primary/helper files. A CLI job's supervisor only observes; only facts end a job: the
-worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or
-`closed` when a new report is on disk). Each CLI dispatch and `hud_send` starts a turn (`turn.json`).
+Jobs are plain files in `$HUD_HOME/jobs/<job>/`.
+Pi history stays in `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to primary/helper files.
+A CLI job's supervisor only observes; only facts end a job: the worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or `closed` when a new report is on disk).
+Each CLI dispatch and `hud_send` starts a turn (`turn.json`).
 `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
-An undeclared report follows the quiet rule, and live in-turn children defer that rule. A continuation invalidates
-an old receipt; rewriting a declared report requires a fresh receipt for that turn. If a rewritten report stays
-quiet for the role's grace, it goes to `waiting_orchestrator` without settling or calling the Decision API.
-Terminal output does not affect the receipt. With a matching receipt and a confirmed turn end (or pi's native
-settled turn with a changed report), leftover processes do not block closure. Open questions and uncollected
-sonic results do block it.
-The watcher reaps the worker and descendants with captured ancestry, records that unverified processes were left
-alone, and retries unresolved cleanup on the slow tick.
-Herdr's status alone never fails a live worker. A turn quiet past the idle grace without a report gets one Decision API choice
-among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen,
-or hand to the main session); below 0.8 confidence or on any error it goes to the main session. Anything unclear is
-`waiting_orchestrator` with a reason. CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`,
-after herdr has been seen `working` in the current turn and is now `done` or `idle`, settles a stable new report in
-2 s or reaches the no-report quiet decision after 10 s (the post-decision wait is unchanged).
-Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example,
-`{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
+An undeclared report follows the quiet rule, and live in-turn children defer that rule.
+A continuation invalidates an old receipt; rewriting a declared report requires a fresh receipt for that turn.
+If a rewritten report stays quiet for the role's grace, it goes to `waiting_orchestrator` without settling or calling the Decision API.
+Terminal output does not affect the receipt.
+With a matching receipt and a confirmed turn end (or pi's native settled turn with a changed report), leftover processes do not block closure.
+Open questions and uncollected sonic results do block it.
+The watcher reaps the worker and descendants with captured ancestry, records that unverified processes were left alone, and retries unresolved cleanup on the slow tick.
+Herdr's status alone never fails a live worker.
+A turn quiet past the idle grace without a report gets one Decision API choice among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen, or hand to the main session); below 0.8 confidence or on any error it goes to the main session.
+Anything unclear is `waiting_orchestrator` with a reason.
+CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`, after herdr has been seen `working` in the current turn and is now `done` or `idle`, settles a stable new report in 2 s or reaches the no-report quiet decision after 10 s (the post-decision wait is unchanged).
+Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example, `{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
 `hud_roster({detail:true})` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
-The supervisor wakes on herdr pushes, file changes and its own deadlines,
-plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes. The on-demand watcher starts on
-`hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed. It reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
-and exits with no open job or pending failed-job deadline. The watcher learns of a HUD runner's exit through a socket close, not a periodic scan. Native pi-roles workers have no such runner; pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000). A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
-worker still running"); the watcher rechecks this unsupervised worker with exponential backoff. `hud_send` to it starts a new supervisor. Settled directories, including reports and
-`hud_read` access, expire **one day after closure** on a later watcher scan, not a dedicated expiry timer. Before deleting a legacy pi job it moves real
-JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
-Invalid cwd, destination conflicts or failed moves retain the job. Removing session
-links never removes their targets.
-On a scan after `resume_s` expires, the watcher removes `stdout.jsonl` and `stderr.log` from cleanly settled jobs
-(`done` or closed with a report). Sonic and older jobs without `resume_s` get the default 1620 seconds.
+The supervisor wakes on herdr pushes, file changes and its own deadlines, plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes.
+The on-demand watcher starts on `hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed.
+It reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours, and exits with no open job or pending failed-job deadline.
+The watcher learns of a HUD runner's exit through a socket close, not a periodic scan.
+Native pi-roles workers have no such runner; pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
+A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.
+`hud_send` to it starts a new supervisor.
+Settled directories, including reports and `hud_read` access, expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
+Before deleting a legacy pi job it moves real JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
+Invalid cwd, destination conflicts or failed moves retain the job.
+Removing session links never removes their targets.
+On a scan after `resume_s` expires, the watcher removes `stdout.jsonl` and `stderr.log` from cleanly settled jobs (`done` or closed with a report).
+Sonic and older jobs without `resume_s` get the default 1620 seconds.
 Failed or stopped jobs keep their raw logs until their directories expire.
 At settlement the watcher saves a bounded, best-effort snapshot of native usage in the job directory before raw logs can be pruned.
 It reads pi session entries, CLI result streams, or native transcript usage records; it never prices missing tokens or treats a truncated per-request transcript as a total.
@@ -481,58 +563,63 @@ In the same housekeeping pass, once a job directory is gone, the watcher prunes 
 ## Claude Code mod
 
 `integrations/claude-mod/` is a Claude Code function-hooks plugin (`hud-mod`) that keeps the main session's context lean.
-Run `./install --with claude,claude-mod` to install it alongside the Claude integration. The `claude-mod`
-extension registers this checkout as the `myhud-local` marketplace and installs `hud-mod@myhud-local` in
-Claude's user scope. Selecting `claude` alone does not install the mod. To try it, run
-`claude --plugin-dir integrations/claude-mod`. The panel remains the herdr panel.
+Run `./install --with claude,claude-mod` to install it alongside the Claude integration.
+The `claude-mod` extension registers this checkout as the `myhud-local` marketplace and installs `hud-mod@myhud-local` in Claude's user scope.
+Selecting `claude` alone does not install the mod.
+To try it, run `claude --plugin-dir integrations/claude-mod`.
+The panel remains the herdr panel.
 
-- **Event wake.** In an interactive herdr main session the mod starts `hud watch --mod` in a HUD project or on the first HUD tool call.
-  It sends only the watch's status lines: job and report notices, questions, sonic checkpoints, land and panel decisions. Settlements
-  share a three-second window; questions do not wait for it. One batch submits a prompt when idle, without editing the draft.
+- **Event wake.**
+  In an interactive herdr main session the mod starts `hud watch --mod` in a HUD project or on the first HUD tool call.
+  It sends only the watch's status lines: job and report notices, questions, sonic checkpoints, land and panel decisions.
+  Settlements share a three-second window; questions do not wait for it.
+  One batch submits a prompt when idle, without editing the draft.
   During work the mod appends a merged note; on interruption it parks pending events for the next prompt rather than waking again.
-  On takeover, open questions, unobserved failures, and unread reports for the caller's jobs settled in the last two hours
-  (or since the previous mod watch's last recorded delivery) are shown individually. Older unread reports share one count.
-  While the mod owns wake, tools omit `changes`, no MCP tasks are created, and no panel messages are typed; `hud_create({jobs})` works. After ten minutes with
-  nothing pending the child exits. A HUD call starts it again, as does a new panel decision in a sleeping HUD project.
-  A dead watch leaves `changes` and `hud_wait` available. Sessions without the mod keep their existing MCP task or Monitor delivery.
+  On takeover, open questions, unobserved failures, and unread reports for the caller's jobs settled in the last two hours (or since the previous mod watch's last recorded delivery) are shown individually.
+  Older unread reports share one count.
+  While the mod owns wake, tools omit `changes`, no MCP tasks are created, and no panel messages are typed; `hud_create({jobs})` works.
+  After ten minutes with nothing pending the child exits.
+  A HUD call starts it again, as does a new panel decision in a sleeping HUD project.
+  A dead watch leaves `changes` and `hud_wait` available.
+  Sessions without the mod keep their existing MCP task or Monitor delivery.
 
-- **Merged notices.** Within one turn a HUD line already delivered by a Monitor row, the wake lane or compact MCP `changes`
-  is not repeated. A later Monitor row of the same task shrinks to its new lines without task id and summary
-  (`(HUD events already shown this turn)` when none). The mod removes already-shown `changes` lines without reformatting
-  the rest of the tool result. Rows that are not HUD lines are untouched.
-- **Owner band.** Above the prompt the mod shows only what needs the owner now, and nothing otherwise: up to two rows, cut to the band's
-  width, in the panel's language, each ending in a button. `? N waiting for you · <first item> [Open]` counts STATE's `Waiting for the owner`
-  items (items whose `(waits on …)` tickets are done drop out, as in the Project Inbox); Open shows the panel beside the pane, where the
-  Project hub lists them. `N to try [Accept all]` is the Inbox's Accept all count; the button records it as the panel does (`hud act try`).
-  A press answers with a toast, never a model turn. Running workers, failures and worker questions are not shown (the statusline and the
-  main session carry those). The watch sends
-  a `band` record after `ready` and again only when it changes; the band is drawn from the session's state with no I/O and stays
-  empty while a survey holds it. One toast (`Needs you: …`) appears when a new item or slice arrives, once per record and never
-  for what was already there when the watch started. The band refreshes while the watch runs; after the ten-minute idle exit it
-  updates at the next restart (a HUD call or panel decision).
-- **Owner commands.** In an owner session (not a worker's) the mod declares slash commands that run at once, even mid-turn, and print
-  for the owner only: their output is shown and goes in no model request, and no MCP schema is added. `/hud` opens the panel (in a herdr
-  pane; elsewhere the skill answers). `/jobs` lists running jobs and unread reports and `/jobs <id>` peeks one, without marking a report
-  read. `/answer <job> <qN> <answer>`, `/try` (Accept all), `/retry <job>` and `/stop <job>` run `hud act`, so they do what the panel
-  does: an answer writes `qa/qN.answer.md` once, resumes a headless job and tells the main session
-  (`ANSWERED qN from panel`); a retry records the request for the main session to decide; `/stop` asks first unless the job is
-  finished. `/land <job>` starts the land flow itself with `hud_land` on the session's HUD connection, asking first when the job's report
-  is unread. There is no per-slice try action.
-- **Dispatch convention.** The mod shortens only the shipped convention in `hud_roster`; project and owner conventions pass through unchanged.
-  In the main session, new `imp` and `frontend-imp` jobs require explicit `isolation` (not retries), read-only roles use no worktree,
-  and new tickets require explicit `owner_try`. A model call to `hud_close` on a running job asks the owner first.
+- **Merged notices.**
+  Within one turn a HUD line already delivered by a Monitor row, the wake lane or compact MCP `changes` is not repeated.
+  A later Monitor row of the same task shrinks to its new lines without task id and summary (`(HUD events already shown this turn)` when none).
+  The mod removes already-shown `changes` lines without reformatting the rest of the tool result.
+  Rows that are not HUD lines are untouched.
+- **Owner band.**
+  Above the prompt the mod shows only what needs the owner now, and nothing otherwise: up to two rows, cut to the band's width, in the panel's language, each ending in a button.
+  `? N waiting for you · <first item> [Open]` counts STATE's `Waiting for the owner` items (items whose `(waits on …)` tickets are done drop out, as in the Project Inbox); Open shows the panel beside the pane, where the Project hub lists them.
+  `N to try [Accept all]` is the Inbox's Accept all count; the button records it as the panel does (`hud act try`).
+  A press answers with a toast, never a model turn.
+  Running workers, failures and worker questions are not shown (the statusline and the main session carry those).
+  The watch sends a `band` record after `ready` and again only when it changes; the band is drawn from the session's state with no I/O and stays empty while a survey holds it.
+  One toast (`Needs you: …`) appears when a new item or slice arrives, once per record and never for what was already there when the watch started.
+  The band refreshes while the watch runs; after the ten-minute idle exit it updates at the next restart (a HUD call or panel decision).
+- **Owner commands.**
+  In an owner session (not a worker's) the mod declares slash commands that run at once, even mid-turn, and print for the owner only: their output is shown and goes in no model request, and no MCP schema is added.
+  `/hud` opens the panel (in a herdr pane; elsewhere the skill answers).
+  `/jobs` lists running jobs and unread reports and `/jobs <id>` peeks one, without marking a report read.
+  `/answer <job> <qN> <answer>`, `/try` (Accept all), `/retry <job>` and `/stop <job>` run `hud act`, so they do what the panel does: an answer writes `qa/qN.answer.md` once, resumes a headless job and tells the main session (`ANSWERED qN from panel`); a retry records the request for the main session to decide; `/stop` asks first unless the job is finished.
+  `/land <job>` starts the land flow itself with `hud_land` on the session's HUD connection, asking first when the job's report is unread.
+  There is no per-slice try action.
+- **Dispatch convention.**
+  The mod shortens only the shipped convention in `hud_roster`; project and owner conventions pass through unchanged.
+  In the main session, new `imp` and `frontend-imp` jobs require explicit `isolation` (not retries), read-only roles use no worktree, and new tickets require explicit `owner_try`.
+  A model call to `hud_close` on a running job asks the owner first.
   While the mod watch is live, use its events instead of another `hud watch`, `hud_wait`, or `hud_read` with positive `wait_ms`.
-- **Report reads.** `Read`, `Grep`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command on `…/jobs/<id>/report.md` is refused with
-  `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` Other reads pass. A worker
-  session (`HUD_JOB_DIR` set) has no `hud_read` and may read the file, as `from_jobs` hands reports to workers as files.
+- **Report reads.**
+  `Read`, `Grep`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command on `…/jobs/<id>/report.md` is refused with `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` Other reads pass.
+  A worker session (`HUD_JOB_DIR` set) has no `hud_read` and may read the file, as `from_jobs` hands reports to workers as files.
 
 ## Project workers
 
-A registered project can opt into scratch cleanup in `.hud/project.json`, for example
-`"scratch": {"paths": ["tmp/tasks"], "keep_days": 7}`. Only designate directories holding disposable data.
-At most once an hour, during an on-demand scan, the watcher removes top-level entries in those directories
-whose newest file is older than `keep_days` (default 7). It refuses `..` path components, paths outside the project
-root, and the root itself. It never follows symlinks and logs the number of entries removed in `$HUD_HOME/watch.log`.
+A registered project can opt into scratch cleanup in `.hud/project.json`, for example `"scratch": {"paths": ["tmp/tasks"], "keep_days": 7}`.
+Only designate directories holding disposable data.
+At most once an hour, during an on-demand scan, the watcher removes top-level entries in those directories whose newest file is older than `keep_days` (default 7).
+It refuses `..` path components, paths outside the project root, and the root itself.
+It never follows symlinks and logs the number of entries removed in `$HUD_HOME/watch.log`.
 
 ```sh
 hud setup --detect [--cwd DIR]
@@ -540,23 +627,19 @@ hud setup --apply PLAN.json [--cwd DIR]
 hud setup --remove [--cwd DIR]
 ```
 
-Non-interactive. The `hud-setup` skill, installed beside `hud-delegate` for Claude,
-Codex and pi, asks; these commands only read or write.
+Non-interactive.
+The `hud-setup` skill, installed beside `hud-delegate` for Claude, Codex and pi, asks; these commands only read or write.
 
-`--detect` prints one JSON document and writes nothing. It names the git root of
-`--cwd` (or `--cwd` itself), whether that root is registered, reference roles
-(shipped and `$HUD_HOME/roles`), project roles with their ordered `run` chains,
-the enabled set, invalid role files, skills and worker-skill links. Optional roles in the inventory
-carry an `enabled` flag; enabling one is a machine-wide choice in Control, not a project setup change.
+`--detect` prints one JSON document and writes nothing.
+It names the git root of `--cwd` (or `--cwd` itself), whether that root is registered, reference roles (shipped and `$HUD_HOME/roles`), project roles with their ordered `run` chains, the enabled set, invalid role files, skills and worker-skill links.
+Optional roles in the inventory carry an `enabled` flag; enabling one is a machine-wide choice in Control, not a project setup change.
 From a registered main checkout, `proposed_disposable` lists suggested globs for ignored leftovers in kept worktrees.
-Skill roots come from `$HUD_HOME/setup.json` `skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
-`~/.agents/skills`), always followed by the checkout's `integrations/skills`. A skill is a directory with `SKILL.md`; its name is the
-frontmatter `name`. Each skill includes `model_invocable`: false when that
-frontmatter has `disable-model-invocation: true`. Pi still loads such a skill, but
-leaves it out of the model's skill list, so a worker will not pick it by itself.
+Skill roots come from `$HUD_HOME/setup.json` `skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and `~/.agents/skills`), always followed by the checkout's `integrations/skills`.
+A skill is a directory with `SKILL.md`; its name is the frontmatter `name`.
+Each skill includes `model_invocable`: false when that frontmatter has `disable-model-invocation: true`.
+Pi still loads such a skill, but leaves it out of the model's skill list, so a worker will not pick it by itself.
 
-`--apply` reads a plan and writes under the project's `.hud/`, which is meant to
-be committed:
+`--apply` reads a plan and writes under the project's `.hud/`, which is meant to be committed:
 
 ```
 .hud/project.json          enabled roles, and the links, role files and prompts apply made
@@ -567,389 +650,478 @@ be committed:
 .hud/brief.md              optional standing brief (add manually; not managed by setup)
 ```
 
-The plan is version 1: `roles` (enabled names), `pi_roles` (pi tuning only: `from`,
-`pi_role`, `model`, `thinking`, `split`, `can_continue`, `skills`), optional `runs`
-(role name to a non-empty ordered list of places), `skills` (name to an absolute
-skill directory), `agents` (role to markdown), `convention` (`keep` or
-`copy-default`), and optional `disposable` (only globs the owner accepts). Apply adds these globs to `worktree.disposable`; it does not run cleanup or remove existing globs. `runs` can name reference roles or copies in `pi_roles`. If both
-fields name a role, `runs` sets its order and `pi_roles` fills in defaults for each
-pi place. It prints `removed`, `wrote`, `linked`,
-`skipped (exists)`, `registered`, or `no changes`. The same plan again changes
-nothing. A file or link apply did not make is left in place and reported as skipped.
+The plan is version 1: `roles` (enabled names), `pi_roles` (pi tuning only: `from`, `pi_role`, `model`, `thinking`, `split`, `can_continue`, `skills`), optional `runs` (role name to a non-empty ordered list of places), `skills` (name to an absolute skill directory), `agents` (role to markdown), `convention` (`keep` or `copy-default`), and optional `disposable` (only globs the owner accepts).
+Apply adds these globs to `worktree.disposable`; it does not run cleanup or remove existing globs.
+`runs` can name reference roles or copies in `pi_roles`.
+If both fields name a role, `runs` sets its order and `pi_roles` fills in defaults for each pi place.
+It prints `removed`, `wrote`, `linked`, `skipped (exists)`, `registered`, or `no changes`.
+The same plan again changes nothing.
+A file or link apply did not make is left in place and reported as skipped.
 
-Applying records the root in `$HUD_HOME/projects.json`. Project config loads only
-after that, including the standing brief. `--remove` drops the registration and
-leaves `.hud/` alone; the standing brief is no longer used.
+Applying records the root in `$HUD_HOME/projects.json`.
+Project config loads only after that, including the standing brief.
+`--remove` drops the registration and leaves `.hud/` alone; the standing brief is no longer used.
 
-A registered project's role file may list pi and CLI places in `run` and in
-`presets[].run`. A CLI place accepts only `harness: "cli"`, `agent`, `model` and
-`thinking`; no extra arguments. Browser (`bro`) places are not allowed.
-Worker tuning (settings, skills and prompts) is still pi only; setup does not edit
-any CLI's own files or run `hud trust`. If a CLI place needs a trust grant for the
-project directory, run `hud trust <dir>` yourself.
+A registered project's role file may list pi and CLI places in `run` and in `presets[].run`.
+A CLI place accepts only `harness: "cli"`, `agent`, `model` and `thinking`; no extra arguments.
+Browser (`bro`) places are not allowed.
+Worker tuning (settings, skills and prompts) is still pi only; setup does not edit any CLI's own files or run `hud trust`.
+If a CLI place needs a trust grant for the project directory, run `hud trust <dir>` yourself.
 
 ## Home
 
-Home shows needs-you questions, package lanes with compact job cards, and native
-session lanes. Its only live sources for cards are HUD jobs in `$HUD_HOME/jobs/`
-recorded for the caller pane and the selected Claude or Codex session's native
-subagent tree. It does not scan `tmp/tasks/` or read retired observation records;
-`CODEX_HUD_PANEL_ALL_DELEGATIONS` no longer changes the scope. Home never briefs
-or chains work; its only actions on a job are the owner's three micro-actions
-(see [Keys](#keys)).
-Running jobs with unanswered questions need you; an unanswered question left on a
-finished job does not. A report is not proof of success, and display labels are not
-acceptance or a merge decision. Unknown evidence stays unknown.
+Home shows needs-you questions, package lanes with compact job cards, and native session lanes.
+Its only live sources for cards are HUD jobs in `$HUD_HOME/jobs/` recorded for the caller pane and the selected Claude or Codex session's native subagent tree.
+It does not scan `tmp/tasks/` or read retired observation records; `CODEX_HUD_PANEL_ALL_DELEGATIONS` no longer changes the scope.
+Home never briefs or chains work; its only actions on a job are the owner's three micro-actions (see [Keys](#keys)).
+Running jobs with unanswered questions need you; an unanswered question left on a finished job does not.
+A report is not proof of success, and display labels are not acceptance or a merge decision.
+Unknown evidence stays unknown.
 
-Home draws **one row per job**: the role's icon (the statusline's), a state mark in a fixed column that shows exceptions only (`?` asking, `✗` failed, `✓●` unread report, `○` queued, `◷` stalled, `✓` done, `−` stopped; ASCII `? x +* o ~ + -`; a running job has none), the ticket id (a job with no ticket: its lane's short name, the package or the head of the brief), then the **stage strip**, `⚡N`, the age and the silence. A row has no model, effort or route mark (the Inspector has them) and no title (it is in the lane header and the Inspector), and the ids pad to one column so the strips line up. Rows of one role that show the same id (jobs dispatched from one brief) get their model's short name after it, dim (`Open review: ho… sol-fast`, `… neon`); a row whose id is its own has none. The marks here are the Unicode set; the default Nerd Font set draws the role and state icons as listed under Icons in Settings.
+Home draws **one row per job**: the role's icon (the statusline's), a state mark in a fixed column that shows exceptions only (`?` asking, `✗` failed, `✓●` unread report, `○` queued, `◷` stalled, `✓` done, `−` stopped; ASCII `? x +* o ~ + -`; a running job has none), the ticket id (a job with no ticket: its lane's short name, the package or the head of the brief), then the **stage strip**, `⚡N`, the age and the silence.
+A row has no model, effort or route mark (the Inspector has them) and no title (it is in the lane header and the Inspector), and the ids pad to one column so the strips line up.
+Rows of one role that show the same id (jobs dispatched from one brief) get their model's short name after it, dim (`Open review: ho… sol-fast`, `… neon`); a row whose id is its own has none.
+The marks here are the Unicode set; the default Nerd Font set draws the role and state icons as listed under Icons in Settings.
 
-- **Stage strip.** Five fixed cells, read ▸ edit ▸ test ▸ report ▸ land: `●` passed, `◐` current, `○` not reached (ASCII `+ @ o`), and a dimmer `○` for a stage the card cannot know. It is read from what the card already has: the report and the job's settling (settled: the first four cells are passed), the checks receipt (a check still running or failed keeps the test cell current), the land flow (the fifth cell is current while a land runs or waits, passed once landed; the gate, merge and push detail is the Inspector's, there is no land sub-row on Home), and `stage`, the kind of work a running job is in (`read`, `edit` or `test`). For a running job, the latest tool call in the local session or headless output can identify its read, edit or test stage. Without a recognised call, or once the job stalls, the first three cells are the dim unknown `○` unless the report, checks or land flow supply them.
-- **A job that needs the owner** shows a short reason in the strip's place, coloured: `asks N opts` with the question's option count (and the model's category, `[owner authorisation]`), `✗ <reason>` for a failed job, `✗ gate red` for a land that failed at that step, `● report unread` (with the model's outcome label when it is not `done`), `queued #N`, `stopped` or `superseded`. An asking job's row is amber and its question is the line below it (one line, two from 100 columns, cut with `…`); Enter or a click opens it into the full slab with the answer keys. Asking rows come first, as the slabs did.
-- **Role icon**, first on the row, in the role's ink: imp, frontend-imp, general, oracle, reviewer, sonic (the statusline's table; ASCII `I F G O R *`), `•` for a role with no icon of its own. Then, at the right, `⚡N` (the sonic icon and the active sonic children).
-- **Order.** Jobs keep the order they were dispatched in while their progress changes: a running job going quiet or moving a stage never swaps rows. A row moves only when the job's state does (a failure or an unread report rises above the running jobs; a finished, read job sinks).
+- **Stage strip.**
+  Five fixed cells, read ▸ edit ▸ test ▸ report ▸ land: `●` passed, `◐` current, `○` not reached (ASCII `+ @ o`), and a dimmer `○` for a stage the card cannot know.
+  It is read from what the card already has: the report and the job's settling (settled: the first four cells are passed), the checks receipt (a check still running or failed keeps the test cell current), the land flow (the fifth cell is current while a land runs or waits, passed once landed; the gate, merge and push detail is the Inspector's, there is no land sub-row on Home), and `stage`, the kind of work a running job is in (`read`, `edit` or `test`).
+  For a running job, the latest tool call in the local session or headless output can identify its read, edit or test stage.
+  Without a recognised call, or once the job stalls, the first three cells are the dim unknown `○` unless the report, checks or land flow supply them.
+- **A job that needs the owner** shows a short reason in the strip's place, coloured: `asks N opts` with the question's option count (and the model's category, `[owner authorisation]`), `✗ <reason>` for a failed job, `✗ gate red` for a land that failed at that step, `● report unread` (with the model's outcome label when it is not `done`), `queued #N`, `stopped` or `superseded`.
+  An asking job's row is amber and its question is the line below it (one line, two from 100 columns, cut with `…`); Enter or a click opens it into the full slab with the answer keys.
+  Asking rows come first, as the slabs did.
+- **Role icon**, first on the row, in the role's ink: imp, frontend-imp, general, oracle, reviewer, sonic (the statusline's table; ASCII `I F G O R *`), `•` for a role with no icon of its own.
+  Then, at the right, `⚡N` (the sonic icon and the active sonic children).
+- **Order.**
+  Jobs keep the order they were dispatched in while their progress changes: a running job going quiet or moving a stage never swaps rows.
+  A row moves only when the job's state does (a failure or an unread report rises above the running jobs; a finished, read job sinks).
 - **Time**: the age, at the right (running: since it started; settled: since it settled), then the silence, `quiet 4m`, only after 3 minutes without output (the card's last observed write), dim, and amber once the card calls the job stalled (Settings → Stall threshold).
 - **Narrowing** drops, in order: the silence, `⚡N`; the role icon, the ticket id, the reason, the stage strip and the age stay.
-- **The running job's sentence**: under each running job's row, one dim line (two from 100 columns): the model's current sentence, else the job's own latest progress line, cut to fit with `…`; none when it has neither, never the ticket title. Settled jobs keep the folds below.
+- **The running job's sentence**: under each running job's row, one dim line (two from 100 columns): the model's current sentence, else the job's own latest progress line, cut to fit with `…`; none when it has neither, never the ticket title.
+  Settled jobs keep the folds below.
 
-A lane gets a header (ticket id, title, phase at the right) only when it shows more than one job; its jobs indent under it, each with its own id (a child without a ticket gets the head of its brief heading). A failed job is one row with its reason until the failure is observed or superseded (Enter opens its full card); a job with a scouted dispatch gets one sub-row (`scouting · 1m`); an unread report (`✓●`, ASCII `+*`) keeps its own row. Queued jobs fold into one `○ queued N · cache-v2/04 · …` row and read finished jobs inside the hide window into one `✓ done N · …` row (whole ids while they fit, then `+N`); Enter on a fold lists one row per job. Enter on a job row expands its card in place (sentence, milestone, activity) and keeps the row out of the folds while it is open; the report sentence is also in the Inspector. Help's **Marks** page lists the role icons, the state, stage, silence and route marks.
-A brief heading in the panel language supplies the lane header's and the Inspector's title when the job has no ticket file. For a foreign heading,
-the same sentence request can supply a localized short name that replaces it (and a ticket heading in the wrong language).
-Without model text the ticket or brief heading remains; narrow lane labels keep their numeric suffix. Classic's job rows never open by themselves; native subagent cards and Split's preview still open the newest current settled card until its fold
-time, and explicit choices win for that panel lifetime. Enter on a lane header folds the lane.
+A lane gets a header (ticket id, title, phase at the right) only when it shows more than one job; its jobs indent under it, each with its own id (a child without a ticket gets the head of its brief heading).
+A failed job is one row with its reason until the failure is observed or superseded (Enter opens its full card); a job with a scouted dispatch gets one sub-row (`scouting · 1m`); an unread report (`✓●`, ASCII `+*`) keeps its own row.
+Queued jobs fold into one `○ queued N · cache-v2/04 · …` row and read finished jobs inside the hide window into one `✓ done N · …` row (whole ids while they fit, then `+N`); Enter on a fold lists one row per job.
+Enter on a job row expands its card in place (sentence, milestone, activity) and keeps the row out of the folds while it is open; the report sentence is also in the Inspector.
+Help's **Marks** page lists the role icons, the state, stage, silence and route marks.
+A brief heading in the panel language supplies the lane header's and the Inspector's title when the job has no ticket file.
+For a foreign heading, the same sentence request can supply a localized short name that replaces it (and a ticket heading in the wrong language).
+Without model text the ticket or brief heading remains; narrow lane labels keep their numeric suffix.
+Classic's job rows never open by themselves; native subagent cards and Split's preview still open the newest current settled card until its fold time, and explicit choices win for that panel lifetime.
+Enter on a lane header folds the lane.
 Question slabs show answer keys beside the expanded options; `o` still opens the question file.
 
-**Sonic children.** A `sonic` job a HUD job dispatched (`parent_job`) never renders as its own row or card on Home (in Classic or Split). Instead, active (currently running) sonic children appear only as `⚡N` (ASCII `*N`) on their parent worker's row (and on the parent's asking row, its ask slab header or Split lane row); finished sonic children add nothing (never a cumulative total). Sonic children do not count in lane strips, Split job counts or `done today`, and never hijack a Split lane row. A `/` filter that matches a sonic job still keeps its parent visible.
+**Sonic children.**
+A `sonic` job a HUD job dispatched (`parent_job`) never renders as its own row or card on Home (in Classic or Split).
+Instead, active (currently running) sonic children appear only as `⚡N` (ASCII `*N`) on their parent worker's row (and on the parent's asking row, its ask slab header or Split lane row); finished sonic children add nothing (never a cumulative total).
+Sonic children do not count in lane strips, Split job counts or `done today`, and never hijack a Split lane row.
+A `/` filter that matches a sonic job still keeps its parent visible.
 
-**Flows.** A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows a land as the fifth cell of its stage strip on Classic Home (a failed land as `✗ gate red`; no sub-row) and a scouted dispatch as the one `scouting · 1m` sub-row while it runs; Split's preview, a failed flow and the Inspector show a flow row on the card
-(`gate ▸ merge ▸ push` or `scout ▸ run`, localized in Chinese) with the active step or final outcome (landed SHA, done,
-failed or cancelled), and Split's lane row shows its active chain. A job with a running land stays
-visible and unfolded until the flow settles; Fold after now applies to native subagent cards and Split's preview. A land queued behind another's lease says whom it waits for by that job's ticket id (else a short title), `waiting for land-log/01 (gate step 3, 1 min)`; a holder that is not on this panel's board shows its flow id.
+**Flows.**
+A job with a land flow (`$HUD_HOME/flows/<flow>.json`) or scouted dispatch shows a land as the fifth cell of its stage strip on Classic Home (a failed land as `✗ gate red`; no sub-row) and a scouted dispatch as the one `scouting · 1m` sub-row while it runs; Split's preview, a failed flow and the Inspector show a flow row on the card (`gate ▸ merge ▸ push` or `scout ▸ run`, localized in Chinese) with the active step or final outcome (landed SHA, done, failed or cancelled), and Split's lane row shows its active chain.
+A job with a running land stays visible and unfolded until the flow settles; Fold after now applies to native subagent cards and Split's preview.
+A land queued behind another's lease says whom it waits for by that job's ticket id (else a short title), `waiting for land-log/01 (gate step 3, 1 min)`; a holder that is not on this panel's board shows its flow id.
 
-**Panel lifetime.** Jobs settled before the panel opened are excluded, including
-their decisions and model inputs; `a` cannot reveal them. Active/unknown jobs stay
-eligible regardless of age. Build reload preserves the original opening time.
+**Panel lifetime.**
+Jobs settled before the panel opened are excluded, including their decisions and model inputs; `a` cannot reveal them.
+Active/unknown jobs stay eligible regardless of age.
+Build reload preserves the original opening time.
 Native agents and Project's ticket lookup keep their own scope.
 
-**Card lifetimes.** Settled native cards fold after 5 minutes and
-hide after 5 minutes by default (so fold and hide coincide; adjust both in Settings → Panel). A read, settled HUD job is in the finished row from the start and leaves it at the hide time. A hide time below fold
-time counts as fold time. A failed or stopped job leaves Home immediately when a retry,
-repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
-`a` shows it muted as `superseded`. An observed failure follows the ordinary fold/hide times.
+**Card lifetimes.**
+Settled native cards fold after 5 minutes and hide after 5 minutes by default (so fold and hide coincide; adjust both in Settings → Panel).
+A read, settled HUD job is in the finished row from the start and leaves it at the hide time.
+A hide time below fold time counts as fold time.
+A failed or stopped job leaves Home immediately when a retry, repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
+`a` shows it muted as `superseded`.
+An observed failure follows the ordinary fold/hide times.
 An unhandled failure stays unfolded with its reason row and leaves Home after 30 minutes; use `hud_read({job})` to inspect it by job ID.
-Running/asking cards stay. `a` reveals hidden cards in place as muted one-row titles; Enter
-expands them. The job scan considers up to 200 top-level jobs and, separately, up to 200 of their children. Child jobs do not request card sentences or display labels.
+Running/asking cards stay.
+`a` reveals hidden cards in place as muted one-row titles; Enter expands them.
+The job scan considers up to 200 top-level jobs and, separately, up to 200 of their children.
+Child jobs do not request card sentences or display labels.
 
 Answered questions are still collected but have no Home block or dedicated panel view.
 The Inspector still lists job files, including answers and their default/departure marks.
-A review verdict requires its recorded accept/changes-required line and settled output,
-not merely helper exit.
+A review verdict requires its recorded accept/changes-required line and settled output, not merely helper exit.
 
-**Native agents on Home.** Claude/Codex main sessions get their own lanes, labeled
-`subagents` in Split. Children indent once; deeper descendants say `↳ parent`. A hidden parent never hides a live
-child. pi helpers already appear as HUD jobs. A long Claude subagent transcript shows
-its latest public step first; Agent/Task nesting fills in as bounded forward replay
-catches up. Replay preserves known completion ages and blocks model requests until caught up. Growth after
-completion reopens an agent; fresh finished metadata or a caught-up public
-`end_turn` with no open calls settles it again. Incomplete reads cannot prove idle.
+**Native agents on Home.**
+Claude/Codex main sessions get their own lanes, labeled `subagents` in Split.
+Children indent once; deeper descendants say `↳ parent`.
+A hidden parent never hides a live child.
+pi helpers already appear as HUD jobs.
+A long Claude subagent transcript shows its latest public step first; Agent/Task nesting fills in as bounded forward replay catches up.
+Replay preserves known completion ages and blocks model requests until caught up.
+Growth after completion reopens an agent; fresh finished metadata or a caught-up public `end_turn` with no open calls settles it again.
+Incomplete reads cannot prove idle.
 `o` opens the transcript; there is no native conversation-switch control.
 
-**Ordering.** Home uses the built-in order, not model ranking. A saved `homeMode`
-setting is ignored; previously selecting Recommended does not change the order.
+**Ordering.**
+Home uses the built-in order, not model ranking.
+A saved `homeMode` setting is ignored; previously selecting Recommended does not change the order.
 
-**Top line.** Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering). The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear. The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in the statusline's order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker). The counts live in the panel's memory only, so a panel restart starts from zero, and nothing shows until a worker has started; the left side takes its shorter forms before the counts go. With STATE waiting items, Enter or a click on the top line in Classic opens the Project Inbox. The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
+**Top line.**
+Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering).
+The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear.
+The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in the statusline's order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker).
+The counts live in the panel's memory only, so a panel restart starts from zero, and nothing shows until a worker has started; the left side takes its shorter forms before the counts go.
+With STATE waiting items, Enter or a click on the top line in Classic opens the Project Inbox.
+The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
 
-**Spare rows.** Cards get space first. Remaining rows show, top to bottom: STATE's
-waiting items (a row each, up to five, then `+N more`), the most recently accepted tickets (three rows at 38–55
-columns, five wider), then STATE's Now summary (up to three wrapped rows), a stacked progress bar
-and ticket count legend (accepted, to try, working, stalled, planned; dropped tickets excluded).
-The bar uses STATE's milestone as its heading, or `All tickets` without a milestone. A project ticket meter includes finished
-features. Started features get one row each; unstarted features share one planned row with ready and queued
-counts. In Split Home the Progress row names the milestone, how many slices are pending and how many are working,
-or the accepted fraction when idle. The Waiting row previews only STATE waiting items. The block takes its rows
-before the two lists, which take what is left.
-As height falls the latest list shrinks first, then waiting, tickets, the summary's extra
-rows, legend, summary, bar and the block. Enter or a click on a waiting item opens its page (Esc
-returns to its row on the hub), on the Waiting header the Project Inbox, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
+**Spare rows.**
+Cards get space first.
+Remaining rows show, top to bottom: STATE's waiting items (a row each, up to five, then `+N more`), the most recently accepted tickets (three rows at 38–55 columns, five wider), then STATE's Now summary (up to three wrapped rows), a stacked progress bar and ticket count legend (accepted, to try, working, stalled, planned; dropped tickets excluded).
+The bar uses STATE's milestone as its heading, or `All tickets` without a milestone.
+A project ticket meter includes finished features.
+Started features get one row each; unstarted features share one planned row with ready and queued counts.
+In Split Home the Progress row names the milestone, how many slices are pending and how many are working, or the accepted fraction when idle.
+The Waiting row previews only STATE waiting items.
+The block takes its rows before the two lists, which take what is left.
+As height falls the latest list shrinks first, then waiting, tickets, the summary's extra rows, legend, summary, bar and the block.
+Enter or a click on a waiting item opens its page (Esc returns to its row on the hub), on the Waiting header the Project Inbox, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
 
 ## Project
 
-Project opens to the Inbox in both Classic and Split. Below the project name:
+Project opens to the Inbox in both Classic and Split.
+Below the project name:
 
-- **Needs you**, in order: asking jobs, items the main session flagged in STATE's `Waiting for the owner`,
-  tickets asking for an answer, other blocked tickets and exhausted roles. The heading counts STATE waiting items.
-  Enter on `N more` reveals the remaining items. Enter on a role alert opens that role on Control;
-  `o` opens its file.
-- **Running**: one row per running job with role, ticket or job title, `⚡N` for its running sonic
-  children and elapsed time. Slices, worktrees and those children do not get separate rows. A
-  `last accepted` line shows the newest accepted ticket.
-- One summary row per page: **Progress**, **Tickets** (absent if there are no tickets), **Working tree**
-  (including the unlisted worktree count), and **Docs**. A narrow row drops optional facts from the end.
-- **Accept all** appears below the page links when there are tickets to try. Select it and press Enter
-  (or click the selected row). It accepts all observed pending tickets in the displayed project in one
-  `$HUD_HOME/tries.jsonl` record. If the read is partial, only the tickets found are included.
+- **Needs you**, in order: asking jobs, items the main session flagged in STATE's `Waiting for the owner`, tickets asking for an answer, other blocked tickets and exhausted roles.
+  The heading counts STATE waiting items.
+  Enter on `N more` reveals the remaining items.
+  Enter on a role alert opens that role on Control; `o` opens its file.
+- **Running**: one row per running job with role, ticket or job title, `⚡N` for its running sonic children and elapsed time.
+  Slices, worktrees and those children do not get separate rows.
+  A `last accepted` line shows the newest accepted ticket.
+- One summary row per page: **Progress**, **Tickets** (absent if there are no tickets), **Working tree** (including the unlisted worktree count), and **Docs**.
+  A narrow row drops optional facts from the end.
+- **Accept all** appears below the page links when there are tickets to try.
+  Select it and press Enter (or click the selected row).
+  It accepts all observed pending tickets in the displayed project in one `$HUD_HOME/tries.jsonl` record.
+  If the read is partial, only the tickets found are included.
   Landed tickets marked `**Owner try:** no` go straight to done; the main session verifies them.
-  The panel reflects the result without writing to project files;
-  `hud watch` and MCP `changes` receive one line. There is no per-slice acceptance, flagging or landing action.
+  The panel reflects the result without writing to project files; `hud watch` and MCP `changes` receive one line.
+  There is no per-slice acceptance, flagging or landing action.
   Old records are still readable.
 
 Enter or click a page row to open it; Esc or the crumb (`‹ Project › Page`) returns to that row.
-Each page keeps its own cursor and scroll, even across panel reloads. Enter on a waiting item opens
-its whole text on its own scrolling page, including continuation lines; Esc or the crumb returns to
-its row, and `o` opens STATE.md. An item ending in `(waits on feature/NN, …)` drops out once the
-named tickets are done or dropped. Old accept records can still settle legacy slice IDs.
+Each page keeps its own cursor and scroll, even across panel reloads.
+Enter on a waiting item opens its whole text on its own scrolling page, including continuation lines; Esc or the crumb returns to its row, and `o` opens STATE.md.
+An item ending in `(waits on feature/NN, …)` drops out once the named tickets are done or dropped.
+Old accept records can still settle legacy slice IDs.
 
-Facts come from `docs/handoff/STATE.md` (root `STATE.md` fallback), `docs/spec.md`,
-reviews, roles/convention/instructions and Git/worktrees. No milestone or completion
-is guessed. Key rows contain names/presence only; Browser ✓ means Chrome and
-`jev-ask` exist on PATH, not a running/logged-in browser.
+Facts come from `docs/handoff/STATE.md` (root `STATE.md` fallback), `docs/spec.md`, reviews, roles/convention/instructions and Git/worktrees.
+No milestone or completion is guessed.
+Key rows contain names/presence only; Browser ✓ means Chrome and `jev-ask` exist on PATH, not a running/logged-in browser.
 
-**Progress page.** One row per ticket feature shows the most important state mark and ticket counts by state.
+**Progress page.**
+One row per ticket feature shows the most important state mark and ticket counts by state.
 Enter in Classic or the Split preview shows the member tickets, with `o` to open the ticket file.
-Next and the Now summary still come from STATE, which is not a slice ledger. A job's row can open its report or,
-if none, its brief. Worktrees without a linked ticket or managed job are listed on the Working tree page.
-The ordinary `/` filter matches the whole group when one member matches. The old Detail (`acceptance`) setting is ignored.
+Next and the Now summary still come from STATE, which is not a slice ledger.
+A job's row can open its report or, if none, its brief.
+Worktrees without a linked ticket or managed job are listed on the Working tree page.
+The ordinary `/` filter matches the whole group when one member matches.
+The old Detail (`acceptance`) setting is ignored.
 
-Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`. The list shows scanned features with open tickets, then the newest finished features to fill 16 slots.
-The scan enumerates feature names, checks up to 256 for an `issues` directory, then reads up to 64 of those directories by recency, at most 64 files per feature and 512 total, up to 64 KiB per file. Totals are marked `Partial` if a cap or a failed read leaves the scan incomplete.
+Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`.
+The list shows scanned features with open tickets, then the newest finished features to fill 16 slots.
+The scan enumerates feature names, checks up to 256 for an `issues` directory, then reads up to 64 of those directories by recency, at most 64 files per feature and 512 total, up to 64 KiB per file.
+Totals are marked `Partial` if a cap or a failed read leaves the scan incomplete.
 Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
-`hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh`
-(open parent issues with sub-issues, plus already-mirrored parents so closed features
-receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files
-with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
-A recorded acceptance or done/closed/complete/resolved status completes a ticket, as does a fully checked nonempty checklist unless it awaits a try. Dropped tickets count as resolved on the Tickets page. A pending landing record or a ticket ID in the latest 64 commit subjects shows **to try** and releases its dependents. Local numbers/titles and `feature/NN` blockers resolve across the scanned project. Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Stalled**. Working jobs and managed worktrees are linked at read time, never written back to the tracker. The lookup of the newest 64 top-level jobs and up to 64 of their children is shared with Progress.
-**Tickets page**: one row per `.scratch` feature, with resolved/total (including dropped tickets as resolved)
-and the oldest open ticket's status. Open a feature to see its tickets in lanes by state, one row each
-(`◐ hp 06 Projects list  imp 12m  1/3`:
-state mark, the feature's code, number and title; on the right what matters for the lane, then
-checked/total). **For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`,
-`ready-for-human`) with their latest comment under the row, whatever else holds them. **Working** holds
-tickets with active work or a fresh claim; landed tickets have a **to try** lane. **Ready** holds work that can
-start; **Queued** starts folded and holds tickets waiting on ordinary predecessors. **Stalled** is for genuine
-blockers. Dependency rows name their blockers (`← 03 ●`, the mark that of the blocker); **Done** also starts folded.
-Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
-`## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
+`hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh` (open parent issues with sub-issues, plus already-mirrored parents so closed features receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
+A recorded acceptance or done/closed/complete/resolved status completes a ticket, as does a fully checked nonempty checklist unless it awaits a try.
+Dropped tickets count as resolved on the Tickets page.
+A pending landing record or a ticket ID in the latest 64 commit subjects shows **to try** and releases its dependents.
+Local numbers/titles and `feature/NN` blockers resolve across the scanned project.
+Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Stalled**.
+Working jobs and managed worktrees are linked at read time, never written back to the tracker.
+The lookup of the newest 64 top-level jobs and up to 64 of their children is shared with Progress.
+**Tickets page**: one row per `.scratch` feature, with resolved/total (including dropped tickets as resolved) and the oldest open ticket's status.
+Open a feature to see its tickets in lanes by state, one row each (`◐ hp 06 Projects list  imp 12m  1/3`: state mark, the feature's code, number and title; on the right what matters for the lane, then checked/total).
+**For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`, `ready-for-human`) with their latest comment under the row, whatever else holds them.
+**Working** holds tickets with active work or a fresh claim; landed tickets have a **to try** lane.
+**Ready** holds work that can start; **Queued** starts folded and holds tickets waiting on ordinary predecessors.
+**Stalled** is for genuine blockers.
+Dependency rows name their blockers (`← 03 ●`, the mark that of the blocker); **Done** also starts folded.
+Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
 
-**Control tab.** Control is a main tab after Project. It names and follows the project selected in Project; `[`/`]` change that same selection without changing Home's root. Control reads that root's role and file facts without collecting its Git status, worktrees or tickets. The Roles view starts with:
+**Control tab.**
+Control is a main tab after Project.
+It names and follows the project selected in Project; `[`/`]` change that same selection without changing Home's root.
+Control reads that root's role and file facts without collecting its Git status, worktrees or tickets.
+The Roles view starts with:
 
-- **Needs attention**: roles with exhausted places that are enabled, with no available place, or with a missing selected preset, plus invalid role files. A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath. An invalid file opens with Enter or `o`.
-- **Healthy**: folded to role names. Enter shows one row per role with its next target and, on project-owned roles, a `project` tag. Only named presets other than `default` get a preset tag; a file chain without a selector has no tag either.
+- **Needs attention**: roles with exhausted places that are enabled, with no available place, or with a missing selected preset, plus invalid role files.
+  A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath.
+  An invalid file opens with Enter or `o`.
+- **Healthy**: folded to role names.
+  Enter shows one row per role with its next target and, on project-owned roles, a `project` tag.
+  Only named presets other than `default` get a preset tag; a file chain without a selector has no tag either.
 - **Leases**: when the selected project has active leases, one read-only row per lease shows its name, holder and age.
-- **Usage** and **Files**: both folded. The reported job-usage block uses the same retained-job, archive and land data as `hud day`, with cost coverage and today's totals by role and by role/place/mode. Usage opens quota windows, pi spend and today's per-role dispatch health (one row per role that never wraps: counts as words while every role's row fits, else as `✓ ✗` marks, and a row still too wide drops its `avg`, then its `quiet`; place names cut at the end with `…`; split into per-place sub-rows for launches, launch failures, hand-offs to main and quota marks when a role used 2+ places or had a launch failure or quota mark; display only). Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
+- **Usage** and **Files**: both folded.
+  The reported job-usage block uses the same retained-job, archive and land data as `hud day`, with cost coverage and today's totals by role and by role/place/mode.
+  Usage opens quota windows, pi spend and today's per-role dispatch health (one row per role that never wraps: counts as words while every role's row fits, else as `✓ ✗` marks, and a row still too wide drops its `avg`, then its `quiet`; place names cut at the end with `…`; split into per-place sub-rows for launches, launch failures, hand-offs to main and quota marks when a role used 2+ places or had a launch failure or quota mark; display only).
+  Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
 
-The role row names the next model when it fits whole; otherwise it shows the harness (and provider for pi, when known). A known inherited model is muted. Split previews the selected role's numbered chain and source; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed. `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
+The role row names the next model when it fits whole; otherwise it shows the harness (and provider for pi, when known).
+A known inherited model is muted.
+Split previews the selected role's numbered chain and source; Enter focuses its places and Esc returns to the list.
+Classic expands the numbered chain and its source under the role with Enter.
+`o` on a role or place opens its source.
+Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed.
+`x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
 
-**Harnesses** (`h`, or click the Roles / Harnesses headings) lists the pi runner, compiled CLI agents,
-browser tools and pi providers for **this machine, all projects**. Space or Enter toggles the selected
-switch; Del removes an enabled entry by turning it off, not uninstalling it. Enter on **Off** expands
-or folds the disabled entries. `i` opens **Add back**: type part of a switch ID, use ↑↓ to select,
-Enter to restore or Esc to cancel. These controls work in Classic and Split. Presence is separate
-from the switch: installed means the executable was found, and a provider being listed is not proof
-of login or quota. A provider under an off runner keeps its switch and shows `pi off`. `jev-ask`
-switches both ChatGPT and Gemini; `jev-aistudio` switches Argon. `r` refreshes the local model lists.
+**Harnesses** (`h`, or click the Roles / Harnesses headings) lists the pi runner, compiled CLI agents, browser tools and pi providers for **this machine, all projects**.
+Space or Enter toggles the selected switch; Del removes an enabled entry by turning it off, not uninstalling it.
+Enter on **Off** expands or folds the disabled entries.
+`i` opens **Add back**: type part of a switch ID, use ↑↓ to select, Enter to restore or Esc to cancel.
+These controls work in Classic and Split.
+Presence is separate from the switch: installed means the executable was found, and a provider being listed is not proof of login or quota.
+A provider under an off runner keeps its switch and shows `pi off`.
+`jev-ask` switches both ChatGPT and Gemini; `jev-aistudio` switches Argon.
+`r` refreshes the local model lists.
 
-An explicit switch action writes only the `disabled` property in `$HUD_HOME/harnesses.json`
-(atomically, mode 0600), retaining other keys and leaving every role file byte-for-byte unchanged.
-IDs are `pi`, `pi:<provider>`, `cli:<agent>` and `bro:<tool>`; absent means on, including newly
-discovered or unlisted targets. `cli:grok` and `pi:xai` are independent. Invalid or unreadable
-switch data is a configuration error, not an all-on default.
+An explicit switch action writes only the `disabled` property in `$HUD_HOME/harnesses.json` (atomically, mode 0600), retaining other keys and leaving every role file byte-for-byte unchanged.
+IDs are `pi`, `pi:<provider>`, `cli:<agent>` and `bro:<tool>`; absent means on, including newly discovered or unlisted targets.
+`cli:grok` and `pi:xai` are independent.
+Invalid or unreadable switch data is a configuration error, not an all-on default.
 
-Roles, `hud_roster` and `hud_create` use the same next-place evaluation: off, live quota and missing
-executables are skipped in order. With `pi:xai` off, `imp [daily]` can go to `agy` without changing
-the preset or deleting the pi place. Restoring xai lets it return to its original position, but not
-until any real quota mark is cleared or expires. A pi provider comes from a qualified explicit or
-pi-role model, a unique exact bare model match in the unfiltered cache, or pi settings when no model
-is set. Unknown providers are shown and do not block dispatch. `pi_args` are not read for attribution.
-The same policy applies to `general`’s per-job `preset`, `on` and `model` overrides; an explicit
-off target is refused, not silently rerouted. If no place can run, `hud_create` returns
-`no_available_place` before creating a job.
+Roles, `hud_roster` and `hud_create` use the same next-place evaluation: off, live quota and missing executables are skipped in order.
+With `pi:xai` off, `imp [daily]` can go to `agy` without changing the preset or deleting the pi place.
+Restoring xai lets it return to its original position, but not until any real quota mark is cleared or expires.
+A pi provider comes from a qualified explicit or pi-role model, a unique exact bare model match in the unfiltered cache, or pi settings when no model is set.
+Unknown providers are shown and do not block dispatch.
+`pi_args` are not read for attribution.
+The same policy applies to `general`’s per-job `preset`, `on` and `model` overrides; an explicit off target is refused, not silently rerouted.
+If no place can run, `hud_create` returns `no_available_place` before creating a job.
 
-A role file can name additional MCP servers for Claude and Codex CLI workers, for example `"mcp_servers": ["chrome-devtools"]`. Omit the field or use `[]` to load only the HUD worker MCP. Claude takes the named entries from `mcpServers` in the user's `.claude.json` (`$CLAUDE_CONFIG_DIR/.claude.json` when set) and starts with a strict, job-private config. An unknown Claude server name fails that launch attempt. Codex disables unlisted servers with per-run overrides; named servers keep their configured state. If HUD cannot read a Codex configuration layer it leaves MCPs as configured and records `mcp scope not applied` in the launch diagnostics. HUD does not edit harness configuration to scope MCPs.
+A role file can name additional MCP servers for Claude and Codex CLI workers, for example `"mcp_servers": ["chrome-devtools"]`.
+Omit the field or use `[]` to load only the HUD worker MCP.
+Claude takes the named entries from `mcpServers` in the user's `.claude.json` (`$CLAUDE_CONFIG_DIR/.claude.json` when set) and starts with a strict, job-private config.
+An unknown Claude server name fails that launch attempt.
+Codex disables unlisted servers with per-run overrides; named servers keep their configured state.
+If HUD cannot read a Codex configuration layer it leaves MCPs as configured and records `mcp scope not applied` in the launch diagnostics.
+HUD does not edit harness configuration to scope MCPs.
 
-Claude appends the role file to its system prompt, and Codex uses developer instructions. Grok appends role text as rules when it contains no control characters; otherwise it prepends the instructions to the first message or points to the role file if it cannot inline them. Claude uses that same fallback if the role path contains a control character. Herdr cannot encode control characters (including newlines and tabs) in CLI startup arguments; other such arguments make HUD skip that place rather than change the argument. Agy has no equivalent system-prompt flag or strict MCP selector: it uses its configured MCPs and prepends the role instructions and, in a registered project, `.hud/brief.md`. Text inlined in the first message must be under 16 KiB and contain no NUL; otherwise the message points to the corresponding file. This also applies to the assembled `brief.md` for all four CLIs.
+Claude appends the role file to its system prompt, and Codex uses developer instructions.
+Grok appends role text as rules when it contains no control characters; otherwise it prepends the instructions to the first message or points to the role file if it cannot inline them.
+Claude uses that same fallback if the role path contains a control character.
+Herdr cannot encode control characters (including newlines and tabs) in CLI startup arguments; other such arguments make HUD skip that place rather than change the argument.
+Agy has no equivalent system-prompt flag or strict MCP selector: it uses its configured MCPs and prepends the role instructions and, in a registered project, `.hud/brief.md`.
+Text inlined in the first message must be under 16 KiB and contain no NUL; otherwise the message points to the corresponding file.
+This also applies to the assembled `brief.md` for all four CLIs.
 
-Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → registered project. At each layer, `hidden_presets` removes inherited names, then local definitions replace or append names. The winning role file's `active_preset` selects a name; `null` selects the file's own `run`. Without this field, the file chain still runs and the first exact normalized match still identifies the preset. If an explicitly selected name is missing, the file chain runs and Control and the roster report the missing name. A detailed `hud_roster` returns the effective `run`, `preset` and merged `presets`. Only `general` can use `hud_create(preset: …)` to select a named chain for one job without saving it.
+Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`.
+Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`.
+Presets merge by name from shipped → owner → registered project.
+At each layer, `hidden_presets` removes inherited names, then local definitions replace or append names.
+The winning role file's `active_preset` selects a name; `null` selects the file's own `run`.
+Without this field, the file chain still runs and the first exact normalized match still identifies the preset.
+If an explicitly selected name is missing, the file chain runs and Control and the roster report the missing name.
+A detailed `hud_roster` returns the effective `run`, `preset` and merged `presets`.
+Only `general` can use `hud_create(preset: …)` to select a named chain for one job without saving it.
 
-In **Control → Roles**, off optional roles are listed under **Optional roles**. Select `pro` or `flow` and press Space (or click the footer's **Space on/off**) to toggle it for all projects. This atomically writes `$HUD_HOME/role-switches.json` (mode 0600) without touching role files. To set it by hand, use a JSON object such as `{ "pro": true, "flow": false }`; remove a key to fall back to whether an owner role file defines it. A project's role allowlist still applies; it cannot turn a globally off role on.
+In **Control → Roles**, off optional roles are listed under **Optional roles**.
+Select `pro` or `flow` and press Space (or click the footer's **Space on/off**) to toggle it for all projects.
+This atomically writes `$HUD_HOME/role-switches.json` (mode 0600) without touching role files.
+To set it by hand, use a JSON object such as `{ "pro": true, "flow": false }`; remove a key to fall back to whether an owner role file defines it.
+A project's role allowlist still applies; it cannot turn a globally off role on.
 
-On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from the file chain, first/last). `p` opens one list including the file chain and any preset named `default`: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` starts a draft copied from the current chain; `I` starts empty. Enter a unique name and press Enter to open the draft. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
+On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from the file chain, first/last).
+`p` opens one list including the file chain and any preset named `default`: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel.
+The list shows where each chain runs next; an all-off preset remains selectable and shows **none**.
+`N` starts a draft copied from the current chain; `I` starts empty.
+Enter a unique name and press Enter to open the draft.
+`R` renames the selected named preset on Enter.
+`D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels.
+Selection, copy, rename and deletion never launch a job or overwrite `run`.
+Quota marks stay with their places.
 
-Only explicit edits write the global owner role file (`$HUD_HOME/roles`, atomically, mode 0600), even when viewing a registered project. An inherited rename or deletion hides the old name in the owner layer instead of changing a shipped file. Project-pinned roles show the source and a lock; `o` opens the file but the panel offers no preset or place edits there. Shipped imp presets: `default`, `hydrogen`, `astra`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
+Only explicit edits write the global owner role file (`$HUD_HOME/roles`, atomically, mode 0600), even when viewing a registered project.
+An inherited rename or deletion hides the old name in the owner layer instead of changing a shipped file.
+Project-pinned roles show the source and a lock; `o` opens the file but the panel offers no preset or place edits there.
+Shipped imp presets: `default`, `hydrogen`, `astra`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup).
+No separate architect HUD role remains.
 
-Enter on a role focuses its chain in place (Split preview or Classic expansion). It stays read-only
-until you make a change. `i` adds a place at the end; Enter on a place edits it. In the sheet, move
-between Target, Model or Flow kind, Thinking (or browser Effort) where applicable, and Done. Enter
-opens a field's list; type to filter, use ↑↓ or PgUp/PgDn to select, and press Enter to fill it. Esc
-cancels the field or the sheet. Off targets cannot be selected; missing executables are marked.
-Existing off places remain in the chain. Replacing a target that has launch options (`skills`,
-`pi_args`, `args`, `split: true` or other fields the sheet cannot preserve) is refused; `o` opens its source.
+Enter on a role focuses its chain in place (Split preview or Classic expansion).
+It stays read-only until you make a change.
+`i` adds a place at the end; Enter on a place edits it.
+In the sheet, move between Target, Model or Flow kind, Thinking (or browser Effort) where applicable, and Done.
+Enter opens a field's list; type to filter, use ↑↓ or PgUp/PgDn to select, and press Enter to fill it.
+Esc cancels the field or the sheet.
+Off targets cannot be selected; missing executables are marked.
+Existing off places remain in the chain.
+Replacing a target that has launch options (`skills`, `pi_args`, `args`, `split: true` or other fields the sheet cannot preserve) is refused; `o` opens its source.
 
-`K`/`J` move a place earlier/later and `Del` removes it. The **Not saved** draft shows its next
-place separately from the saved chain. `s` saves the whole nonempty chain and selects it; if validation
-or the write fails, or if the role changed on disk, the draft stays open. To leave a dirty draft,
-confirm **Discard edits?** with Enter or resume with Esc. Panel reload waits until the draft is closed.
-Outside a draft, `x` clears the selected place's quota mark and `o` opens the role file. `r` refreshes model lists.
+`K`/`J` move a place earlier/later and `Del` removes it.
+The **Not saved** draft shows its next place separately from the saved chain.
+`s` saves the whole nonempty chain and selects it; if validation or the write fails, or if the role changed on disk, the draft stays open.
+To leave a dirty draft, confirm **Discard edits?** with Enter or resume with Esc.
+Panel reload waits until the draft is closed.
+Outside a draft, `x` clears the selected place's quota mark and `o` opens the role file.
+`r` refreshes model lists.
 
-Press `m` on a role row to change the `◉` place (or place 1 if none can run). Press `m` on a place or
-click its model field (`[model ▾]`) to change that place directly. Pi, CLI and AI Studio use the same
-picker. Enter saves immediately to the active named preset or file chain and keeps the cursor where
-it was. If a draft is open, Enter changes only the draft; `s` still saves it.
+Press `m` on a role row to change the `◉` place (or place 1 if none can run).
+Press `m` on a place or click its model field (`[model ▾]`) to change that place directly.
+Pi, CLI and AI Studio use the same picker.
+Enter saves immediately to the active named preset or file chain and keeps the cursor where it was.
+If a draft is open, Enter changes only the draft; `s` still saves it.
 Flow has no model, and project-locked places show plain text and cannot be edited.
 
 When unset, the model field shows the effective model in muted text if known, or just `[▾]`.
-Unset thinking likewise shows the known value in muted text or stays blank. If you open Edit place
-with Enter, its Model field still fills the form: choose Done to put the place in the draft, then `s` to save.
-With an empty query, the picker starts with the current model, compatible models from this role's other
-presets (tagged except for `default`), the previous model from the last quick save for this place (`was`,
-kept only for this panel session), and a clear row when applicable. The picker fills the panel body
-below the tabs in Classic and Split without zooming. For CLI and AI Studio it stays a single list at
-any width, showing model IDs from the catalog and available discovery, with no provider groups or
-facts strip. In pi, the pinned models also stay in their groups.
-Pi providers used by role or preset places (including resolved defaults for unset places) are open below: the
-current provider first, then by number of uses. The `▸` row groups the other providers; Enter or a click
-opens or closes them together. Individual headers are not selectable. With no providers in use, all groups are open.
+Unset thinking likewise shows the known value in muted text or stays blank.
+If you open Edit place with Enter, its Model field still fills the form: choose Done to put the place in the draft, then `s` to save.
+With an empty query, the picker starts with the current model, compatible models from this role's other presets (tagged except for `default`), the previous model from the last quick save for this place (`was`, kept only for this panel session), and a clear row when applicable.
+The picker fills the panel body below the tabs in Classic and Split without zooming.
+For CLI and AI Studio it stays a single list at any width, showing model IDs from the catalog and available discovery, with no provider groups or facts strip.
+In pi, the pinned models also stay in their groups.
+Pi providers used by role or preset places (including resolved defaults for unset places) are open below: the current provider first, then by number of uses.
+The `▸` row groups the other providers; Enter or a click opens or closes them together.
+Individual headers are not selectable.
+With no providers in use, all groups are open.
 At 100 columns or more, the pi list has columns for context, max output, thinking, images and HUD state.
-The read-only right column wraps the full model ID and shows those facts, whether it is current,
-which roles and presets use it, list age, and what Enter will do. Below 100 columns, the bottom strip
-shows one row of facts and wraps the full ID above it if it was shortened. Missing pi facts show `?`.
+The read-only right column wraps the full model ID and shows those facts, whether it is current, which roles and presets use it, list age, and what Enter will do.
+Below 100 columns, the bottom strip shows one row of facts and wraps the full ID above it if it was shortened.
+Missing pi facts show `?`.
 
-Type to filter full model IDs (`provider/model` for pi). Every space-separated term must match, ignoring
-case (for example, `gpt mini`). Results are one flat list. Pi ranks providers in use first; all lists
-rank matches at the start of names, after separators, or inside words, then alphabetically. One click
-on a model sets it. The wheel scrolls three list rows at a time, keeping the selection visible. ↑↓
-move without recentering the list,
-and PgUp/PgDn move one visible list window less one row. Enter sets. Esc clears a typed filter first,
-then closes without setting; clicking `esc cancel` or pressing Ctrl+C closes immediately. `◉` marks the current
-assignment and `›` marks the cursor. A long model ID is shortened in the middle in the list.
-Pi rows mark exhaustion with `✗` and time to reset. `⊘` means off and `?` means an unknown provider.
-One muted line names off providers; their models are not offered. A read-only current model stays
-visible; if its provider is off, the wide detail explains why the place is skipped. Enter on a read-only
-current row in the wide view closes the picker without writing; in the narrow view it does nothing.
-The clear row, when eligible, removes the explicit model. It is labelled by the resulting model and its
-source when known (for example, `role's model (gpt-6.2-sol)`), or `clear` otherwise. No pi match writes nothing; manual model IDs in role files and
-one-job overrides still work. The old `catalog.pi.include` key no longer filters the picker and is
-left untouched in existing configuration. While the picker is open, printable keys (including `q`
-and `r`) type into the filter; Backspace edits it.
+Type to filter full model IDs (`provider/model` for pi).
+Every space-separated term must match, ignoring case (for example, `gpt mini`).
+Results are one flat list.
+Pi ranks providers in use first; all lists rank matches at the start of names, after separators, or inside words, then alphabetically.
+One click on a model sets it.
+The wheel scrolls three list rows at a time, keeping the selection visible.
+↑↓ move without recentering the list, and PgUp/PgDn move one visible list window less one row.
+Enter sets.
+Esc clears a typed filter first, then closes without setting; clicking `esc cancel` or pressing Ctrl+C closes immediately.
+`◉` marks the current assignment and `›` marks the cursor.
+A long model ID is shortened in the middle in the list.
+Pi rows mark exhaustion with `✗` and time to reset.
+`⊘` means off and `?` means an unknown provider.
+One muted line names off providers; their models are not offered.
+A read-only current model stays visible; if its provider is off, the wide detail explains why the place is skipped.
+Enter on a read-only current row in the wide view closes the picker without writing; in the narrow view it does nothing.
+The clear row, when eligible, removes the explicit model.
+It is labelled by the resulting model and its source when known (for example, `role's model (gpt-6.2-sol)`), or `clear` otherwise.
+No pi match writes nothing; manual model IDs in role files and one-job overrides still work.
+The old `catalog.pi.include` key no longer filters the picker and is left untouched in existing configuration.
+While the picker is open, printable keys (including `q` and `r`) type into the filter; Backspace edits it.
 
-The bounded list commands (`pi --list-models`, `agy models`, `grok models`) run when Control opens
-with an absent or stale pi list (one-day cache), or on `r` in Control outside the picker or Ctrl+R
-(`^R`) inside it. Overlapping refreshes coalesce; typing, redraws and ticks never run them. The same
-cache under `$HUD_HOME/display` holds the last good results and pi model facts; older caches still open.
-The wide pi picker shows the list age. The picker flags a failed refresh or a stale list when that
-status is available. Without a successful pi list the picker labels the limited offline catalog. A successful empty pi list is shown as
-empty. Other harnesses' fields use their separate catalogs, merging discovered models where supported,
-then shipped and owner catalog models, then models from owner role files. A chain save updates only its
-owner role file, keeping unrelated fields and presets. `x` writes `$HUD_HOME/exhausted.json`, not the
-role. The next `hud_roster` and `hud_create` read these same files.
+The bounded list commands (`pi --list-models`, `agy models`, `grok models`) run when Control opens with an absent or stale pi list (one-day cache), or on `r` in Control outside the picker or Ctrl+R (`^R`) inside it.
+Overlapping refreshes coalesce; typing, redraws and ticks never run them.
+The same cache under `$HUD_HOME/display` holds the last good results and pi model facts; older caches still open.
+The wide pi picker shows the list age.
+The picker flags a failed refresh or a stale list when that status is available.
+Without a successful pi list the picker labels the limited offline catalog.
+A successful empty pi list is shown as empty.
+Other harnesses' fields use their separate catalogs, merging discovered models where supported, then shipped and owner catalog models, then models from owner role files.
+A chain save updates only its owner role file, keeping unrelated fields and presets.
+`x` writes `$HUD_HOME/exhausted.json`, not the role.
+The next `hud_roster` and `hud_create` read these same files.
 
-**Switching projects.** With more than one project the hub's name row reads `name ▾ project i/n`
-and `[` and `]` step through the panel's own project and the existing roots in
-`$HUD_HOME/projects.json` (deduplicated, at most 16). Enter or a click on the name row
-opens the **Projects list** (`‹ Projects` replaces the tabs; Esc or a click on the crumb
-returns to the hub).
-On a page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and
-folds start fresh. The choice belongs to the panel and survives its reload, not
-Settings. Home's progress block always shows the panel's own project, and opening
-that block returns to it. The panel keeps one collector per visited project (at most four, the
-panel's own never dropped, the oldest other one first) and collects only the shown one.
+**Switching projects.**
+With more than one project the hub's name row reads `name ▾ project i/n` and `[` and `]` step through the panel's own project and the existing roots in `$HUD_HOME/projects.json` (deduplicated, at most 16).
+Enter or a click on the name row opens the **Projects list** (`‹ Projects` replaces the tabs; Esc or a click on the crumb returns to the hub).
+On a page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and folds start fresh.
+The choice belongs to the panel and survives its reload, not Settings.
+Home's progress block always shows the panel's own project, and opening that block returns to it.
+The panel keeps one collector per visited project (at most four, the panel's own never dropped, the oldest other one first) and collects only the shown one.
 With one project there is no `▾ project i/n` and no list.
 
-**Projects list.** Groups are Needs you (STATE waiting items or work to try), Running, and Quiet.
-Entries show counts and, when known, time since the last change to STATE.md or a ticket file. Quiet
-projects take one row and show their milestone or `no STATE.md` when known. Within each group the
-panel's own project comes first, then projects with waiting items, then those with running jobs,
-then the most recently touched. Enter or one click opens the project's hub; Esc returns to the list
-from a hub opened that way. On the root hub, Esc does nothing. The list is read only while it is visible: for each listed project STATE and
-tickets as Home reads them (cached by file signature) and, in one pass over the newest
-64 top-level jobs and up to 64 of their children, the unsettled jobs per root, at most once every five seconds while
-the list stays open (opening it again reads at once). No Git, no roles, no full collection;
-the shown project's own full collection pauses while the list is open. The last-touched
-time reads `12m`, `3h`, `4d` (`12分`, `3小时`, `4天` in Chinese).
+**Projects list.**
+Groups are Needs you (STATE waiting items or work to try), Running, and Quiet.
+Entries show counts and, when known, time since the last change to STATE.md or a ticket file.
+Quiet projects take one row and show their milestone or `no STATE.md` when known.
+Within each group the panel's own project comes first, then projects with waiting items, then those with running jobs, then the most recently touched.
+Enter or one click opens the project's hub; Esc returns to the list from a hub opened that way.
+On the root hub, Esc does nothing.
+The list is read only while it is visible: for each listed project STATE and tickets as Home reads them (cached by file signature) and, in one pass over the newest 64 top-level jobs and up to 64 of their children, the unsettled jobs per root, at most once every five seconds while the list stays open (opening it again reads at once).
+No Git, no roles, no full collection; the shown project's own full collection pauses while the list is open.
+The last-touched time reads `12m`, `3h`, `4d` (`12分`, `3小时`, `4天` in Chinese).
 A project without STATE.md says `no STATE.md` on Progress; its other pages work.
 
-On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o`
-opens it in `$EDITOR` (default vim), in a herdr tab that closes with the editor; failed workspace lookup falls back to a
-split. Home, Project and Control retain separate cursor/scroll state. Full Project collection
-runs while the hub or a page is visible, not behind modals; Home reuses only cached
-STATE/ticket reads.
-Git is gated to at most once per five seconds. Reads do not start a browser or MCP.
+On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o` opens it in `$EDITOR` (default vim), in a herdr tab that closes with the editor; failed workspace lookup falls back to a split.
+Home, Project and Control retain separate cursor/scroll state.
+Full Project collection runs while the hub or a page is visible, not behind modals; Home reuses only cached STATE/ticket reads.
+Git is gated to at most once per five seconds.
+Reads do not start a browser or MCP.
 
 ## Review board
 
-`hud board [--html] [--cwd DIR] [--out FILE] [--open]` writes the project's review board: one static HTML file for a
-browser, with no script, font, image, link or network request (its Content-Security-Policy allows inline style only) and
-every project string escaped. Sections: the header (project, branch with changed/ahead/behind, milestone, time written, and a
-stacked bar of working / blocked / to try / accepted / todo); **Needs you** (STATE's waiting items and open job questions
-with their options and default, when there are any); **To try** (read-only ticket cards grouped by feature:
-feature, age, commit, ticket text and checklist, and per-file `--numstat` bars);
-**In flight** (working and blocked tickets, running jobs with role, model, elapsed time and current sentence); **Tickets**
-(per-feature meters, unfinished tickets with their checklists); and the **latest milestone review**. Sections with nothing
-in them are left out. The page follows the system light/dark setting, or the Auto / Dark / Light switch at its top (pure
-CSS), and reads from phone width up.
+`hud board [--html] [--cwd DIR] [--out FILE] [--open]` writes the project's review board: one static HTML file for a browser, with no script, font, image, link or network request (its Content-Security-Policy allows inline style only) and every project string escaped.
+Sections: the header (project, branch with changed/ahead/behind, milestone, time written, and a stacked bar of working / blocked / to try / accepted / todo); **Needs you** (STATE's waiting items and open job questions with their options and default, when there are any); **To try** (read-only ticket cards grouped by feature: feature, age, commit, ticket text and checklist, and per-file `--numstat` bars); **In flight** (working and blocked tickets, running jobs with role, model, elapsed time and current sentence); **Tickets** (per-feature meters, unfinished tickets with their checklists); and the **latest milestone review**.
+Sections with nothing in them are left out.
+The page follows the system light/dark setting, or the Auto / Dark / Light switch at its top (pure CSS), and reads from phone width up.
 
-It collects once, as Project does: no HTTP server and no model call. The caller pane's jobs appear only inside herdr
-(`HERDR_PANE_ID`). The file is `$HUD_HOME/display/board-<project>.html` unless `--out` names one, written 0600 to a temp
-name and renamed, so a link at the target is replaced, never followed. The command prints the path. `--open` then runs
-`wslview`, else `xdg-open`, detached; with neither on `PATH` it only says so on stderr (exit 0).
+It collects once, as Project does: no HTTP server and no model call.
+The caller pane's jobs appear only inside herdr (`HERDR_PANE_ID`).
+The file is `$HUD_HOME/display/board-<project>.html` unless `--out` names one, written 0600 to a temp name and renamed, so a link at the target is replaced, never followed.
+The command prints the path.
+`--open` then runs `wslview`, else `xdg-open`, detached; with neither on `PATH` it only says so on stderr (exit 0).
 
-In the panel `w` (Home or Project, not in a picker or Settings) does the same for the project shown, opens it the same way and
-shows `Board saved: <file>` at the top until the next key.
+In the panel `w` (Home or Project, not in a picker or Settings) does the same for the project shown, opens it the same way and shows `Board saved: <file>` at the top until the next key.
 
 ## Panel layouts
 
-Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `split`) chooses how Home, Project and
-Control are laid out; saving switches the open panel at once, no restart. **Classic** is the default described above.
+Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `split`) chooses how Home, Project and Control are laid out; saving switches the open panel at once, no restart.
+**Classic** is the default described above.
 **Split** puts a list over a preview of the selected row (see [Split layout](#split-layout)).
 
-There is no separate Project layout setting. Old `projectLayout` values, including `timeline` and
-`board`, are ignored: Project opens to the Inbox.
+There is no separate Project layout setting.
+Old `projectLayout` values, including `timeline` and `board`, are ignored: Project opens to the Inbox.
 
 ## The panel
 
 ### Frame and reload
 
-Home, Project, and Control are the default main tabs. Settings → Panel → **Experiments** (`experiments` in `hud-settings.json`,
-off by default) adds the experimental **EXP** tab. Use ↑/↓ to select and Enter to edit or open an account;
-Enter saves, and Esc cancels. For calibration, Enter first previews the change, then Enter saves the new base.
-The form is the same in Classic and Split. Settings apply to all projects on this machine, and are stored under
-`$HUD_HOME/exp/`. Codex profile choices are local; EXP does not change CLI configuration.
+Home, Project, and Control are the default main tabs.
+Settings → Panel → **Experiments** (`experiments` in `hud-settings.json`, off by default) adds the experimental **EXP** tab.
+Use ↑/↓ to select and Enter to edit or open an account; Enter saves, and Esc cancels.
+For calibration, Enter first previews the change, then Enter saves the new base.
+The form is the same in Classic and Split.
+Settings apply to all projects on this machine, and are stored under `$HUD_HOME/exp/`.
+Codex profile choices are local; EXP does not change CLI configuration.
 
-In **pi subscription proxy**, choose a Codex profile and turn on Auto-refresh. When pi draws its HUD footer, a due refresh uses
-that profile's existing login to read quota from Codex; it sends no prompt and does not run while pi is unused. The `openai`
-OAuth footer shows percent used. The tightest window leads with a bar and time to reset (`7d ████░░░░░░ ≈43% (2d4h)`);
-when there is room, the other window follows. A reading from the current request takes precedence and has no `≈` (`5h 11%`).
-Stale estimates are dim and end in `?`; a window past its reset shows `↻`. Other routes such as `oapi` do not show subscription quota.
+In **pi subscription proxy**, choose a Codex profile and turn on Auto-refresh.
+When pi draws its HUD footer, a due refresh uses that profile's existing login to read quota from Codex; it sends no prompt and does not run while pi is unused.
+The `openai` OAuth footer shows percent used.
+The tightest window leads with a bar and time to reset (`7d ████░░░░░░ ≈43% (2d4h)`); when there is room, the other window follows.
+A reading from the current request takes precedence and has no `≈` (`5h 11%`).
+Stale estimates are dim and end in `?`; a window past its reset shows `↻`.
+Other routes such as `oapi` do not show subscription quota.
 Open **Proxy readings** for both windows and their reset times, source, last success and error, and next eligible attempt.
-If the proxy pauses for sign-in, sign in to the bound profile and turn Auto-refresh off and back on. Experiments off stops refreshes.
+If the proxy pauses for sign-in, sign in to the bound profile and turn Auto-refresh off and back on.
+Experiments off stops refreshes.
 
-**API grants** shows the two ledgers together. The pi footer shows only the enabled ledger for the current API route,
-with a bar for the share spent, approximate dollars left and days to renewal (`API ████████░░ ≈$12.34 (12d)`, for example).
-`openai-api` counts `oapi` requests; `anthropic-api` counts only
-requests the installed pi HUD can identify as direct Anthropic API-key usage. Claude OAuth, third-party gateways,
-and unknown routes are not charged. The Claude Code status line is unchanged. Turning Experiments off preserves
-both ledgers and stops collection.
+**API grants** shows the two ledgers together.
+The pi footer shows only the enabled ledger for the current API route, with a bar for the share spent, approximate dollars left and days to renewal (`API ████████░░ ≈$12.34 (12d)`, for example).
+`openai-api` counts `oapi` requests; `anthropic-api` counts only requests the installed pi HUD can identify as direct Anthropic API-key usage.
+Claude OAuth, third-party gateways, and unknown routes are not charged.
+The Claude Code status line is unchanged.
+Turning Experiments off preserves both ledgers and stops collection.
 
-The panel keeps footer hints whole: the selected row's actions take priority, then Enter with its
-verb, `Esc back` where applicable, and page actions. Hints drop from the right to make room, but
-`? help` stays last. Movement, tab switching and the Settings shortcut remain available without taking
-footer space. An editor or picker that owns the keyboard shows its own hints without `? help`; Help
-itself shows `Esc back`. For example, a running HUD job offers `g job tab` (`g output` for a headless job) and
-`X stop`, the Accept all row shows `⏎ accept all`, and a Control role shows `⏎ chain`. `o file` opens a row's file.
-One key means one thing on a page (`>` `<` move between
-Home's cards that need you; `i` `Del` change places; `+` `=` `-` size Split's list), and the Help
-page lists each key once. A row says its state once: a card's `[done]` mark is left out when its
-state word says the same, and a Home lane's state word is on its row once. The fixed words
-(`Usage`, `unparseable JSON`, `(no key)`) follow the panel language, and a quota figure says
-whether it is what is `used` or what is `left`. There is no Agents pane, stacked/compact layout, Timeline, activity hub,
-agent log, Summary or diagnostics page. Each page retains its scroll/selection.
-Icons (Settings → Display → Advanced → Icons, `icons`) are `nerd` (the default), `unicode` or `text`; an old or unknown saved value loads as the default. `nerd` draws Font Awesome glyphs from the Basic Multilingual Plane, which a Nerd Font such as MesloLGS NF has; the codepoints: roles imp U+F0AD (wrench), frontend-imp U+F1FC (paint brush), general U+F013 (cog), oracle U+F0EB (light bulb), reviewer U+F002 (search), sonic U+F0E7 (bolt); states asking U+F059 (question circle, amber), failed U+F057 (times circle, red), unread report U+F0E0 (envelope, green), done U+F058 (check circle), queued U+F252 (hourglass half), stalled U+F186 (moon), stopped U+F04D (stop). `unicode` is the earlier set (`⚒ ✎ ✦ ◈ ⚖ ⚡`, `? ✗ ✓● ✓ ○ ◷ −`) and `text` is ASCII letters and words. The role icons are one table for Home, the Claude, Codex and pi statuslines (TypeScript and native) and the pi footer, all following the saved setting (the bar reads `icons` from `hud-settings.json`, else `HUD_ICONS`); the stage strip `●◐○` is the same in every set.
+The panel keeps footer hints whole: the selected row's actions take priority, then Enter with its verb, `Esc back` where applicable, and page actions.
+Hints drop from the right to make room, but `? help` stays last.
+Movement, tab switching and the Settings shortcut remain available without taking footer space.
+An editor or picker that owns the keyboard shows its own hints without `? help`; Help itself shows `Esc back`.
+For example, a running HUD job offers `g job tab` (`g output` for a headless job) and `X stop`, the Accept all row shows `⏎ accept all`, and a Control role shows `⏎ chain`.
+`o file` opens a row's file.
+One key means one thing on a page (`>` `<` move between Home's cards that need you; `i` `Del` change places; `+` `=` `-` size Split's list), and the Help page lists each key once.
+A row says its state once: a card's `[done]` mark is left out when its state word says the same, and a Home lane's state word is on its row once.
+The fixed words (`Usage`, `unparseable JSON`, `(no key)`) follow the panel language, and a quota figure says whether it is what is `used` or what is `left`.
+There is no Agents pane, stacked/compact layout, Timeline, activity hub, agent log, Summary or diagnostics page.
+Each page retains its scroll/selection.
+Icons (Settings → Display → Advanced → Icons, `icons`) are `nerd` (the default), `unicode` or `text`; an old or unknown saved value loads as the default.
+`nerd` draws Font Awesome glyphs from the Basic Multilingual Plane, which a Nerd Font such as MesloLGS NF has; the codepoints: roles imp U+F0AD (wrench), frontend-imp U+F1FC (paint brush), general U+F013 (cog), oracle U+F0EB (light bulb), reviewer U+F002 (search), sonic U+F0E7 (bolt); states asking U+F059 (question circle, amber), failed U+F057 (times circle, red), unread report U+F0E0 (envelope, green), done U+F058 (check circle), queued U+F252 (hourglass half), stalled U+F186 (moon), stopped U+F04D (stop).
+`unicode` is the earlier set (`⚒ ✎ ✦ ◈ ⚖ ⚡`, `? ✗ ✓● ✓ ○ ◷ −`) and `text` is ASCII letters and words.
+The role icons are one table for Home, the Claude, Codex and pi statuslines (TypeScript and native) and the pi footer, all following the saved setting (the bar reads `icons` from `hud-settings.json`, else `HUD_ICONS`); the stage strip `●◐○` is the same in every set.
 
-After a new installed entry is stable for two seconds, a bounded child import
-validates it before the panel restarts in the same pane. Selection, scroll, folds,
-show-all, modal, Settings cursor, opening time and width override survive. A saved
-Skills tab from an older build falls back to Home; a saved Project/Control page reopens on Control. Unsaved
-Settings delay reload; a bad build leaves the old panel and a dim notice. Bars are
-separate and need restarting for new code. Quiet, positively idle observations can
-back off to five-second collection; input/redraw remain independent.
+After a new installed entry is stable for two seconds, a bounded child import validates it before the panel restarts in the same pane.
+Selection, scroll, folds, show-all, modal, Settings cursor, opening time and width override survive.
+A saved Skills tab from an older build falls back to Home; a saved Project/Control page reopens on Control.
+Unsaved Settings delay reload; a bad build leaves the old panel and a dim notice.
+Bars are separate and need restarting for new code.
+Quiet, positively idle observations can back off to five-second collection; input/redraw remain independent.
 
 ### Keys
 
@@ -983,38 +1155,38 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Control or EXP, Esc does nothing |
 | `q` | Close panel |
 
-Mouse clicks select a row/button, a second click on the selected item runs Enter's
-action (Project hub links, Inspector file links and Home progress-block links open
-on one click), clicking the top crumb goes back, clicking a tab switches tabs, and
-wheel scrolling moves the viewport without moving the selection. The model picker is an exception:
-one click sets a model and scrolling keeps the selection visible.
+Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Project hub links, Inspector file links and Home progress-block links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
+The model picker is an exception: one click sets a model and scrolling keeps the selection visible.
 
 ### Split layout
 
-The saved setting `panelLayout` (`classic` by default; Settings → Panel → Layout) can be `split`:
-Home, Project and Control become **a list above and a preview of the cursor row below**
-(`docs/design/panel-v8/`, option 2). The preview uses Classic's cards and sentences; a question slab doesn't repeat the lane name from its preview rule.
+The saved setting `panelLayout` (`classic` by default; Settings → Panel → Layout) can be `split`: Home, Project and Control become **a list above and a preview of the cursor row below** (`docs/design/panel-v8/`, option 2).
+The preview uses Classic's cards and sentences; a question slab doesn't repeat the lane name from its preview rule.
 
-- **Home.** One row per package lane and per block (Waiting for you,
-  Progress), always the same height, whatever runs: mark, name, phase, then the role icon and the state
-  of the lane's most important job. Queued lanes and read finished lanes are one row each
-  (`○ queued N · ids`, `✓ done N · ids`) whose preview lists their cards. A question or a failure keeps a reason row, so what
-  needs you is always on screen; the cursor starts on the first such row. Below the
-  list the preview shows that row: the question's slab and the lane's cards, the
-  STATE waiting items, or the milestone and ticket rollup.
-  On a short panel blank rows go first, then the preview from its bottom; the list
-  never gives way (a very short panel scrolls it with its cursor). A lane at work that
-  the cursor is not on shows, in the row's free cells, the marked keywords of its
-  model sentence (else its reason or the phases so far); when the width leaves under
-  six cells, nothing.
-- **Project hub.** The Inbox lists Needs you, Running, last accepted, the page rows and Accept all when
-  there is pending work. A waiting item previews its whole text; a role alert previews its places.
-  The Progress preview shows the summary, milestone bar, Running and last accepted. Enter on a page
-  row opens it. PgUp/PgDn scroll a long preview.
-- **Progress.** The selected feature previews its tickets, their state and title; `o` opens the source ticket.
-- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the chain and opens the place sheet on the next Enter. Drafts and discard confirmation stay in the preview. On a role row, `c` / `C` switch presets and `p` opens the preset list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
-- **Tickets, Working tree, Docs.** Preview the selected feature's tickets or the selected fact's whole
-  text. A ticket can show its checklist and latest comment; `o` opens the file.
+- **Home.**
+  One row per package lane and per block (Waiting for you, Progress), always the same height, whatever runs: mark, name, phase, then the role icon and the state of the lane's most important job.
+  Queued lanes and read finished lanes are one row each (`○ queued N · ids`, `✓ done N · ids`) whose preview lists their cards.
+  A question or a failure keeps a reason row, so what needs you is always on screen; the cursor starts on the first such row.
+  Below the list the preview shows that row: the question's slab and the lane's cards, the STATE waiting items, or the milestone and ticket rollup.
+  On a short panel blank rows go first, then the preview from its bottom; the list never gives way (a very short panel scrolls it with its cursor).
+  A lane at work that the cursor is not on shows, in the row's free cells, the marked keywords of its model sentence (else its reason or the phases so far); when the width leaves under six cells, nothing.
+- **Project hub.**
+  The Inbox lists Needs you, Running, last accepted, the page rows and Accept all when there is pending work.
+  A waiting item previews its whole text; a role alert previews its places.
+  The Progress preview shows the summary, milestone bar, Running and last accepted.
+  Enter on a page row opens it.
+  PgUp/PgDn scroll a long preview.
+- **Progress.**
+  The selected feature previews its tickets, their state and title; `o` opens the source ticket.
+- **Control.**
+  Roles on top (Needs attention first), with the selected role's detail and chain below.
+  Enter focuses the chain and opens the place sheet on the next Enter.
+  Drafts and discard confirmation stay in the preview.
+  On a role row, `c` / `C` switch presets and `p` opens the preset list.
+  `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
+- **Tickets, Working tree, Docs.**
+  Preview the selected feature's tickets or the selected fact's whole text.
+  A ticket can show its checklist and latest comment; `o` opens the file.
 
 | Key | In Split |
 |---|---|
@@ -1032,38 +1204,35 @@ One waiting item's page and the Projects list are Classic's frames in either lay
 
 ### Help
 
-Press `?` for shortcuts grouped by where they work. From Project or Control, Help
-opens at that tab’s section; from Home, EXP or Settings it opens at Everywhere.
-The Split shortcuts appear only in the Split layout. Marks are grouped by jobs
-(state glyphs, queued, and `⚡N` for running sonic children), route (the tier bars
-`▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places. `g` is
-the job's herdr tab, or the Inspector's Output for a headless job. At 80 columns and wider, Marks sit to the right of the
-shortcuts. Scroll with ↑↓, PgUp/PgDn or the wheel; Esc, `?` or Enter returns to the previous page.
+Press `?` for shortcuts grouped by where they work.
+From Project or Control, Help opens at that tab’s section; from Home, EXP or Settings it opens at Everywhere.
+The Split shortcuts appear only in the Split layout.
+Marks are grouped by jobs (state glyphs, queued, and `⚡N` for running sonic children), route (the tier bars `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places.
+`g` is the job's herdr tab, or the Inspector's Output for a headless job.
+At 80 columns and wider, Marks sit to the right of the shortcuts.
+Scroll with ↑↓, PgUp/PgDn or the wheel; Esc, `?` or Enter returns to the previous page.
 
-See [Optional skills](optional-skills.md) for the skills shipped but not installed. Ask the main session to read one when needed.
+See [Optional skills](optional-skills.md) for the skills shipped but not installed.
+Ask the main session to read one when needed.
 
 ### Inspector
 
-The selected card/question expands above facts: role/harness, model/effort,
-package, state/phase and observed local times. The Inspector and expanded running cards in both layouts show
-one muted Milestone line when the worker has logged one, and an Activity row under it: ten one-minute
-buckets (`▁▂▃▄▅▆▇█`, `..--==##` with text icons) of how often the panel saw the running worker write (session, status,
-report or `hud-progress`), a quiet minute blank, eight sightings or more a full cell. The ring lives in the panel's memory
-from when it first saw the worker, so there is none for a worker that has not written since, and none once it settles.
-The kind row lists at most the two kinds the model is surest of. Files lists brief, QA, reviews and
-report; Up/Down selects, Enter/`o` opens. With no Git diff, **Reported files** shows up to 12 worker-listed
-paths as text, not as links or verified changes. Native cards list their transcript and
-available context %, estimated tokens/s and cumulative tokens; missing values are
-omitted, with no extra model request. No stage/log history or switch controls remain.
+The selected card/question expands above facts: role/harness, model/effort, package, state/phase and observed local times.
+The Inspector and expanded running cards in both layouts show one muted Milestone line when the worker has logged one, and an Activity row under it: ten one-minute buckets (`▁▂▃▄▅▆▇█`, `..--==##` with text icons) of how often the panel saw the running worker write (session, status, report or `hud-progress`), a quiet minute blank, eight sightings or more a full cell.
+The ring lives in the panel's memory from when it first saw the worker, so there is none for a worker that has not written since, and none once it settles.
+The kind row lists at most the two kinds the model is surest of.
+Files lists brief, QA, reviews and report; Up/Down selects, Enter/`o` opens.
+With no Git diff, **Reported files** shows up to 12 worker-listed paths as text, not as links or verified changes.
+Native cards list their transcript and available context %, estimated tokens/s and cumulative tokens; missing values are omitted, with no extra model request.
+No stage/log history or switch controls remain.
 
 ### Changes summary
 
-`3` shows branch/HEAD, ahead/behind (unknown without upstream evidence), change
-counts and one row per worktree with path/branch/dirty state. No file lists, diffs,
-previews, staging, commits or checkout actions. Collection runs only while focused;
-failed/stale Git status stays unknown, with repository filters and lazy fetching disabled.
-Edits inside a submodule's working tree do not mark the Codex bar, pi footer or
-Project dirty; a moved submodule commit does. The Changes view ignores submodules entirely.
+`3` shows branch/HEAD, ahead/behind (unknown without upstream evidence), change counts and one row per worktree with path/branch/dirty state.
+No file lists, diffs, previews, staging, commits or checkout actions.
+Collection runs only while focused; failed/stale Git status stays unknown, with repository filters and lazy fetching disabled.
+Edits inside a submodule's working tree do not mark the Codex bar, pi footer or Project dirty; a moved submodule commit does.
+The Changes view ignores submodules entirely.
 
 ### Settings
 
@@ -1075,36 +1244,31 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
-Common rows are open; the 13 rarely changed rows above fold under one **Advanced**
-row at the bottom (collapsed on each open; Enter, Left/Right or click expands or
-collapses it, and `*`/highlight mark folded unsaved or non-default values).
-Expanded rows show their source group prefix so `r` still resets that row's group
-(pressing `r` on the Advanced row shows a hint). Up/Down selects; Left/Right or
-Enter changes; `s` saves, `r` resets only this group, `t` runs/cancels Test API.
-Dirty leave asks Save and leave / Discard changes / Continue editing (default);
-failed saves retain the draft. Theme and Icons preview in the draft itself. No
-Reset all or picture.
+Common rows are open; the 13 rarely changed rows above fold under one **Advanced** row at the bottom (collapsed on each open; Enter, Left/Right or click expands or collapses it, and `*`/highlight mark folded unsaved or non-default values).
+Expanded rows show their source group prefix so `r` still resets that row's group (pressing `r` on the Advanced row shows a hint).
+Up/Down selects; Left/Right or Enter changes; `s` saves, `r` resets only this group, `t` runs/cancels Test API.
+Dirty leave asks Save and leave / Discard changes / Continue editing (default); failed saves retain the draft.
+Theme and Icons preview in the draft itself.
+No Reset all or picture.
 
 Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default.
-Saving a changed width resizes every client's panel, preserving 41 columns for the
-agent where possible. Window resizing reapplies it; border drags and unrelated saves
-do not. Fold default 5 minutes, Hide default 5 (stored 1–1440). Stall threshold is
-10 minutes (1–120); job session writes count as activity even with models off.
+Saving a changed width resizes every client's panel, preserving 41 columns for the agent where possible.
+Window resizing reapplies it; border drags and unrelated saves do not.
+Fold default 5 minutes, Hide default 5 (stored 1–1440).
+Stall threshold is 10 minutes (1–120); job session writes count as activity even with models off.
 
-Themes: `terminal` (default), `titanium`, `mocha`, `arctic`, `ember`, `contrast`,
-`latte`, `paper`, `none`. Each has its own Home/Project/Inspector inks; latte/paper
-are light, none/`NO_COLOR` emits no colour. Preferences save privately to
-`$HUD_HOME/hud-settings.json` or `HUD_SETTINGS_PATH`; saved display values override
-environment defaults. Old card/layout/model-feature keys are ignored and dropped
-on save, not migrated; existing user caches/assets are not deleted.
+Themes: `terminal` (default), `titanium`, `mocha`, `arctic`, `ember`, `contrast`, `latte`, `paper`, `none`.
+Each has its own Home/Project/Inspector inks; latte/paper are light, none/`NO_COLOR` emits no colour.
+Preferences save privately to `$HUD_HOME/hud-settings.json` or `HUD_SETTINGS_PATH`; saved display values override environment defaults.
+Old card/layout/model-feature keys are ignored and dropped on save, not migrated; existing user caches/assets are not deleted.
 
 ## LLM
 
-One master controls job/native names and sentences, Inspector decision titles,
-and Decision labels. Nothing writes workflow facts
-or steers a worker. Off hides overlays and sends no requests; without a saved
-preference, a Mistral/OpenAI/Gemini key defaults it on. Text requires a matching
-chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately. Sonic auto-thinking and Imp placement’s auto mode are separate dispatch opt-ins, independent of Model text.
+One master controls job/native names and sentences, Inspector decision titles, and Decision labels.
+Nothing writes workflow facts or steers a worker.
+Off hides overlays and sends no requests; without a saved preference, a Mistral/OpenAI/Gemini key defaults it on.
+Text requires a matching chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately.
+Sonic auto-thinking and Imp placement’s auto mode are separate dispatch opt-ins, independent of Model text.
 
 | Setting | Key / default |
 |---|---|
@@ -1114,16 +1278,18 @@ chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately. Sonic au
 | Decision cap | `decisionCallsPerHour`, 0; 600/2000/unlimited |
 | Summary interval | `summaryIntervalMinutes`, 5; 2/5/10/15/30 minutes (validated 1–120) |
 
-Both caps use 0 for unlimited and still count calls (`n/∞`). Counts aggregate
-panels on one HUD home. Text uses `display/model-cache/calls.json`; Decision API
-usage uses `display/model-cache/decision-api/calls.json`, including fallback attempts.
-One line per counter lists this hour's active features, largest first. Recent calls
-from retired features still count toward the total and cap until they age out. Changed running
-text follows Summary interval. A newly settled HUD job clears its running text. A current worker summary
-is shown immediately, even with Model text off. It needs no sentence request in the panel's language;
-otherwise, when enabled, the model translates the summary. A missing or stale summary falls back to a
-model result from the report. The first final request does not wait for the running interval; failed final
-requests and native finals keep two-minute floors. Outcome labels are independent Decision-API judgements.
+Both caps use 0 for unlimited and still count calls (`n/∞`).
+Counts aggregate panels on one HUD home.
+Text uses `display/model-cache/calls.json`; Decision API usage uses `display/model-cache/decision-api/calls.json`, including fallback attempts.
+One line per counter lists this hour's active features, largest first.
+Recent calls from retired features still count toward the total and cap until they age out.
+Changed running text follows Summary interval.
+A newly settled HUD job clears its running text.
+A current worker summary is shown immediately, even with Model text off.
+It needs no sentence request in the panel's language; otherwise, when enabled, the model translates the summary.
+A missing or stale summary falls back to a model result from the report.
+The first final request does not wait for the running interval; failed final requests and native finals keep two-minute floors.
+Outcome labels are independent Decision-API judgements.
 
 **Outbound material** (public channels only; never reasoning, ciphertext or referenced files):
 
@@ -1141,19 +1307,16 @@ requests and native finals keep two-minute floors. Outcome labels are independen
 | Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Test API | Fixed synthetic messages only |
 
-Settled report excerpts include a short head and sections on unfinished work,
-blockers, failures, tests/checks or open questions; if none are found, they include
-the tail instead.
+Settled report excerpts include a short head and sections on unfinished work, blockers, failures, tests/checks or open questions; if none are found, they include the tail instead.
 
-Outcome/looping/category/severity labels are display-only enums; language
-changes translate locally. Failure shows no provider HTTP text. Private revision
-caches survive reopen, as do sentence/title caches (200 records); unchanged inputs
-make no new request. Sentences have at most three pending handles on the shared
-single-flight text queue; Decision labels have a separate single-flight path.
+Outcome/looping/category/severity labels are display-only enums; language changes translate locally.
+Failure shows no provider HTTP text.
+Private revision caches survive reopen, as do sentence/title caches (200 records); unchanged inputs make no new request.
+Sentences have at most three pending handles on the shared single-flight text queue; Decision labels have a separate single-flight path.
 Titles use effort none and sentences low; no model-tier/effort selector.
-Wrong-language text is rejected. Keyword marks `«keyword»`, `«+approve»`, `«-reject»`,
-`«!opinion»` (and short Chinese `「…」`) share painting across cards and the Inspector;
-files/paths retain identifier ink. No recap, session-title or change-summary generator runs.
+Wrong-language text is rejected.
+Keyword marks `«keyword»`, `«+approve»`, `«-reject»`, `«!opinion»` (and short Chinese `「…」`) share painting across cards and the Inspector; files/paths retain identifier ink.
+No recap, session-title or change-summary generator runs.
 
 Configure text through the settings file, not a connection editor:
 
@@ -1166,13 +1329,12 @@ Configure text through the settings file, not a connection editor:
 }
 ```
 
-Empty base uses Mistral. `POST <base>/chat/completions` receives only its exact
-origin's matching `MISTRAL_API_KEY` or `OPENAI_API_KEY`; environment wins over HUD
-credentials. Custom/HTTP/lookalike/nondefault-port origins get neither; userinfo
-and redirects refuse. No matching key means no request. `CODEX_HUD_BRIEF_MODEL`
-overrides the model id. Test API uses three fixed synthetic requests, the same
-model/cap, 256-token answers plus reasoning allowance and 15-second timeouts;
-master off/no key sends nothing, leaving Settings cancels.
+Empty base uses Mistral.
+`POST <base>/chat/completions` receives only its exact origin's matching `MISTRAL_API_KEY` or `OPENAI_API_KEY`; environment wins over HUD credentials.
+Custom/HTTP/lookalike/nondefault-port origins get neither; userinfo and redirects refuse.
+No matching key means no request.
+`CODEX_HUD_BRIEF_MODEL` overrides the model id.
+Test API uses three fixed synthetic requests, the same model/cap, 256-token answers plus reasoning allowance and 15-second timeouts; master off/no key sends nothing, leaving Settings cancels.
 
 ## The bottom bars
 
@@ -1182,56 +1344,53 @@ Claude and Antigravity statuslines, the pi footer and the Codex tmux bar use the
 model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s │ notices ··· MCP n  skills n
 ```
 
-Context is ten cells, green below 70%, yellow from 70%, red from 85%, measured
-against the client's compaction window when known. Claude/Codex show only their
-own tightest quota window, blue then magenta from 75%, red from 90%; pi has session
-cost instead (in its top-right editor ribbon, not duplicated below). Missing facts
-are absent. The notice zone is, in order: what needs the owner, the HUD's workers, then what the client itself
-tells (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
+Context is ten cells, green below 70%, yellow from 70%, red from 85%, measured against the client's compaction window when known.
+Claude/Codex show only their own tightest quota window, blue then magenta from 75%, red from 90%; pi has session cost instead (in its top-right editor ribbon, not duplicated below).
+Missing facts are absent.
+The notice zone is, in order: what needs the owner, the HUD's workers, then what the client itself tells (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
 
-The workers are counts, never titles, and only those running now: one icon and its count per role, in the order imp
-`⚒`, frontend-imp `✎`, general `✦`, oracle `◈`, reviewer `⚖`, any other role `•`, sonic `⚡` (`⚒3  ✦2  ◈1  ⚡4`; the default Nerd Font set draws the glyphs listed under Icons in Settings), two
-spaces between groups; a role with no worker running is absent. Text icons draw `I`, `F`, `G`, `O`, `R`, `.` and `*`
-(`I3  G2  O1  *4`). No provider, model or thinking level appears. The zone reads a census of this pane's live jobs, so a
-worker that runs for hours is still counted; a settled one is not (the zone does not read settled jobs), and neither is a
-queued one; with none running the zone is absent. After the last group, one `!N` (the bar's alert badge) counts the
-workers asking the owner across all roles, until they are answered; working has no mark, and there is no mark for a
-finished or failed worker. `⚡` is two columns wide where `visualLength` counts it, and the bar fits by that count. Open
-approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others, `! 3 needs` when even that
-does not fit; nothing open, nothing pinned. No clock, task count, hooks count, tool-at-work or idle fallback.
+The workers are counts, never titles, and only those running now: one icon and its count per role, in the order imp `⚒`, frontend-imp `✎`, general `✦`, oracle `◈`, reviewer `⚖`, any other role `•`, sonic `⚡` (`⚒3  ✦2  ◈1  ⚡4`; the default Nerd Font set draws the glyphs listed under Icons in Settings), two spaces between groups; a role with no worker running is absent.
+Text icons draw `I`, `F`, `G`, `O`, `R`, `.` and `*` (`I3  G2  O1  *4`).
+No provider, model or thinking level appears.
+The zone reads a census of this pane's live jobs, so a worker that runs for hours is still counted; a settled one is not (the zone does not read settled jobs), and neither is a queued one; with none running the zone is absent.
+After the last group, one `!N` (the bar's alert badge) counts the workers asking the owner across all roles, until they are answered; working has no mark, and there is no mark for a finished or failed worker.
+`⚡` is two columns wide where `visualLength` counts it, and the bar fits by that count.
+Open approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others, `! 3 needs` when even that does not fit; nothing open, nothing pinned.
+No clock, task count, hooks count, tool-at-work or idle fallback.
 
 - Claude statusline: `~N t/s` estimates the latest response from transcript output tokens and elapsed time since its prompt or tool result.
   On Linux x64/WSL, the installed `hud-statusline` launcher can render the compact `line` and `p10k` looks with a native binary.
-  It reads fresh stdin every time. Missing or stale work/cache evidence, an unavailable binary, live transcript notices,
-  forwarding, admin commands and `--details`/`--source` use the TypeScript renderer. Claude quota facts
-  are still published locally; stdin is not stored for replay. A source install can build the binary with Cargo; a
-  Linux x64 release built with Cargo carries it, so Cargo is not needed on the receiving machine.
-- Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same worker zone (this pane's jobs, read as Claude's is), without reading its transcript or forwarding its payload. `--details --lang en|zh` also shows reported input and output totals. With the Linux x64 native binary, the launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws. A change may appear on the next refresh; without the binary, TypeScript renders each call.
+  It reads fresh stdin every time.
+  Missing or stale work/cache evidence, an unavailable binary, live transcript notices, forwarding, admin commands and `--details`/`--source` use the TypeScript renderer.
+  Claude quota facts are still published locally; stdin is not stored for replay.
+  A source install can build the binary with Cargo; a Linux x64 release built with Cargo carries it, so Cargo is not needed on the receiving machine.
+- Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same worker zone (this pane's jobs, read as Claude's is), without reading its transcript or forwarding its payload.
+  `--details --lang en|zh` also shows reported input and output totals.
+  With the Linux x64 native binary, the launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws.
+  A change may appear on the next refresh; without the binary, TypeScript renders each call.
 - Codex bar: `~N t/s` shows the existing output-rate estimate from the rollout.
 
-Settings → Bar style offers `line` (default) and `p10k`. Both fit on one row; saved retired styles load as `line`.
-With colour disabled, the bar uses `line`. `barFields`
-selects from `model,context,project,quota,tps,notice,loaded` without reordering them.
-If you use a field allowlist, include `tps` to show the rate. Narrow bars (a main pane beside
-the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts;
-both gauges' cells together; the quota's reset and the branch's `↑n`; a subagent's title (a few words, then none); the rate; the older of two
-subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context. The
-model is never dropped. The worker zone has one form and never narrows; the numbers keep their forms while a worker
-starts, which takes room from the extras. pi keeps the same editor ribbon in both styles, and
-other extensions' statuses remain visible. The bars stay English-only apart from a subagent's own description.
+Settings → Bar style offers `line` (default) and `p10k`.
+Both fit on one row; saved retired styles load as `line`.
+With colour disabled, the bar uses `line`.
+`barFields` selects from `model,context,project,quota,tps,notice,loaded` without reordering them.
+If you use a field allowlist, include `tps` to show the rate.
+Narrow bars (a main pane beside the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts; both gauges' cells together; the quota's reset and the branch's `↑n`; a subagent's title (a few words, then none); the rate; the older of two subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context.
+The model is never dropped.
+The worker zone has one form and never narrows; the numbers keep their forms while a worker starts, which takes room from the extras.
+pi keeps the same editor ribbon in both styles, and other extensions' statuses remain visible.
+The bars stay English-only apart from a subagent's own description.
 
 ### EXP · Codex native status line (experimental)
 
-In ordinary Codex with the `hud` MCP server registered, open `/experimental`,
-turn on **Custom status line**, then restart Codex. Open `/statusline` →
-**Choose a status line provider** → **MyHUD**. To switch back, select
-**Default status line** from the same picker. EXP’s **Track native status line**
-switch only records when MyHUD was last seen for each local profile; it does not
-change what Codex displays.
+In ordinary Codex with the `hud` MCP server registered, open `/experimental`, turn on **Custom status line**, then restart Codex.
+Open `/statusline` → **Choose a status line provider** → **MyHUD**.
+To switch back, select **Default status line** from the same picker.
+EXP’s **Track native status line** switch only records when MyHUD was last seen for each local profile; it does not change what Codex displays.
 
-The compact footer puts model and effort, context, then quota first. A HUD work
-reminder, when available, is scoped to the pane. On a narrow footer, Codex cuts
-the right end with `…`; `codexH`'s tmux bar keeps its width-aware layout.
+The compact footer puts model and effort, context, then quota first.
+A HUD work reminder, when available, is scoped to the pane.
+On a narrow footer, Codex cuts the right end with `…`; `codexH`'s tmux bar keeps its width-aware layout.
 
 ### pi controls
 
@@ -1246,41 +1405,38 @@ These controls affect the current pi session, not saved panel preferences:
 | `/hud help` | Show panel/footer command help |
 | `/hud footer on`, `/hud footer off` | Restore/hide the entire HUD footer and editor ribbon, session-local |
 
-Segment/group changes below persist to `$HUD_HOME/config.json` → `piFooter`;
-if saving fails, the change applies only to this session and a warning is shown.
+Segment/group changes below persist to `$HUD_HOME/config.json` → `piFooter`; if saving fails, the change applies only to this session and a warning is shown.
 `/hud footer` or `/hud footer list` lists enabled segments by group and the config path.
-`/hud footer reset` restores all segments to on. `/hud footer band on|off` switches
-the ribbon group; `/hud footer footer on|off` switches the bottom group.
-`/hud footer on|off|toggle <segment...>` changes named segments, or use `all`
-(for example, `/hud footer off lens viz`, `/hud footer on all`). Bare
-`/hud footer on|off` is the session-local whole-frame switch, not a persisted group change.
+`/hud footer reset` restores all segments to on.
+`/hud footer band on|off` switches the ribbon group; `/hud footer footer on|off` switches the bottom group.
+`/hud footer on|off|toggle <segment...>` changes named segments, or use `all` (for example, `/hud footer off lens viz`, `/hud footer on all`).
+Bare `/hud footer on|off` is the session-local whole-frame switch, not a persisted group change.
 
 Bottom-group ids: `model thinking path git mcp skill lens viz statuses context`.
-Ribbon-group ids: `session cache tokens tps ttft cost time`. These are segment
-visibility controls, not a way to enable unavailable facts. Context is in the bottom
-group but is stored as `piFooter.band.context`; the other ids use `piFooter.footer`
-or `piFooter.band` according to their group.
+Ribbon-group ids: `session cache tokens tps ttft cost time`.
+These are segment visibility controls, not a way to enable unavailable facts.
+Context is in the bottom group but is stored as `piFooter.band.context`; the other ids use `piFooter.footer` or `piFooter.band` according to their group.
 
 ## Machine-readable state
 
-The active Codex bar/panel writes private atomic snapshots to
-`$HUD_HOME/display/state/<tmux-session>.json` when facts change (at most once/second).
+The active Codex bar/panel writes private atomic snapshots to `$HUD_HOME/display/state/<tmux-session>.json` when facts change (at most once/second).
 `hud codex --json` reads this directory's session snapshot:
 
 ```sh
 hud codex --json | jq '.context.percent, .agents.active, .attention[].label'
 ```
 
-Version 2 carries session/project/context/quota/tokens/agents/attention, optional
-health/rate evidence, and bar field columns (`bar.segments`, empty for panels).
-Agent, subtask and guardian-review counts are separate. Missing facts are absent,
-not zero. Writer ownership follows the atomic file's device/inode; an outgoing
-writer cannot delete a replacement snapshot. There is no owner sidecar.
+Version 2 carries session/project/context/quota/tokens/agents/attention, optional health/rate evidence, and bar field columns (`bar.segments`, empty for panels).
+Agent, subtask and guardian-review counts are separate.
+Missing facts are absent, not zero.
+Writer ownership follows the atomic file's device/inode; an outgoing writer cannot delete a replacement snapshot.
+There is no owner sidecar.
 
-**Output throughput.** The native Inspector may show estimated `~42 tok/s`: current
-turn output delta / elapsed time minus the union of fully known tool waits, including
-initial latency/stalls. It is not exact request decoding speed. Two counter samples
-are needed; unchanged counters do not refresh it. Old samples say last, not live.
+**Output throughput.**
+The native Inspector may show estimated `~42 tok/s`: current turn output delta / elapsed time minus the union of fully known tool waits, including initial latency/stalls.
+It is not exact request decoding speed.
+Two counter samples are needed; unchanged counters do not refresh it.
+Old samples say last, not live.
 
 ## Configuration
 
@@ -1301,33 +1457,32 @@ are needed; unchanged counters do not refresh it. Old samples say last, not live
 | `CODEX_HUD_FONT_DIR` | Override optional `bin/codex-hud-fonts` install/check directory |
 | `HUD_HEAP_CAPS` | V8 heap caps for panel (`128/4`) and `hud-watch`/`hud-mcp` (`96/2`); `off`/`default`/`0` restores Node defaults, or `<old>[/<semi>]` MB |
 
-Notifications default off. They report observed failures, approvals and completions
-through tmux, optionally desktop OSC/notify-send; they never auto-approve or retry.
+Notifications default off.
+They report observed failures, approvals and completions through tmux, optionally desktop OSC/notify-send; they never auto-approve or retry.
 
-**Credentials.** `$HUD_HOME/credentials.env` must be a regular 0600 file (not a
-symlink/FIFO). `NAME=VALUE`, optional quotes/export, no interpolation; environment
-wins per name, no implicit client/jev key import. Known keys include
-`MISTRAL_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `TYPESAFE_API_KEY`.
+**Credentials.**
+`$HUD_HOME/credentials.env` must be a regular 0600 file (not a symlink/FIFO).
+`NAME=VALUE`, optional quotes/export, no interpolation; environment wins per name, no implicit client/jev key import.
+Known keys include `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `TYPESAFE_API_KEY`.
 
-**Decision API.** `$HUD_HOME/config.json` has `decisions.primary` (default openai)
-and optional `decisions.fallback`: gemini/openai/typesafe. Settings saves primary,
-not keys. Automatic fallback picks the first other keyed provider in Gemini →
-OpenAI → TypeSafe order; one fallback for missing credentials, quota/auth/5xx/timeout,
-not malformed/refused answers. Gemini quota replies cool down the process for the
-server delay or 60 seconds. Browser CLIs own their own configuration independently.
+**Decision API.**
+`$HUD_HOME/config.json` has `decisions.primary` (default openai) and optional `decisions.fallback`: gemini/openai/typesafe.
+Settings saves primary, not keys.
+Automatic fallback picks the first other keyed provider in Gemini → OpenAI → TypeSafe order; one fallback for missing credentials, quota/auth/5xx/timeout, not malformed/refused answers.
+Gemini quota replies cool down the process for the server delay or 60 seconds.
+Browser CLIs own their own configuration independently.
 
-**Explicit import.** `hud import preview`/`apply` reads only named old files (plus
-legacy HUD `jev.env` when present), never guesses a Codex home. Existing values win;
-apply backs up changed targets privately and output lists names, never values.
-`--pi-footer` imports an explicitly named p10k-footer JSON. Sources are old
-`hud-settings.json` and `.env` files; old jev-ask TOML is refused (browser CLIs keep
-their own configuration).
+**Explicit import.**
+`hud import preview`/`apply` reads only named old files (plus legacy HUD `jev.env` when present), never guesses a Codex home.
+Existing values win; apply backs up changed targets privately and output lists names, never values.
+`--pi-footer` imports an explicitly named p10k-footer JSON.
+Sources are old `hud-settings.json` and `.env` files; old jev-ask TOML is refused (browser CLIs keep their own configuration).
 
 ```sh
 hud import preview --from /tmp/synthetic-old/hud-settings.json
 hud import apply --from /tmp/synthetic-old/hud-settings.json
 ```
 
-**Codex config.** The display reads model/effort, compaction window, quota evidence,
-MCP and skills from Codex's config/transcripts; it does not edit them. Client MCP
-registration belongs to the explicit installer, not the read-only display loop.
+**Codex config.**
+The display reads model/effort, compaction window, quota evidence, MCP and skills from Codex's config/transcripts; it does not edit them.
+Client MCP registration belongs to the explicit installer, not the read-only display loop.

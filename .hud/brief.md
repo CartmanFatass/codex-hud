@@ -25,9 +25,10 @@ Applies to every worker job in this repository, after its own task.
 
 - A test outside your change fails: rerun that one file once. If it fails again, leave it, name it in the report as a
   baseline failure, and fix it only when the brief asks.
-- Scope: edit what the brief names plus the tests and reference docs (`docs/reference.md`, `docs/reference.zh.md`) the
-  change needs. Another file you need: change it and give one line why in the report. Past the size budget: stop and
-  report.
+- Scope: edit what the brief names plus the tests and reference docs the change needs. A slice edits
+  `docs/reference.zh.md` only when adding a new section. A translation pass once per milestone syncs it with
+  `docs/reference.md`. Another file you need: change it and give one line why in the report. Past the size budget:
+  stop and report.
 - A choice the brief and `docs/spec.md` leave open that the owner would not see: take the simplest and list it under
   Decisions in the report. Ask only when the owner would see the difference or the brief contradicts the spec.
 - Do not merge main into your branch or wait for another job's land: build on your worktree's base and say in the
@@ -65,9 +66,9 @@ Applies to every worker job in this repository, after its own task.
 **Privacy and repository:**
 - The Model text master switch controls display requests (chat also requires a matching endpoint key); Sonic
   auto-thinking has its own explicit Decision API switch, independent of Model text, like quiet-job dispatch.
-- List every new outbound model input in `docs/ARCHITECTURE.md` §5 and both reference languages (`docs/reference.md`,
-  `docs/reference.zh.md`); land repair sends only the failing cherry-pick/gate step and its last 40 output lines to the
-  source worker or same-role replacement.
+- List every new outbound model input in `docs/ARCHITECTURE.md` §5 and `docs/reference.md`; carry it into
+  `docs/reference.zh.md` under the translation rule above. Land repair sends only the failing cherry-pick/gate step
+  and its last 40 output lines to the source worker or same-role replacement.
 - State is private: `writePrivateFile` or equivalent temp-file + `0600` + rename.
 - Preserve owner configuration, keys, history and unrelated state; tests, fixtures, logs and README examples use
   synthetic data only.
