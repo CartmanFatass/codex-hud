@@ -365,8 +365,19 @@ refuse to declare a report while the managed worktree has uncommitted changes. I
 and a clean worktree may report a no-op without making a commit. For a committed branch, the report tool attempts a
 merge preview against the current base tip. If it detects conflicts, it refuses once per job, listing the conflicting paths
 and asking the worker to rebase onto the given commit and rerun tests. A later report is not blocked by this preview;
-`hud_land` still performs its own replay and repair. Workers use `hud_sonic` to start sonic sub-tasks without waiting,
-then collect their reports; HUD prompts once if they finish without collecting.
+`hud_land` still performs its own replay and repair.
+
+A registered main checkout can set `worker_checks` in `.hud/project.json`, for example
+`"worker_checks": { "imp": ["npm run build", "npm run build:test"] }`. For the named code role, HUD runs the
+commands in order in the managed worktree before publishing a report, using `land.wrapper` if configured.
+Read-only roles and worktrees without new commits skip them. The commands share a 60-second limit. The first
+failure or timeout refuses that report attempt and returns the failing command and up to 2 KiB of trailing output
+to the same worker. The worker can fix the failure and retry, or report while blocked with a nonblank
+`skip_checks_reason` (`hud-progress --done --skip-checks-reason` for the fallback). That reason appears in the
+`hud_read` digest. These checks are separate from `hud_create` checks and the land gate.
+
+Workers use `hud_sonic` to start sonic sub-tasks without waiting, then collect their reports; HUD prompts once
+if they finish without collecting.
 `hud_send` queues a message for a working pi or CLI job. After a worker closes on its report, HUD checks the
 clock and native session. Within `resume_s`, it can open the same pi, Claude, Codex or Antigravity session in a
 new pane in the same checkout, as a new turn of the same job (`continuation: "resumed"`). After the window or if

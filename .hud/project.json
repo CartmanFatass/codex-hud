@@ -24,6 +24,10 @@
       "node_modules/**"
     ]
   },
+  "worker_checks": {
+    "imp": ["npm run build", "npm run build:test"],
+    "frontend-imp": ["npm run build", "npm run build:test"]
+  },
   "land": {
     "base": "universal-hud",
     "wrapper": "tmp/env.sh",

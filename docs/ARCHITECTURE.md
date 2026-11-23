@@ -309,6 +309,7 @@ Deterministic HTTP 4xx errors pause that feature on that route for five minutes 
 | Imp routing (opt-in) | First 4000 characters of the dispatch brief and up to 4 KiB/4000 characters of the named local ticket; up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports, or preset/model IDs. |
 | Scouted dispatch | The scout question and target `context_files` go to sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
 | Land repair | Failing cherry-pick or gate step and error, plus up to 40 output lines (8 KiB) to the source worker or same-role replacement. Blank and HUD frame lines are removed; recognized test names and assertions from the failing command take priority over a plain log tail. |
+| Pre-report worker checks | Failing project command (label up to 200 characters) and up to 2 KiB of its trailing stdout/stderr to the same worker in the `hud_report` error. An explicit skip reason is returned to the calling session in the report digest. |
 | Settings Test API | Fixed synthetic messages only |
 
 Headless Claude Code and Antigravity dispatch use the same model inputs as worker tabs: the assembled brief, role instructions, and subsequent answers, sends or repair messages. The native stream's session ID is read locally to bind the next turn; the stream is not sent to a separate model. For pi and headless CLIs, sends queued during a turn go to the same worker's native session in send order on its next turn, alongside the answer if it asked.
@@ -433,7 +434,7 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | Path under HUD home | Contents / writer |
 |---|---|
 | `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles, CLI supervisor or browser wrapper |
-| `jobs/<job>/report-meta.json` | Optional private 0600 worker summary and file list, bound to `report.md` by signature; no lifecycle, checks or outcome authority |
+| `jobs/<job>/report-meta.json` | Optional private 0600 worker summary, file list and check skip reason, bound to `report.md` by signature; no lifecycle, checks or outcome authority |
 | `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control tab |
 | `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control tab |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |

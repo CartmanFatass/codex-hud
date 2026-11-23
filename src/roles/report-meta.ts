@@ -21,7 +21,7 @@ export function cachedReportSignature(dir: string): string | null {
 }
 
 /** Display metadata only. The caller supplies normalized fields and the signature of its report. */
-export type ReportMetaFields = { summary?: string; files?: readonly string[] };
+export type ReportMetaFields = { summary?: string; files?: readonly string[]; skip_checks_reason?: string };
 export type ReportMeta = ReportMetaFields & { v: 1; report_sig: string; at: string };
 
 // Terminal control strings (including OSC), CSI, and other ESC sequences.
@@ -31,19 +31,25 @@ const invalidField = (field: keyof ReportMetaFields): never => {
   throw Object.assign(new Error(`invalid_arguments: ${field}`), { code: 'invalid_arguments' });
 };
 
-export function normalizeReportMeta({ summary, files }: { summary?: unknown; files?: unknown }): ReportMetaFields {
+function plainLine(text: string): string {
+  const line = text.replace(ansi, '').replace(/[\r\n\u2028\u2029]+/gu, ' ').replace(controls, '')
+    .trim().replace(/\s+/gu, ' ').replace(/^(?:#{1,6}|[-*•]) /u, '');
+  const points = [...line];
+  return points.length > 160 ? `${points.slice(0, 159).join('')}…` : line;
+}
+
+export function normalizeReportMeta({ summary, files, skip_checks_reason }: { summary?: unknown; files?: unknown; skip_checks_reason?: unknown }): ReportMetaFields {
   const fields: ReportMetaFields = {};
   if (summary !== undefined) {
     if (typeof summary !== 'string') return invalidField('summary');
-    const line = summary
-      .replace(ansi, '')
-      .replace(/[\r\n\u2028\u2029]+/gu, ' ')
-      .replace(controls, '')
-      .trim()
-      .replace(/\s+/gu, ' ')
-      .replace(/^(?:#{1,6}|[-*•]) /u, '');
-    const points = [...line];
-    if (line) fields.summary = points.length > 160 ? `${points.slice(0, 159).join('')}…` : line;
+    const line = plainLine(summary);
+    if (line) fields.summary = line;
+  }
+  if (skip_checks_reason !== undefined) {
+    if (typeof skip_checks_reason !== 'string') return invalidField('skip_checks_reason');
+    const reason = plainLine(skip_checks_reason);
+    if (!reason) return invalidField('skip_checks_reason');
+    fields.skip_checks_reason = reason;
   }
   if (files !== undefined) {
     if (!Array.isArray(files) || files.some((file) => typeof file !== 'string')) return invalidField('files');
@@ -64,11 +70,11 @@ export function normalizeReportMeta({ summary, files }: { summary?: unknown; fil
 export function writeReportMeta(
   dir: string,
   reportSig: string,
-  { summary, files }: ReportMetaFields,
+  { files, ...fields }: ReportMetaFields,
   at = new Date().toISOString()
 ): void {
   const file = join(dir, jobFiles.reportMeta);
-  const meta: ReportMeta = { v: 1, report_sig: reportSig, at, ...(summary ? { summary } : {}) };
+  const meta: ReportMeta = { v: 1, report_sig: reportSig, at, ...fields };
   // Valid paths can still exceed the read cap when JSON-escaped or encoded as UTF-8.
   const paths: string[] = [];
   let remaining = MAX_META_BYTES - Buffer.byteLength(JSON.stringify(meta)) - ',"files":[]'.length;
@@ -77,7 +83,7 @@ export function writeReportMeta(
     if (remaining < 0) break;
     paths.push(path);
   }
-  if (!summary && !paths.length) {
+  if (!fields.summary && !fields.skip_checks_reason && !paths.length) {
     fs.rmSync(file, { force: true });
     return;
   }
@@ -110,6 +116,7 @@ export function readReportMeta(dir: string, expectedSig?: string | null): Report
       typeof meta.at !== 'string' ||
       typeof meta.report_sig !== 'string' ||
       (meta.summary !== undefined && typeof meta.summary !== 'string') ||
+      (meta.skip_checks_reason !== undefined && typeof meta.skip_checks_reason !== 'string') ||
       (meta.files !== undefined &&
         (!Array.isArray(meta.files) || !meta.files.every((p: unknown) => typeof p === 'string')))
     )
@@ -117,7 +124,7 @@ export function readReportMeta(dir: string, expectedSig?: string | null): Report
     if (meta.report_sig !== (expectedSig === undefined ? cachedReportSignature(dir) : expectedSig)) return null;
     const { at, report_sig } = meta;
     const fields = normalizeReportMeta(meta);
-    return fields.summary || fields.files ? { v: 1, at, report_sig, ...fields } : null;
+    return fields.summary || fields.files || fields.skip_checks_reason ? { v: 1, at, report_sig, ...fields } : null;
   } catch {
     return null;
   }

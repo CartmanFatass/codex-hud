@@ -427,14 +427,14 @@ function settledReportMeta(dir: string, hasReport: boolean, settled: boolean): R
   if (!meta?.summary || !/[«»]/u.test(meta.summary)) return meta ?? undefined;
   const { summary: marked, ...rest } = meta;
   const summary = keywordMarks(marked).plain.trim();
-  return summary ? { ...rest, summary } : rest.files ? rest : undefined;
+  return summary ? { ...rest, summary } : rest.files || rest.skip_checks_reason ? rest : undefined;
 }
 
 export function jobRowReportMeta(row: JobRow, dir: string): ReportMetaFields | undefined {
   const meta = settledReportMeta(dir, row.report_present, row.display_state !== 'working' && row.display_state !== 'queued');
-  return meta ? {
-    ...(meta.summary ? { summary: meta.summary } : {}), ...(meta.files ? { files: meta.files } : {}),
-  } : undefined;
+  if (!meta) return undefined;
+  const { v, at, report_sig, ...fields } = meta;
+  return fields;
 }
 
 const rowState = (row: JobRow) => row.state ?? row.display_state;

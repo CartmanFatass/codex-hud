@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { AnswerResult } from '../../collectors/panel-actions.js';
 import { readJobProgress, jobRowReportMeta, jobChanges, failedAttempt, type JobRow } from '../../collectors/thin-jobs.js';
+import type { ReportMetaFields } from '../../roles/report-meta.js';
 import { QUEUE_START_MARKER } from '../../roles/concurrency.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { herdrId, runHerdr, runCommand } from '../../roles/herdr-run.js';
@@ -275,15 +276,16 @@ function readGit(summary: GitSummary | undefined, full: boolean) {
 }
 
 function reportDigest(report: NonNullable<ReturnType<typeof slice>>, job: string, state: string | null,
-  summary: string | undefined, git: GitSummary | undefined) {
+  meta: ReportMetaFields | undefined, git: GitSummary | undefined) {
   const verdict = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?verdict(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
   const blockers = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?blockers?(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
   const facts = { state, read_hint: reportReadHint(job), report_bytes: report.bytes,
     ...(git ? { changed_files: git.changed_files } : {}),
     ...(verdict ? { verdict: digestLine(verdict, 100) } : {}),
-    ...(blockers ? { blockers: digestLine(blockers, 160) } : {}) };
+    ...(blockers ? { blockers: digestLine(blockers, 160) } : {}),
+    ...(meta?.skip_checks_reason ? { skip_checks_reason: digestLine(meta.skip_checks_reason, 160) } : {}) };
   const budget = 1000 - Buffer.byteLength(JSON.stringify({ ...facts, result: '…' }));
-  return { ...facts, result: digestLine(summary ?? fallbackResultLine(report.text), budget) };
+  return { ...facts, result: digestLine(meta?.summary ?? fallbackResultLine(report.text), budget) };
 }
 const REPORT_PAGE_BYTES = 24 * 1024;
 
@@ -370,7 +372,7 @@ function observation(
       ...(checks ? { checks: full ? checks : { state: checks.state, stale: checks.stale,
         results: checks.results.map(({ command, passed }) => `${passed ? 'pass' : 'fail'}: ${digestLine(command.replace(/\s+/g, ' '), 120)}`) } } : {}),
       ...(row.report_present && !report ? { report_unchanged: true } : report && !full ? {
-        digest: reportDigest(report, currentJob.job, row.state ?? row.display_state, reportMeta?.summary, git),
+        digest: reportDigest(report, currentJob.job, row.state ?? row.display_state, reportMeta, git),
       } : {
         ...(page ? {
           report_path: reportPath,

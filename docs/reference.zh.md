@@ -243,6 +243,13 @@ CLI 声明后 120 秒仍未结束时，交由主会话处理，不强制中断�
 工作者调用 `hud_report` 时可附带单行 `summary`（最多 160 个 Unicode 码点）和 `files`（最多 50 个相对路径），不在对话中重复报告正文。
 托管工作树若有未提交的改动，`hud_report` 和备用命令 `hud-progress --done` 都会拒绝声明报告。Git 忽略的文件不会阻止报告；干净的工作树即使没有新提交，也可以报告没有改动。
 对于有新提交的分支，报告工具会尝试预演与当前基线的合并。如果检测到冲突，每项任务只拒绝一次，列出冲突路径，并要求工作者变基到指定提交后重跑测试。之后的报告不受此预检阻拦；`hud_land` 仍会执行自己的重放与修复流程。
+
+已注册项目可在主检出的 `.hud/project.json` 中添加 `worker_checks`，例如 `"worker_checks": { "imp": ["npm run build", "npm run build:test"] }`。
+指定的代码角色提交报告前，HUD 在托管工作树中依次运行命令，若已配置 `land.wrapper` 则使用该包装程序。只读角色或没有新提交的工作树跳过检查。
+所有命令共用 60 秒时限。首次失败或超时会拒绝本次报告，将失败的命令及最多 2 KiB 的末尾输出返回给同一工作者。
+工作者可修复后重试；若受阻，可用非空的 `skip_checks_reason` 跳过检查（备用命令为 `hud-progress --done --skip-checks-reason`），原因会显示在 `hud_read` 摘要中。
+这些检查与 `hud_create` 的检查和 `hud_land` 的合入门禁分开运行。
+
 `hud_send` 给工作中的 pi 或 CLI 任务排队消息。任务报告后关闭时，HUD 按时间与原生会话可用性自动选择：在 `resume_s` 内可在同一检出中新开窗格，恢复同一 pi、Claude、Codex 或 Antigravity 会话，开启同一任务的新回合（`continuation: "resumed"`）。超时或无法恢复时，启动引用原简报和报告的修正任务（`continuation: "repair"`、`continued_as` 为新任务 ID）。
 修正托管工作树任务，或用 `retry_of` 重试失败的修正任务（且未覆盖 `cwd` 或 `isolation`）时，若源工作树仍存在且工作区干净，HUD 会复用该工作树；否则新建工作树。
 用 `jobs` 代替 `job` 时，只把同一段文字发给工作中的任务，返回 `sent` 任务 ID 和 `skipped` 条目及其原因，不恢复已关闭任务。用 `messages: [{job, text, message_key?}]` 可在一次调用中给多个任务发送各自的消息（包括原生恢复和关闭后修复），按输入顺序返回 `messages` 且错误逐项隔离。

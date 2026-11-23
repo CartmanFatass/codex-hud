@@ -19,6 +19,7 @@ import { readJobProgress } from '../collectors/thin-jobs.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
 import { progress } from './progress.js';
+import { runWorkerChecks } from './checks.js';
 
 export { progress } from './progress.js';
 
@@ -129,6 +130,7 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
         throw new Error(`Merge conflict with the current base${names ? ` in ${names}${more}` : ''}. Rebase onto ${base}, rerun tests, then report again. This check only refuses once.`);
       }
     }
+    if (!fields.skip_checks_reason) await runWorkerChecks(dirname(dirname(dir)), job.role, job.worktree);
   }
   const path = join(dir, jobFiles.report);
   if (job.cli) {
@@ -359,6 +361,7 @@ export async function workerTools(cli = false) {
         ...(cli ? { turn: { ...string, description: 'Use the token in the prompt you are answering, not a newer turn.' } } : {}),
         summary: { ...string, maxLength: 320, description: 'Optional one-line plain-text summary of the result (up to 160 code points, no Markdown heading).' },
         files: { type: 'array', items: { ...string, maxLength: 260 }, maxItems: 50, description: 'Optional list of relative paths to files changed by code roles (up to 50).' },
+        skip_checks_reason: { ...string, minLength: 1, maxLength: 160, description: 'If blocked, skip the project’s worker checks and include this reason in the report digest.' },
       },
       cli ? ['text', 'turn'] : ['text']),
     tool('hud_ask', headless ? 'Ask the orchestrator and end the turn. The answer resumes this session.'
