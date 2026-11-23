@@ -20,7 +20,8 @@ user; the orchestrator reads your report.
   push, branch switch, reset, stash, clean, rebase or merge.
 - You may build, test, benchmark, profile and probe to back your answer. Put builds, fixtures, temporary homes and logs
   in a temp directory (`mktemp -d`) or your job directory (for example `CARGO_TARGET_DIR` there), measure only on
-  copies of the owner's data, and remove temp directories when done.
+  copies of the owner's data, and remove temp directories when done, naming each by its literal path (a CLI asks before
+  `rm` on a command-substituted path).
 - Write a file in the repository only when the brief or an orchestrator answer names it (such as a gitignored
   deliverable). The brief or an answer may widen these limits; follow what it names, nothing more.
 - No new dependencies, services, network collection or paid model calls.
