@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { join } from 'node:path';
-import { checksJustFinished, failureUnobserved, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { checksJustFinished, failureUnobserved, formatJobChange, jobChanges, readSessionJobRows, readThinJobRows, type JobRow, type WatchJobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
@@ -43,7 +43,7 @@ const isBrokenPipe = (error: unknown): boolean => {
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
 type Notice = { line: string; defer?: boolean };
 // A numeric catch-up value is the Claude mod's cutoff for individual report notices.
-function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup: boolean | number = false): Notice[] {
+function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number = false, lastScanAt = -Infinity): Notice[] {
   let olderReports = 0;
   const notices = rows.flatMap((row) => {
     const old = prev.get(row.job);
@@ -63,6 +63,8 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
         });
     if (row.land_turn) return questions;
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
+    // A newly visible row can be old work promoted into the bounded window by retention.
+    if (catchup === false && !old && settled(row) && row.notice_mtime < lastScanAt) return questions;
     let attentionUnread = true;
     if (catchup && (row.blocked || row.display_state === 'failed')) {
       const idx = getJobIndexCache(home), job = idx.readJob(row.job);
@@ -185,7 +187,7 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
 export function startSessionWatch(home: string, pane: string, cwd: string, deliver: (lines: string[]) => void, settlementWindowMs = settlementWindow(process.env)) {
   const tries = new TryLog(home), answers = new PanelActionLog(home);
   let prev = new Map<string, JobRow>();
-  let first = true, stopped = false, scanning = false, dirty = false;
+  let first = true, stopped = false, scanning = false, dirty = false, lastScanAt = -Infinity;
   let timer: ReturnType<typeof setTimeout>;
   const notices = settlementNotices(settlementWindowMs), checkpoints = sonicCheckpointNotices();
   const inputs = watchInputs(home, () => {
@@ -201,13 +203,15 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     inputs.attach();
     scanning = true;
     dirty = false;
+    const scanAt = Date.now();
     let rows;
     try { rows = await collectSessionJobRows(home, pane, cwd, process.env); }
     catch { if (!stopped) schedule(DEFAULT_RESCAN_MS); return; }
     finally { scanning = false; }
     if (stopped) return;
-    const lines = notices.collect(actionable(home, prev, rows, first), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines, ...checkpoints(rows)]);
+    const lines = notices.collect(actionable(home, prev, rows, first, lastScanAt), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines, ...checkpoints(rows)]);
     first = false;
+    lastScanAt = scanAt;
     prev = new Map(rows.map((row) => [row.job, row]));
     schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
     if (lines.length) deliver(lines);
@@ -342,7 +346,7 @@ export async function watchCommand(
     // Attach before catch-up so events during the scan are not lost.
     inputs.attach();
     let prev = new Map<string, JobRow>();
-    let first = true;
+    let first = true, lastScanAt = -Infinity;
     let queueAgent: 'codex' | 'agy' | undefined;
     const agyBacklog: string[] = [];
     while (!stopped) {
@@ -368,7 +372,7 @@ export async function watchCommand(
       const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...(modCatchup ? [] : progress)];
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
-      const events = first || !verbose ? actionable(home, prev, rows, modCatchup ? modCutoff : first) : [];
+      const events = first || !verbose ? actionable(home, prev, rows, modCatchup ? modCutoff : first, lastScanAt) : [];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       if (queue || mod) {
@@ -387,6 +391,7 @@ export async function watchCommand(
         ? (first ? events.map((event) => event.line) : jobChanges(prev, rows)).concat(tryLines)
         : notices.collect(events, tryLines);
       first = false;
+      lastScanAt = scanAt;
       prev = new Map(rows.map((row) => [row.job, row]));
       if (queueAgent === 'agy') {
         for (const batch of lines) for (const line of batch.split('\n')) agyBacklog.push(line);

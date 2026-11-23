@@ -488,19 +488,21 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   }
   return lines;
 }
+export type WatchJobRow = JobRow & { notice_mtime: number };
+
 function watchReceipts(cache: JobIndexCache) {
   return cache.listJobDirsByMtime().dirs.flatMap(({ id, dir }) => {
     const res = cache.readJob<Job & Record<string, unknown>>(id);
     return res.status === 'ok' && res.value.job === id && typeof res.value.role === 'string'
-      ? [{ id, dir, job: res.value }]
+      ? [{ id, dir, job: res.value, receiptAt: res.at }]
       : [];
   });
 }
 
-function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnType<typeof watchReceipts>): JobRow[] {
-  const rows: JobRow[] = [];
+function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnType<typeof watchReceipts>, adopted?: ReadonlySet<string>): WatchJobRow[] {
+  const rows: WatchJobRow[] = [];
   const statuses = new Map<string, Partial<JobStatus> | null>();
-  for (const { id, dir, job } of receipts) {
+  for (const { id, dir, job, receiptAt } of receipts) {
     if (rows.length === 200) break;
     if (job.scout_only === true || (pane !== null && jobCallerPane(job) !== pane)) continue;
     const statusRes = cache.readStatus<JobStatus>(id);
@@ -511,7 +513,12 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
       const progress = job.role === 'sonic' && status?.state === 'working' ? readJobProgress(dir, true) : undefined;
       const row = jobRow(job, status, { dir, cache, progress });
       const reportMeta = jobRowReportMeta(row, dir);
-      rows.push({ ...row, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
+      const checksAt = checks?.state === 'done' && !checks.stale
+        ? fs.lstatSync(join(dir, jobFiles.checks), { throwIfNoEntry: false })?.mtimeMs : undefined;
+      // Directory mtime also moves on maintenance; only actionable artifacts count as live evidence.
+      const notice_mtime = Math.max(statusRes.status === 'ok' ? statusRes.at : receiptAt,
+        row.report_unread ? row.report_mtime ?? 0 : 0, checksAt ?? 0, adopted?.has(id) ? receiptAt : 0);
+      rows.push({ ...row, notice_mtime, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
     } catch {
       /* Job directory disappeared or became unreadable during the scan; skip it. */
     }
@@ -541,7 +548,7 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
  * Lightweight, read-only watch rows: receipts, `qa/` filenames and report mtime; checks and settled report metadata
  * use the cached report signature. A null pane matches every job, undefined matches none.
  */
-export function readThinJobRows(home: string, scope: { pane?: string | null }): JobRow[] {
+export function readThinJobRows(home: string, scope: { pane?: string | null }): WatchJobRow[] {
   if (scope.pane !== null && !herdrId(scope.pane)) return [];
   const cache = getJobIndexCache(home);
   return watchRows(cache, scope.pane, watchReceipts(cache));
@@ -552,9 +559,9 @@ export async function readSessionJobRows(home: string, pane: string, cwd: string
   const receipts = watchReceipts(cache);
   // Capture the initial pane state before yielding, so writes just after watch starts are changes, not catch-up.
   const rows = watchRows(cache, pane, receipts);
-  const jobs = receipts.map(({ job }) => job);
-  if (await adoptProjectJobs(home, pane, cwd, jobs, env, adoptionAttention(home, jobs, cwd, cache), cache)) {
-    return readThinJobRows(home, { pane });
+  const jobs = receipts.map(({ job }) => job), adopted = new Set<string>();
+  if (await adoptProjectJobs(home, pane, cwd, jobs, env, adoptionAttention(home, jobs, cwd, cache), cache, (id) => adopted.add(id))) {
+    return watchRows(cache, pane, watchReceipts(cache), adopted);
   }
   return rows;
 }

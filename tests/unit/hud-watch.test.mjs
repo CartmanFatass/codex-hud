@@ -12,6 +12,7 @@ import { appendPanelAction } from '../../dist/collectors/panel-actions.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
+import { archiveJob } from '../../dist/roles/job-archive.js';
 import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
@@ -776,6 +777,44 @@ test('mod JSONL uses shared actionable lines, sleeps only once clear, and resume
   assert.deepEqual(records.filter(r => r.type === 'wake').flatMap(r => r.lines), [
     `try accepted ${process.cwd().split('/').at(-1)} M1: ONE`, `[${id}] Retry requested from panel`,
   ]);
+});
+
+test('mod retention does not announce old settlements entering the watch window', async (t) => {
+  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID;
+  const past = new Date(Date.now() - 25 * 3600_000), newer = new Date(+past + 1000);
+  const id = (i) => `j${i.toString(16).padStart(16, '0')}`;
+  const status = { state: 'closed', ended_at: past.toISOString() };
+  const oldJob = (i, stamp, marks = {}, state = status) => {
+    const dir = writeJob(f.home, id(i), pane, 'retained', state, true);
+    const file = join(dir, 'job.json');
+    const receipt = { ...JSON.parse(fs.readFileSync(file)), created_at: past.toISOString(), ...marks };
+    writeFixtureFile(file, JSON.stringify(receipt));
+    for (const path of ['report.md', 'STATUS.json', 'job.json', '.']) fs.utimesSync(join(dir, path), stamp, stamp);
+    return { dir, receipt };
+  };
+  const seen = new Date(+newer + 1000).toISOString();
+  oldJob(1, past, { read_at: seen });
+  oldJob(2, past, { observed_at: seen }); // Delivered/observed, but report still unread.
+  const active = oldJob(3, past, {}, { state: 'working' });
+  const newerJobs = Array.from({ length: 200 }, (_, i) => oldJob(i + 4, newer, { read_at: seen }));
+  const ac = new AbortController(), records = [];
+  const run = watchCommand(['--mod'], { env: { ...f.env, HUD_MOD_CURSOR: '' },
+    stdout: s => records.push(JSON.parse(s)), stderr: s => assert.fail(s) },
+    { signal: ac.signal, rescanMs: 50, settlementWindowMs: 40 });
+  try {
+    await until(() => records.some(r => r.type === 'ready'));
+    assert.deepEqual(records, [{ type: 'ready' }]);
+    for (const { dir, receipt } of newerJobs.slice(0, 3)) {
+      archiveJob(f.home, dir, receipt.job, receipt, status, Date.now(), (s) => assert.fail(s));
+      fs.rmSync(dir, { recursive: true });
+    }
+    // A real settlement outside the previous window still arrives, even on the same rescan.
+    writeFixtureFile(join(active.dir, 'STATUS.json'), JSON.stringify({ state: 'done' }));
+    await until(() => records.some(r => r.type === 'wake'));
+    assert.deepEqual(records.slice(1).map(({ type, lines }) => ({ type, lines })), [
+      { type: 'wake', lines: [`${id(3)} imp retained: done | report | ${readHint(id(3))}`] },
+    ]);
+  } finally { ac.abort(); await run; }
 });
 
 test('a live pi watcher suppresses fallback, but dead, reused and mismatched PIDs do not', async (t) => {
