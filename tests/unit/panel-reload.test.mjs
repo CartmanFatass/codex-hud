@@ -8,6 +8,7 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { DEFAULT_PANEL_VIEW } from '../../dist/settings.js';
 import { delay, until, fixture, launch, encode, live, QUIET_MS } from '../helpers/panel-reload-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { until as untilRendered } from '../helpers/until.mjs';
 
 const moduleUrl = pathToFileURL(resolve('dist/utils/panel-reload.js')).href;
 
@@ -321,16 +322,22 @@ else await reload.restart({state:initialMonitorState(),settings:null},()=>{});`)
   assert.deepEqual(await run.exited, { code: 23, signal: null });
 });
 
-test('the live panel coalesces build bursts, retains jobs settled during its life, and keeps a broken build alive with a notice', async (t) => {
+test('the live panel coalesces build bursts, retains jobs settled during its life, and keeps a broken build alive with a notice', { timeout: 60000 }, async (t) => {
   const openedAt = Date.now() - 60000;
   const f = live(t, (state) => ({ state, settings: null, openedAt }));
-  await until(() => f.output().includes('SYNTHETIC reloa'), 'initial collected Home frame did not render');
+  // A start record precedes PanelReload construction. Wait for a collected Home
+  // frame on the new alternate screen before replacing that generation's entry.
+  const homeFrame = (generation) => {
+    const screens = f.output().split('\x1b[?1049h');
+    return screens.length === generation + 1 && screens.at(-1).includes('SYNTHETIC reloa');
+  };
+  await untilRendered(() => homeFrame(1), t.signal);
   writeFixtureFile(join(f.env.HUD_HOME, 'jobs/j0000000000000000/STATUS.json'), JSON.stringify({ state: 'done', settled_at: new Date().toISOString() }));
   for (let i = 0; i < 2; i++) { f.appendBuild(`\n// build burst ${i}`); await delay(20); }
   const lastChange = Date.now();
   f.appendBuild('\n// build burst 2');
-  await until(() => f.events().filter((e) => e.start).length === 2, 'panel did not replace itself');
-  await delay(400);
+  await untilRendered(() => homeFrame(2), t.signal);
+  assert.equal(f.events().filter((e) => e.start).length, 2, 'panel replaced itself');
   assert.equal(f.restarts().length, 1);
   assert.ok(f.restarts()[0].at - lastChange >= QUIET_MS, 'quiet period measured from last change');
   assert.equal(f.restarts()[0].restart.openedAt, openedAt);
@@ -340,11 +347,12 @@ test('the live panel coalesces build bursts, retains jobs settled during its lif
   assert.deepEqual(saved.home.expanded, [...f.state.home.expanded]);
   assert.equal(saved.home.showAll, true);
   f.appendBuild('\ninvalid syntax !');
-  await until(() => f.output().includes('new build failed to load'), 'bad build notice not rendered');
+  await untilRendered(() => f.output().includes('new build failed to load'), t.signal);
   assert.equal(f.restarts().length, 1);
   assert.equal(f.child.exitCode, null);
   writeFixtureFile(f.entry, f.baseline + '\n// good recovery');
-  await until(() => f.events().filter((e) => e.start).length === 3, 'good build did not recover');
+  await untilRendered(() => homeFrame(3), t.signal);
+  assert.equal(f.events().filter((e) => e.start).length, 3, 'good build recovered');
   assert.equal(f.restarts()[1].restart.openedAt, openedAt);
   const restored = f.restarts()[1].restart.stateV2;
   assert.deepEqual(restored.home.cursor, saved.home.cursor, 'settled job and selection survived the first collected frame');

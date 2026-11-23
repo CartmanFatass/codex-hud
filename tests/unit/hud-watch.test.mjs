@@ -17,6 +17,7 @@ import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
+import { until as untilSettled } from '../helpers/until.mjs';
 
 const readHint = (job) => `hud_read job=${job} (mode: "full" for the whole report)`;
 
@@ -368,46 +369,64 @@ test('hud watch skips child completion and report, but delivers questions and fa
   assert.equal(await running, 0);
 });
 
-for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbose ? 'verbose' : 'quiet'})`, async (t) => {
+for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbose ? 'verbose' : 'quiet'})`, { timeout: 60000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-life-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const ac = new AbortController();
-  t.after(() => ac.abort());
   const lines = [], id = 'j00000000000000a1', head = `${id} imp life:`;
+  const dir = join(home, 'jobs', id), statusFile = join(dir, 'STATUS.json');
+  let scans = 0;
+  const lstat = fs.lstatSync;
+  t.mock.method(fs, 'lstatSync', (file, ...args) => {
+    if (file === statusFile) scans++;
+    return lstat(file, ...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  // Keep all three settlements in one logical window regardless of wall-clock scan latency.
+  const settlementWindowMs = 1000;
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
   const running = watchCommand(verbose ? ['--verbose'] : [], {
     env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(s.trim()), stderr: () => {},
-  }, { signal: ac.signal, rescanMs: 50, settlementWindowMs: 1000 });
-  const dir = writeJob(home, id, 'w4E:p1', 'life', { state: 'working' });
-  const status = async (state, reason) => {
-    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
-    await wait(90);
+  }, { signal: ac.signal, rescanMs: 50, settlementWindowMs });
+  // Silent transitions still need to reach the watcher's baseline before the next write.
+  const step = async (change) => {
+    const before = scans;
+    change();
+    await untilSettled(() => scans > before, t.signal);
   };
-  await wait(90);
-  fs.mkdirSync(join(dir, 'qa'));
+  const status = (state, reason) => writeFixtureFile(statusFile, JSON.stringify({ state, reason }));
   const qfile = join(dir, 'qa/q1.md');
-  writeFixtureFile(qfile, '# Question q1 from imp@demo\n\nWhich\nlayout?\n\nOptions:\n- rows\n- columns\n\nDefault if unanswered: rows\n');
-  await status('waiting_orchestrator', 'question');
-  writeFixtureFile(join(dir, 'qa/q1.answer.md'), 'rows');
-  await wait(90);
-  await status('working');
-  writeFixtureFile(join(dir, 'report.md'), 'First report');
-  await status('idle_grace');
-  const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
-  const markRead = async () => {
-    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
-    await wait(90);
-  };
-  await markRead();
-  await status('working');
-  writeFixtureFile(join(dir, 'report.md'), 'Second report');
-  await status('idle_grace');
-  await markRead();
-  await status('working');
-  await status('idle_grace'); // A new settlement is actionable even without rewriting the already-read report.
-  await status('closed');
-  if (!verbose) await until(() => lines.length > 1, 6000);
-  ac.abort();
-  assert.equal(await running, 0);
+  try {
+    await step(() => writeJob(home, id, 'w4E:p1', 'life', { state: 'working' }));
+    await step(() => {
+      fs.mkdirSync(join(dir, 'qa'));
+      writeFixtureFile(qfile, '# Question q1 from imp@demo\n\nWhich\nlayout?\n\nOptions:\n- rows\n- columns\n\nDefault if unanswered: rows\n');
+      status('waiting_orchestrator', 'question');
+    });
+    await step(() => writeFixtureFile(join(dir, 'qa/q1.answer.md'), 'rows'));
+    await step(() => status('working'));
+    const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
+    for (const report of ['First report', 'Second report']) {
+      await step(() => {
+        writeFixtureFile(join(dir, 'report.md'), report);
+        status('idle_grace');
+      });
+      await step(() => writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() })));
+      await step(() => status('working'));
+    }
+    await step(() => status('idle_grace')); // A new settlement is actionable even without rewriting the already-read report.
+    await step(() => status('closed'));
+    now += settlementWindowMs;
+    await untilSettled(() => lines.length >= (verbose ? 10 : 2), t.signal);
+  } finally {
+    ac.abort();
+    assert.equal(await running, 0);
+  }
   const report = `${head} idle_grace | report | ${readHint(id)}`;
   assert.deepEqual(lines, verbose ? [
     `${head} working`, `${head} waiting_orchestrator | question | QUESTION`,

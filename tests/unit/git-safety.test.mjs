@@ -102,9 +102,18 @@ async function piFacts(cwd) {
 }
 
 const paths = {
-  Claude: async (cwd) => {
-    const value = await collectParityGit(cwd, process.env);
-    return { branch: value?.branch, dirty: value?.dirty };
+  Claude: async (cwd, t) => {
+    // Test the real Git commands and their safety, not the statusline's 120 ms budget.
+    t.mock.method(performance, 'now', () => 0);
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const expire = () => t.mock.timers.runAll();
+    t.signal.addEventListener('abort', expire, { once: true });
+    try {
+      const value = await collectParityGit(cwd, process.env);
+      return { branch: value?.branch, dirty: value?.dirty };
+    } finally {
+      t.signal.removeEventListener('abort', expire);
+    }
   },
   Codex: async (cwd) => {
     const value = await collectGitStatus(cwd);
@@ -126,9 +135,9 @@ const paths = {
 
 test('production Git safety matrix: repository commands never execute; facts survive safe neutralisation', async (t) => {
   for (const mode of ['repository', 'unsafe', 'submodule']) for (const [name, read] of Object.entries(paths)) {
-    await t.test(`${name}: ${mode}`, async (t) => {
+    await t.test(`${name}: ${mode}`, { timeout: 60000 }, async (t) => {
       const f = fixture(t, mode);
-      const facts = await read(f.cwd);
+      const facts = await read(f.cwd, t);
       const markers = Object.fromEntries(Object.entries(f.markers).map(([kind, path]) => [kind, fs.existsSync(path)]));
       t.diagnostic(JSON.stringify({ path: name, mode, markers, facts }));
       assert.deepEqual(markers, { clean: false, process: false, smudge: false, fsmonitor: false });

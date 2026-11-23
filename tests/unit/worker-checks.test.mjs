@@ -106,7 +106,7 @@ for (const [label, options] of [
   });
 }
 
-test('worker checks share a 60-second deadline and timeouts kill the command process group', { timeout: 15_000 }, async (t) => {
+test('worker checks share a 60-second deadline and timeouts kill the command process group', { timeout: 60_000 }, async (t) => {
   const s = await setup(t);
   s.configure(['true', 'sleep 600 & echo "$!" > ignored.txt; wait']);
   const schedule = globalThis.setTimeout, delays = [];
@@ -116,15 +116,22 @@ test('worker checks share a 60-second deadline and timeouts kill the command pro
     if (ms !== 60_000 && ms !== 35_000) return schedule(fn, ms, ...args);
     delays.push(ms);
     now += 25_000;
-    expire = () => fn(...args);
-    return schedule(fn, 5000, ...args); // Safety net if the child fails to start.
+    expire = () => { expire = undefined; fn(...args); };
+    return schedule(() => {}, 0); // Keep a real handle for clearTimeout without running the deadline early.
   });
   const rejected = assert.rejects(runWorkerChecks(s.f.env.HUD_HOME, 'imp', s.worktree), /timed out \(60 s total limit\)/);
-  await until(() => fs.existsSync(s.marker) && fs.readFileSync(s.marker, 'utf8').trim(), t.signal);
-  const pid = Number(fs.readFileSync(s.marker, 'utf8'));
-  assert.ok(procStat(pid), 'the child started before the deadline');
-  assert.deepEqual(delays, [60_000, 35_000]);
-  expire();
-  await rejected;
-  await until(() => !procStat(pid) || procStat(pid).state === 'Z', t.signal);
+  try {
+    await until(() => fs.existsSync(s.marker) && fs.readFileSync(s.marker, 'utf8').trim(), t.signal);
+    const pid = Number(fs.readFileSync(s.marker, 'utf8'));
+    assert.ok(procStat(pid), 'the child started before the deadline');
+    assert.deepEqual(delays, [60_000, 35_000]);
+    expire();
+    await rejected;
+    await until(() => {
+      const stat = procStat(pid);
+      return !stat || stat.state === 'Z';
+    }, t.signal);
+  } finally {
+    expire?.();
+  }
 });
