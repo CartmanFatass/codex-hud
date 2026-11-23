@@ -69,6 +69,49 @@ test('Claude closes without a read, resumes the exact session in a new pane, and
   assert.equal(starts(f).at(-1).args.includes('--resume'), false);
 });
 
+test('the watcher leaves a reopening CLI turn working and its send task completes at the new report', async (t) => {
+  const { f, job, worker, report } = await cliFixture(t);
+  const dir = job.task_dir, oldSupervisor = cliState(dir).supervisor_pid;
+  // Keep the watcher running across closure. This second CLI job also witnesses a scan
+  // while the new turn has been admitted but its prompt hasn't returned a supervisor yet.
+  const sibling = 'jffffffffffffffff', other = join(f.env.HUD_HOME, 'jobs', sibling);
+  fs.mkdirSync(other);
+  write(join(other, 'job.json'), JSON.stringify({ ...json(dir, 'job.json'), job: sibling }));
+  write(join(other, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  resultValue(await report('Synthetic previous report.'));
+  f.push(job.job, 'done');
+  await until(() => reaped(job) && dead(worker.pid) && dead(oldSupervisor));
+  f.closeTab(); // The old tab's closure is not a fact about the replacement either.
+
+  const next = fakeCliWithChild(t, f), rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  write(join(f.env.HOME, 'hold-prompt-result'), '');
+  const seen = new Set();
+  const changes = fs.watch(dir, (_event, name) => { if (name === 'STATUS.json') seen.add(cliState(dir)?.state); });
+  t.after(() => changes.close());
+  const sending = taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic next turn.' });
+  await until(() => json(dir, 'turn.json').seq === 2);
+  // The same dead PID really is current for the sibling, not for the reopened job.
+  write(join(other, 'supervisor.pid'), `${oldSupervisor}\n`);
+  await until(() => cliState(other)?.state === 'waiting_orchestrator');
+  assert.equal(cliState(other).reason, 'supervisor exited; worker liveness unknown');
+  assert.equal(cliState(dir).state, 'working');
+  write(join(f.env.HOME, 'release-prompt-result'), '');
+  const task = await sending;
+  assert.equal(task.continuation, 'resumed');
+  const get = () => rpc('tasks/get', { taskId: task.taskId });
+  assert.equal((await get()).status, 'working');
+  await until(() => cliState(dir)?.pid === next.pid);
+  assert.deepEqual([...seen], ['working']);
+  assert.equal((await get()).status, 'working');
+  resultValue(await report('Synthetic resumed result.'));
+  f.push(job.job, 'done');
+  await until(() => reaped(job));
+  const result = await get();
+  assert.equal(result.status, 'completed');
+  assert.match(result.result.content[0].text, /Synthetic resumed result/);
+});
+
 test('an unconfirmed native CLI session receives no input and falls back to repair', async (t) => {
   const { f, job, worker, report } = await cliFixture(t);
   resultValue(await report('Synthetic report before mismatch.'));

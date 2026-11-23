@@ -1079,17 +1079,26 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     }
   }
   const taskEntry = session.taskClient && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;
-  // The reaper has finished the old turn. Publish a nonterminal status before replacing its ownership.
+  // The reaper has finished. Retire its CLI tab and supervisor before any scan can
+  // pair their closure with the new working status. Dispatch publishes fresh receipts.
+  const pidFile = join(dir, jobFiles.supervisorPid);
+  const tabCli = current.cli && !current.headless;
+  const priorPid = tabCli ? jobCache.readPid(pidFile) : null;
+  if (tabCli) {
+    fs.rmSync(pidFile, { force: true });
+    fs.unlinkSync(join(dir, jobFiles.session));
+  }
   writeCreateStatus(dir, { state: 'working' });
   save(next, true);
   const result = await launchPlace(next, role, place, dir, message, undefined, undefined, { resume: { ...identity, message } });
   if (result.preInput && !result.cleanupFailed) {
-    if (priorSession) writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
     if (answerFile) { fs.unlinkSync(answerFile); jobCache.invalidateQa(id); }
     if (priorTurn) saveTurn(dir, priorTurn);
-    writeCreateStatus(dir, status);
     const touched = findJob(id);
     save({ ...current, read_at: touched?.read_at ?? current.read_at, observed_at: touched?.observed_at ?? current.observed_at }, true);
+    writeCreateStatus(dir, status);
+    if (priorSession) writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
+    if (priorPid !== null) writePrivateFile(pidFile, `${priorPid}\n`, { mkdir: false });
     if (taskEntry) releaseTask(taskEntry);
     return;
   }
