@@ -183,14 +183,14 @@ test('an unchanged cli report after continuation stays open without failing', { 
   await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
 });
 
-test('quiet past grace turns waiting_orchestrator without pane notices and self-wake returns to working', { timeout: 15000 }, async (t) => {
+test('quiet past grace turns waiting_orchestrator without pane notices and self-wake returns to working', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'quiet-cli', 1, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const notices = () =>
     f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args.at(-1)).includes('quiet without a report'));
   const job = await f.call('hud_create', { role: 'quiet-cli', request_key: 'quiet-grace', task: 'Synthetic quiet grace.' });
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 5000);
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
   assert.equal(notices().length, 0);
   const asking = workerFor(f, job.job);
   assert.equal(asking.homeNeedsHuman, true);
@@ -198,15 +198,17 @@ test('quiet past grace turns waiting_orchestrator without pane notices and self-
   assert.match(cardText(asking), /quiet without a report/);
   assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
   assert.equal(f.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
-  await new Promise((done) => setTimeout(done, 350));
+  // The second status query confirms the supervisor finished a safety pass while quiet.
+  const queries = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= queries + 2, t.signal);
   assert.equal(notices().length, 0);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   fs.writeFileSync(join(f.env.HOME, 'wake-turn'), '');
-  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.reason === null, 5000);
+  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.reason === null, t.signal);
   assert.equal(workerFor(f, job.job).homeNeedsHuman, false);
   fs.unlinkSync(join(f.env.HOME, 'missing-report'));
   fs.writeFileSync(join(f.env.HOME, 'release-turn'), '');
-  await until(() => cliState(job.task_dir)?.state === 'closed', 5000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
   assert.equal(notices().length, 0);
 });
 

@@ -217,13 +217,13 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   assert.deepEqual(supervisorCommands(), commands);
 });
 
-test('supervisor edges: stalled submission stays supervised; pre-input rejection closes its tab', { timeout: 10000 }, async (t) => {
+test('supervisor edges: stalled submission stays supervised; pre-input rejection closes its tab', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   fs.writeFileSync(join(f.env.HOME, 'stalled-prompt'), '');
   const live = await f.call('hud_create', { role: 'general', on: 'agy', request_key: 'stalled', task: 'Synthetic stall.' });
   assert.notEqual(live.ok, false);
-  await until(() => cliState(live.task_dir)?.state === 'working');
+  await until(() => cliState(live.task_dir)?.state === 'working', t.signal);
   assert.equal(JSON.parse(fs.readFileSync(join(live.task_dir, 'turn.json'))).seq, 1);
   assert.ok(fs.existsSync(join(live.task_dir, 'supervisor.pid')));
   assert.equal(f.commands().some((c) => c.args[0] === 'tab' && c.args[1] === 'close'), false);

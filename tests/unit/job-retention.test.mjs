@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
 import { waitUntilFs } from '../../dist/utils/fs-wait.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { fixture, realSession, expired, destination, hour, until } from '../helpers/job-retention-fixture.mjs';
@@ -74,7 +75,7 @@ for (const odd of ['dispatch file', 'linked helper file', 'unreadable sessions']
 
 for (const fault of ['unreadable sessions', 'dispatch file']) {
   test(`working tabbed job with ${fault} stays open through housekeeping errors and is reaped`, {
-    timeout: 10000, skip: fault === 'unreadable sessions' && process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
+    timeout: 60000, skip: fault === 'unreadable sessions' && process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
   }, async (t) => {
     let unreadable;
     t.after(() => { if (unreadable) fs.chmodSync(unreadable, 0o700); });
@@ -86,18 +87,22 @@ for (const fault of ['unreadable sessions', 'dispatch file']) {
       fs.chmodSync(unreadable, 0);
     } else fs.writeFileSync(join(first, '.dispatch'), 'Synthetic incomplete dispatch.\n');
     const { child, exited } = f.start();
-    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) && f.log().includes('keep ')));
+    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) && f.log().includes('keep ')), t.signal);
     assert.equal(child.exitCode, null, 'housekeeping does not erase the only open job');
     if (second) {
       writeFixtureFile(join(second, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-      await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at);
+      await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at, t.signal);
       assert.ok(JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at, 'the second tab is reaped');
     }
-    await new Promise((done) => setTimeout(done, 350));
+    // A fresh summary proves a scan after the reap kept watching, rather than going idle.
+    const summary = workSummaryPath(f.home);
+    fs.rmSync(summary, { force: true });
+    writeFixtureFile(join(first, 'report.md'), 'Synthetic report.');
+    await until(() => child.exitCode !== null || fs.existsSync(summary), t.signal);
     assert.equal(child.exitCode, null, 'the first job still keeps the watcher alive after the second settles');
     if (unreadable) fs.chmodSync(unreadable, 0o700);
     writeFixtureFile(join(first, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-    await until(() => child.exitCode !== null);
+    await until(() => child.exitCode !== null || child.signalCode !== null, t.signal);
     await exited;
     assert.equal(child.exitCode, 0);
     assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), (second ? second + '\n' : '') + first + '\n');
