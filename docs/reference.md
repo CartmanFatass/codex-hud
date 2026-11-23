@@ -74,6 +74,7 @@ hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
 hud watch                 # pending questions and actionable events (--verbose: every change; --all: every pane)
+hud doctor <jobId>        # print one job's local facts without changing it
 hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
@@ -88,6 +89,12 @@ these select observations, not execution identity. Without explicit selection,
 `HERDR_PANE_ID` permits a one-second `herdr pane current` lookup for the caller's
 Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
+
+`hud doctor <jobId>` reads one directory under `$HUD_HOME/jobs`. It shows identity, the shared job state, raw
+`STATUS.json`, open questions, checks, last progress, stop/close markers and recorded process liveness when
+applicable. For CLI workers it compares the turn, completion receipt and current report signature; it does not
+print the report body. Missing or unreadable evidence is labeled. The command changes nothing and does not
+contact herdr or the network.
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
 **hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.

@@ -64,6 +64,7 @@ hud statusline --help
 hud import --help
 hud trust <dir>           # 把该目录加入 grok、agy 和 claude 的信任列表
 hud watch                 # 本窗格 HUD 任务每次状态变化一行（--all：所有任务）
+hud doctor <jobId>        # 只读查看单个任务的本地记录
 hud setup --detect        # 打印本项目的工作者配置 JSON
 hud setup --apply PLAN    # 按计划写入 .hud/
 hud setup --remove        # 去掉项目注册，留下 .hud/
@@ -76,6 +77,11 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 `--harness claude|pi|codex --session ID --source ABS` 选择观测，不建立执行身份。
 没有显式选择时，`HERDR_PANE_ID` 允许用一秒预算向 `herdr pane current` 查询调用者的 Claude 转写或 Codex 会话（herdr 窗格内回退读取 `CODEX_THREAD_ID`）；
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
+
+`hud doctor <jobId>` 读取 `$HUD_HOME/jobs` 下的单个任务目录。它显示任务身份、共享读取器给出的状态、原始
+`STATUS.json`、未答问题、检查结果、最新进度，以及适用的停止／关闭标记和记录中的进程是否存活。
+对 CLI 工作者，它会比较当前轮次、完成回执和当前报告签名，但不打印报告正文。缺失或无法读取的记录会标明。
+该命令不修改任何文件，也不连接 herdr 或网络。
 
 MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**、**hud_land**、**hud_lease** 与 **hud_tickets**。
 首次分派或项目上下文失效时，调用 `hud_roster` 获取角色可用性、能否继续、生效的 `runs_on` 和约定；上下文仍有效时直接调用 `hud_create`。
