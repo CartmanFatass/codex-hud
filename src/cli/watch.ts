@@ -45,7 +45,13 @@ const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'sto
 type Notice = { line: string; defer?: boolean };
 // A numeric catch-up value is the Claude mod's cutoff for individual report notices.
 function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number = false, lastScanAt = -Infinity): Notice[] {
-  let olderReports = 0;
+  let olderReports = 0, olderFailures = 0;
+  const settledAt = (job: string) => {
+    const status = getJobIndexCache(home).readStatus(job);
+    return status.status === 'ok'
+      ? [status.value.settled_at, status.value.ended_at].map(v => typeof v === 'string' ? Date.parse(v) : NaN).find(Number.isFinite) ?? status.at
+      : -Infinity;
+  };
   const notices = rows.flatMap((row) => {
     if (row.ticket_queue) return [];
     const old = prev.get(row.job);
@@ -76,15 +82,13 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
     }
     const attention = attentionUnread && (row.blocked || row.display_state === 'failed');
     const unread = !row.parent_job && settled(row) && row.report_unread;
-    if (typeof catchup === 'number' && unread && !attention) {
-      const status = getJobIndexCache(home).readStatus(row.job);
-      const at = status.status === 'ok'
-        ? [status.value.settled_at, status.value.ended_at].map(v => typeof v === 'string' ? Date.parse(v) : NaN).find(Number.isFinite) ?? status.at
-        : -Infinity;
-      if (at < catchup) {
-        olderReports++;
-        return questions;
-      }
+    // The mod's first wake folds failures that ended before its cutoff, like old reports: a day-old
+    // failure nobody opened (often a worker's child its parent already handled) is history, not news.
+    const oldFailure = attention && !row.blocked;
+    if (typeof catchup === 'number' && (oldFailure || (unread && !attention)) && settledAt(row.job) < catchup) {
+      if (oldFailure) olderFailures++;
+      else olderReports++;
+      return questions;
     }
     const pending = unread || attention;
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
@@ -99,7 +103,11 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
     const defer = !row.blocked && row.display_state !== 'failed' && !escalation && (settled(row) || report || checks);
     return [...questions, { line: formatJobChange(row), defer }];
   });
-  if (olderReports) notices.push({ line: `${olderReports} older unread report${olderReports === 1 ? '' : 's'} — hud_read view:compact` });
+  const older = [
+    olderReports && `${olderReports} older unread report${olderReports === 1 ? '' : 's'}`,
+    olderFailures && `${olderFailures} older failure${olderFailures === 1 ? '' : 's'}`,
+  ].filter(Boolean);
+  if (older.length) notices.push({ line: `${older.join(', ')} — hud_read view:compact` });
   return notices;
 }
 

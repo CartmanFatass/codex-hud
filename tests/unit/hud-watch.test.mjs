@@ -728,7 +728,7 @@ test('mod watcher marker requires the live --mod process, start time, pane and h
   assert.equal(watchingMod(pane, f.home), false);
 });
 
-test('mod catch-up lists two fresh reports, summarizes history, and preserves questions and failures', async (t) => {
+test('mod catch-up lists two fresh reports, summarizes history and old failures, and preserves questions and fresh failures', async (t) => {
   const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, now = Date.now();
   const old = { state: 'closed', settled_at: new Date(now - 4 * 60 * 60_000).toISOString() };
   const recent = { state: 'closed', settled_at: new Date(now - 10 * 60_000).toISOString() };
@@ -739,6 +739,7 @@ test('mod catch-up lists two fresh reports, summarizes history, and preserves qu
   writeJob(f.home, foreign, 'w4E:p2', 'foreign', recent, true);
   const failed = 'j00000000000000a1', ask = 'j00000000000000a2', active = 'j00000000000000a3';
   writeJob(f.home, failed, pane, 'failure', { state: 'failed', reason: 'needs repair' }, true);
+  writeJob(f.home, 'j00000000000000a5', pane, 'stale', { state: 'failed', reason: 'timeout', settled_at: old.settled_at });
   const observed = writeJob(f.home, 'j00000000000000a4', pane, 'seen', { state: 'failed' });
   const receipt = join(observed, 'job.json');
   writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), observed_at: new Date(Date.now() + 1000).toISOString() }));
@@ -760,7 +761,8 @@ test('mod catch-up lists two fresh reports, summarizes history, and preserves qu
     for (const id of fresh) assert.ok(lines.includes(`${id} imp fresh: closed | report | ${readHint(id)}`));
     assert.ok(lines.every(line => !line.includes(foreign)));
     assert.ok(lines.includes(`f00000000000000a2 (land ${failed}) — failed: gate`));
-    assert.ok(lines.includes('30 older unread reports — hud_read view:compact'));
+    assert.ok(lines.includes('30 older unread reports, 1 older failure — hud_read view:compact'));
+    assert.ok(lines.every(line => !line.includes('j00000000000000a5')));
     assert.ok(lines.some(s => s.startsWith(`${failed} imp failure: failed | needs repair`)));
     assert.ok(lines.some(s => s.startsWith('[imp] QUESTION q1: Proceed?')));
     writeFixtureFile(join(working, 'STATUS.json'), JSON.stringify({ state: 'done' }));

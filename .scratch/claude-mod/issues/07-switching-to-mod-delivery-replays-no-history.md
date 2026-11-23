@@ -12,3 +12,5 @@
 - [x] Live: reload the mod in a session with old unread jobs; one short wake
 
 ## Comments
+
+- 2026-11-23 follow-up: the first wake still listed every unobserved failure regardless of age (five 11-22 failures: four sonic children of closed imps and one aborted oracle). Catch-up now folds failures that ended before the mod cutoff into the same summary line (`N older unread reports, M older failures — hud_read view:compact`); fresh failures and blocks stay listed one per line.
