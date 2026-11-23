@@ -1,6 +1,6 @@
 # 04: Measure, then maybe add diff size, test result and context fill to Home rows
 
-**Status:** needs-triage
+**Status:** wontfix
 **Owner try:** no
 **Blocked by:** 03
 
@@ -10,3 +10,5 @@
 - [ ] Decision recorded in this ticket before any build
 
 ## Comments
+
+- 2026-11-23 main session: wontfix. D-2026-11-22-28 (attention first: show only the most important) came after this ticket; diff size, test counts and context fill are detail for a job you open, not for every Home row. Reopen if the owner asks for one of them.
