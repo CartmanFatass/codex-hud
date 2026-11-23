@@ -353,6 +353,50 @@ test('red gate continues the source in grace; its rebased fix passes on a fresh 
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
 });
 
+for (const ask of [false, true]) test(`a CLI land repair ignores pre-turn attention and ${ask ? 'hands back its new question' : 'lands its fresh report'}`, async t => {
+  const f = await checkout(t, ['grep fixed tracked']);
+  const dir = jobDir(f), jobFile = join(dir, 'job.json'), statusFile = join(dir, 'STATUS.json');
+  writeFixtureFile(jobFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(jobFile)),
+    cli: { agent: 'claude', can_continue: true, idle_grace_s: 60 } }));
+  writeFixtureFile(join(dir, 'SESSION.txt'), 'PRIMARY=source-agent\n');
+  writeFixtureFile(join(dir, 'report.md'), 'Synthetic previous report.');
+  const previous = new Date(Date.now() - 60000);
+  writeFixtureFile(join(dir, 'turn.json'), JSON.stringify({ seq: 1, sent_at: previous.toISOString(), report_sig: null }));
+  writeFixtureFile(statusFile, JSON.stringify({ state: 'idle_grace' }));
+  // Admission sees a settled source. Hold back the new status so land's first poll sees an old attention row.
+  writeFixtureFile(`${statusFile}.previous`, JSON.stringify({ state: 'waiting_orchestrator', blocked: true, updated_at: previous.toISOString() }));
+  fs.utimesSync(`${statusFile}.previous`, previous, previous);
+  f.overrideBin('herdr', `#!/bin/sh
+set -e
+if [ "$1 $2 $3" = 'agent prompt source-agent' ]; then
+  status="$HUD_HOME/jobs/${job}/STATUS.json"
+  mv "$status.previous" "$status"
+fi
+exec node "$FAKE_BIN" herdr "$@"
+`);
+  const { flow } = await f.call('hud_land', { job });
+  assert.equal(await repair(f, flow, 0), job);
+  assert.equal(JSON.parse(fs.readFileSync(join(dir, 'turn.json'))).seq, 2);
+  await new Promise(resolve => setTimeout(resolve, 500)); // Let the repair poll the unchanged old row.
+  assert.equal(f.flowState(flow).state, 'running', JSON.stringify(f.flowState(flow)));
+  if (ask) {
+    fs.mkdirSync(join(dir, 'qa'));
+    writeFixtureFile(join(dir, 'qa/q1.md'), 'Which synthetic version?');
+  } else {
+    fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+    f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
+  }
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow);
+  if (ask) {
+    assert.equal(done.state, 'failed');
+    assert.equal(done.error, `${job} needs the main session: q1`);
+  } else {
+    assert.equal(done.state, 'completed', JSON.stringify(done));
+    assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
+  }
+});
+
 async function isolatedLand(t, gate) {
   // Publish to a private installation so the real dist and other test processes are untouched.
   const install = fs.mkdtempSync(join(tmpdir(), 'hud-land-build-'));

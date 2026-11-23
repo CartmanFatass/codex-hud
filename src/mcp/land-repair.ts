@@ -30,19 +30,28 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
     for (;;) {
       checkCancel();
       const root = dir(id), receipt = readJsonFile(join(root, jobFiles.job)) as Job;
-      const statusFile = join(root, jobFiles.status);
-      const status = fs.existsSync(statusFile) ? readJsonFile(statusFile) as JobStatus : null;
-      const row = jobRow(receipt, status, { dir: root });
+      const send = receipt.send_outcomes?.at(-1);
+      if ((send?.key ?? receipt.request_key) !== key) throw Error(`${id} repair turn superseded`);
+      // A new question is evidence even before the worker publishes a new status.
       const question = questions(root).find(file => source !== id || !seen.includes(file));
-      if (question || row.open_questions || row.blocked || row.state === 'waiting_orchestrator')
-        throw Error(`${id} needs the main session${question ? `: ${question}` : ''}`);
-      if ((receipt.send_outcomes?.at(-1)?.key ?? receipt.request_key) !== key)
-        throw Error(`${id} repair turn superseded`);
+      if (question) throw Error(`${id} needs the main session: ${question.slice(0, -3)}`);
+      const statusFile = join(root, jobFiles.status);
+      // Stat before reading so an atomic replacement can't date an old row with a newer mtime.
+      const statusAt = fs.statSync(statusFile, { throwIfNoEntry: false })?.mtimeMs;
+      const sentAt = send?.recorded_at ? Date.parse(send.recorded_at) : started;
+      if (source === id && statusAt !== undefined && Math.ceil(statusAt) < sentAt) {
+        await delay(250);
+        continue;
+      }
+      const status = statusAt === undefined ? null : readJsonFile(statusFile) as JobStatus;
+      const row = jobRow(receipt, status);
+      if (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')
+        throw Error(`${id} needs the main session`);
       if (row.display_state === 'failed' || row.display_state === 'stopped') throw Error(`${id}: ${row.reason ?? row.state}`);
       if (row.display_state === 'done') {
         const sig = cachedReportSignature(root);
-        const settled = status!.settled_at ? Date.parse(status!.settled_at) : fs.statSync(statusFile).mtimeMs;
-        if (sig && (source !== id || sig !== before) && Math.ceil(settled) >= started) break;
+        const settled = status!.settled_at ? Date.parse(status!.settled_at) : statusAt!;
+        if (sig && (source !== id || sig !== before) && Math.ceil(settled) >= sentAt) break;
         if (row.state !== 'idle_grace') throw Error(`${id} closed without a fresh repair report`);
       }
       await delay(250);
