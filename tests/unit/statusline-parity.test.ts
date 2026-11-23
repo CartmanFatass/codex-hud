@@ -223,11 +223,11 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
     },
   },
   {
-    name: 'plain install without statusline configuration uses Settings bar looks',
+    name: 'plain install without statusline configuration uses the saved bar style',
     run(t) {
       const f = fixture(t);
       fs.writeFileSync(join(f.hud, 'config.json'), '{}');
-      const outputs = ['micro', 'gauge'].map((barStyle) => {
+      const outputs = ['line', 'p10k'].map((barStyle) => {
         fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ barStyle }));
         const r = spawnSync(process.execPath, [resolve('bin/hud-statusline'), '--width', '120'], {
           env: f.env, input: JSON.stringify(f.input), encoding: 'utf8', timeout: 5000,

@@ -78,8 +78,8 @@ model effort │ context %/window │ repo branch(dirty) │ quota │ notices �
 代理／任务开始、完成、失败和 Claude 技能加载事件显示三分钟，待答问题／审批固定显示。
 变窄会缩短或丢弃可选字段，缺数据不填零。不再显示轮次时钟、输出速率、任务数或正在执行的工具。
 
-设置可选 line、p10k、Gauge Plates、Tide、Micro Glyphs、Stacked、Headline、Triptych。
-Stacked 在 Claude/pi 为两行，Codex 一行窗格回退 line。pi 右上条带跟随样式，并保留其它扩展状态。
+设置只有两种单行样式：`line`（默认）和 `p10k`。保存的旧样式载入为 `line`。
+两种样式下 pi 右上条带相同，并保留其它扩展状态。
 
 ## 开发面板
 

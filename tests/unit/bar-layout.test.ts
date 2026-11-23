@@ -421,15 +421,13 @@ test('a pinned approval stays first and the workers asking are one `!N`; `N need
   assert.match(bar(needs, 60), /^M high │ ██░░░░░░░░ 16%\/1M │ ! Approve: Bash \+2 │ ⚒2  !1$/);
   assert.match(bar(needs, 40), /! 3 needs │ ⚒2  !1$/);
   assert.doesNotMatch(bar([], 120), /\bneeds\b|asks/);
-  // The p10k capsule and a look draw the same zone.
+  // The p10k capsule keeps the same pinned approval and worker count.
   setDisplayConfig({ theme: 'terminal' });
-  for (const style of ['p10k', 'gauge'] as const) {
-    const draw = (width: number) =>
-      stripAnsi(renderBar({ model: { name: 'M' }, needs, workers }, width, NOW, style).line).replace(/[\ue0b0\ue0b2]/g, '');
-    assert.match(draw(120), /! Approve: Bash \+2.*⚒2 +!1/, style);
-    assert.match(draw(36), /! Approve: Bash \+2.*⚒2 +!1/, style);
-    assert.match(draw(24), /! 3 needs.*⚒2 +!1/, style);
-  }
+  const capsule = (width: number) =>
+    stripAnsi(renderBar({ model: { name: 'M' }, needs, workers }, width, NOW, 'p10k').line).replace(/[\ue0b0\ue0b2]/g, '');
+  assert.match(capsule(120), /! Approve: Bash \+2.*⚒2 +!1/);
+  assert.match(capsule(36), /! Approve: Bash \+2.*⚒2 +!1/);
+  assert.match(capsule(24), /! 3 needs.*⚒2 +!1/);
 });
 
 /** The Claude subagent's events, as the statusline makes them. */

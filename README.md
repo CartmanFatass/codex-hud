@@ -93,9 +93,8 @@ failure and Claude skill-load events stay for three minutes. Open questions/appr
 are pinned. Narrow bars shorten/drop optional fields; missing data is absent, not zero.
 No turn clock, output rate, task count or tool-at-work line remains.
 
-Settings offers line, p10k, Gauge Plates, Tide, Micro Glyphs, Stacked, Headline and
-Triptych. Stacked is two rows in Claude/pi; Codex's one-row pane falls back to line.
-The pi top-right ribbon follows the look and retains other extensions' statuses.
+Settings offers two single-row styles: `line` (default) and `p10k`. Saved retired styles load as `line`.
+The pi top-right ribbon stays the same in both styles and retains other extensions' statuses.
 
 ## Development workbench
 

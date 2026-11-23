@@ -200,8 +200,8 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   claude-hud (same owner fields), pi absorbs p10k-footer, `codexH` keeps its tmux bar. Pi ribbon stays at the
   right end of the editor's top border; other extensions' statuses stay visible. (11.04, 12.01, 17.09)
 - Antigravity shows the HUD statusline through its `statusLine` command. (22.12)
-- BAR-THEMES for the Claude, Codex and pi bars and pi ribbon: Gauge Plates, Tide, Micro Glyphs, Stacked, Headline, Triptych.
-  Keep default look. Stacked is the sole opt-in two-row theme. (12.01)
+- Status bars and pi ribbon keep only `line` (default) and `p10k`; saved retired styles load as `line`.
+  The native renderer supports both. (22.27)
 
 #### 2.2.2 Side panel, tabs and layouts
 

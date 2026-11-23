@@ -361,9 +361,8 @@ of live jobs; `bar-fields.ts` shows an icon (`roleIcon`: Nerd Font, Unicode or A
 for the workers asking; no job title, provider, model or effort appears in the bar), then
 retains subagent starts/completions/failures and Claude skill loads for three minutes, with
 approvals pinned. The zone has one form; the `title` rungs of `LADDER` cut subagent titles only.
-No tool-at-work line or clock appears in the bar. Styles are line,
-p10k, gauge, tide, micro, stacked, headline and triptych; Stacked is two rows in
-Claude/pi, with the one-row Codex pane falling back to line.
+No tool-at-work line or clock appears in the bar. The only styles are `line`
+and `p10k`, both one row. Retired style values load as `line`.
 
 `renderMonitor` always uses `renderWorkboardFrame`: Home, Project, Inspector, Changes,
 Settings and Help share exact-width rows, one title band and whole footer hints.

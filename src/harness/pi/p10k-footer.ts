@@ -2,7 +2,7 @@
  * The pi footer: one line below the editor, from the shared bar builder (`render/layout/bar-fields.ts`), so it shows the
  * same fields in the same order as Claude's statusline and the Codex bar, in the style `barStyle` picks:
  *
- *   DeepSeek V4.1 Flash 1017 max │ ━━━━────── 42%/200K │ example main +1 *1 ?3 │ lens ✓   MCP 2  skills 5
+ *   DeepSeek V4.1 Flash 1017 max │ ████░░░░░░ 42%/200K │ example main +1 *1 ?3 │ lens ✓   MCP 2  skills 5
  *
  * The editor's top border carries the p10k ribbon and other extensions' statuses, after pi's native working
  * indicator. Context stays on the shared bottom bar; cost lives only in the ribbon. The notice zone counts the HUD's
@@ -627,8 +627,6 @@ export function createP10kFooter(
     );
     add('cost', totals.priced ? `${totals.estimated ? '~' : ''}$${formatCost(totals.cost)}` : '$-', 179);
     add('time', duration, 187);
-    if (!noColor() && !['line', 'p10k'].includes(activeBarStyle()))
-      return bar.renderThemedRibbon(segments, width, view.getContextUsage()?.percent ?? 0);
     const size = () => 1 + segments.reduce((n, s) => n + host.visibleWidth(s.text) + 3, 0);
     // Drop whole segments from the right; only the final block is ever cut.
     while (segments.length > 1 && size() > width) segments.pop();

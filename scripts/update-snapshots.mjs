@@ -61,21 +61,6 @@ const writers = {
     const { ticketFixture, ticketFrames } = await load('project-tickets.mjs');
     return withHome(async (h) => ticketFrames({ root: h, ...(await ticketFixture(h)) }));
   },
-  'bar-themes.json': async () => {
-    const bars = await import(join(root, 'dist-test/fixtures/bar-themes.js'));
-    const now = Date.now;
-    process.env.COLORTERM = 'truecolor';
-    Date.now = () => bars.THEME_NOW;
-    try {
-      const golden = JSON.parse(fs.readFileSync(fixture('bar-themes.json'), 'utf8'));
-      const scene = bars.barThemeScene();
-      for (const style of Object.keys(golden)) golden[style] = scene.render(style);
-      scene.dispose();
-      return golden;
-    } finally {
-      Date.now = now;
-    }
-  },
   'bar-widths.json': async () => {
     const { widthFrames } = await import(join(root, 'dist-test/fixtures/bar-widths.js'));
     return widthFrames();

@@ -16,7 +16,7 @@
 
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
-import { activeBarStyle, displayConfig, iconSet, isLightTheme, type BarField, type BarStyle, type IconMode } from '../hud-config.js';
+import { activeBarStyle, displayConfig, iconSet, type BarField, type IconMode } from '../hud-config.js';
 import { ROLE_GLYPHS, roleIcon } from '../model-glyphs.js';
 import { providerMark } from '../providers.js';
 
@@ -36,7 +36,7 @@ export interface BarSegment {
   width: number;
 }
 export interface FitResult {
-  /** One fitted row; Stacked alone joins its two rows with a newline. */
+  /** One fitted row. */
   line: string;
   /** Fields on the line, in display order. */
   kept: string[];
@@ -223,9 +223,8 @@ interface Seg {
   /** Longest first. A segment gives up form by form, then goes. */
   forms: Form[];
   ink: Ink;
-  /** The provider's mark colour, p10k only. */
+  /** The provider's mark colour. */
   lead?: number;
-  meter?: { percent: number; role: Role };
   at: number;
 }
 
@@ -295,7 +294,6 @@ function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
       ? [[...reading(lead, true, true), ...tail], [...reading(lead, false, true), ...tail], reading(lead)]
       : [],
     ink: role === 'quiet' ? P10K.loaded : role === 'usageHigh' ? P10K.warn : role === 'bad' ? P10K.bad : P10K.quota,
-    meter: lead?.percent === undefined || lead.meter === false ? undefined : { percent: lead.percent, role },
     at: 0,
   };
 }
@@ -529,422 +527,6 @@ function rosterSeg(workers: readonly BarWorker[] | undefined, pad: string, icons
   return { id: 'notice', forms: [form], ink: P10K.info, at: 0 };
 }
 
-// ─── The six opt-in looks ──────────────────────────────────────────────────────────────────────────────────────────
-
-const clamp = (p: number) => Math.min(100, Math.max(0, p));
-const light = isLightTheme;
-const track = () => (light() ? 252 : 236);
-const raised = () => (light() ? 254 : 235);
-const LEVEL_INKS: Partial<Record<Role, number>> = { ok: 71, warn: 179, bad: 167, usage: 69, usageHigh: 170 };
-const levelInk = (role: Role): number => (role === 'quiet' ? (light() ? 245 : 243) : (LEVEL_INKS[role] ?? 75));
-const levelGlyph = (p: number) => '▁▂▃▄▅▆▇█'[Math.min(7, Math.floor((clamp(p) * 8) / 100))];
-/** The looks' own 256-colour inks from the approved concepts, [dark, light]: the panel palette does not drive them. */
-const LOOK_INKS: Partial<Record<Role, readonly [number, number]>> = {
-  value: [252, 235],
-  name: [252, 235],
-  project: [252, 235],
-  dim: [243, 245],
-  quiet: [243, 245],
-  branch: [176, 133],
-  agent: [176, 133],
-  count: [252, 235],
-  info: [75, 25],
-  skill: [141, 61],
-  ok: [71, 28],
-  warn: [179, 136],
-  bad: [167, 160],
-  usage: [69, 26],
-  usageHigh: [170, 127],
-  alert: [209, 209],
-};
-/** Headline's vitals recede: dimmer text and no bold names. */
-const QUIET_INKS: Partial<Record<Role, readonly [number, number]>> = {
-  value: [249, 240],
-  name: [254, 233],
-  project: [254, 233],
-  dim: [242, 247],
-};
-/** The columns between fields while there is room (the concepts'); two when there is not. */
-const AIRY = { gauge: 3, tide: 3, headline: 3, micro: 4, stacked: 3, triptych: 2 };
-/** The provider marks' pale colours, darkened for a light terminal. */
-const LIGHT_MARKS: Record<number, number> = { 79: 29, 173: 130, 69: 26, 110: 67, 141: 97 };
-/** Names and level readings are bold (Headline's are not); an agent's name is bold except in Micro and Triptych. */
-function lookInk(role: Role, part: string, style: BarStyle): string {
-  const ink = (style === 'headline' ? QUIET_INKS[role] : undefined) ?? LOOK_INKS[role];
-  if (!ink) return part;
-  const bold =
-    role === 'name' || role === 'project'
-      ? style !== 'headline'
-      : role === 'agent'
-        ? style !== 'micro' && style !== 'triptych'
-        : role === 'count'
-          ? style !== 'headline'
-          : role in LEVEL_INKS && style !== 'headline' && part.includes('%');
-  return `${bold ? '\x1b[1m' : ''}${fg(ink[+light()])}${part}${RESET}`;
-}
-const ruleInk = (words: string) => `${fg(light() ? 250 : 239)}${words}${RESET}`;
-const paintForm = (form: Form, style: BarStyle, lead?: number, meterBack?: number): string =>
-  form
-    .map(([part, role, bar, own]) => {
-      const mark = own ?? lead;
-      const ink =
-        role === 'lead'
-          ? mark === undefined
-            ? part
-            : `${fg((light() && LIGHT_MARKS[mark]) || mark)}${part}${RESET}`
-          : role
-            ? lookInk(role, part, style)
-            : part;
-      return bar && role && meterBack !== undefined ? `${bg(meterBack)}${ink}` : ink;
-    })
-    .join('');
-
-/** Shared ten-cell gauges: eighth blocks for Micro/Triptych; a half-step thin rule for Stacked. */
-function lookMeter(percent: number, role: Role, style: BarStyle, cells = 10): Form {
-  const scale = style === 'stacked' ? 2 : 8;
-  const units = Math.round((clamp(percent) / 100) * cells * scale);
-  const full = Math.floor(units / scale),
-    edge = units % scale;
-  return [
-    [
-      (style === 'stacked' ? '━' : '█').repeat(full) + (edge ? (style === 'stacked' ? '╸' : '▏▎▍▌▋▊▉'[edge - 1]) : ''),
-      role,
-      true,
-    ],
-    [(style === 'stacked' ? '─' : style === 'triptych' ? ' ' : '░').repeat(cells - full - (edge ? 1 : 0)), 'dim', true],
-    [' ', undefined, true],
-  ];
-}
-
-/** Fill the number's own cells rather than spending another ten columns on a meter: two runs, bold on the level colour. */
-function plate(words: string, percent: number, role: Role): string {
-  const edge = Math.round((visualLength(words) * clamp(percent)) / 100);
-  let x = 0,
-    cut = 0;
-  for (const ch of words) {
-    if (x >= edge) break;
-    x += visualLength(ch);
-    cut += ch.length;
-  }
-  const fill = `\x1b[1m${bg(levelInk(role))}${fg(233)}${words.slice(0, cut)}`;
-  return `${fill}\x1b[22m${bg(track())}${fg(light() ? 235 : 252)}${words.slice(cut)}${RESET}`;
-}
-
-/** Tide's 256 fallback deliberately has no tint: the palette has no sufficiently quiet one. */
-function tide(row: string, width: number, percent: number): string {
-  row += ' '.repeat(Math.max(0, width - visualLength(row)));
-  if (!/truecolor|24bit/i.test(process.env.COLORTERM ?? '')) return row;
-  const role = contextRole(percent);
-  const tint = light()
-    ? { ok: '212;234;240', warn: '246;230;184', bad: '246;205;206' }
-    : { ok: '21;48;58', warn: '58;48;20', bad: '69;26;31' };
-  const edge = Math.round((width * clamp(percent)) / 100);
-  let x = 0,
-    own = false;
-  // Preserve alert badges' own backgrounds. SGR is zero columns; CJK still advances by two.
-  return (
-    (row.match(/\x1b\[[0-9;]*m|[^]/gu) ?? [])
-      .map((token) => {
-        if (token.startsWith('\x1b')) {
-          if (/^\x1b\[(?:0)?m$/.test(token) || token === '\x1b[49m') own = false;
-          if (/^\x1b\[48;/.test(token)) own = true;
-          return token;
-        }
-        const under = own
-          ? ''
-          : `\x1b[48;2;${x < edge ? tint[role as 'ok' | 'warn' | 'bad'] : light() ? '246;244;239' : '18;18;20'}m`;
-        x += visualLength(token);
-        return under + token;
-      })
-      .join('') + RESET
-  );
-}
-
-/** The editor border stays one row even for Stacked; its small fields use the same inks and idioms. */
-export function renderThemedRibbon(
-  parts: ReadonlyArray<{ text: string; bg: number }>,
-  width: number,
-  percent: number
-): string {
-  const style = activeBarStyle();
-  const list = parts.map((part) => ({ ...part }));
-  const label = (s: { text: string }) =>
-    style === 'micro'
-      ? s.text
-          .replace(/^cache /, '◴ ')
-          .replace(/^tok /, 'Σ ')
-          .replace(/^TTFT /, '↦ ')
-      : s.text;
-  const size = () =>
-    list.reduce((n, s) => n + visualLength(label(s)) + (style === 'gauge' ? 2 : 0), 0) +
-    Math.max(0, list.length - 1) * 2;
-  while (list.length > 1 && size() > width) list.pop();
-  if (!list.length || width <= 0) return '';
-  if (size() > width) list[0]!.text = truncateAnsi(list[0]!.text, Math.max(0, width - (style === 'gauge' ? 2 : 0)));
-  let row = list
-    .map((s) => {
-      const words = label(s);
-      if (style === 'gauge') {
-        const cache = /^cache (\d+)%/.exec(words);
-        return cache
-          ? plate(` ${words} `, Number(cache[1]), 'ok')
-          : `${bg(raised())}${fg(light() ? 235 : 252)} ${words} ${RESET}`;
-      }
-      if (style === 'headline' && /^~?\$/.test(words)) return `${bg(179)}${fg(233)}${words}${RESET}`;
-      return `${fg(style === 'stacked' ? 245 : s.bg)}${words}${RESET}`;
-    })
-    .join(style === 'triptych' ? ruleInk(' ─') : '  ');
-  if (style === 'tide') row = tide(row, Math.min(width, visualLength(row)), percent);
-  return visualLength(row) > width ? truncateAnsi(row, width) + RESET : row;
-}
-
-function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle): FitResult {
-  const on = new Set(displayConfig().barFields);
-  const zone = on.has('notice') ? zoneOf(facts, now) : null;
-  const notices = zone
-    ? [...(zone.alert ? [zone.alert] : []), ...zone.events.slice(0, zone.alert ? 1 : 2)].filter((n) => n.words)
-    : [];
-  const noticeSegments = notices.map((n) => {
-    const seg = noticeSeg(n, Infinity, '')!;
-    seg.forms = noticeStages(n, '');
-    return seg;
-  });
-  // The workers come after a pinned need and before the client's own events.
-  const roster = on.has('notice') ? rosterSeg(facts.workers, '', iconSet()) : null;
-  const zoneSegments = [
-    ...noticeSegments.slice(0, zone?.alert ? 1 : 0),
-    ...(roster ? [roster] : []),
-    ...noticeSegments.slice(zone?.alert ? 1 : 0),
-  ];
-  const fields = [
-    on.has('model') && facts.model ? modelSeg(facts.model, iconSet() === 'text') : null,
-    on.has('context') && facts.context ? contextSeg(facts.context) : null,
-    on.has('project') && facts.project?.name ? projectSeg(facts.project) : null,
-    on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
-    on.has('tps') ? tpsSeg(facts.tps) : null,
-  ];
-  // Micro tells who (model, repo) before the meters.
-  if (style === 'micro') fields.splice(1, 0, ...fields.splice(2, 1));
-  const list = [...fields, ...zoneSegments, on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null].filter(
-    (s): s is Seg => s !== null
-  );
-  const reading = (s: Seg): { percent: number; role: Role } | null => {
-    if (s.id === 'context' && facts.context)
-      return { percent: facts.context.percent, role: contextRole(facts.context.percent) };
-    return s.meter ?? null;
-  };
-  const isTag = (s: Seg) =>
-    style === 'headline' &&
-    (s.id === 'notice' || (!zone?.alert && reading(s) && ['warn', 'bad', 'usageHigh'].includes(reading(s)!.role)));
-  // One meter form for both gauges: the bars go together, as the concepts have them.
-  const bars = () => !list.some((s) => (s.id === 'context' || s.id === 'quota') && s.at > 0);
-  const body = (s: Seg): Form => {
-    const form = s.forms[s.at] ?? [];
-    const r = reading(s);
-    if (!form.length) return [];
-    if (!r) return style === 'micro' && s.id === 'project' && iconSet() !== 'text' ? [['⋔ ', 'dim'], ...form] : form;
-    // The reset is dim, and `↻1h19m` in Micro; Tide and Headline say `ctx`.
-    const nums = form
-      .filter(([, , bar]) => !bar)
-      .map(([w, role]): Form[number] =>
-        w.startsWith(' (') ? [style === 'micro' ? ` ↻${w.slice(2, -1)}` : w, 'dim'] : [w, role]
-      );
-    const label: Form = s.id === 'context' && (style === 'tide' || style === 'headline') ? [['ctx ', 'dim']] : [];
-    const glyph: Form = style === 'micro' ? [[`${levelGlyph(r.percent)} `, r.role]] : [];
-    const meter =
-      style === 'micro' || style === 'triptych'
-        ? bars()
-          ? lookMeter(r.percent, r.role, style, s.id === 'quota' && style === 'triptych' ? 8 : 10)
-          : style === 'micro'
-            ? glyph
-            : []
-        : [];
-    const at = Math.max(
-      nums.findIndex(([, role]) => role === r.role),
-      0
-    );
-    return [...label, ...nums.slice(0, at), ...meter, ...nums.slice(at)];
-  };
-  const rows = (s: Seg): [Form, Form] => {
-    const f = body(s);
-    if (style !== 'stacked' || !f.length) return [f, []];
-    const r = reading(s);
-    if (s.id === 'model' && facts.model) {
-      // The effort sits under the name, past the provider's mark.
-      const mark = s.forms[1]![0]!;
-      return [
-        s.forms[1]!,
-        s.at ? [] : [[' '.repeat(mark[1] === 'lead' ? visualLength(mark[0]) : 0)], [facts.model.effort ?? '', 'dim']],
-      ];
-    }
-    if (r) {
-      const detail = f.filter(([words]) => words.startsWith('/') || words.startsWith(' ('));
-      return [
-        [...(s.id === 'context' ? [['ctx ', 'dim'] as const] : []), ...f.filter((piece) => !detail.includes(piece))],
-        [
-          ...(bars() ? lookMeter(r.percent, r.role, style) : []),
-          ...detail.map(([w, role]): Form[number] => [w.trim().replace(/^\//, ''), role]),
-        ],
-      ];
-    }
-    if (s.id === 'project')
-      return [f.filter(([, role]) => role === 'project'), f.filter(([, role]) => role === 'branch')];
-    if (s.id === 'notice') {
-      // An agent's title and run time go under its name.
-      if (f[1]?.[1] !== 'agent') return [f, []];
-      const rest = f.slice(2).filter(([words]) => words.trim());
-      return [
-        f.slice(0, 2),
-        rest.length ? [['  '], ...rest.map(([w, r], i): Form[number] => [i ? w : w.trimStart(), r])] : [],
-      ];
-    }
-    if (s.id === 'loaded') {
-      // pi's extension words stand in a column of their own, MCP over skills beside it.
-      const cut = f.findIndex(([words]) => words === 'skills');
-      const counts = Math.max(
-        0,
-        f.findIndex(([words]) => words === 'MCP')
-      );
-      return cut > 0
-        ? [f.slice(0, cut), [[' '.repeat(visualLength(text(f.slice(0, counts))))], ...f.slice(cut)]]
-        : [f, []];
-    }
-    return [f, []];
-  };
-  const render = (s: Seg): string[] => {
-    const forms = rows(s);
-    const r = reading(s);
-    if (zone?.alert && s === noticeSegments[0]) return [`\x1b[1m${bg(209)}${fg(233)} ${text(forms[0])} ${RESET}`, ''];
-    if (r && (style === 'gauge' || isTag(s))) {
-      // A trailing quota window has its own ink, outside the leading reading's plate or tag.
-      const split = s.id === 'quota' ? forms[0].findIndex(([part]) => part === '  ') : -1;
-      const primary = split < 0 ? text(forms[0]) : text(forms[0].slice(0, split));
-      const tail = split < 0 ? '' : paintForm(forms[0].slice(split), style);
-      const tagged = `\x1b[1m${bg(r.role === 'bad' && !light() ? 203 : levelInk(r.role))}${fg(233)} ▲ ${primary} ${RESET}`;
-      return [(style === 'gauge' ? plate(` ${primary} `, r.percent, r.role) : tagged) + tail, ''];
-    }
-    if (style === 'gauge' && s.id === 'notice')
-      return [
-        `${bg(raised())}${lookInk(forms[0]![0]![1]!, '▌', style)}${paintForm(forms[0], style).replaceAll(RESET, RESET + bg(raised()))} ${RESET}`,
-        '',
-      ];
-    return forms.map((f) => paintForm(f, style, s.lead, style === 'triptych' ? track() : undefined));
-  };
-  const alive = () => list.filter((s) => text(body(s)));
-  // A segment's width is measured again for every ladder step; only a changed form or meter needs a new measure.
-  const measured = new Map<Seg, { forms: Seg['forms']; at: number; wide: boolean; width: number }>();
-  const size = (s: Seg) => {
-    const known = measured.get(s),
-      wide = bars();
-    if (known?.forms === s.forms && known.at === s.at && known.wide === wide) return known.width;
-    const width = Math.max(...render(s).map(visualLength));
-    measured.set(s, { forms: s.forms, at: s.at, wide, width });
-    return width;
-  };
-  // The looks' spacing, from the concepts: airy between fields while there is room, two columns when there is not.
-  // Micro keeps a field's own group (who, meters, notices) at two.
-  let roomy = true;
-  const group = (id: string) => (id === 'model' || id === 'project' ? 0 : id === 'context' || id === 'quota' ? 1 : 2);
-  const airy = style === 'stacked' && width >= 160 ? 5 : (AIRY[style as 'gauge'] ?? 2);
-  const space = (a?: Seg, b?: Seg) =>
-    !roomy || (style === 'micro' && a && b && group(a.id) === group(b.id)) ? 2 : airy;
-  const natural = () =>
-    alive().reduce((n, s, i, all) => n + size(s) + (i ? space(all[i - 1], s) : 0), 0) + (style === 'triptych' ? 4 : 0);
-  roomy = natural() <= width;
-  // A notice cut at a word to the room it has (`grow`: only when that gives it more than it has).
-  const fitNotice = (i: number, notice: Notice, grow = false) => {
-    const s = noticeSegments[i];
-    if (!s || !text(body(s))) return false;
-    const room = width - natural() + size(s) - (style === 'gauge' || (i === 0 && zone?.alert) ? 2 : 0);
-    const cut = noticeSeg(notice, room, '');
-    if (!cut || (grow && textWidth(cut) <= visualLength(text(body(s))))) return false;
-    s.forms = cut.forms;
-    s.at = 0;
-    return true;
-  };
-  // A notice gives up its title before the vitals give up more than their extras (see `LADDER`).
-  let stage = 0;
-  for (const id of LADDER) {
-    if (roomy || natural() <= width) break;
-    if (id === 'title') {
-      stage = Math.min(stage + 1, 2);
-      for (const s of noticeSegments) s.at = Math.max(s.at, stage);
-      continue;
-    }
-    if (id === 'meters') {
-      for (const s of list) if ((s.id === 'context' || s.id === 'quota') && s.at < 1) s.at = 1;
-      continue;
-    }
-    if (id === 'notice') {
-      // The older of two items goes before the branch does; the newest is cut at a word.
-      if (noticeSegments.length > 1) noticeSegments[1]!.at = noticeSegments[1]!.forms.length;
-      if (natural() <= width || fitNotice(0, notices[0]!)) break;
-      continue;
-    }
-    const s = list.find((s) => s.id === id);
-    if (s && s.at < s.forms.length) s.at = id === 'loaded' && s.at ? s.forms.length : s.at + 1;
-  }
-  // Last resort for the notice zone: keep the pinned/newest one and cut at a word, never split its metadata.
-  if (!roomy && natural() > width && noticeSegments.length > 1) noticeSegments[1]!.at = noticeSegments[1]!.forms.length;
-  if (!roomy && natural() > width && noticeSegments[0] && !fitNotice(0, notices[0]!)) noticeSegments[0].forms = [];
-  // What room is left goes back to the titles, the newest first: a few words each before any gets more.
-  if (!roomy && natural() < width)
-    for (const cap of [TITLE_SHORT, TITLE_COLS])
-      notices.forEach((n, i) => fitNotice(i, { ...n, title: cutWords(n.title, cap) }, true));
-  const shown = alive();
-  const segments: BarSegment[] = [];
-  const out = ['', ''];
-  let x = 0;
-  const put = (s: Seg) => {
-    const w = size(s),
-      rendered = render(s);
-    segments.push({ id: s.id, level: (['full', 'short', 'min'] as const)[Math.min(s.at, 2)], x, width: w });
-    for (let row = 0; row < (style === 'stacked' ? 2 : 1); row++)
-      out[row] += (rendered[row] ?? '') + ' '.repeat(w - visualLength(rendered[row] ?? ''));
-    x += w;
-  };
-  const gap = (n: number, rule = '') => {
-    const fill = rule && n >= 3 ? ruleInk(` ${rule.repeat(n - 2)} `) : ' '.repeat(Math.max(0, n));
-    out[0] += fill;
-    out[1] += ' '.repeat(Math.max(0, n));
-    x += n;
-  };
-  const cluster = (items: Seg[]) =>
-    items.forEach((s, i) => {
-      if (i) gap(space(items[i - 1], s));
-      put(s);
-    });
-  if (style === 'triptych' || style === 'headline') {
-    // Triptych: who, what is happening between rules, pressure. Headline: the tags, then the vitals flush right.
-    const left = shown.filter(style === 'headline' ? isTag : (s) => s.id === 'model' || s.id === 'project');
-    const middle = style === 'headline' ? [] : shown.filter((s) => s.id === 'notice');
-    const right = shown.filter((s) => !left.includes(s) && !middle.includes(s));
-    const total = (items: Seg[]) => items.reduce((n, s, i) => n + size(s) + (i ? space(items[i - 1], s) : 0), 0);
-    const room = Math.max(0, width - total(left) - total(middle) - total(right));
-    cluster(left);
-    gap(middle.length ? Math.floor(room / 2) : room, middle.length ? '─' : style === 'triptych' ? '·' : '');
-    cluster(middle);
-    if (middle.length) gap(room - Math.floor(room / 2), '─');
-    cluster(right);
-  } else {
-    shown.forEach((s, i) => {
-      if (i) gap(s.id === 'loaded' ? Math.max(2, width - x - size(s)) : space(shown[i - 1], s));
-      put(s);
-    });
-  }
-  let line = out
-    .slice(0, style === 'stacked' ? 2 : 1)
-    .map((row) => (visualLength(row) > width ? truncateAnsi(row, width) + RESET : row))
-    .join('\n');
-  if (style === 'tide') line = tide(line, width, facts.context?.percent ?? 0);
-  return {
-    line,
-    kept: segments.map((s) => s.id),
-    levels: Object.fromEntries(segments.map((s) => [s.id, s.level])),
-    segments,
-  };
-}
-
 // ─── Fit and layout ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -973,13 +555,11 @@ const LADDER: Array<BarField | 'meters' | 'title'> = [
   'context',
 ];
 
-/** Fitted rows, each `width` columns at most, from the client's facts; only Stacked has two. */
+/** One fitted row, `width` columns at most, from the client's facts. */
 export function renderBar(facts: BarFacts, width: number, now = Date.now(), style = activeBarStyle()): FitResult {
   const { barFields, theme: themeName } = displayConfig();
-  const barStyle = themeName === 'none' ? 'line' : style;
-  if (barStyle !== 'line' && barStyle !== 'p10k') return renderLook(facts, Math.max(0, width), now, barStyle);
   // No colour asked for means no capsules: a capsule is a background.
-  const p10k = barStyle === 'p10k' && themeName !== 'none';
+  const p10k = style === 'p10k' && themeName !== 'none';
   const ascii = iconSet() === 'text';
   // The powerline arrows: one column after each left segment, one before the right cluster.
   const arrow = p10k && !ascii ? 1 : 0;

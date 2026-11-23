@@ -82,9 +82,20 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     const childEnv = { ...env, ...extra };
     assert.deepEqual(rust(childEnv, input, args), ts(childEnv, input, args), label);
   }
+  const file = join(env.HUD_HOME, 'hud-settings.json');
+  const lineEnv = { ...env, HUD_BAR_STYLE: 'line' }, capsuleEnv = { ...env, HUD_BAR_STYLE: 'p10k' };
+  const line = ts(lineEnv, base), capsules = ts(capsuleEnv, base);
+  for (const [style, childEnv, expected] of [['line', capsuleEnv, line], ['p10k', lineEnv, capsules]]) {
+    fs.writeFileSync(file, JSON.stringify({ barStyle: style }), { mode: 0o600 });
+    assert.deepEqual(ts(childEnv, base), expected, `saved ${style}`);
+    assert.deepEqual(rust(childEnv, base), expected, `native saved ${style}`);
+  }
+  for (const style of ['gauge', 'tide', 'micro', 'stacked', 'headline', 'triptych']) {
+    fs.writeFileSync(file, JSON.stringify({ barStyle: style }));
+    assert.deepEqual(rust(capsuleEnv, base), line, `retired ${style} renders as native line`);
+  }
   // The panel's saved Icons setting wins over the environment, as the bar's own settings reader does: Nerd glyphs by default.
   const bar = (extra, icons) => {
-    const file = join(env.HUD_HOME, 'hud-settings.json');
     if (icons) fs.writeFileSync(file, JSON.stringify({ icons }), { mode: 0o600 });
     else fs.rmSync(file, { force: true });
     const childEnv = { ...env, ...extra, NO_COLOR: '1', COLUMNS: '86' };

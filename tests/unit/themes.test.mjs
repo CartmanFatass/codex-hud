@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pageFixture, TREE, NOW } from '../fixtures/kept-pages.mjs';
 import { projectFixture } from '../fixtures/project-page.mjs';
 import { renderMonitor } from '../../dist/render/monitor.js';
-import { THEMES, setDisplayConfig, resolveDisplayConfig, isLightTheme } from '../../dist/render/hud-config.js';
+import { THEMES, setDisplayConfig, resolveDisplayConfig } from '../../dist/render/hud-config.js';
 import { palette, workboardPalette, paletteNames } from '../../dist/render/palette.js';
 import { SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { setLanguage, t as say } from '../../dist/render/i18n.js';
@@ -111,7 +111,7 @@ test('the board of every theme reads: ink on every surface, the question header,
     });
 });
 
-test('Settings offers every theme, named in English and in Chinese; env, saved settings and light bars follow', (t) => {
+test('Settings offers every theme, named in English and in Chinese; env and saved settings follow', (t) => {
   const row = SETTING_ROWS.find((r) => r.key === 'theme');
   assert.deepEqual([...row.values], [...THEMES]);
   assert.deepEqual([...paletteNames()].sort(), [...THEMES].sort());
@@ -136,6 +136,4 @@ test('Settings offers every theme, named in English and in Chinese; env, saved s
   assert.equal(loadSettings().theme, 'none', 'an unknown theme is refused and the last valid one kept');
   assert.equal(resolveDisplayConfig({ HUD_THEME: 'nord' }).theme, defaultSettings().theme);
   assert.equal(resolveDisplayConfig({ HUD_THEME: 'paper', NO_COLOR: '1' }).theme, 'none');
-  for (const name of THEMES)
-    asTheme(name, () => assert.equal(isLightTheme(), name === 'latte' || name === 'paper'));
 });

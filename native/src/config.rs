@@ -153,17 +153,10 @@ impl Display {
                 _ => [true; 7],
             };
         }
-        // The extra multi-row and editorial looks continue through TS; this binary owns the compact line/capsules.
-        let capsules = theme != "none" && style == "p10k";
-        if theme != "none"
-            && ["gauge", "tide", "micro", "stacked", "headline", "triptych"]
-                .contains(&style.as_str())
-        {
-            return None;
-        }
+        // Retired and unknown styles use line, as in the TypeScript settings reader.
         Some(Self {
+            capsules: theme != "none" && style == "p10k",
             theme,
-            capsules,
             ascii: icons == "text",
             nerd: !matches!(icons.as_str(), "text" | "unicode" | "emoji"),
             fields,

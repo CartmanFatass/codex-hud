@@ -18,15 +18,11 @@ export type GlyphMode = 'glyph' | 'text' | 'both';
 export type MotionMode = 'full' | 'reduced';
 export type ContextMode = 'used' | 'remaining';
 /** The bottom bars (Claude, pi, Codex), all three at once: `│` separators (`line`) or powerline capsules (`p10k`). */
-export const BAR_STYLES = ['line', 'p10k', 'gauge', 'tide', 'micro', 'stacked', 'headline', 'triptych'] as const;
+export const BAR_STYLES = ['line', 'p10k'] as const;
 export type BarStyle = (typeof BAR_STYLES)[number];
-/** A coloured look cannot communicate its idiom without colour. Unknown settings keep today's look. */
+/** Retired and unknown styles read as line. */
 export function barStyleOf(value: unknown): BarStyle {
   return BAR_STYLES.includes(value as BarStyle) ? (value as BarStyle) : 'line';
-}
-/** The themes made for a light terminal: the bars' greys and tints turn light with them. */
-export function isLightTheme(): boolean {
-  return active.theme === 'latte' || active.theme === 'paper';
 }
 export function activeBarStyle(): BarStyle {
   return active.theme === 'none' ? 'line' : barStyleOf(active.barStyle);
