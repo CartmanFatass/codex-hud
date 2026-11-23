@@ -106,7 +106,7 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
   const extraction = path.join(temp, 'extracted with spaces');
   const tree = path.join(extraction, `hud-${version}`);
   for (const dir of [tools, bin, hud, extraction]) fs.mkdirSync(dir, { recursive: true });
-  for (const name of ['bash', 'sh', 'dirname', 'readlink', 'mkdir', 'ln', 'rm', 'cp', 'cat', 'basename', 'grep', 'sed', 'git', 'tar', 'gzip']) {
+  for (const name of ['bash', 'sh', 'dirname', 'readlink', 'mkdir', 'mktemp', 'mv', 'ln', 'rm', 'cp', 'cat', 'basename', 'grep', 'sed', 'git', 'tar', 'gzip']) {
     fs.symlinkSync(`/usr/bin/${name}`, path.join(tools, name));
   }
   fs.symlinkSync(process.execPath, path.join(tools, 'node'));
