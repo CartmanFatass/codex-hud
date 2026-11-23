@@ -23,7 +23,8 @@ import { headlessSonicChildren } from '../worker/sonic-jobs.js';
 import { monitorSonic, sonicLimitDefaults, type SonicLimits, type SonicStop } from './sonic-policy.js';
 
 export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file?: string; id?: string; initialId?: string }, limits?: SonicLimits) {
-  const env: NodeJS.ProcessEnv = { ...process.env, HUD_HOME: dirname(dirname(dir)), HUD_JOB_DIR: dir };
+  // GIT_OPTIONAL_LOCKS: a killed `git status` would leave a stale index.lock in the worker's checkout.
+  const env: NodeJS.ProcessEnv = { ...process.env, HUD_HOME: dirname(dirname(dir)), HUD_JOB_DIR: dir, GIT_OPTIONAL_LOCKS: '0' };
   if (session?.file && session.id) env.HUD_RESUME_SESSION_ID = session.id;
   else delete env.HUD_RESUME_SESSION_ID;
   if (job.cli?.agent === 'claude') {

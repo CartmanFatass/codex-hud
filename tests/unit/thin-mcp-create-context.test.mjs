@@ -374,7 +374,7 @@ test('pi dispatch falls back to the role name for HUD instructions and passes th
     assert.equal(argv[instructions + 1], resolve('packages/hud-mcp/instructions/general.md'));
     const tab = f.commands().find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').args;
     const at = tab.indexOf('--env');
-    assert.deepEqual(tab.slice(at, at + 4), ['--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_HOME=${f.env.HUD_HOME}`]);
+    assert.deepEqual(tab.slice(at, at + 6), ['--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_HOME=${f.env.HUD_HOME}`, '--env', 'GIT_OPTIONAL_LOCKS=0']);
   } finally {
     await client.stop();
   }

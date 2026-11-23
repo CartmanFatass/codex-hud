@@ -150,6 +150,9 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       `HUD_JOB_DIR=${dir}`,
       '--env',
       `HUD_HOME=${hudHome}`,
+      // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
+      '--env',
+      'GIT_OPTIONAL_LOCKS=0',
       '--no-focus',
     ];
     let left = '';
