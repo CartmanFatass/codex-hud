@@ -429,6 +429,7 @@ export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: Ques
   const receipt = readJob(dir);
   const orch = jobCallerPane(receipt) || orchestrator(dir);
   if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
+  else if (receipt.ticket_queue) pushed = 'handled by the ticket queue';
   else if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
   else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
     const ran = await notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))), { signal });

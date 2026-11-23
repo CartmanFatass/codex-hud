@@ -11,6 +11,8 @@ import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { recordJobUsage } from '../roles/job-usage.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
+import { queueIds, readTicketQueue } from '../mcp/ticket-queue-state.js';
+import { wakeTicketQueue } from '../mcp/ticket-queue.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.js';
@@ -124,7 +126,7 @@ function warn(kind: string, message: string) {
   if (!recordWarning(warnings, kind)) return;
   log(message);
 }
-let watcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
+let watcher: fs.FSWatcher | undefined, flowsWatcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
 let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
   stopped = false;
@@ -192,6 +194,8 @@ function stopScheduling() {
   runners.close();
   watcher?.close();
   watcher = undefined;
+  flowsWatcher?.close();
+  flowsWatcher = undefined;
   jobChanges.stop();
   settingsWatcher?.close();
   settingsWatcher = undefined;
@@ -761,6 +765,15 @@ function scan(retryWatch = false) {
       }
     }
   }
+  // The batch driver watches settlement itself; this on-demand watcher only recovers a dead driver.
+  for (const id of queueIds(home)) {
+    try {
+      const queue = readTicketQueue(home, id);
+      if (queue?.state !== 'working') continue;
+      wakeTicketQueue(home, queue);
+      nearest = Math.min(nearest, Date.now() + 5000);
+    } catch (error) { warn(`ticket queue ${id}`, `ticket queue ${id}: ${(error as Error).message}`); }
+  }
   // Archive expired jobs before dropping the flow receipts those archives read.
   if (housekeep) pruneLandFlows(home);
   for (const id of [...reapRetries.keys()]) if (!liveIds.has(id)) reapRetries.delete(id);
@@ -863,6 +876,13 @@ function ensureSettingsWatch() {
 }
 // Watch before catch-up, so a STATUS rename during the initial scan is not missed.
 function startWatch() {
+  try {
+    const flows = join(home, 'flows');
+    fs.mkdirSync(flows, { mode: 0o700, recursive: true });
+    flowsWatcher = fs.watch(flows, (_event, file) => {
+      if (!file || /^q[a-f0-9]{16}\.json$/.test(file)) schedule();
+    }).on('error', () => { flowsWatcher?.close(); flowsWatcher = undefined; });
+  } catch { /* The initial scan and active-queue recovery timer still run. */ }
   try {
     watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
       const path = filename?.toString();

@@ -187,6 +187,7 @@ export interface ThinJobScope {
 export interface JobRow extends Partial<JobProgress> {
   job: string;
   land_turn?: true;
+  ticket_queue?: true;
   parent_job?: string;
   role: string | null;
   package: string | null;
@@ -318,6 +319,7 @@ export function jobRow(
     job: word(j.job) ?? '',
     ...(parent ? { parent_job: parent } : {}),
     ...(j.land_turn ? { land_turn: true } : {}),
+    ...(j.ticket_queue ? { ticket_queue: true } : {}),
     role: word(j.role),
     ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
     package: word(j.package),
@@ -467,7 +469,7 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   const lines: string[] = [];
   for (const row of rows) {
     const old = prior.get(row.job);
-    if (row.land_turn && !row.question_ids.some(id => !old?.question_ids.includes(id))) continue;
+    if (row.ticket_queue || (row.land_turn && !row.question_ids.some(id => !old?.question_ids.includes(id)))) continue;
     if (row.parent_job && row.display_state !== 'working' && row.display_state !== 'failed' &&
         !row.question_ids.some((id) => !old?.question_ids.includes(id))) continue;
     // A working job's reason and report flip with every tool step of the worker; only what the session acts on is

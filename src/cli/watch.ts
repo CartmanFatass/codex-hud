@@ -47,6 +47,7 @@ type Notice = { line: string; defer?: boolean };
 function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number = false, lastScanAt = -Infinity): Notice[] {
   let olderReports = 0;
   const notices = rows.flatMap((row) => {
+    if (row.ticket_queue) return [];
     const old = prev.get(row.job);
     const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
           const file = join(home, 'jobs', row.job, 'qa', `${id}.md`);
@@ -380,7 +381,7 @@ export async function watchCommand(
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
+        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {

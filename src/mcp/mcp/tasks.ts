@@ -15,6 +15,8 @@ import type { BatchNotice, Job, McpTaskMarker } from '../job-contracts.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../headless-sends.js';
 import { readLand, activeLand, isFlowId } from '../land-state.js';
 import { landTask } from '../land.js';
+import { isTicketQueueId, readTicketQueue } from '../ticket-queue-state.js';
+import { ticketQueueTask } from '../ticket-queue.js';
 import { jobFiles } from '../paths.js';
 import {
   hudHome, findJob, directory, json, jobCache, readCachedStatus, readRow, slice, settled, fallbackResultLine,
@@ -24,7 +26,12 @@ import { locks, keyLock } from '../store/key-lock.js';
 import { pruneTasks, MAX_MCP_TASKS } from '../task-bounds.js';
 import { callerPane, session } from './session-state.js';
 
-export const landActive = (id: string) => { const flow = readLand(hudHome, id); return !!flow && activeLand(flow); };
+export const flowReceipt = (id: string) => isTicketQueueId(id) ? readTicketQueue(hudHome, id) : readLand(hudHome, id);
+const flowId = (id: string) => isFlowId(id) || isTicketQueueId(id);
+export const landActive = (id: string) => {
+  const flow = flowReceipt(id);
+  return !!flow && ('wt' in flow ? activeLand(flow) : flow.state === 'working');
+};
 
 export const TASK_TTL = 3 * 60 * 60_000;
 const TASK_POLL_MS = 5000;
@@ -58,7 +65,7 @@ export function persistTask(task: HudTask) {
   saveTaskReceipt({ ...task, expiresAt: task.expiresAt, seenQuestions: [...task.seenQuestions] });
 }
 export function loadTaskReceipt(id: string): TaskReceipt | JobTaskReceipt | undefined {
-  if (!jobTaskId.test(id) && !isFlowId(id)) return;
+  if (!jobTaskId.test(id) && !flowId(id)) return;
   try {
     const receipt = readJsonBounded(taskFile(id), 1024 * 1024) as TaskReceipt | JobTaskReceipt;
     if (receipt.id !== id || !Number.isFinite(receipt.expiresAt) || receipt.expiresAt <= Date.now()) return;
@@ -73,7 +80,7 @@ function sweepTaskReceipts(): string[] {
   try {
     for (const file of readDirSafe(taskRoot)) {
       const match = /^([^.]+)\.([0-9a-f]{32})\.json(\.\d+\.[0-9a-f-]+\.tmp)?$/.exec(file);
-      if (!match || (!jobTaskId.test(match[1]) && !isFlowId(match[1]))) continue;
+      if (!match || (!jobTaskId.test(match[1]) && !flowId(match[1]))) continue;
       const path = join(taskRoot, file);
       try {
         // Age from the last write is only for cleanup; polling always checks expiresAt.
@@ -415,16 +422,16 @@ function unknownTask(taskId: string) {
 }
 export async function taskRequest(taskId: string, cancel: boolean,
   closeJob: (job: Job, stop: boolean) => Promise<{ exit_code: number; last_line: string }>) {
-  if (isFlowId(taskId)) {
+  if (flowId(taskId)) {
     const live = landTasks.has(taskId);
     if (!live && (cancel || !loadTaskReceipt(taskId))) return unknownTask(taskId);
-    const flow = readLand(hudHome, taskId);
+    const flow = flowReceipt(taskId);
     if (!flow || Date.parse(flow.created_at) + TASK_TTL <= Date.now()) {
       landTasks.delete(taskId);
       return unknownTask(taskId);
     }
     if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
-    return landTask(hudHome, flow, cancel);
+    return 'wt' in flow ? landTask(hudHome, flow, cancel) : ticketQueueTask(hudHome, flow, cancel);
   }
   let task = tasks.get(taskId);
   if (!task && !cancel) {

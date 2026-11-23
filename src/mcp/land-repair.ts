@@ -25,7 +25,7 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
   try {
     checkCancel();
     const started = Date.now();
-    const id = await dispatchLandRepair(source, f.wt.root, task, key, f.pane);
+    const id = await dispatchLandRepair(source, f.wt.root, task, key, f.pane, f.ticket_queue);
     attempt.job = id; attempt.outcome = 'waiting for worker'; writeLand(home, f);
     for (;;) {
       checkCancel();

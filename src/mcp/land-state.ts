@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { sharedRoot } from '../roles/projects.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import type { ManagedWorktree } from './managed-worktree.js';
+import { isTicketQueueId, readTicketQueue, ticketQueueNotice } from './ticket-queue-state.js';
 
 export const DEFAULT_LAND_TIMEOUT_S = 900;
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
@@ -14,6 +15,7 @@ export interface LandRerun {
 }
 export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
+  ticket_queue?: string;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string;
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
@@ -114,18 +116,19 @@ export function landEvents(home: string, pane: string | null, all = false, cwd =
       continue;
     }
     const id = file.replace(/\.json$/, '');
-    if (!file.endsWith('.json') || !isFlowId(id)) continue;
+    if (!file.endsWith('.json') || (!isFlowId(id) && !isTicketQueueId(id))) continue;
     const marker = `${landFile(home, id)}.${all ? 'observed' : 'noticed'}`;
     if (fs.existsSync(marker)) continue;
-    const f = readLand(home, id);
-    if (!f || f.task || (!all && f.pane !== pane)) continue;
-    if (!all && f.wt.main_root !== cwd && f.wt.main_root !== sharedRoot(cwd)) continue;
-    if (activeLand(f)) { pending = true; continue; }
+    const f = isTicketQueueId(id) ? readTicketQueue(home, id) : readLand(home, id);
+    if (!f || f.task || (!all && f.pane !== pane) || ('ticket_queue' in f && f.ticket_queue)) continue;
+    // A queue explicitly started with another cwd still reports to its authorizing pane.
+    if (!all && 'wt' in f && f.wt.main_root !== cwd && f.wt.main_root !== sharedRoot(cwd)) continue;
+    if ('wt' in f ? activeLand(f) : f.state === 'working') { pending = true; continue; }
     try { fs.closeSync(fs.openSync(marker, 'wx', 0o600)); }
     catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e; }
-    if (modCatchup && f.state !== 'failed') continue;
+    if (modCatchup && 'wt' in f && f.state !== 'failed') continue;
     // Queued transports (and hud watch) use one physical line per event.
-    lines.push(landNotice(f).replace(/\r?\n/g, ' | ').replace(/[\x00-\x1f\x7f-\x9f]/g, ' '));
+    lines.push(('wt' in f ? landNotice(f) : ticketQueueNotice(f)).replace(/\r?\n/g, ' | ').replace(/[\x00-\x1f\x7f-\x9f]/g, ' '));
   }
   return { lines, pending };
 }

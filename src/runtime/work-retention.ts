@@ -60,7 +60,22 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
   try {
     inAbsoluteDir(join(home, 'flows'), (dir) => {
       const jobs = new Map<string, string[]>();
-      for (const name of fs.readdirSync(dir)) {
+      const names = fs.readdirSync(dir);
+      for (const name of names) {
+        if (/^q[a-f0-9]{16}\.json$/.test(name)) {
+          try {
+            const path = join(dir, name), stat = fs.lstatSync(path);
+            if (stat.isFile() && stat.mtimeMs < cutoff) {
+              // Terminal queue IDs are never reused. Remove sidecars with their receipt.
+              const receipt = readJsonBounded(path, stat.size) as { state?: unknown } | null;
+              if (receipt?.state === 'completed' || receipt?.state === 'failed' || receipt?.state === 'cancelled') {
+                fs.unlinkSync(path);
+                for (const suffix of ['cancel', 'noticed', 'observed']) fs.rmSync(`${path}.${suffix}`, { force: true });
+              }
+            }
+          } catch { /* Missing or unreadable queue receipt: leave it alone. */ }
+          continue;
+        }
         const match = /^f([a-f0-9]{16})(?:-[1-9]\d*)?\.json(?:\.(?:cancel|noticed|observed|gate-[1-9]\d*(?:-rerun)?\.log))?$/.exec(name);
         if (!match) continue;
         const job = `j${match[1]}`, files = jobs.get(job);

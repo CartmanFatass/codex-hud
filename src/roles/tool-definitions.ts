@@ -162,11 +162,13 @@ export const ROLE_TOOLS = [
   LEASE_TOOL,
   tool(
     'hud_tickets',
-    'Ticket guide/ready list; add/update local; sync GitHub mirror.',
+    'Ticket guide/ready list; run a feature queue; add/update local; sync GitHub mirror.',
     {
-      op: { ...text, enum: ['guide', 'ready', 'add', 'update', 'sync'], default: 'guide' },
+      op: { ...text, enum: ['guide', 'ready', 'run', 'add', 'update', 'sync'], default: 'guide' },
       cwd: { ...text, description: 'Project dir; default server cwd.' },
-      feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Add/update: slug.' },
+      feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Run/add/update: feature slug.' },
+      max_parallel: { type: 'integer', minimum: 1, description: 'Run: maximum in-flight tickets; default imp role cap.' },
+      cancel: { type: 'boolean', description: 'Run: stop this feature queue without stopping existing jobs or lands.' },
       tickets: {
         type: 'array',
         minItems: 1,

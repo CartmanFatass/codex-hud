@@ -497,7 +497,7 @@ A blocked CLI marks the job as needing the owner; task clients can see it in `hu
 A stopped Pi worker is recorded as `stopped` even if it exits during startup without publishing its final status.
 Normal cleanup belongs to the watcher, which also records `stopped` on its next scan if a stop was requested and the recorded Pi process is gone.
 The owner can also answer an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line, `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the reader runs; a question answered earlier is simply gone).
-The main session chooses all next steps; the MCP never chains work.
+The main session chooses next steps outside fixed HUD flows it starts.
 See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool arguments.
 
 `hud_tickets` provides the ticket method in every client without a separate skill.
@@ -508,6 +508,7 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
   `what` is one line from the ticket's What to build section.
   Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
   The live job claims the ticket in the panel and Home progress without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` when `**Owner try:** no`, else `ready-for-human`) without touching `STATE.md`.
+- **`run`**: pass `feature` and optional `max_parallel` (default: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main; `**Role:** frontend-imp` selects that role, `**Main review:** yes` stops auto-land, and `run` with the same `feature` and `cancel: true` leaves existing jobs and lands alone.
 - **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?}]`.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing.

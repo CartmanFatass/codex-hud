@@ -16,7 +16,7 @@ export async function runNotifyCli() {
       const dir = join(home, 'jobs', job);
       const receipt = readJsonFile(join(dir, jobFiles.job)) as Job;
       // Scouts hand all outcomes to their target. Other children and land repairs still forward questions.
-      if (receipt.scout_only === true || ((receipt.parent_job || receipt.land_turn) && /^\[.*\] DONE /.test(message))) process.exit(0);
+      if (receipt.scout_only === true || receipt.ticket_queue || ((receipt.parent_job || receipt.land_turn) && /^\[.*\] DONE /.test(message))) process.exit(0);
       const owner = jobCallerPane(receipt);
       if (owner && !/[\x00-\x1f\x7f-\x9f]/.test(owner)) pane = owner;
       if (taskDelivery(dir, pane)) process.exit(0);

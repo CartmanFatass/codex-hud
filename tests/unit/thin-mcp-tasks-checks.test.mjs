@@ -55,7 +55,7 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   assert.equal(list.cacheScope, 'private');
   assert.equal(list.tools.some(({ name }) => name === 'hud_wait'), false);
   assert.deepEqual(list.tools.filter((tool) => tool.execution?.taskSupport === 'optional').map((tool) => tool.name).sort(),
-    ['hud_create', 'hud_land', 'hud_respond', 'hud_send']);
+    ['hud_create', 'hud_land', 'hud_respond', 'hud_send', 'hud_tickets']);
   const roster = resultValue(await taskCall(rpc, 'hud_roster'));
   assert.match(roster.hint, /task completions.*hud_read/);
   assert.equal(roster.watcher_alive, undefined);

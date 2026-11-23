@@ -12,6 +12,7 @@ import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { MAX_CHECKS, MAX_CHECK_COMMAND } from '../../roles/job-checks.js';
+import { withAbstractLock } from '../../utils/abstract-lock.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
 import { sharedRoot } from '../../roles/projects.js';
 import {
@@ -158,7 +159,7 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
 
 type SlotGate = { wait: Promise<void>; release: () => void };
 
-export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { source: Job; derived: boolean }, batch = false, slotGate?: SlotGate) {
+export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { source: Job; derived: boolean }, batch = false, slotGate?: SlotGate, queue?: { id: string; canAdmit: () => boolean }) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
     catch { return { ok: false, code: 'invalid_arguments', error: 'sonic cwd must be an existing directory inside the parent project' }; }
@@ -216,7 +217,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source }));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: queue?.canAdmit }));
 }
 
 export const pendingScouts = new Map<string, AbortController>();
@@ -257,7 +258,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
 }
 
 export function canOverflowImpJob(job: Job): boolean {
-  if (job.role !== 'imp') return false;
+  if (job.role !== 'imp' || job.ticket_queue) return false;
   const cwd = roleCwd(job);
   const found = registry(cwd);
   const roles = found.roles();
@@ -279,8 +280,9 @@ export function canOverflowImpJob(job: Job): boolean {
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parentJob?: string, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob }: {
+  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit }: {
     scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
+    ticketQueue?: string; canAdmit?: () => boolean;
   } = {}) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
@@ -423,6 +425,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   let queuedReply: ReturnType<typeof created> | TaskReply | undefined;
 
   const admit = async () => {
+    const stopped = () => canAdmit && !canAdmit();
+    if (stopped()) return { ok: false as const, code: 'queue_stopped' };
     let shouldQueue = false;
     if (enforceCap) {
       const concurrency = loadConcurrencySettings();
@@ -431,7 +435,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (cap > 0 && (workingByRole.get(role) ?? 0) >= cap) {
         const generalCap = capForRole(concurrency, 'general');
         const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
-        if (role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
+        if (!ticketQueue && role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
           // Overflow borrows a concurrency slot, not the imp role's launch chain or mode.
           overflowFrom = 'imp';
           role = 'general';
@@ -450,6 +454,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if (shouldQueue) {
       const queuedContext = localContext ?? await contextFor(args, false);
       if ('code' in queuedContext) return queuedContext;
+      if (stopped()) return { ok: false as const, code: 'queue_stopped' };
       const nowIso = new Date().toISOString();
       // The watcher re-evaluates availability at start time; retain the decision while queued.
       const queuedRoute = plan.fallback ? route : first.route;
@@ -464,6 +469,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         caller_pane: pane,
         created_at: nowIso,
         queued_at: nowIso,
+        ...(ticketQueue && { ticket_queue: ticketQueue }),
         ...(queuedRoute && { route: queuedRoute }),
         ...((first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
         ...(overflowFrom && { overflow_from: overflowFrom }),
@@ -512,6 +518,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     inline = first.prepared.place.harness === 'bro';
     const assembled = (!inline && localContext) || await contextFor(args, inline);
     if ('code' in assembled) return assembled;
+    if (stopped()) return { ok: false as const, code: 'queue_stopped' };
     context = assembled;
     base = {
       job: id,
@@ -529,6 +536,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(repairOf ? { repair_of: repairOf } : {}),
       ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
       ...(landCwd ? { land_turn: request_key } : {}),
+      ...(ticketQueue && { ticket_queue: ticketQueue }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
       ...(first.route && { route: first.route }),
@@ -553,7 +561,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   let admissionError: Awaited<ReturnType<typeof admit>>;
   if (slotGate) await slotGate.wait;
   try {
-    admissionError = enforceCap ? await keyLock('concurrency', admit) : await admit();
+    // Ticket queues and MCP connections admit against the same on-disk role caps.
+    admissionError = enforceCap ? await withAbstractLock('concurrency', hudHome, admit, { timeoutMs: 10_000 }) : await admit();
   } finally {
     slotGate?.release();
   }
@@ -816,11 +825,26 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     if ('code' in context) return failQueued(context.error ?? context.code ?? 'invalid_arguments', context.code === 'invalid_arguments' ? 'invalid_arguments' : undefined);
 
     const scoutQuestion = existing.scout_question;
+    const leaveQueue = () => {
+      fs.rmSync(join(dir, jobFiles.status), { force: true });
+      jobCache.invalidateFile(join(dir, jobFiles.status));
+      save(base);
+    };
+    // The watcher's scan is a scheduling hint; another process can admit a create before we launch.
+    const reserved = await withAbstractLock('concurrency', hudHome, () => {
+      if (readCachedStatus(id).status?.state !== 'queued') return false;
+      const cap = capForRole(loadConcurrencySettings(), role);
+      if (cap && (countWorkingByRole().get(role) ?? 0) >= cap) return false;
+      if (scoutQuestion) {
+        base.scout_state = 'scouting';
+        save(base);
+        writeCreateStatus(dir, { state: 'working', role, reason: 'scouting' });
+      } else leaveQueue();
+      return true;
+    }, { timeoutMs: 10_000 });
+    if (!reserved) return { started: false };
     let scoutResult: Awaited<ReturnType<typeof runCreateScout>> | undefined;
     if (scoutQuestion) {
-      base.scout_state = 'scouting';
-      save(base);
-      writeCreateStatus(dir, { state: 'working', role, reason: 'scouting' });
       const controller = new AbortController();
       if (worktree && !base.worktree && plan.candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
         (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
@@ -831,10 +855,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       }
     }
 
-    // Leave queued state cleanly before launching.
-    fs.rmSync(join(dir, jobFiles.status), { force: true });
-    jobCache.invalidateFile(join(dir, jobFiles.status));
-    save(base);
+    if (scoutQuestion) leaveQueue();
 
     const harnessesSource = harnessesSourceFor(onName);
     const attempts = base.attempts!;
@@ -1091,6 +1112,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     recorded_at: new Date().toISOString(), exit_code: null as number | null, stderr_tail: '', resumed: true as const };
   const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
+    ticket_queue: land || automatic ? current.ticket_queue : undefined,
     headless_task_fence: automatic ? taskFence(current) : undefined,
     send_outcomes: [...(current.send_outcomes ?? []), ...delivered, ...(automatic ? [] : [outcome])] };
   const answerFile = answerRequest && join(dir, jobFiles.qa, `${answerRequest}.answer.md`);
@@ -1273,6 +1295,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}), recorded_at,
     exit_code: null as number | null, stderr_tail: '' };
   current.land_turn = land ? key : undefined;
+  if (!land) delete current.ticket_queue;
   (current.send_outcomes ??= []).push(outcome);
   if (!current.cli) current.pi_sent_at = recorded_at;
   save(current);
@@ -1335,7 +1358,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
 }
 
 /** Detached land helper only: repair the existing branch, without widening public retry_of eligibility. */
-export async function dispatchLandRepair(id: string, cwd: string, task: string, key: string, pane: string | null) {
+export async function dispatchLandRepair(id: string, cwd: string, task: string, key: string, pane: string | null, ticketQueue?: string) {
   const source = findJob(id);
   if (!source || source.cwd !== cwd) throw Error('Repair source checkout changed');
   if (source.role === 'sonic') throw Error('Sonic cannot continue; dispatch a new query');
@@ -1353,7 +1376,7 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
   // A closed but successfully settled job isn't a public retry target. Use the same keyed create path,
   // retaining retry provenance and the original checkout rather than starting at a clean main tip.
   const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? jobCallerPane(source), key, false,
-    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source }));
+    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source, ticketQueue }));
   if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
   throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);
 }

@@ -11,7 +11,7 @@ import { managedReceiptMatches } from './managed-worktree.js';
 import { binScript } from './paths.js';
 import type { Job } from './job-contracts.js';
 
-function config(home: string, root: string): LandConfig {
+export function validLandConfig(home: string, root: string): LandConfig {
   if (!registeredProject(home, root).registered) throw Error('hud_land requires a registered project');
   const c = JSON.parse(fs.readFileSync(join(root, '.hud/project.json'), 'utf8')).land;
   const commands = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim());
@@ -21,14 +21,15 @@ function config(home: string, root: string): LandConfig {
     throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper and timeout_s');
   return c;
 }
-export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean) {
+export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean, ticketQueue?: string) {
   const wt = job?.worktree;
   if (!job || job.job !== id || !wt || wt.root !== job.cwd || wt.main_root !== sharedRoot(process.cwd()))
     throw Error('hud_land requires a managed worktree job in the caller project');
   const { flow, prior, cleanup } = landAttempt(home, id);
-  if (prior && !retryableLand(prior)) return prior;
+  // A recovering ticket queue observes its earlier attempt, even if it already failed.
+  if (prior && (ticketQueue || !retryableLand(prior))) return prior;
   if (!['idle_grace', 'closed', 'done'].includes(state ?? '')) throw Error(`Cannot land ${id}: job state is ${state ?? 'unknown'} (expected idle_grace, done or closed)`);
-  const c = config(home, wt.main_root);
+  const c = validLandConfig(home, wt.main_root);
   await git(wt.main_root, ['check-ref-format', `refs/heads/${c.base}`]);
   const trees = parseWorktreeList(await git(wt.main_root, ['worktree', 'list', '--porcelain', '-z']));
   const tree = trees.slice(1).find(t => t.path === wt.root && t.branch === wt.branch);
@@ -46,7 +47,7 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
     const pid = child.pid, start = pid && procStat(pid)?.start;
     if (!pid || !start) throw Error('Could not start land helper');
     const loaded = await ready, now = new Date().toISOString();
-    const f: LandFlow = { flow, job: id, pane, task, wt, config: c, source_sha: tree.head, pid, start,
+    const f: LandFlow = { flow, job: id, pane, task, ...(ticketQueue && { ticket_queue: ticketQueue }), wt, config: c, source_sha: tree.head, pid, start,
       state: loaded ? 'queued' : 'failed', step: loaded ? 'main-checkout lease' : 'load land helper', created_at: now, updated_at: now };
     if (!loaded) f.error = 'HUD was rebuilt; retry the land';
     // Publish before granting permission to run; a concurrent caller can win the receipt but cannot start a second land.

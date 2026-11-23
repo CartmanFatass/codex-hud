@@ -29,6 +29,8 @@ import type { Job } from '../job-contracts.js';
 import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
+import { startTicketQueue, ticketQueueTask, wakeTicketQueue } from '../ticket-queue.js';
+import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
 import { jobFiles } from '../paths.js';
@@ -455,6 +457,18 @@ export async function call(name: string, args: Args, scan: JobScan): Promise<unk
   if (name === 'hud_tickets') {
     if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
     const cwd = jobCwd(args);
+    if (args.op === 'run') {
+      const q = await startTicketQueue(hudHome, cwd, callerPane, session.taskClient, args);
+      if (!q) return { ok: false, code: 'queue_not_running' };
+      ensureWatcher();
+      if (q.task && session.taskCapable && args.cancel !== true) {
+        rememberLandTask(landTasks, q.flow, landActive);
+        saveTaskReceipt({ id: q.flow, expiresAt: Date.parse(q.created_at) + TASK_TTL });
+        return { resultType: 'task', ...ticketQueueTask(hudHome, q) };
+      }
+      if (!q.task && callerPane) void ensureQueueWatcher(callerPane, hudHome);
+      return { ...ticketQueueView(q), ...(args.cancel === true && { cancel_requested: true }) };
+    }
     return args.op === 'ready' ? readyTickets(cwd, jobCache) : editTickets(cwd, args);
   }
   if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
@@ -576,7 +590,7 @@ export async function call(name: string, args: Args, scan: JobScan): Promise<unk
     if (args.mode !== undefined && args.mode !== 'digest' && args.mode !== 'full') throw new Error('invalid_arguments: mode');
     if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
     if (args.offset !== undefined && (typeof args.offset !== 'number' || !Number.isSafeInteger(args.offset) || args.offset < 0 ||
-        !fullRead(args) || typeof args.job !== 'string' || args.jobs !== undefined || isFlowId(args.job)))
+        !fullRead(args) || typeof args.job !== 'string' || args.jobs !== undefined || isFlowId(args.job) || isTicketQueueId(args.job)))
       throw new Error('invalid_arguments: offset requires a nonnegative integer and one full job read');
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
@@ -603,6 +617,12 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
   if (name === 'hud_read' && isFlowId(id)) {
     const flow = readLand(hudHome, id);
     return flow ? landView(flow) : { ok: false, code: 'flow_not_found' };
+  }
+  if (name === 'hud_read' && isTicketQueueId(id)) {
+    const flow = readTicketQueue(hudHome, id);
+    if (!flow || flow.pane !== callerPane) return { ok: false, code: 'flow_not_found' };
+    if (flow.state === 'working') { wakeTicketQueue(hudHome, flow); ensureWatcher(); }
+    return ticketQueueView(flow);
   }
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };

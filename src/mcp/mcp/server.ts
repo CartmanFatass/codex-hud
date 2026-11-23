@@ -3,7 +3,6 @@ import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import * as workerTools from '../../worker/tools.js';
 import { statuslineTool, statuslineResource, readCodexStatusline } from '../codex-statusline.js';
 import { scoutedCreates, pendingScouts } from '../dispatch/orchestrator.js';
-import { readLand } from '../land-state.js';
 import { isWorker, hudHome, publishWorkSummary, scanForCall, writeScan, findJob } from '../store/job-store.js';
 import { locks, keyLock } from '../store/key-lock.js';
 import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js';
@@ -12,7 +11,7 @@ import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ow
 import { compactResult } from './result-text.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
-  resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, tasks,
+  resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, flowReceipt, tasks,
   evictTask, activeTasks, loadTaskReceipt, TASK_TTL, saveTaskReceipt, stopBatchDelivery, beginHandoff,
   restoreTaskMaps, clearTaskSweep, clearTaskMaps, batchTasks, batchPending,
 } from './tasks.js';
@@ -29,7 +28,7 @@ async function toolsListResult() {
     ...(session.discovered ? privateCache : {}),
     tools: session.resumeRefusal ? [] : worker ? await worker.listWorkerTools(true) :
       [...tools, statuslineTool].filter((tool) => !session.taskClient || tool.name !== 'hud_wait').map((tool) =>
-        session.taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land'].includes(tool.name)
+        session.taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land', 'hud_tickets'].includes(tool.name)
           ? { ...tool, execution: { taskSupport: 'optional' } } : tool),
   };
 }
@@ -232,7 +231,7 @@ export function openRuntime() {
         for (const id of landTasks) {
           if (loadTaskReceipt(id)) continue;
           try {
-            const flow = readLand(hudHome, id), expiresAt = flow ? Date.parse(flow.created_at) + TASK_TTL : 0;
+            const flow = flowReceipt(id), expiresAt = flow ? Date.parse(flow.created_at) + TASK_TTL : 0;
             if (expiresAt > Date.now()) saveTaskReceipt({ id, expiresAt });
           } catch { /* A broken flow receipt must not prevent reload. */ }
         }

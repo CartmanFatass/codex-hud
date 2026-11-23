@@ -51,7 +51,7 @@ export function routingTicketText(root: string, ticket: unknown): string | undef
   } catch { /* Missing or unreadable ticket contributes no text. */ }
 }
 
-export function readyTickets(cwd: string, jobs: JobIndexCache) {
+export function readyTickets(cwd: string, jobs: JobIndexCache, feature?: string) {
   const scratch = join(cwd, '.scratch');
   if (!directoryExists(scratch)) return { ok: true, tickets: [] };
   const features = fs.readdirSync(scratch, { withFileTypes: true }).filter(entry => entry.isDirectory())
@@ -82,7 +82,7 @@ export function readyTickets(cwd: string, jobs: JobIndexCache) {
       { role: job.role, state, created: Date.parse(job.created_at) || 0 });
   }
   rollup.derive(Date.now());
-  return { ok: true, tickets: features.flatMap(({ slug, tickets }) => tickets.flatMap(t =>
+  return { ok: true, tickets: features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) => tickets.flatMap(t =>
     t.state === 'ready' && /^ready-for-agent$/i.test(t.status)
       ? [{ ticket: `${slug}/${nn(Number(t.number))}`, path: t.path, title: t.title, what: t.what }] : [])) };
 }
