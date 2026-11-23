@@ -7,9 +7,6 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { Readable } from 'node:stream';
-import { fileURLToPath } from 'node:url';
-import { stripVTControlCharacters } from 'node:util';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
@@ -19,65 +16,39 @@ import { recordLanding } from './land-records.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
+import { LandOutput } from './land-evidence.js';
 
 class CommandError extends Error {
-  constructor(message: string, readonly tail: string[], readonly output = '') { super(message); }
+  constructor(message: string, readonly evidence: ReturnType<LandOutput['evidence']>) { super(message); }
+  get tail() { return this.evidence.tail; }
 }
 class CommandTimeout extends CommandError {}
-function failureExcerpt(e: CommandError) {
-  const output = stripVTControlCharacters(e.output).replace(/\r\n/g, '\n');
-  // Node's spec reporter groups failures at the end; TAP puts diagnostics after each `not ok`.
-  const blocks = output.match(/^test at .+:\d+[ \t]*\n[ \t]*✖ .+(?:\n[ \t][^\n]*)+|^[ \t]*not ok \d+ - .+\n[ \t]+---[ \t]*\n(?:[ \t][^\n]*\n)*?[ \t]+\.\.\.[ \t]*$/gm);
-  const bytes = Buffer.from(blocks?.join('\n\n') ?? e.tail.map(line => stripVTControlCharacters(line)).join('\n'));
-  const cap = 8 * 1024;
-  if (bytes.length <= cap) return bytes;
-  // Keep the start of assertion blocks or the end of the tail, without splitting UTF-8.
-  let edge = blocks ? cap : bytes.length - cap;
-  while ((bytes[edge] & 0xc0) === 0x80) edge += blocks ? -1 : 1;
-  return blocks ? bytes.subarray(0, edge) : bytes.subarray(edge);
-}
-type TestFailure = { file: string; name?: string };
-function collectTestFailures(cwd: string, stream: Readable, failures: TestFailure[]) {
-  let previous: TestFailure | undefined;
-  createInterface({ input: stream }).on('line', (raw) => {
-    const line = stripVTControlCharacters(raw);
-    if (previous) {
-      previous.name = /^\s*✖ (.+?)(?: \([\d.]+ms\))?\s*$/.exec(line)?.[1];
-      previous = undefined;
-    }
-    const location = /^test at (.+?):\d+(?::\d+)?\s*$/.exec(line)?.[1];
-    if (!location) return;
-    let path: string;
-    try { path = location.startsWith('file://') ? fileURLToPath(location) : resolve(cwd, location); }
-    catch { return; }
-    const file = relative(cwd, path);
-    if (!file || file === '..' || file.startsWith(`..${sep}`) || isAbsolute(file)) return;
-    failures.push(previous = { file });
-  });
-}
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
-function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, failures?: TestFailure[], env = process.env) {
+function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, env = process.env) {
   return new Promise<string[]>((ok, fail) => {
     const child = spawn(bin, argv, { cwd, env: safeGitEnv(env), detached: deadlineMs !== undefined, stdio: ['ignore', 'pipe', 'pipe'] });
-    let output = '';
-    const append = (chunk: string) => { output = (output + chunk).slice(-65536); };
-    const tail = () => output.trimEnd().split(/\r?\n/).slice(-40);
-    for (const stream of [child.stdout, child.stderr]) {
-      stream.setEncoding('utf8').on('data', append);
-      if (failures) collectTestFailures(cwd, stream, failures);
-    }
+    const output = new LandOutput(cwd);
+    const streams = [child.stdout, child.stderr].map(input => {
+      const stream = output.stream();
+      createInterface({ input }).on('line', stream.line).on('close', stream.finish);
+      return stream;
+    });
+    const evidence = () => {
+      for (const stream of streams) stream.finish();
+      return output.evidence();
+    };
     const timer = deadlineMs === undefined ? undefined : setTimeout(() => {
       try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); }
-      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') append(`\n${(e as Error).message}\n`); }
+      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') streams[1].line((e as Error).message); }
       // Don't wait for inherited stdio to close. A child can outlive the shell that opened it.
       child.stdout.destroy(); child.stderr.destroy(); child.unref();
-      fail(new CommandTimeout('timeout', tail(), output));
+      fail(new CommandTimeout('timeout', evidence()));
     }, deadlineMs);
     child.once('error', (e) => { clearTimeout(timer); fail(e); });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
-      if (code === 0) ok(tail());
-      else fail(new CommandError(`exit ${code ?? signal}`, tail(), output));
+      if (code === 0) ok(output.tail());
+      else fail(new CommandError(`exit ${code ?? signal}`, evidence()));
     });
   });
 }
@@ -144,35 +115,33 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         CARGO_HOME: process.env.CARGO_HOME || join(homedir(), '.cargo'),
         HUD_NATIVE_REUSE_DIR: join(kind === 'gate' ? main : integration, 'dist/native'),
       } : process.env;
-      const invoke = (script: string, failures?: TestFailure[]) => c.wrapper
-        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, failures, env)
-        : command(cwd, 'sh', ['-c', script], deadlineMs, failures, env);
-      const failures = kind === 'gate' ? [] as TestFailure[] : undefined;
+      const invoke = (script: string) => c.wrapper
+        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, env)
+        : command(cwd, 'sh', ['-c', script], deadlineMs, env);
       const t0 = performance.now();
       try {
-        const output = await invoke(script, failures);
+        const output = await invoke(script);
         if (kind === 'after' && build) {
           const prefix = 'HUD build: ';
           f.after_note = output.find(line => line.startsWith(`${prefix}Cargo unavailable; `))?.slice(prefix.length);
         }
         recordTiming(label, t0, true, publish ? { skipped: true } : undefined);
       } catch (e) {
-        if (!failures || !(e instanceof CommandError)) { recordTiming(label, t0, false); throw e; }
+        if (kind !== 'gate' || !(e instanceof CommandError)) { recordTiming(label, t0, false); throw e; }
         const reruns = f.reruns ??= [];
         const prefix = `${landFile(home, f.flow)}.gate-${reruns.length + 1}`;
         const saveExcerpt = (error: CommandError, suffix = '') => {
           const path = `${prefix}${suffix}.log`;
-          writePrivateFile(path, failureExcerpt(error), { mkdir: false });
+          writePrivateFile(path, error.evidence.excerpt, { mkdir: false });
           return path;
         };
-        const tests = [...new Set(failures.map(({ file, name }) => name ? `${name} (${file})` : file))];
+        const { tests, files } = e.evidence;
         const entry: LandRerun = { step: label, tests, output_path: saveExcerpt(e) };
         reruns.push(entry);
         recordTiming(label, t0, false);
         // A command deadline can leave tests unrun; a red test (including a node:test timeout) identifies a safe rerun.
         if (e instanceof CommandTimeout) throw e;
         checkCancel();
-        const files = [...new Set(failures.map(({ file }) => file))];
         const r0 = performance.now();
         try {
           await invoke(files.length ? [process.execPath, '--test', '--test-timeout=60000', '--test-force-exit', '--', ...files].map(quote).join(' ') : cmd);
@@ -315,7 +284,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
           throw Error('Main checkout is not at the recorded base tip');
       } catch (e) {
         if (f.state === 'cancelled') throw e;
-        if (e instanceof CommandError) throw new CommandError('Main checkout is not at the recorded base tip', e.tail);
+        if (e instanceof CommandError) throw new CommandError('Main checkout is not at the recorded base tip', e.evidence);
         throw e;
       }
       target = current;

@@ -6,7 +6,7 @@ import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.j
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { notifyRunner } from '../utils/runner-lifetime.js';
 import { procStat } from '../utils/proc.js';
-import { activeLand, landAttempt, landFile, landNotice, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
+import { activeLand, landAttempt, landFile, landNotice, landOutcome, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
 import { managedReceiptMatches } from './managed-worktree.js';
 import { binScript } from './paths.js';
 import type { Job } from './job-contracts.js';
@@ -60,7 +60,8 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
 }
 export function landTask(home: string, f: LandFlow, cancel = false) {
   if (cancel && activeLand(f)) fs.closeSync(fs.openSync(`${landFile(home, f.flow)}.cancel`, 'a', 0o600));
-  return { taskId: f.flow, status: activeLand(f) ? 'working' : f.state, statusMessage: `${f.flow} — ${f.state}: ${f.step}`,
+  return { taskId: f.flow, status: activeLand(f) ? 'working' : f.state,
+    statusMessage: `${f.flow} — ${f.state === 'failed' ? landOutcome(f) : `${f.state}: ${f.step}`}`,
     createdAt: f.created_at, lastUpdatedAt: f.updated_at, ttlMs: 3 * 60 * 60_000, pollIntervalMs: 5000,
     ...(!activeLand(f) ? { result: { content: [{ type: 'text', text: landNotice(f) }] } } : {}) };
 }

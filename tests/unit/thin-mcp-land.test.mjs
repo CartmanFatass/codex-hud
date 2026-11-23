@@ -15,6 +15,8 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { takeLease } from '../../dist/roles/lease.js';
 import { procStat, isProcAlive } from '../../dist/utils/proc.js';
 import { landTask } from '../../dist/mcp/land.js';
+import { LandOutput } from '../../dist/mcp/land-evidence.js';
+import { landNotice } from '../../dist/mcp/land-state.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { landedNewest } from '../../dist/render/project-view.js';
 
@@ -334,8 +336,23 @@ test('land fast-forwards a rebased worker branch with only its own commits beyon
   assert.equal(f.git(f.main, 'log', '--reverse', '--format=%s', `${base}..base`), 'first\nsecond');
 });
 
-test('red gate continues the source in grace; its rebased fix passes on a fresh checkout', async t => {
-  const f = await checkout(t, ['grep fixed tracked || { echo repair-needed; exit 1; }']);
+test('red gate continues the source in grace with clean assertion evidence; its rebased fix passes', async t => {
+  const f = await checkout(t, [`grep fixed tracked || {
+cat <<'TAP'
+not ok 1 - sees the fix
+  ---
+  location: 'sample.test.mjs:1:1'
+  error: |-
+    synthetic assertion: expected fix
+    首页 ?1  项目  控制
+    synthetic panel row
+    \x1b[32m   \x1b[0m
+  code: 'ERR_ASSERTION'
+  ...
+TAP
+seq 50
+exit 1
+}`]);
   fs.writeFileSync(join(jobDir(f), 'SESSION.txt'), 'PRIMARY=source-agent\n');
   fs.writeFileSync(join(jobDir(f), 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   fs.writeFileSync(join(f.main, 'upstream'), 'new base');
@@ -343,7 +360,13 @@ test('red gate continues the source in grace; its rebased fix passes on a fresh 
   const { flow } = await f.call('hud_land', { job });
   assert.equal(await repair(f, flow, 0), job);
   const prompt = f.commands().find(({ args }) => args[0] === 'agent' && args[1] === 'prompt').args.at(-1);
-  assert.match(prompt, /Rebase onto the current base base/); assert.match(prompt, /gate\[1\][\s\S]*Log tail:\nrepair-needed/);
+  assert.match(prompt, /Rebase onto the current base base/);
+  const evidence = prompt.split('Log tail:\n').at(-1).trimEnd();
+  assert.match(evidence, /^not ok 1 - sees the fix[\s\S]*synthetic assertion: expected fix[\s\S]*ERR_ASSERTION/);
+  assert.doesNotMatch(evidence, /^\s*$|synthetic panel row|首页|^50$/m);
+  const [rerun] = f.flowState(flow).reruns;
+  assert.deepEqual(rerun.tests, ['sees the fix (sample.test.mjs)']);
+  for (const path of [rerun.output_path, rerun.rerun_output_path]) assert.equal(fs.readFileSync(path, 'utf8'), evidence);
   f.git(f.worktree, 'rebase', 'base'); fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
   f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
   await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
@@ -533,6 +556,39 @@ test('cherry-pick conflict goes to the repair worker; even a quickly answered qu
   await until(() => f.flowState(flow).state === 'failed', 15000);
   const done = f.flowState(flow); assert.match(done.error, /needs the main session: q1/); assert.equal(done.repairs.length, 1);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
+});
+
+test('gate evidence drops panel frames and reserves the first assertion from each file', () => {
+  const output = new LandOutput('/synthetic');
+  const stream = output.stream();
+  const panelRow = '\x1b[32m  ┃ synthetic panel card                \x1b[0m';
+  const log = [
+    'test at first.test.mjs:4:5', '✖ first check (1ms)', '  AssertionError: first assertion',
+    '\x1b[32m   Home ?1  Project ?2  Control   models off  \x1b[0m',
+    ...Array.from({ length: 900 }, () => [' '.repeat(80), panelRow]).flat(),
+    ...Array.from({ length: 8 }, () => '      at ' + '✓'.repeat(700)),
+    'test at first.test.mjs:8:5', '✖ another check (1ms)', '  AssertionError: another assertion',
+    'test at second.test.mjs:2:5', '✖ second check (1ms)', '  AssertionError: second assertion',
+    ...Array.from({ length: 60 }, (_, i) => `post-test output ${i}`),
+  ];
+  log.forEach(stream.line); stream.finish();
+  const { excerpt, tail, tests } = output.evidence();
+  assert.ok(Buffer.byteLength(excerpt) <= 8192);
+  assert.ok(tail.length <= 40);
+  assert.doesNotMatch(excerpt, /^\s*$|panel card|models off|post-test output|\uFFFD/m);
+  for (const [name, assertion] of [['first check', 'first assertion'], ['another check', 'another assertion'], ['second check', 'second assertion']]) {
+    assert.ok(excerpt.includes(`✖ ${name} (1ms)\n  AssertionError: ${assertion}`));
+    assert.ok(tail.includes(`  AssertionError: ${assertion}`));
+  }
+  const step = 'gate[2]: npm run test:sample';
+  const flow = { flow: 'f0000000000000123', job, state: 'failed', step: 'repair 1', error: 'worker stopped', tail,
+    repairs: [{ step, outcome: 'worker stopped' }],
+    reruns: [{ step, tests: [...tests, 'undisplayed fourth check'], output_path: 'sample.log', rerun_ok: false }] };
+  const notice = landNotice(flow);
+  const headline = /failed: gate\[2\]: npm run test:sample \(repair 1\).*failing tests: first check .*another check .*second check/;
+  assert.match(notice.split('\n')[0], headline);
+  assert.match(landTask('/synthetic', flow).statusMessage, headline);
+  assert.doesNotMatch(notice, /undisplayed fourth check/);
 });
 
 test('gate reruns only the failing step once and reports its recovery without dispatch', async t => {

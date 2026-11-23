@@ -64,9 +64,17 @@ export function landView(f: LandFlow) {
   const { flow, job, state, step, landed_sha, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail } = f;
   return { flow, job, state, step, landed_sha, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail };
 }
+const one = (text: string) => text.replace(/\s+/g, ' ').trim();
+export function landOutcome(f: LandFlow) {
+  const failedRepair = f.state === 'failed' && /^repair \d+$/.test(f.step) ? f.repairs?.at(-1) : undefined;
+  const step = failedRepair?.step ?? f.step;
+  const gate = f.state === 'failed' ? f.reruns?.filter(r => typeof r !== 'string' && r.step === step).at(-1) : undefined;
+  const failedTests = typeof gate === 'object' && gate.rerun_ok !== true && gate.tests.length
+    ? `; failing tests: ${gate.tests.slice(0, 3).map(one).join(', ')}` : '';
+  return `${f.state}: ${one(step)}${failedRepair ? ` (${f.step})` : ''}${f.landed_sha ? ` ${f.landed_sha}` : ''}${f.error ? `: ${one(f.error)}` : ''}${failedTests}`;
+}
 export function landNotice(f: LandFlow) {
-  const one = (text: string) => text.replace(/\s+/g, ' ').trim();
-  return [`${f.flow} (land ${f.job}) — ${f.state}: ${f.step}${f.landed_sha ? ` ${f.landed_sha}` : ''}${f.error ? `: ${f.error}` : ''}`,
+  return [`${f.flow} (land ${f.job}) — ${landOutcome(f)}`,
     ...(f.replayed_onto ? [`Replayed onto ${one(f.replayed_onto)}${f.base_sha ? ` (base moved from ${one(f.base_sha)})` : ''}`] : []),
     ...(f.after_note ? [`After note: ${one(f.after_note)}`] : []),
     ...(f.cleanup_note ? [`Cleanup note: ${one(f.cleanup_note)}`] : []),
