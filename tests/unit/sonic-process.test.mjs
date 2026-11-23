@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fixture, cliState, until } from '../helpers/thin-mcp-harness.mjs';
+import { fixture, cliState, runSonic, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
 import { startSessionWatch } from '../../dist/cli/watch.js';
@@ -44,8 +44,46 @@ if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
   process.kill(cliState(dir).pid, 'SIGKILL');
   await until(() => cliState(dir).state === 'failed');
   assert.ok(scans()[before] - killed < 1000, 'runner death wakes the watcher within one second');
-  assert.equal(cliState(dir).exit_reason, 'sonic runner exited without an exit receipt');
+  const status = cliState(dir);
+  assert.equal(status.exit_reason, 'sonic runner exited without an exit receipt');
+  assert.equal(status.runner_exit_signal, 'SIGKILL');
+  assert.equal(status.runner_exit_code, null);
+  assert.equal(status.stderr_tail, '');
+  assert.equal(status.output_written, false);
   assert.equal(fs.existsSync(join(dir, 'sonic-exit.json')), false);
+});
+
+test('an aborted sonic records a parent restart and recovers only assistant text after launcher exit', async t => {
+  const f = await fixture(t, { watcherTickMs: 250 });
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic parent.' });
+  const publishParent = started_at => writeFixtureFile(join(parent.task_dir, 'STATUS.json'), JSON.stringify({ ...cliState(parent.task_dir), started_at }));
+  publishParent(new Date(Date.now() - 10000).toISOString());
+  f.overrideBin('pi', `#!${process.execPath}
+import { writeFileSync } from 'node:fs';
+const entry = (role, content) => JSON.stringify({ type: 'message', message: { role, content, stopReason: 'aborted' } });
+console.error('x'.repeat(4000) + 'Synthetic failure detail.');
+writeFileSync(process.env.HUD_JOB_DIR + '/sonic-session.jsonl', [entry('user', 'Task'), entry('assistant', [
+  { type: 'text', text: 'First finding.' }, { type: 'thinking', thinking: 'Not report text' }, { type: 'text', text: 'Second finding.' }
+]), entry('toolResult', 'Not a finding'), '{'].join('\\n'));
+setInterval(() => {}, 10000);
+`);
+  // The CLI launcher exits before we kill the runner: its exit callback cannot supply this signal.
+  const launch = await runSonic(f, 'start', parent.task_dir, '--task', 'Synthetic query.');
+  assert.equal(launch.status, 0, launch.stderr);
+  const dir = join(f.env.HUD_HOME, 'jobs', launch.stdout.trim());
+  await until(() => fs.existsSync(join(dir, 'sonic-session.jsonl')));
+  publishParent(new Date().toISOString());
+  process.kill(cliState(dir).pid, 'SIGTERM');
+  await until(() => cliState(dir)?.state === 'failed');
+  const status = cliState(dir);
+  assert.match(status.exit_reason, /parent session restarted/);
+  assert.equal(status.runner_exit_signal, 'SIGTERM');
+  assert.equal(status.runner_exit_code, null);
+  assert.ok(status.stderr_tail.endsWith('Synthetic failure detail.\n') && status.stderr_tail.length < status.stderr_bytes);
+  assert.equal(status.output_written, true);
+  assert.equal(fs.readFileSync(join(dir, 'report.md'), 'utf8'), '# Partial sonic report\n\nFirst finding.\n\nSecond finding.\n');
+  assert.equal(fs.statSync(join(dir, 'report.md')).mode & 0o777, 0o600);
+  assert.equal(fs.existsSync(join(dir, 'done.json')), false);
 });
 
 // Model-free pi stand-in. Its TERM-resistant detached grandchild is not in the runner's group.

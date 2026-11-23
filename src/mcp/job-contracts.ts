@@ -102,6 +102,10 @@ export type JobStatus = {
   pid?: number | null;
   pid_start_time?: string | null;
   boot_id?: string;
+  parent_started_at?: string;
+  runner_exit_code?: number | null;
+  runner_exit_signal?: NodeJS.Signals | null;
+  stderr_tail?: string | null;
   stdout_bytes?: number;
   stderr_bytes?: number;
   sonic_limits?: SonicLimits;

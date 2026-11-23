@@ -13,6 +13,7 @@ import { landAttempt, activeLand } from '../mcp/land-state.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.js';
+import { missingRunnerEvidence, missingRunnerReceipt } from '../mcp/sonic-failure.js';
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
@@ -361,7 +362,8 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
         writePrivateFile(join(child.dir, jobFiles.stopRequested), '', { mkdir: false });
     }
     const waiting = !stopped && end.state === 'waiting_orchestrator';
-    writeJsonAtomic(statusFile, { ...status, ...end, ...(identity && !status.session_id && { session_id: identity.id }), ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
+    const evidence = !stopped && end.exit_reason === missingRunnerReceipt ? missingRunnerEvidence(dir, job, status) : undefined;
+    writeJsonAtomic(statusFile, { ...status, ...end, ...evidence, ...(identity && !status.session_id && { session_id: identity.id }), ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
       output_written: !waiting && fs.existsSync(join(dir, jobFiles.report)), ...(waiting ? {} : { settled_at: now, ended_at: now }),
       stdout_bytes: size(jobFiles.sonicStdout), stderr_bytes: size(jobFiles.sonicStderr) });
     const latest = readJson<Job>(jobFile);

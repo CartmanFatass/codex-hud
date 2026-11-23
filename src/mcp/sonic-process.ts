@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ensureJobWatcher } from './watch-pid.js';
 import { hasHeadlessSends, noHeadlessReport } from './headless-sends.js';
+import { missingRunnerReceipt, observeOwnExit, parentStartedAt, recordRunnerDeath } from './sonic-failure.js';
 import { sonicSession } from './sonic-session.js';
 import { briefPrompt } from './brief-prompt.js';
 import { binScript, jobFiles } from './paths.js';
@@ -57,7 +58,8 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
       const status: JobStatus = { state: 'working', slot: session ? 'headless' : 'sonic', task_dir: dir, role: job.role,
         ...(job.cli ? { harness: 'cli', agent: job.cli.agent, agent_session_id: session?.id ?? session?.initialId }
           : { harness: 'pi', session_file: session?.file, session_id: session?.id }), ...(limits && { sonic_limits: limits }),
-        pid, pid_start_time: start, boot_id: boot, started_at: new Date().toISOString() };
+        pid, pid_start_time: start, boot_id: boot, started_at: new Date().toISOString(), parent_started_at: parentStartedAt(dir, job) };
+      child.once('exit', (code, signal) => recordRunnerDeath(dir, { pid, pid_start_time: start, boot_id: boot }, code, signal));
       writeJsonPrivate(join(dir, jobFiles.status), status, { mkdir: false });
       const capture = rememberWorkerTree(dir, status);
       if (capture.issue || !capture.snapshot) throw Error(capture.issue ?? 'cannot capture sonic runner');
@@ -128,6 +130,7 @@ export async function runHeadlessTurn(dir: string, argv: string[]) {
   for await (const chunk of process.stdin) go += chunk;
   if (go !== 'start') return;
   const status = readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus;
+  observeOwnExit(dir, status);
   const agent = status.harness === 'cli' ? status.agent : undefined;
   const offset = agent ? fs.fstatSync(1).size : 0;
   if (!agent) process.umask(0o077); // Pi creates and appends its native session file.
@@ -184,7 +187,7 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     if (Date.now() >= deadline) return timeout;
-    return root !== 'gone' ? null : { state: 'failed', exit_reason: 'sonic runner exited without an exit receipt' };
+    return root !== 'gone' ? null : { state: 'failed', exit_reason: missingRunnerReceipt };
   }
   if (exit.at >= deadline) return timeout;
   const agent = status.harness === 'cli' ? status.agent : undefined;

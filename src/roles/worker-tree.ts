@@ -123,7 +123,7 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
         if (current?.start !== child.start || current.ppid !== parent.pid || readProcStat(parent.pid)?.start !== parent.start) continue;
         // detached:true creates a new session, but not a new PPID. A registered sonic
         // runner owns its entire subtree; other detached helpers still belong to this turn.
-        if (slot === 'headless' && current.session === child.pid) {
+        if (current.session === child.pid) {
           const argv = readProcCmdline(child.pid), childDir = argv?.[2];
           if (argv?.[1] === binScript('sonic-run') && childDir && dirname(childDir) === dirname(dir) &&
               fs.existsSync(join(dir, jobFiles.sonic, basename(childDir)))) continue;

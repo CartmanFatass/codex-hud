@@ -6,6 +6,7 @@ import fs, { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { binScript } from '../../dist/mcp/paths.js';
 import { reapWorkerTree, rememberWorkerTree } from '../../dist/roles/worker-tree.js';
 import { judge, procStat, withDonePrompt, workerAlive, workerHasChild } from '../../dist/mcp/cli-judge.js';
 
@@ -72,6 +73,25 @@ test('worker reap: cleans captured descendants after root exit, including detach
   assert.equal(complete, true);
   assert.ok(stamps.every(([pid, start]) => !workerAlive(pid, start)));
   assert.ok(workerAlive(unrelated.pid, procStat(unrelated.pid).start));
+});
+
+test('primary worker reap leaves a registered detached sonic runner alive', async (t) => {
+  const jobs = mkdtempSync(join(tmpdir(), 'hud-sonic-tree-'));
+  t.after(() => rmSync(jobs, { recursive: true, force: true }));
+  const dir = join(jobs, 'parent'), childDir = join(jobs, 'child');
+  fs.mkdirSync(childDir);
+  fs.mkdirSync(join(dir, '.sonic'), { recursive: true });
+  writeFileSync(join(dir, '.sonic', 'child'), '');
+  writeFileSync(join(dir, 'SESSION.txt'), 'LEFT=w4E:p2\nORCH=w4E:p1\n');
+  const script = `const child = require('node:child_process').spawn(process.execPath, process.argv.slice(1),
+    { detached: true, stdio: ['pipe', 'ignore', 'ignore'] }); process.send(child.pid); setInterval(() => {}, 10000);`;
+  const worker = spawn(process.execPath, ['-e', script, binScript('sonic-run'), childDir], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  const exited = once(worker, 'exit');
+  t.after(async () => { worker.kill('SIGKILL'); await exited; }); // Closes the runner's handshake pipe too.
+  const [pid] = await once(worker, 'message'), start = procStat(pid).start;
+  const status = { slot: 'primary', task_dir: dir, pid: worker.pid, pid_start_time: procStat(worker.pid).start };
+  assert.equal((await reapWorkerTree(dir, status, () => true, Boolean)).complete, true);
+  assert.ok(workerAlive(pid, start), 'the sonic runner belongs to its own reaper');
 });
 
 test('worker reap: a same-group, tagged sibling is not a descendant; PID reuse suppresses each signal', async (t) => {
