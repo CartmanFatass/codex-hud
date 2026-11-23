@@ -12,3 +12,5 @@
 - [ ] `claude plugin validate`, `claude plugin test` (commands and button presses on terminal and desktop) and `tests/unit/cli-act.test.mjs` pass
 
 ## Comments
+
+- 2026-11-23: claude-mod/04 narrowed the band to owner-needed items (Waiting + Accept all count). Band buttons follow that: Accept all, and opening a Waiting item; answer/retry/stop stay slash commands, not band rows.

@@ -25,7 +25,7 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - In MCP-task sessions, send one `hud_create` per job in parallel. Other sessions can batch with `hud_create({ jobs })` (each item takes single-create fields, including `brief_file` within `cwd`). Batch forms return per-item results in input order without one error blocking others; also available: `hud_tickets({ op: "update", updates })`, `hud_respond({ answers })`, and `hud_send({ messages })` (distinct sends; `jobs` stays fan-out to working jobs).
 - Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
   otherwise choose the simplest option and note it.
-- Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
+- Have the implementer run the brief's main-path tests at the end, rerunning only what a fix touched; no full suites unless requested.
 - `hud_land({ job })` lands a settled managed worktree (`idle_grace`, `done` or `closed`) through the project's
   `.hud/project.json` `land` config: takes the `main-checkout` lease, cherry-picks into a detached checkout, runs `gate`
   (one immediate rerun per red command; up to two source-worker repairs on persistent failure or conflict), folds

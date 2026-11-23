@@ -4,11 +4,11 @@
 **Owner try:** yes
 **Blocked by:** 03
 
-**What to build:** Design: oracle report j173e9f379178e359, 'Slice 2: Band + Toast'. `hud watch --mod` also emits `band` (running workers with sonic counts, open questions, unobserved non-superseded failures, to-try items from STATE/tickets/tries without git) only when it changes, and `toast` records on live report/question/failure transitions. The mod keeps the band in `$.state` and draws it on AbovePrompt with no I/O during render, 0 rows when nothing to show or a survey is up, at most 3 rows sized to bodyColumns; toasts coalesce per flush, never on catch-up.
+**What to build:** Design base: oracle report j173e9f379178e359, 'Slice 2: Band + Toast', narrowed by spec §4 (22.28, attention first; 2026-11-23). The band is for the owner, not the main session: it shows only what needs the owner now, otherwise nothing. `hud watch --mod` also emits a `band` record (only when it changes) with: STATE `Waiting for the owner` items for this project (first item text + count), and the count of slices waiting for the owner's Accept all (same count as the Project Inbox hub). No running-worker counts (the statusline has them), no job failures or worker questions (the main session handles those). The mod keeps the band in `$.state` and draws it on AbovePrompt with no I/O during render: 0 rows when nothing needs the owner or a survey is up, at most 2 rows sized to bodyColumns. One toast only when a new owner-needed item appears (never on catch-up, one per flush).
 
-- [ ] Band shows nothing when idle/clean or `hasSurvey`; otherwise running/questions/failures/to-try within bodyColumns and ≤3 rows, read from `$.state` only
-- [ ] Band states agree with jobRow, failure observation, supersession and try marks in unit tests; `hud_read` of a job clears it from the band
-- [ ] Toasts fire on live report/question/failure transitions, one per flush, none on initial catch-up
+- [ ] Band is empty when nothing needs the owner or `hasSurvey`; otherwise ≤2 rows within bodyColumns from `$.state` only, EN/ZH per panel language
+- [ ] Band items agree with STATE Waiting (incl. `(waits on …)` drop rule) and the Inbox Accept all count in unit tests
+- [ ] A toast fires only when a new owner-needed item appears, once per flush, none on initial catch-up
 - [ ] `claude plugin validate` / `claude plugin test` pass on terminal, desktop, vscode and mobile surfaces
 
 ## Comments
