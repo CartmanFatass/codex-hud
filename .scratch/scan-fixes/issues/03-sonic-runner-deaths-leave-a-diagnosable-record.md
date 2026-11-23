@@ -12,3 +12,5 @@
 - [ ] Unit tests with a synthetic aborted runner
 
 ## Comments
+
+Likely cause (carbon review j91fa6e1950156406 #6): `src/roles/worker-tree.ts:126` exempts a child `sonic-run` session from the worker-tree reap only when `slot === 'headless'`; a tab worker's (`primary`) reap SIGTERMs live sonic children. Fix that first and confirm with a test; also check inherited heap caps (`scripts/dist-lock.mjs:48-52`) do not reach child pi processes (`src/mcp/sonic-process.ts:24`).

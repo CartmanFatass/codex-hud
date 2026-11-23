@@ -12,3 +12,5 @@
 - [ ] Unit tests
 
 ## Comments
+
+Also (carbon #6, fable #8): record the attempted agent args in launch diagnostics (src/mcp/dispatch/harness-cli.ts:184-187) and treat herdr `invalid_agent_argument` as a before-input failure (src/mcp/dispatch/proc.ts:56-63,138) so it falls through to the next place or the prompt-file fallback.
