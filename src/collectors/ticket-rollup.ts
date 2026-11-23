@@ -65,10 +65,11 @@ export class TicketRollup {
       const ticketPath = `.scratch/${feature}/issues/${basename(t.path)}`;
       const fileState = t.state;
       if (t.state === 'done' || t.state === 'dropped') {
-        if (t.state === 'done' && !slice && t.commit) {
+        if (t.state === 'done' && !slice && (t.commit || t.recordedLanding)) {
           const commit = gitCommit?.sha ?? t.commit;
           running.push({ id: alias ?? `${feature.toUpperCase()}-${t.number}`, state: 'accepted', milestone: milestoneFor(feature),
-            text: `${t.title} (${t.commit.slice(0, 8)})`, commit, ...(gitCommit ? { at: gitCommit.at } : {}), ticketPath, path: t.path });
+            text: commit ? `${t.title} (${commit.slice(0, 8)})` : t.title, ...(commit ? { commit } : {}),
+            ...(gitCommit ? { at: gitCommit.at } : {}), ticketPath, path: t.path });
         }
         continue;
       }

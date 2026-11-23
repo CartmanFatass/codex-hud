@@ -15,9 +15,19 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { takeLease } from '../../dist/roles/lease.js';
 import { procStat, isProcAlive } from '../../dist/utils/proc.js';
 import { landTask } from '../../dist/mcp/land.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { landedNewest } from '../../dist/render/project-view.js';
 
+const EMPTY_BOARD = { revision: 'synthetic', lanes: [], workers: [], decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: '' } };
 const job = 'j0000000000000123';
 const jobDir = (f, id = job) => join(f.home, 'jobs', id);
+function assertLandingRecord(f, ticket, replayBase, landed) {
+  const body = f.git(f.main, 'show', `base:${ticket}`);
+  const record = body.match(/^- Landed in this commit \(replay base ([0-9a-f]+)\); gate 1\/1 passed\.$/m);
+  assert.ok(record, body);
+  assert.equal(record[1], replayBase);
+  assert.equal(f.git(f.main, 'log', '--first-parent', '--format=%H', '-S', record[0], `${record[1]}..base`, '--', ticket), landed);
+}
 function settle(f, id, text) {
   writeFixtureFile(join(jobDir(f, id), 'report.md'), text);
   writeFixtureFile(join(jobDir(f, id), 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: new Date().toISOString() }));
@@ -287,9 +297,8 @@ for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty l
   f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed records');
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('after[1]'), 10000);
-  const { landed_sha, tested_sha } = f.flowState(flow);
+  const { landed_sha, tested_sha, base_sha } = f.flowState(flow);
   assert.notEqual(landed_sha, tested_sha);
-  assert.ok(f.git(f.main, 'show', `${landed_sha}:${ticket}`).includes(`Landed ${tested_sha}; gate 1/1`));
   const other = '.scratch/feature/issues/02-unrelated.md';
   fs.writeFileSync(join(f.main, other), '# 02: Unrelated ticket\n');
   f.git(f.main, 'add', other); f.git(f.main, 'commit', '-qm', 'claim unrelated ticket');
@@ -304,6 +313,7 @@ for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty l
   assert.equal(done.records_sha, undefined);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), advanced);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD^'), landed_sha);
+  assertLandingRecord(f, ticket, base_sha, landed_sha);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), dirty ? f.base_head : advanced);
   assert.equal(fs.existsSync(f.worktree), dirty);
 });
@@ -575,7 +585,7 @@ for (const [label, ownerTryLine, expectedStatus] of [
   ['omitted', '', 'ready-for-human'],
   ['yes', '**Owner try:** yes\n', 'ready-for-human'],
   ['no', '**Owner try:** no\n', 'done'],
-]) test(`land folds ${expectedStatus} and sha into one commit without STATE.md change (owner_try ${label})`, async t => {
+]) test(`land folds ${expectedStatus} and a resolvable record into one commit without STATE.md change (owner_try ${label})`, async t => {
   const f = await checkout(t, ['true']), dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
   // Squash the worker branch to one commit so we verify one commit on main per landed slice.
   f.git(f.worktree, 'reset', '--soft', f.base_head);
@@ -584,9 +594,11 @@ for (const [label, ownerTryLine, expectedStatus] of [
   fs.writeFileSync(join(dir, 'report.md'), 'Report'); writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
   const initialState = '## Slices\n\n<!-- Row format -->\n\n- try · SAMPLE · SAMPLE-01 · Existing\n';
   fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, ticket), `# 01: Example ticket\n**Status:** ready-for-agent\n${ownerTryLine}- [ ] first\n- [ ] second\n\n## Comments\n- [ ] preserve me\n`);
+  fs.writeFileSync(join(f.main, ticket), `# 01: Example ticket\n**Status:** ready-for-agent\n${ownerTryLine}**Blocked by:** none\n- [ ] first\n- [ ] second\n\n## Comments\n- [ ] preserve me\n`);
+  fs.writeFileSync(join(f.main, '.scratch/feature/issues/02-legacy.md'),
+    `# 02: Legacy ticket\n**Status:** ready-for-human\n**Blocked by:** none\n\n## Comments\n- Landed ${f.base_head.slice(0, 8)}; gate 1/1 passed.\n`);
   fs.writeFileSync(join(f.main, 'STATE.md'), initialState);
-  f.git(f.main, 'add', ticket, 'STATE.md'); f.git(f.main, 'commit', '-qm', 'seed ticket and state');
+  f.git(f.main, 'add', '.scratch', 'STATE.md'); f.git(f.main, 'commit', '-qm', 'seed tickets and state');
   const beforeBase = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.main, 'owner'), 'unrelated staged edit'); f.git(f.main, 'add', 'owner');
   const { flow } = await f.call('hud_land', { job });
@@ -600,9 +612,13 @@ for (const [label, ownerTryLine, expectedStatus] of [
   assert.equal(f.git(f.main, 'diff', '--cached', '--name-only'), 'owner');
   assert.deepEqual(f.git(f.remote, 'diff', '--name-only', beforeBase, 'base').split('\n').sort(), [ticket, 'tracked']);
   const body = f.git(f.remote, 'show', `base:${ticket}`);
-  assert.match(body, new RegExp(`\\*\\*Status:\\*\\* ${expectedStatus}\\n${ownerTryLine ? '\\*\\*Owner try:\\*\\* (?:yes|no)\\n' : ''}- \\[x\\] first\\n- \\[x\\] second[\\s\\S]*- \\[ \\] preserve me`));
-  assert.ok(body.includes(`Landed ${done.tested_sha}; gate 1/1`));
+  assert.match(body, new RegExp(`\\*\\*Status:\\*\\* ${expectedStatus}\\n${ownerTryLine ? '\\*\\*Owner try:\\*\\* (?:yes|no)\\n' : ''}\\*\\*Blocked by:\\*\\* none\\n- \\[x\\] first\\n- \\[x\\] second[\\s\\S]*- \\[ \\] preserve me`));
+  assertLandingRecord(f, ticket, beforeBase, done.landed_sha);
   assert.equal(f.git(f.remote, 'show', 'base:STATE.md') + '\n', initialState);
+  const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
+  const latest = landedNewest(project).map(({ r }) => r);
+  assert.equal(latest.find(r => r.id === 'FEATURE-01')?.commit, done.landed_sha);
+  assert.equal(latest.find(r => r.id === 'FEATURE-02')?.state, 'try');
 });
 
 test('land cleanup removes clean source worktree when picked patch differs from source commit', async t => {
@@ -711,7 +727,7 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
   assert.equal(f.git(f.remote, 'rev-list', '--count', `${movedBase}..base`), '2');
   assert.equal(f.git(f.main, 'merge-base', movedBase, state.landed_sha), movedBase);
   assert.match(f.git(f.remote, 'show', 'base:.scratch/other/issues/02-unrelated.md'), /Unrelated/);
-  assert.ok(f.git(f.remote, 'show', `base:${ticket}`).includes(`Landed ${state.tested_sha}; gate 1/1`));
+  assertLandingRecord(f, ticket, movedBase, state.landed_sha);
   assert.match(f.git(f.remote, 'show', 'base:STATE.md'), /Milestone boundary note/);
   assert.doesNotMatch(f.git(f.remote, 'show', 'base:STATE.md'), /FEATURE-01/);
   assert.equal(fs.readFileSync(join(f.main, 'after-ran'), 'utf8').trim(), f.main);

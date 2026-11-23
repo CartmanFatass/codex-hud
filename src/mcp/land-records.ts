@@ -9,7 +9,7 @@ import type { Job } from './job-contracts.js';
 import { jobFiles } from './paths.js';
 import { landedTicket } from './local-tickets.js';
 
-export async function recordLanding(root: string, dir: string, sha: string, gates: number, identity: string[]) {
+export async function recordLanding(root: string, dir: string, replayBase: string, gates: number, identity: string[]) {
   const job = readJsonFile(join(dir, jobFiles.job)) as Job;
   const ticket = typeof job.ticket === 'string' && /^([a-z0-9-]+)\/(\d+)$/.exec(job.ticket);
   if (!ticket) return;
@@ -23,7 +23,8 @@ export async function recordLanding(root: string, dir: string, sha: string, gate
   if (!st.isFile() || fs.realpathSync(full) !== full || await git(root, [...filters, 'status', '--porcelain', '--', path]))
     throw Error(`Landing record is redirected or changed by the gate: ${path}`);
   const original = fs.readFileSync(full, 'utf8');
-  const updated = landedTicket(original, Number(ticket[2]), `Landed ${sha}; gate ${gates}/${gates} passed.`);
+  // Amending changes the tip SHA; the ticket line itself identifies the commit that introduces it.
+  const updated = landedTicket(original, Number(ticket[2]), `Landed in this commit (replay base ${replayBase}); gate ${gates}/${gates} passed.`);
   if (original === updated) return;
   writeFileAtomic(full, updated, st.mode & 0o777);
   await git(root, [...identity, ...filters, 'commit', '--amend', '--no-edit', '--no-gpg-sign', '--only', '--', path]);

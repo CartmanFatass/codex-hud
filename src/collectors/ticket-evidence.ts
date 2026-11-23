@@ -18,12 +18,13 @@ export function ticketFileEvidence(text: string) {
     done: b[1].toLowerCase() === 'x', text: b[2].replace(/\s+/g, ' ').trim(),
   }));
   const checked = items.filter(i => i.done).length;
-  const commit = [...comments.matchAll(/^[ \t]*[-*][ \t]+Landed:?(?:[ \t]+(?:in|at))?[ \t]+`?([0-9a-f]{7,40})`?\b/gim)].at(-1)?.[1];
+  const record = [...comments.matchAll(/^[ \t]*[-*][ \t]+Landed:?[ \t]+(?:in this commit \(replay base (?:[0-9a-f]{40}|[0-9a-f]{64})\)|(?:(?:in|at)[ \t]+)?`?([0-9a-f]{7,40})`?\b)/gim)].at(-1);
+  const commit = record?.[1], recordedLanding = !!record;
   const allChecked = items.length > 0 && checked === items.length;
   const readyForHuman = /^ready-for-human\b/i.test(status ?? '');
   const landed = /^(wontfix|dropped)\b/i.test(status ?? '') ? 'dropped'
     : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') ? 'done'
-    : /^try\b/i.test(status ?? '') || (readyForHuman && (!!commit || allChecked)) ? 'try'
+    : /^try\b/i.test(status ?? '') || (readyForHuman && (recordedLanding || allChecked)) ? 'try'
     : !readyForHuman && allChecked ? 'done' : undefined;
-  return { status, blocked, items, checked, landed, ...(commit ? { commit } : {}) } as const;
+  return { status, blocked, items, checked, landed, recordedLanding, ...(commit ? { commit } : {}) } as const;
 }

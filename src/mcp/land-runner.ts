@@ -270,7 +270,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     checkCancel(); await checkSource();
     startStep('records');
     const tested = f.tested_sha!, base = f.base_sha!;
-    let landed = (await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who)) ?? tested;
+    let landed = (await recordLanding(integration, join(home, 'jobs', f.job), base, c.gate.length, who)) ?? tested;
     endStep();
     checkCancel(); startStep('fast-forward');
     const touched = async (from: string, to: string) => [...new Set([
@@ -310,7 +310,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
           await command(integration, 'git', [...SAFE_GIT_ARGS, ...filters, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
         }
         const replayed = await head(integration);
-        landed = (await recordLanding(integration, join(home, 'jobs', f.job), tested, c.gate.length, who)) ?? replayed;
+        landed = (await recordLanding(integration, join(home, 'jobs', f.job), current, c.gate.length, who)) ?? replayed;
         if (landed !== replayed && pathsOverlap(await touched(replayed, landed), mainPaths))
           throw Error('Main checkout is not at the recorded base tip');
       } catch (e) {

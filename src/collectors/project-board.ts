@@ -48,7 +48,7 @@ export interface ActiveJob {
 export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
   number: string; title: string; originalTitle?: string; path: string; at: number; status: string;
-  checked: number; total: number; items: TicketItem[]; comment?: string; commit?: string;
+  checked: number; total: number; items: TicketItem[]; comment?: string; commit?: string; recordedLanding?: boolean;
   blockers: string[]; state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { role: string; state: string; at?: number; created: number };
 }
@@ -256,14 +256,14 @@ export class ProjectCollector {
         const ticket = this.body(path, (buffer, truncated, stat): ProjectTicket | null => {
           if (truncated) return null;
           const text = buffer.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
-          const { status, blocked, items, checked, landed, commit } = ticketFileEvidence(text);
+          const { status, blocked, items, checked, landed, commit, recordedLanding } = ticketFileEvidence(text);
           if (!heading || !status || blocked === undefined) return null;
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
           const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
           return { ...heading, path, at: stat.mtimeMs, status,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
-            ...(commit !== undefined ? { commit } : {}),
+            ...(commit !== undefined ? { commit } : {}), ...(recordedLanding ? { recordedLanding } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
             state: landed ?? (/^claimed\b/i.test(status) ? 'working' : 'ready') };
         }, st ?? null);
