@@ -261,7 +261,7 @@ test('hud_sonic start accepts timeout_s, documents it for wait, and refuses wait
   assert.match(JSON.parse(conflict.content[0].text).error, /\bwait\b/);
 });
 
-test('a working pi parent gets native sonic checkpoint and ready notices without polling or collecting', { timeout: 45000 }, async (t) => {
+test('a working pi parent gets native sonic notices unless already collecting the result', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic pi parent.' });
@@ -271,11 +271,12 @@ test('a working pi parent gets native sonic checkpoint and ready notices without
     import { join } from 'node:path';
     import assert from 'node:assert/strict';
     process.argv.push('--hud-worker-tools');
-    const tools = new Map(), notice = Promise.withResolvers(), checkpoint = Promise.withResolvers();
+    const tools = new Map(), notice = Promise.withResolvers(), checkpoint = Promise.withResolvers(), sent = [];
     await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); },
-      sendMessage(message, options) { notice.resolve({ message, options }); } });
+      sendMessage(message, options) { sent.push(message); notice.resolve({ message, options }); } });
     const sonic = tools.get('hud_sonic');
-    const { details: { job } } = await sonic.execute('start', { task: ${JSON.stringify(fs.readFileSync(task, 'utf8'))} },
+    const childTask = ${JSON.stringify(fs.readFileSync(task, 'utf8'))};
+    const { details: { job } } = await sonic.execute('start', { task: childTask },
       undefined, undefined, { ui: { notify: checkpoint.resolve } });
     const dir = join(process.env.HUD_HOME, 'jobs', job);
     await tools.get('hud_progress').execute('unrelated', { message: 'Parent still editing.' });
@@ -292,6 +293,16 @@ test('a working pi parent gets native sonic checkpoint and ready notices without
     assert.equal(existsSync(join(dir, 'sonic-collected')), false);
     const { details } = await sonic.execute('collect', { wait: [job] });
     assert.equal(details.reports[0].body, 'Synthetic implementation report.');
+
+    for (const explicit of [true, false]) {
+      const { details: { job: next } } = await sonic.execute('start-waited', { task: childTask },
+        undefined, undefined, { ui: { notify() {} } });
+      const child = join(process.env.HUD_HOME, 'jobs', next);
+      const collecting = sonic.execute('wait', explicit ? { wait: [next] } : {});
+      writeFileSync(join(child, 'release-sonic'), '');
+      assert.deepEqual((await collecting).details.reports.map(report => report.id), [next]);
+      assert.deepEqual(sent, [message], 'collection takes precedence over the ready notice');
+    }
 
     process.env.HUD_JOB_DIR = dir;
     const childTools = [];
@@ -663,7 +674,8 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   assert.match(description, /one-line plain summary.*code roles list the files changed/);
   assert.deepEqual(inputSchema.required, ['text', 'turn']);
   assert.equal(inputSchema.additionalProperties, false);
-  assert.equal(inputSchema.properties.summary.maxLength, 320);
+  assert.equal(inputSchema.properties.summary.maxLength, 160);
+  assert.match(inputSchema.properties.summary.description, /up to 160 code points/);
   assert.equal(inputSchema.properties.files.maxItems, 50);
   assert.equal(inputSchema.properties.files.items.maxLength, 260);
   const finish = (text, turn, fields) => call('hud_report', { text, turn, ...fields });

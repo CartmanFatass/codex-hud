@@ -61,12 +61,15 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
   assert.deepEqual(createTool.inputSchema.properties.jobs.items, { type: 'object' });
   assert.ok(Buffer.byteLength(JSON.stringify(createTool), 'utf8') < 3300, 'hud_create schema stays compact');
 
-  const rejected = (role) => ({ ok: false, code: 'invalid_arguments',
-    error: `Role "${role}" runs as configured in its role file and Control; use general to choose a model for one job.` });
-  for (const [role, fields] of [['imp', { preset: 'astra' }], ['reviewer', { model: 'synthetic/one' }]]) {
+  const rejected = (role, fields) => ({ ok: false, code: 'invalid_arguments',
+    error: `Role "${role}" does not accept placement fields: ${fields}. It runs as configured in its role file and Control; use general for per-job placement.` });
+  for (const [role, fields, refused] of [
+    ['imp', { preset: 'astra' }, 'preset'],
+    ['reviewer', { model: 'synthetic/one', pi_args: ['--thinking=low'], lens: false }, 'model, pi_args'],
+  ]) {
     const result = await f.call('hud_create', { role, task: 'No launch.', ...fields });
     if (role === 'imp') assert.ok(result.hint, 'first create supplies the delivery hint once');
-    assert.deepEqual(withoutHint(result), rejected(role));
+    assert.deepEqual(withoutHint(result), rejected(role, refused));
   }
   assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
 
@@ -83,8 +86,8 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
   });
   assert.equal(batch.jobs.length, 6);
   const [j1, j2, bad, badOn, badThinking, j3] = batch.jobs;
-  assert.deepEqual(badOn, rejected('imp'));
-  assert.deepEqual(badThinking, rejected('reviewer'));
+  assert.deepEqual(badOn, rejected('imp', 'on'));
+  assert.deepEqual(badThinking, rejected('reviewer', 'thinking'));
   assert.match(j1.job, /^j[0-9a-f]{16}$/);
   assert.match(j2.job, /^j[0-9a-f]{16}$/);
   assert.equal(bad.ok, false);
@@ -150,7 +153,7 @@ test('hud_tickets updates applies batch updates in input order with per-item err
   assert.equal(res.updates[2].feature, 'feat-b');
   assert.equal(res.updates[3].ok, true);
   assert.equal(res.updates[4].ok, false);
-  assert.match(res.updates[4].error, /unknown acceptance item: 9/);
+  assert.equal(res.updates[4].error, 'unknown acceptance item: 9 (valid range: 1-1)');
 
   const a1 = fs.readFileSync(res.updates[0].path, 'utf8');
   assert.match(a1, /\*\*Status:\*\* ready-for-human/);

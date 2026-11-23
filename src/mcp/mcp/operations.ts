@@ -481,7 +481,11 @@ export async function call(name: string, args: Args, scan: JobScan): Promise<unk
     }
     const roles = [...found.roles().values()].map((role) => {
       const assignment = found.assignment(role, now, undefined, routing);
-      return detail ? assignment : compactAssignment(assignment);
+      if (!detail) return compactAssignment(assignment);
+      return role.role === 'imp' && assignment.routing ? {
+        ...assignment,
+        routing_hint: 'Auto-route chooses these presets; do not pass them to hud_create.',
+      } : assignment;
     });
     if (!session.taskClient && !session.callerHarness && callerPane) rememberCallerHarness((await paneInfo(callerPane))?.agent);
     const watcherAlive = !session.taskClient && !!callerPane && watching(callerPane, hudHome);

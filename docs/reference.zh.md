@@ -194,6 +194,8 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
 Sonic 以非交互方式运行一次 pi 查询，不打开工作标签页或窗格。主会话通过 `hud_create` 发起，工作任务通过 `hud_sonic` 发起并收取结果。两者都保留普通任务目录：`stdout.jsonl` 和 `stderr.log` 记录 pi 的输出，`report.md` 通常是已声明的报告。若运行器退出却未留下退出回执，`STATUS.json` 会记录可确认的退出码或信号、标准错误日志的末尾，以及是否观察到父会话重启。若尚无报告且会话末尾有助手文本，HUD 会将该文本写入 `report.md` 并标记为部分报告；任务状态仍为失败。Sonic 可以发布进度和获取租约，但不能提问或接收后续消息，也没有空闲宽限期。sonic 角色文件可设置 `check_s`（默认 600）、`stall_s`（180）和 `max_s`（1800），均为正整数秒；`hud_roster({detail:true})` 显示生效值。HUD 在每个检查点停止陷入循环的查询（`looping`），否则发布一条进度并让同一个 pi 进程继续运行。若 `stall_s` 内标准输出未增长且没有工作任务进度，则以 `stalled` 停止；达到硬上限则以 `timeout` 停止。这些失败会保留已有的标准输出和最新进度。用 `hud_create({role:"sonic", retry_of:job})` 重试已停止的查询。新任务以一条说明停止原因的简短消息，从原任务 `sonic-session.jsonl` 的私有副本继续。如果会话不可用或 pi 在接收输入前拒绝打开它，pi 将收到原简报，以及未完成报告末尾最多 8 KiB 的内容（没有报告时取标准输出）。
 
+Sonic 子任务就绪时，Pi 会通知工作者；如果同一会话的 `hud_sonic` 等待调用已收取报告，则不再发送通知。
+
 Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。用 `hud_create` 派发 sonic 或用 `hud_sonic` 启动子任务时，都不能覆盖思考级别。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。
 
 **Imp 自动分流**（`impRouting`，设置 → 模型，默认关闭）独立于「模型文字」，使用一次决策 API 判断。生效的 `imp` 角色文件必须定义 `routing`，不会从低优先级角色文件继承该块。例如：
@@ -207,7 +209,7 @@ Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不�
 }
 ```
 
-只提供文件中声明的档位。`light` 和 `hard` 指定角色预设；`standard` 不带 `preset`，沿用「控制」中当前选择的预设。分流会发送任务简报的前 4000 字符、指定本地工单（`feature/NN`，最多 4 KiB/4000 字符）、最多 32 个 `context_files` 的相对文件名（每个最多 512 字符）和字节数，以及档位和运行方式的用途说明。不发送上下文正文、常驻简报、既有报告、预设或模型 ID。所选的用途说明组成一行理由。
+只提供文件中声明的档位。`light` 和 `hard` 的角色预设由自动分流选择；详细名册列出这些预设仅供参考，不能作为 `imp` 的 `hud_create` 参数。`standard` 不带 `preset`，沿用「控制」中当前选择的预设。分流会发送任务简报的前 4000 字符、指定本地工单（`feature/NN`，最多 4 KiB/4000 字符）、最多 32 个 `context_files` 的相对文件名（每个最多 512 字符）和字节数，以及档位和运行方式的用途说明。不发送上下文正文、常驻简报、既有报告、预设或模型 ID。所选的用途说明组成一行理由。
 
 所选档位无可用位置时回退到 `standard`；决策失败、超时或设置关闭时，使用当前预设并打开标签页。自动选择标准档的无界面任务若在输入提交前启动失败，会尝试用标签页运行当前预设。显式指定 `mode: "tab"` 或 `mode: "headless"` 优先，此时只选择档位。自动无标签页运行仅用于支持该模式的可继续位置（pi、Claude Code 或 Antigravity），否则打开标签页。溢出到 `general` 时保留 `imp` 的运行链。`retry_of` 保留档位，不再请求决策；轻量任务的落地修复改用标准档。任务回执、创建结果和单任务 `hud_read` 返回 `route`，包括 `tier`、`mode`、`reason`、`source` 以及适用时的 `fallback` 或 `mode_reason`；任务卡也显示分流及原因：分栏列表行和详情标题上有档位和无界面标记（经典首页行不带），详情里有一行 `分流：轻量 · 无界面 — <原因>`。
 
@@ -278,7 +280,7 @@ MCP 重启后，同一调用方仍可在任务有效期内查询已有的工作�
 `watcher_alive` 或 `hud watch` 提示。
 
 `hud_tickets` 在各客户端提供本地工单方法与操作（仅主会话可写，拒绝改写 GitHub 镜像）：默认 `guide` 返回方法模板；`ready` 返回无阻塞且无活动任务的 `ready-for-agent` 工单，格式为 `tickets: [{ticket, path, title, what}]`。将 `ticket`（`feature/NN`）及 `path`（作为 `brief_file`）传给 `hud_create`；活动任务在项目面板和首页进度中即算认领，无需提交认领记录，`hud_land` 将工单更新并入落地提交（`**Owner try:** no` 记为 `done`，`yes` 或省略记为 `ready-for-human`），不再追加 `STATE.md`。
-`add` 按 `feature` 和 `tickets` 批量建单（可选 `owner_try` 布尔值，在状态行下写入 `**Owner try:** yes` 或 `no`）；`update` 可单条更新（`feature`、`ticket` 及 `status`／`owner_try`／`tick`／`blocked_by`），也可传 `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` 按输入顺序批量更新并返回逐项结果（每项可覆盖 `feature`，单项错误不阻塞其余项）；`sync` 执行 `hud tickets sync`。
+`add` 按 `feature` 和 `tickets` 批量建单（可选 `owner_try` 布尔值，在状态行下写入 `**Owner try:** yes` 或 `no`）；`update` 可单条更新（`feature`、`ticket` 及 `status`／`owner_try`／`tick`／`blocked_by`），也可传 `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` 按输入顺序批量更新并返回逐项结果（每项可覆盖 `feature`，单项错误不阻塞其余项）；`sync` 执行 `hud tickets sync`。验收项编号无效时会提示有效范围，整条工单更新都不会写入，即使同一次更新中的其他编号有效。
 
 其他客户端的 MCP 工具响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
 与 `hud watch` 用同一个 `jobRow` 推导任务状态，所以结论一致。`hud watch` 默认只打印需要关注的事件，如提问、结算、受阻或新的静置原因；

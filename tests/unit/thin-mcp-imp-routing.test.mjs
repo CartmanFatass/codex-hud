@@ -48,6 +48,19 @@ test('Imp routing is an opt-in Models setting and resets to off', () => {
   assert.equal(resetSettingsGroup({ ...defaultSettings(), impRouting: true }, 'Models').impRouting, false);
 });
 
+test('detailed imp roster labels routing presets as auto-route only', async t => {
+  const f = await fixture(t);
+  const imp = roster => roster.roles.find(({ role }) => role === 'imp');
+  const detail = imp(await f.call('hud_roster', { detail: true }));
+  assert.equal(detail.routing.hard.preset, 'astra');
+  assert.match(detail.routing_hint, /Auto-route chooses .* do not pass .* hud_create/);
+  assert.ok(!detail.accepts_options.includes('preset'));
+  const compact = imp(await f.call('hud_roster'));
+  assert.equal(compact.routing, undefined);
+  assert.equal(compact.routing_hint, undefined);
+  assert.equal((await create(f, 'Synthetic task.', { preset: detail.routing.hard.preset })).code, 'invalid_arguments');
+});
+
 test('one-file brief chooses light/headless and cross-module brief chooses hard/tab; inputs are bounded metadata', async t => {
   const { f, api } = await setup(t, body => JSON.stringify(body).includes('Cross-module rewrite')
     ? answer(body, 'hard', 'tab') : answer(body, 'light', 'headless'));

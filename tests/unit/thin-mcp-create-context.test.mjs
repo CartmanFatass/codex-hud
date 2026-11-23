@@ -450,14 +450,20 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   ]);
   fs.appendFileSync(first, '\n- [ ] Synthetic comment, not acceptance.\n');
   const original = fs.readFileSync(first, 'utf8');
-  await refusedTicketCall({ op: 'update', ticket: 1, status: 'wontfix', tick: [1, 3] }, /unknown acceptance item: 3/);
-  assert.equal(fs.readFileSync(first, 'utf8'), original);
+  for (const n of [3, 0]) {
+    await refusedTicketCall({ op: 'update', ticket: 1, status: 'wontfix', tick: [1, n] },
+      new RegExp(`unknown acceptance item: ${n} \\(valid range: 1-2\\)`));
+    assert.equal(fs.readFileSync(first, 'utf8'), original);
+  }
   assert.deepEqual(await ticketCall({ op: 'update', ticket: 1, status: 'ready-for-human', tick: [2] }), {
     ok: true, number: 1, path: first,
   });
   assert.equal(fs.readFileSync(first, 'utf8'), original.replace('ready-for-agent', 'ready-for-human').replace('- [ ] Data is visible.', '- [x] Data is visible.'));
   assert.deepEqual((await ticketCall({ op: 'add', tickets: [{ ...drafts[0], blocked_by: [2] }] })).tickets,
     [{ number: 3, path: join(issues, '03-first-slice.md') }]);
+
+  const { tickets: [{ number: noChecklist }] } = await ticketCall({ op: 'add', tickets: [{ ...drafts[0], acceptance: [] }] });
+  await refusedTicketCall({ op: 'update', ticket: noChecklist, tick: [1] }, /unknown acceptance item: 1 \(no acceptance items\)/);
 
   const cross = `${feature}/02`;
   await refusedTicketCall({ op: 'add', feature: 'other', tickets: [{ ...drafts[0], blocked_by: [`${feature}/99`] }] }, /unknown blocked_by/);
@@ -1002,18 +1008,18 @@ test('thin launch options reject Jev roles and invalid pi values before dispatch
 test('thin create rejects model or thinking overrides for Jev roles', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   enableOptionalRoles(f, 'pro');
-  for (const override of [{ model: 'synthetic/other' }, { thinking: 'max' }]) {
+  for (const [field, value] of [['model', 'synthetic/other'], ['thinking', 'max']]) {
     assert.deepEqual(
       withoutHint(await f.call('hud_create', {
         role: 'pro',
         request_key: 'jev-override',
         task: 'Synthetic question.',
-        ...override,
+        [field]: value,
       })),
       {
         ok: false,
         code: 'invalid_arguments',
-        error: 'Role "pro" runs as configured in its role file and Control; use general to choose a model for one job.',
+        error: `Role "pro" does not accept placement fields: ${field}. It runs as configured in its role file and Control; use general for per-job placement.`,
       }
     );
   }

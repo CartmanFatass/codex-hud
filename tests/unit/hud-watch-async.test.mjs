@@ -155,6 +155,42 @@ process.exitCode = 1;`);
   assert.equal(f.log().match(/worker-tree snapshot unresolved/g)?.length, 1);
 });
 
+test('unresolved worker-tree warnings are logged once per job across changing reap outcomes and watcher restart', { timeout: 10000 }, async (t) => {
+  const f = fixture(t);
+  const root = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  const start = procStat(root.pid).start;
+  await once(root, 'exit');
+  const dirs = Array.from({ length: 2 }, () => {
+    const dir = f.job(closed());
+    save(dir, 'STATUS.json', { ...status(dir), slot: 'primary', task_dir: dir, pid: root.pid, pid_start_time: start });
+    writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=synthetic-tab\nLEFT=synthetic-worker\nORCH=synthetic-caller\n');
+    fs.mkdirSync(join(dir, 'worker-tree.json')); // A read error keeps cleanup retryable.
+    return dir;
+  });
+  reapStub(f, `if (fs.existsSync(join(dir, 'worker-tree.json'))) process.exitCode = fs.existsSync(join(dir, 'change-outcome')) ? 2 : 1;`);
+  const retry = "process.env.HUD_WATCH_CLI_CHECK_MS = '50';";
+  const log = () => text(join(f.home, 'watch.log'));
+  const count = dir => log().split('\n').filter(line => line.includes(`reap ${basename(dir)} `) && line.includes('worker-tree snapshot unresolved')).length;
+  const changed = dir => `reap ${basename(dir)} state=closed exit=2`;
+  const first = f.start(retry);
+  await until(() => dirs.every(dir => count(dir) >= 1));
+  for (const dir of dirs) fs.writeFileSync(join(dir, 'change-outcome'), '');
+  await until(() => dirs.every(dir => log().includes(changed(dir))));
+  assert.deepEqual(dirs.map(count), [1, 1]);
+  first.child.kill('SIGTERM');
+  assert.deepEqual(await first.exited, [0, null]);
+
+  const second = f.start(retry);
+  await until(() => {
+    const current = log();
+    return dirs.every(dir => current.lastIndexOf(changed(dir)) > current.lastIndexOf('start pid='));
+  });
+  for (const dir of dirs) fs.rmdirSync(join(dir, 'worker-tree.json'));
+  assert.deepEqual(await second.exited, [0, null]);
+  assert.ok(dirs.every(dir => reaped(dir) && attempts(f, dir) >= 3));
+  assert.deepEqual(dirs.map(count), [1, 1]);
+});
+
 test('overlapping watcher startups publish only one ready PID', async (t) => {
   const f = fixture(t);
   f.job({ state: 'working' });

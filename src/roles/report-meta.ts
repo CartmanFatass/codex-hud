@@ -5,6 +5,7 @@ import { reportSignature } from './cli-turn.js';
 import { jobFiles } from '../mcp/paths.js';
 
 const MAX_META_BYTES = 16 * 1024;
+export const REPORT_LINE_LIMIT = 160;
 const signatures = new Map<string, { stamp: string; sig: string | null }>();
 
 /** The existing mtime:size:sha256 signature, shared with report-bound checks. */
@@ -35,7 +36,7 @@ function plainLine(text: string): string {
   const line = text.replace(ansi, '').replace(/[\r\n\u2028\u2029]+/gu, ' ').replace(controls, '')
     .trim().replace(/\s+/gu, ' ').replace(/^(?:#{1,6}|[-*•]) /u, '');
   const points = [...line];
-  return points.length > 160 ? `${points.slice(0, 159).join('')}…` : line;
+  return points.length > REPORT_LINE_LIMIT ? `${points.slice(0, REPORT_LINE_LIMIT - 1).join('')}…` : line;
 }
 
 export function normalizeReportMeta({ summary, files, skip_checks_reason }: { summary?: unknown; files?: unknown; skip_checks_reason?: unknown }): ReportMetaFields {

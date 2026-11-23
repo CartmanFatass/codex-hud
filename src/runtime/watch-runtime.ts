@@ -119,6 +119,7 @@ export function recordWarning(
 }
 
 const warnings = new Map<string, number>();
+const snapshotWarnings = new Set<string>();
 function warn(kind: string, message: string) {
   if (!recordWarning(warnings, kind)) return;
   log(message);
@@ -316,6 +317,18 @@ function startWorktree(id: string, file: string, job: Job, sweep = false) {
   });
   inFlightWorktrees.set(id, promise);
 }
+function snapshotIssueForLog(id: string, dir: string, issue?: string) {
+  if (!issue?.startsWith('worker-tree snapshot unresolved:')) return issue;
+  const marker = join(dir, 'worker-tree-warning');
+  if (snapshotWarnings.has(id) || fs.existsSync(marker)) return;
+  try { writePrivateFile(marker, '', { exclusive: true, mkdir: false }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return;
+    // A full or unwritable filesystem can prevent saving both the snapshot and the marker.
+    snapshotWarnings.add(id);
+  }
+  return issue;
+}
 const reapOwner = (session: SessionEntry | null, status: Partial<JobStatus> | null) =>
   JSON.stringify([session?.fields ?? null, status?.pid, status?.pid_start_time]);
 function deferReap(entry: ActiveReap, { id, retry }: ReapInput, message: string, final = false) {
@@ -342,7 +355,8 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     if (signal.aborted) return;
     entry.snapshot = cleanup.snapshot;
     if (!cleanup.complete && !(cleanup.unrecoverable && cleanup.result)) {
-      deferReap(entry, input, `reap ${id}: ${cleanup.issue ?? 'sonic runner still exiting'}`);
+      const issue = snapshotIssueForLog(id, dir, cleanup.issue);
+      deferReap(entry, input, `reap ${id}: ${issue ?? 'sonic cleanup incomplete'}`);
       return;
     }
     // A panel Stop can race reopening a paused turn. Never publish an old runner's terminal facts over its successor.
@@ -371,7 +385,8 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     writeJsonAtomic(statusFile, settled);
     const latest = readJson<Job>(jobFile);
     if (latest && !waiting) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
-    if (cleanup.unrecoverable) log(`reap ${id}: ${cleanup.unrecoverable}; ${UNVERIFIED_TREE_NOTE}`);
+    const issue = snapshotIssueForLog(id, dir, cleanup.unrecoverable);
+    if (issue) log(`reap ${id}: ${issue}; ${UNVERIFIED_TREE_NOTE}`);
     reapRetries.delete(id);
     return;
   }
@@ -400,13 +415,16 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   entry.snapshot = snapshot;
   const exit = signal.aborted ? 'aborted' : result.exitCode ?? result.reason;
   const groupIssue = result.groupCleanupIssue?.replace(/^group \d+ /, 'reaper group ');
-  const message = `reap ${id} state=${status.state} exit=${exit}; ${issue ? `${issue}; ` : ''}${groupIssue ? `${groupIssue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
-  if (signal.aborted || result.reason === 'aborted') { log(message); return; }
+  const message = () => {
+    const noted = snapshotIssueForLog(id, dir, issue);
+    return `reap ${id} state=${status.state} exit=${exit}; ${noted ? `${noted}; ` : ''}${groupIssue ? `${groupIssue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
+  };
+  if (signal.aborted || result.reason === 'aborted') { log(message()); return; }
   const refusal = result.exitCode === 1 &&
     result.stderr.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`) && !result.stderr.trim().includes('\n');
   // When ancestry cannot be recovered, only the tab outcome remains to be verified.
   if (!complete && !(unrecoverable && (result.ok || refusal || closedTabs.has(tab)))) {
-    deferReap(entry, input, message, refusal && !issue && !readClose);
+    deferReap(entry, input, message(), refusal && !issue && !readClose);
     return;
   }
 
@@ -424,12 +442,12 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   if (receipt) {
     if (!receipt.reaped_at) {
       writeJsonAtomic(jobFile, { ...receipt, reaped_at: new Date().toISOString() }, 2);
-      log(message);
+      log(message());
     }
     reapRetries.delete(id);
   } else {
     // There is no receipt to stamp. Don't repeat a finished reap on every scan.
-    deferReap(entry, input, message, true);
+    deferReap(entry, input, message(), true);
   }
 }
 function startReap(job: ReapInput) {
@@ -746,6 +764,7 @@ function scan(retryWatch = false) {
   // Archive expired jobs before dropping the flow receipts those archives read.
   if (housekeep) pruneLandFlows(home);
   for (const id of [...reapRetries.keys()]) if (!liveIds.has(id)) reapRetries.delete(id);
+  for (const id of snapshotWarnings) if (!liveIds.has(id)) snapshotWarnings.delete(id);
   for (const id of checkRetries.keys()) if (!liveIds.has(id)) checkRetries.delete(id);
   for (const id of [...preflightHold.keys()]) if (!liveIds.has(id)) preflightHold.delete(id);
   for (const id of [...worktreeRetries.keys()]) if (!liveIds.has(id)) worktreeRetries.delete(id);

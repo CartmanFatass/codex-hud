@@ -1,5 +1,5 @@
 /** Worker protocol shared by MCP, the native pi extension and the CLI fallbacks. */
-import { normalizeReportMeta, writeReportMeta } from '../roles/report-meta.js';
+import { normalizeReportMeta, REPORT_LINE_LIMIT, writeReportMeta } from '../roles/report-meta.js';
 import { DONE_FILE, readTurn, saveTurn, turnToken, reportSignature, withTurnLock, workerAlive } from '../mcp/cli-judge.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { readJsonBounded, readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
@@ -359,9 +359,9 @@ export async function workerTools(cli = false) {
       {
         text: string,
         ...(cli ? { turn: { ...string, description: 'Use the token in the prompt you are answering, not a newer turn.' } } : {}),
-        summary: { ...string, maxLength: 320, description: 'Optional one-line plain-text summary of the result (up to 160 code points, no Markdown heading).' },
+        summary: { ...string, maxLength: REPORT_LINE_LIMIT, description: `One-line result summary (up to ${REPORT_LINE_LIMIT} code points, no Markdown heading).` },
         files: { type: 'array', items: { ...string, maxLength: 260 }, maxItems: 50, description: 'Optional list of relative paths to files changed by code roles (up to 50).' },
-        skip_checks_reason: { ...string, minLength: 1, maxLength: 160, description: 'If blocked, skip the project’s worker checks and include this reason in the report digest.' },
+        skip_checks_reason: { ...string, minLength: 1, maxLength: REPORT_LINE_LIMIT, description: 'If blocked, skip the project’s worker checks and include this reason in the report digest.' },
       },
       cli ? ['text', 'turn'] : ['text']),
     tool('hud_ask', headless ? 'Ask the orchestrator and end the turn. The answer resumes this session.'

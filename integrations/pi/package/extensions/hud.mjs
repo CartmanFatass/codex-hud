@@ -30,18 +30,48 @@ export default async function hud(pi) {
       : pathToFileURL(loadBinding(new URL('../binding.json', import.meta.url)).release + '/packages/hud-mcp/bin/worker-tools.mjs');
     const { callWorkerTool, listWorkerTools, watchSonicReady, capturePiTree } = await import(url.href);
     const notices = new AbortController();
-    pi.on('session_shutdown', () => notices.abort());
+    const waits = new Set(), pendingReady = new Map();
+    pi.on('session_shutdown', () => {
+      notices.abort();
+      pendingReady.clear();
+    });
+    function flushReady() {
+      for (const [job, send] of pendingReady) {
+        if ([...waits].some(({ ids }) => !ids?.length || ids.includes(job))) continue;
+        pendingReady.delete(job);
+        send();
+      }
+    }
     for (const { name, description, inputSchema } of await listWorkerTools()) {
       if (name === 'hud_ask' && nativeAsk) continue; // pi-roles supplies the native asynchronous ask.
       pi.registerTool({
         name, label: name, description, parameters: inputSchema, promptSnippet: description,
         async execute(_id, args, signal, _onUpdate, ctx) {
-          const value = await callWorkerTool(name, args, signal);
-          if (name === 'hud_sonic' && args.task !== undefined) {
-            watchSonicReady(value.job, notices.signal, (state) => pi.sendMessage({
-              customType: 'hud-sonic-ready', display: true,
-              content: `Sonic ${value.job} ${state}. Collect its result with hud_sonic (wait: ["${value.job}"]).`,
-            }, { triggerTurn: true, deliverAs: 'steer' }), (text) => ctx.ui.notify(`Sonic ${value.job}: ${text}`, 'info'));
+          const wait = name === 'hud_sonic' && args.task === undefined ? { ids: args.wait } : null;
+          if (wait) waits.add(wait);
+          let value;
+          try {
+            value = await callWorkerTool(name, args, signal);
+            if (wait) for (const { id } of value.reports) pendingReady.delete(id);
+          } finally {
+            if (wait) {
+              waits.delete(wait);
+              flushReady();
+            }
+          }
+          if (name === 'hud_sonic' && !wait) {
+            watchSonicReady(value.job, notices.signal, (state) => {
+              const send = () => pi.sendMessage({
+                customType: 'hud-sonic-ready', display: true,
+                content: `Sonic ${value.job} ${state}. Collect its result with hud_sonic (wait: ["${value.job}"]).`,
+              }, { triggerTurn: true, deliverAs: 'steer' });
+              if (state === 'failed') send();
+              else {
+                // STATUS can wake this watcher before a same-session wait reads the report.
+                pendingReady.set(value.job, send);
+                flushReady();
+              }
+            }, (text) => ctx.ui.notify(`Sonic ${value.job}: ${text}`, 'info'));
           }
           return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
             details: value, ...(name === 'hud_report' ? { terminate: true } : {}) };

@@ -171,10 +171,18 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
   if (retryOf && !source) return { ok: false, code: 'job_not_found' };
   const role = input.role === undefined && source ? source.role : required(input, 'role');
   // Check caller input, not inherited retry options or internal repair placement.
-  if (!repair && role !== 'general' && (input.instructions !== undefined ||
-      (!parent && placementOverrides.some(key => input[key] !== undefined)) || hasPiPlacement(input.pi_args))) {
-    const choice = input.instructions === undefined ? 'choose a model' : 'borrow instructions';
-    return { ok: false, code: 'invalid_arguments', error: `Role ${JSON.stringify(role)} runs as configured in its role file and Control; use general to ${choice} for one job.` };
+  if (!repair && role !== 'general') {
+    const fields: string[] = parent ? [] : placementOverrides.filter(key => input[key] !== undefined);
+    if (hasPiPlacement(input.pi_args)) fields.push('pi_args');
+    const borrowsInstructions = input.instructions !== undefined;
+    if (fields.length || borrowsInstructions) {
+      const seat = `Role ${JSON.stringify(role)}`;
+      const subject = fields.length ? `${seat} does not accept placement fields: ${fields.join(', ')}. It` : seat;
+      const advice = fields.length
+        ? `for per-job placement${borrowsInstructions ? ' and to borrow instructions' : ''}`
+        : 'to borrow instructions for one job';
+      return { ok: false, code: 'invalid_arguments', error: `${subject} runs as configured in its role file and Control; use general ${advice}.` };
+    }
   }
   let args = input;
   let repairOf = repair?.source.job;

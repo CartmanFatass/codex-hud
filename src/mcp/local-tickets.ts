@@ -25,10 +25,6 @@ function status(value: unknown): string {
   const label = TICKET_STATUSES.find((label) => label === value);
   return label ?? invalid('status');
 }
-function numbers(value: unknown, field: string): number[] {
-  if (!Array.isArray(value) || !value.every(number)) return invalid(field);
-  return value;
-}
 function directoryExists(path: string): boolean {
   const st = fs.lstatSync(path, { throwIfNoEntry: false });
   if (st && !st.isDirectory()) throw new Error(`not a directory: ${path}`);
@@ -202,6 +198,18 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
     const original = fs.readFileSync(ticket.path, 'utf8');
     const comments = original.search(/^## Comments[ \t]*\r?$/m);
     let body = comments < 0 ? original : original.slice(0, comments);
+    if (item.tick !== undefined) {
+      if (!Array.isArray(item.tick) || !item.tick.every(Number.isSafeInteger)) return invalid('tick');
+      const box = /^([ \t]*[-*] \[)([ xX])\]/gm;
+      const count = body.match(box)?.length ?? 0;
+      const unknown = item.tick.find(n => n < 1 || n > count);
+      if (unknown !== undefined) {
+        throw new Error(`unknown acceptance item: ${unknown} (${count ? `valid range: 1-${count}` : 'no acceptance items'})`);
+      }
+      const tick = new Set(item.tick);
+      let index = 0;
+      body = body.replace(box, (match, prefix, mark) => tick.has(++index) && mark === ' ' ? `${prefix}x]` : match);
+    }
     if (item.status !== undefined) body = withStatus(body, status(item.status), item.ticket);
     if (item.owner_try !== undefined) body = withOwnerTry(body, ownerTry(item.owner_try), item.ticket);
     if (item.blocked_by !== undefined) {
@@ -209,14 +217,6 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
       if (!field.test(body)) throw new Error(`missing Blocked by field in ticket: ${item.ticket}`);
       const refs = resolveBlockers(item.blocked_by, feat, known);
       body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${refs}${suffix}`);
-    }
-    if (item.tick !== undefined) {
-      const tick = new Set(numbers(item.tick, 'tick'));
-      let count = 0;
-      body = body.replace(/^([ \t]*[-*] \[)([ xX])\]/gm, (box, prefix, mark) =>
-        tick.has(++count) && mark === ' ' ? `${prefix}x]` : box
-      );
-      for (const n of tick) if (n > count) throw new Error(`unknown acceptance item: ${n}`);
     }
     const updated = body + (comments < 0 ? '' : original.slice(comments));
     if (updated !== original) writeFileAtomic(ticket.path, updated, fs.statSync(ticket.path).mode & 0o777);
