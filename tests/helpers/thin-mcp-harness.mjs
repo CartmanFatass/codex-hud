@@ -107,6 +107,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     HERDR_SOCKET_PATH: join(root, 'events.sock'),
   };
   if (!mcpJson) delete env.HUD_MCP_JSON;
+  // Set by the Claude mod in the session that runs the suite; it would turn MCP tasks off. Tests that want it set it.
+  delete env.HUD_CLAUDE_MOD;
   if (routingOnly) env.FAKE_ROUTING_ONLY = '1';
   else {
     delete env.FAKE_ROUTING_ONLY;
