@@ -1101,7 +1101,7 @@ test('idle hud watch reads nothing between safety rescans', async (t) => {
   assert.equal(await running, 0);
 });
 
-test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM', { timeout: 30000 }, async (t) => {
+test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM', { timeout: 60000 }, async (t) => {
   const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-bin-'));
   let child, closed;
   cleanupFixture(t, { root: hudHome }, () => child && stopChild(child, closed));
@@ -1126,7 +1126,7 @@ syncBuiltinESMExports();`;
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
   closed = once(child, 'close');
-  const baselineRead = once(child, 'message');
+  const baselineRead = once(child, 'message', { signal: t.signal });
 
   let stdout = '';
   let stderr = '';
@@ -1141,8 +1141,11 @@ syncBuiltinESMExports();`;
   assert.equal(ready, 'baseline');
   assert.equal(stdout, '');
 
-  writeJob(hudHome, 'j00000000000000f6', 'w4E:p1', 'tab-gone', { state: 'failed', exit_reason: 'tab closed' });
-  await until(() => stdout.includes('j00000000000000f6 imp tab-gone: failed | tab closed\n'), 15000);
+  // Publish the whole arrival at once so its directory event cannot precede STATUS.
+  const failedId = 'j00000000000000f6';
+  const failed = writeJob(join(hudHome, 'staging'), failedId, 'w4E:p1', 'tab-gone', { state: 'failed', exit_reason: 'tab closed' });
+  fs.renameSync(failed, join(hudHome, 'jobs', failedId));
+  await untilSettled(() => stdout.includes(`${failedId} imp tab-gone: failed | tab closed\n`), t.signal);
 
   child.kill('SIGTERM');
   const [code, signal] = await closed;

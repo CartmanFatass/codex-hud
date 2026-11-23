@@ -21,6 +21,7 @@ import {
   workSignalsFromSummary,
 } from '../../dist/render/work-summary.js';
 import { writePrivateFile } from '../../dist/utils/atomic-fs.js';
+import { until } from '../helpers/until.mjs';
 
 const PANE_A = 'w4E:p1';
 const PANE_B = 'w4E:p2';
@@ -144,11 +145,12 @@ test('publisher writes private bounded snapshots only on meaningful changes and 
   assert.equal(readFreshWorkSummary(home, PANE_A, t0), null);
 });
 
-test('hud-watch updates work-summary.v1.json within 200 ms of job changes and staleness is detected on watcher exit', { timeout: 15_000 }, async (t) => {
+test('hud-watch updates work-summary.v1.json within 200 ms of job changes and staleness is detected on watcher exit', { timeout: 60_000 }, async (t) => {
   const { home, addJob } = makeFixture(t);
   const j1 = addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
   const j2 = addJob({ role: 'sonic', pane: PANE_B, status: { state: 'working' } });
   assert.ok(j2.id);
+  fs.mkdirSync(join(j1.dir, 'qa')); // Attach the recursive watch before publishing the question.
 
   const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
     env: { ...process.env, HUD_HOME: home },
@@ -162,44 +164,41 @@ test('hud-watch updates work-summary.v1.json within 200 ms of job changes and st
     }
   });
 
-  const initial = await waitFor(() => readFreshWorkSummary(home, PANE_A), 5_000, 10);
+  const summaryFile = workSummaryPath(home);
+  const readSummary = async (matches = () => true) => {
+    let result;
+    await until(() => {
+      result = readFreshWorkSummary(home, PANE_A);
+      return result && matches(result.scope);
+    }, t.signal);
+    return result;
+  };
+  const initial = await readSummary();
   assert.equal(initial.snapshot.producer, 'hud-watch');
   assert.equal(initial.snapshot.watching, true);
-  assert.equal(fs.statSync(workSummaryPath(home)).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(summaryFile).mode & 0o777, 0o600);
   assert.deepEqual(initial.scope, { running: 1, asking: 0, roles: { imp: { running: 1, asking: 0 } } });
   assert.equal(initial.snapshot.global.running, 2);
 
-  // Open a question -> snapshot must reflect asking=1 within 200 ms.
-  const tAsk = performance.now();
-  writePrivateFile(join(j1.dir, 'qa', 'q1.md'), '# Question q1 from imp\n\nSynthetic?');
-  const asked = await waitFor(() => {
-    const r = readFreshWorkSummary(home, PANE_A);
-    return r?.scope.asking === 1 ? r : null;
-  }, 1_000, 5);
-  const askMs = performance.now() - tAsk;
-  assert.ok(askMs < 200, `expected <200ms update on question, got ${askMs.toFixed(1)}ms`);
+  const update = async (file, value, matches, action) => {
+    const input = join(j1.dir, file);
+    writePrivateFile(input, value);
+    const changedAt = fs.statSync(input).ctimeMs;
+    const result = await readSummary(matches);
+    // Linux stamps ctime at each atomic rename. Measure publication to publication,
+    // not the test process's scheduling delay before the write or after the snapshot.
+    const elapsed = fs.statSync(summaryFile).ctimeMs - changedAt;
+    assert.ok(elapsed < 200, `expected <200ms update on ${action}, got ${elapsed.toFixed(1)}ms`);
+    return result;
+  };
+
+  const asked = await update('qa/q1.md', '# Question q1 from imp\n\nSynthetic?', scope => scope.asking === 1, 'question');
   assert.ok(asked.snapshot.generation > initial.snapshot.generation);
-
-  // Answer the question -> asking returns to 0 within 200 ms.
-  const tAns = performance.now();
-  writePrivateFile(join(j1.dir, 'qa', 'q1.answer.md'), 'Synthetic answer');
-  const answered = await waitFor(() => {
-    const r = readFreshWorkSummary(home, PANE_A);
-    return r?.scope.asking === 0 ? r : null;
-  }, 1_000, 5);
-  const ansMs = performance.now() - tAns;
-  assert.ok(ansMs < 200, `expected <200ms update on answer, got ${ansMs.toFixed(1)}ms`);
+  const answered = await update('qa/q1.answer.md', 'Synthetic answer', scope => scope.asking === 0, 'answer');
   assert.ok(answered.snapshot.generation > asked.snapshot.generation);
-
-  // Close j1 -> PANE_A running drops to 0 within 200 ms (j2 keeps watcher alive).
-  const tClose = performance.now();
-  j1.setStatus({ state: 'closed', settled_at: new Date().toISOString() });
-  const closed = await waitFor(() => {
-    const r = readFreshWorkSummary(home, PANE_A);
-    return r?.scope.running === 0 ? r : null;
-  }, 1_000, 5);
-  const closeMs = performance.now() - tClose;
-  assert.ok(closeMs < 200, `expected <200ms update on close, got ${closeMs.toFixed(1)}ms`);
+  // j2 keeps the watcher alive after j1 closes.
+  const closed = await update('STATUS.json', JSON.stringify({ state: 'closed', settled_at: new Date().toISOString() }),
+    scope => scope.running === 0, 'close');
   assert.equal(closed.snapshot.global.running, 1);
 
   // Kill watcher with SIGKILL (simulating crash where watch.pid remains) -> stale immediately detected.

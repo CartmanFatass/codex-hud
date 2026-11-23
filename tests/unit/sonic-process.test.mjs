@@ -225,10 +225,20 @@ test('a default checkpoint counts worker milestones but not its own progress or 
 });
 
 for (const reason of ['looping', 'stalled']) {
-  test(`sonic stops as ${reason} and preserves its last progress in the digest`, async (t) => {
-    // Settlement must also complete if the watch misses the runner's stop-receipt rename.
-    const f = await fixture(t, { watcherTickMs: 250 });
-    setLimits(f, reason === 'looping' ? { check_s: 4, stall_s: 8, max_s: 20 } : { check_s: 12, stall_s: 4, max_s: 20 });
+  test(`sonic stops as ${reason} and preserves its last progress in the digest`, { timeout: 60000 }, async (t) => {
+    // Advance the stalled runner's clock only after Pi logs its first event, which
+    // follows hud_progress. Real startup must not race a synthetic inactivity window.
+    const clock = `import { statSync } from 'node:fs';
+if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
+  const now = Date.now, stdout = process.env.HUD_JOB_DIR + '/stdout.jsonl';
+  Date.now = () => now() + (statSync(stdout, { throwIfNoEntry: false })?.size ? ${sonicLimitDefaults.stall_s * 1000 + 1} : 0);
+}`;
+    const f = await fixture(t, {
+      // Settlement must also complete if the watch misses the runner's stop-receipt rename.
+      watcherTickMs: 250,
+      probe: reason === 'stalled' ? `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}` : '',
+    });
+    if (reason === 'looping') setLimits(f, { check_s: 4, stall_s: 8, max_s: 20 });
     f.overrideBin('pi', `#!${process.execPath}
 const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
 await callWorkerTool('hud_progress', { message: 'Synthetic partial milestone.' });
@@ -237,7 +247,7 @@ log();
 setInterval(${reason === 'looping' ? 'log' : '() => {}'}, 50);
 `);
     const { job, task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic interrupted query.' });
-    await until(() => cliState(dir).state === 'failed');
+    await until(() => cliState(dir)?.state === 'failed', t.signal);
     const status = cliState(dir);
     assert.equal(status.exit_reason, reason);
     assert.ok(status.stdout_bytes > 0);
