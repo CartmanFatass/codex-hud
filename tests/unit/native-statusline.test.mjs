@@ -189,13 +189,19 @@ test('missing binary and explicit modes use TS; unsupported hosts bypass native'
 
 test('failed native renderer replays fresh stdin exactly', { skip: !linuxX64 }, (t) => {
   const { env, entry, input, bin } = localInstall(t);
-  const expected = ts(env, input);
+  // Check bytes at the TS handoff without contending for the shared dist lock.
+  const stubBin = join(env.HOME, 'bin');
+  fs.mkdirSync(stubBin);
+  fs.writeFileSync(join(stubBin, 'node'), '#!/bin/bash\n[[ $# == 1 && $1 == "$TS_ENTRY" ]] || exit 1\nexec /bin/cat\n', { mode: 0o755 });
+  env.PATH = `${stubBin}:${env.PATH}`;
+  env.TS_ENTRY = entry;
+
   fs.writeFileSync(bin, failingRenderer, { mode: 0o755 });
-  assert.deepEqual(run(entry, [], env, input), expected);
+  assert.deepEqual(run(entry, [], env, input), input);
   assert.deepEqual(fs.readFileSync(env.CAPTURE), input);
   const nul = Buffer.concat([input, Buffer.from([0, 0, 0xff, 0])]);
-  assert.deepEqual(run(entry, [], env, nul), ts(env, nul));
+  assert.deepEqual(run(entry, [], env, nul), nul);
   assert.deepEqual(fs.readFileSync(env.CAPTURE), nul);
   fs.writeFileSync(bin, '#!/synthetic/missing/interpreter\n', { mode: 0o755 });
-  assert.deepEqual(run(entry, [], env, input), expected);
+  assert.deepEqual(run(entry, [], env, input), input);
 });
