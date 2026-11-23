@@ -3,7 +3,7 @@ import { fork } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
-import { registeredProject, sharedRoot } from '../roles/projects.js';
+import { registeredProject } from '../roles/projects.js';
 import { notifyRunner } from '../utils/runner-lifetime.js';
 import { procStat } from '../utils/proc.js';
 import { activeLand, landAttempt, landFile, landNotice, landOutcome, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
@@ -21,13 +21,16 @@ export function validLandConfig(home: string, root: string): LandConfig {
     throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper and timeout_s');
   return c;
 }
-export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean, ticketQueue?: string) {
+export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean, ticketQueue?: string, retry?: string) {
   const wt = job?.worktree;
-  if (!job || job.job !== id || !wt || wt.root !== job.cwd || wt.main_root !== sharedRoot(process.cwd()))
-    throw Error('hud_land requires a managed worktree job in the caller project');
+  if (!job || job.job !== id || !wt || wt.root !== job.cwd)
+    throw Error('hud_land requires a managed worktree job');
   const { flow, prior, cleanup } = landAttempt(home, id);
-  // A recovering ticket queue observes its earlier attempt, even if it already failed.
-  if (prior && (ticketQueue || !retryableLand(prior))) return prior;
+  // A recovering runner observes its earlier attempt. An explicitly resumed queue can retry that specific receipt.
+  if (prior && (!retryableLand(prior) || (ticketQueue && prior.flow !== retry))) {
+    if (!registeredProject(home, wt.main_root).registered) throw Error('hud_land requires a registered project');
+    return prior;
+  }
   if (!['idle_grace', 'closed', 'done'].includes(state ?? '')) throw Error(`Cannot land ${id}: job state is ${state ?? 'unknown'} (expected idle_grace, done or closed)`);
   const c = validLandConfig(home, wt.main_root);
   await git(wt.main_root, ['check-ref-format', `refs/heads/${c.base}`]);

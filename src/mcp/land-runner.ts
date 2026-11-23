@@ -25,6 +25,7 @@ class CommandError extends Error {
   get tail() { return this.evidence.tail; }
 }
 class CommandTimeout extends CommandError {}
+const MAX_RECOVERIES = 2; // Independent limits for worker repairs and moved bases.
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
 function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, env = process.env) {
   return new Promise<string[]>((ok, fail) => {
@@ -100,9 +101,13 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
   };
   const head = async (dir: string) => (await git(dir, ['rev-parse', '--verify', 'HEAD'])).trim();
   const tree = async (sha: string) => (await git(main, ['rev-parse', '--verify', `${sha}^{tree}`])).trim();
-  const checkMain = async (sha: string) => {
-    if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref || await head(main) !== sha)
+  const mainTip = async () => {
+    if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref)
       throw Error('Main checkout is not at the recorded base tip');
+    return head(main);
+  };
+  const checkMain = async (sha: string) => {
+    if (await mainTip() !== sha) throw Error('Main checkout is not at the recorded base tip');
   };
   const checkSource = async (row: LandFlow) => {
     const { wt } = row;
@@ -277,21 +282,18 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
     };
     const paths = await touched(base, landed);
     await checkClean(paths);
-    checkCancel(); await checkSources();
-    if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref)
-      throw Error('Main checkout is not at the recorded base tip');
-    let target = base;
-    const current = await head(main);
-    if (current !== base) {
+    const replay = async (target: string, current: string) => {
       // Fall back to singles (with normal replay/re-gate) rather than rebuild a moving train.
       if (trainTips) throw Error('Main checkout is not at the recorded base tip');
-      let ancestor = false;
-      try { ancestor = (await git(main, ['merge-base', base, current])).trim() === base; } catch { /* not an ancestor */ }
-      if (!ancestor) throw Error('Main checkout is not at the recorded base tip');
+      if ((f.base_moves ?? 0) >= MAX_RECOVERIES)
+        throw Error('Main checkout is not at the recorded base tip (base move retry limit reached)');
+      try { await git(main, ['merge-base', '--is-ancestor', target, current]); }
+      catch { throw Error('Main checkout is not at the recorded base tip'); }
       const mainPaths = await touched(base, current);
       if (pathsOverlap(paths, mainPaths)) throw Error('Main checkout is not at the recorded base tip');
       checkCancel();
-      const picks = (await git(main, ['rev-list', '--reverse', '--topo-order', `${base}..${tested}`, '--'])).trim().split(/\s+/).filter(Boolean);
+      // Always replay the original tested patches, not a prior replay's ticket amendment.
+      const picks = await picksFor(base, tested);
       if (!picks.length) throw Error('Main checkout is not at the recorded base tip');
       await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
       await git(main, ['worktree', 'add', '--detach', '--', integration, current], 120000);
@@ -309,19 +311,29 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
         if (e instanceof CommandError) throw new CommandError('Main checkout is not at the recorded base tip', e.evidence);
         throw e;
       }
-      target = current;
+      f.base_moves = (f.base_moves ?? 0) + 1;
+    };
+    checkCancel(); await checkSources();
+    let target = base, current = await mainTip(), landedPaths = paths;
+    for (;;) {
+      if (current !== target) {
+        await replay(target, current);
+        target = current;
+        landedPaths = await touched(target, landed);
+      }
+      const published = await tree(landed);
+      for (const row of members) row.published_tree = published;
+      const regate = published !== f.tested_tree && !await metadataOnly(main, f.tested_tree!, published);
+      if (regate) {
+        // Disjoint paths can still interact. Gate the exact candidate, including the ticket update.
+        await gate(landed, published);
+        step('fast-forward');
+      }
+      if (target !== base || regate) await checkClean(landedPaths);
+      checkCancel(); await checkSources();
+      current = await mainTip();
+      if (current === target) break;
     }
-    const landedPaths = target === base ? paths : await touched(target, landed);
-    const published = await tree(landed);
-    for (const row of members) row.published_tree = published;
-    const regate = published !== f.tested_tree && !await metadataOnly(main, f.tested_tree!, published);
-    if (regate) {
-      // Disjoint paths can still interact. Gate the exact candidate, including the ticket update.
-      await gate(landed, published);
-      step('fast-forward');
-    }
-    if (target !== base || regate) await checkClean(landedPaths);
-    checkCancel(); await checkSources(); await checkMain(target);
     publishing = true;
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
     const at = new Date().toISOString();
@@ -477,7 +489,7 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
         if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
         const prior = f.repairs?.at(-1);
         if (prior) prior.outcome = `failed at ${f.step}`;
-        if (e instanceof CommandTimeout || (f.repairs?.length ?? 0) >= 2) throw e;
+        if (e instanceof CommandTimeout || (f.repairs?.length ?? 0) >= MAX_RECOVERIES) throw e;
         checkCancel(); await checkSource(f);
         f.error = e.message; f.tail = e.tail;
         // Only the helper-created scratch checkout is disposable, never the source or main.

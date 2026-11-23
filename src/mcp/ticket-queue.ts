@@ -33,7 +33,9 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
   if (!pane || !herdrId(pane)) throw Error('hud_tickets run requires a caller pane');
   const root = sharedRoot(cwd);
   return withAbstractLock('ticket-start', `${home}\0${root}\0${feature}`, () => {
-    const prior = queueIds(home).map(id => readTicketQueue(home, id)).find(q => q?.root === root && q.feature === feature && q.state === 'working');
+    const queues = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
+      .filter(q => q.root === root && q.feature === feature);
+    const prior = queues.find(q => q.state === 'working');
     if (prior) {
       if (prior.pane !== pane) throw Error(`Ticket queue ${prior.flow} is owned by another pane`);
       if (cancel) cancelTicketQueue(home, prior);
@@ -44,10 +46,12 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     if (!registeredProject(home, root).registered) throw Error('hud_tickets run requires a registered project');
     validLandConfig(home, root);
     fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
+    const latest = queues.sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const resumed = latest?.state === 'failed' ? latest : undefined;
     const now = new Date().toISOString();
     const q: TicketQueue = { flow: `q${randomBytes(8).toString('hex')}`, root, feature, pane, task,
-      max_parallel: max_parallel ?? capForRole(loadConcurrencySettings(), 'imp'), created_at: now, updated_at: now,
-      state: 'working', tickets: [] };
+      max_parallel: max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp'), created_at: now, updated_at: now,
+      state: 'working', tickets: resumed?.tickets.map(item => ({ ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow })) ?? [] };
     writeTicketQueue(home, q, true);
     wakeTicketQueue(home, q);
     return q;

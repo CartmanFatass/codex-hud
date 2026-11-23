@@ -229,8 +229,8 @@ Project 把这些检出视为任务自己的，不算未登记的 worktree。
 当 `node_modules/` 下存在已跟踪文件时，建树会链接主检出中其余未跟踪项，清理也会把 `node_modules/` 下的已忽略项视为可移除的依赖状态。
 其他忽略文件、未跟踪文件及已跟踪的改动仍会保留。
 
-`hud_land({job})` 集成成功结算（`idle_grace`、`done` 或 `closed`）的托管工作树。
-主检出的项目配置示例：
+`hud_land({job})` 可集成任一已注册项目中成功结算（`idle_grace`、`done` 或 `closed`）的托管工作树。
+HUD 使用任务所属项目的主检出，而不是调用者的检出。该主检出的 `.hud/project.json` 配置示例：
 
 ```json
 {"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh","timeout_s":900}}
@@ -271,7 +271,8 @@ HUD 勾选验收项，并在评论中写入 `Landed in this commit`、重放基�
 仅当涉及路径干净且主检出仍位于原基分支顶端，或基分支新增提交均未触及本次集成的路径时才快进；
 后一种情况下，HUD 会在新的分离工作树中把已测试的提交摘取到新的基分支顶端，并重新应用工单更新（若存在路径重叠或任何冲突则拒绝），并在通知中说明此次重放。
 仅当待落地的文件树与已通过门禁的文件树相同，或差异只涉及普通工单文件或 `STATE.md` 元数据（含 `docs/handoff/STATE.md`）时，HUD 才沿用门禁结果；
-否则在快进前对待落地的提交再运行一次门禁。
+否则在快进前对待落地的确切提交重新运行门禁。
+如果基分支在门禁期间再次前进，HUD 会重放并重新检查新的候选提交；每次落地尝试最多吸收两次基分支移动。次数非零时，`hud_read` 的 `base_moves` 字段和终结通知都会报告该次数。
 若重放后的门禁仍然失败，落地停止，不派发修复。
 随后 HUD 在主检出运行 `after`（若某条 `after` 主构建命令与集成工作树已测试的构建输入、编译器及配置完全一致，HUD 通过 `scripts/build.mjs` 的分段发布器发布已测试的 `dist`，跳过重复编译）。
 若启用推送，即使本地基分支已继续前进，HUD 也只把获准落地的 SHA 推送到 `origin` 的基分支。
@@ -536,6 +537,9 @@ MCP 重启后，同一调用方仍可在任务有效期内查询已有的工作�
 `ready` 返回无阻塞且无活动任务的 `ready-for-agent` 工单，格式为 `tickets: [{ticket, path, title, what}]`。
 将 `ticket`（`feature/NN`）及 `path`（作为 `brief_file`）传给 `hud_create`；
 活动任务在项目面板和首页进度中即算认领，无需提交认领记录，`hud_land` 将工单更新并入落地提交（`**Owner try:** no` 记为 `done`，`yes` 或省略记为 `ready-for-human`），不再追加 `STATE.md`。
+`run` 按 `feature` 派发就绪工单并自动落地符合条件的任务；可用 `cwd` 指定其他项目。新队列的 `max_parallel` 默认使用 imp 的并发上限；`**Role:** frontend-imp` 选择该角色，`**Main review:** yes` 则停止自动落地。
+处理失败原因后，以同一项目和 `feature` 再次调用 `run`。新一轮队列保留已有任务和已完成的落地，并重试符合条件、在快进前失败的落地，不再重新派发这些工单；除非显式覆盖，沿用原 `max_parallel`。
+以同一 `feature` 和 `cancel: true` 调用 `run` 会停止后续派发与落地，不干预已有任务和正在进行的落地。
 `add` 按 `feature` 和 `tickets` 批量建单（可选 `owner_try` 布尔值，在状态行下写入 `**Owner try:** yes` 或 `no`）；
 `update` 可单条更新（`feature`、`ticket` 及 `status`／`owner_try`／`tick`／`blocked_by`），也可传 `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` 按输入顺序批量更新并返回逐项结果（每项可覆盖 `feature`，单项错误不阻塞其余项）；
 `sync` 执行 `hud tickets sync`。

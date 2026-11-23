@@ -19,7 +19,7 @@ export interface LandFlow {
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string;
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
-  tested_tree?: string; published_tree?: string;
+  tested_tree?: string; published_tree?: string; base_moves?: number;
   train?: string; published_sha?: string; single?: true;
   boarded?: { flow: string; pid: number; start: string };
   after_note?: string;
@@ -72,8 +72,8 @@ export function landAttempt(home: string, job: string) {
   return { flow, prior, cleanup };
 }
 export function landView(f: LandFlow) {
-  const { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail } = f;
-  return { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail };
+  const { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, timings, error, tail } = f;
+  return { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, timings, error, tail };
 }
 const one = (text: string) => text.replace(/\s+/g, ' ').trim();
 export function landOutcome(f: LandFlow) {
@@ -87,6 +87,7 @@ export function landOutcome(f: LandFlow) {
 export function landNotice(f: LandFlow) {
   return [`${f.flow} (land ${f.job}) — ${landOutcome(f)}`,
     ...(f.replayed_onto ? [`Replayed onto ${one(f.replayed_onto)}${f.base_sha ? ` (base moved from ${one(f.base_sha)})` : ''}`] : []),
+    ...(f.base_moves ? [`Base moves absorbed: ${f.base_moves}`] : []),
     ...(f.after_note ? [`After note: ${one(f.after_note)}`] : []),
     ...(f.cleanup_note ? [`Cleanup note: ${one(f.cleanup_note)}`] : []),
     ...(f.repairs ?? []).map((r, i) => `Repair ${i + 1}: ${one(r.step)} → ${r.job ?? 'dispatch'}: ${one(r.outcome)}`),
@@ -121,8 +122,8 @@ export function landEvents(home: string, pane: string | null, all = false, cwd =
     if (fs.existsSync(marker)) continue;
     const f = isTicketQueueId(id) ? readTicketQueue(home, id) : readLand(home, id);
     if (!f || f.task || (!all && f.pane !== pane) || ('ticket_queue' in f && f.ticket_queue)) continue;
-    // A queue explicitly started with another cwd still reports to its authorizing pane.
-    if (!all && 'wt' in f && f.wt.main_root !== cwd && f.wt.main_root !== sharedRoot(cwd)) continue;
+    // Explicit cross-project flows still report to their authorizing pane; pane-less watches stay project-scoped.
+    if (!all && !pane && 'wt' in f && f.wt.main_root !== cwd && f.wt.main_root !== sharedRoot(cwd)) continue;
     if ('wt' in f ? activeLand(f) : f.state === 'working') { pending = true; continue; }
     try { fs.closeSync(fs.openSync(marker, 'wx', 0o600)); }
     catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e; }

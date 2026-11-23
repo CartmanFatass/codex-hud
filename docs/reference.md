@@ -326,8 +326,8 @@ When tracked files live under `node_modules/`, worktree setup links the untracke
 Other ignored files and untracked or tracked changes are preserved.
 Project lists these checkouts as the jobs' own, not as unlisted worktrees.
 
-Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace`, `done` or `closed`).
-Configure `land` in the registered main checkout's `.hud/project.json`, for example:
+Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace`, `done` or `closed`) in any registered project.
+HUD uses the job's own main checkout, not the caller's. Configure `land` in that checkout's `.hud/project.json`, for example:
 
 ```json
 {"land":{"base":"main","gate":["npm test"],"after":["npm run build"],"push":true,"wrapper":"tools/env.sh","timeout_s":900}}
@@ -361,7 +361,8 @@ On the base branch, `git blame -- <ticket-path>` identifies the commit that adde
 This does not update `STATE.md` or use the owner's index.
 HUD fast-forwards the checked-out base only when touched paths are clean and either the base tip is unchanged or every new base commit touches only unrelated paths; in the latter case it cherry-picks the tested commits onto the new base tip in a fresh detached checkout and reapplies the ticket update (refusing on any overlap or conflict), and notes the replay in the notice.
 HUD reuses the green gate only if the candidate tree matches the tested tree or differs only in plain ticket or `STATE.md` metadata (including `docs/handoff/STATE.md`).
-Otherwise it runs the gate once on the exact candidate before fast-forward.
+Otherwise it reruns the gate on the exact candidate before fast-forward.
+If the base advances again during that gate, HUD can replay and recheck the new candidate, up to two absorbed base moves per attempt. `hud_read` and the terminal notice report `base_moves` when nonzero.
 A persistent replay gate failure stops the land without dispatching a repair.
 HUD then runs `after` in the main checkout (when an `after` main build command matches the integration checkout's tested build inputs, compiler and config exactly, HUD publishes the tested `dist` through `scripts/build.mjs`'s staged publisher instead of recompiling).
 If pushing is enabled, HUD pushes only the approved landed SHA to the base branch on `origin`, even if the local branch has since advanced.
@@ -508,7 +509,9 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
   `what` is one line from the ticket's What to build section.
   Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
   The live job claims the ticket in the panel and Home progress without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` when `**Owner try:** no`, else `ready-for-human`) without touching `STATE.md`.
-- **`run`**: pass `feature` and optional `max_parallel` (default: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main; `**Role:** frontend-imp` selects that role, `**Main review:** yes` stops auto-land, and `run` with the same `feature` and `cancel: true` leaves existing jobs and lands alone.
+- **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land.
+  After addressing a failure, call `run` again with the same project and `feature`. A new queue attempt keeps existing jobs and completed lands, and retries eligible lands that failed before fast-forward without dispatching their tickets again. It keeps the previous `max_parallel` unless you override it.
+  `run` with the same `feature` and `cancel: true` stops new dispatches and lands; it leaves existing jobs and lands alone.
 - **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?}]`.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing.

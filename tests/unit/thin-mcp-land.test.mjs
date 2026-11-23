@@ -42,9 +42,11 @@ async function repair(f, flow, index) {
   }, 20000);
   return f.flowState(flow).repairs[index].job;
 }
-async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry, probe } = {}) {
+async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry, probe, crossProject = false } = {}) {
   const f = await fixture(t, { mcpEntry, probe });
-  const home = f.env.HUD_HOME, main = f.root, root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
+  const home = f.env.HUD_HOME, main = crossProject ? join(f.root, 'project') : f.root;
+  const root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
+  if (crossProject) fs.mkdirSync(main);
   cleanupFixture(t, { root: `${main}-wt` });
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: f.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(main, 'init', '-qb', 'base');
@@ -106,6 +108,25 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..base`), '2');
   assert.equal(f.git(f.main, 'branch', '--list', f.branch), '');
   assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 2);
+});
+
+test('land resolves another project from the job, requires registration, and notifies the caller', async t => {
+  const f = await checkout(t, ['test "$WRAPPED" = yes'], { crossProject: true });
+  const registry = join(f.home, 'projects.json');
+  f.git(f.root, 'init', '-qb', 'caller');
+  fs.writeFileSync(registry, JSON.stringify({ version: 1, projects: [{ root: f.root }] }));
+  const { result } = await f.rpc('tools/call', { name: 'hud_land', arguments: { job } });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /hud_land requires a registered project/);
+
+  fs.writeFileSync(registry, JSON.stringify({ version: 1, projects: [{ root: f.root }, { root: f.main }] }));
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.changes.filter(s => s.includes(flow)).length, 1);
+  assert.equal(f.git(f.main, 'rev-parse', 'base'), done.landed_sha);
+  assert.equal(f.git(f.root, 'branch', '--show-current'), 'caller');
 });
 
 async function trainCheckout(t, gate = 'true') {
@@ -1025,6 +1046,9 @@ for (const green of [true, false]) test(`land re-gates disjoint code changes and
   if (green) {
     assert.equal(state.state, 'completed', JSON.stringify(state));
     assert.deepEqual(heads, [initial, candidate]);
+    const view = await f.call('hud_read', { job: flow });
+    assert.equal(view.base_moves, 1);
+    assert.match(view.changes.find(line => line.includes(flow)), /Base moves absorbed: 1/);
     assert.equal(state.replayed_onto, movedBase);
     assert.equal(state.tested_tree, state.published_tree);
     assert.equal(state.landed_sha, candidate);
@@ -1040,6 +1064,38 @@ for (const green of [true, false]) test(`land re-gates disjoint code changes and
     assert.equal(state.landed_sha, undefined);
     assert.equal(state.repairs, undefined);
     assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), movedBase);
+    assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
+  }
+});
+
+for (const moves of [2, 3]) test(`land ${moves === 2 ? 'absorbs another move during the replay gate' : 'stops at the base move limit'}`, { timeout: 30_000 }, async t => {
+  const f = await checkout(t, [`run=1; while test -f "$HOME/gate-$run"; do run=$((run+1)); done
+    git rev-parse HEAD > "$HOME/gate-$run"
+    while test ! -f "$HOME/release-$run"; do sleep .05; done`]);
+  const { flow } = await f.call('hud_land', { job });
+  for (const run of [1, 2, 3]) {
+    await until(() => fs.existsSync(join(f.env.HOME, `gate-${run}`)), t.signal);
+    if (run <= moves) {
+      fs.writeFileSync(join(f.main, `unrelated-${run}`), `Synthetic ${run}\n`);
+      f.git(f.main, 'add', `unrelated-${run}`);
+      f.git(f.main, 'commit', '-qm', `base move ${run}`);
+    }
+    fs.writeFileSync(join(f.env.HOME, `release-${run}`), 'go');
+  }
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), t.signal);
+  const state = f.flowState(flow);
+  assert.equal(state.base_moves, 2);
+  assert.equal(fs.existsSync(join(f.env.HOME, 'gate-4')), false);
+  if (moves === 2) {
+    assert.equal(state.state, 'completed', JSON.stringify(state));
+    assert.equal(state.landed_sha, fs.readFileSync(join(f.env.HOME, 'gate-3'), 'utf8').trim());
+    assert.equal(f.git(f.remote, 'rev-parse', 'base'), state.landed_sha);
+    for (const n of [1, 2]) assert.equal(f.git(f.remote, 'show', `base:unrelated-${n}`), `Synthetic ${n}`);
+  } else {
+    assert.equal(state.state, 'failed', JSON.stringify(state));
+    assert.match(state.error, /base move retry limit reached/);
+    assert.equal(state.landed_sha, undefined);
+    assert.equal(f.git(f.main, 'log', '-1', '--format=%s'), 'base move 3');
     assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
   }
 });

@@ -8,7 +8,8 @@ export const queueIds = (home: string) => readDirSafe(join(home, 'flows')).filte
   .map(file => file.slice(0, -5)).filter(isTicketQueueId);
 
 export interface TicketQueueItem {
-  ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true;
+  ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true; base_moves?: number;
+  dispatch_queue?: string; // Keep the original worker request key across explicit resumes.
 }
 export interface TicketQueue {
   flow: string; root: string; feature: string; pane: string; task: boolean; max_parallel: number;
@@ -31,12 +32,14 @@ export function cancelTicketQueue(home: string, q: TicketQueue) {
 export const queueCancelled = (home: string, q: TicketQueue) => fs.existsSync(`${queueFile(home, q.flow)}.cancel`);
 export function ticketQueueView(q: TicketQueue) {
   const { flow, feature, state, reason, remaining, max_parallel } = q;
-  return { flow, feature, state, reason, remaining, ...(max_parallel && { max_parallel }),
+  const base_moves = q.tickets.reduce((total, item) => total + (item.base_moves ?? 0), 0);
+  return { flow, feature, state, reason, remaining, ...(max_parallel && { max_parallel }), ...(base_moves && { base_moves }),
     landed: q.tickets.filter(item => item.landed).map(item => item.ticket),
     jobs: q.tickets.map(({ ticket, job, land }) => ({ ticket, job, land })) };
 }
 export function ticketQueueNotice(q: TicketQueue) {
-  const { landed } = ticketQueueView(q);
+  const { landed, base_moves } = ticketQueueView(q);
   return `${q.flow} (ticket queue ${q.feature}) — ${q.reason ?? q.state}. Landed: ${landed.join(', ') || 'none'}.` +
+    (base_moves ? ` Base moves absorbed: ${base_moves}.` : '') +
     (q.state === 'completed' ? '' : ` Still running: ${q.remaining?.join(', ') || 'none'}.`);
 }

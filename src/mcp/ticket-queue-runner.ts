@@ -11,7 +11,7 @@ import { procStat } from '../utils/proc.js';
 import { readTurn, readDone, receiptForTurn } from '../roles/cli-turn.js';
 import { dispatchJob } from './dispatch/orchestrator.js';
 import type { Job, JobStatus } from './job-contracts.js';
-import { activeLand, landAttempt, landOutcome, readLand } from './land-state.js';
+import { activeLand, landAttempt, landOutcome, readLand, retryableLand } from './land-state.js';
 import { startLand } from './land.js';
 import { readyTickets } from './local-tickets.js';
 import { jobFiles } from './paths.js';
@@ -59,7 +59,8 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus): st
 
 async function drive(q: TicketQueue) {
   const save = () => writeTicketQueue(hudHome, q);
-  const key = (item: TicketQueueItem) => `ticket-queue:${q.flow}:${item.ticket}`;
+  const owner = (item: TicketQueueItem) => item.dispatch_queue ?? q.flow;
+  const key = (item: TicketQueueItem) => `ticket-queue:${owner(item)}:${item.ticket}`;
   const receiptFor = (item: TicketQueueItem) => jobs().find(job => job.request_key === key(item));
   // A crash between admission and the queue update does not issue a second create.
   for (const item of q.tickets) {
@@ -89,21 +90,28 @@ async function drive(q: TicketQueue) {
           filter: (file: string | null) => !file || /^(?:qa(?:\/q\d+\.md)?|STATUS\.json(?:\.stop-requested)?|report\.md|checks\.json|job\.json|done\.json|turn\.json)$/.test(file) }] : [])],
       check: async () => {
         let issue = dispatchError, changed = false;
-        const clean: { item: TicketQueueItem; job: Job; state: JobStatus['state'] }[] = [];
+        const clean: { item: TicketQueueItem; job: Job; state: JobStatus['state']; retry?: string }[] = [];
         for (const item of q.tickets) {
           if (!item.job || item.landed) continue;
-          const land = item.land ? readLand(hudHome, item.land) : landAttempt(hudHome, item.job).prior;
+          const recorded = item.land ? readLand(hudHome, item.land) : null;
+          // A resumed queue follows any newer attempt, including one started manually after the handoff.
+          const land = !item.land || (item.dispatch_queue && recorded?.ticket_queue !== q.flow)
+            ? landAttempt(hudHome, item.job).prior : recorded;
+          let retry: string | undefined;
           if (land) {
-            if (!item.land) { item.land = land.flow; changed = true; }
-            if (land.state === 'completed') { item.landed = true; changed = true; }
-            else if (!activeLand(land)) issue ??= `${item.ticket} land ${land.flow}: ${landOutcome(land)}`;
-            continue;
-          }
-          if (item.land) { issue ??= `${item.ticket} land receipt missing (${item.land})`; continue; }
+            if (item.land !== land.flow) { item.land = land.flow; changed = true; }
+            if (land.state === 'completed') {
+              item.landed = true; item.base_moves = land.base_moves; changed = true;
+            } else if (!activeLand(land)) {
+              if (item.dispatch_queue && land.ticket_queue !== q.flow && retryableLand(land)) retry = land.flow;
+              else issue ??= `${item.ticket} land ${land.flow}: ${landOutcome(land)}`;
+            }
+            if (!retry) continue;
+          } else if (item.land) { issue ??= `${item.ticket} land receipt missing (${item.land})`; continue; }
           const job = findJob(item.job);
           const flag = (why: string) => { issue ??= `${item.ticket} (${item.job}): ${why}`; };
           if (!job) { flag('job receipt missing'); continue; }
-          if (job.ticket_queue !== q.flow) { flag('job taken over outside the ticket queue'); continue; }
+          if (job.ticket_queue !== owner(item)) { flag('job taken over outside the ticket queue'); continue; }
           const { row, status } = readRow(job, false, null);
           const question = jobCache.readQa(directory(job.job)).allQuestionFiles[0];
           if (question) flag(`worker question ${question.slice(0, -3)} — use hud_read or hud_respond`);
@@ -114,7 +122,7 @@ async function drive(q: TicketQueue) {
           else if (status && cleanStates.includes(status.state)) {
             const verdict = judgeSettlement(item, job, status);
             if (verdict) flag(verdict);
-            else if (verdict === '') clean.push({ item, job, state: status.state });
+            else if (verdict === '') clean.push({ item, job, state: status.state, retry });
           }
         }
         if (queueCancelled(hudHome, q)) return finish('cancelled', 'cancelled: no more dispatches or lands started');
@@ -122,9 +130,9 @@ async function drive(q: TicketQueue) {
         if (changed) save();
         if (clean.length) {
           // Queue together, letting the existing land train decide whether they can share a gate.
-          const results = await Promise.allSettled(clean.map(async ({ item, job, state }) => {
+          const results = await Promise.allSettled(clean.map(async ({ item, job, state, retry }) => {
             try {
-              const land = await startLand(hudHome, job.job, job, state, q.pane, false, q.flow);
+              const land = await startLand(hudHome, job.job, job, state, q.pane, false, q.flow, retry);
               item.land = land.flow;
             } catch (error) { throw Error(`${item.ticket} (${job.job}): cannot start land: ${errorLine(error)}`); }
           }));
@@ -154,7 +162,7 @@ async function drive(q: TicketQueue) {
         pending = (async () => {
           try {
             const result = await dispatchJob({ role: launching.role, cwd: q.root, isolation: 'worktree', ticket: launching.ticket,
-              brief_file: launching.path, request_key: key(launching) }, q.pane, undefined, undefined, false, undefined, { id: q.flow, canAdmit });
+              brief_file: launching.path, request_key: key(launching) }, q.pane, undefined, undefined, false, undefined, { id: owner(launching), canAdmit });
             if (q.state !== 'working') return;
             if ('job' in result && typeof result.job === 'string') launching.job = result.job;
             if (!launching.job || ('ok' in result && result.ok === false)) {

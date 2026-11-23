@@ -8,8 +8,10 @@ import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
-async function project(t, { thirdBlocker = 'none', frontend = false } = {}) {
-  const f = await fixture(t, { failedRetentionMs: 30_000 });
+async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false } = {}) {
+  const caller = await fixture(t, { failedRetentionMs: 30_000 });
+  const f = crossProject ? { ...caller, root: join(caller.root, 'project') } : caller;
+  if (crossProject) fs.mkdirSync(f.root);
   cleanupFixture(t, { root: `${f.root}-wt` });
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: f.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(f.root, 'init', '-qb', 'base');
@@ -34,7 +36,7 @@ async function project(t, { thirdBlocker = 'none', frontend = false } = {}) {
   const dir = id => join(home, 'jobs', id);
   const job = id => read(join(dir(id), 'job.json'));
   const status = id => read(join(dir(id), 'STATUS.json'));
-  const start = max_parallel => f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel });
+  const start = max_parallel => f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel, cwd: f.root });
   const jobs = async (id, count) => {
     await until(() => {
       const q = flow(id);
@@ -90,6 +92,40 @@ test('ticket queue lands two ready tickets, resumes after a runner crash, and re
   assert.deepEqual(result.landed, ['sample/01', 'sample/02', 'sample/03']);
   assert.deepEqual(result.changes, [`${flow} (ticket queue sample) — completed. Landed: sample/01, sample/02, sample/03.`]);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+});
+
+test('running a failed queue in another project retries only the land, keeping the settled worker and original receipts', { timeout: 45_000 }, async t => {
+  const f = await project(t, { thirdBlocker: '01', crossProject: true });
+  const { flow } = await f.start(1);
+  const [first] = await f.jobs(flow, 1);
+  const dirty = join(f.root, 'sample-01.txt');
+  fs.writeFileSync(dirty, 'Synthetic untracked change.\n');
+  await f.settle(first);
+  const failed = await f.end(flow);
+  assert.equal(failed.state, 'failed');
+  assert.match(failed.reason, /dirty or hidden changes/);
+  const originalLand = failed.tickets[0].land;
+
+  const { flow: retry } = await f.start();
+  assert.notEqual(retry, flow);
+  const failedAgain = await f.end(retry);
+  assert.equal(failedAgain.state, 'failed');
+  assert.deepEqual(failedAgain.tickets.map(t => t.job), [first]);
+  assert.equal(failedAgain.tickets[0].land, `${originalLand}-2`);
+
+  fs.unlinkSync(dirty);
+  const { flow: resumed } = await f.start();
+  const [, second] = await f.jobs(resumed, 2);
+  assert.equal(f.flow(resumed).tickets[0].job, first);
+  assert.equal(f.flow(resumed).tickets[0].land, `${originalLand}-3`);
+  assert.equal(f.flow(resumed).tickets[0].landed, true);
+  assert.deepEqual(f.flow(flow), failed);
+  await f.settle(second);
+  const [, , third] = await f.jobs(resumed, 3);
+  await f.settle(third);
+  assert.equal((await f.end(resumed)).state, 'completed');
+  const all = fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id));
+  assert.deepEqual(all.sort(), [first, second, third].sort());
 });
 
 test('ticket queue hands back on a worker question without stopping its peer', { timeout: 30_000 }, async t => {
