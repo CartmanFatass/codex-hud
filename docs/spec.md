@@ -173,7 +173,9 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - Worker or main takes a named `hud_lease` before using a shared resource named in the brief (real install,
   paid or live runs, shared browser). One holder; free on holder end. No resident process. (21.07)
 - `hud_create` may name check commands. HUD runs them once the worker declares completion, records them
-  against that report's signature and attaches results. Checks never settle, accept or fail a job. (21.08)
+  against that report's signature and attaches results. Checks never settle, accept or fail a job. A project's
+  fast `worker_checks` are the exception: a red result refuses the code worker's report once so it fixes it in the
+  same turn, unless the worker gives a reason to skip. (21.08, 22.26)
 - Job lists are per project root, not pane. Same-project sessions adopt jobs whose recorded pane is gone.
   Manual restart recovery: herdr resume loses job bindings; no relaunch of resumed sessions. (21.09)
 
