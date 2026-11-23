@@ -12,11 +12,11 @@ import { sharedRoot } from './projects.js';
 const MAX_WAIT = 300;
 export const LEASE_TOOL = {
   name: 'hud_lease',
-  description: 'Take the named project lease before using a shared resource, and release it when finished. Only use the resource after granted:true.',
+  description: 'Named project lease: shared use needs granted:true; release after.',
   inputSchema: { type: 'object', properties: {
     name: { type: 'string', minLength: 1, maxLength: 120 },
     release: { type: 'boolean' },
-    wait_s: { type: 'number', minimum: 0, default: 120, description: `Wait capped at ${MAX_WAIT}s; 0 checks once.` },
+    wait_s: { type: 'number', minimum: 0, default: 120, description: `Max ${MAX_WAIT}s; 0 checks once.` },
   }, required: ['name'], additionalProperties: false },
 };
 

@@ -177,8 +177,8 @@ test('task client reload notifies only when its filtered tools/list payload chan
   const defs = join(copy.root, 'dist/roles/tool-definitions.js');
   const originalDefs = fs.readFileSync(defs, 'utf8');
   const waitOnly = originalDefs.replace(
-    'Wait for settlement or attention without reading reports.',
-    'Wait for synthetic settlement or attention without reading reports.'
+    'Await settlement/attention; no report reads.',
+    'Await synthetic settlement/attention; no report reads.'
   );
   assert.notEqual(waitOnly, originalDefs);
   fs.writeFileSync(defs, waitOnly);

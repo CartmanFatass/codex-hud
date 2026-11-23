@@ -19,7 +19,7 @@ export const statuslineResource = { uri: URI, name: 'codex-statusline', mimeType
 export const statuslineTool = {
   name: 'hud_statusline',
   title: 'MyHUD',
-  description: 'Displays a compact MyHUD summary in the Codex footer.',
+  description: 'Compact MyHUD Codex footer summary.',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   _meta: { 'openai/ui': { entrypoints: [{ type: 'statusline', resourceUri: URI }] } },
 };

@@ -291,8 +291,8 @@ test('sonic tooling uses the role settings for main jobs and children', { timeou
   assert.match(detail.roles.find(({ role }) => role === 'sonic').thinking_choices.max, /tracing a cause/);
   const { tools } = (await f.rpc('tools/list')).result;
   const create = tools.find(({ name }) => name === 'hud_create');
-  assert.match(create.description, /Only general accepts preset, on, model and thinking for one job\./);
-  assert.equal(create.inputSchema.properties.thinking.description, 'General thinking effort on pi or CLI.');
+  assert.match(create.description, /Single general job only: preset\/on\/model\/thinking\./);
+  assert.equal(create.inputSchema.properties.thinking.description, 'Thinking effort (pi/CLI).');
   assert.doesNotMatch(tools.find(({ name }) => name === 'hud_roster').description, /per-task|thinking choices/);
   const main = await f.call('hud_create', { role: 'sonic', task: 'Synthetic task.' });
   assert.equal(main.thinking, 'high');

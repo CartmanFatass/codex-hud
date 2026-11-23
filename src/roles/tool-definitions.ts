@@ -4,7 +4,7 @@ import { MAX_CHECK_COMMAND, MAX_CHECKS } from './job-checks.js';
 
 const text = { type: 'string' };
 const bool = { type: 'boolean' };
-const detail = { ...bool, description: 'Include diagnostics.' };
+const detail = { ...bool, description: 'Diagnostics.' };
 const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
   name,
   description,
@@ -17,87 +17,87 @@ const ticketNumber = { type: 'integer', minimum: 1 };
 const blockers = { type: 'array', items: { anyOf: [ticketNumber, { type: 'string', pattern: '^[a-z0-9-]+/[0-9]+$' }] } };
 
 export const ROLE_TOOLS = [
-  tool('hud_roster', 'Get role availability, effective assignments, and the project dispatch convention when new or changed.', {
-    cwd: { ...text, description: 'Project directory (default: server cwd).' },
+  tool('hud_roster', 'Role availability, effective assignments; new/changed project dispatch convention.', {
+    cwd: { ...text, description: 'Project dir; default server cwd.' },
     convention_version: text,
-    detail: { ...bool, description: 'Include presets, fallbacks, sources and accepted options.' },
+    detail: { ...bool, description: 'Presets, fallbacks, sources, valid options.' },
   }),
   tool(
     'hud_create',
-    'Create a job (role + task or brief_file), batch (jobs), or retry (retry_of). Role files and Control set placement. Only general accepts preset, on, model and thinking for one job. Use a fresh request_key for an intentional duplicate. See hud_roster(detail:true) for options.',
+    'Single: role + task/brief_file; batch: jobs; retry: retry_of. Placement: role files/Control. Single general job only: preset/on/model/thinking. Fresh request_key for duplicates. Options: hud_roster(detail:true).',
     {
       role: text,
-      request_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same caller, role, cwd and task match for 10 minutes.' },
+      request_key: { ...text, description: 'Permanent key; omit for 10-min caller/role/cwd/task dedupe.' },
       task: text,
-      brief_file: { ...text, description: 'UTF-8 text path within cwd used as task.' },
+      brief_file: { ...text, description: 'UTF-8 task file within cwd.' },
       jobs: {
         type: 'array',
         minItems: 1,
         items: { type: 'object' },
-        description: 'Batch create for sessions without MCP tasks; task sessions send parallel single creates.',
+        description: 'Without MCP tasks; else parallel single creates.',
       },
-      scout: { ...text, minLength: 1, description: 'Run sonic on this question first and attach its report. Not available for role sonic.' },
-      retry_of: { ...text, description: 'Failed or stopped job ID. Reuses its brief and options and selects an available place.' },
-      cwd: { ...text, description: 'Job directory and project context (default: server cwd).' },
+      scout: { ...text, minLength: 1, description: 'Ask sonic first, attach report; non-sonic only.' },
+      retry_of: { ...text, description: 'Failed/stopped ID; reuse brief/options at available place.' },
+      cwd: { ...text, description: 'Job/project dir; default server cwd.' },
       package: { ...text, description: 'Display label.' },
-      ticket: { ...text, description: 'Linked ticket: feature/NN.' },
+      ticket: { ...text, description: 'feature/NN ticket link.' },
       slice: { ...text, description: 'Linked STATE slice ID.' },
-      context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths within cwd.' },
+      context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths in cwd.' },
       checks: { type: 'array', maxItems: MAX_CHECKS, items: { ...text, minLength: 1, maxLength: MAX_CHECK_COMMAND },
-        description: 'Commands the HUD runs in the job cwd after a declared pi or CLI settlement.' },
+        description: 'HUD runs in job cwd after declared pi/CLI settlement.' },
       from_jobs: {
         type: 'array',
         items: { ...text, pattern: '^j[0-9a-f]{16}$' },
         maxItems: 16,
-        description: 'Use reports as context without marking them read.',
+        description: 'Report context without marking read.',
       },
       isolation: {
         type: 'string',
         enum: ['none', 'worktree'],
         default: 'none',
-        description: 'Managed Git checkout from HEAD (local only).',
+        description: 'Managed local Git checkout from HEAD.',
       },
-      mode: { ...text, enum: ['tab', 'headless'], description: 'Headless requires a continuable pi, Claude or Antigravity role.' },
+      mode: { ...text, enum: ['tab', 'headless'], description: 'Headless: continuable pi/Claude/Antigravity roles.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI only.' },
-      on: { ...text, description: 'General harness/provider: pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow.' },
-      preset: { ...text, description: 'Named general preset; mutually exclusive with on.' },
+      on: { ...text, description: 'Harness/provider: pi|agy|claude|codex|grok|chatgpt|gemini|argon|flow.' },
+      preset: { ...text, description: 'Preset name; excludes on.' },
       kind: { type: 'string', enum: ['image', 'video'], description: 'Flow only (default image).' },
-      model: { ...text, description: 'General model on pi or CLI.' },
-      thinking: { ...text, description: 'General thinking effort on pi or CLI.' },
+      model: { ...text, description: 'Model (pi/CLI).' },
+      thinking: { ...text, description: 'Thinking effort (pi/CLI).' },
       lens: { ...bool, description: 'Pi: pi-lens.' },
       mcp: { ...bool, description: 'Pi: MCP adapter.' },
       tps: { ...bool, description: 'Pi: tokens/s.' },
       ui_ext: { ...bool, description: 'Pi: false disables UI extensions.' },
-      skills: { ...bool, description: 'Pi: true includes personal skills.' },
-      split: { ...bool, description: 'Pi: reserve a right helper pane.' },
+      skills: { ...bool, description: 'Pi: true adds personal skills.' },
+      split: { ...bool, description: 'Pi: right helper pane.' },
       pi_args: {
         type: 'array',
         items: { ...text, maxLength: 4096 },
         maxItems: 128,
-        description: 'Pi argv; placement is general-only; --orchestrator and --notify reserved.',
+        description: 'Pi argv; general-only placement; --orchestrator/--notify reserved.',
       },
     }
   ),
   tool(
     'hud_read',
-    'List the project’s active jobs and the caller’s unread settled reports, or collect by job or jobs. Default: report digest, changed paths, open questions, check outcomes and latest progress. Full mode includes report text, path and diagnostics. Reading a settled report closes the worker; use hud_peek to inspect.',
+    "List active project jobs + caller's unread settled reports or collect job/jobs. Default digest: summary, changed paths, open questions, check results, latest progress. Full adds report text/path/diagnostics. Reading settled reports closes workers; inspect via hud_peek.",
     {
       job: text,
-      jobs: { type: 'array', items: text, minItems: 1, description: 'Read each job in order of input; errors are per item.' },
+      jobs: { type: 'array', items: text, minItems: 1, description: 'Input order; per-item errors.' },
       mode: { ...text, enum: ['digest', 'full'], default: 'digest' },
-      wait_ms: { type: 'integer', minimum: 0, maximum: 120000, description: 'Wait for settlement or attention.' },
-      full: { ...bool, description: 'Legacy alias for mode: full.' },
-      detail: { ...bool, description: 'Job only: include launch diagnostics.' },
+      wait_ms: { type: 'integer', minimum: 0, maximum: 120000, description: 'For settlement/attention.' },
+      full: { ...bool, description: 'Legacy mode: full alias.' },
+      detail: { ...bool, description: 'Job only: launch diagnostics.' },
       view: {
         type: 'string',
         enum: ['compact', 'recent'],
-        description: 'List only (no job). Compact counts child jobs and folds older unread reports; recent gives the newest 20 full rows, including children.',
+        description: 'List only: compact counts children, folds older unread reports; recent: newest 20 full rows incl. children.',
       },
     }
   ),
   tool(
     'hud_wait',
-    'Wait for settlement or attention without reading reports. Omit jobs for the caller’s unsettled jobs.',
+    "Await settlement/attention; no report reads. Default: caller's unsettled jobs.",
     {
       jobs: { type: 'array', items: text },
       mode: { type: 'string', enum: ['any', 'all'], default: 'any' },
@@ -106,21 +106,21 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_peek',
-    'Inspect status and progress without marking anything read or closing the worker.',
+    'Status/progress; never marks read or closes worker.',
     {
       job: text,
-      lines: { type: 'integer', minimum: 1, maximum: 120, description: 'Fetch this many recent pane lines.' },
+      lines: { type: 'integer', minimum: 1, maximum: 120, description: 'Recent pane line count.' },
       detail,
     },
     ['job']
   ),
   tool(
     'hud_send',
-    'Send text to one job, fan out to working jobs (jobs), or send distinct messages (messages: [{job, text, message_key?}]). After closure, HUD resumes the native session or starts a repair (continued_as) and names the path in continuation. Use one of job, jobs or messages.',
+    'Send via one: job, jobs (working jobs), messages (distinct text). Closed: resume native session or start repair (continued_as); continuation says which.',
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1 },
-      message_key: { ...text, description: 'Optional permanent idempotency key. If omitted, the same job and text match for 10 minutes.' },
+      message_key: { ...text, description: 'Permanent key; omit for 10-min job/text dedupe.' },
       text,
       messages: {
         type: 'array',
@@ -131,13 +131,13 @@ export const ROLE_TOOLS = [
           required: ['job', 'text'],
           additionalProperties: false,
         },
-        description: 'Batch sends in input order; errors are per item.',
+        description: 'Input order; per-item errors.',
       },
     }
   ),
   tool(
     'hud_respond',
-    'Write a question answer once, or batch-answer with answers: [{job, request_id, answer}].',
+    'Answer once or batch via answers.',
     {
       job: text,
       request_id: text,
@@ -151,24 +151,24 @@ export const ROLE_TOOLS = [
           required: ['job', 'request_id', 'answer'],
           additionalProperties: false,
         },
-        description: 'Batch answers in input order; errors are per item.',
+        description: 'Input order; per-item errors.',
       },
     }
   ),
-  tool('hud_close', 'Reap a job early; safe to repeat.', { job: text }, ['job']),
-  tool('hud_land', 'Land a settled managed worktree job through the project gate. Read the returned flow ID with hud_read.', { job: text }, ['job']),
+  tool('hud_close', 'Reap early; repeat-safe.', { job: text }, ['job']),
+  tool('hud_land', 'Land settled managed worktree job via project gate; hud_read returned flow ID.', { job: text }, ['job']),
   LEASE_TOOL,
   tool(
     'hud_tickets',
-    'Read the ticket method, list ready tickets, add or update local tickets, or sync a GitHub mirror.',
+    'Ticket guide/ready list; add/update local; sync GitHub mirror.',
     {
       op: { ...text, enum: ['guide', 'ready', 'add', 'update', 'sync'], default: 'guide' },
-      cwd: { ...text, description: 'Project directory (default: server cwd).' },
-      feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Feature slug for add and update.' },
+      cwd: { ...text, description: 'Project dir; default server cwd.' },
+      feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Add/update: slug.' },
       tickets: {
         type: 'array',
         minItems: 1,
-        description: 'For add: drafts, blockers first.',
+        description: 'Add drafts, blockers first.',
         items: {
           type: 'object',
           properties: {
@@ -177,21 +177,21 @@ export const ROLE_TOOLS = [
             what: text,
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
-            owner_try: { type: 'boolean', description: 'Whether the owner needs to try it after landing (default: yes).' },
+            owner_try: { type: 'boolean', description: 'Owner tries post-land (default yes).' },
           },
           required: ['title', 'blocked_by', 'what', 'acceptance'],
           additionalProperties: false,
         },
       },
-      ticket: { ...ticketNumber, description: 'Ticket number for update.' },
-      status: { ...ticketStatus, description: 'New status for update.' },
-      owner_try: { type: 'boolean', description: 'For update: set Owner try yes/no.' },
-      blocked_by: { ...blockers, description: 'For update: replace blockers (local numbers or feature/NN).' },
-      tick: { type: 'array', items: ticketNumber, description: 'For update: 1-based acceptance items to check.' },
+      ticket: { ...ticketNumber, description: 'Update only.' },
+      status: { ...ticketStatus, description: 'Update only.' },
+      owner_try: { type: 'boolean', description: 'Update: yes/no.' },
+      blocked_by: { ...blockers, description: 'Update: replace blockers (local numbers or feature/NN).' },
+      tick: { type: 'array', items: ticketNumber, description: 'Update: tick 1-based acceptance items.' },
       updates: {
         type: 'array',
         minItems: 1,
-        description: 'For update: batch updates in input order (item feature overrides top-level feature); errors are per item.',
+        description: 'Update batch: input order, per-item errors; item feature wins.',
         items: {
           type: 'object',
           properties: {
