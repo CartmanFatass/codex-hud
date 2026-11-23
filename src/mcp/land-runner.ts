@@ -13,7 +13,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { DEFAULT_LAND_TIMEOUT_S, isFlowId, landFile, readLand, writeLand, type LandFlow } from './land-state.js';
+import { DEFAULT_LAND_TIMEOUT_S, isFlowId, landFile, readLand, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
@@ -21,9 +21,21 @@ import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 
 class CommandError extends Error {
-  constructor(message: string, readonly tail: string[]) { super(message); }
+  constructor(message: string, readonly tail: string[], readonly output = '') { super(message); }
 }
 class CommandTimeout extends CommandError {}
+function failureExcerpt(e: CommandError) {
+  const output = stripVTControlCharacters(e.output).replace(/\r\n/g, '\n');
+  // Node's spec reporter groups failures at the end; TAP puts diagnostics after each `not ok`.
+  const blocks = output.match(/^test at .+:\d+[ \t]*\n[ \t]*✖ .+(?:\n[ \t][^\n]*)+|^[ \t]*not ok \d+ - .+\n[ \t]+---[ \t]*\n(?:[ \t][^\n]*\n)*?[ \t]+\.\.\.[ \t]*$/gm);
+  const bytes = Buffer.from(blocks?.join('\n\n') ?? e.tail.map(line => stripVTControlCharacters(line)).join('\n'));
+  const cap = 8 * 1024;
+  if (bytes.length <= cap) return bytes;
+  // Keep the start of assertion blocks or the end of the tail, without splitting UTF-8.
+  let edge = blocks ? cap : bytes.length - cap;
+  while ((bytes[edge] & 0xc0) === 0x80) edge += blocks ? -1 : 1;
+  return blocks ? bytes.subarray(0, edge) : bytes.subarray(edge);
+}
 type TestFailure = { file: string; name?: string };
 function collectTestFailures(cwd: string, stream: Readable, failures: TestFailure[]) {
   let previous: TestFailure | undefined;
@@ -59,13 +71,13 @@ function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, 
       catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') append(`\n${(e as Error).message}\n`); }
       // Don't wait for inherited stdio to close. A child can outlive the shell that opened it.
       child.stdout.destroy(); child.stderr.destroy(); child.unref();
-      fail(new CommandTimeout('timeout', tail()));
+      fail(new CommandTimeout('timeout', tail(), output));
     }, deadlineMs);
     child.once('error', (e) => { clearTimeout(timer); fail(e); });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
       if (code === 0) ok(tail());
-      else fail(new CommandError(`exit ${code ?? signal}`, tail()));
+      else fail(new CommandError(`exit ${code ?? signal}`, tail(), output));
     });
   });
 }
@@ -145,19 +157,33 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         }
         recordTiming(label, t0, true, publish ? { skipped: true } : undefined);
       } catch (e) {
+        if (!failures || !(e instanceof CommandError)) { recordTiming(label, t0, false); throw e; }
+        const reruns = f.reruns ??= [];
+        const prefix = `${landFile(home, f.flow)}.gate-${reruns.length + 1}`;
+        const saveExcerpt = (error: CommandError, suffix = '') => {
+          const path = `${prefix}${suffix}.log`;
+          writePrivateFile(path, failureExcerpt(error), { mkdir: false });
+          return path;
+        };
+        const tests = [...new Set(failures.map(({ file, name }) => name ? `${name} (${file})` : file))];
+        const entry: LandRerun = { step: label, tests, output_path: saveExcerpt(e) };
+        reruns.push(entry);
         recordTiming(label, t0, false);
         // A command deadline can leave tests unrun; a red test (including a node:test timeout) identifies a safe rerun.
-        if (!failures || !(e instanceof CommandError) || e instanceof CommandTimeout) throw e;
+        if (e instanceof CommandTimeout) throw e;
         checkCancel();
         const files = [...new Set(failures.map(({ file }) => file))];
         const r0 = performance.now();
         try {
           await invoke(files.length ? [process.execPath, '--test', '--test-timeout=60000', '--test-force-exit', '--', ...files].map(quote).join(' ') : cmd);
-          recordTiming(label, r0, true, { rerun: true });
-        } catch (re) { recordTiming(label, r0, false, { rerun: true }); throw re; }
-        const tests = [...new Set(failures.map(({ file, name }) => name ? `${name} (${file})` : file))];
-        (f.reruns ??= []).push(tests.length ? { step: f.step, tests } : f.step);
-        writeLand(home, f);
+        } catch (re) {
+          entry.rerun_ok = false;
+          if (re instanceof CommandError) entry.rerun_output_path = saveExcerpt(re, '-rerun');
+          recordTiming(label, r0, false, { rerun: true });
+          throw re;
+        }
+        entry.rerun_ok = true;
+        recordTiming(label, r0, true, { rerun: true });
       }
     }
   }

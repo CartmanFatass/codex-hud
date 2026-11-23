@@ -81,6 +81,8 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   const done = await f.call('hud_read', { job: flow });
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.equal(done.changes.filter(s => s.includes(flow)).length, 1);
+  assert.equal(done.reruns, undefined);
+  assert.equal(fs.readdirSync(join(f.home, 'flows')).some(name => name.endsWith('.log')), false);
   const again = await f.call('hud_land', { job });
   assert.equal(again.flow, flow); assert.equal(again.state, 'completed');
   assert.equal(again.changes?.some(s => s.includes(flow)) ?? false, false);
@@ -195,7 +197,10 @@ for (const kind of ['gate', 'after']) test(`land bounds a hung ${kind} and kills
   assert.equal(done.error, 'timeout');
   assert.deepEqual(done.tail, Array.from({ length: 40 }, (_, i) => String(i + 11)));
   assert.equal(done.repairs, undefined);
-  assert.equal(done.reruns, undefined);
+  if (kind === 'gate') {
+    assert.equal(done.reruns[0].rerun_ok, undefined);
+    assert.equal(fs.readFileSync(done.reruns[0].output_path, 'utf8'), done.tail.join('\n'));
+  } else assert.equal(done.reruns, undefined);
   const pid = Number(fs.readFileSync(join(f.env.HOME, 'sleeper'), 'utf8'));
   await until(() => !isProcAlive(pid));
   assert.equal((await f.call('hud_lease', { name: 'main-checkout', wait_s: 2 })).granted, true);
@@ -449,7 +454,14 @@ test('a persistently red gate creates same-role repairs and hands back once afte
   }
   await until(() => f.flowState(flow).state === 'failed', 15000);
   const done = await rpc('tasks/get', { taskId: flow });
-  assert.match(done.result.content[0].text, /gate\[1\].*exit 7\nRepair 1:[^\n]+\nRepair 2:[^\n]+\n11\n[\s\S]*50$/);
+  assert.match(done.result.content[0].text, /gate\[1\].*exit 7\nRepair 1:[^\n]+\nRepair 2:[^\n]+\ngate\[1\][\s\S]*\n11\n[\s\S]*50$/);
+  const paths = f.flowState(flow).reruns.flatMap(({ rerun_ok, output_path, rerun_output_path }) => {
+    assert.equal(rerun_ok, false);
+    return [output_path, rerun_output_path];
+  });
+  assert.equal(paths.length, 6);
+  assert.equal(new Set(paths).size, 6);
+  for (const path of paths) assert.equal(fs.readFileSync(path, 'utf8'), Array.from({ length: 40 }, (_, i) => i + 11).join('\n'));
   assert.equal(fs.readFileSync(join(f.env.HOME, 'count'), 'utf8'), 'run\n'.repeat(6));
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
@@ -470,12 +482,17 @@ test('cherry-pick conflict goes to the repair worker; even a quickly answered qu
 });
 
 test('gate reruns only the failing step once and reports its recovery without dispatch', async t => {
-  const f = await checkout(t, ['echo first >> "$HOME/count"', 'echo flaky >> "$HOME/count"; test -f "$HOME/once" || { touch "$HOME/once"; exit 1; }']);
+  const f = await checkout(t, ['echo first >> "$HOME/count"', `echo flaky >> "$HOME/count"; test -f "$HOME/once" || {
+    touch "$HOME/once"; node -e 'console.log("✓".repeat(4000)); console.log("synthetic final line")'; exit 1;
+  }`]);
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).state === 'completed', 15000);
   const done = await f.call('hud_read', { job: flow });
   assert.equal(done.repairs, undefined); assert.equal(done.reruns.length, 1);
   assert.match(done.changes.join('\n'), /gate\[2\].*passed on immediate rerun/);
+  const excerpt = fs.readFileSync(done.reruns[0].output_path);
+  assert.ok(excerpt.length <= 8192);
+  assert.match(excerpt.toString('utf8'), /^✓+\nsynthetic final line$/);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'count'), 'utf8'), 'first\nflaky\nflaky\n');
 });
 
@@ -492,7 +509,7 @@ import test from 'node:test';
 const marker = join(process.env.HOME, ${JSON.stringify(file)});
 const seen = existsSync(marker);
 appendFileSync(marker, 'run\\n');
-for (const name of ${JSON.stringify(names)}) test(name, () => assert.ok(seen));
+for (const name of ${JSON.stringify(names)}) test(name, () => assert.ok(seen, 'synthetic assertion: ' + name));
 `);
   }
   f.git(f.worktree, 'add', 'sample', 'package.json'); f.git(f.worktree, 'commit', '-qm', 'add tests');
@@ -504,10 +521,25 @@ for (const name of ${JSON.stringify(names)}) test(name, () => assert.ok(seen));
   assert.deepEqual(done.reruns[0].tests, [
     'alpha recovers (sample/alpha.test.mjs)', 'another alpha recovers (sample/alpha.test.mjs)', "beta recovers (sample/beta's test.test.mjs)",
   ]);
-  assert.match(done.changes.join('\n'), /flaky tests: alpha recovers .*another alpha recovers .*beta recovers/);
+  const { output_path: path, rerun_output_path } = done.reruns[0];
+  const notice = done.changes.find(line => line.includes('flaky tests:'));
+  assert.match(notice, /flaky tests: alpha recovers .*another alpha recovers .*beta recovers/);
+  assert.ok(notice.includes(path));
+  assert.equal(rerun_output_path, undefined);
+  assert.equal(fs.statSync(path).mode & 0o777, 0o600);
+  const excerpt = fs.readFileSync(path, 'utf8');
+  assert.ok(path.startsWith(join(f.home, 'flows', `${flow}.json.`)));
+  assert.match(excerpt, /^test at .*alpha\.test\.mjs:/);
+  for (const name of ['alpha recovers', 'another alpha recovers', 'beta recovers'])
+    assert.ok(excerpt.includes(`AssertionError [ERR_ASSERTION]: synthetic assertion: ${name}`));
+  assert.doesNotMatch(excerpt, /ℹ tests|✖ failing tests:/);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'green.test.mjs'), 'utf8'), 'run\n');
   for (const file of ['alpha.test.mjs', "beta's test.test.mjs"])
     assert.equal(fs.readFileSync(join(f.env.HOME, file), 'utf8'), 'run\nrun\n');
+  assert.equal((await f.call('hud_read', { job: flow })).reruns[0].output_path, path);
+  fs.unlinkSync(join(f.home, 'flows', `${flow}.json`));
+  assert.equal((await f.call('hud_read', { job: flow })).code, 'flow_not_found');
+  assert.equal(fs.existsSync(path), false);
 });
 
 test('gate reruns a timed-out test file once, not its passing neighbor', async t => {

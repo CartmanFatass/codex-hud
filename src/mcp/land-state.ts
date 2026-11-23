@@ -9,6 +9,9 @@ import type { ManagedWorktree } from './managed-worktree.js';
 export const DEFAULT_LAND_TIMEOUT_S = 900;
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
 export interface LandTiming { step: string; ms: number; ok: boolean; rerun?: true; skipped?: true }
+export interface LandRerun {
+  step: string; tests: string[]; output_path?: string; rerun_output_path?: string; rerun_ok?: boolean;
+}
 export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
@@ -16,7 +19,7 @@ export interface LandFlow {
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
   after_note?: string;
   repairs?: { step: string; job?: string; outcome: string }[];
-  reruns?: (string | { step: string; tests: string[] })[];
+  reruns?: (string | LandRerun)[];
   timings?: LandTiming[];
 }
 export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}(?:-[1-9]\d*)?$/.test(id);
@@ -68,8 +71,13 @@ export function landNotice(f: LandFlow) {
     ...(f.after_note ? [`After note: ${one(f.after_note)}`] : []),
     ...(f.cleanup_note ? [`Cleanup note: ${one(f.cleanup_note)}`] : []),
     ...(f.repairs ?? []).map((r, i) => `Repair ${i + 1}: ${one(r.step)} → ${r.job ?? 'dispatch'}: ${one(r.outcome)}`),
-    ...(f.reruns ?? []).map(r => typeof r === 'string' ? `${one(r)} passed on immediate rerun` :
-      `${one(r.step)} passed on immediate rerun; flaky tests: ${r.tests.map(one).join(', ')}`), ...(f.tail ?? [])].join('\n');
+    ...(f.reruns ?? []).map(r => {
+      if (typeof r === 'string') return `${one(r)} passed on immediate rerun`;
+      const passed = r.rerun_ok === true || !r.output_path; // Legacy entries recorded only recovered gates.
+      const outcome = passed ? 'passed on immediate rerun' : r.rerun_ok === false ? 'failed on immediate rerun' : 'failed';
+      const tests = passed && r.tests.length ? `; flaky tests: ${r.tests.map(one).join(', ')}` : '';
+      return `${one(r.step)} ${outcome}${tests}${r.output_path ? `; output: ${r.output_path}` : ''}${r.rerun_output_path ? `; rerun output: ${r.rerun_output_path}` : ''}`;
+    }), ...(f.tail ?? [])].join('\n');
 }
 /** Native/watch and MCP changes share one terminal notice claim for the calling pane. */
 export function landEvents(home: string, pane: string | null, all = false, cwd = process.cwd()) {
@@ -80,6 +88,14 @@ export function landEvents(home: string, pane: string | null, all = false, cwd =
   try { files = fs.readdirSync(dir); }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { lines, pending }; throw e; }
   for (const file of files) {
+    const sidecar = /^(.*)\.json\.gate-[1-9]\d*(?:-rerun)?\.log$/.exec(file);
+    if (sidecar && isFlowId(sidecar[1])) {
+      // Keep excerpts as long as the receipt exists; only sweep orphaned sidecars.
+      try {
+        if (!fs.lstatSync(landFile(home, sidecar[1]), { throwIfNoEntry: false })) fs.unlinkSync(join(dir, file));
+      } catch { /* Retry at the next scan. */ }
+      continue;
+    }
     const id = file.replace(/\.json$/, '');
     if (!file.endsWith('.json') || !isFlowId(id)) continue;
     const marker = `${landFile(home, id)}.${all ? 'observed' : 'noticed'}`;
