@@ -1308,7 +1308,8 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}), recorded_at,
     exit_code: null as number | null, stderr_tail: '' };
   current.land_turn = land ? key : undefined;
-  if (!land) delete current.ticket_queue;
+  // A note queued into a working turn leaves that turn with its queue; only a new turn is taken over.
+  if (!land && !queued) delete current.ticket_queue;
   (current.send_outcomes ??= []).push(outcome);
   if (!current.cli) current.pi_sent_at = recorded_at;
   save(current);

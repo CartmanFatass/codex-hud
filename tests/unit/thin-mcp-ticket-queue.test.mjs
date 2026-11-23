@@ -153,6 +153,20 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   assert.deepEqual(f.flow(answered.queue_resumed).tickets.map(x => x.job), [first, peer]);
 });
 
+test('a note sent to a working queue job keeps the job in its queue', { timeout: 30_000 }, async t => {
+  const f = await project(t);
+  const { flow } = await f.start();
+  const [first] = await f.jobs(flow, 1);
+  await f.call('hud_send', { job: first, text: 'Synthetic constraint for the current turn.' });
+  assert.equal(f.job(first).ticket_queue, flow);
+  await f.settle(first);
+  const [, second] = await f.jobs(flow, 2);
+  await f.settle(second);
+  const [, , third] = await f.jobs(flow, 3);
+  await f.settle(third);
+  assert.equal((await f.end(flow)).state, 'completed');
+});
+
 test('ticket queue keeps going past an answered worker question', { timeout: 30_000 }, async t => {
   const f = await project(t);
   const { flow } = await f.start();
