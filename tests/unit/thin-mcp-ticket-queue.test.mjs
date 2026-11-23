@@ -155,6 +155,10 @@ test('ticket queue keeps going past an answered worker question', { timeout: 30_
   fs.mkdirSync(qa, { recursive: true });
   writeFixtureFile(join(qa, 'q1.md'), '# Question q1 from Synthetic\n\nChoose a synthetic path.\n');
   writeFixtureFile(join(qa, 'q1.answer.md'), 'Take the synthetic path.\n');
+  // The worker has not read the answer yet.
+  writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({ ...f.status(first), state: 'waiting_orchestrator' }));
+  await new Promise(resolve => setTimeout(resolve, 500));
+  assert.equal(f.flow(flow).state, 'working');
   await f.settle(first);
   const [, second] = await f.jobs(flow, 2);
   await f.settle(second);

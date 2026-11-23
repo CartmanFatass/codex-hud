@@ -113,11 +113,13 @@ async function drive(q: TicketQueue) {
           if (!job) { flag('job receipt missing'); continue; }
           if (job.ticket_queue !== owner(item)) { flag('job taken over outside the ticket queue'); continue; }
           const { row, status } = readRow(job, false, null);
-          const question = jobCache.readQa(directory(job.job)).openIds[0];
+          const qa = jobCache.readQa(directory(job.job)), question = qa.openIds[0];
+          // Answered but not yet read: the worker still reports waiting_orchestrator until it picks the answer up.
+          const answered = !question && qa.allQuestionFiles.length > 0 && row.state === 'waiting_orchestrator';
           if (question) flag(`worker question ${question} — use hud_read or hud_respond`);
           else if (fs.existsSync(join(directory(job.job), jobFiles.stopRequested))) flag('worker stop requested');
           else if (failedAttempt(row)) flag(row.reason ?? row.display_state);
-          else if (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator') flag(row.reason ?? 'worker needs main');
+          else if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) flag(row.reason ?? 'worker needs main');
           else if (!status && job.dispatch_exit_code === null) flag('dispatch interrupted before worker status was recorded');
           else if (status && cleanStates.includes(status.state)) {
             const verdict = judgeSettlement(item, job, status);
