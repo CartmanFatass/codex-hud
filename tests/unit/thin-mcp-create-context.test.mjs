@@ -132,13 +132,76 @@ test('non-general roles refuse caller Pi placement flags and do not inherit gene
     const result = await f.call('hud_create', { role: 'reviewer', task: 'Read only.', pi_args: [flag, 'synthetic/caller'] });
     assert.equal(result.code, 'invalid_arguments', flag);
   }
-  const original = await f.call('hud_create', { role: 'general', task: 'Synthetic retry.', on: 'pi', model: 'synthetic/override', thinking: 'low', pi_args: ['--model', 'synthetic/caller'] });
+  const original = await f.call('hud_create', { role: 'general', task: 'Synthetic retry.', instructions: 'imp', on: 'pi', model: 'synthetic/override', thinking: 'low', pi_args: ['--model', 'synthetic/caller'] });
   writeFixtureFile(join(original.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed' }));
   const next = await f.call('hud_create', { retry_of: original.job, role: 'reviewer' });
   const receipt = JSON.parse(fs.readFileSync(join(next.task_dir, 'job.json')));
   assert.equal(receipt.model, owner.model);
   assert.equal(receipt.thinking, owner.thinking);
   assert.deepEqual(receipt.pi_args, owner.pi_args);
+  assert.equal(receipt.instructions_from, undefined);
+});
+
+test('only general can borrow instructions from a visible role', async t => {
+  const f = await fixture(t);
+  const task = 'Synthetic validation.';
+  const rejected = await f.call('hud_create', { role: 'imp', task, instructions: 'reviewer' });
+  assert.equal(rejected.code, 'invalid_arguments');
+  assert.match(rejected.error, /role file and Control.*general.*instructions/);
+  const unknown = await f.call('hud_create', { role: 'general', task, instructions: 'not-a-role' });
+  assert.equal(unknown.code, 'invalid_arguments');
+  assert.match(unknown.error, /not-a-role.*Valid roles:.*general.*imp/);
+  fs.mkdirSync(join(f.root, '.hud'));
+  writeFixtureFile(join(f.root, '.hud/project.json'), JSON.stringify({ version: 1, roles: ['general'] }));
+  writeFixtureFile(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
+    version: 1, projects: [{ root: f.root, registered_at: '2026-01-01T00:00:00.000Z' }],
+  }));
+  const hidden = await f.call('hud_create', { role: 'general', task, instructions: 'imp' });
+  assert.equal(hidden.code, 'invalid_arguments');
+  assert.match(hidden.error, /Valid roles: general$/);
+  assert.deepEqual(withoutCallerLookups(f.commands()), []);
+});
+
+test('general borrows the imp pi role and bundled instructions without borrowing placement; retry keeps them', async t => {
+  const f = await fixture(t);
+  writeFixtureFile(join(f.root, 'roles', 'general.md'), '---\nmodel: synthetic/general\nthinking: high\n---\n');
+  const create = await f.call('hud_create', { role: 'general', task: 'Synthetic comparison.', instructions: 'imp' });
+  assert.equal(create.role, 'general');
+  assert.equal(create.used_place, 'pi (synthetic/general)');
+  assert.equal(create.overflow_from, undefined);
+  assert.equal((await f.call('hud_read', { job: create.job })).instructions_from, 'imp');
+  writeFixtureFile(join(create.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed' }));
+  const retry = await f.call('hud_create', { retry_of: create.job });
+  assert.equal(retry.role, 'general');
+  assert.equal(retry.used_place, create.used_place);
+  assert.equal(JSON.parse(fs.readFileSync(join(retry.task_dir, 'job.json'))).instructions_from, 'imp');
+  const launches = f.commands().filter(({ command }) => command === 'pi-role');
+  assert.equal(launches.length, 2);
+  for (const { args } of launches) {
+    assert.deepEqual(args.slice(0, 2), ['--args-json', 'implementer']);
+    for (const [flag, value] of [
+      ['--hud-instructions', resolve('packages/hud-mcp/instructions/implementer.md')],
+      ['--model', 'synthetic/general'], ['--thinking', 'high'],
+    ]) assert.equal(args[args.indexOf(flag) + 1], value);
+  }
+});
+
+test('general borrows bundled imp instructions on Antigravity and Claude', async t => {
+  const f = await fixture(t);
+  const file = resolve('packages/hud-mcp/instructions/implementer.md');
+  for (const on of ['agy', 'claude']) {
+    const job = await f.call('hud_create', { role: 'general', task: `Synthetic ${on}.`, instructions: 'imp', on });
+    assert.equal(job.role, 'general');
+    assert.match(job.used_place, new RegExp(`^cli/${on}`));
+    const logs = f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'agent' && args[2] === job.agent);
+    if (on === 'claude') {
+      const { args } = logs.find(({ args }) => args[1] === 'start');
+      assert.equal(args[args.indexOf('--append-system-prompt-file') + 1], file);
+    } else {
+      const { args } = logs.find(({ args }) => args[1] === 'prompt');
+      assert.ok(args[3].startsWith(fs.readFileSync(file, 'utf8').trimEnd() + '\n\n'));
+    }
+  }
 });
 
 test('hud_create retry_of reuses a failed job brief and options on an available place', async (t) => {

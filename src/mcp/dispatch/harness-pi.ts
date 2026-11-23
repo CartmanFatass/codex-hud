@@ -101,7 +101,8 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       if (source?.role === 'sonic') continuation = prepareSonicRetry(dir, job.cwd, source, directory(source.job), readCachedStatus(source.job).status);
     }
     const prompt = continuation ?? briefPrompt(join(dir, jobFiles.brief));
-    const piRole = place.pi_role ?? role.instructions;
+    const borrowed = job.borrowed_instructions;
+    const piRole = borrowed?.pi_role ?? place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
     const argv = ['--args-json', piRole];
     if (!job.headless) argv.push('--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role);
@@ -113,7 +114,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       const notify = binScript('hud-notify.mjs');
       argv.push('--notify', [process.execPath, notify, hudHome, owner, job.job].map(quote).join(' '));
     }
-    const instructionsName = role.instructions ?? role.role;
+    const instructionsName = borrowed?.name ?? role.instructions ?? role.role;
     if (plainSkillName(instructionsName)) {
       const instructions = join(bundled, 'instructions', `${instructionsName}.md`);
       if (fs.existsSync(instructions)) argv.push('--hud-instructions', instructions);
@@ -127,7 +128,13 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     if (job.skills === true) argv.push('--skills');
     argv.push('--', ...(job.headless ? [] : ['--tui-mode', 'regular']), '--hud-worker-tools', '-e',
       join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
-    for (const key of ['model', 'thinking'] as const) if (place[key] !== undefined) argv.push(`--${key}`, place[key]);
+    for (const key of ['model', 'thinking'] as const) {
+      const value = place[key] ?? (borrowed ? job[key] : undefined);
+      if (value != null) argv.push(`--${key}`, value);
+      // Pi leaves its native default alone for an empty flag; pi-roles sees the flag
+      // and does not apply the borrowed role's frontmatter default instead.
+      else if (borrowed) argv.push(`--${key}=`);
+    }
     argv.push(...resources, ...(job.pi_args ?? []));
     // Pi expands even a positional @path into file contents. A follow-up is literal text, not a file grant.
     if (sessionFile) argv.push('--session', sessionFile, '--print', '--mode', 'json', '--', prompt.startsWith('@') ? ` ${prompt}` : prompt);

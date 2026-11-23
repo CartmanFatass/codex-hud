@@ -127,7 +127,9 @@ JSON-RPC 封装、任务协议以及工作者工具保持不变。
 对 `general`，`preset` 选取指定预设中首个可用且未耗尽的位置，不保存设置；也可用 `on` 覆盖执行环境或浏览器服务商
 （默认值见内置 `harnesses.json` 与 `$HUD_HOME/harnesses.json`）。`preset` 和 `on` 互斥。
 `model` 和 `thinking` 覆盖所选 `pi` 或 `cli` 位置的模型和推理强度。其他角色在启动前拒绝这四个字段，批量派发和重试也一样。
-带 `detail: true` 的任务读取或查看会显示所选 `preset`。重复使用显式键会返回原任务；派生键仅复用最近 10 分钟内创建的任务。
+带 `detail: true` 的任务读取或查看会显示所选 `preset`。
+只有 `general` 还可以用 `instructions: "imp"`（也可指定 `hud_roster` 中可见的其他角色）。所选 pi 或 CLI 工作者收到借用角色的指令，而非 general 的指令。pi 使用借用角色当前运行链中第一个 pi 位置的 pi 角色；若没有 pi 位置，则使用其指令名称。任务仍沿用 general 的运行位置和并发名额。`hud_read` 显示 `instructions_from`；以 general 重试或恢复原生会话时仍沿用借用角色。
+重复使用显式键会返回原任务；派生键仅复用最近 10 分钟内创建的任务。
 `kind` 为 `flow` 选择 `image`（默认）或 `video`。
 仅 `pi` 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
 （最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；

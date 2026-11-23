@@ -312,6 +312,7 @@ Deterministic HTTP 4xx errors pause that feature on that route for five minutes 
 | Settings Test API | Fixed synthetic messages only |
 
 Headless Claude Code and Antigravity dispatch use the same model inputs as worker tabs: the assembled brief, role instructions, and subsequent answers, sends or repair messages. The native stream's session ID is read locally to bind the next turn; the stream is not sent to a separate model. For pi and headless CLIs, sends queued during a turn go to the same worker's native session in send order on its next turn, alongside the answer if it asked.
+A `general` job with `instructions: "<role>"` supplies the borrowed role's instructions to its selected pi or CLI worker instead of general's instructions.
 
 `JobSentences` replaces separate native labels/digests/causes/progress schedulers;
 there is no agent-log writer. Names and keyword-marked sentences share a request.

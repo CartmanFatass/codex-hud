@@ -480,7 +480,7 @@ test('general uses a named preset for one job and falls back within it without e
   const roster = async () => (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'general');
   const before = await roster();
   assert.equal(before.runs_on.model, 'synthetic/normal');
-  assert.deepEqual(before.accepts_options, ['on', 'preset', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args']);
+  assert.deepEqual(before.accepts_options, ['on', 'instructions', 'preset', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args']);
 
   const args = { role: 'general', preset: 'default', task: 'Synthetic task.' };
   const receipt = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));

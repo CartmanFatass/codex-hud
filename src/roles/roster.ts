@@ -734,7 +734,7 @@ export function roleRegistry(
       ...(active.harness === 'cli' ? { state_trust: activeEntry.state_trust } : {}),
       accepts_options: [
         ...(role.role === 'general' ? [
-          'on',
+          'on', 'instructions',
           ...((role.presets?.length ?? 0) > 0 ? ['preset'] : []),
           ...(active.harness === 'bro' ? [] : ['model', 'thinking']),
         ] : []),

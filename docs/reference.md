@@ -214,6 +214,11 @@ named preset without saving it. Alternatively, `on` overrides the harness/provid
 `harnesses.json` overridden by `$HUD_HOME/harnesses.json`). `preset` and `on` are mutually exclusive.
 `model` and `thinking` override the selected `pi` or `cli` place. Other roles reject these four fields before launch,
 including in batch items and retry overrides. A detailed job read or peek shows the selected `preset`.
+Only `general` can also set `instructions: "imp"` (or another role visible in `hud_roster`). The borrowed role's
+instructions go to the selected pi or CLI worker instead of general's; on pi this also selects the borrowed role's
+first pi role in its active chain, or its instructions name if there is no pi place. The job keeps general's
+placement and concurrency slot. `hud_read` shows `instructions_from`; retrying as general and resuming the
+native session retain the borrowed role.
 A repeated explicit key returns the original job; a derived key only reuses a job created within the last 10 minutes.
 `kind` selects `image` (default) or `video` for `flow`. Optional `idle_grace_s` (integer 60–3600) overrides
 CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).

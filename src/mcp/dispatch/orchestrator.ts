@@ -113,7 +113,7 @@ function countWorkingByRole(allJobs = jobs()): Map<string, number> {
 function jobOptions(job: Job): Args {
   return {
     role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, ticket: job.ticket, slice: job.slice, preset: job.preset,
-    context_files: job.context_files, from_jobs: job.from_jobs, checks: job.checks,
+    context_files: job.context_files, from_jobs: job.from_jobs, checks: job.checks, instructions: job.instructions_from,
     ...(job.create_options ?? {
       isolation: job.worktree ? 'worktree' : undefined,
       model: job.model_source === 'hud_create' ? job.model : undefined,
@@ -171,8 +171,10 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
   if (retryOf && !source) return { ok: false, code: 'job_not_found' };
   const role = input.role === undefined && source ? source.role : required(input, 'role');
   // Check caller input, not inherited retry options or internal repair placement.
-  if (!repair && role !== 'general' && ((!parent && placementOverrides.some(key => input[key] !== undefined)) || hasPiPlacement(input.pi_args))) {
-    return { ok: false, code: 'invalid_arguments', error: `Role ${JSON.stringify(role)} runs as configured in its role file and Control; use general to choose a model for one job.` };
+  if (!repair && role !== 'general' && (input.instructions !== undefined ||
+      (!parent && placementOverrides.some(key => input[key] !== undefined)) || hasPiPlacement(input.pi_args))) {
+    const choice = input.instructions === undefined ? 'choose a model' : 'borrow instructions';
+    return { ok: false, code: 'invalid_arguments', error: `Role ${JSON.stringify(role)} runs as configured in its role file and Control; use general to ${choice} for one job.` };
   }
   let args = input;
   let repairOf = repair?.source.job;
@@ -182,7 +184,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     if (row.state !== 'failed' && row.state !== 'stopped') return { ok: false, code: 'not_retryable' };
     const inherited = jobOptions(source);
     if (role !== source.role) {
-      for (const key of placementOverrides) delete inherited[key];
+      for (const key of [...placementOverrides, 'instructions']) delete inherited[key];
       if (hasPiPlacement(inherited.pi_args)) delete inherited.pi_args;
     }
     delete inherited.on; // Retry through the role's chain instead of pinning the previous harness.
@@ -292,6 +294,17 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (!definition) {
     const invalid = found.invalidRole(role);
     return { ok: false, code: 'role_unavailable', reason: `Role ${asked} is not configured or is hidden in this project`, ...invalid };
+  }
+  let borrowed: Pick<Job, 'instructions_from' | 'borrowed_instructions'> = {};
+  if (args.instructions !== undefined) {
+    const from = typeof args.instructions === 'string' ? configured.get(args.instructions) : undefined;
+    if (!from || from.optionalEnabled === false) {
+      const valid = [...configured.values()].filter(r => r.optionalEnabled !== false).map(r => r.role).sort();
+      return { ok: false, code: 'invalid_arguments', error: `Unknown instructions role ${JSON.stringify(args.instructions)}. Valid roles: ${valid.join(', ')}` };
+    }
+    const name = from.instructions ?? from.role;
+    borrowed = { instructions_from: from.role, borrowed_instructions: { name,
+      pi_role: from.run.find(p => p.harness === 'pi')?.pi_role ?? name } };
   }
   const now = Date.now();
   const existing = jobs().find((job) =>
@@ -422,6 +435,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const queuedJob: Job = {
         job: id,
         role,
+        ...borrowed,
         request_key,
         cwd: reusedWorktree?.root ?? cwd,
         project_root: sharedRoot(cwd),
@@ -481,6 +495,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     base = {
       job: id,
       role,
+      ...borrowed,
       ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
       request_key,
       cwd: landCwd ?? reusedWorktree?.root ?? cwd,
@@ -923,6 +938,8 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
   const { resume } = options;
   let instructionsPath = '';
   try {
+    if (job.borrowed_instructions && place.harness === 'bro')
+      return rejectLaunch(launchError('instructions requires a pi or CLI place', 'unsupported_harness'));
     if (!resume && job.thinking != null) {
       // Pi takes `off`, even when the model maps it to the provider value `none`.
       if (place.harness === 'pi' && job.thinking === 'none') job.thinking = place.thinking = 'off';
@@ -934,7 +951,7 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
       }
     }
     if (place.harness === 'cli') {
-      const name = definition.instructions ?? definition.role;
+      const name = job.borrowed_instructions?.name ?? definition.instructions ?? definition.role;
       if (!plainSkillName(name)) return rejectLaunch(launchError(`invalid instructions name: ${name}`, 'unsupported_harness'));
       instructionsPath = join(bundled, 'instructions', `${name}.md`);
       if (!fs.existsSync(instructionsPath))

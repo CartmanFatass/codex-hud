@@ -61,6 +61,7 @@ export const ROLE_TOOLS = [
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI only.' },
       on: { ...text, description: 'Harness/provider: pi|agy|claude|codex|grok|chatgpt|gemini|argon|flow.' },
       preset: { ...text, description: 'Preset name; excludes on.' },
+      instructions: { ...text, description: 'Borrow role (general only).' },
       kind: { type: 'string', enum: ['image', 'video'], description: 'Flow only (default image).' },
       model: { ...text, description: 'Model (pi/CLI).' },
       thinking: { ...text, description: 'Thinking effort (pi/CLI).' },

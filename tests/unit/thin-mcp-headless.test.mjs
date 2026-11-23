@@ -127,6 +127,37 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.ok(noTab(f));
 });
 
+test('headless general resumes its own pi session with the borrowed role selectors', async t => {
+  const f = await fixture(t);
+  f.overrideBin('pi', fakePi);
+  write(join(f.env.HOME, 'ask'), '');
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles);
+  const source = join(roles, 'imp.json');
+  write(source, JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true,
+    run: [{ harness: 'pi', pi_role: 'implementer' }], active_preset: 'synthetic',
+    presets: [{ name: 'synthetic', run: [{ harness: 'cli', agent: 'agy' }, { harness: 'pi', pi_role: 'synthetic-imp' }] }] }));
+  const job = await f.call('hud_create', { role: 'general', mode: 'headless', instructions: 'imp', task: 'Synthetic comparison.' });
+  const dir = job.task_dir;
+  await until(() => cliState(dir)?.state === 'waiting_orchestrator', t.signal);
+  const session = cliState(dir).session_id;
+  assert.ok(session);
+  // Changing the source's active chain must not change an existing session's launch selectors.
+  write(source, JSON.stringify({ role: 'imp', instructions: 'reviewer', can_continue: true,
+    run: [{ harness: 'pi', pi_role: 'reviewer' }] }));
+  assert.equal((await f.call('hud_respond', { job: job.job, request_id: 'q1', answer: 'Choose B.' })).continuation, 'resumed');
+  await closed(job, t.signal);
+  assert.equal(cliState(dir).session_id, session);
+  assert.equal(read(join(dir, 'job.json')).instructions_from, 'imp');
+  const launches = f.commands().filter(({ command }) => command === 'pi-role');
+  assert.equal(launches.length, 2);
+  for (const { args } of launches) {
+    assert.equal(args[1], 'synthetic-imp');
+    assert.match(args[args.indexOf('--hud-instructions') + 1], /\/implementer\.md$/);
+    assert.ok(args.includes('--model=') && args.includes('--thinking='), 'let pi use native defaults, not the borrowed role defaults');
+  }
+});
+
 test('a sonic survives its headless pi parent asking; resume carries ready input, stop reaps instead', async t => {
   const f = await fixture(t);
   f.overrideBin('pi', fakePi);

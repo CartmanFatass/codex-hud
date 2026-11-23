@@ -108,6 +108,7 @@ function listJobs(recent: boolean, scan: JobScan) {
         ...childCount(row.job),
         role: row.role,
         ...(row.overflow_from ? { overflow_from: row.overflow_from } : {}),
+        ...(job.instructions_from && { instructions_from: job.instructions_from }),
         state: row.state,
         display_state: row.display_state,
         ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}),
@@ -128,7 +129,8 @@ function listJobs(recent: boolean, scan: JobScan) {
     const { row } = readRow(job, !isWorker && index < recentLimit, scan);
     const active = row.display_state === 'working' || row.display_state === 'queued';
     if (!active && !(ownsJob(job) && row.report_unread)) return [];
-    return [{ row, active, compact: { ...compactRow(row), ...childCount(row.job) } }];
+    return [{ row, active, compact: { ...compactRow(row), ...childCount(row.job),
+      ...(job.instructions_from && { instructions_from: job.instructions_from }) } }];
   });
   // Keep active work visible. Spend the remaining space on the newest unread reports,
   // reserving room for the single count of those that didn't fit.
@@ -352,6 +354,7 @@ function observation(
       job: currentJob.job,
       role: currentJob.role,
       ...(currentJob.overflow_from ? { overflow_from: currentJob.overflow_from } : {}),
+      ...(currentJob.instructions_from && { instructions_from: currentJob.instructions_from }),
       ...(currentJob.route && { route: currentJob.route }),
       state: detail ? row.state : row.state ?? row.display_state,
       ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}),

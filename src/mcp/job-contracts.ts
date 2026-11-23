@@ -32,6 +32,8 @@ export interface Job extends PiOptions {
   created_at: string;
   queued_at?: string;
   overflow_from?: string;
+  instructions_from?: string;
+  borrowed_instructions?: { name: string; pi_role: string }; // Keep launch selectors across queueing and native resume.
   route?: JobRoute;
   scout_question?: string;
   headless?: boolean; // Older sonic receipts may own a herdr tab.
