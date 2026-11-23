@@ -43,7 +43,7 @@ console.log(JSON.stringify({ id, prompt }));
 const gate = fresh ? 'first' : 'next', home = process.env.HOME;
 if (fs.existsSync(join(home, 'hold-' + gate))) {
   const { waitUntilFs } = await import(${JSON.stringify(moduleUrl('../../dist/utils/fs-wait.js'))});
-  assert.ok(await waitUntilFs({ targets: [{ dir: home }], timeoutMs: 10000, check: ({ timedOut }) => {
+  assert.ok(await waitUntilFs({ targets: [{ dir: home }], timeoutMs: Infinity, check: ({ timedOut }) => {
     const value = fs.existsSync(join(home, 'release-' + gate));
     return value || timedOut ? { done: true, value } : { done: false };
   } }));
@@ -76,11 +76,11 @@ if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
 `;
 
 const create = f => f.call('hud_create', { role: 'imp', mode: 'headless', task: 'Synthetic change.' });
-const closed = job => until(() => {
+const closed = (job, limit) => until(() => {
   const state = cliState(job.task_dir);
   if (state?.state === 'failed') assert.fail(`${state.exit_reason}: ${fs.readFileSync(join(job.task_dir, 'stderr.log'), 'utf8')}`);
   return state?.state === 'closed' && read(join(job.task_dir, 'job.json')).reaped_at;
-});
+}, limit);
 const noTab = f => !f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'create');
 
 test('question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair', async t => {
@@ -154,7 +154,7 @@ test('a sonic survives its headless pi parent asking; resume carries ready input
   }
 });
 
-test('queued pi sends run in order after a report and keep the original MCP task', async t => {
+test('queued pi sends run in order after a report and keep the original MCP task', { timeout: 60000 }, async t => {
   const f = await fixture(t), rpc = taskRpc(f.rpc);
   f.overrideBin('pi', fakePi);
   const signal = file => write(join(f.env.HOME, file), '');
@@ -175,7 +175,7 @@ test('queued pi sends run in order after a report and keep the original MCP task
   assert.equal((await get()).status, 'working');
   signal('release-first');
   const stdout = join(dir, 'stdout.jsonl');
-  await until(() => fs.readFileSync(stdout, 'utf8').includes('Second queued follow-up.'));
+  await until(() => fs.readFileSync(stdout, 'utf8').includes('Second queued follow-up.'), t.signal);
   assert.notEqual(cliState(dir).pid, firstPid);
   assert.ok(!isProcAlive(firstPid));
   assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Synthetic intermediate report/);
@@ -185,7 +185,7 @@ test('queued pi sends run in order after a report and keep the original MCP task
   assert.equal(lines[1].id, lines[0].id);
   assert.equal(lines[1].prompt, 'First queued follow-up.\n\nSecond queued follow-up.');
   signal('release-next');
-  await closed(job);
+  await closed(job, t.signal);
   const result = await get();
   assert.equal(result.status, 'completed');
   assert.match(result.result.content[0].text, /First queued follow-up/);

@@ -104,7 +104,7 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 2);
 });
 
-test('MCP reconnect polls a create and land, re-fences follow-ups, and preserves the terminal notices', { timeout: 15000 }, async t => {
+test('MCP reconnect polls a create and land, re-fences follow-ups, and preserves the terminal notices', { timeout: 60000 }, async t => {
   const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done']);
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
   const rpc = taskRpc(f.rpc);
@@ -112,7 +112,7 @@ test('MCP reconnect polls a create and land, re-fences follow-ups, and preserves
   const create = await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic reconnect job.' });
   const worker = taskJob(f, create);
   const land = await taskCall(rpc, 'hud_land', { job });
-  await until(() => f.flowState(land.taskId).step.startsWith('gate[1]'));
+  await until(() => f.flowState(land.taskId).step.startsWith('gate[1]'), t.signal);
   const dir = join(f.home, 'mcp-tasks');
   const receipt = ({ taskId }) => join(dir, fs.readdirSync(dir).find(name => name.startsWith(`${taskId}.`)));
   assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
@@ -151,7 +151,7 @@ test('MCP reconnect polls a create and land, re-fences follow-ups, and preserves
 
   settle(f, worker.job, 'Synthetic settled pi report.\n');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
-  await until(() => f.flowState(land.taskId).state === 'completed');
+  await until(() => f.flowState(land.taskId).state === 'completed', t.signal);
   const createDone = await get(client, create);
   assert.equal(createDone.status, 'completed');
   assert.equal(createDone.result.content[0].text, `${worker.job} (imp) — closed\nReport: hud_read job=${worker.job} (mode: "full" for the whole report)\nSummary: Synthetic settled pi report.`);

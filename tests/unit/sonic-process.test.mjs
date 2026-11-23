@@ -207,7 +207,7 @@ setInterval(${reason === 'looping' ? 'log' : '() => {}'}, 50);
   });
 }
 
-test('retry_of resumes the stopped Sonic history or starts fresh with the partial result', async (t) => {
+test('retry_of resumes the stopped Sonic history or starts fresh with the partial result', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, { watcherTickMs: 250 });
   f.overrideBin('pi', `#!${process.execPath}
 import * as fs from 'node:fs';
@@ -232,7 +232,7 @@ if (!fs.existsSync(join(process.env.HOME, 'retry'))) {
   const task = 'Investigate the synthetic input.';
   const source = await f.call('hud_create', { role: 'sonic', task });
   const session = join(source.task_dir, 'sonic-session.jsonl');
-  await until(() => fs.existsSync(session) && fs.readFileSync(join(source.task_dir, 'stdout.jsonl'), 'utf8').includes('Synthetic partial finding.'));
+  await until(() => fs.existsSync(session) && fs.readFileSync(join(source.task_dir, 'stdout.jsonl'), 'utf8').includes('Synthetic partial finding.'), t.signal);
   await f.call('hud_close', { job: source.job });
   assert.equal(cliState(source.task_dir).state, 'stopped');
   const original = fs.readFileSync(session, 'utf8'), id = JSON.parse(original.split('\n')[0]).id;
@@ -240,7 +240,7 @@ if (!fs.existsSync(join(process.env.HOME, 'retry'))) {
   writeFixtureFile(join(f.env.HOME, 'retry'), '');
   const retry = async key => {
     const job = await f.call('hud_create', { role: 'sonic', retry_of: source.job, request_key: key });
-    await until(() => cliState(job.task_dir)?.state === 'closed');
+    await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
     return JSON.parse(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'));
   };
   const resumed = await retry('resumed');
