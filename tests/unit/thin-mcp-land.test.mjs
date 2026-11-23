@@ -100,6 +100,8 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   assert.equal(again.changes?.some(s => s.includes(flow)) ?? false, false);
   assert.equal(f.git(f.remote, 'rev-parse', 'refs/heads/base'), done.landed_sha);
   assert.equal(f.git(f.main, 'rev-parse', 'base'), done.landed_sha);
+  assert.equal(done.tested_tree, f.git(f.main, 'rev-parse', 'base^{tree}'));
+  assert.equal(done.published_tree, done.tested_tree);
   assert.equal(fs.readFileSync(join(f.main, 'after-ran'), 'utf8').trim(), f.main);
   assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..base`), '2');
   assert.equal(f.git(f.main, 'branch', '--list', f.branch), '');
@@ -290,7 +292,7 @@ test('a failed after command does not retry an already landed flow', async t => 
   assert.equal(again.flow, flow); assert.equal(again.landed_sha, landed);
 });
 
-for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty landed paths' : 'pushes the advanced HEAD and cleans up'} after fast-forward`, async t => {
+for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty landed paths' : 'pushes only the approved commit'} after fast-forward`, async t => {
   const f = await checkout(t, ['true'], { after: ['while test ! -f "$HOME/release"; do sleep .05; done'] });
   const receipt = join(jobDir(f), 'job.json'), ticket = '.scratch/feature/issues/01-example.md';
   fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
@@ -301,9 +303,8 @@ for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty l
   await until(() => f.flowState(flow).step.startsWith('after[1]'), 10000);
   const { landed_sha, tested_sha, base_sha } = f.flowState(flow);
   assert.notEqual(landed_sha, tested_sha);
-  const other = '.scratch/feature/issues/02-unrelated.md';
-  fs.writeFileSync(join(f.main, other), '# 02: Unrelated ticket\n');
-  f.git(f.main, 'add', other); f.git(f.main, 'commit', '-qm', 'claim unrelated ticket');
+  fs.writeFileSync(join(f.main, 'unapproved'), 'unapproved code change\n');
+  f.git(f.main, 'add', 'unapproved'); f.git(f.main, 'commit', '-qm', 'advance during after');
   const advanced = f.git(f.main, 'rev-parse', 'HEAD');
   if (dirty) fs.appendFileSync(join(f.main, 'tracked'), 'uncommitted owner edit\n');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
@@ -316,7 +317,7 @@ for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty l
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), advanced);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD^'), landed_sha);
   assertLandingRecord(f, ticket, base_sha, landed_sha);
-  assert.equal(f.git(f.remote, 'rev-parse', 'base'), dirty ? f.base_head : advanced);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), dirty ? f.base_head : landed_sha);
   assert.equal(fs.existsSync(f.worktree), dirty);
 });
 
@@ -808,7 +809,10 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
   fs.mkdirSync(join(f.main, '.scratch/other/issues'), { recursive: true });
   fs.writeFileSync(join(f.main, '.scratch/other/issues/02-unrelated.md'), '# 02: Unrelated\n**Status:** claimed\n');
   fs.appendFileSync(join(f.main, 'STATE.md'), '\nMilestone boundary note\n');
-  f.git(f.main, 'add', '.scratch/other/issues/02-unrelated.md', 'STATE.md'); f.git(f.main, 'commit', '-qm', 'unrelated ticket and state');
+  fs.mkdirSync(join(f.main, 'docs/handoff'), { recursive: true });
+  fs.writeFileSync(join(f.main, 'docs/handoff/STATE.md'), 'Milestone handoff\n');
+  f.git(f.main, 'add', '.scratch/other/issues/02-unrelated.md', 'STATE.md', 'docs/handoff/STATE.md');
+  f.git(f.main, 'commit', '-qm', 'unrelated ticket and state');
   const movedBase = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
   await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
@@ -818,6 +822,9 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
   assert.equal(state.repairs, undefined);
   assert.equal(state.records_sha, undefined);
   assert.equal(state.replayed_onto, movedBase);
+  assert.equal(state.tested_tree, f.git(f.main, 'rev-parse', `${state.tested_sha}^{tree}`));
+  assert.equal(state.published_tree, f.git(f.remote, 'rev-parse', 'base^{tree}'));
+  assert.notEqual(state.tested_tree, state.published_tree);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'gate-count'), 'utf8'), 'run\n');
   const done = await rpc('tasks/get', { taskId: flow });
   assert.equal(done.status, 'completed');
@@ -834,6 +841,49 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
   assert.equal(fs.existsSync(f.worktree), false);
   assert.equal(f.git(f.main, 'branch', '--list', f.branch), '');
   assert.equal(f.git(f.main, 'worktree', 'list', '--porcelain').split('worktree ').length, 2);
+});
+
+for (const green of [true, false]) test(`land re-gates disjoint code changes and ${green ? 'pushes the gated candidate' : 'stops when they break the gate'}`, async t => {
+  const f = await checkout(t, ['git rev-parse HEAD >> "$HOME/gate-heads"; while test ! -f "$HOME/release"; do sleep .05; done; test "$(tail -1 tracked)" = "$(cat contract)"']);
+  // The source's change to tracked depends on a contract in a different file.
+  const receipt = join(jobDir(f), 'job.json'), ticket = '.scratch/feature/issues/01-example.md';
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
+  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
+  fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** claimed\n\n## Comments\n');
+  fs.writeFileSync(join(f.main, 'contract'), 'second\n');
+  f.git(f.main, 'add', 'contract', ticket); f.git(f.main, 'commit', '-qm', 'seed contract and ticket');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => fs.existsSync(join(f.env.HOME, 'gate-heads')), 10000);
+  fs.writeFileSync(join(f.main, 'contract'), green ? 'second\n\n' : 'incompatible\n');
+  f.git(f.main, 'commit', '-qam', 'change contract on base');
+  const movedBase = f.git(f.main, 'rev-parse', 'HEAD');
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const state = f.flowState(flow);
+  const heads = fs.readFileSync(join(f.env.HOME, 'gate-heads'), 'utf8').trim().split('\n');
+  const [initial, candidate] = heads;
+  assert.notEqual(candidate, initial);
+  assert.equal(state.published_tree, f.git(f.main, 'rev-parse', `${candidate}^{tree}`));
+  if (green) {
+    assert.equal(state.state, 'completed', JSON.stringify(state));
+    assert.deepEqual(heads, [initial, candidate]);
+    assert.equal(state.replayed_onto, movedBase);
+    assert.equal(state.tested_tree, state.published_tree);
+    assert.equal(state.landed_sha, candidate);
+    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), candidate);
+    assert.equal(f.git(f.remote, 'rev-parse', 'base'), candidate);
+    assertLandingRecord(f, ticket, movedBase, candidate);
+  } else {
+    assert.equal(state.state, 'failed', JSON.stringify(state));
+    assert.match(state.step, /^gate\[1\]:/);
+    assert.deepEqual(heads, [initial, candidate, candidate]); // One immediate retry of the failed command.
+    assert.equal(state.tested_tree, f.git(f.main, 'rev-parse', `${initial}^{tree}`));
+    assert.notEqual(state.tested_tree, state.published_tree);
+    assert.equal(state.landed_sha, undefined);
+    assert.equal(state.repairs, undefined);
+    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), movedBase);
+    assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
+  }
 });
 
 test('a main commit touching the landing ticket path during the gate stops before fast-forward', async t => {

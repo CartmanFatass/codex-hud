@@ -17,6 +17,7 @@ export interface LandFlow {
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string;
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
+  tested_tree?: string; published_tree?: string;
   after_note?: string;
   landed_at?: string;
   repairs?: { step: string; job?: string; outcome: string }[];
@@ -62,8 +63,8 @@ export function landAttempt(home: string, job: string) {
   return { flow, prior, cleanup };
 }
 export function landView(f: LandFlow) {
-  const { flow, job, state, step, landed_sha, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail } = f;
-  return { flow, job, state, step, landed_sha, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail };
+  const { flow, job, state, step, landed_sha, tested_tree, published_tree, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail } = f;
+  return { flow, job, state, step, landed_sha, tested_tree, published_tree, records_sha, replayed_onto, after_note, cleanup_note, repairs, reruns, timings, error, tail };
 }
 const one = (text: string) => text.replace(/\s+/g, ' ').trim();
 export function landOutcome(f: LandFlow) {

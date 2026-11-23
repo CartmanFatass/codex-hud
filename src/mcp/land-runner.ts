@@ -53,6 +53,13 @@ function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, 
   });
 }
 const fields = (out: string) => out.split('\0').filter(Boolean);
+const isMetadataPath = (path: string) => path === 'STATE.md' || path === 'docs/handoff/STATE.md' ||
+  /^\.scratch\/[a-z0-9-]+\/issues\/\d+-[^/]+\.md$/.test(path);
+async function metadataOnly(cwd: string, from: string, to: string) {
+  // Raw NUL-delimited records pair modes with paths. Only plain metadata files are exempt.
+  const changes = fields(await git(cwd, ['diff', '--raw', '-z', '--no-renames', '--no-ext-diff', '--ignore-submodules=none', from, to, '--']));
+  return changes.every((field, i) => i % 2 === 0 ? /^:(100644|000000) (100644|000000) /.test(field) : isMetadataPath(field));
+}
 function pathsOverlap(a: string[], b: string[]) {
   const exact = new Set(a), dirs = new Set<string>();
   for (const p of a)
@@ -83,6 +90,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
   };
   const checkCancel = () => { if (cancelled()) { f.state = 'cancelled'; throw Error('Cancelled before fast-forward'); } };
   const head = async (dir: string) => (await git(dir, ['rev-parse', '--verify', 'HEAD'])).trim();
+  const tree = async (sha: string) => (await git(main, ['rev-parse', '--verify', `${sha}^{tree}`])).trim();
   const checkMain = async (sha: string) => {
     if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref || await head(main) !== sha)
       throw Error('Main checkout is not at the recorded base tip');
@@ -156,6 +164,12 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       }
     }
   }
+  async function gate(sha: string, treeId: string) {
+    await commands('gate', integration);
+    if (await head(integration) !== sha) throw Error('Gate changed integration HEAD');
+    f.tested_sha = sha;
+    f.tested_tree = treeId;
+  }
   let acquired = false;
   const acquire = async () => {
     while (!acquired) {
@@ -206,9 +220,8 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
       for (const sha of picks.split(/\s+/)) await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
       endStep();
     }
-    f.tested_sha = await head(integration);
-    await commands('gate', integration);
-    if (await head(integration) !== f.tested_sha) throw Error('Gate changed integration HEAD');
+    const tested = await head(integration);
+    await gate(tested, await tree(tested));
     return who;
   }
   try {
@@ -230,7 +243,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         await takeLease({ name: 'main-checkout', release: true }, lease); acquired = false;
         await repairLand(home, f, checkCancel);
         f.source_sha = await head(wt.root);
-        delete f.error; delete f.tail; delete f.tested_sha;
+        delete f.error; delete f.tail;
         f.state = 'queued'; step('main-checkout lease');
       }
     }
@@ -288,15 +301,21 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         throw e;
       }
       target = current;
-      await checkClean(await touched(current, landed));
-      checkCancel(); await checkSource(); await checkMain(target);
-    } else {
-      await checkMain(base);
     }
+    const landedPaths = target === base ? paths : await touched(target, landed);
+    f.published_tree = await tree(landed);
+    const regate = f.published_tree !== f.tested_tree && !await metadataOnly(main, f.tested_tree!, f.published_tree);
+    if (regate) {
+      // Disjoint paths can still interact. Gate the exact candidate, including the ticket update.
+      await gate(landed, f.published_tree);
+      step('fast-forward');
+    }
+    if (target !== base || regate) await checkClean(landedPaths);
+    checkCancel(); await checkSource(); await checkMain(target);
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
     if (target !== base) f.replayed_onto = target;
     f.landed_sha = landed; f.landed_at = new Date().toISOString(); endStep();
-    const landingHead = async () => {
+    const checkLandingHead = async () => {
       const moved = Error('Main checkout is not at the recorded base tip');
       if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref) throw moved;
       const current = await head(main);
@@ -304,17 +323,16 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
         try { await git(main, ['merge-base', '--is-ancestor', landed, current]); }
         catch { throw moved; }
       }
-      return current;
     };
-    await landingHead();
-    await commands('after', main, target === base ? { tested, filters } : undefined);
+    await checkLandingHead();
+    await commands('after', main, target === base ? { tested: f.tested_sha!, filters } : undefined);
     if (c.push) {
       startStep('push');
-      await checkClean(target === base ? paths : await touched(target, landed));
-      const pushHead = await landingHead();
-      // Push the verified HEAD by SHA so a later branch switch cannot change what is published.
+      await checkClean(landedPaths);
+      await checkLandingHead();
+      // Later main commits are not covered by this flow's gate.
       await command(main, 'git', ['-c', 'core.hooksPath=/dev/null', '-c', 'remote.origin.mirror=false', 'push',
-        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${pushHead}:${ref}`]);
+        '--no-follow-tags', '--recurse-submodules=no', 'origin', `${landed}:${ref}`]);
       endStep();
     }
     startStep('cleanup');
