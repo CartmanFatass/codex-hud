@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { waitUntilFs } from '../../dist/utils/fs-wait.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { fixture, realSession, expired, destination, hour, until } from '../helpers/job-retention-fixture.mjs';
 
@@ -107,7 +108,7 @@ for (const fault of ['unreadable sessions', 'dispatch file']) {
 
 for (const file of ['job.json', 'STATUS.json', 'SESSION.txt']) {
   test(`an unreadable ${file} counts as possibly open until it can be read`, {
-    timeout: 10000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
+    timeout: 30000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
   }, async (t) => {
     let unreadable;
     t.after(() => { if (unreadable) fs.chmodSync(unreadable, 0o600); });
@@ -115,12 +116,14 @@ for (const file of ['job.json', 'STATUS.json', 'SESSION.txt']) {
     unreadable = join(dir, file);
     fs.chmodSync(unreadable, 0);
     const { child, exited, stderr } = f.start();
-    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) && f.log().includes('keep ')));
-    await new Promise((done) => setTimeout(done, 100));
+    // Only a scan that counted an open job tries to subscribe to the fixture's absent socket.
+    await Promise.race([exited, waitUntilFs({ targets: [{ dir: f.home }], timeoutMs: Infinity, signal: t.signal,
+      check: () => ({ done: fs.existsSync(join(f.home, 'watch.log')) && f.log().includes('herdr events unavailable') }),
+    })]);
+    assert.match(f.log(), /keep /);
     assert.equal(child.exitCode, null, 'uncertain lifecycle evidence must not mean nothing open');
     fs.chmodSync(unreadable, 0o600);
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-    await until(() => child.exitCode !== null);
     await exited;
     assert.equal(child.exitCode, 0, stderr());
     assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');

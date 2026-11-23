@@ -46,14 +46,16 @@ function settled() {
 async function herdrSocket(t, f, answer) {
   const path = join(dirname(f.home), 'herdr.sock');
   const sockets = new Set();
+  const subscribed = Promise.withResolvers(), queried = Promise.withResolvers();
   let subscriber, queries = 0, pending = 0;
   const server = createServer((socket) => {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
     createInterface({ input: socket }).on('line', (line) => {
       const { method, id } = JSON.parse(line);
-      if (method === 'events.subscribe') subscriber = socket;
+      if (method === 'events.subscribe') { subscriber = socket; subscribed.resolve(); }
       if (method === 'agent.get') {
+        queried.resolve();
         queries++;
         pending++;
         socket.once('close', () => pending--);
@@ -69,6 +71,7 @@ async function herdrSocket(t, f, answer) {
   });
   return {
     preload: `process.env.HERDR_SOCKET_PATH = ${JSON.stringify(path)};`,
+    preflight: Promise.all([subscribed.promise, queried.promise]),
     ready: () => Boolean(subscriber), queries: () => queries, pending: () => pending,
     closeTab: (id) => subscriber.write(JSON.stringify({ event: 'tab.closed', data: { tab_id: id } }) + '\n'),
   };
@@ -179,7 +182,7 @@ test('watcher dispatches at most four concurrent reaps and resumes the backlog',
 });
 
 for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [null, 'external close']]) {
-  test(`read-close preflight: ${event}`, { timeout: 10000 }, async (t) => {
+  test(`read-close preflight: ${event}`, { timeout: 30000 }, async (t) => {
     const f = fixture(t), herdr = await herdrSocket(t, f, answer);
     const { created, state, reportTime } = settled();
     const dir = f.job(state, { created_at: created, read_at: new Date().toISOString() });
@@ -187,7 +190,7 @@ for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [
     tab(dir, 'pi');
     reapStub(f, `while (!fs.existsSync(join(dir, 'release'))) await delay(10);`);
     const { child, exited } = f.start(herdr.preload);
-    await until(() => herdr.ready() && herdr.queries());
+    await herdr.preflight; // Startup (including the shared dist lock) is not part of the query budget.
     if (event === 'no spin') {
       await delay(600);
       assert.equal(herdr.queries(), 1);

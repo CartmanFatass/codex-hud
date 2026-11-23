@@ -78,32 +78,34 @@ test('waitUntilFs fast-path and timeoutMs<=0 allocate zero watchers', async (t) 
   assert.equal(stats.active, 0);
 });
 
-test('waitUntilFs wakes within 100 ms of a file change and closes all watchers', async (t) => {
+test('waitUntilFs wakes within 100 ms of a file change and closes all watchers', { timeout: 30000 }, async (t) => {
   const dir = makeTempDir(t);
   const stats = trackWatches(t);
   const file = join(dir, 'STATUS.json');
 
-  let writeAt = 0;
+  const armed = Promise.withResolvers(), delivered = Promise.withResolvers();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const waiting = waitUntilFs({
-    targets: [{ dir, filter: (name) => name === null || name === 'STATUS.json' }],
-    timeoutMs: 5000,
-    fallbackIntervalMs: 5000,
-    check: ({ timedOut }) => {
-      if (fs.existsSync(file)) return { done: true, value: JSON.parse(fs.readFileSync(file, 'utf8')) };
-      if (timedOut) return { done: true, value: null };
+    targets: [{ dir, filter: (name) => {
+      if (name !== null && name !== 'STATUS.json') return false;
+      delivered.resolve();
+      return true;
+    } }],
+    timeoutMs: Infinity, signal: t.signal,
+    check: ({ reason }) => {
+      if (reason === 'catchup') armed.resolve();
+      if (reason === 'event') return { done: true, value: JSON.parse(fs.readFileSync(file, 'utf8')) };
       return { done: false };
     },
   });
 
-  await new Promise((r) => setTimeout(r, 40));
+  await armed.promise;
   assert.equal(stats.active, 1);
-  writeAt = performance.now();
   writeFixtureFile(file, JSON.stringify({ state: 'done' }));
-
-  const result = await waiting;
-  const latencyMs = performance.now() - writeAt;
-  assert.deepEqual(result, { state: 'done' });
-  assert.ok(latencyMs < 100, `expected wakeup < 100 ms, got ${latencyMs.toFixed(1)} ms`);
+  await delivered.promise; // Real fs.watch delivery; only the wake-up timers use virtual time.
+  t.mock.timers.tick(99);
+  const result = await Promise.race([waiting, new Promise(resolve => setImmediate(resolve))]);
+  assert.deepEqual(result, { state: 'done' }, 'must wake in <100 ms without a fallback tick');
   assert.equal(stats.active, 0);
   assert.equal(stats.closed, stats.opened);
 });

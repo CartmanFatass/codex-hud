@@ -115,37 +115,46 @@ await callWorkerTool('hud_report', { text: 'Synthetic helper report.' });
   assert.equal(fs.existsSync(join(dir, 'SESSION.txt')), false);
 });
 
-test('sonic checkpoints reach the caller and keep the original pi process running', async (t) => {
-  const f = await fixture(t);
+test('sonic checkpoints reach the caller and keep the original pi process running', { timeout: 60000 }, async (t) => {
+  // Advance one checkpoint only once Pi has written its tool event. Neither slow dispatch
+  // nor the trip through hud_report should race a synthetic two-second policy window.
+  const clock = `import { existsSync } from 'node:fs';
+if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
+  const now = Date.now;
+  Date.now = () => now() + (existsSync(process.env.HUD_JOB_DIR + '/pi-pid') ? 101000 : 0);
+}`;
+  const f = await fixture(t, { probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}` });
   const defaults = (await f.call('hud_roster', { detail: true })).roles.find(r => r.role === 'sonic');
   assert.deepEqual([defaults.check_s, defaults.stall_s, defaults.max_s], [600, 180, 1800]);
-  setLimits(f, { check_s: 2, stall_s: 5, max_s: 12 });
+  setLimits(f, { check_s: 101, stall_s: 250, max_s: 400 });
   const role = (await f.call('hud_roster', { detail: true })).roles.find(r => r.role === 'sonic');
-  assert.deepEqual([role.check_s, role.stall_s, role.max_s], [2, 5, 12]);
-  const lines = [];
-  t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, batch => lines.push(...batch), 10));
+  assert.deepEqual([role.check_s, role.stall_s, role.max_s], [101, 250, 400]);
+  const notice = Promise.withResolvers();
+  t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, batch => {
+    const line = batch.find(line => line.startsWith('[sonic ') && line.endsWith(': tool read'));
+    if (line) notice.resolve(line);
+  }, 10));
   f.overrideBin('pi', `#!${process.execPath}
 import { writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 const dir = process.env.HUD_JOB_DIR;
-writeFileSync(join(dir, 'pi-pid'), String(process.pid));
 for (let i = 0; !existsSync(join(dir, 'release')); i++) {
   console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'read', args: { path: 'synthetic-' + i } }));
+  if (!i) writeFileSync(join(dir, 'pi-pid'), String(process.pid));
   await delay(50);
 }
 const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
 await callWorkerTool('hud_report', { text: 'Finished in Pi PID ' + process.pid });
 `);
   const { job, task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic ongoing query.' });
-  const pidFile = join(dir, 'pi-pid');
-  await until(() => fs.existsSync(pidFile));
-  const pid = Number(fs.readFileSync(pidFile));
-  await until(() => lines.some(line => line.startsWith(`[sonic ${job}] still working at `) && line.endsWith(': tool read')));
+  assert.equal(await notice.promise, `[sonic ${job}] still working at 101 s: tool read`);
+  const pid = Number(fs.readFileSync(join(dir, 'pi-pid')));
   assert.equal(cliState(dir).state, 'working');
   assert.ok(isProcAlive(pid));
   writeFixtureFile(join(dir, 'release'), '');
-  await until(() => cliState(dir).state === 'closed');
+  await f.call('hud_wait', { jobs: [job], wait_ms: 60000 });
+  assert.equal(cliState(dir).state, 'closed');
   assert.equal(fs.readFileSync(join(dir, 'report.md'), 'utf8'), `Finished in Pi PID ${pid}`);
   assert.match((await f.call('hud_read', { job })).latest_progress.text, /^still working at \d+ s: tool read$/);
 });
