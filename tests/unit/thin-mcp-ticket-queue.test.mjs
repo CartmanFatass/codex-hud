@@ -184,6 +184,18 @@ test('a resumed queue waits for a launch still in flight instead of failing it',
   assert.equal((await f.end(flow)).state, 'completed');
 });
 
+test('a resumed queue dispatches again a ticket whose launch failed before input', { timeout: 30_000 }, async t => {
+  const f = await project(t);
+  const { flow } = await f.start(1);
+  const [first] = await f.jobs(flow, 1);
+  writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'dispatch_failed', error: 'synthetic checkout timeout', ended_at: new Date().toISOString() }));
+  assert.equal((await f.end(flow)).state, 'failed');
+  const { flow: resumed } = await f.start(1);
+  const [again] = await f.jobs(resumed, 1);
+  assert.notEqual(again, first);
+  assert.equal(f.job(again).ticket, 'sample/01');
+});
+
 test('ticket queue keeps going past an answered worker question', { timeout: 30_000 }, async t => {
   const f = await project(t);
   const { flow } = await f.start();

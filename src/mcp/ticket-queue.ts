@@ -24,6 +24,12 @@ export function wakeTicketQueue(home: string, q: TicketQueue) {
   child.once('exit', clear).once('error', clear).unref();
 }
 
+/** A pre-input launch failure did no work: a resumed queue drops that job and dispatches its ticket again. */
+function launchFailed(home: string, job: string | undefined) {
+  if (!job) return false;
+  try { return JSON.parse(fs.readFileSync(join(home, 'jobs', job, 'STATUS.json'), 'utf8'))?.exit_reason === 'dispatch_failed'; }
+  catch { return false; }
+}
 export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean, args: Record<string, unknown>) {
   const { feature, max_parallel, cancel } = args;
   if (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature)) throw Error('invalid_arguments: feature');
@@ -51,7 +57,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     const now = new Date().toISOString();
     const q: TicketQueue = { flow: `q${randomBytes(8).toString('hex')}`, root, feature, pane, task,
       max_parallel: max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp'), created_at: now, updated_at: now,
-      state: 'working', tickets: resumed?.tickets.map(item => ({ ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow })) ?? [] };
+      state: 'working', tickets: resumed?.tickets.filter(item => item.landed || !launchFailed(home, item.job))
+        .map(item => ({ ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow })) ?? [] };
     writeTicketQueue(home, q, true);
     wakeTicketQueue(home, q);
     return q;
