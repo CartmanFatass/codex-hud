@@ -149,7 +149,7 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   (`stdout.jsonl`, `stderr.log`) are removed once its resume window ends; a failed or stopped job keeps them until
   its directory goes. A project may name scratch paths in `.hud/project.json` (`scratch`, default `keep_days` 7);
   the watcher removes top-level entries there whose newest file is older, at most hourly, without following links.
-- Before deleting a closed job directory, the watcher appends one line of the job's facts (no report text) to `$HUD_HOME/archive/YYYY-MM.jsonl`; nothing reads it yet. (22.16)
+- Before deleting a closed job directory, the watcher appends one line of the job's facts (no report text) to `$HUD_HOME/archive/YYYY-MM.jsonl`. toktrack reads the archive and live job records read-only to join jobs with native sessions, so the line names the job's native session ids and its land repair causes; a job directory whose native session file exists nowhere else (headless pi) is kept at least 7 days. (22.16, 23.01)
 
 #### 2.1.6 Events, project scope and the worker surface
 

@@ -5,6 +5,16 @@ Dates are the owner dates in the source spec unless marked *recorded*: a spec re
 separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-NN`. Section refs point into
 `docs/spec.md`.
 
+## 2026-11-23
+
+- **D-2026-11-23-01** (§2.1.6): toktrack (the owner's usage tracker) becomes the place for model and project
+  insight on HUD work. It reads HUD job facts read-only from the job archive and live job records and joins them
+  to native sessions by session id; tokens and cost stay toktrack's. HUD therefore records each job's native
+  session ids and its land repair causes (conflict, gate failure, flaky rerun) in the archive line, and keeps a
+  job directory whose native session file exists nowhere else (headless pi) at least 7 days so toktrack can scan
+  it. Not through the MCP. Model tests are tagged at `hud_create` (`experiment`, arm). Details:
+  toktrack `.scratch/hud-insight/`, MyHUD `.scratch/toktrack-facts/`.
+
 ## 2026-11-22
 
 - **D-2026-11-22-01** (§2.1.6, §2.2.8): Reject self-graded outcomes; keep independent Decision API labels.
