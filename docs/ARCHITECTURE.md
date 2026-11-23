@@ -300,10 +300,9 @@ Deterministic HTTP 4xx errors pause that feature on that route for five minutes 
 | `TryBriefs` | One call per to-try slice, while Home or Project is shown (newest 12 slices): its ledger line, up to 5 commits' messages (1200 chars each), up to 4 ticket files (3000 bytes each) under a `.scratch/<slug>/` the line names |
 | `WaitingBriefs` | Wrong-language prose only: first 8 STATE waiting items (≤2 KiB each), open QA question, context, options and default (≤4 KiB), open ticket titles (≤512 bytes each), the route reason a card shows (≤512 bytes) and the ledger text of the newest 6 landed slices (≤512 bytes each). Batch ≤25 strings / 4 KiB; `waiting-briefs.json` caches by language and text hash. Display copies carry translations; the answer action always uses original options. |
 | `DecisionTitles` | Only for an inspected job's answered question in Files: question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
-| `DecisionLabels`, outcome/kind | Final state + the same settled report excerpt (4096 UTF-8 bytes), or brief title/goal (1500-byte head); once per settlement/job respectively |
+| `DecisionLabels`, outcome | Final state + the same settled report excerpt (4096 UTF-8 bytes); once per settlement |
 | `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
 | `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
-| `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240, can include the worker summary), question flag and outcome; no file bodies |
 | Sonic auto-thinking | First 4000 characters of the dispatched task (the scout question for scouted dispatch), plus sonic role scope and thinking purposes; no standing brief or referenced files |
 | Claude mod event wake | Existing pane-scoped `hud watch` lines (job status and report summary/read hint, questions, sonic checkpoints, land and owner panel decisions), submitted or appended as status text to the main Claude conversation; no separate model call or report-body read |
 | Stopped Sonic retry | The new pi job receives its saved native session context and a short continuation naming the stop reason. Fresh fallback uses the brief plus the last 8 KiB of partial report or stdout. |
@@ -335,14 +334,12 @@ in its preview (Split) or expanded row (Classic) the whole brief, the steps and 
 Waiting, the Progress row and the Projects list use the same unit. Keyword painting is shared by
 cards, decisions and Inspector (`utils/keyword-marks.ts`), never lifecycle evidence.
 
-Decision labels and Home ranking use `selectDecisionProvider`, not the chat endpoint.
+Decision labels use `selectDecisionProvider`, not the chat endpoint.
 Settings → Decision API persists `config.json.decisions.primary` (default OpenAI).
 Automatic fallback chooses another keyed provider in Gemini → OpenAI → TypeSafe
 order; one fallback covers missing credentials, quota/auth/5xx/timeout, not malformed
 answers or refusals. Gemini quota replies impose an in-memory cooldown. Labels store
 revision-keyed enums and translate locally; provider failures show no raw HTTP text.
-Recommended Home ranks cards without hiding questions/failures/human-needed cards or
-breaking native subtree order. A separate chat request writes its short progress brief.
 
 LLM cap defaults to 60/hour; Decision cap defaults to unlimited (`0`). Both reserve
 atomically across panels on one local HUD home and still count unlimited calls.

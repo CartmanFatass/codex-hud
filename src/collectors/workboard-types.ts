@@ -65,8 +65,6 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly diffStat?: import('./diff-stat.js').DiffStatSummary;
   /** Display-only metadata bound to this settled thin job's current report. */
   readonly reportMeta?: import('../roles/report-meta.js').ReportMeta;
-  readonly homeRank?: number;
-  readonly homeFolded?: boolean;
   readonly superseded?: boolean;
   readonly failureObserved?: boolean;
   readonly labels?: import('./decision-labels.js').DisplayLabels;
@@ -159,7 +157,6 @@ export interface WorkCoverage {
   readonly workspace: string | null;
 }
 export interface WorkboardSnapshot {
-  readonly homeBrief?: string;
   readonly revision: string;
   readonly lanes: readonly WorkLane[];
   readonly workers: readonly OwnerWorker[];

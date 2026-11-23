@@ -157,7 +157,7 @@ export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = SHIPPE
 
 export function apiModelTier(feature: string): ApiModelTier {
   if (['labels', 'title', 'approval'].includes(feature)) return 'lite';
-  if (['recap', 'cause', 'home-brief'].includes(feature)) return 'medium';
+  if (['recap', 'cause'].includes(feature)) return 'medium';
   return 'low';
 }
 

@@ -12,13 +12,11 @@ import { writePrivateFile } from '../utils/atomic-fs.js';
 import { eachThread } from './subagent-tree.js';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import type { WorkboardSnapshot, OwnerWorker } from './workboard-types.js';
-export const JOB_KINDS = ['ui', 'bug fix', 'feature', 'refactor', 'review', 'research', 'docs', 'chore'] as const;
 export const OUTCOMES = ['done', 'partial', 'failed', 'blocked'] as const;
 export const CATEGORIES = ['design trade-off', 'clarification', 'owner authorisation', 'blocked'] as const;
 export const SEVERITIES = ['must fix', 'should fix', 'optional'] as const;
 export interface DisplayLabels {
   outcome?: { value: string; confidence: number };
-  kinds?: string[];
   looping?: number;
   category?: string;
   severity?: number[];
@@ -85,10 +83,6 @@ export class DecisionLabels {
         const report = w.settledAt !== null ? readJobReport(join(dir, 'report.md')) : undefined;
         if (report?.text) add(w.id + ':outcome', { status: w.state, report: report.text },
           [question('outcome', 'Classify the actual outcome, not just process exit. Missing required validation or incomplete work is partial.', OUTCOMES)], String(w.settledAt));
-        if (w.settledAt === null || w.settledAt >= this.clock() - 86400000) {
-          const brief = readJobFile(join(dir, 'brief.md'), 1500).text.split(/\r?\n\s*\r?\n/).slice(0, 2).join('\n');
-          if (brief) add(w.id + ':kind', brief, JOB_KINDS.map((kind) => question(kind, `Does this job's title and goal describe ${kind} work?`, ['included', 'excluded'])), 'once');
-        }
         const pending = w.files?.find((f) => f.kind === 'question' && f.state === 'open' &&
           f.rel === w.work?.requestInfo?.evidence?.relativePath);
         if (pending) {
@@ -124,7 +118,7 @@ export class DecisionLabels {
   private async run(p: Plan): Promise<void> {
     const abort = new AbortController(), id = randomUUID(), digest = hash('decision-label-v1:' + p.key + ':' + p.revision);
     this.active = abort;
-    const feature = p.key.endsWith(':outcome') ? 'outcome' : p.key.endsWith(':kind') ? 'kind'
+    const feature = p.key.endsWith(':outcome') ? 'outcome'
       : p.key.endsWith(':loop') ? 'looping' : p.key.endsWith(':severity') ? 'review-severity' : 'question-category';
     let reserved = false;
     try {
@@ -178,8 +172,6 @@ export class DecisionLabels {
       const findings = this.answers(w.id + ':severity');
       return { ...w, labels: {
         outcome: outcome ? { value: outcome.choice, confidence: outcome.confidence } : undefined,
-        // Most confident first: the Inspector shows the first two.
-        kinds: this.answers(w.id + ':kind').flatMap((a) => a.kind === 'choice' && a.choice === 'included' ? [a] : []).sort((a, b) => b.confidence - a.confidence).map((a) => a.name),
         looping: loop?.choice === 'looping' ? loop.confidence : undefined,
         category: value(w.id + ':' + w.work?.requestInfo?.evidence?.relativePath)?.choice,
         severity: findings.length ? SEVERITIES.map((s) => findings.filter((a) => a.kind === 'choice' && a.choice === s).length) : undefined,

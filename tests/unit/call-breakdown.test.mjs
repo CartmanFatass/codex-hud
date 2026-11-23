@@ -28,10 +28,10 @@ const reserve = (store, feature, cap = 0, now = NOW) =>
 test('mixed old/new reservations count only the last hour by feature and retain the existing pruning/cap', async (t) => {
   const dir = fixture(t), store = new ModelRuntimeStore(dir);
   fs.writeFileSync(join(dir, 'calls.json'), JSON.stringify([NOW - 86400000, NOW - HOUR - 1, NOW - HOUR, NOW - 1000]));
-  for (const feature of ['job-sentence', 'title', 'job-sentence', 'home-brief', 'native-sentence', 'probe'])
+  for (const feature of ['job-sentence', 'title', 'job-sentence', 'try-brief', 'native-sentence', 'probe'])
     assert.equal((await reserve(store, feature)).kind, 'reserved');
   assert.deepEqual(callsByFeature(store.calls(), NOW), {
-    'earlier-format': 1, 'job-sentence': 2, title: 1, 'home-brief': 1, 'native-sentence': 1, probe: 1,
+    'earlier-format': 1, 'job-sentence': 2, title: 1, 'try-brief': 1, 'native-sentence': 1, probe: 1,
   });
   const raw = JSON.parse(fs.readFileSync(join(dir, 'calls.json')));
   assert.equal(raw.length, 9, 'yesterday pruned, today retained even outside the hour');
@@ -55,11 +55,11 @@ for (const disk of [false, true]) test(`real SmallModel dispatch accounts featur
   assert.equal(requestDigest(request), requestDigest({ ...request, callFeature: 'native-sentence' }));
   for (const r of [request, { ...request, callFeature: 'native-sentence' },
     { ...request, cacheKey: 'native', callFeature: 'native-sentence' },
-    { ...request, feature: 'title' }, { ...request, feature: 'home-brief' }])
+    { ...request, feature: 'title' }, { ...request, feature: 'try-brief' }])
     assert.equal((await model.submit(r).result).ok, true);
   assert.equal(bodies.length, 4, 'cache hit is not a reservation');
   assert.deepEqual(model.usage(), { today: 4, lastHour: 4, cap: 0,
-    byFeature: { 'job-sentence': 1, 'native-sentence': 1, title: 1, 'home-brief': 1 } });
+    byFeature: { 'job-sentence': 1, 'native-sentence': 1, title: 1, 'try-brief': 1 } });
   assert.ok(bodies.every((body) => !JSON.stringify(body).includes('callFeature')));
 });
 
@@ -83,7 +83,7 @@ test('concurrent panel processes share one labelled ledger and cap', async (t) =
     let n = 0;
     for (let i = 0; i < 8; i++) if ((await store.reserve(null, randomUUID(), 17, () => ${NOW}, () => false, undefined, process.argv[2])).kind === 'reserved') n++;
     console.log(n);`;
-  const results = await Promise.all(['outcome', 'kind', 'looping', 'home-ranking'].map((feature) =>
+  const results = await Promise.all(['outcome', 'question-category', 'looping', 'review-severity'].map((feature) =>
     promisify(execFile)(process.execPath, ['--input-type=module', '-e', code, dir, feature], { timeout: 15000 })));
   assert.equal(results.reduce((n, result) => n + Number(result.stdout), 0), 17);
   const calls = new ModelRuntimeStore(dir).calls();
@@ -116,10 +116,13 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120])
     assert.ok(frame.lines.every((line) => visualLength(line) === width));
     const modelAt = lines.findIndex((line) => line.includes(lang === 'en' ? 'Calls this hour' : '本小时调用'));
     const decisionAt = lines.findIndex((line) => line.includes(lang === 'en' ? 'Decision calls this hour' : '本小时决策调用'));
+    assert.match(lines[modelAt], /45\/60\s*$/, 'old Home brief still counts toward the hourly cap');
+    assert.match(lines[decisionAt], /28\/∞\s*$/, 'old kind and ranking calls still count toward the total');
     assert.equal(lines[modelAt + 1].trim(), lang === 'en'
-      ? 'Job sentence 40 · Decision title 3 · Earlier format 1 · Home brief 1'
-      : '任务句子 40 · 决定标题 3 · 早期格式 1 · 首页简报 1');
-    assert.ok(lines[decisionAt + 1].trim().startsWith(lang === 'en' ? 'Quiet job 7 · Home ranking 6' : '静默任务 7 · 首页排序 6'));
+      ? 'Job sentence 40 · Decision title 3 · Earlier format 1'
+      : '任务句子 40 · 决定标题 3 · 早期格式 1');
+    assert.ok(lines[decisionAt + 1].trim().startsWith(lang === 'en' ? 'Quiet job 7 · Review severity 5' : '静默任务 7 · 评审严重度 5'));
+    assert.doesNotMatch(lines[decisionAt + 1], /\bkind\b|Home ranking|类型|首页排序/);
     const breakdowns = (rows) => rows.filter((line) => line.includes(' · ') && !/^(?:\*| ) (?:Display|Panel|Models|Workers|Codex|显示|面板|模型|工作者) · /.test(line));
     assert.equal(breakdowns(lines).length, 2, 'exactly one breakdown per counter');
     const zero = renderSettingsPage(state, width, 60, { state: undefined,

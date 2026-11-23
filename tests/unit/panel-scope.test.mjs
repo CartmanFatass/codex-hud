@@ -13,7 +13,6 @@ import { SmallModel } from '../../dist/collectors/small-model.js';
 import { JobSentences } from '../../dist/collectors/job-sentences.js';
 import { DecisionTitles } from '../../dist/collectors/decision-titles.js';
 import { DecisionLabels } from '../../dist/collectors/decision-labels.js';
-import { HomeRecommendation } from '../../dist/collectors/home-recommendation.js';
 
 const OPEN = Date.parse('2030-01-15T12:00:00Z'), MIN = 60000;
 const scope = { project: null, pane: 'w4E:p1' };
@@ -72,9 +71,9 @@ test('legacy settlement fallbacks, including receipt-only dispatch failure, obey
   assert.equal(board.decisions.length, 1, 'only the active job contributes its decision');
 });
 
-test('excluded jobs cost zero artifact reads and zero requests with every model feature enabled', async (t) => {
+test('excluded jobs cost zero artifact reads and zero requests for sentences, titles and labels', async (t) => {
   const f = fixture(t); const { dir } = f.job(1, 'done');
-  const calls = { chat: 0, labels: 0, ranking: 0 };
+  const calls = { chat: 0, labels: 0 };
   const env = { HOME: f.home, HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic', OPENAI_API_KEY: 'synthetic' };
   const fetcher = (kind) => async () => { calls[kind]++; return new Response('{}', { status: 400 }); };
   const cache = join(f.home, 'display/model-cache');
@@ -83,9 +82,8 @@ test('excluded jobs cost zero artifact reads and zero requests with every model 
   const sentences = new JobSentences(model, join(cache, 'sentences.json'), () => {}, () => OPEN + MIN);
   const titles = new DecisionTitles(model, join(cache, 'titles.json'));
   const labels = new DecisionLabels(cache, () => {}, env, fetcher('labels'), () => OPEN + MIN);
-  const ranking = new HomeRecommendation(cache, model, () => {}, env, fetcher('ranking'), () => OPEN + MIN);
-  sentences.configure(true, 'en'); titles.configure(true, 'en'); labels.configure(true, 0); ranking.configure(true, 'en', 0, 'openai');
-  t.after(async () => { sentences.stop(); titles.stop(); labels.stop(); ranking.stop(); model.cancelAll(); await pause(); });
+  sentences.configure(true, 'en'); titles.configure(true, 'en'); labels.configure(true, 0);
+  t.after(async () => { sentences.stop(); titles.stop(); labels.stop(); model.cancelAll(); await pause(); });
   let reads = 0;
   const originals = { openSync: fs.openSync, readFileSync: fs.readFileSync };
   for (const method of Object.keys(originals)) fs[method] = (file, ...args) => {
@@ -96,19 +94,19 @@ test('excluded jobs cost zero artifact reads and zero requests with every model 
   try {
     const board = await f.collect();
     for (let i = 0; i < 20; i++) {
-      sentences.update(board, f.home, tree); titles.update(board, f.home); labels.update(board, f.home, tree); ranking.update(board);
+      sentences.update(board, f.home, tree); titles.update(board, f.home); labels.update(board, f.home, tree);
       await pause();
     }
-    assert.deepEqual({ reads, ...calls }, { reads: 0, chat: 0, labels: 0, ranking: 0 });
+    assert.deepEqual({ reads, ...calls }, { reads: 0, chat: 0, labels: 0 });
     // Positive control: the same real collectors/services do read/request for an admitted settlement.
     f.put(dir, 'STATUS.json', { state: 'done', settled_at: new Date(OPEN).toISOString() });
     const admitted = await f.collect();
     for (let i = 0; i < 20; i++) {
-      sentences.update(admitted, f.home, tree); titles.update(admitted, f.home); labels.update(admitted, f.home, tree); ranking.update(admitted);
+      sentences.update(admitted, f.home, tree); titles.update(admitted, f.home); labels.update(admitted, f.home, tree);
       await pause();
     }
-    assert.ok(reads > 0); assert.ok(calls.chat >= 3, 'sentence, title and Home brief use the real SmallModel');
-    assert.ok(calls.labels > 0); assert.ok(calls.ranking > 0);
+    assert.ok(reads > 0); assert.ok(calls.chat >= 2, 'sentence and title use the real SmallModel');
+    assert.ok(calls.labels > 0);
   } finally { Object.assign(fs, originals); syncBuiltinESMExports(); }
 });
 

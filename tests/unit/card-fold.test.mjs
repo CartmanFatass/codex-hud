@@ -116,7 +116,7 @@ test('Fold after and Hide after: defaults, validator, rows, save, reset, and a c
   assert.equal(rowsOf(frame(30, loadSettings()), card).length, 0, 'hide 30: gone at 30 min');
 });
 
-test('a hide time before the fold time is the fold time; failed and protected cards keep their own rules', (t) => {
+test('a hide time before the fold time is the fold time; failures and owner needs keep their own rules', (t) => {
   const board = jobBoard(temp(t)), card = board.workers[0];
   const short = { cardFoldMinutes: 10, cardHideMinutes: 5 };
   assert.equal(rowsOf(drawAt(board, initialMonitorState({ ...defaultSettings(), ...short }), 9), card).length, 1, 'on Home before the hide time');
@@ -132,10 +132,6 @@ test('a hide time before the fold time is the fold time; failed and protected ca
   assert.ok(!currentWorker(failed, NOW + 30 * MIN, { cardHideMinutes: 90 }), 'the cap also applies with a long hide time');
   assert.ok(foldedWorker(failed, NOW + 5 * MIN) && !foldedWorker(failed, NOW + 5 * MIN - 1));
   assert.ok(!foldedWorker(worker({ homeNeedsHuman: true }), NOW + 60 * MIN), 'a card needing the owner never folds');
-  assert.ok(!foldedWorker(worker({ homeRank: 100 }), NOW + 60 * MIN), 'a protected card never folds');
   assert.ok(!foldedWorker(worker({ settledAt: null }), NOW + 60 * MIN), 'a running card never folds');
-  const ranked = worker({ state: 'failed', homeRank: 100 });
-  assert.ok(currentWorker(ranked, NOW + 30 * MIN - 1));
-  assert.ok(!currentWorker(ranked, NOW + 30 * MIN), 'ranking cannot extend the cap');
-  assert.ok(currentWorker(worker({ state: 'failed', homeRank: 100, homeNeedsHuman: true }), NOW + 48 * 60 * MIN), 'unless it still needs the owner');
+  assert.ok(currentWorker(worker({ state: 'failed', homeNeedsHuman: true }), NOW + 48 * 60 * MIN), 'a card needing the owner never hides');
 });

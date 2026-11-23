@@ -174,7 +174,7 @@ test('Collapsed navigation walks only visible rows plus ADVANCED; PageDown/PageU
   }
   assert.deepEqual(jumped, [
     SETTING_ROWS.findIndex((r) => r.key === 'theme'),
-    SETTING_ROWS.findIndex((r) => r.key === 'homeMode'),
+    SETTING_ROWS.findIndex((r) => r.key === 'panelLayout'),
     SETTING_ROWS.findIndex((r) => r.key === 'modelEnabled'),
     SETTING_ROWS.findIndex((r) => r.key === 'statusline'),
     ADVANCED,

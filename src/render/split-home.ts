@@ -21,7 +21,7 @@ import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, 
 import { acceptedText, briefStack, currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedEntries, taskRows, tryCount, trySentence, waitingRows } from './project-view.js';
 import { boardRow, homeDoneCount, mark, minuteAge, originalRows, section } from './workboard-rows.js';
 import { splitSubValid, type SplitScene } from './split-frame.js';
-import { cutWords, fit, flowLines, monitorText, pair } from './monitor-text.js';
+import { cutWords, fit, monitorText, pair } from './monitor-text.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 
@@ -73,7 +73,7 @@ export function homeScene(
     const list = main.length ? main : lane.workers;
     return Math.min(...list.map((w) => workerPriority(w, now)));
   };
-  const lanes = (state.home.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now))
+  const lanes = (state.home.showAll ? board.lanes : orderedLanes(board, now))
     .filter((l) => mainLaneWorkers(l).length > 0);
   const names = lanes.map((l) => monitorText(l.identity.kind === 'native' ? l.label.replace('this session', t('this session')) : l.label));
   const col = Math.max(8, Math.min(14, Math.floor(width / 3), Math.max(0, ...names.map(visualLength))));
@@ -205,8 +205,7 @@ export function homeScene(
     }),
   }];
   const block = data ? homeProgressRows(data, width, Infinity, false, state.prefs.acceptance, state.home.expanded) : [];
-  const brief = board.homeBrief ? [...flowLines(monitorText(board.homeBrief), width).map((l) => boardRow(theme.board.text(l))), boardRow('')] : [];
-  const progress: Entry[] = filtering || (!block.length && !brief.length) ? [] : (() => {
+  const progress: Entry[] = filtering || !block.length ? [] : (() => {
     const cur = data ? currentRows(data) : undefined, milestone = data?.ladder.current && cur && !(cur.whole && cur.rows.length) ? monitorText(data.ladder.current) : '';
     const lead = `${theme.board.active(mark('◐', '@'))} ${t('Progress')}`, facts = milestone ? [milestone] : [];
     if (cur?.rows.length) {
@@ -221,7 +220,7 @@ export function homeScene(
       item: PROGRESS,
       needs: false,
       rows: [{ item: PROGRESS, text: pair(lead, theme.board.muted(facts.join(' · ')), width) }],
-      preview: () => ({ label: t('Progress'), right: milestone && `${t('Milestone')} ${milestone}`, rows: [...brief, ...block.slice(1), ...pendingRows()] }),
+      preview: () => ({ label: t('Progress'), right: milestone && `${t('Milestone')} ${milestone}`, rows: [...block.slice(1), ...pendingRows()] }),
     }];
   })();
 

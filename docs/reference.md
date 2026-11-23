@@ -554,9 +554,9 @@ hide after 5 minutes by default (so fold and hide coincide; adjust both in Setti
 time counts as fold time. A failed or stopped job leaves Home immediately when a retry,
 repair, newer job of the same role on the same target, or landed slice/ticket supersedes it.
 `a` shows it muted as `superseded`. An observed failure follows the ordinary fold/hide times.
-An unhandled failure stays unfolded with its reason row and leaves Home after 30 minutes in either mode; use `hud_read({job})` to inspect it by job ID.
+An unhandled failure stays unfolded with its reason row and leaves Home after 30 minutes; use `hud_read({job})` to inspect it by job ID.
 Running/asking cards stay. `a` reveals hidden cards in place as muted one-row titles; Enter
-expands them. The job scan considers up to 200 top-level jobs and, separately, up to 200 of their children. Child jobs do not request card sentences, labels or Home recommendations.
+expands them. The job scan considers up to 200 top-level jobs and, separately, up to 200 of their children. Child jobs do not request card sentences or display labels.
 
 Answered questions are still collected but have no Home block or dedicated panel view.
 The Inspector still lists job files, including answers and their default/departure marks.
@@ -572,13 +572,8 @@ completion reopens an agent; fresh finished metadata or a caught-up public
 `end_turn` with no open calls settles it again. Incomplete reads cannot prove idle.
 `o` opens the transcript; there is no native conversation-switch control.
 
-**Recommended mode.** Default keeps factual order. Recommended sends up to 200
-cards' bounded display facts to the selected Decision API for 0–4 ranking, at most
-once per two minutes per changed board. Questions, failures and human-needed cards
-are protected; native subtrees remain together. Low-ranked settled cards join the
-older fold, visible with `a`. A separate chat call writes a short progress brief
-at Summary interval. No key/error means default order. When the brief's inputs change,
-the old text disappears immediately, even while a replacement is pending or unavailable. Models off hides both.
+**Ordering.** Home uses the built-in order, not model ranking. A saved `homeMode`
+setting is ignored; previously selecting Recommended does not change the order.
 
 **Top line.** Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering). The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear. The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in the statusline's order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker). The counts live in the panel's memory only, so a panel restart starts from zero, and nothing shows until a worker has started; the left side takes its shorter forms before the counts go. With STATE waiting items, Enter or a click on the top line in Classic opens the Project hub on its Waiting block. The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
 
@@ -1082,7 +1077,7 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 | Group | Rows |
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
-| Panel | Home mode, Layout, Project layout, Detail, Width, Notifications; in **Advanced**: Stall threshold, Fold after, Hide after, Refresh, Mouse, Experiments |
+| Panel | Layout, Project layout, Detail, Width, Notifications; in **Advanced**: Stall threshold, Fold after, Hide after, Refresh, Mouse, Experiments |
 | Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking, Imp routing; in **Advanced**: Decision cap (with hourly counter), Summary interval |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
@@ -1113,7 +1108,7 @@ on save, not migrated; existing user caches/assets are not deleted.
 ## LLM
 
 One master controls job/native names and sentences, Inspector decision titles,
-Decision labels and Recommended Home ranking/brief. Nothing writes workflow facts
+and Decision labels. Nothing writes workflow facts
 or steers a worker. Off hides overlays and sends no requests; without a saved
 preference, a Mistral/OpenAI/Gemini key defaults it on. Text requires a matching
 chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately. Sonic auto-thinking and Imp routing are separate dispatch opt-ins, independent of Model text.
@@ -1127,14 +1122,15 @@ chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately. Sonic au
 | Summary interval | `summaryIntervalMinutes`, 5; 2/5/10/15/30 minutes (validated 1–120) |
 
 Both caps use 0 for unlimited and still count calls (`n/∞`). Counts aggregate
-panels on one HUD home. Text uses `display/model-cache/calls.json`; labels/ranking
-use `display/model-cache/decision-api/calls.json`, including fallback attempts.
-One line per counter lists this hour's features, largest first. Changed running
+panels on one HUD home. Text uses `display/model-cache/calls.json`; Decision API
+usage uses `display/model-cache/decision-api/calls.json`, including fallback attempts.
+One line per counter lists this hour's active features, largest first. Recent calls
+from retired features still count toward the total and cap until they age out. Changed running
 text follows Summary interval. A newly settled HUD job clears its running text. A current worker summary
 is shown immediately, even with Model text off. It needs no sentence request in the panel's language;
 otherwise, when enabled, the model translates the summary. A missing or stale summary falls back to a
 model result from the report. To-try task headers show the newest pending member's brief sentence when available. The first final request does not wait for the running interval; failed final
-requests, native finals and ranking keep two-minute floors. Outcome labels are independent Decision-API judgements.
+requests and native finals keep two-minute floors. Outcome labels are independent Decision-API judgements.
 
 **Outbound material** (public channels only; never reasoning, ciphertext or referenced files):
 
@@ -1146,11 +1142,9 @@ requests, native finals and ranking keep two-minute floors. Outcome labels are i
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
 | Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
 | Outcome label | Final state + the same settled report excerpt, independently judged once per settlement |
-| Kind label | First two brief paragraphs (1500-byte head), once per running/job settled within one day |
 | Looping label | Last 12 public tool/result pairs (600 chars each part) from the same safe tail; after 3 quiet minutes, at most once per 5 minutes, unchanged input never repeats |
 | Question category | 4096-byte head of the job's current open question |
 | Review severity | ≤24 list items (400 chars each) from newest 32 KiB review head or settled reviewer report |
-| Home ranking/brief | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240, can include the worker summary), question flag, outcome; no bodies |
 | Sonic thinking | First 4000 characters of the task as data; sonic role scope and thinking purposes. No referenced context, standing brief or reports are loaded for the decision. |
 | Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Test API | Fixed synthetic messages only |
@@ -1159,12 +1153,12 @@ Settled report excerpts include a short head and sections on unfinished work,
 blockers, failures, tests/checks or open questions; if none are found, they include
 the tail instead.
 
-Outcome/kind/looping/category/severity labels are display-only enums; language
+Outcome/looping/category/severity labels are display-only enums; language
 changes translate locally. Failure shows no provider HTTP text. Private revision
 caches survive reopen, as do sentence/title caches (200 records); unchanged inputs
 make no new request. Sentences have at most three pending handles on the shared
 single-flight text queue; Decision labels have a separate single-flight path.
-Titles use effort none, sentences low, Home briefs high; no model-tier/effort selector.
+Titles use effort none and sentences low; no model-tier/effort selector.
 Wrong-language text is rejected. Keyword marks `«keyword»`, `«+approve»`, `«-reject»`,
 `«!opinion»` (and short Chinese `「…」`) share painting across cards and the Inspector;
 files/paths retain identifier ink. No recap, session-title or change-summary generator runs.

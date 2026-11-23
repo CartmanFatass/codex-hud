@@ -7,7 +7,7 @@ import { orderedLanes } from './work-lanes.js';
 import { askRows, jobRows, roleMark } from './work-jobs.js';
 import { quietDecisionSummary, requestLines, questionOriginalRows, stemLines } from './work-card.js';
 import { theme, visualLength } from './colors.js';
-import { fit, pair, monitorText, flowLines } from './monitor-text.js';
+import { fit, pair, monitorText } from './monitor-text.js';
 import { t } from './i18n.js';
 import { activeFlow, currentWorker, foldedWorker, unattendedFailure } from './work-visibility.js';
 import { isUnreadReport, sonicChildrenRunning, workerModelPlain } from './worker-roster.js';
@@ -167,15 +167,9 @@ export function homeRows(
   // A question is its row and its text until the owner opens it into the slab (Enter or a click).
   for (const worker of needs)
     rows.push(...(state.home.expanded?.has(targetKey({ kind: 'worker', laneId: worker.laneId, workerId: worker.id })) ? askSlabRows(worker, board, state, width, now) : askRows(worker, board, state, width, now)));
-  if (!filtering && board.homeBrief) {
-    rows.push(...flowLines(monitorText(board.homeBrief), width).map((s) => boardRow(theme.board.text(s))), boardRow(''));
-  }
   const allWorkers = input?.workboard?.workers ?? board.workers;
   if (input) {
-    const ordered =
-      state.home.showAll && !board.workers.some((w) => w.homeRank !== undefined)
-        ? board.lanes
-        : orderedLanes(board, now, true);
+    const ordered = state.home.showAll ? board.lanes : orderedLanes(board, now, true);
     rows.push(...jobRows(input, ordered, state, width, now, allWorkers));
   }
   const source = input?.workboard;

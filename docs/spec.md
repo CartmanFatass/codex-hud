@@ -227,8 +227,7 @@ Reference: `docs/design/panel-v8/` (option 2) and `docs/design/panel-v8/notes.md
   or ticket features). A setting shows slices and tickets. (11.04, 11.08, 20.04)
 - Finished jobs hide after a short time; `a` reveals them in place. (11.04)
 - Collect worker decisions for the owner but do not show them. (20.04, 22.11)
-- Default or Recommended. Recommended ranks and folds cards via Decision API and shows a short progress
-  brief. Never hide cards needing the owner. (12.02)
+- Home uses its built-in order; no model ranks or folds cards. Never hide cards needing the owner. (22.27)
 - Read native subagents from transcripts (Claude Agent incl. custom, Codex, pi). One lane per main session
   beside package lanes; one card per subagent with same hide rules. Indent nested agents one level; deeper
   use flat `↳ parent`. External current-work summaries follow the master switch. No agent log, card label
@@ -332,9 +331,9 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
 - Optional external Decision API text in panel and bars: summaries, recaps and sentences with owner keys
   (`$HUD_HOME/credentials.env`). Read only job files and the project's STATE and ticket files; write only display text. Never prompt, brief or steer
   workers. No consent or authority layer. (11.05, 12.02)
-- Settings API (default OpenAI) labels settled outcome, job kind, quiet repeated failures on running cards,
+- Settings API (default OpenAI) labels settled outcome, quiet repeated failures on running cards,
   question category and review finding severity. Outcome is independent report judgement, never self-graded.
-  (12.02, 22.01)
+  (12.02, 22.01, 22.27)
 - Signature-bound worker `hud_report` summary supplies the finished result line, notices and `hud_read`.
   Model fallback only if absent, stale or wrong panel language. No two-minute hold on settled results.
   (22.01)

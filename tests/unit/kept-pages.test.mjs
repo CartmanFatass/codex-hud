@@ -50,7 +50,7 @@ test("frames: all seven kept pages in Home's kit", (t) => {
     }
     if (page === 'settings') {
       assert.match(text, /Advanced \(13\)/);
-      assert.doesNotMatch(text, /Bar style|imp cap/);
+      assert.doesNotMatch(text, /Bar style|imp cap|Home mode/);
       assert.match(text, /Calls this hour\s+██▍░░░░░░░ 14\/60/);
       assert.match(text, /\* Call cap\s+‹ 120\/h ›/);
       assert.doesNotMatch(text, /Preview|Reset all|HUD read the session/);
@@ -219,6 +219,7 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
     JSON.stringify({
       modelEnabled: false,
       icons: 'emoji',
+      homeMode: 'recommended',
       look: 'pill',
       motion: 'full',
       art: 'ascii',
@@ -239,6 +240,7 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
   let draft = loadSettings();
   assert.equal(draft.icons, 'nerd', 'a retired value loads as the default');
   const retired = [
+    'homeMode',
     'sort',
     'importantRoles',
     'agentColors',

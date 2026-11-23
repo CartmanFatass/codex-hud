@@ -57,8 +57,8 @@ function fixture(t, keys = { GEMINI_API_KEY: 'synthetic-gemini', OPENAI_API_KEY:
     const answers = qs.map(({ name, values }) => {
       const choice = f.reply?.(name, input, values) ?? (name === 'outcome' ? 'partial' : name === 'progress' ? (input.includes('failed command') ? 'looping' : 'progressing')
         : name === 'category' ? (input.includes('authorise') ? 'owner authorisation' : 'clarification')
-        : name.startsWith('f') && /^f\d+$/.test(name) ? ['must fix', 'should fix', 'optional'][Number(name.slice(1)) % 3]
-        : name === 'feature' || name === 'ui' ? 'included' : 'excluded');
+        : /^f\d+$/.test(name) ? ['must fix', 'should fix', 'optional'][Number(name.slice(1)) % 3]
+        : values[0]);
       const probabilities = Object.fromEntries(values.map((v) => [v, v === choice ? 0.9 : 0.1 / (values.length - 1)]));
       return { name, type: 'choice', choice, confidence: 0.9, probabilities };
     });
@@ -122,23 +122,14 @@ test('01: off and no-key hide labels and send nothing', async (t) => {
   }
 });
 
-test('02: multi-kind once, bounded title/goal, newest-first within one day; no two-day backfill', async (t) => {
-  const f = fixture(t); f.cap = 2; f.open();
-  const newest = f.job(1), older = f.job(2, 'done', 86400000), oldest = f.job(3, 'done', 2 * 86400000), expired = f.job(4, 'done', 31 * 86400000);
-  for (const [id, title] of [[newest, 'newest'], [older, 'older'], [oldest, 'oldest'], [expired, 'expired']])
-    f.put(id, 'brief.md', `# ${title}\n\nGoal: feature UI.\n\nNOT-OUTBOUND\n` + 'x'.repeat(2000));
-  let board = await f.pump();
-  assert.equal(f.calls.length, 2);
-  assert.match(JSON.stringify(f.calls[0].body.input), /newest/); assert.match(JSON.stringify(f.calls[1].body.input), /older/);
-  assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND|expired/);
-  assert.deepEqual(board.workers[0].labels.kinds, ['ui', 'feature']);
-  assert.deepEqual(f.service.usage().byFeature, { kind: 2 });
-  f.open(); await f.pump(); assert.equal(f.calls.length, 2);
-  f.now += 3600001; board = await f.pump(); assert.equal(f.calls.length, 2);
-  assert.doesNotMatch(JSON.stringify(f.calls), /oldest|expired/, 'no kind call for a job settled two days ago');
-  assert.equal(board.workers.find((w) => w.id.endsWith(expired)).labels.kinds.length, 0);
-  f.now += 3600001; f.put(newest, 'brief.md', '# Changed title\n\nNew goal');
-  await f.pump(); assert.equal(f.calls.length, 2, 'kind is frozen per job');
+test('brief-only running or newly settled jobs make no Decision API calls', async (t) => {
+  const f = fixture(t);
+  for (const [i, state] of ['working', 'done'].entries())
+    f.put(f.job(i + 1, state), 'brief.md', '# Synthetic UI feature\n\nGoal: build interface');
+  const board = await f.pump();
+  assert.equal(board.workers.length, 2);
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual(f.service.usage().byFeature, {});
 });
 
 function transcript(command, n = 12, format = 'pi') {
@@ -236,18 +227,6 @@ test('06: a reviewer job classifies findings from its own report', async (t) => 
   const board = await f.pump(); assert.equal(f.calls.length, 2); assert.deepEqual(board.workers[0].labels.severity, [1, 0, 0]);
 });
 
-test('01: the Inspector’s kind row lists the first two kinds, in EN and ZH (panel-polish/04)', async (t) => {
-  const f = fixture(t), id = f.job();
-  f.put(id, 'brief.md', '# Synthetic UI feature\n\nGoal: build interface');
-  const w = { ...(await f.pump()).workers[0], labels: { kinds: ['ui', 'bug fix', 'feature', 'docs', 'chore', 'review'] } };
-  const previous = setLanguage('en'); t.after(() => setLanguage(previous));
-  for (const lang of ['en', 'zh']) {
-    setLanguage(lang);
-    const row = workInspectorRows(w, initialMonitorState(), 80, f.now).map((r) => stripAnsi(r.text)).find((l) => l.startsWith(tr('kind')));
-    assert.ok(row.includes(`${tr('ui')} · ${tr('bug fix')}`) && !row.includes(tr('feature')), `${lang}: ${row}`);
-  }
-});
-
 test('01–06: Home, Inspector and progress rows in EN/ZH at 80 and 120 columns', async (t) => {
   const f = fixture(t), id = f.job();
   f.put(id, 'brief.md', '# Synthetic UI feature\n\nGoal: build interface');
@@ -262,7 +241,7 @@ test('01–06: Home, Inspector and progress rows in EN/ZH at 80 and 120 columns'
       ladder: { ids: [] }, ledger: [{ id: 'SYNTHETIC', milestone: 'M1', state: 'working', text: 'synthetic slice' }],
       active: [], counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
       slices: [{ label: 'SYNTHETIC', value: 'synthetic slice', jobId: id }], next: [], tickets: [] };
-    const inspector = workInspectorRows(w, state, width, f.now), progress = projectRows(project,
+    const inspector = workInspectorRows({ ...w, labels: { ...w.labels, kinds: ['SYNTHETIC-KIND'] } }, state, width, f.now), progress = projectRows(project,
       withState(state, { project: { folded: new Set(['task:milestone:M1']), view: { kind: 'progress' } } }), width, f.now, board, true);
     const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
       modelEnabled: true, state, width, height: 80, nowMs: f.now });
@@ -270,7 +249,8 @@ test('01–06: Home, Inspector and progress rows in EN/ZH at 80 and 120 columns'
     for (const line of frame.lines) assert.equal(visualLength(line), width);
     assert.match(frame.lines.map(stripAnsi).join('\n'), new RegExp(tr('partial')));
     const inspectText = inspector.map((r) => stripAnsi(r.text)).join('\n');
-    for (const label of ['kind', 'feature', 'ui', 'partial', 'must fix', 'should fix', 'optional']) assert.ok(inspectText.includes(tr(label)), inspectText);
+    for (const label of ['partial', 'must fix', 'should fix', 'optional']) assert.ok(inspectText.includes(tr(label)), inspectText);
+    assert.doesNotMatch(inspectText, /\bkind\b|类型|SYNTHETIC-KIND/);
     assert.match(inspectText, /90%/);
     const projectText = progress.map((r) => stripAnsi(r.text)).join('\n');
     for (const label of ['partial', 'must fix']) assert.ok(projectText.includes(tr(label)), projectText);

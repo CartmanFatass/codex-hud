@@ -197,7 +197,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const nowMs = Date.now();
       frame = renderMonitor({
         tree,
-        workboard: painted.activeTab === 'home' && !painted.subpage && !painted.help ? models.recommend(displayBoard()) : displayBoard(),
+        workboard: displayBoard(),
         workerCounts: jobPipeline.workerCounts.counts(),
         modelEnabled: settings.modelEnabled,
         mouse: settings.mouse,

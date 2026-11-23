@@ -1,7 +1,6 @@
 import * as path from 'node:path';
 import { DecisionLabels } from '../collectors/decision-labels.js';
 import { DecisionTitles } from '../collectors/decision-titles.js';
-import { HomeRecommendation } from '../collectors/home-recommendation.js';
 import { JobSentences } from '../collectors/job-sentences.js';
 import { ModelProbe, apiSettings } from '../collectors/model-probe.js';
 import { SmallModel, modelHttpRequest } from '../collectors/small-model.js';
@@ -27,7 +26,6 @@ export function createPanelModelServices(home: string, render: () => void, isClo
   const waitingBriefs = new WaitingBriefs(model, path.join(dir, 'waiting-briefs.json'), render);
   const decisionTitles = new DecisionTitles(model, path.join(dir, 'decision-titles.json'), render);
   const decisionLabels = new DecisionLabels(dir, render);
-  const homeRecommendation = new HomeRecommendation(dir, model, render);
   const apply = (board: WorkboardSnapshot) => decisionLabels.apply(decisionTitles.apply(jobSentences.apply(board)));
 
   let lastControlShown = false;
@@ -61,7 +59,6 @@ export function createPanelModelServices(home: string, render: () => void, isClo
         hourlyCap: settings.modelCallsPerHour,
       });
       decisionLabels.configure(settings.modelEnabled, settings.decisionCallsPerHour);
-      homeRecommendation.configure(settings.homeMode === 'recommended' && settings.modelEnabled, resolveLanguage(settings.language), settings.decisionCallsPerHour, settings.decisionApi, settings.summaryIntervalMinutes, settings);
       jobSentences.configure(modelOn, resolveLanguage(settings.language), settings.summaryIntervalMinutes);
       waitingBriefs.configure(modelOn, resolveLanguage(settings.language));
       tryBriefs.configure(modelOn, resolveLanguage(settings.language));
@@ -70,18 +67,15 @@ export function createPanelModelServices(home: string, render: () => void, isClo
     modelHealth: () => !modelOn ? undefined : model.diagnostics(),
     modelCalls: () => model.usage(),
     decisionCalls: () => decisionLabels.usage(),
-    recommend: (board: WorkboardSnapshot) => homeRecommendation.apply(board),
     update(board: WorkboardSnapshot, tree: SubagentTree, subpage: MonitorState['subpage']) {
       decisionTitles.inspect(board, home, subpage?.kind === 'inspector' ? subpage.target : undefined);
       decisionLabels.update(board, home, tree);
       jobSentences.update(board, home, tree);
-      homeRecommendation.update(apply(board));
     },
     leaveRoot() {
       // Cancel old-root writers before loading the next root's model log.
       decisionTitles.stop();
       decisionLabels.stop();
-      homeRecommendation.stop();
       jobSentences.stop();
       tryBriefs.stop();
       waitingBriefs.stop();
@@ -96,7 +90,6 @@ export function createPanelModelServices(home: string, render: () => void, isClo
       waitingBriefs.stop();
       decisionTitles.stop();
       decisionLabels.stop();
-      homeRecommendation.stop();
       model.cancelAll();
       modelListAbort?.abort();
       probe.cancel();

@@ -24,7 +24,6 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   treeWidth: number;
   worktreeRoot: string;
   modelEnabled: boolean;
-  homeMode: 'default' | 'recommended';
   /** How Home and Project are laid out (owner, 2026-11-17): the layouts being tried, one of which stays. */
   panelLayout: 'classic' | 'split';
   /** How the Project tab's pages are arranged (owner, 2026-11-20): Timeline (default), Board or Inbox. */
@@ -90,7 +89,6 @@ export function defaultSettings(): HudSettings {
         return false;
       }
     })(),
-    homeMode: 'default',
     ...DEFAULT_PANEL_VIEW,
     language: 'auto',
     briefingApiBase: SHIPPED_MODELS_CATALOG.defaults.summary.apiBase,
@@ -136,7 +134,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
-  homeMode: oneOf('default', 'recommended'),
   panelLayout: oneOf('classic', 'split'),
   projectLayout: oneOf('timeline', 'board', 'inbox'),
   acceptance: oneOf('task', 'slice'),
