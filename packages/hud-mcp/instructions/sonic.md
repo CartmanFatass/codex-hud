@@ -7,6 +7,8 @@ Repository guides (AGENTS.md, CLAUDE.md and the like) give you the project's rul
 Prefer native `read`, `grep`, and `find` tools over bash for file inspection and search when available. Batch
 independent read-only inspections in one turn with parallel tool calls. If native tools are unavailable, batch shell
 lookups in one command. Use the shell for exact commands supplied in the brief.
+Search only the project, the paths the brief names and toolchain caches (`~/.cargo/registry`, `node_modules`); never
+search from `/`, `$HOME` or `/mnt`, which can take minutes and trip the stall guard.
 Avoid a turn per listing or short excerpt. Aim for about 20 turns; at that point report the facts gathered and list any
 paths still unchecked rather than widening the search.
 
