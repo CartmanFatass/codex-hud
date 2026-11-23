@@ -94,8 +94,10 @@ test('worktree isolation validates before dispatch, links dependencies and carri
   assert.equal(tabs.length, 1);
   assert.equal(tabs[0].args[tabs[0].args.indexOf('--cwd') + 1], root);
   const project = await new ProjectCollector(cwd, f.env.HUD_HOME, f.env).collect(true, { workers: [] }, Date.now());
-  assert.equal(project.slices.find((s) => s.label === name)?.jobId, job.job);
-  assert.equal(project.slices.find((s) => s.label === name).drift, undefined);
+  assert.ok(project.active.some((entry) => entry.jobId === job.job), 'the managed job is visible under Running');
+  assert.equal(project.worktreeCount, 1);
+  assert.ok(!project.slices.some((slice) => slice.label === name), 'the managed tree is not unlisted');
+  assert.deepEqual(project.ledger, [], 'a job without a ticket does not count toward progress');
 });
 
 test('hud_create closes a pre-input failure and starts the next place in the same job', async (t) => {

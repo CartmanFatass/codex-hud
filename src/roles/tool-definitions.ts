@@ -41,7 +41,7 @@ export const ROLE_TOOLS = [
       cwd: { ...text, description: 'Job/project dir; default server cwd.' },
       package: { ...text, description: 'Display label.' },
       ticket: { ...text, description: 'feature/NN ticket link.' },
-      slice: { ...text, description: 'Legacy target label; use ticket to link progress.' },
+      slice: { ...text, description: 'Legacy target label.' },
       context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths in cwd.' },
       checks: { type: 'array', maxItems: MAX_CHECKS, items: { ...text, minLength: 1, maxLength: MAX_CHECK_COMMAND },
         description: 'HUD runs in job cwd after declared pi/CLI settlement.' },
