@@ -52,11 +52,3 @@ export function workSignalsFromSummary(scope: WorkSummaryScope): WorkSignals {
   }
   return { workers };
 }
-export function renderWorkSummaryFromCounts(scope: WorkSummaryScope, width: number): string {
-  const running = Math.max(0, scope.running - scope.asking);
-  const parts = [
-    ...(scope.asking > 0 ? [`${scope.asking} needs you`] : []),
-    ...(running > 0 ? [`${running} running`] : []),
-  ];
-  return parts.length ? truncateAnsi('Work: ' + parts.join(' · '), width) : '';
-}

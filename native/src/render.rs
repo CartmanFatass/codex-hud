@@ -385,23 +385,23 @@ fn short_model(s: &str) -> String {
     }
     out
 }
-fn provider(id: &str, ascii: bool) -> Option<(&'static str, u8)> {
+fn provider(id: &str, ascii: bool) -> Option<(&'static str, Option<u8>)> {
     let id = id.to_lowercase();
     let has = |tokens: &[&str]| tokens.iter().any(|t| id.contains(t));
     let (glyph, text, color) = if has(&["gpt", "o1-", "o3-", "o4-"])
         || ["o1", "o3", "o4"].iter().any(|t| id.ends_with(t))
     {
-        ("◎", "OAI", 79)
+        ("◎", "OAI", Some(79))
     } else if has(&["claude", "sonnet", "haiku", "opus", "fable"]) {
-        ("✻", "Ant", 173)
+        ("✻", "Ant", Some(173))
     } else if has(&["deepseek"]) {
-        ("≋", "DS", 69)
+        ("≋", "DS", Some(69))
     } else if has(&["glm"]) {
-        ("ℤ", "GLM", 69)
+        ("ℤ", "GLM", None)
     } else if has(&["gemini"]) {
-        ("▲", "Gem", 111)
+        ("▲", "Gem", Some(111))
     } else if has(&["grok"]) {
-        ("⊘", "xAI", 245)
+        ("⊘", "xAI", Some(245))
     } else {
         return None;
     };
@@ -448,7 +448,7 @@ fn model(input: &Value, t: &Value, policy: &Policy, ascii: bool) -> Segment {
         }
     }
     let mut seg = Segment::new(Field::Model, (7, 232), vec![full, short]);
-    seg.mark = vendor.map(|(_, c)| c);
+    seg.mark = vendor.and_then(|(_, c)| c);
     seg
 }
 fn fixed_tenth(n: f64) -> String {

@@ -1,5 +1,5 @@
-import { watch, type FSWatcher } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { lstatSync, realpathSync, watch, type FSWatcher } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   observeProxy,
   refreshProxyIfDue,
@@ -109,9 +109,10 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
     const mounted = epoch;
     const captured = revision;
     const active = () => mounted === epoch;
-    poll = observeProxy(env, (enabled) => {
+    let covered = false;
+    // Attach before reading, so even an atomic replacement during the read invalidates it.
+    poll = Promise.resolve().then(() => {
       if (!active()) return;
-      expEnabled = enabled;
       settingsWatch ??= watchDir(
         dirname(preferences),
         (file) => {
@@ -125,6 +126,35 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
           }
         }
       );
+      // A watch on a link's parent cannot see edits to its target in a dotfiles directory.
+      try {
+        covered = !!settingsWatch && realpathSync(dirname(preferences)) === resolve(dirname(preferences)) &&
+          !lstatSync(preferences, { throwIfNoEntry: false })?.isSymbolicLink();
+      } catch { /* Unknown watch coverage: read on the next draw too. */ }
+      return observeProxy(env, enabledChanged);
+    }).then(
+      (next) => {
+        if (!active()) return;
+        poll = undefined;
+        if (captured !== revision) return repaint();
+        observed = covered;
+        if (
+          next?.proxy.bindingVersion !== reading?.proxy.bindingVersion ||
+          next?.proxy.profile !== reading?.proxy.profile
+        )
+          clearRequest();
+        const changed = JSON.stringify(next) !== JSON.stringify(reading);
+        reading = next;
+        if (next) maybeRefresh(next, captured);
+        if (changed) repaint();
+      },
+      () => {
+        if (active()) poll = undefined;
+      }
+    );
+    function enabledChanged(enabled: boolean) {
+      if (!active()) return;
+      expEnabled = enabled;
       if (enabled) {
         expWatch ??= watchDir(
           expDir,
@@ -145,26 +175,7 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
         watcher?.close();
         clearRequest();
       }
-    }).then(
-      (next) => {
-        if (!active()) return;
-        poll = undefined;
-        if (captured !== revision) return repaint();
-        observed = true;
-        if (
-          next?.proxy.bindingVersion !== reading?.proxy.bindingVersion ||
-          next?.proxy.profile !== reading?.proxy.profile
-        )
-          clearRequest();
-        const changed = JSON.stringify(next) !== JSON.stringify(reading);
-        reading = next;
-        if (next) maybeRefresh(next, captured);
-        if (changed) repaint();
-      },
-      () => {
-        if (active()) poll = undefined;
-      }
-    );
+    }
   }
   function clearRequest() {
     request = undefined;

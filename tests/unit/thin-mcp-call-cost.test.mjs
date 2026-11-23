@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import cp from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -82,4 +82,18 @@ test('MCP shares one receipt scan and global FIFO, and only wakes the watcher wh
   children[1].emit('exit', 1);
   await call('hud_read');
   assert.equal(children.length, 3, 'a failed launch can be retried');
+
+  const answers = [5, 6, 7, 8].map(n => {
+    const job = seed(n, 'working'), qa = join(home, 'jobs', job, 'qa');
+    mkdirSync(qa);
+    writeFileSync(join(qa, 'q1.md'), 'Synthetic question');
+    return { job, request_id: 'q1', answer: 'Synthetic answer' };
+  });
+  scans.mock.resetCalls();
+  const response = await call('hud_respond', { answers });
+  assert.ok(response.answers.every(item => item.written));
+  assert.equal(scans.mock.callCount(), 1, 'one call scan shared with the batch census');
+  const summary = JSON.parse(readFileSync(join(home, 'display/work-summary.v1.json'), 'utf8'));
+  assert.equal(summary.generation, 1, 'publish the final census, not intermediate answers');
+  assert.equal(summary.global.asking, 0);
 });

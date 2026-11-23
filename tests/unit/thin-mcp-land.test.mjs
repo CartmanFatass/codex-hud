@@ -745,17 +745,15 @@ async function buildableCheckout(t, { gate = ['npm run build'], after = ['npm ru
   };
   put(f.main, '.gitignore', 'dist/\ndist-test/\n.tsbuild/\n.dist-stage-*/\n.dist-test-stage-*/\n');
   put(f.main, 'package.json', JSON.stringify({ type: 'module', scripts: { build: 'node scripts/build.mjs' } }));
-  put(f.main, 'tsconfig.json', JSON.stringify({
-    compilerOptions: { target: 'ES2022', module: 'NodeNext', rootDir: 'src', types: [], declaration: true, sourceMap: true },
-    include: ['src/**/*'],
-  }));
+  fs.copyFileSync(resolve('tsconfig.json'), join(f.main, 'tsconfig.json'));
   fs.mkdirSync(join(f.main, 'scripts'), { recursive: true });
-  for (const name of ['build.mjs', 'build-native.mjs', 'dist-lock.mjs']) {
+  for (const name of ['build.mjs', 'build-native.mjs', 'dist-lock.mjs', 'dist-lock.d.mts']) {
     fs.copyFileSync(resolve('scripts', name), join(f.main, 'scripts', name));
   }
-  fs.mkdirSync(join(f.main, 'node_modules'), { recursive: true });
-  fs.symlinkSync(resolve('node_modules/typescript'), join(f.main, 'node_modules/typescript'), 'dir');
-  put(f.main, 'src/index.ts', 'export const index = 1;\n');
+  fs.symlinkSync(resolve('node_modules'), join(f.main, 'node_modules'), 'dir');
+  const binder = 'packages/hud-mcp/bin/agy-events.d.mts';
+  put(f.main, binder, fs.readFileSync(resolve(binder)));
+  put(f.main, 'src/index.ts', "export { buildStamp } from '../scripts/dist-lock.mjs';\nexport { hasAgyEvents } from '../packages/hud-mcp/bin/agy-events.mjs';\n");
   put(f.main, 'src/tree-page.ts', 'export const page = 1;\n');
   put(f.main, 'src/mcp/thin-main.ts', 'export const version = 1;\n');
   put(f.main, '.hud/project.json', JSON.stringify({
@@ -763,7 +761,7 @@ async function buildableCheckout(t, { gate = ['npm run build'], after = ['npm ru
     land: { base: 'base', gate, after, push: true, wrapper: 'wrap' },
   }));
   if (native) put(f.main, 'native/Cargo.toml', '# synthetic native sources\n');
-  f.git(f.main, 'add', '.gitignore', 'package.json', 'tsconfig.json', 'scripts', 'node_modules/typescript', 'src', '.hud/project.json',
+  f.git(f.main, 'add', '.gitignore', 'package.json', 'tsconfig.json', 'scripts', 'packages', 'node_modules', 'src', '.hud/project.json',
     ...(native ? ['native'] : []));
   f.git(f.main, 'commit', '-qm', 'add buildable project');
   const seeded = f.git(f.main, 'rev-parse', 'HEAD');
@@ -866,11 +864,12 @@ out=$2/x86_64-unknown-linux-gnu/release
   }
 });
 
-for (const reason of ['dirty main src', 'replayed base']) test(`after npm run build rebuilds when inputs do not match (${reason})`, async t => {
+for (const reason of ['dirty main src', 'dirty declaration', 'replayed base']) test(`after npm run build rebuilds when inputs do not match (${reason})`, async t => {
   const f = await buildableCheckout(t, {
     gate: reason === 'replayed base' ? ['npm run build', 'while test ! -f "$HOME/release"; do sleep .05; done'] : ['npm run build'],
   });
   if (reason === 'dirty main src') f.put(f.main, 'src/local-extra.ts', 'export const localExtra = true;\n');
+  if (reason === 'dirty declaration') f.put(f.main, 'packages/hud-mcp/bin/agy-events.d.mts', 'export function hasAgyEvents(): false;\n');
   const { flow } = await f.call('hud_land', { job });
   if (reason === 'replayed base') {
     await until(() => f.flowState(flow).step.startsWith('gate[2]'), 15000);
@@ -888,7 +887,7 @@ for (const reason of ['dirty main src', 'replayed base']) test(`after npm run bu
   assert.match(fs.readFileSync(join(f.main, 'dist/mcp/thin-main.js'), 'utf8'), /version = 2/);
   if (reason === 'dirty main src') {
     assert.match(fs.readFileSync(join(f.main, 'dist/local-extra.js'), 'utf8'), /localExtra = true/);
-  } else {
+  } else if (reason === 'replayed base') {
     assert.match(fs.readFileSync(join(f.main, 'dist/unrelated.js'), 'utf8'), /unrelated = 7/);
   }
 });

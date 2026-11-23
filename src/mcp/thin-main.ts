@@ -79,6 +79,8 @@ const jobsRoot = join(hudHome, 'jobs');
 const jobCache = new JobIndexCache(hudHome);
 const workSummary = createWorkSummaryPublisher(hudHome, 'hud-mcp', jobCache);
 const publishWorkSummary = (loadedJobs?: readonly Job[]) => {
+  const defer = writeScan.getStore()?.deferSummary;
+  if (defer) return defer();
   try {
     workSummary.publish(loadedJobs ? { jobs: loadedJobs as readonly (Job & Record<string, unknown>)[], jobsExist: true } : undefined);
   } catch { /* Best-effort display snapshot. */ }
@@ -888,7 +890,7 @@ function scanForCall() {
 }
 type JobScan = ReturnType<typeof scanForCall>;
 // Track receipt writes made by a tool without using its display snapshot for dispatch admission.
-const writeScan = new AsyncLocalStorage<JobScan>();
+const writeScan = new AsyncLocalStorage<JobScan & { deferSummary?: () => void }>();
 
 function countWorkingByRole(allJobs = jobs()): Map<string, number> {
   const counts = new Map<string, number>();
@@ -2866,7 +2868,10 @@ async function call(name: string, args: Args, scan: JobScan): Promise<unknown> {
   if (name === 'hud_respond' && args.answers !== undefined) {
     if (args.job !== undefined || args.request_id !== undefined || args.answer !== undefined ||
         !Array.isArray(args.answers) || !args.answers.length) throw new Error('invalid_arguments: answers');
-    const answers = await Promise.all(args.answers.map(async (raw) => {
+    let changed = false;
+    const items = args.answers;
+    // Coalesce ordinary answer writes and any status changes from a headless resume.
+    const answers = await writeScan.run({ ...scan, deferSummary: () => { changed = true; } }, () => Promise.all(items.map(async (raw) => {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw))
         return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: answers' };
       const item = raw as Args;
@@ -2879,7 +2884,8 @@ async function call(name: string, args: Args, scan: JobScan): Promise<unknown> {
       } catch (error) {
         return { ...(jobId ? { job: jobId } : {}), ...(reqId ? { request_id: reqId } : {}), ...itemError(error) };
       }
-    }));
+    })));
+    if (changed) publishWorkSummary(scan.summaryJobs());
     return { answers };
   }
   if (name === 'hud_wait') return waitJobs(args, scan);

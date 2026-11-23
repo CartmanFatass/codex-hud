@@ -94,6 +94,12 @@ function quotaFixture(t: test.TestContext) {
 
 test('the actual subscription footer matches S1 at 144, 120, 80 and 36 with pi’s short model name', async (t) => {
   const { f, home, expectQuota } = quotaFixture(t);
+  // Dotfiles managers commonly keep the preferences in a separate directory.
+  const settings = join(home, 'hud-settings.json'), target = join(home, 'dotfiles', 'settings');
+  mkdirSync(join(home, 'dotfiles'));
+  fsMutable.renameSync(settings, target);
+  writeFileSync(target, '{"experiments":false}');
+  fsMutable.symlinkSync(target, settings);
   const profile = join(home, '.codex');
   const min = 60_000;
   mkdirSync(profile);
@@ -116,6 +122,9 @@ test('the actual subscription footer matches S1 at 144, 120, 80 and 36 with pi�
   );
   f.ctx.modelRegistry = { isUsingOAuth: () => true };
   f.controller.update();
+  assert.doesNotMatch(f.render(120)[0]!, /≈43%/);
+  await sleep(20); // Allow the initial off observation to finish.
+  writeFileSync(target, '{"experiments":true}');
   for (let attempt = 0; attempt < 100 && !f.render(120)[0]?.includes('≈43%'); attempt++) await sleep(5);
   assert.match(f.render(120)[0]!, /^◎ 6\.2-sol high .*≈43%/);
   const direct = (percent: number, resetInMinutes: number) => {

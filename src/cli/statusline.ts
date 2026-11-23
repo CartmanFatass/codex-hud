@@ -166,7 +166,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
       const home = getHudHome(io.env), pane = io.env.HERDR_PANE_ID ?? null;
       // The compact renderers share the watcher/MCP census; only TS can recover from a stale one.
       if (parity && !options.details) {
-        const fresh = sourceRoot === undefined ? readFreshWorkSummary(home, pane, now) : null;
+        const fresh = sourceRoot === undefined && pane !== null ? readFreshWorkSummary(home, pane, now) : null;
         const work = fresh && fresh.scope.running <= 4096
           ? workSignalsFromSummary(fresh.scope)
           : workSignals((await collectJobLanes(home, { project: null, pane }, { settledBefore: now })

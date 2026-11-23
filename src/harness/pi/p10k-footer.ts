@@ -731,6 +731,7 @@ export function createP10kFooter(
     start,
     stop,
     update,
+    ownsFooter: () => footerStatuses !== null,
     modelChanged: subscription.modelChanged,
     requestStarted: subscription.requestStarted,
     requestWindows: subscription.requestWindows,

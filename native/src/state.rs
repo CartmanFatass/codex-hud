@@ -350,7 +350,7 @@ pub fn work(home: &Path, now: f64) -> Option<Workers> {
         "hud-mcp" if now - at <= 5_000. => {}
         _ => return None,
     }
-    let global = workers(snapshot.get("global"))?;
+    workers(snapshot.get("global"))?;
     let panes = snapshot.get("panes").obj()?;
     if panes.len() > 128 {
         return None;
@@ -369,7 +369,6 @@ pub fn work(home: &Path, now: f64) -> Option<Workers> {
             found = counts;
         }
     }
-    let result = if pane.is_some() { found } else { global };
-    // Keep the same bounded census as the TS compact bar.
-    (result.counts.iter().sum::<u64>() <= 4096).then_some(result)
+    // A Claude bar is pane-local, including when it has no pane.
+    (found.counts.iter().sum::<u64>() <= 4096).then_some(found)
 }

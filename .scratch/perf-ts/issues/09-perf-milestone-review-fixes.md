@@ -1,6 +1,6 @@
 # 09: Milestone review fixes for performance stage 1 and the native statusline
 
-**Status:** ready-for-agent
+**Status:** done
 **Blocked by:** none
 **Owner try:** no
 
@@ -14,7 +14,9 @@
 - Deletions: per-answer census rebuilds; `seenFacts` in `src/collectors/thin-jobs.ts` (use the `seenStamps` keys).
 Also take the review's third optional item (split the ARM64-portable TS-bypass assertion from the x64 replay assertion in `tests/unit/native-statusline.test.mjs`); leave the other optional items.
 
-- [ ] Each blocking finding has one main-path test that fails before and passes after
-- [ ] Targeted tests pass, including the Rust/TS differential tests
+- [x] Each blocking finding has one main-path test that fails before and passes after
+- [x] Targeted tests pass, including the Rust/TS differential tests
 
 ## Comments
+
+- Landed 2b1eef2efe5e03ec021825a40758db8d83499e38; gate 5/5 passed.

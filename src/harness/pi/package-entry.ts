@@ -54,7 +54,8 @@ export function installPiPackage(
 ) {
   const env: NodeJS.ProcessEnv = { ...(deps.env ?? process.env), HUD_HOME: binding.hudHome };
   let footer: ReturnType<typeof createP10kFooter> | undefined;
-  const segment = createPiSegment({ env, ...deps.segment, onSignals: (signals) => footer?.setWork(signals) });
+  const segment = createPiSegment({ env, ...deps.segment, onSignals: (signals) => footer?.setWork(signals),
+    statusVisible: () => !footer?.ownsFooter() });
   type State = {
     ctx: PiPackageContext;
     id: string;
@@ -262,6 +263,7 @@ export function installPiPackage(
               footerChoice = { id: s.id, source: s.source, on: show };
               if (show) footer?.start(ctx);
               else footer?.stop();
+              segment.refresh();
             }
             ctx.ui.notify('HUD: footer_' + options, 'info');
           }

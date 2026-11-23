@@ -83,7 +83,7 @@ function restore(home: string, idx: JobIndexCache): void {
     if (allCurrent && stamps.size === rows.length) persistStates.set(idx, { file, fileStamp: fileStampOf(st), stamps });
   } catch { /* Corrupt or missing display cache: rebuild on persist. */ }
 }
-function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string>, seenStamps: Map<string, string>): void {
+function persist(home: string, idx: JobIndexCache, seenStamps: Map<string, string>): void {
   const file = join(home, 'display/thin-jobs.json');
   const prev = persistStates.get(idx);
   if (prev && prev.file === file && sameStamps(prev.stamps, seenStamps)) {
@@ -91,7 +91,7 @@ function persist(home: string, idx: JobIndexCache, seenFacts: ReadonlySet<string
     if (liveStamp !== null && liveStamp === prev.fileStamp) return;
   }
   // Entry order in JobIndexCache reflects recent lookups, not a change in facts.
-  const text = JSON.stringify(idx.exportFacts(seenFacts, factKeys, { factsVersion: 6 }).sort(([a], [b]) => a.localeCompare(b)));
+  const text = JSON.stringify(idx.exportFacts(seenStamps.keys(), factKeys, { factsVersion: 6 }).sort(([a], [b]) => a.localeCompare(b)));
   if (text.length > 1048576) return;
   try {
     const { bytes, truncated } = readFileBounded(file, 1048576);
@@ -668,14 +668,14 @@ export function readThinJobs(
   let complete = herdrId(scope.pane) && inventory?.complete !== false;
   const markIncomplete = () => { complete = false; };
   const idx = getJobIndexCache(home), artifacts = artifactStoreFor(idx);
-  const seenFacts = new Set<string>(), seenStamps = new Map<string, string>(), seenArtifacts = new Set<string>();
+  const seenStamps = new Map<string, string>(), seenArtifacts = new Set<string>();
   restore(home, idx);
   const root = join(home, 'jobs');
   const readFact = (path: string): { v: Record<string, unknown>; at: number } | null => {
     const res = idx.readJson(path, { parse, acceptFacts: true });
-    if (res.status === 'ok') { seenFacts.add(path); seenStamps.set(path, `ok:${res.stamp}`); return { v: res.value, at: res.at }; }
-    if (res.status === 'truncated' || res.status === 'invalid') { seenFacts.add(path); seenStamps.set(path, `${res.status}:${res.stamp}`); }
-    else { seenFacts.delete(path); seenStamps.delete(path); }
+    if (res.status === 'ok') { seenStamps.set(path, `ok:${res.stamp}`); return { v: res.value, at: res.at }; }
+    if (res.status === 'truncated' || res.status === 'invalid') seenStamps.set(path, `${res.status}:${res.stamp}`);
+    else seenStamps.delete(path);
     complete = false;
     return null;
   };
@@ -704,7 +704,7 @@ export function readThinJobs(
       const file = readFact(join(root, id, 'job.json')),
         job = file?.v;
       // Bars may have read STATUS before the directory vanished during the receipt read.
-      if (!file) { const sp = join(root, id, 'STATUS.json'); seenFacts.delete(sp); seenStamps.delete(sp); }
+      if (!file) seenStamps.delete(join(root, id, 'STATUS.json'));
       if (job?.job === id) receipts.push(job);
       if (!file || !job || job.job !== id || typeof job.role !== 'string') complete = false;
       if (
@@ -1029,7 +1029,7 @@ export function readThinJobs(
   }
   // Retain only artifact signatures used by this bounded scan.
   for (const path of artifacts.keys()) if (!seenArtifacts.has(path)) artifacts.delete(path);
-  persist(home, idx, seenFacts, seenStamps);
+  persist(home, idx, seenStamps);
   if (observation) observation.complete = complete;
   return [...lanes.values()];
 }

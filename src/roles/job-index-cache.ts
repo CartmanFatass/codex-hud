@@ -768,7 +768,7 @@ export class JobIndexCache {
   }
 
   exportFacts(
-    seenPaths: ReadonlySet<string>,
+    seenPaths: Iterable<string>,
     factKeys: ReadonlySet<string>,
     opts?: { factsVersion?: number }
   ): [string, string, ExportedFactSnap][] {

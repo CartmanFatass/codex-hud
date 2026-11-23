@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 
-const INPUTS = ['src', 'tsconfig.json', 'package.json', 'package-lock.json', 'native',
+const DECLARATIONS = ['scripts/dist-lock.d.mts', 'packages/hud-mcp/bin/agy-events.d.mts'];
+const INPUTS = [...DECLARATIONS, 'src', 'tsconfig.json', 'package.json', 'package-lock.json', 'native',
   'scripts/build.mjs', 'scripts/build-native.mjs', 'scripts/dist-lock.mjs'];
 const COMMIT_INPUTS = [...INPUTS, 'node_modules'];
 const MAIN_BUILD_CMDS = new Set(['npm run build', 'node scripts/build.mjs', 'node scripts/build.mjs --target main']);
@@ -79,6 +80,11 @@ export async function canPublishTestedBuild(opts: {
       if (typeof file !== 'string') return false;
       const abs = resolve(infoDir, file);
       if (inside(intSrc, abs) || shared.some(r => inside(r, abs))) continue;
+      const local = relative(intReal, abs);
+      if (DECLARATIONS.includes(local)) {
+        if (!sameFile(abs, join(mainReal, local))) return false;
+        continue;
+      }
       const nmRel = inside(intNm, abs);
       if (!nmRel || !sameFile(abs, join(mainNm, nmRel))) return false;
     }

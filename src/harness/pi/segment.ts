@@ -3,7 +3,7 @@ import { jobLaneSnapshot, type Lanes } from '../../collectors/job-snapshot.js';
 import { readFreshWorkSummary, type WorkSummaryScope } from '../../collectors/work-summary-snapshot.js';
 import { getHudHome } from '../../hud-home.js';
 import { herdrId } from '../../roles/herdr-run.js';
-import { renderWorkSummary, renderWorkSummaryFromCounts, workSignals, workSignalsFromSummary, type WorkSignals } from '../../render/work-summary.js';
+import { renderWorkSummary, workSignals, workSignalsFromSummary, type WorkSignals } from '../../render/work-summary.js';
 export const HUD_STATUS_KEY = 'hud-delegation';
 export interface SegmentContext {
   mode: string;
@@ -17,6 +17,8 @@ export function createPiSegment(options: {
   schedule?: (callback: () => void, ms: number) => () => void;
   /** Told the census of the jobs, at every refresh and, empty, when the segment stops. */
   onSignals?: (signals: WorkSignals) => void;
+  /** The HUD-owned footer shows the icon census instead of pi's passive status text. */
+  statusVisible?: () => boolean;
 }) {
   type State = {
     ctx: SegmentContext;
@@ -51,9 +53,8 @@ export function createPiSegment(options: {
       show(state, now);
       return;
     }
-    const fresh = readFreshWorkSummary(state.home, state.pane, now);
-    if (fresh) {
-      state.summary = fresh.scope;
+    state.summary = readFreshWorkSummary(state.home, state.pane, now)?.scope;
+    if (state.summary && options.statusVisible?.() === false) {
       state.snapshot = undefined;
       state.jobs?.close();
       state.jobs = undefined;
@@ -61,13 +62,12 @@ export function createPiSegment(options: {
       show(state, now);
       return;
     }
-    state.summary = undefined;
     show(state, now);
     if (state.loading) return;
     const jobs = (state.jobs ??= jobLaneSnapshot(state.home, { project: null, pane: state.pane }));
     state.loading = true;
     void jobs.read().then((snapshot) => {
-      if (current !== state || !state.isCurrent() || state.summary || state.jobs !== jobs || snapshot === state.snapshot) return;
+      if (current !== state || !state.isCurrent() || state.jobs !== jobs || snapshot === state.snapshot) return;
       state.snapshot = snapshot;
       show(state);
     }).catch(() => { /* Keep the last good view and retry on the next refresh. */ })
@@ -76,7 +76,7 @@ export function createPiSegment(options: {
   function show(state: State, now = (options.now ?? Date.now)()) {
     const signals = state.summary ? workSignalsFromSummary(state.summary) : workSignals(state.snapshot?.lanes ?? [], now);
     options.onSignals?.(signals);
-    const next = (state.summary ? renderWorkSummaryFromCounts(state.summary, 160) : renderWorkSummary(state.snapshot?.lanes ?? [], 160, now)) || undefined;
+    const next = options.statusVisible?.() === false ? undefined : renderWorkSummary(state.snapshot?.lanes ?? [], 160, now) || undefined;
     if (current === state && (!published || next !== text)) {
       published = true;
       text = next;

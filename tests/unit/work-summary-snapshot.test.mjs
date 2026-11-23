@@ -17,8 +17,6 @@ import {
 } from '../../dist/collectors/work-summary-snapshot.js';
 import { createPiSegment } from '../../dist/harness/pi/segment.js';
 import {
-  renderWorkSummary,
-  renderWorkSummaryFromCounts,
   workSignals,
   workSignalsFromSummary,
 } from '../../dist/render/work-summary.js';
@@ -61,7 +59,7 @@ async function waitFor(predicate, timeoutMs = 5_000, stepMs = 10) {
   throw new Error('waitFor timed out');
 }
 
-test('collectWorkSummary matches workSignals and renderWorkSummary across roles, panes, asking, queued and settled jobs', (t) => {
+test('collectWorkSummary matches workSignals across roles, panes, asking, queued and settled jobs', (t) => {
   const { home, addJob } = makeFixture(t);
   const j1 = addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
   const j2 = addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
@@ -102,10 +100,6 @@ test('collectWorkSummary matches workSignals and renderWorkSummary across roles,
   assert.deepEqual(
     sortWorkers(workSignalsFromSummary(summary.panes[PANE_A]).workers),
     sortWorkers(workSignals(lanesA, now).workers)
-  );
-  assert.equal(
-    renderWorkSummaryFromCounts(summary.panes[PANE_A], 160),
-    renderWorkSummary(lanesA, 160, now)
   );
 });
 
@@ -241,11 +235,12 @@ test('pi segment reads fresh work-summary.v1.json without scanning jobs and fall
 
   const statuses = new EventEmitter();
   const signalsLog = [];
-  let timer;
+  let timer, passive = false;
   const segment = createPiSegment({
     env: { HUD_HOME: home, HERDR_PANE_ID: PANE_A },
     schedule(fn) { timer = fn; return () => {}; },
     onSignals(signals) { signalsLog.push(signals); },
+    statusVisible: () => passive,
   });
   t.after(() => {
     segment.stop();
@@ -258,7 +253,7 @@ test('pi segment reads fresh work-summary.v1.json without scanning jobs and fall
   statuses.on('status', (v) => { lastStatus = v; });
 
   segment.start(ctx, '/tmp', () => true);
-  assert.equal(lastStatus, 'Work: 1 running');
+  assert.equal(lastStatus, undefined, 'the owned footer shows icons instead of passive text');
   assert.deepEqual(signalsLog.at(-1), { workers: [{ role: 'imp', state: 'working' }] });
   assert.equal(jobsScans, 0, 'fresh snapshot path must not enumerate jobs/');
 
@@ -266,7 +261,7 @@ test('pi segment reads fresh work-summary.v1.json without scanning jobs and fall
   writePrivateFile(join(j1.dir, 'qa', 'q1.md'), '# Question q1 from imp\n\nSynthetic?');
   await waitFor(() => readFreshWorkSummary(home, PANE_A)?.scope.asking === 1);
   timer();
-  assert.equal(lastStatus, 'Work: 1 needs you');
+  assert.equal(lastStatus, undefined);
   assert.deepEqual(signalsLog.at(-1), { workers: [{ role: 'imp', state: 'asking' }] });
   assert.equal(jobsScans, 0);
 
@@ -275,12 +270,29 @@ test('pi segment reads fresh work-summary.v1.json without scanning jobs and fall
   await exited;
   assert.equal(readFreshWorkSummary(home, PANE_A), null);
   writePrivateFile(join(j1.dir, 'qa', 'q1.answer.md'), 'Answered after watcher exit');
+  passive = true;
   const next = once(statuses, 'status');
   timer();
   // Wait until fallback scan publishes the updated running status.
   await waitFor(() => lastStatus === 'Work: 1 running', 5_000, 15);
   await next;
   assert.deepEqual(signalsLog.at(-1), { workers: [{ role: 'imp', state: 'working' }] });
+});
+
+test('fresh census supplies pi icons without erasing passive stalled and failed work', async (t) => {
+  const { home, addJob } = makeFixture(t);
+  addJob();
+  addJob({ status: { state: 'failed' } });
+  const now = Date.now() + 11 * 60_000; // Advance the display clock past the inactivity threshold.
+  createWorkSummaryPublisher(home, 'hud-mcp').publish({ now });
+  assert.equal(readFreshWorkSummary(home, PANE_A, now)?.scope.running, 1);
+  let text, signals;
+  const segment = createPiSegment({ env: { HUD_HOME: home, HERDR_PANE_ID: PANE_A }, now: () => now,
+    schedule: () => () => {}, onSignals: value => { signals = value; } });
+  t.after(() => segment.stop());
+  segment.start({ mode: 'tui', hasUI: true, ui: { setStatus(_key, value) { text = value; } } }, '/tmp', () => true);
+  assert.deepEqual(signals, { workers: [{ role: 'imp', state: 'working' }] });
+  await waitFor(() => text === 'Work: 1 stalled · 1 failed');
 });
 
 test('hud-mcp updates work-summary.v1.json on hud_respond without overriding a fresh matching hud-watch snapshot', { timeout: 15_000 }, async (t) => {

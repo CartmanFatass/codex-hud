@@ -14,8 +14,9 @@ const base = {
   rate_limits: { five_hour: { used_percentage: 22 }, seven_day: { used_percentage: 84 } },
 };
 const syntheticEmail = 'synthetic@example.invalid';
-const start = process.platform === 'linux' ? fs.readFileSync('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ')[19] : '';
-const toolchain = process.platform === 'linux' && process.arch === 'x64' && spawnSync('cargo', ['--version'], { stdio: 'ignore' }).status === 0;
+const start = process.platform === 'linux' ? fs.readFileSync('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ')[19] : null;
+const linuxX64 = process.platform === 'linux' && process.arch === 'x64';
+const toolchain = linuxX64 && spawnSync('cargo', ['--version'], { stdio: 'ignore' }).status === 0;
 const hasNative = fs.existsSync(native);
 function receipt(t) {
   const home = fs.mkdtempSync(join(tmpdir(), 'hud-native-statusline-'));
@@ -25,11 +26,10 @@ function receipt(t) {
 function setup(hud) {
   fs.mkdirSync(join(hud, 'display'), { recursive: true, mode: 0o700 });
   const scope = { running: 3, asking: 1, roles: { imp: { running: 1, asking: 0 }, sonic: { running: 2, asking: 1 } } };
-  const empty = { running: 0, asking: 0, roles: {} };
   const file = join(hud, 'display/work-summary.v1.json');
   const write = (extra = {}) => fs.writeFileSync(file, JSON.stringify({
     version: 1, producer: 'hud-watch', pid: process.pid, pid_start: start, generation: 1,
-    observed_at: 1000, watching: true, complete: true, global: scope, panes: { 'synthetic-pane': empty }, ...extra,
+    observed_at: 1000, watching: true, complete: true, global: scope, panes: { 'synthetic-pane': scope }, ...extra,
   }), { mode: 0o600 });
   fs.writeFileSync(join(hud, 'watch.pid'), `${process.pid}\n`);
   write();
@@ -55,19 +55,21 @@ test('native build is present when Cargo and the Linux x64 target are available'
 });
 
 test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasNative }, (t) => {
-  const env = environment(receipt(t));
+  const env = { ...environment(receipt(t)), HERDR_PANE_ID: 'synthetic-pane' };
   setup(env.HUD_HOME);
   const cjk = { ...base, model: { display_name: '虚构苏州🧪 工作者' }, context_window: { used_percentage: 76.5 } };
   const ansi = { ...base, model: { display_name: '甲\x1b[31m\n\t\x00\u202e乙' }, cwd: join(env.HOME, '项目') };
   fs.mkdirSync(ansi.cwd);
   const rows = [
     ['Claude', base, {}, []],
+    ['GLM uncoloured mark', { ...base, model: { id: 'glm-4.7' } }, { HUD_BAR_STYLE: 'line' }, []],
+    ['GLM powerline mark', { ...base, model: { id: 'glm-4.7' } }, { HUD_BAR_STYLE: 'p10k' }, []],
     ['CJK truncation', cjk, {}, ['--width', '9']],
     ['ANSI in external text', ansi, {}, ['--width', '70']],
     ['NO_COLOR and text icons', base, { NO_COLOR: '1', HUD_ICONS: 'text', COLUMNS: '86' }, []],
     ['narrow width from the environment', base, { COLUMNS: '5' }, []],
     ['powerline, no capsule parity regressions', base, { HUD_BAR_STYLE: 'p10k' }, []],
-    ['scoped workers and RGB palette', base, { HERDR_PANE_ID: 'synthetic-pane', HUD_THEME: 'mocha' }, []],
+    ['scoped workers and RGB palette', base, { HUD_THEME: 'mocha' }, []],
     ['fields and hide Bedrock quota', { ...base, model: { id: 'us.anthropic.claude-sonnet-4-20250514-v1:0' } },
       { HUD_BAR_FIELDS: 'model,quota' }, []],
     ['zero reset/cost are still facts', { cost: { total_cost_usd: 0 }, context_window: { context_window_size: 200000 } }, {}, []],
@@ -82,6 +84,16 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
   const exact = Buffer.from(JSON.stringify(base).padEnd(65536, ' '));
   assert.deepEqual(run(launcher, [], env, exact), rust(env, exact), 'exactly 64 KiB remains valid');
   assert.deepEqual(run(launcher, [], env, Buffer.concat([exact, Buffer.from([0])])), ts(env, Buffer.alloc(65537, 32)));
+});
+
+test('Claude outside herdr shows no workers from another pane', (t) => {
+  const env = { ...environment(receipt(t)), NO_COLOR: '1' };
+  setup(env.HUD_HOME);
+  for (const render of hasNative ? [ts, rust] : [ts]) {
+    assert.match(render({ ...env, HERDR_PANE_ID: 'synthetic-pane' }, base).toString(), /!1/);
+    assert.doesNotMatch(render(env, base).toString(), /!1/);
+    assert.deepEqual(render(env, base), render({ ...env, HERDR_PANE_ID: 'empty-pane' }, base));
+  }
 });
 
 test('warm TS git/transcript/context/config cache files are reused; stale evidence declines native', { skip: !hasNative }, (t) => {
@@ -146,7 +158,7 @@ test('dispatcher never reuses a frame and declines missing, stale, incompatible 
   assert.deepEqual(run(launcher, [], env, { ...base, email: syntheticEmail }), ts(env, base));
 });
 
-test('missing binary and failed renderer replay fresh stdin exactly; explicit modes never start it', (t) => {
+function localInstall(t) {
   const home = receipt(t), env = { ...environment(home), CAPTURE: join(home, 'capture') };
   setup(env.HUD_HOME);
   const root = join(home, 'install with spaces'), localBin = join(root, 'bin'), localDist = join(root, 'dist');
@@ -160,22 +172,30 @@ test('missing binary and failed renderer replay fresh stdin exactly; explicit mo
   fs.symlinkSync(resolve('package.json'), join(root,'package.json'));
   const entry = join(localBin, 'hud-statusline');
   const input = Buffer.from(`\ufeff \r\n${JSON.stringify({ ...base, model: { display_name: '示例' } })}\n\n`);
+  return { env, entry, input, bin: join(localDist, 'native/hud-statusline') };
+}
+const failingRenderer = '#!/bin/bash\n/bin/cat > "$CAPTURE"\nprintf "hud-statusline-v1:partial"\nexit 75\n';
+
+test('missing binary and explicit modes use TS; unsupported hosts bypass native', (t) => {
+  const { env, entry, input, bin } = localInstall(t);
+  assert.deepEqual(run(entry, [], env, input), ts(env, input));
+  fs.writeFileSync(bin, failingRenderer, { mode: 0o755 });
+  fs.mkdirSync(env.CLAUDE_CONFIG_DIR, { mode: 0o700 });
+  for (const args of [...(linuxX64 ? [] : [[]]), ['--details'], ['--source', env.CLAUDE_CONFIG_DIR], ['--help'], ['settings','preview']]) {
+    assert.deepEqual(run(entry, args, env, input), ts(env, input, args));
+    assert.equal(fs.existsSync(env.CAPTURE), false);
+  }
+});
+
+test('failed native renderer replays fresh stdin exactly', { skip: !linuxX64 }, (t) => {
+  const { env, entry, input, bin } = localInstall(t);
   const expected = ts(env, input);
-  assert.deepEqual(run(entry, [], env, input), expected);
-  const bin = join(localDist, 'native/hud-statusline');
-  // Mimic a renderer which consumes every byte and prints a partial frame before it dies.
-  fs.writeFileSync(bin, '#!/bin/bash\n/bin/cat > "$CAPTURE"\nprintf "hud-statusline-v1:partial"\nexit 75\n', { mode: 0o755 });
+  fs.writeFileSync(bin, failingRenderer, { mode: 0o755 });
   assert.deepEqual(run(entry, [], env, input), expected);
   assert.deepEqual(fs.readFileSync(env.CAPTURE), input);
   const nul = Buffer.concat([input, Buffer.from([0, 0, 0xff, 0])]);
   assert.deepEqual(run(entry, [], env, nul), ts(env, nul));
   assert.deepEqual(fs.readFileSync(env.CAPTURE), nul);
-  fs.unlinkSync(env.CAPTURE);
-  fs.mkdirSync(env.CLAUDE_CONFIG_DIR, { mode: 0o700 });
-  for (const args of [['--details'], ['--source', env.CLAUDE_CONFIG_DIR], ['--help'], ['settings','preview']]) {
-    assert.deepEqual(run(entry, args, env, input), ts(env, input, args));
-    assert.equal(fs.existsSync(env.CAPTURE), false);
-  }
   fs.writeFileSync(bin, '#!/synthetic/missing/interpreter\n', { mode: 0o755 });
   assert.deepEqual(run(entry, [], env, input), expected);
 });
