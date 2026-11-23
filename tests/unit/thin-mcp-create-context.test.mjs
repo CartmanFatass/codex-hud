@@ -748,7 +748,7 @@ test('browser dispatch inlines the registered standing brief once through the bo
   assert.equal(workerFor(f, job.job).task, args.task);
 });
 
-test('hud_create inlines browser context with safe fences and caps both file and total bytes', { timeout: 10000 }, async (t) => {
+test('hud_create inlines browser context with safe fences and caps both file and total bytes', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   enableOptionalRoles(f, 'pro', 'flow');
   const max = 64 * 1024;

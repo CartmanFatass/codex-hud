@@ -16,6 +16,7 @@ import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, turnToken } from '../../dist/mcp/cli-judge.js';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from './process-cleanup.mjs';
+import { until } from './until.mjs';
 
 const fakeBin = fileURLToPath(new URL('./thin-mcp-fake-bin.mjs', import.meta.url));
 const clock = new URL('./thin-mcp-clock.mjs', import.meta.url).href;
@@ -349,13 +350,7 @@ export const resultValue = (result) => {
   return JSON.parse(result.content[0].text);
 };
 
-export async function until(check, timeout = 10000) {
-  const end = Date.now() + timeout;
-  while (!check()) {
-    assert.ok(Date.now() < end, 'condition did not settle');
-    await new Promise((done) => setTimeout(done, 20));
-  }
-}
+export { until };
 
 export const tasksExtension = 'io.modelcontextprotocol/tasks';
 export function taskRpc(rpc) {

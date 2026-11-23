@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from './process-cleanup.mjs';
+import { until as waitUntil } from './until.mjs';
 
 export const hour = 3600000;
 const watcher = resolve('packages/hud-mcp/bin/hud-watch.mjs');
@@ -69,10 +70,4 @@ export function realSession(dir, layout = 'sessions', header = { type: 'session'
 export const expired = () => ({ state: 'closed', ended_at: new Date(Date.now() - 25 * hour).toISOString() });
 export const destination = (pi) => join(pi, 'sessions', '--synthetic-work.space-repo--', 'synthetic-session.jsonl');
 
-export async function until(check, timeout = 5000) {
-  const end = Date.now() + timeout;
-  while (!check()) {
-    assert.ok(Date.now() < end, 'watcher condition did not settle');
-    await new Promise((done) => setTimeout(done, 20));
-  }
-}
+export const until = (check, limit = 5000) => waitUntil(check, limit, 'watcher condition did not settle');

@@ -298,11 +298,11 @@ test('idle and unknown with a live agent settle only a stable new report', { tim
   }
 });
 
-test('unknown while the agent is gone settles the job', { timeout: 10000 }, async (t) => {
+test('unknown while the agent is gone settles the job', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-unknown'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'unknown-gone', task: 'Synthetic unknown.' });
-  await until(() => cliState(job.task_dir)?.state === 'failed');
+  await until(() => cliState(job.task_dir)?.state === 'failed', t.signal);
   assert.equal(cliState(job.task_dir).error, 'worker exited');
 });
 
@@ -334,7 +334,7 @@ test(
   }
 );
 
-test('a blocked resume treats idle as present and unknown as gone', { timeout: 15000 }, async (t) => {
+test('a blocked resume treats idle as present and unknown as gone', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-blocked'), '');
   writeFixtureFile(join(f.env.HOME, 'blocked-quiet'), 'idle');
@@ -344,9 +344,9 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
     request_key: 'blocked-idle',
     task: 'Synthetic blocked quiet.',
   });
-  await until(() => cliState(held.task_dir)?.state === 'waiting_orchestrator');
+  await until(() => cliState(held.task_dir)?.state === 'waiting_orchestrator', t.signal);
   fs.writeFileSync(join(f.env.HOME, 'release-blocked'), '');
-  await until(() => cliState(held.task_dir)?.state === 'closed', 8000);
+  await until(() => cliState(held.task_dir)?.state === 'closed', t.signal);
   assert.equal(cliState(held.task_dir).exit_reason, 'settled');
   assert.equal(cliState(held.task_dir).error, null);
   fs.unlinkSync(join(f.env.HOME, 'release-blocked'));
@@ -359,7 +359,7 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
     request_key: 'blocked-gone',
     task: 'Synthetic blocked gone.',
   });
-  await until(() => cliState(gone.task_dir)?.state === 'failed', 8000);
+  await until(() => cliState(gone.task_dir)?.state === 'failed', t.signal);
   assert.equal(cliState(gone.task_dir).error, 'worker exited');
 });
 

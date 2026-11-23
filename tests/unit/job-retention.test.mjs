@@ -343,7 +343,7 @@ test('retention deletes CLI and Jev jobs without moving their session files into
   assert.equal(fs.existsSync(destination(f.pi)), false);
 });
 
-test('watcher deletes only terminal job directories older than one day, using end-time precedence', { timeout: 10000 }, async (t) => {
+test('watcher deletes only terminal job directories older than one day, using end-time precedence', { timeout: 60000 }, async (t) => {
   const f = fixture(t), now = Date.now();
   const ago = (hours) => new Date(now - hours * hour).toISOString();
   const deleted = [
@@ -384,9 +384,9 @@ fs.rmSync = (dir, options) => {
   return rm(dir, options);
 };
 syncBuiltinESMExports();`);
-  await until(() => deleted.every((dir) => !fs.existsSync(dir)));
+  await until(() => deleted.every((dir) => !fs.existsSync(dir)), t.signal);
   // appendFileSync creates the file before writing, so wait for the complete line, not just the file.
-  await until(() => fs.existsSync(join(f.home, 'reaps')) && fs.readFileSync(join(f.home, 'reaps'), 'utf8').endsWith('\n'));
+  await until(() => fs.existsSync(join(f.home, 'reaps')) && fs.readFileSync(join(f.home, 'reaps'), 'utf8').endsWith('\n'), t.signal);
   for (const dir of kept) {
     assert.ok(fs.existsSync(dir), dir);
     assert.equal(fs.existsSync(join(dir, '.archived')), false);

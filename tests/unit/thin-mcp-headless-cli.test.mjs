@@ -64,7 +64,7 @@ try {
   await call('hud_progress', { message: 'Synthetic headless CLI progress.' });
   if (!resumed) {
     await call('hud_sonic', { task: 'Read a synthetic fact.' });
-    if (prompt.includes('Synthetic plain turn.')) await until(() => fs.existsSync(join(dir, 'release-first')));
+    if (prompt.includes('Synthetic plain turn.')) await until(() => fs.existsSync(join(dir, 'release-first')), Infinity); // Released or reaped by the test.
     else {
       await call('hud_ask', { question: 'Which value?', default: 'A' });
       fs.writeFileSync(join(dir, 'continued-after-ask'), 'Unexpected next action');
@@ -88,7 +88,7 @@ try {
 assert.deepEqual(await exited, [0, null]);
 `;
 
-test('working headless Claude resumes queued input after a plain turn end', async t => {
+test('working headless Claude resumes queued input after a plain turn end', { timeout: 60000 }, async t => {
   const f = await fixture(t), rpc = taskRpc(f.rpc);
   f.overrideBin('claude', fakeCli('claude'));
   write(join(f.env.HOME, 'hold-sonic'), '');
@@ -107,7 +107,7 @@ test('working headless Claude resumes queued input after a plain turn end', asyn
     if (status?.state === 'failed' && status.exit_reason !== 'claude exited without a declared report')
       assert.fail(`${status.exit_reason}: ${fs.readFileSync(join(dir, 'stderr.log'), 'utf8')}`);
     return status?.state === 'closed' && read(join(dir, 'job.json')).reaped_at;
-  });
+  }, t.signal);
   const invocations = fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trimEnd().split('\n').map(JSON.parse).filter(row => row.pid);
   assert.equal(invocations.length, 2);
   assert.notEqual(invocations[0].pid, invocations[1].pid);

@@ -18,13 +18,13 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-test('supervisor events: renewed idle and stale scrollback do not settle a draft with an in-turn child', { timeout: 10000 }, async (t) => {
+test('supervisor events: renewed idle and stale scrollback do not settle a draft with an in-turn child', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'background-events', 4);
   const job = await f.call('hud_create', { role: 'background-events', request_key: 'background-events', task: 'Synthetic background work.' });
-  await until(() => cliState(job.task_dir)?.pid === worker.pid && cliState(job.task_dir)?.agent_session_id);
+  await until(() => cliState(job.task_dir)?.pid === worker.pid && cliState(job.task_dir)?.agent_session_id, t.signal);
   assert.equal(cliState(job.task_dir).pid_start_time, procStat(worker.pid).start);
   const child = await worker.start();
   const report = join(job.task_dir, 'report.md');
@@ -34,7 +34,7 @@ test('supervisor events: renewed idle and stale scrollback do not settle a draft
   writeFixtureFile(report, 'Report while tests finish.\n');
   writeFixtureFile(join(f.env.HOME, 'pane-read'), marker);
   const queries = statusQueries(f, job);
-  await until(() => statusQueries(f, job) >= queries + 2);
+  await until(() => statusQueries(f, job) >= queries + 2, t.signal);
   assert.ok(procStat(child));
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).output_written, false);

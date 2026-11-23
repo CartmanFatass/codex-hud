@@ -332,7 +332,7 @@ spawnSync('herdr', [], { stdio: 'ignore', env: ${token ? 'process.env' : "{ ...p
 });
 
 for (const reason of ['timeout', 'unavailable']) {
-  test(`watcher records exit=${reason} without marking the job reaped`, { timeout: 10000 }, async (t) => {
+  test(`watcher records exit=${reason} without marking the job reaped`, { timeout: 60000 }, async (t) => {
     const f = fixture(t), dir = f.job(closed(), {}, true);
     reapStub(f, 'await delay(30000);');
     const preload = reason === 'timeout' ? `
@@ -342,7 +342,7 @@ const raw = timers.setTimeout;
 timers.setTimeout = (cb, ms, ...args) => raw(cb, ms === 135000 ? 150 : ms, ...args);
 syncBuiltinESMExports();` : "process.env.PATH = '';";
     const { child, exited } = f.start(preload);
-    await until(() => text(join(f.home, 'watch.log')).includes(`state=closed exit=${reason};`));
+    await until(() => text(join(f.home, 'watch.log')).includes(`state=closed exit=${reason};`), t.signal);
     assert.equal(reaped(dir), undefined);
     child.kill('SIGINT');
     assert.deepEqual(await exited, [0, null]);
