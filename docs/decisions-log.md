@@ -14,6 +14,13 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   job directory whose native session file exists nowhere else (headless pi) at least 7 days so toktrack can scan
   it. Not through the MCP. Model tests are tagged at `hud_create` (`experiment`, arm). Details:
   toktrack `.scratch/hud-insight/`, MyHUD `.scratch/toktrack-facts/`.
+- **D-2026-11-23-02** (§2.1.2): The oracle may experiment but never changes the repository. It may build, test,
+  benchmark and probe in a temp or job directory and on copies of the owner's data, and write a repository file
+  only when the brief or an orchestrator answer names it. Still forbidden: changes to tracked files, the owner's
+  configs, caches or state, or live processes; state-changing git; new dependencies, services or paid calls.
+  This aligns `oracle.md` with the pi architect role ("experiments, not changes", 2026-11-11). Why: with
+  `oracle.md`, a performance review refused to build or measure even when the main session authorised it in an
+  answer.
 
 ## 2026-11-22
 

@@ -94,7 +94,7 @@ job and the land read the same requirement.
 | implementer | role `imp` (skill `hud-delegate`) | one slice each |
 | reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
 | sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups); never test authoring, bug hunting, design, review or why/which/is-it-wrong questions (those stay with the deciding model) |
-| oracle | role `oracle` | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
+| oracle | role `oracle` | the strongest-model seat: high-level judgement that never changes the repository (scratch builds and measurements allowed) of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |
 | frontend-implementer | role `frontend-imp` | UI design and every user-facing UI build: panel, statusline, footers, rendered pages, design samples (`src/render/`) |
 | Hermes | Windows, computer use | tests that need human-like interaction |

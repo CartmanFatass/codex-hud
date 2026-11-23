@@ -42,7 +42,7 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
 - CLI roles use herdr with pi-roles or an interactive CLI (§2.1.3). Browser tasks (ChatGPT, Gemini, AI Studio,
   Flow) use the shared browser via `bro`. Jev and Decision API name the structured choice/predicate model
   with probabilities, not the browser. (11.01, 14.01)
-- `oracle`: strongest-model local, read-only advisor on a model harness for any judgement in the brief.
+- `oracle`: strongest-model local advisor on a model harness for any judgement in the brief; it never changes tracked files or the owner's state, but may build and measure in scratch dirs and write a deliverable the brief names. (23.02)
   `architect` and `oracle` share `oracle`, with former setups as presets. On create, `architect` aliases
   `oracle` unless a role file defines `architect`. (14.01, 17.03)
 - HUD ships `pro` (ChatGPT 6 Pro, then Gemini, then AI Studio) and `flow` (Google Flow images and video) as optional roles, off by default until enabled in Control or by the owner's configuration.
