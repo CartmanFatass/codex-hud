@@ -18,6 +18,7 @@ export interface LandFlow {
   pid: number; start: string; created_at: string; updated_at: string;
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
   after_note?: string;
+  landed_at?: string;
   repairs?: { step: string; job?: string; outcome: string }[];
   reruns?: (string | LandRerun)[];
   timings?: LandTiming[];

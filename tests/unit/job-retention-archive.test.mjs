@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { basename, join } from 'node:path';
 import test from 'node:test';
+import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { writeReportMeta } from '../../dist/roles/report-meta.js';
 import { fixture } from '../helpers/job-retention-fixture.mjs';
 
 const now = Date.parse('2026-11-04T00:00:00Z');
@@ -19,10 +21,19 @@ test('retention appends one private facts-only line before removal, even if remo
     preset: 'default', used_place: 'claude example', attempts: [{ index: 0, place: 'pi example', reason: longReason, extra: secret }],
     checks: [secret], created_at: ended, read_at: ended, reaped_at: reaped, parent_job: 'j000000000000000a',
     repair_of: 'j000000000000000b', package: 'archive', create_options: { task: secret }, request_key: secret,
+    headless: true, ticket: 'sample/03', route: { tier: 'standard', mode: 'headless', reason: secret }, resume_s: 0,
   });
   const id = basename(dir);
   fs.mkdirSync(join(dir, 'qa'));
-  for (const name of ['report.md', 'brief.md', 'qa/q1.md']) fs.writeFileSync(join(dir, name), secret);
+  for (const name of ['report.md', 'brief.md', 'qa/q1.md', 'qa/q1.answer.md']) fs.writeFileSync(join(dir, name), secret);
+  writeReportMeta(dir, reportSignature(dir), { summary: 'Delivered /home/synthetic/private.txt and ~/worker/report.md.' });
+  fs.writeFileSync(join(dir, 'stdout.jsonl'), JSON.stringify({ type: 'result', result: secret, total_cost_usd: 0.12,
+    usage: { input_tokens: 6, output_tokens: 9, cache_read_input_tokens: 0 } }) + '\n');
+  fs.mkdirSync(join(f.home, 'flows'));
+  const flow = `f${id.slice(1)}`, sha = 'abc1234'.repeat(5) + 'abc12';
+  for (const [name, facts] of [[flow, { state: 'failed', repairs: [{ outcome: secret }] }],
+    [`${flow}-2`, { state: 'completed', reruns: [{ tests: [secret] }], landed_sha: sha, updated_at: reaped }]])
+    fs.writeFileSync(join(f.home, 'flows', `${name}.json`), JSON.stringify({ job: id, ...facts }));
   fs.writeFileSync(join(dir, 'checks.json'), JSON.stringify({ state: 'done', turn: 'earlier', report_sig: 'earlier',
     results: [{ command: secret, exit_code: 1, output_tail: secret }] }));
   const labels = join(f.home, 'display', 'model-cache', 'decision-labels');
@@ -51,6 +62,9 @@ syncBuiltinESMExports();`);
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   const line = fs.readFileSync(file, 'utf8');
   assert.ok(line.endsWith('\n') && !line.includes(secret));
+  assert.doesNotMatch(line, /\/home\/synthetic|~\/worker/);
+  assert.equal(fs.statSync(join(dir, 'usage.json')).mode & 0o777, 0o600);
+  assert.equal(fs.existsSync(join(dir, 'stdout.jsonl')), false);
   assert.deepEqual(JSON.parse(line), {
     v: 1, job: id, archived_at: new Date(now).toISOString(), project: '/synthetic/project', role: 'imp',
     harness: 'claude', model: 'example', thinking: 'high', preset: 'default', used_place: 'claude example',
@@ -58,6 +72,9 @@ syncBuiltinESMExports();`);
     state: 'closed', exit_reason: 'é'.repeat(99), created_at: ended, started_at: ended, settled_at: ended,
     ended_at: ended, read_at: ended, reaped_at: reaped, checks: { passed: 0, total: 1, stale: true },
     repair_of: 'j000000000000000b', parent_job: 'j000000000000000a', package: 'archive', outcome: 'partial',
+    mode: 'headless', route: { tier: 'standard', mode: 'headless' }, ticket: 'sample/03', question_count: 1,
+    summary: 'Delivered <home path> and <home path>', usage: { input: 6, output: 9, cache_read: 0, cost_usd: 0.12 },
+    land: { attempts: 2, state: 'completed', repairs: 1, reruns: 1, sha, landed_at: reaped, updated_at: reaped },
   });
   const second = f.start(clock);
   await second.exited;
@@ -78,8 +95,8 @@ test('retention appends successive jobs without adding absent facts or changing 
   const lines = fs.readFileSync(file, 'utf8').trimEnd().split('\n').map(JSON.parse);
   assert.deepEqual(lines, [
     { job: basename(dir), v: 1, archived_at: new Date(now).toISOString(), harness: 'pi',
-      dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped, state: 'failed' },
-    { job: basename(other), v: 1, archived_at: new Date(now).toISOString(), harness: 'bro', dispatch_exit_code: 0, state: 'stopped' },
+      dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped, state: 'failed', question_count: 0 },
+    { job: basename(other), v: 1, archived_at: new Date(now).toISOString(), harness: 'bro', dispatch_exit_code: 0, state: 'stopped', question_count: 0 },
   ]);
 });
 

@@ -9,6 +9,7 @@ import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.
 import { archivedClosedJobs, mainHead, reapWorktree, sweepArchivedWorktrees, type ArchivedClosedJob } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
+import { recordJobUsage } from '../roles/job-usage.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
@@ -363,9 +364,11 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     }
     const waiting = !stopped && end.state === 'waiting_orchestrator';
     const evidence = !stopped && end.exit_reason === missingRunnerReceipt ? missingRunnerEvidence(dir, job, status) : undefined;
-    writeJsonAtomic(statusFile, { ...status, ...end, ...evidence, ...(identity && !status.session_id && { session_id: identity.id }), ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
+    const settled: JobStatus = { ...status, ...end, ...evidence, ...(identity && !status.session_id && { session_id: identity.id }), ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
       output_written: !waiting && fs.existsSync(join(dir, jobFiles.report)), ...(waiting ? {} : { settled_at: now, ended_at: now }),
-      stdout_bytes: size(jobFiles.sonicStdout), stderr_bytes: size(jobFiles.sonicStderr) });
+      stdout_bytes: size(jobFiles.sonicStdout), stderr_bytes: size(jobFiles.sonicStderr) };
+    recordJobUsage(dir, job, settled);
+    writeJsonAtomic(statusFile, settled);
     const latest = readJson<Job>(jobFile);
     if (latest && !waiting) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
     if (cleanup.unrecoverable) log(`reap ${id}: ${cleanup.unrecoverable}; ${UNVERIFIED_TREE_NOTE}`);
@@ -646,6 +649,8 @@ function scan(retryWatch = false) {
         nearest = Math.min(nearest, retry.at > Date.now() ? retry.at : Date.now() + cliCheck);
       // Once the recorded tab or root is gone, retry that owner's cleanup without an agent preflight.
       const resumeReadReap = retry?.readClose && ((!!tab && closedTabs.has(tab)) || workerTreeRootGone(status.pid, status.pid_start_time));
+      if (job && ['idle_grace', 'done', 'closed', 'failed', 'stopped'].includes(status.state ?? ''))
+        recordJobUsage(dir, job, status);
       let readInGrace = null;
       if (!resumeReadReap && status.state === 'idle_grace') {
         open = true;

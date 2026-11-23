@@ -295,7 +295,7 @@ async function execute(home: string, f: LandFlow, cleanup: string[]) {
     }
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
     if (target !== base) f.replayed_onto = target;
-    f.landed_sha = landed; endStep();
+    f.landed_sha = landed; f.landed_at = new Date().toISOString(); endStep();
     const landingHead = async () => {
       const moved = Error('Main checkout is not at the recorded base tip');
       if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref) throw moved;

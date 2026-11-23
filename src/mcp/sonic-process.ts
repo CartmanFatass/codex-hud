@@ -56,7 +56,8 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
         if (!job.cli) fs.rmSync(join(dir, jobFiles.done), { force: true });
       }
       const status: JobStatus = { state: 'working', slot: session ? 'headless' : 'sonic', task_dir: dir, role: job.role,
-        ...(job.cli ? { harness: 'cli', agent: job.cli.agent, agent_session_id: session?.id ?? session?.initialId }
+        ...(job.cli ? { harness: 'cli', agent: job.cli.agent, agent_session_id: session?.id ?? session?.initialId,
+          stdout_start: fs.fstatSync(fds[0]!).size }
           : { harness: 'pi', session_file: session?.file, session_id: session?.id }), ...(limits && { sonic_limits: limits }),
         pid, pid_start_time: start, boot_id: boot, started_at: new Date().toISOString(), parent_started_at: parentStartedAt(dir, job) };
       child.once('exit', (code, signal) => recordRunnerDeath(dir, { pid, pid_start_time: start, boot_id: boot }, code, signal));

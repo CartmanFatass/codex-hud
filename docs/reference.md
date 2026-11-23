@@ -80,6 +80,8 @@ hud trust <dir>           # add the directory to grok, agy and claude trust list
 hud watch                 # pending questions and actionable events (--verbose: every change; --all: every pane)
 hud doctor                # run the read-only local install preflight
 hud doctor <jobId>        # print one job's local facts without changing it
+hud stats [--days N] [--by role|model|route|feature]  # per-job usage and outcomes
+hud day [--project]        # today's landings, worker outcomes, and flaky gates
 hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
@@ -107,6 +109,14 @@ process that does not report its generation cannot be verified. The command does
 applicable. For CLI workers it compares the turn, completion receipt and current report signature; it does not
 print the report body. Missing or unreadable evidence is labeled. The command changes nothing and does not
 contact herdr or the network.
+
+`hud stats` is a read-only scoreboard for jobs created in the last seven local calendar days, including today (`--days` accepts 1–90).
+The default groups by role, place and mode; `--by` can group by role, model, route tier/mode or ticket feature.
+It shows median dispatch-to-settlement time, question and sonic counts, land repairs, and harness-reported tokens and USD.
+`hud day` lists today's landings and workers' declared one-line summaries, failures and stops, gate tests that passed on immediate rerun, and today's worker time and cost by role.
+`--project` scopes the digest to the current checkout's project, including from a linked worktree.
+The commands merge retained jobs, monthly archives and land receipts, without double-counting a job; known/observed counts and scan limits are shown.
+Missing cost is unknown, not free: sums include only jobs with reported totals, and harness-reported USD is not necessarily a bill.
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
 **hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, and **hud_tickets**. Call `hud_roster` when project dispatch context is missing or stale.
@@ -431,7 +441,10 @@ links never removes their targets.
 On a scan after `resume_s` expires, the watcher removes `stdout.jsonl` and `stderr.log` from cleanly settled jobs
 (`done` or closed with a report). Sonic and older jobs without `resume_s` get the default 1620 seconds.
 Failed or stopped jobs keep their raw logs until their directories expire.
-Before deletion the watcher appends job facts, not the brief or report, to `$HUD_HOME/archive/YYYY-MM.jsonl`; append failures do not delay deletion, and HUD neither reads nor expires the archive.
+At settlement the watcher saves a bounded, best-effort snapshot of native usage in the job directory before raw logs can be pruned.
+It reads pi session entries, CLI result streams, or native transcript usage records; it never prices missing tokens or treats a truncated per-request transcript as a total.
+Before deletion it appends job facts to `$HUD_HOME/archive/YYYY-MM.jsonl`, including ticket, route, question count, land outcome, available usage and the worker's bounded declared summary with home paths removed.
+It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
 
 ## Claude Code mod
 
@@ -712,7 +725,7 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 - **Needs attention**: roles with exhausted places that are enabled, with no available place, or with a missing selected preset, plus invalid role files. A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath. An invalid file opens with Enter or `o`.
 - **Healthy**: folded to role names. Enter shows one row per role with its next target and, on project-owned roles, a `project` tag. Only named presets other than `default` get a preset tag; a file chain without a selector has no tag either.
 - **Leases**: when the selected project has active leases, one read-only row per lease shows its name, holder and age.
-- **Usage** and **Files**: both folded. Usage opens quota windows, pi spend and today's per-role dispatch health (one row per role that never wraps: counts as words while every role's row fits, else as `✓ ✗` marks, and a row still too wide drops its `avg`, then its `quiet`; place names cut at the end with `…`; split into per-place sub-rows for launches, launch failures, hand-offs to main and quota marks when a role used 2+ places or had a launch failure or quota mark; display only). Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
+- **Usage** and **Files**: both folded. The reported job-usage block uses the same retained-job, archive and land data as `hud day`, with cost coverage and today's totals by role and by role/place/mode. Usage opens quota windows, pi spend and today's per-role dispatch health (one row per role that never wraps: counts as words while every role's row fits, else as `✓ ✗` marks, and a row still too wide drops its `avg`, then its `quiet`; place names cut at the end with `…`; split into per-place sub-rows for launches, launch failures, hand-offs to main and quota marks when a role used 2+ places or had a launch failure or quota mark; display only). Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
 
 The role row names the next model when it fits whole; otherwise it shows the harness (and provider for pi, when known). A known inherited model is muted. Split previews the selected role's numbered chain and source; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed. `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
 

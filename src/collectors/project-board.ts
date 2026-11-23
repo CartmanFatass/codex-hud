@@ -12,6 +12,7 @@ import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
+import { collectControlJobStats, type ControlJobStats } from './job-stats.js';
 import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
 import { TryLog } from './try-records.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
@@ -71,6 +72,7 @@ export interface ProjectSnapshot {
   browser: boolean;
   roleCount: number;
   radar?: ControlRadar;
+  jobStats?: ControlJobStats;
   leases?: LeaseRecord[];
   git?: WorktreeStatus;
   gitDiff?: DiffStatSummary;
@@ -310,11 +312,14 @@ export class ProjectCollector {
     if (error instanceof HarnessSwitchError)
       Object.assign(snapshot, { roles: [], harnessSwitches: [], roleCount: 0, harnessSwitchError: error.path });
   }
-  private collectControl(out: ProjectSnapshot, now: number, showLeases = false): void {
+  private collectControl(out: ProjectSnapshot, now: number, controlPage = false): void {
     const radar = collectControlRadar(this.hudHome, this.env, now);
     if (radar) out.radar = radar;
     const registry = this.registry();
-    if (showLeases) out.leases = readActiveLeases(this.hudHome, registry.project().root);
+    if (controlPage) {
+      out.leases = readActiveLeases(this.hudHome, registry.project().root);
+      out.jobStats = collectControlJobStats(this.hudHome, now);
+    }
     try {
       const facts = controlFacts(registry, this.hudHome, now, this.readJson, this.names);
       out.roles = facts.roles;

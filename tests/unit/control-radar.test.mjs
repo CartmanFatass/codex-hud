@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { collectControlRadar } from '../../dist/collectors/control-radar.js';
+import { collectControlJobStats } from '../../dist/collectors/job-stats.js';
 import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { recordClaudeQuota } from '../../dist/statusline-parity/quota-cache.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
@@ -315,6 +316,29 @@ test('Control Dispatch today splits by place at 40 and 80 columns in EN and ZH w
     assert.ok(!usageFrame.lines.some((line) => stripAnsi(line).includes('\x1b')), 'control characters in place names are escaped');
     // Role detail preview has no chain-row dispatch note (§6 default #2).
     assert.doesNotMatch(plain(roleFrame).join('\n'), /launch ✗|启动 ✗|quota \d|配额 \d/);
+  }
+});
+
+test('Control Usage presents the archive scoreboard with explicit cost coverage at narrow widths', async (t) => {
+  const { root, home, put } = fixture(t), f = await projectFixture(join(root, 'job-stats-view'));
+  const month = iso(now).slice(0, 7);
+  const common = { v: 1, role: 'imp', created_at: iso(now - MINUTE * 8), settled_at: iso(now - MINUTE), model: 'synthetic', mode: 'tab' };
+  put(join(home, 'archive', `${month}.jsonl`), [
+    { job: 'j0000000000000001', ...common, usage: { cost_usd: 0.25 } },
+    { job: 'j0000000000000002', ...common },
+    { job: 'j0000000000000003', ...common, role: 'reviewer', model: 'other' },
+  ].map(row => JSON.stringify(row)).join('\n') + '\n');
+  const data = { ...f.data, jobStats: collectControlJobStats(home, now) };
+  const folded = new Set(['healthy', 'files', 'agents']);
+  for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const panelLayout of ['classic', 'split']) {
+    const state = onControl({ cursor: 'project:fold:usage', folded }, { prefs: { panelLayout } });
+    const frame = f.render(width, lang, state, 80, data, true, 'unicode', 'none');
+    assert.ok(frame.lines.every(line => visualLength(line) === width));
+    const text = plain(frame).join('\n');
+    assert.match(text, lang === 'en' ? /Reported job usage today/ : /今日任务用量/);
+    assert.match(text, lang === 'en' ? /By role \/ place \/ mode/ : /按角色 \/ 位置 \/ 模式/);
+    assert.match(text, /\$0\.25/);
+    assert.match(text, lang === 'en' ? /unknown\s+\(0\/1\)/ : /未知\s*（0\/1）/);
   }
 });
 

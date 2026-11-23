@@ -115,6 +115,29 @@ function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: n
     ...(today ? kvRows('today', roleToday(today), width) : []), ...actions];
 }
 
+function jobUsageRows(stats: ProjectSnapshot['jobStats'], width: number): MonitorRow[] {
+  if (!stats) return [];
+  const { coverage: c, total, roles, places } = stats;
+  const lines = (text: string) => flowLines(text, Math.max(1, width - 4)).map(line => boardRow(fit(`  ${line}`, width)));
+  const money = (n: number) => '$' + (n > 0 && n < 0.01 ? n.toPrecision(2) : n.toFixed(2));
+  const cost = total.usage.cost_usd;
+  const rows = (groups: typeof roles, title: string) => groups.length ? [section(t(title), width,
+    groups.length > 8 ? `8/${groups.length}` : ''), ...groups.slice(0, 8).flatMap(g => {
+    const usd = g.usage.cost_usd;
+    return [...lines(g.label.map((value, i) => !value ? t('unknown') : i === 2 && (value === 'tab' || value === 'headless')
+      ? t(value) : monitorText(value)).join(' / ')),
+      ...lines(t('{n} jobs · median {time} · cost {cost} ({known}/{n})', { n: g.jobs,
+        time: g.median === undefined ? t('unknown') : t('{n}m', { n: g.median.toFixed(1) }),
+        cost: usd.known ? money(usd.total) : t('unknown'), known: usd.known }))];
+  })] : [];
+  return [section(t('Reported job usage today'), width),
+    ...lines(t('{live} retained · {archive} archived · {flows} flow receipts', { live: c.live, archive: c.archive, flows: c.flows })),
+    ...lines(t('Cost {cost} · known for {known}/{n} jobs', { cost: cost.known ? money(cost.total) : t('unknown'), known: cost.known, n: total.jobs })),
+    ...(c.skipped ? lines(t('{n} unreadable or invalid', { n: c.skipped })) : []),
+    ...(c.limited ? lines(t('Scan limits reached')) : []),
+    ...rows(roles, 'By role'), ...rows(places, 'By role / place / mode')];
+}
+
 function controlList(data: ProjectSnapshot, view: ControlViewState, width: number, now: number, classic: boolean): MonitorRow[] {
   const needs = (r: RoleFact) => r.optionalEnabled !== false && (!!r.missingPreset || needsAttention(r));
   const attention = data.roles.filter(needs).sort((a, b) => Number(!active(a)) - Number(!active(b)));
@@ -136,7 +159,8 @@ function controlList(data: ProjectSnapshot, view: ControlViewState, width: numbe
   const entries = (role: RoleFact) => [...roleRows(role, width, now),
     ...(classic && role.source !== 'project' && role.optionalEnabled !== false && view.nav.cursor === controlRoleItem(role.role) ? roleActions(role, width) : [])];
   const radar = radarFacts(data.radar), usage = radarSummary(radar, false);
-  if (radar.roles.length) usage.push(t('{n} jobs', { n: radar.roles.reduce((n, [, s]) => n + s.total, 0) }));
+  const jobs = data.jobStats?.total.jobs ?? radar.roles.reduce((n, [, s]) => n + s.total, 0);
+  if (jobs) usage.push(t('{n} jobs', { n: jobs }));
   const ok = (yes: boolean) => yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-'));
   const files = data.control.filter((r) => r.label !== 'invalid'), have = data.keys.filter(([, present]) => present).length;
   return [
@@ -157,7 +181,8 @@ function controlList(data: ProjectSnapshot, view: ControlViewState, width: numbe
       return boardRow(pair(`  ${name}`, muted(detail), width));
     })] : []),
     boardRow(''), fold('usage', 'Usage', usage),
-    ...(folded.has('usage') ? [] : radarRows(radar, width, true).map((row, i) => ({ ...row, item: `control:usage:${i}` }))),
+    ...(folded.has('usage') ? [] : [...radarRows(radar, width, true), ...jobUsageRows(data.jobStats, width)]
+      .map((row, i) => ({ ...row, item: `control:usage:${i}` }))),
     fold('files', 'Files', [...(data.keys.length ? [`${t('keys')} ${have}/${data.keys.length}`] : []), `${t('browser')} ${ok(data.browser)}`]),
     ...(folded.has('files') ? [] : [
       ...files.map((r, i) => projectItem(r.label === 'convention' ? { ...r, value: `${t(r.value)} · ${basename(r.path ?? '')}` } : r, i, '', width, now)),

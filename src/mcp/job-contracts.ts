@@ -107,6 +107,7 @@ export type JobStatus = {
   runner_exit_signal?: NodeJS.Signals | null;
   stderr_tail?: string | null;
   stdout_bytes?: number;
+  stdout_start?: number;
   stderr_bytes?: number;
   sonic_limits?: SonicLimits;
   supervisor_pid?: number | null;

@@ -18,6 +18,7 @@ export const jobFiles = {
   brief: 'brief.md',
   report: 'report.md',
   reportMeta: 'report-meta.json',
+  usage: 'usage.json',
   progress: 'progress.jsonl',
   qa: 'qa',
   sonic: '.sonic',

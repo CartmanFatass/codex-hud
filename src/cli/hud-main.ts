@@ -9,6 +9,7 @@ import { ticketsCommand } from './tickets.js';
 import { watchCommand } from './watch.js';
 import { boardCommand } from './board.js';
 import { doctorCommand, versionCommand } from './doctor.js';
+import { jobStatsCommand } from './job-stats.js';
 
 export async function main(args: readonly string[], io: HudIO): Promise<number> {
   try {
@@ -28,6 +29,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
     if (args[0] === 'board') return await boardCommand(args.slice(1), io);
     if (args[0] === 'doctor') return await doctorCommand(args.slice(1), io);
     if (args.length === 1 && args[0] === '--version') return await versionCommand(io);
+    if (args[0] === 'stats' || args[0] === 'day') return await jobStatsCommand(args[0], args.slice(1), io);
     if (args.length === 1 && (args[0] === '--help' || args[0] === 'help')) {
       await io.stdout(
         'Usage: hud panel --help          Open the interactive panel\n' +
@@ -42,13 +44,15 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud doctor               Check the local installation without changing it\n' +
           '       hud doctor <jobId>       Print one job\'s disk facts without changing it\n' +
           '       hud --version            Print version, build commit and build time\n' +
+          '       hud stats [--days N] [--by role|model|route|feature]  Report job usage and outcomes\n' +
+          '       hud day [--project]       Summarize today\'s jobs and landings\n' +
           '       hud board [--html] [--cwd DIR] [--out FILE] [--open]  Write the HTML review board\n' +
           '       hud codex [ARG ...]        Existing codex-hud launcher (alias: codex-hud)\n' +
           '       hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|watch|board|doctor|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|watch|board|doctor|stats|day|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {
