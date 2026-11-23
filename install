@@ -104,8 +104,8 @@ if $skip_build; then
   printf 'Skipping dependencies and build (--skip-build)\n'
 else
   # Keep the hash with the dependency tree, not with the user's HUD configuration.
-  lock_hash="$(sha256sum -- package-lock.json)"
-  lock_hash="${lock_hash%% *}"
+  # node, not sha256sum: the installer already needs node, and coreutils may be absent from PATH.
+  lock_hash="$(node -e 'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync("package-lock.json")).digest("hex"))')"
   lock_stamp=node_modules/.hud-package-lock-hash
   if [[ ! -f "$lock_stamp" || "$(< "$lock_stamp")" != "$lock_hash" ]]; then
     printf 'Installing dependencies (npm ci)\n'
