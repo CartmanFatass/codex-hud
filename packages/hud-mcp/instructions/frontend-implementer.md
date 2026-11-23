@@ -22,7 +22,7 @@ Take the lease named in the brief before using that shared resource.
 
 - In a HUD-managed worktree (the job's `isolation: "worktree"`), commit your changes on its branch before you report;
   `hud_land` lands commits only. Elsewhere leave changes in the working tree. No push, branch switch, reset, stash,
-  clean, rebase or merge.
+  clean, rebase or merge, except the rebase `hud_report` asks for onto the base it names.
 - Never delete or overwrite user data, caches or state; never modify files the brief marks read-only.
 - No new dependencies, services, network collection or paid model/API calls; never read credential files such as
   `.env.local` and never print secrets. If one seems required, explain why in the report instead.
