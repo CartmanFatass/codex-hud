@@ -152,8 +152,10 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Decision-API calls per hour (labels, Sonic thinking, Imp routing)', advanced: true, format: callCap },
   { key: 'sonicAutoThinking', group: 'Models', label: 'Sonic auto-thinking', values: [false, true],
     help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
-  { key: 'impRouting', group: 'Models', label: 'Imp routing', values: [false, true],
-    help: 'Send the Imp brief, ticket and context file names and sizes to the Decision API to choose its tier and mode' },
+  { key: 'impPlacement', group: 'Models', label: 'Imp placement', values: ['fixed', 'even', 'auto'],
+    help: 'Fixed: active preset. Even: spread starts across the pool. Auto: send the Imp brief, ticket and context file names and sizes to the Decision API' },
+  { key: 'impEvenPool', group: 'Models', label: 'Even pool', values: [],
+    help: 'Choose an Imp preset with ←→; Enter includes or excludes it', get: settings => settings.impEvenPool.join(', ') },
   { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
     help: "How often a running job's sentence may refresh", advanced: true, format: (value) => t('{n}m', { n: Number(value) }) },
   {
@@ -206,8 +208,8 @@ function isAdvancedOpen(state: Pick<SettingsPageState, 'selected' | 'advanced'>)
   const selected = clampSelected(state.selected);
   return Boolean(state.advanced || (selected < SETTING_ROWS.length && SETTING_ROWS[selected].advanced));
 }
-function visibleIndices(advanced: boolean): number[] {
-  return advanced ? [...MAIN_INDICES, ADVANCED, ...ADVANCED_INDICES] : [...MAIN_INDICES, ADVANCED];
+function mainIndices(draft: HudSettings): readonly number[] {
+  return MAIN_INDICES.filter(i => draft.impPlacement === 'even' || SETTING_ROWS[i].key !== 'impEvenPool');
 }
 function visualGroup(index: number): SettingGroup | 'Advanced' {
   return index === ADVANCED || SETTING_ROWS[index]?.advanced ? 'Advanced' : SETTING_ROWS[index].group;
@@ -220,6 +222,8 @@ export function withRowValue(settings: HudSettings, row: SettingRow, value: Sett
 }
 export interface SettingsPageState {
   draft: HudSettings;
+  impPresets?: readonly string[];
+  poolIndex?: number;
   selected: number;
   offset: number;
   message: string;
@@ -246,7 +250,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['panelLayout', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
-  Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'impRouting', 'summaryIntervalMinutes'],
+  Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'impPlacement', 'impEvenPool', 'summaryIntervalMinutes'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };
@@ -287,7 +291,8 @@ export function renderSettingsPage(
 ): SettingsFrame {
   width = Math.max(0, Math.floor(width));
   height = Math.max(0, Math.floor(height));
-  const selected = clampSelected(state.selected),
+  const pool = SETTING_ROWS.findIndex(row => row.key === 'impEvenPool');
+  const selected = state.selected === pool && state.draft.impPlacement !== 'even' ? pool - 1 : clampSelected(state.selected),
     advanced = isAdvancedOpen({ selected, advanced: state.advanced }),
     original = state.original ?? { ...state.draft, roleCaps: { ...state.draft.roleCaps } },
     defaults = defaultSettings();
@@ -302,8 +307,11 @@ export function renderSettingsPage(
     const displayLabel = row.advanced
       ? `${i === selected ? `${t(row.group)} ·` : theme.board.muted(`${t(row.group)} ·`)} ${t(row.label)}`
       : t(row.label);
+    const preset = state.impPresets?.[state.poolIndex ?? 0];
+    const displayValue = i !== pool ? valueText(row, value) : i !== selected ? String(value || t('empty'))
+      : preset ? `${monitorText(preset)} · ${t(state.draft.impEvenPool.includes(preset) ? 'included' : 'excluded')}` : t('No Imp presets');
     const shown = truncateAnsi(
-        valueText(row, value) + (row.key === 'decisionApi' && !state.decisionKeys?.[value as HudSettings['decisionApi']] ? ` ${t('(no key)')}` : ''),
+        displayValue + (row.key === 'decisionApi' && !state.decisionKeys?.[value as HudSettings['decisionApi']] ? ` ${t('(no key)')}` : ''),
         Math.max(1, width - visualLength(rawLabel) - (i === selected ? 7 : 3))
       ),
       tail = i === selected ? `${mark('‹', '<')} ${shown} ${mark('›', '>')}` : shown;
@@ -365,7 +373,7 @@ export function renderSettingsPage(
     }
   };
   let lastGroup: SettingGroup | undefined;
-  for (const i of MAIN_INDICES) {
+  for (const i of mainIndices(state.draft)) {
     const row = SETTING_ROWS[i];
     if (lastGroup !== row.group) {
       content.push({ text: '' }, { text: section(t(row.group), width).text });
@@ -414,7 +422,7 @@ export function renderSettingsPage(
   const models = selected < SETTING_ROWS.length && settingGroup({ selected }) === 'Models';
   const hints = selected === ADVANCED
     ? [advanced ? '⏎ collapse' : '⏎ expand', 's save', 'Esc back']
-    : ['←→ change', 's save', 'Esc back', ...(models ? ['t test'] : []), 'r reset'];
+    : [...(selected === pool ? ['←→ choose', '⏎ toggle'] : ['←→ change']), 's save', 'Esc back', ...(models ? ['t test'] : []), 'r reset'];
   if (height > 1) lines.push(footRow('', hints, width));
   const back = body.findIndex((r) => r.back !== undefined),
     probe = body.findIndex((r) => r.probe);
@@ -438,7 +446,7 @@ export function handleSettingsInput(
   const next: SettingsPageState = {
     ...state,
     original: state.original ?? frame.state.original,
-    selected: clampSelected(state.selected),
+    selected: frame.state.selected,
     advanced: isAdvancedOpen({ selected: state.selected, advanced: state.advanced ?? frame.state.advanced }),
   };
   let key = input.type === 'key' ? input.key : '';
@@ -468,7 +476,7 @@ export function handleSettingsInput(
         frame.back?.y === input.y &&
         input.x >= frame.back.x &&
         input.x <= frame.back.x + 1;
-      key = onBack ? 'left' : 'right';
+      key = SETTING_ROWS[index].key === 'impEvenPool' && input.x < (frame.back?.x ?? 0) ? 'enter' : onBack ? 'left' : 'right';
     } else {
       const delta = input.button === 'wheel-down' ? 3 : -3;
       next.offset = Math.max(0, Math.min(frame.maxOffset ?? Infinity, next.offset + delta));
@@ -487,7 +495,7 @@ export function handleSettingsInput(
   }
   if (key === 'settings-test' && next.selected < SETTING_ROWS.length && settingGroup(next) === 'Models')
     return { state: next, action: 'test-api' };
-  const visible = visibleIndices(!!next.advanced);
+  const visible = [...mainIndices(next.draft), ADVANCED, ...(next.advanced ? ADVANCED_INDICES : [])];
   const pos = Math.max(0, visible.indexOf(next.selected));
   const moved = next.selected;
   if (key === 'down' || key === 'tab') next.selected = visible[Math.min(visible.length - 1, pos + 1)];
@@ -515,9 +523,17 @@ export function handleSettingsInput(
       next.revealed = undefined;
       return { state: next };
     }
-    const row = SETTING_ROWS[next.selected],
-      values = row.values,
-      current = rowValue(row, next.draft);
+    const row = SETTING_ROWS[next.selected];
+    if (row.key === 'impEvenPool') {
+      const presets = next.impPresets ?? [], index = next.poolIndex ?? 0, preset = presets[index];
+      if (key === 'enter' && preset) {
+        const pool = next.draft.impEvenPool;
+        next.draft = { ...next.draft, impEvenPool: pool.includes(preset) ? pool.filter(name => name !== preset) : [...pool, preset] };
+      } else if (presets.length && key !== 'enter') next.poolIndex = (index + presets.length + (key === 'left' ? -1 : 1)) % presets.length;
+      next.message = '';
+      return { state: next };
+    }
+    const values = row.values, current = rowValue(row, next.draft);
     let index = values.indexOf(current);
     if (index < 0 && typeof current === 'number') {
       const descending = Number(values[0]) > Number(values[1]);

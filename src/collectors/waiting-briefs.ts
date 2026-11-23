@@ -54,7 +54,7 @@ export class WaitingBriefs {
     };
     for (const [key, until] of this.retry) if (until <= now) this.retry.delete(key);
     for (const w of board.workers) {
-      if (w.route) add(w.route[whyKey(w.route)], 512);
+      if (w.route && !w.route.placement) add(w.route[whyKey(w.route)], 512);
       if (!thin(w) || !w.homeNeedsHuman) continue;
       const r = request(w);
       if (r) {
@@ -106,7 +106,7 @@ export class WaitingBriefs {
   board(board: WorkboardSnapshot): WorkboardSnapshot {
     if (!this.on) return board;
     const lanes = board.lanes.map(l => ({ ...l, workers: l.workers.map(routed => {
-      const route = routed.route, key = route && whyKey(route), why = key && this.translation(route[key]!);
+      const route = routed.route, key = route && !route.placement && whyKey(route), why = key && route && this.translation(route[key]!);
       const w = why ? { ...routed, route: { ...route, [key]: why } } : routed;
       if (!thin(w) || !w.homeNeedsHuman) return w;
       const r = request(w);

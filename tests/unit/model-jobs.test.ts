@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
-import { SETTING_ROWS, renderSettingsPage } from '../../dist/render/settings-page.js';
+import { SETTING_ROWS, handleSettingsInput, renderSettingsPage } from '../../dist/render/settings-page.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 
 test('Models exposes the master, provider, separate budgets, dispatch opt-ins and summary interval', () => {
@@ -46,7 +46,7 @@ test('Models exposes the master, provider, separate budgets, dispatch opt-ins an
     );
     assert.deepEqual(
       SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
-      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour', 'decisionCallsPerHour', 'sonicAutoThinking', 'impRouting', 'summaryIntervalMinutes']
+      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour', 'decisionCallsPerHour', 'sonicAutoThinking', 'impPlacement', 'impEvenPool', 'summaryIntervalMinutes']
     );
     const text = stripAnsi(
       renderSettingsPage(
@@ -61,9 +61,18 @@ test('Models exposes the master, provider, separate budgets, dispatch opt-ins an
     assert.match(text, /Decision cap/);
     assert.match(text, /Sonic thinking 2/);
     assert.match(text, /Sonic auto-thinking\s+off/);
-    assert.match(text, /Imp routing\s+off/);
+    assert.match(text, /Imp placement\s+fixed/);
     assert.match(text, /Summary interval/);
-    assert.doesNotMatch(text, /consent|Backend|AGY/);
+    assert.doesNotMatch(text, /consent|Backend|AGY|Even pool/);
+    const frame = renderSettingsPage({ draft, selected: SETTING_ROWS.findIndex(r => r.key === 'impPlacement'),
+      impPresets: ['small', 'deep'], offset: 0, message: '' }, 80, 40);
+    let next = frame.state;
+    for (const key of ['right', 'down', 'enter', 'right', 'enter', 'left', 'enter'])
+      next = handleSettingsInput(next, { type: 'key', key }, renderSettingsPage(next, 80, 40)).state;
+    assert.equal(next.draft.impPlacement, 'even');
+    assert.deepEqual(next.draft.impEvenPool, ['deep']);
+    assert.deepEqual(saveSettings(next.draft).impEvenPool, ['deep']);
+    assert.deepEqual(loadSettings().impEvenPool, ['deep']);
     fs.unlinkSync(path.join(home, 'credentials.env'));
     assert.equal(loadSettings().modelEnabled, true, 'a saved master boolean wins over the key-aware default');
     fs.unlinkSync(path.join(home, 'hud-settings.json'));

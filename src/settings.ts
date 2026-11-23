@@ -30,7 +30,8 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
   sonicAutoThinking: boolean;
-  impRouting: boolean;
+  impPlacement: 'fixed' | 'even' | 'auto';
+  impEvenPool: string[];
   /** The tree panel's and the brief's language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
   /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
@@ -92,7 +93,8 @@ export function defaultSettings(): HudSettings {
     model: SHIPPED_MODELS_CATALOG.defaults.summary.model,
     decisionApi: 'openai',
     sonicAutoThinking: false,
-    impRouting: false,
+    impPlacement: 'fixed',
+    impEvenPool: [],
     modelCallsPerHour: 60,
     decisionCallsPerHour: 0,
     summaryIntervalMinutes: 5,
@@ -135,7 +137,8 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   experiments: isBoolean,
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   sonicAutoThinking: isBoolean,
-  impRouting: isBoolean,
+  impPlacement: oneOf('fixed', 'even', 'auto'),
+  impEvenPool: (value) => Array.isArray(value) && value.every(name => typeof name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(name)),
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   model: isText(200),
@@ -163,6 +166,8 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result: HudSettings = { ...base, roleCaps: { ...base.roleCaps } };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
   const values = raw as Record<string, unknown>;
+  if (!validators.impPlacement(values.impPlacement) && typeof values.impRouting === 'boolean')
+    result.impPlacement = values.impRouting ? 'auto' : 'fixed';
   for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
       if (key === 'roleCaps') {

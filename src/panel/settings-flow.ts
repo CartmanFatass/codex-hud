@@ -61,9 +61,9 @@ type SettingsEffects = {
 type SettingsFacts = Omit<NonNullable<Parameters<typeof renderSettingsPage>[3]>, 'probe' | 'settingsFile'>;
 
 /** Own the Settings draft, dirty-navigation prompt, overlaid Help and connection test. */
-export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, probe: ModelProbe, effects: SettingsEffects) {
+export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, probe: ModelProbe, effects: SettingsEffects, impPresets: () => readonly string[]) {
   let page: SettingsPageState | null = place
-    ? { ...place, draft: { ...saved, roleCaps: { ...saved.roleCaps } }, original: { ...saved, roleCaps: { ...saved.roleCaps } }, decisionKeys: availableDecisionKeys(), message: '' } : null;
+    ? { ...place, draft: { ...saved, roleCaps: { ...saved.roleCaps } }, original: { ...saved, roleCaps: { ...saved.roleCaps } }, decisionKeys: availableDecisionKeys(), impPresets: impPresets(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
   let help: MonitorState | undefined;
   let leave: (SettingsConfirmationState & { destination?: string }) | null = null;
@@ -107,7 +107,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     show(settings: HudSettings) {
       let decisionApi = settings.decisionApi;
       try { decisionApi = loadSettings().decisionApi; } catch { /* Keep the loaded draft. */ }
-      page = { draft: { ...settings, roleCaps: { ...settings.roleCaps }, decisionApi }, decisionKeys: availableDecisionKeys(), selected: 0, offset: 0, message: '' };
+      page = { draft: { ...settings, roleCaps: { ...settings.roleCaps }, decisionApi }, decisionKeys: availableDecisionKeys(), impPresets: impPresets(), selected: 0, offset: 0, message: '' };
     },
     paint(width: number, height: number, facts: () => SettingsFacts, paintHelp: (help: MonitorState, mouse: boolean) => string[]): string[] | undefined {
       if (!page) return;

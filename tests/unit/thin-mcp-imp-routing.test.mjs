@@ -4,7 +4,8 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { markExhausted } from '../../dist/roles/roster.js';
-import { defaultSettings } from '../../dist/settings.js';
+import { defaultSettings, loadSettings } from '../../dist/settings.js';
+import { pickEvenPreset } from '../../dist/mcp/imp-routing.js';
 import { SETTING_ROWS, resetSettingsGroup } from '../../dist/render/settings-page.js';
 import { cardText, configureFakeDecision, fakeDecisionServer, fixture, until, waitFixtureJob, workerFor } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
@@ -18,7 +19,14 @@ const routing = { light, standard, hard, modes };
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const receipt = job => read(join(job.task_dir, 'job.json'));
 const create = (f, task, options = {}) => f.call('hud_create', { role: 'imp', task, ...options });
-const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ impRouting: true, roleCaps: { imp: 0 }, ...patch }));
+const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ impPlacement: 'auto', roleCaps: { imp: 0 }, ...patch }));
+const landRepair = (f, source) => {
+  const module = new URL('../../dist/mcp/thin-main.js', import.meta.url).href;
+  const script = `import { dispatchLandRepair } from ${JSON.stringify(module)};
+    console.log(await dispatchLandRepair(${JSON.stringify(source.job)}, process.cwd(), 'Synthetic repair.', 'land:test', null));`;
+  const id = execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: f.root, env: f.env, encoding: 'utf8' }).trim();
+  return read(join(f.env.HUD_HOME, 'jobs', id, 'job.json'));
+};
 function role(f, routing, small = pi('small')) {
   const dir = join(f.env.HUD_HOME, 'roles');
   fs.mkdirSync(dir, { recursive: true });
@@ -42,10 +50,74 @@ async function setup(t, handler) {
   return { f, api };
 }
 
-test('Imp routing is an opt-in Models setting and resets to off', () => {
-  assert.equal(defaultSettings().impRouting, false);
-  assert.ok(SETTING_ROWS.some(row => row.group === 'Models' && row.key === 'impRouting'));
-  assert.equal(resetSettingsGroup({ ...defaultSettings(), impRouting: true }, 'Models').impRouting, false);
+test('Imp placement defaults and resets to fixed; legacy switches migrate without writing', async t => {
+  const f = await fixture(t);
+  assert.equal(defaultSettings().impPlacement, 'fixed');
+  assert.ok(SETTING_ROWS.some(row => row.group === 'Models' && row.key === 'impPlacement'));
+  const reset = resetSettingsGroup({ ...defaultSettings(), impPlacement: 'even', impEvenPool: ['small'] }, 'Models');
+  assert.equal(reset.impPlacement, 'fixed');
+  assert.deepEqual(reset.impEvenPool, []);
+  for (const [raw, expected] of [[{ impRouting: true }, 'auto'], [{ impRouting: false }, 'fixed'],
+    [{ impRouting: true, impPlacement: 'even', impEvenPool: ['small'] }, 'even']]) {
+    const body = JSON.stringify(raw) + '\n';
+    write(f.env.HUD_SETTINGS_PATH, body);
+    assert.equal(loadSettings(f.env).impPlacement, expected);
+    assert.equal(fs.readFileSync(f.env.HUD_SETTINGS_PATH, 'utf8'), body);
+  }
+});
+
+test('Even counts only imp starts from the last 24 hours and breaks ties in role order', () => {
+  const now = Date.parse('2026-11-23T12:00:00Z');
+  const start = (hours, name, opts = {}) => ({ role: 'imp', imp_preset: name,
+    started_at: new Date(now - hours * 3600_000).toISOString(), ...opts });
+  const pick = jobs => pickEvenPreset(['small', 'deep', 'daily'], ['deep', 'missing', 'small', 'daily'], name => name !== 'daily', jobs, now);
+  const outside = [start(24, 'small'), start(25, 'small'), start(-1, 'small'), start(1, 'small', { role: 'general' }),
+    { role: 'imp', imp_preset: 'small' }];
+  assert.deepEqual(pick(outside), { preset: 'small', skipped: ['missing', 'daily'] });
+  assert.equal(pick([...outside, start(23, 'small', { role: 'general', overflow_from: 'imp' })]).preset, 'deep');
+});
+
+test('Even reports placement, rotates after real starts, skips unavailable presets and pins overflow, retry and repair', async t => {
+  const { f, api } = await setup(t, body => answer(body, 'hard', 'tab'));
+  role(f, undefined);
+  const pool = { impPlacement: 'even', impEvenPool: ['deep', 'missing', 'small'] };
+  settings(f, pool);
+  const first = await create(f, 'First even placement.');
+  assert.equal(first.route.placement, 'even');
+  assert.equal(first.route.preset, 'small');
+  assert.match(first.route.fallback, /Skipped unavailable presets: missing/);
+  assert.equal(receipt(first).model, 'synthetic/small');
+  assert.deepEqual(receipt(first).route, first.route);
+  assert.match(cardText(workerFor(f, first.job)), /Placement: even · small/);
+
+  waitFixtureJob(f, 1);
+  settings(f, { ...pool, impOverflow: false, roleCaps: { imp: 1, general: 0 } });
+  const second = await create(f, 'Queue the second even placement.');
+  assert.equal(second.state, 'queued');
+  assert.equal(second.route.preset, 'deep');
+  settings(f, { ...pool, impEvenPool: ['small'], impOverflow: true, roleCaps: { imp: 1, general: 0 } });
+  await until(() => receipt(second).dispatch_exit_code === 0, 10000);
+  assert.equal(receipt(second).overflow_from, 'imp');
+  assert.equal(receipt(second).model, 'synthetic/deep');
+
+  write(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'Synthetic exit' }));
+  const retry = await f.call('hud_create', { retry_of: second.job });
+  assert.equal(retry.route.preset, 'deep');
+  assert.equal(receipt(retry).model, 'synthetic/deep');
+  write(join(retry.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  const repair = landRepair(f, retry);
+  assert.equal(repair.retry_of, retry.job);
+  assert.equal(repair.route.preset, 'deep');
+  assert.equal(repair.model, 'synthetic/deep');
+
+  for (const [impEvenPool, reason] of [[[], /Even pool empty/], [['missing'], /Even pool unavailable/]]) {
+    settings(f, { ...pool, impEvenPool });
+    const fallback = await create(f, `Even fallback ${reason}.`);
+    assert.equal(fallback.route.preset, 'daily');
+    assert.match(fallback.route.fallback, reason);
+    assert.equal(receipt(fallback).model, 'synthetic/daily');
+  }
+  assert.equal(api.requests.length, 0);
 });
 
 test('detailed imp roster labels routing presets as auto-route only', async t => {
@@ -222,9 +294,10 @@ test('API error and timeout are visible; explicit headless wins and asks only fo
   assert.equal(explicit.route.tier, 'light');
   assert.equal(explicit.route.mode, 'headless');
 
-  settings(f, { impRouting: false });
-  const off = await create(f, 'Disabled setting dispatch.');
-  assert.deepEqual(off.route, { tier: 'standard', mode: 'tab', source: 'default', reason: 'Imp routing is off' });
+  settings(f, { impPlacement: 'fixed' });
+  const off = await create(f, 'Fixed placement dispatch.');
+  assert.deepEqual(off.route, { tier: 'standard', mode: 'tab', source: 'default', reason: 'Imp routing is off', preset: 'daily' });
+  assert.equal(receipt(off).model, 'synthetic/daily');
   const offExplicit = await create(f, 'Disabled setting with explicit headless.', { mode: 'headless' });
   assert.equal(offExplicit.route.mode, 'headless');
   assert.equal(api.requests.length, 3);
@@ -273,12 +346,8 @@ test('land repair of a light job in grace starts a standard replacement without 
   role(f, routing);
   const lightJob = await create(f, 'One-file synthetic repair source.');
   write(join(lightJob.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-  const module = new URL('../../dist/mcp/thin-main.js', import.meta.url).href;
-  const script = `import { dispatchLandRepair } from ${JSON.stringify(module)};
-    console.log(await dispatchLandRepair(${JSON.stringify(lightJob.job)}, process.cwd(), 'Synthetic repair.', 'land:test', null));`;
-  const replacement = execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: f.root, env: f.env, encoding: 'utf8' }).trim();
-  assert.notEqual(replacement, lightJob.job);
-  const job = read(join(f.env.HUD_HOME, 'jobs', replacement, 'job.json'));
+  const job = landRepair(f, lightJob);
+  assert.notEqual(job.job, lightJob.job);
   assert.equal(job.retry_of, lightJob.job);
   assert.equal(job.route.tier, 'standard');
   assert.equal(job.route.mode, 'tab');

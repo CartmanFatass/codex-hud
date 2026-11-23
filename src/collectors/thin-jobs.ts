@@ -992,6 +992,7 @@ export function readThinJobs(
         (route.mode === 'headless' || route.mode === 'tab') && (route.source === 'decision' || route.source === 'default') &&
         typeof route.reason === 'string' ? { route: {
           tier: route.tier, mode: route.mode, source: route.source, reason: route.reason,
+          ...(route.placement === 'even' && { placement: 'even' as const, preset: word(route.preset) }),
           ...(typeof route.fallback === 'string' && { fallback: route.fallback }),
           ...(typeof route.mode_reason === 'string' && { mode_reason: route.mode_reason }),
         } } : {}),

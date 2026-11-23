@@ -22,6 +22,7 @@ import { renderMonitor, fit, initialMonitorState, handleMonitorInput, type Monit
 import { acceptsMonitorInput, applyViewPrefs, blocksReload, filterBatchInputs, reconcileMonitor } from '../render/monitor-state.js';
 import { projectListOpen } from '../render/project-view.js';
 import { projectList } from '../roles/projects.js';
+import { roleRegistry } from '../roles/roster.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
 import { defaultSettings, saveSettings } from '../settings.js';
 import { runtimeSettings, applyDisplaySettings } from '../settings-runtime.js';
@@ -164,7 +165,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     applyWidth: lifecycle.applyWidth,
     repaint: () => render(),
     repaintAll: () => repaintAll(),
-  });
+  }, () => roleRegistry(jobPipeline.home, shownRoot()).roles().get('imp')?.presets?.map(p => p.name) ?? []);
   const syncModelListDiscovery = () => models.syncDiscovery(controlShown(state, settingsFlow.open));
 
   const render = () => {

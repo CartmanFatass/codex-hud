@@ -121,7 +121,7 @@ const TIER_MARKS = { light: ['▂', '-'], standard: ['▄', '='], hard: ['▆', 
  * Inspector's Route row.
  */
 export function routeBadge(w: OwnerWorker, withTier = true): string {
-  const tier = withTier && w.route ? TIER_MARKS[w.route.tier] : undefined;
+  const tier = withTier && w.route && !w.route.placement ? TIER_MARKS[w.route.tier] : undefined;
   const marks = (tier ? mark(tier[0], tier[1]) : '') + (isHeadless(w) ? mark('∅', 'h') : '');
   return marks ? theme.board.muted(marks) : '';
 }

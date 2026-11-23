@@ -198,7 +198,9 @@ Sonic 子任务就绪时，Pi 会通知工作者；如果同一会话的 `hud_so
 
 Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不接受思考级别参数。设置中的 **Sonic 自动选档**（`sonicAutoThinking`，默认关闭，独立于「模型文字」）将任务文本的前 4000 字符作为数据连同角色职责与 `thinking_choices` 中的用途发送给决策 API，由其在 `none`、`low`、`high`、`max` 中选择；不读取引用的上下文、项目常驻简报或报告。按原样执行给定命令并报告输出、逐字复制或列出文件用 `none`；在指定文件中查找具体事实用 `low`。Pi 将 `none` 称为 `off`。缺少密钥、达到调用上限、约五秒后超时或结果无效时，仍用角色默认级别。用 `hud_create` 派发 sonic 或用 `hud_sonic` 启动子任务时，都不能覆盖思考级别。分发记录并返回映射到模型支持范围后的级别和来源 `thinking_source`。
 
-**Imp 自动分流**（`impRouting`，设置 → 模型，默认关闭）独立于「模型文字」，使用一次决策 API 判断。生效的 `imp` 角色文件必须定义 `routing`，不会从低优先级角色文件继承该块。例如：
+**Imp 运行位置**（`impPlacement`，设置 → 模型）默认为 `fixed`（固定），使用当前预设。选择 `even`（均衡）时，可在「均衡预设池」（`impEvenPool`）一行用 ←/→ 选择预设，按 Enter 加入或移出。HUD 选择过去 24 小时启动 imp 任务最少的可用预设；次数相同时按角色文件顺序选择。HUD 会报告跳过的预设；池为空或无可用预设时，使用当前预设。创建结果和任务回执包含 `route.placement: "even"` 和 `route.preset`；任务卡显示均衡模式和所用预设。固定和均衡模式下，排队、溢出、重试和落地修复都沿用创建时选中的预设。旧设置 `impRouting: true` 读作 `auto`，`false` 读作 `fixed`。
+
+`auto`（自动）独立于「模型文字」，使用一次决策 API 判断。生效的 `imp` 角色文件必须定义 `routing`，不会从低优先级角色文件继承该块。例如：
 
 ```json
 "routing": {
@@ -211,9 +213,9 @@ Sonic 默认使用角色的思考级别（内置为 `high`），`hud_sonic` 不�
 
 只提供文件中声明的档位。`light` 和 `hard` 的角色预设由自动分流选择；详细名册列出这些预设仅供参考，不能作为 `imp` 的 `hud_create` 参数。`standard` 不带 `preset`，沿用「控制」中当前选择的预设。分流会发送任务简报的前 4000 字符、指定本地工单（`feature/NN`，最多 4 KiB/4000 字符）、最多 32 个 `context_files` 的相对文件名（每个最多 512 字符）和字节数，以及档位和运行方式的用途说明。不发送上下文正文、常驻简报、既有报告、预设或模型 ID。所选的用途说明组成一行理由。
 
-所选档位无可用位置时回退到 `standard`；决策失败、超时或设置关闭时，使用当前预设并打开标签页。自动选择标准档的无界面任务若在输入提交前启动失败，会尝试用标签页运行当前预设。显式指定 `mode: "tab"` 或 `mode: "headless"` 优先，此时只选择档位。自动无标签页运行仅用于支持该模式的可继续位置（pi、Claude Code 或 Antigravity），否则打开标签页。溢出到 `general` 时保留 `imp` 的运行链。`retry_of` 保留档位，不再请求决策；轻量任务的落地修复改用标准档。任务回执、创建结果和单任务 `hud_read` 返回 `route`，包括 `tier`、`mode`、`reason`、`source` 以及适用时的 `fallback` 或 `mode_reason`；任务卡也显示分流及原因：分栏列表行和详情标题上有档位和无界面标记（经典首页行不带），详情里有一行 `分流：轻量 · 无界面 — <原因>`。
+所选档位无可用位置时回退到 `standard`；决策失败或超时时，使用当前预设并打开标签页。自动选择标准档的无界面任务若在输入提交前启动失败，会尝试用标签页运行当前预设。显式指定 `mode: "tab"` 或 `mode: "headless"` 优先，此时只选择档位。自动无标签页运行仅用于支持该模式的可继续位置（pi、Claude Code 或 Antigravity），否则打开标签页。溢出到 `general` 时保留 `imp` 的运行链。`retry_of` 保留档位，不再请求决策；轻量任务的落地修复改用标准档。任务回执、创建结果和单任务 `hud_read` 返回 `route`，包括 `tier`、`mode`、`reason`、`source` 以及适用时的 `fallback` 或 `mode_reason`；任务卡也显示分流及原因：分栏列表行和详情标题上有档位和无界面标记（经典首页行不带），详情里有一行 `分流：轻量 · 无界面 — <原因>`。
 
-按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位，则计入 `general` 的名额，但保留 `imp` 的执行链（适用时按分流选择，否则使用当前预设），并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
+按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位，则计入 `general` 的名额，但保留 `imp` 的执行链（沿用选定的运行位置），并返回 `overflowed: true`、`overflow_from: "imp"`。无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；对排队任务执行 `hud_close`（或面板 `X`）会将其移除。
 
 `hud trust <dir>` 把该目录加入 grok、agy 和 claude 的信任文件（先在 `$HUD_HOME` 下备份）。
 文件不存在则不创建。codex 跳过。
@@ -714,7 +716,7 @@ Claude OAuth、第三方网关和无法归属的请求不计入。Claude Code �
 |---|---|
 | 显示 | 主题、语言；**高级**中：底栏样式、图标 |
 | 面板 | 布局、宽度、通知；**高级**中：停滞阈值、折叠时间、隐藏时间、刷新、鼠标、实验功能 |
-| 模型 | 模型文字、模型、决策 API、调用上限（附小时计数与测试 API）、Sonic 自动选档、Imp 自动分流；**高级**中：决策调用上限（附小时计数）、总结间隔 |
+| 模型 | 模型文字、模型、决策 API、调用上限（附小时计数与测试 API）、Sonic 自动选档、Imp 运行位置（均衡模式下另有均衡预设池）；**高级**中：决策调用上限（附小时计数）、总结间隔 |
 | 工作者 | 全部在**高级**中：imp 上限（`roleCaps.imp`，默认 3）、general 上限（`roleCaps.general`，默认 3）、imp→general 溢出（`impOverflow`，默认开） |
 | Codex | 启动时显示状态栏 |
 

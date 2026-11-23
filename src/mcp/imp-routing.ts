@@ -1,16 +1,37 @@
 import { routeModes, routeTiers, type Role, type RoleRouting } from '../roles/roster.js';
-import { loadSettings } from '../settings.js';
+import { loadSettings, type HudSettings } from '../settings.js';
 import { dispatchChoice, dispatchDecision } from './dispatch-decision.js';
-import type { JobRoute } from './job-contracts.js';
+import type { Job, JobRoute } from './job-contracts.js';
 
 export const defaultImpRoute = (reason: string, mode: JobRoute['mode'] = 'tab'): JobRoute => ({ tier: 'standard', mode, source: 'default', reason });
 
-export async function pickImpRoute(hudHome: string, routing: RoleRouting, task: string, explicitMode: JobRoute['mode'] | undefined,
+export function impPlacementSettings(hudHome: string) {
+  try { return loadSettings({ ...process.env, HUD_HOME: hudHome }); }
+  catch { return undefined; }
+}
+
+/** Presets and ties follow role-file order; selected names absent from the role are unavailable. */
+export function pickEvenPreset(order: readonly string[], pool: readonly string[], available: (preset: string) => boolean,
+  jobs: readonly Pick<Job, 'role' | 'overflow_from' | 'imp_preset' | 'preset' | 'started_at'>[], now: number) {
+  const counts = new Map<string, number>();
+  for (const job of jobs) {
+    const name = job.imp_preset === undefined ? job.preset : job.imp_preset;
+    const age = now - Date.parse(job.started_at ?? '');
+    if ((job.overflow_from ?? job.role) === 'imp' && name && age >= 0 && age < 86_400_000)
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  let preset: string | undefined;
+  const skipped = new Set(pool);
+  for (const name of order) {
+    if (!skipped.has(name) || !available(name)) continue;
+    skipped.delete(name);
+    if (preset === undefined || (counts.get(name) ?? 0) < (counts.get(preset) ?? 0)) preset = name;
+  }
+  return { preset, skipped: [...skipped] };
+}
+
+export async function pickImpRoute(hudHome: string, settings: HudSettings, routing: RoleRouting, task: string, explicitMode: JobRoute['mode'] | undefined,
   inputs: () => { ticket?: string; context_files: { name: string; bytes: number }[] }) {
-  let settings;
-  try { settings = loadSettings({ ...process.env, HUD_HOME: hudHome }); }
-  catch { return defaultImpRoute('Imp routing settings unavailable', explicitMode); }
-  if (!settings.impRouting) return defaultImpRoute('Imp routing is off', explicitMode);
   const tiers = routeTiers.filter(tier => routing[tier]);
   if (!tiers.length) return defaultImpRoute('No routing tiers are configured', explicitMode);
   const { result, failure } = await dispatchDecision(hudHome, settings, 'imp-routing', {

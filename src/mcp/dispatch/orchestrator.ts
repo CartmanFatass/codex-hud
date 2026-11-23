@@ -15,7 +15,7 @@ import { MAX_CHECKS, MAX_CHECK_COMMAND } from '../../roles/job-checks.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
 import { sharedRoot } from '../../roles/projects.js';
 import {
-  harnessDefaults, readExhausted, isQuotaFailure, markExhausted, describePlace, recordFailureExhaustion,
+  currentPreset, harnessDefaults, readExhausted, isQuotaFailure, markExhausted, describePlace, recordFailureExhaustion,
   type Role, type RolePlace,
 } from '../../roles/roster.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
@@ -25,7 +25,7 @@ import {
   beginPrompt, cliWorkerTools, endPrompt, readTurn, saveTurn, REPORT_READ_EXIT, withDonePrompt, workerAlive, turnToken,
 } from '../cli-judge.js';
 import type { StandingBriefRef } from '../cli-worker-startup.js';
-import { repairImpRoute, pickImpRoute } from '../imp-routing.js';
+import { defaultImpRoute, impPlacementSettings, pickEvenPreset, repairImpRoute, pickImpRoute } from '../imp-routing.js';
 import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
 import type { Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
@@ -315,7 +315,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       pi_role: from.run.find(p => p.harness === 'pi')?.pi_role ?? name } };
   }
   const now = Date.now();
-  const existing = jobs().find((job) =>
+  const receipts = jobs();
+  const existing = receipts.find((job) =>
     job.request_key === request_key && (!windowedKey || withinRetryWindow(job.created_at, now)));
   if (existing) {
     ensureWatcher();
@@ -378,15 +379,27 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const contextCwd = scoutContextCwd ?? cwd;
   const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
   const imp = requestedRole === 'imp' || fromImp;
+  const settings = imp && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
   let route: JobRoute | undefined;
   let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
   if (imp && (retryInput || fromImp)) {
     route = landCwd ? repairImpRoute(chain, sourceJob?.route) : sourceJob?.route;
-  } else if (imp && chain.routing) {
+  } else if (settings?.impPlacement === 'even') {
+    const history = receipts.filter(j => (j.overflow_from ?? j.role) === 'imp' && (j.imp_preset ?? j.preset))
+      .map(j => ({ ...j, started_at: j.started_at ?? readCachedStatus(j.job).status?.started_at ?? (!j.queued_at && j.used_place ? j.created_at : undefined) }));
+    const seed = defaultImpRoute('Fewest imp starts in the last 24 hours', mode);
+    const { preset, skipped } = pickEvenPreset(chain.presets?.map(p => p.name) ?? [], settings.impEvenPool, name =>
+      launchPlan(found, chain, now, args, routing, onEntry, retryInput, { ...seed, preset: name }).candidates.length > 0, history, now);
+    route = { ...seed, placement: 'even', preset: preset ?? currentPreset(chain),
+      ...(!preset || skipped.length ? { fallback: [!preset && `Even pool ${skipped.length ? 'unavailable' : 'empty'}; using active preset`,
+        skipped.length && `Skipped unavailable presets: ${skipped.join(', ')}`].filter(Boolean).join('; ') } : {}) };
+  } else if (imp && settings?.impPlacement !== 'auto') {
+    route = { ...defaultImpRoute(settings ? 'Imp routing is off' : 'Imp routing settings unavailable', mode), preset: currentPreset(chain) };
+  } else if (imp && chain.routing && settings) {
     localContext = await contextFor(args, false);
     if ('code' in localContext) return localContext;
     const context_files = localContext.contextInputs;
-    route = await pickImpRoute(hudHome, chain.routing, task, mode, () => ({
+    route = await pickImpRoute(hudHome, settings, chain.routing, task, mode, () => ({
       ticket: routingTicketText(project.root, args.ticket), context_files,
     }));
   }
@@ -602,6 +615,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
+      if (imp) job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context! : await contextFor(args, browser);
       let scoutFailure = scoutResult?.failure;
@@ -870,6 +884,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
+      if (launchRoleName === 'imp') job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context : await contextFor(args, browser);
       let scoutFailure = scoutResult?.failure;
@@ -984,6 +999,7 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
 
 function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string, advanceCursor = true): JobRow | undefined {
   job.dispatch_exit_code = result.exit_code;
+  if (job.used_place && job.imp_preset !== undefined) job.started_at = readCachedStatus(job.job).status?.started_at ?? new Date().toISOString();
   if (result.code) job.dispatch_code = result.code;
   if (result.path) job.dispatch_path = result.path;
   const failure = result.exit_code === 0 ? null : launchFailure(result);

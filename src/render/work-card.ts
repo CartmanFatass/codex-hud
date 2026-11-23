@@ -359,9 +359,13 @@ export function renderWorkCard(
   const rows = [theme.board.title(titleLine)];
   const route = card.worker.route;
   if (route) {
-    const label = t('Route: {tier} · {mode}', { tier: t(route.tier), mode: t(route.mode) });
+    const label = route.placement === 'even'
+      ? t('Placement: even · {preset}', { preset: route.preset ? monitorText(route.preset) : t('active preset') })
+      : t('Route: {tier} · {mode}', { tier: t(route.tier), mode: t(route.mode) });
     const why = route.fallback ?? route.mode_reason ?? route.reason;
-    rows.push(fit(`${ink(mark('┃', '|'))} ${label} — ${monitorText(why).replace(/\s+/g, ' ').trim()}`, width));
+    const detail = route.placement === 'even' ? why.split('; ').map(part => part.startsWith('Skipped unavailable presets: ')
+      ? t('Skipped unavailable presets: {presets}', { presets: part.slice('Skipped unavailable presets: '.length) }) : t(part)).join('; ') : why;
+    rows.push(fit(`${ink(mark('┃', '|'))} ${label} — ${monitorText(detail).replace(/\s+/g, ' ').trim()}`, width));
   }
   // Open questions have their complete expandable slab above the lanes on Home.
   const step = card.worker.transcriptStep;

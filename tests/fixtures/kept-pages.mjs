@@ -151,15 +151,17 @@ export function pageFixture(home) {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }),
       previous = setLanguage(lang);
     try {
-      if (page === 'settings') {
+      if (page === 'settings' || page === 'settings-even') {
+        const even = page === 'settings-even';
         const original = { ...defaultSettings(), modelEnabled: true, theme: 'none', barStyle: 'line' };
-        const draft = { ...original, modelCallsPerHour: 120 };
+        const draft = { ...original, modelCallsPerHour: 120, ...(even ? { impPlacement: 'even', impEvenPool: ['small'] } : {}) };
         return withDisplaySettings(draft, () =>
           renderSettingsPage(
             {
               draft,
               original,
-              selected: SETTING_ROWS.findIndex((r) => r.key === 'modelCallsPerHour'),
+              selected: SETTING_ROWS.findIndex((r) => r.key === (even ? 'impEvenPool' : 'modelCallsPerHour')),
+              impPresets: ['small', 'deep', 'daily'],
               offset: 0,
               message: '',
             },
@@ -198,6 +200,7 @@ export function pageFrames(fixture) {
     }
   // Settings' help/gauge also reflow at the ordinary narrow panel width.
   for (const lang of ['en', 'zh']) frames[`settings-40-${lang}`] = plainFrame(fixture.render('settings', 40, lang));
+  for (const lang of ['en', 'zh']) frames[`settings-even-40-${lang}`] = plainFrame(fixture.render('settings-even', 40, lang, 20));
   // At narrow widths, the last Help viewport shows the end of Marks.
   for (const lang of ['en', 'zh']) frames[`help-end-40-${lang}`] = plainFrame(fixture.render('help-end', 40, lang, 16));
   return frames;

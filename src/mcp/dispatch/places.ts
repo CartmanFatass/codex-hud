@@ -106,9 +106,12 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
   route?: JobRoute, land = false) {
   const model = typeof args.model === 'string' ? args.model : undefined;
   const preset = typeof args.preset === 'string' ? args.preset : undefined;
-  const choice = onEntry ? { run: [{ ...chain.run.find(p => matchPlace(p, onEntry)), ...onEntry }] }
+  const pin = route?.preset;
+  const missingPin = typeof pin === 'string' && !chain.presets?.some(p => p.name === pin);
+  const choice = pin !== undefined && pin !== chain.preset && !missingPin ? { preset: pin }
+    : route ? undefined : onEntry ? { run: [{ ...chain.run.find(p => matchPlace(p, onEntry)), ...onEntry }] }
     : preset !== undefined ? { preset } : undefined;
-  const standard = found.assignment(chain, now, route ? undefined : model, routing, route ? undefined : choice,
+  const standard = found.assignment(chain, now, route ? undefined : model, routing, choice,
     !!retryInput && retryInput.model === undefined);
   const tierPreset = route && chain.routing?.[route.tier]?.preset;
   const tier = !route || route.tier === 'standard' ? standard
@@ -133,6 +136,7 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
     }
     return [{ candidate, effective, route: applied, prepared: placeOptions(launchArgs, candidate.place) }];
   });
+  if (missingPin) return { candidates: [], effective: { ...standard, reason: `Preset ${pin} is no longer configured` }, route, fallback: undefined, error: undefined };
   const preferred = tier ? entries(tier, route) : [];
   const modeFallback = route?.tier === 'standard' && !explicit && preferred.some(entry => entry.route?.mode === 'headless');
   const fallback: JobRoute | undefined = route && (route.tier !== 'standard' || modeFallback) ? {
