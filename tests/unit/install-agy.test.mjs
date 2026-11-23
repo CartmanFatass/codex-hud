@@ -41,6 +41,7 @@ function fixture(t, seed = originals) {
   for (const [key, text] of Object.entries(seed)) {
     fs.mkdirSync(path.dirname(files[key]), { recursive: true });
     fs.writeFileSync(files[key], text, { mode: 0o640 });
+    fs.chmodSync(files[key], 0o640); // Exercise preservation even under a restrictive umask.
   }
   const run = (args = [], status = 0, override = {}) => {
     const result = spawnSync('./install', ['--skip-build', '--with', 'agy', ...args], {
@@ -50,12 +51,13 @@ function fixture(t, seed = originals) {
     return result.stderr;
   };
   const calls = () => read(log).trim().split('\n').map(JSON.parse);
-  return { temp, home, hud, bin, files, fake, run, calls };
+  return { temp, home, hud, bin, files, fake, run, calls, env };
 }
 
 for (const foreignEdits of [false, true]) {
   test(`agy install, reinstall and byte-exact uninstall${foreignEdits ? ' with intervening owner edits' : ''}`, (t) => {
-    const { temp, home, hud, bin, files, fake, run, calls } = fixture(t);
+    const { temp, home, hud, bin, files, fake, run, calls, env } = fixture(t);
+    const instructions = path.join(home, '.gemini/antigravity-cli/mcp/hud/instructions.md');
     const dotfile = path.join(temp, 'owner settings.json');
     fs.renameSync(files.settings, dotfile);
     fs.symlinkSync(dotfile, files.settings);
@@ -80,8 +82,22 @@ for (const foreignEdits of [false, true]) {
       ...JSON.parse(originals.mcp).mcpServers, hud: { command, disabled: false, env: { HUD_MCP_SURFACE: 'roles' } },
     });
     const installed = Object.values(files).map(read);
+    const hudInstructions = read(instructions);
+    assert.ok(hudInstructions.length > 0);
+    if (!foreignEdits) {
+      const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'antigravity-client' } } };
+      const reply = spawnSync(command, [], {
+        cwd: home, env: { ...env, ...json(files.mcp).mcpServers.hud.env }, encoding: 'utf8',
+        timeout: 5000, input: JSON.stringify(initialize) + '\n',
+      });
+      assert.equal(reply.status, 0, reply.stderr);
+      assert.equal(hudInstructions, JSON.parse(reply.stdout).result.instructions);
+    }
+    const ownerInstructions = 'Synthetic owner instructions.\n';
+    if (foreignEdits) fs.writeFileSync(instructions, ownerInstructions);
     run();
     assert.deepEqual(Object.values(files).map(read), installed);
+    assert.equal(read(instructions), foreignEdits ? ownerInstructions : hudInstructions);
     const invocations = calls();
     assert.deepEqual(invocations.map(({ args }) => args), [
       ['mcp', 'remove', 'hud'], ['mcp', 'add', '--env', 'HUD_MCP_SURFACE=roles', 'hud', command],
@@ -117,6 +133,9 @@ for (const foreignEdits of [false, true]) {
       assert.equal(fs.statSync(file).mode & 0o777, 0o640, key);
       assert.equal(exists(file + '.hud-agy-backup'), false);
     }
+    if (foreignEdits) assert.equal(read(instructions), ownerInstructions);
+    else assert.equal(exists(instructions), false);
+    assert.equal(exists(instructions + '.hud-agy-backup'), false);
     assert.equal(fs.readlinkSync(files.settings), dotfile);
     assert.equal(exists(path.join(bin, 'hud-statusline')), false);
     assert.equal(exists(path.join(hud, 'integrations/agy/pre-invocation.sh')), false);

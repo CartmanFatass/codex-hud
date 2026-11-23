@@ -58,6 +58,8 @@ Pi registers delegation and display packages and excludes the old p10k-footer.
 
 For Antigravity, put `agy` on `PATH`, then run `./install --with agy`.
 It registers the HUD MCP, permission and hook, and leaves an existing non-HUD statusline alone.
+It writes the main-session MCP instructions to `~/.gemini/antigravity-cli/mcp/hud/instructions.md`
+without replacing owner instructions.
 Remove the integration with `./install --uninstall --with agy`.
 
 See [installer extensions](../install.d/README.md) for backups and multiple Codex homes.

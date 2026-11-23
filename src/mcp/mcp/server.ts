@@ -7,6 +7,7 @@ import { readLand } from '../land-state.js';
 import { isWorker, hudHome, publishWorkSummary, scanForCall, writeScan, findJob } from '../store/job-store.js';
 import { locks, keyLock } from '../store/key-lock.js';
 import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js';
+import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows } from './session-state.js';
 import {
@@ -74,7 +75,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         capabilities: { tools: { listChanged: true }, resources: {} },
         serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
         instructions: session.resumeRefusal ?? (worker ? 'Use the worker tools for your own HUD job. Finish with hud_report.' :
-          'Call hud_roster when project dispatch context is missing or stale. With live watch, keep working until notified, then collect with hud_read.'),
+          MAIN_SESSION_INSTRUCTIONS),
       };
       break;
     case 'ping':

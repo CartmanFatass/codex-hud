@@ -151,6 +151,8 @@ const settingsPath = path.join(HOME, '.gemini/antigravity-cli/settings.json');
 const hooksPath = path.join(HOME, '.gemini/config/hooks.json');
 const mcpRelative = '.gemini/config/mcp_config.json';
 const mcpPath = path.join(HOME, mcpRelative);
+const instructionsPath = path.join(HOME, '.gemini/antigravity-cli/mcp/hud/instructions.md');
+const instructionsRecord = instructionsPath + '.hud-agy-backup';
 const allowKey = ['permissions', 'allow'];
 const statusKey = ['statusLine'];
 const hookKey = ['hud'];
@@ -200,7 +202,24 @@ function objectOrMissing(value, name) {
 const isHudStatus = (line) => line?.type === 'command' && typeof line.command === 'string' &&
   line.command.endsWith('hud-statusline');
 
-function install() {
+// The per-file record holds the last HUD text so uninstall works without a
+// build and never removes pre-existing instructions or intervening owner edits.
+function saveInstructions(text) {
+  const before = fs.lstatSync(instructionsPath, { throwIfNoEntry: false });
+  const last = exists(instructionsRecord) ? read(instructionsRecord) : undefined;
+  const owned = last !== undefined && before?.isFile() && read(instructionsPath) === last;
+  if (text === undefined) {
+    if (owned) fs.unlinkSync(instructionsPath);
+    if (last !== undefined) fs.unlinkSync(instructionsRecord);
+  } else if (!before || (owned && text !== last)) {
+    fs.mkdirSync(path.dirname(instructionsPath), { recursive: true });
+    if (text !== last) writeAtomic(instructionsRecord, text, 0o600);
+    writeAtomic(instructionsPath, text, 0o600);
+  }
+}
+
+async function install() {
+  const { MAIN_SESSION_INSTRUCTIONS } = await import('../dist/mcp/mcp/instructions.js');
   const settings = readConfig(settingsPath);
   const hooks = readConfig(hooksPath);
   const mcp = readConfig(mcpPath);
@@ -215,6 +234,7 @@ function install() {
   hooks.live.put(hookKey, JSON.stringify(hook));
   mcp.live.put(mcpKey, JSON.stringify(stagedMcp()));
   for (const config of [settings, hooks, mcp]) save(config, true);
+  saveInstructions(MAIN_SESSION_INSTRUCTIONS);
 }
 
 // Keep an owner edit to a HUD entry, and keep the backup if it holds a previous
@@ -257,10 +277,11 @@ function uninstall() {
     removeEmptyObject(mcp, ['mcpServers']);
     save(mcp, false, keep);
   }
+  saveInstructions();
 }
 
 try {
-  if (process.argv[2] === 'install') install();
+  if (process.argv[2] === 'install') await install();
   else uninstall();
 } catch (err) {
   console.error(`agy extension: ${err.message}`);

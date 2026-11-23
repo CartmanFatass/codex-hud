@@ -48,6 +48,7 @@ Claude 设置跟随符号链接并保留一次性普通备份；Codex 在官方 
 
 安装 Antigravity 集成前，确保 `PATH` 上有 `agy`，再运行 `./install --with agy`。
 安装器注册 HUD MCP、权限规则和钩子，保留已有的非 HUD 状态行。
+主会话的 MCP 指引写入 `~/.gemini/antigravity-cli/mcp/hud/instructions.md`，不会覆盖用户自己的指引。
 用 `./install --uninstall --with agy` 移除该集成。
 
 备份和多个 Codex home 的操作见[安装器扩展](../install.d/README.md)。

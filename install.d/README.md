@@ -71,8 +71,10 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   an owner's non-HUD command is already set. Adds a named `hud` `PreInvocation` hook to
   `~/.gemini/config/hooks.json`, beside (not inside) herdr's hook. The hook runs
   `$HUD_HOME/integrations/agy/pre-invocation.sh`, currently a no-op. Edited files retain
-  their modes and have one-time `.hud-agy-backup` copies. Uninstall reverses those
-  HUD entries without requiring `agy`; it preserves owner edits made since install.
+  their modes and have one-time `.hud-agy-backup` copies. The installer writes HUD's
+  main-session MCP instructions to `~/.gemini/antigravity-cli/mcp/hud/instructions.md`
+  unless an owner file is already there. Uninstall reverses the HUD entries and
+  removes unmodified HUD instructions without requiring `agy`; owner edits stay.
 - **herdr**: checks PATH for `herdr`, `pi-role`, `pi-role-reap`, `pi-dispatch` and `pi`,
   printing their locations and sources. Only missing `herdr` fails installation.
   No external tool or herdr registration is installed; uninstall is a stated no-op.
