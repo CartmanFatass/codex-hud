@@ -54,7 +54,7 @@ test('TERM during the watcher startup dist-lock wait leaves no advertised PID', 
   const f = await fixture(t, true, `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify(url)};`);
   await f.call('hud_create', { role: 'imp', task: 'Synthetic startup.' });
   const waiting = join(f.env.HOME, 'waiting-on-dist');
-  await until(() => fs.existsSync(waiting) && !procStat(Number(fs.readFileSync(waiting, 'utf8'))));
+  await until(() => fs.existsSync(waiting) && !procStat(Number(fs.readFileSync(waiting, 'utf8'))), t.signal);
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), false);
 });
 
@@ -74,7 +74,7 @@ test('hud_close during Pi startup records stopped without relying on the watcher
       if (!id) return false;
       dir = join(jobs, id);
       return cliState(dir)?.state === 'working';
-    });
+    }, t.signal);
     assert.equal(procStat(cliState(dir).pid)?.start, cliState(dir).pid_start_time);
     closing = f.call('hud_close', { job: id });
   } finally {
@@ -94,7 +94,7 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
   writeCliRole(f, 'read-close-cli', 30);
   for (const role of ['read-close-cli', 'imp']) {
     const job = await f.call('hud_create', { role, request_key: `close-on-read-${role}`, task: 'Synthetic task.', package: 'Original package' });
-    if (role === 'imp') await publishPiGrace(job); // Fake pi settles only after the initial prompt.
+    if (role === 'imp') await publishPiGrace(t, job); // Fake pi settles only after the initial prompt.
     await until(() => cliState(job.task_dir)?.state === 'idle_grace', 15000);
     const grace = cliState(job.task_dir);
     let queries = statusQueries(f, job);
@@ -133,7 +133,7 @@ test('read-close: reading the old Pi report after an admitted continuation does 
   const f = await fixture(t, true, '', 200);
   await f.startCliSocket();
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-continuation', task: 'Synthetic task.' });
-  await publishPiGrace(job);
+  await publishPiGrace(t, job);
   const sent = await f.call('hud_send', { job: job.job, message_key: 'next', text: 'Synthetic continuation.' });
   assert.equal(sent.sent, true);
   assert.equal(sent.queued, undefined, 'the continuation was admitted from idle grace');
@@ -143,9 +143,9 @@ test('read-close: reading the old Pi report after an admitted continuation does 
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Do not repair the already continued report.' })).code, 'not_continuable');
 
-  await publishPiGrace(job);
+  await publishPiGrace(t, job);
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
 });
 
@@ -154,11 +154,11 @@ test('read-close: aborts Pi reap when fresh Herdr status has turned working', { 
   const worker = fakeCliWithChild(t, f);
   await f.startCliSocket();
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-resumed', task: 'Synthetic task.' });
-  await publishPiGrace(job, worker);
+  await publishPiGrace(t, job, worker);
   let state = 'idle';
   f.piStatus(() => (state = 'working')); // The worker resumes during the automatic reap preflight.
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
-  await until(() => statusQueries(f, job) > 0);
+  await until(() => statusQueries(f, job) > 0, t.signal);
   await new Promise((done) => setTimeout(done, 100));
   assert.equal(state, 'working');
   assert.ok(procStat(worker.pid));
@@ -176,14 +176,14 @@ test('read-close: failed Pi reap is retried on the slow safety tick without a fi
   const f = await fixture(t, true, '', 350);
   await f.startCliSocket();
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-retry', task: 'Synthetic task.' });
-  await publishPiGrace(job);
+  await publishPiGrace(t, job);
   fs.writeFileSync(join(job.task_dir, 'fail-reap-once'), '');
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
   const log = join(f.env.HUD_HOME, 'watch.log');
-  await until(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes(`reap ${job.job} state=idle_grace exit=1`));
+  await until(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes(`reap ${job.job} state=idle_grace exit=1`), t.signal);
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
   assert.equal(readCloseReaped(job), undefined);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.equal(reapAttempts(f, job), 2);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
 });
@@ -196,7 +196,7 @@ for (const rewrite of [false, true]) test(`read-close: Pi retries captured child
   const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
   const start = procStat(child).start;
   t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });
-  await publishPiGrace(job, worker);
+  await publishPiGrace(t, job, worker);
   const flag = join(f.env.HOME, 'snapshot-enospc');
   writeFixtureFile(flag, String(child));
   fs.writeFileSync(join(job.task_dir, 'reap-worker'), '');
@@ -204,7 +204,7 @@ for (const rewrite of [false, true]) test(`read-close: Pi retries captured child
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
   const log = join(f.env.HUD_HOME, 'watch.log');
   // The watcher creates watch.log on its first write; under load that can follow the read.
-  await until(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('synthetic ENOSPC'));
+  await until(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('synthetic ENOSPC'), t.signal);
   assert.equal(procStat(worker.pid), null);
   assert.equal(procStat(child)?.start, start);
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
@@ -213,12 +213,12 @@ for (const rewrite of [false, true]) test(`read-close: Pi retries captured child
     const report = join(job.task_dir, 'report.md');
     writeFixtureFile(report, 'Synthetic rewritten report.\n');
     assert.ok(Math.floor(fs.statSync(report).mtimeMs) > Date.parse(cliState(job.task_dir).settled_at));
-    await until(() => Date.now() > fs.statSync(report).mtimeMs);
+    await until(() => Date.now() > fs.statSync(report).mtimeMs, t.signal);
     assert.match((await f.call('hud_read', { job: job.job })).digest.result, /rewritten report/);
   }
   // No relevant file event on fault removal: the slow retry must work without a live agent or eligible report.
   fs.unlinkSync(flag);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.ok(reapAttempts(f, job) >= 2);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
   assert.ok(!procStat(child) || procStat(child).state === 'Z');
@@ -231,16 +231,16 @@ for (const trigger of ['native deadline', 'native one-shot']) test(`pi reap: ${t
   const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
   const start = procStat(child).start;
   t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });
-  await publishPiGrace(job, worker);
+  await publishPiGrace(t, job, worker);
   if (trigger === 'native one-shot') writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ ...cliState(job.task_dir), state: 'working' }));
   declareDone(f, job, false);
   process.kill(worker.pid, 'SIGTERM');
-  await until(() => !procStat(worker.pid));
+  await until(() => !procStat(worker.pid), t.signal);
   assert.equal(procStat(child)?.start, start);
   const file = join(job.task_dir, 'STATUS.json');
   fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cliState(job.task_dir), state: 'closed', exit_reason: 'settled' }));
   fs.renameSync(`${file}.tmp`, file);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.ok(!procStat(child) || procStat(child).state === 'Z');
 });
 
@@ -251,24 +251,24 @@ for (const fault of ['rename', 'open']) test(`pi reap: --done snapshot ${fault} 
   const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
   const start = procStat(child).start;
   t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });
-  await publishPiGrace(job, worker);
+  await publishPiGrace(t, job, worker);
   const file = join(job.task_dir, 'STATUS.json');
   writeFixtureFile(file, JSON.stringify({ ...cliState(job.task_dir), state: 'working' }));
   fs.writeFileSync(join(f.env.HOME, 'progress-snapshot-enospc'), fault);
   const done = runProgress(f, job.task_dir, '--done');
   assert.equal(fs.existsSync(join(job.task_dir, 'worker-tree.json')), false);
   process.kill(worker.pid, 'SIGTERM');
-  await until(() => !procStat(worker.pid));
+  await until(() => !procStat(worker.pid), t.signal);
   assert.equal(procStat(child)?.start, start);
   fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cliState(job.task_dir), state: 'closed', exit_reason: 'settled' }));
   fs.renameSync(`${file}.tmp`, file);
   if (fault === 'rename') {
-    await until(() => readCloseReaped(job));
+    await until(() => readCloseReaped(job), t.signal);
     assert.ok(!procStat(child) || procStat(child).state === 'Z', 'watcher recovered the captured orphan');
   } else {
     const log = join(f.env.HUD_HOME, 'watch.log');
     await until(() => readCloseReaped(job) && fs.existsSync(log) &&
-      fs.readFileSync(log, 'utf8').includes('worker-tree snapshot unresolved'));
+      fs.readFileSync(log, 'utf8').includes('worker-tree snapshot unresolved'), t.signal);
     assert.equal(reapAttempts(f, job), 1, 'missing proof cannot be recovered by another reap');
     assert.equal(fs.readFileSync(log, 'utf8').match(/worker-tree snapshot unresolved/g)?.length, 1);
     assert.equal(procStat(child)?.start, start, 'unprovable child was left alone');
@@ -308,21 +308,21 @@ test('read-close: CLI pre-quit snapshot failure hands cleanup to the watcher and
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'cli-snapshot-failure', 30);
   const job = await f.call('hud_create', { role: 'cli-snapshot-failure', request_key: 'cli-snapshot-failure', task: 'Synthetic task.' });
-  await until(() => cliState(job.task_dir)?.pid === worker.pid);
+  await until(() => cliState(job.task_dir)?.pid === worker.pid, t.signal);
   const child = await worker.start();
   writeFixtureFile(join(job.task_dir, 'report.md'), 'Synthetic report.\n');
   declareDone(f, job);
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
   const flag = join(f.env.HOME, 'snapshot-enospc');
   fs.writeFileSync(flag, '');
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
-  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.log')) && fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8').includes('synthetic ENOSPC'));
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.log')) && fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8').includes('synthetic ENOSPC'), t.signal);
   assert.equal(readCloseQuit(f, job), false, 'keep the root in place for the watcher to capture');
   assert.equal(cliState(job.task_dir).state, 'closed');
   assert.equal(readCloseReaped(job), undefined);
-  await until(() => !procStat(child)); // Verified descendants are cleaned even though capture cannot persist yet.
+  await until(() => !procStat(child), t.signal); // Verified descendants are cleaned even though capture cannot persist yet.
   fs.unlinkSync(flag);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.ok(reapAttempts(f, job) >= 2);
 });
 
@@ -361,18 +361,18 @@ test('read-close: a settled Pi with a fresh report closes and reaps a current-tu
   assert.deepEqual(meta.files, ['src/native.ts']);
   assert.equal(fs.statSync(join(job.task_dir, 'report-meta.json')).mode & 0o777, 0o600);
   assert.equal(cliState(job.task_dir).state, 'working', 'publication alone does not declare pi settlement');
-  await publishPiGrace(job, worker, false); // Synthetic pi-roles native turn end.
+  await publishPiGrace(t, job, worker, false); // Synthetic pi-roles native turn end.
   assert.equal((await f.call('hud_read', { job: job.job, mode: 'full' })).report, report);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
-  await until(() => procStat(child) === null);
+  await until(() => procStat(child) === null, t.signal);
 });
 
 test('read-close: listing an unread report leaves the CLI grace deadline in place', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'unread-close-cli', 2);
   const job = await f.call('hud_create', { role: 'unread-close-cli', request_key: 'unread-close', task: 'Synthetic task.' });
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
   const { idle_deadline_at } = cliState(job.task_dir);
   for (const args of [{}, { view: 'recent' }]) {
     assert.equal((await f.call('hud_read', args)).jobs.find((row) => row.job === job.job).report_unread, true);
@@ -381,12 +381,12 @@ test('read-close: listing an unread report leaves the CLI grace deadline in plac
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
   assert.equal(readCloseQuit(f, job), false);
   assert.equal(readCloseReaped(job), undefined);
-  await until(() => cliState(job.task_dir)?.state === 'closed');
+  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
   const closed = cliState(job.task_dir);
   assert.equal(closed.exit_reason, 'settled');
   assert.ok(Date.parse(closed.ended_at) >= Date.parse(idle_deadline_at));
   assert.ok(readCloseQuit(f, job));
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
 });
 
 test('read-close: the CLI receipt survives a shell-counter change and needs no pane read', { timeout: 10000 }, async (t) => {
@@ -395,22 +395,22 @@ test('read-close: the CLI receipt survives a shell-counter change and needs no p
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'child-read-cli', 8, true, 'claude');
   const job = await f.call('hud_create', { role: 'child-read-cli', request_key: 'child-read-close', task: 'Synthetic task.' });
-  await until(() => cliState(job.task_dir)?.pid === worker.pid);
+  await until(() => cliState(job.task_dir)?.pid === worker.pid, t.signal);
   const child = await worker.start();
   const report = join(job.task_dir, 'report.md'), pane = join(f.env.HOME, 'pane-read');
   writeFixtureFile(pane, `⏺ report written: ${report}\n2 shells still running\n`);
   const call = workerClient(t, f, job.task_dir);
   assert.deepEqual(resultValue(await call('hud_report', { text: 'Synthetic report.\n', turn: cliToken(job.task_dir) })), { path: report });
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
   assert.ok(procStat(child));
   writeFixtureFile(pane, `⏺ report written: ${report}\n1 shell still running\n`);
   fs.writeFileSync(join(f.env.HOME, 'pane-read-timeout'), '');
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.ok(readCloseQuit(f, job));
   assert.equal(f.socketRequests.filter(({ method }) => method === 'pane.read').length, 0);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
-  await until(() => procStat(child) === null);
+  await until(() => procStat(child) === null, t.signal);
 });
 
 test('read-close: a live pre-turn CLI child does not block settlement or close', { timeout: 10000 }, async (t) => {
@@ -419,12 +419,12 @@ test('read-close: a live pre-turn CLI child does not block settlement or close',
   const child = await worker.start();
   writeCliRole(f, 'pre-turn-cli', 20);
   const job = await f.call('hud_create', { role: 'pre-turn-cli', request_key: 'pre-turn-read-close', task: 'Synthetic task.' });
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
-  await until(() => readCloseReaped(job));
+  await until(() => readCloseReaped(job), t.signal);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
   assert.ok(readCloseQuit(f, job));
-  await until(() => procStat(child) === null);
+  await until(() => procStat(child) === null, t.signal);
 });
 
 test('startup failure closes the tab, reports the pi-roles cause instead of the timeout, and is reaped', { timeout: 7000 }, async (t) => {
@@ -444,9 +444,9 @@ test('startup failure closes the tab, reports the pi-roles cause instead of the 
   assert.deepEqual(f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'close')?.args,
     ['tab', 'close', 'w4E:t2']);
   assert.equal(f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt'), false);
-  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
+  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
   assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
-  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
 });
 
 test('stopped jobs read immediately, render neutral and are terminal to the watcher', { timeout: 7000 }, async (t) => {
@@ -463,8 +463,8 @@ test('stopped jobs read immediately, render neutral and are terminal to the watc
   assert.equal(projectWorkCard(worker, Date.now()).state, 'done');
   assert.equal(workStateInk(projectWorkCard(worker, Date.now())), theme.board.muted);
   assert.match(cardText(worker), /stopped/);
-  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
-  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
+  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
 });
 
 const failedRetentionMs = 250;
@@ -474,16 +474,16 @@ test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeou
   for (const ended_at of [undefined, 'not-a-date']) {
     const job = await f.call('hud_create', { role: 'imp', request_key: String(ended_at), task: 'Synthetic task.' });
     const pidFile = join(f.env.HUD_HOME, 'watch.pid');
-    await until(() => fs.existsSync(pidFile));
+    await until(() => fs.existsSync(pidFile), t.signal);
     const file = join(job.task_dir, 'STATUS.json');
     writeFixtureFile(file, JSON.stringify({ state: 'failed', ended_at }));
     const mtime = fs.statSync(file).mtimeMs;
     const reapedAt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at;
-    await until(reapedAt);
+    await until(reapedAt, t.signal);
     // Retention is a product deadline: compare the reaper's receipt to the actual
     // file mtime, not to a sleep that can overshoot when the observer is descheduled.
     assert.ok(Date.parse(reapedAt()) >= mtime + failedRetentionMs - 1);
-    await until(() => !fs.existsSync(pidFile));
+    await until(() => !fs.existsSync(pidFile), t.signal);
   }
 });
 
@@ -504,7 +504,7 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   server.listen(f.env.HERDR_SOCKET_PATH);
   await once(server, 'listening');
   const job = await f.call('hud_create', { role: 'imp', request_key: 'tab-close', task: 'Synthetic task.' });
-  await until(() => request);
+  await until(() => request, t.signal);
   assert.equal(request.method, 'events.subscribe');
   assert.deepEqual(request.params, { subscriptions: [{ type: 'tab.closed' }] });
   const statusFile = join(job.task_dir, 'STATUS.json');
@@ -530,11 +530,11 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
     JSON.stringify({ state: 'failed', exit_reason: 'original', ended_at: new Date().toISOString() })
   );
   emit('w4E:t2');
-  await until(() => JSON.parse(fs.readFileSync(statusFile)).state === 'failed');
+  await until(() => JSON.parse(fs.readFileSync(statusFile)).state === 'failed', t.signal);
   assert.equal(JSON.parse(fs.readFileSync(statusFile)).exit_reason, 'tab closed');
   assert.equal(JSON.parse(fs.readFileSync(join(finalDir, 'STATUS.json'))).exit_reason, 'original');
-  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
-  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
+  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
   assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
   assert.ok(!f.commands().some((c) => c.command === 'herdr' && c.args[1] === 'get' && c.args[2] !== 'w4E:p1'));
 });
@@ -551,7 +551,7 @@ test('the watcher settles a dead stop-requested Pi worker on its initial scan', 
   const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env: f.env, stdio: 'ignore' });
   t.after(() => { if (child.exitCode === null) child.kill(); });
   const exited = once(child, 'exit');
-  await until(() => cliState(dir)?.state === 'stopped', 4000);
+  await until(() => cliState(dir)?.state === 'stopped', t.signal);
   assert.equal(cliState(dir).exit_reason, 'stop requested');
   assert.ok(cliState(dir).ended_at);
   assert.deepEqual(await exited, [0, null]);
@@ -570,7 +570,7 @@ test(
     writeFixtureFile(join(caught, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
     const first = await f.call('hud_create', { role: 'imp', request_key: 'watch-one', task: 'Synthetic task.' });
     const reaped = (dir) => f.commands().filter((c) => c.command === 'pi-role-reap' && c.args[0] === dir).length;
-    await until(() => reaped(caught) === 1);
+    await until(() => reaped(caught) === 1, t.signal);
     const pidFile = join(f.env.HUD_HOME, 'watch.pid');
     const pid = fs.readFileSync(pidFile, 'utf8');
     process.kill(Number(pid), 0);
@@ -592,7 +592,7 @@ test(
     assert.equal(watchLog().match(/herdr events unavailable/g)?.length, 1);
     writeFixtureFile(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
     writeFixtureFile(join(first.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
-    await until(() => reaped(first.task_dir) === 1);
+    await until(() => reaped(first.task_dir) === 1, t.signal);
     const ended = Date.now();
     writeFixtureFile(
       join(second.task_dir, 'STATUS.json'),
@@ -601,9 +601,9 @@ test(
     await new Promise((done) => setTimeout(done, 75));
     assert.equal(reaped(second.task_dir), 0);
     assert.equal(fs.existsSync(pidFile), true);
-    await until(() => reaped(second.task_dir) === 1);
+    await until(() => reaped(second.task_dir) === 1, t.signal);
     assert.ok(Date.now() >= ended + failedRetentionMs);
-    await until(() => !fs.existsSync(pidFile));
+    await until(() => !fs.existsSync(pidFile), t.signal);
     await until(() => {
       try {
         process.kill(Number(pid), 0);
@@ -611,7 +611,7 @@ test(
       } catch {
         return true;
       }
-    });
+    }, t.signal);
     assert.match(watchLog(), /no open jobs or failed deadlines/);
     assert.equal(JSON.parse(fs.readFileSync(join(second.task_dir, 'job.json'))).reaped_at !== undefined, true);
     console.log('Synthetic watch.log:\n' + watchLog());
@@ -639,7 +639,7 @@ test('hud watch catch-up does not replay reportless failures after hud_read or h
     const lines = [], ac = new AbortController();
     t.after(() => ac.abort());
     const watch = watchCommand([], { env: f.env, stdout: (line) => lines.push(line.trim()), stderr: () => {} }, { signal: ac.signal });
-    await until(() => lines.length);
+    await until(() => lines.length, t.signal);
     ac.abort();
     await watch;
     assert.equal(lines.length, 1);

@@ -460,7 +460,7 @@ export function declareDone(f, job, cli = true) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-export async function publishPiGrace(job, worker, writeReport = true, session = {}) {
+export async function publishPiGrace(t, job, worker, writeReport = true, session = {}) {
   const dir = job.task_dir;
   const report = join(dir, 'report.md');
   if (writeReport) writeFixtureFile(report, 'Synthetic settled pi report.\n');
@@ -471,15 +471,15 @@ export async function publishPiGrace(job, worker, writeReport = true, session = 
     settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 30000).toISOString(),
   }));
   const mtime = fs.statSync(report).mtimeMs;
-  await until(() => Date.now() > mtime); // hud_read records integer milliseconds.
+  await until(() => Date.now() > mtime, t.signal); // hud_read records integer milliseconds.
 }
 
-export async function publishLegacyPiGrace(job, worker, writeReport) {
+export async function publishLegacyPiGrace(t, job, worker, writeReport) {
   const file = join(job.task_dir, 'job.json');
   const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
   delete receipt.resume_s;
   writeFixtureFile(file, JSON.stringify(receipt));
-  return publishPiGrace(job, worker, writeReport);
+  return publishPiGrace(t, job, worker, writeReport);
 }
 
 export const fallbackPlaces = [

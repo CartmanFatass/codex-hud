@@ -74,7 +74,7 @@ test('roster and create report pane watcher liveness, with Claude delivery guida
   const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env: f.env, stdio: 'ignore' });
   const exited = once(child, 'exit');
   t.after(() => child.kill('SIGKILL'));
-  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers/w4E:p1.pid')));
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers/w4E:p1.pid')), t.signal);
   const live = await f.call('hud_roster');
   assert.equal(live.watcher_alive, true);
   assert.match(live.hint, /^Claude Code: `hud watch` is live under Monitor;/);
@@ -1107,10 +1107,10 @@ if (process.env.SLOW_DELIVERY_LOOKUP === '1') {
   const lookups = () => fs.existsSync(started) ? fs.readFileSync(started, 'utf8').trim().split('\n').length : 0;
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic async dispatch.' });
   assert.match(job.job, /^j[0-9a-f]{16}$/);
-  await until(() => lookups() === 1);
+  await until(() => lookups() === 1, t.signal);
   const reply = await f.call('hud_send', { job: job.job, text: 'Synthetic addendum.' });
   assert.equal(reply.sent, true);
-  await until(() => lookups() === 2);
+  await until(() => lookups() === 2, t.signal);
   fs.writeFileSync(release, '');
 });
 
@@ -1133,7 +1133,7 @@ for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one que
   await f.call('hud_create', args);
   await f.call('hud_create', { ...args, request_key: 'queue-second' });
   const queueStarts = () => f.commands().filter((c) => c.command === 'queue-watch');
-  if (agent === 'codex') await until(() => queueStarts().length > 0);
+  if (agent === 'codex') await until(() => queueStarts().length > 0, t.signal);
   const starts = queueStarts();
   assert.equal(starts.length, agent === 'codex' ? 1 : 0);
   if (agent === 'codex') {

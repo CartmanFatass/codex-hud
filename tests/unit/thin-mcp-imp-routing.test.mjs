@@ -96,7 +96,7 @@ test('Even reports placement, rotates after real starts, skips unavailable prese
   assert.equal(second.state, 'queued');
   assert.equal(second.route.preset, 'deep');
   settings(f, { ...pool, impEvenPool: ['small'], impOverflow: true, roleCaps: { imp: 1, general: 0 } });
-  await until(() => receipt(second).dispatch_exit_code === 0, 10000);
+  await until(() => receipt(second).dispatch_exit_code === 0, t.signal);
   assert.equal(receipt(second).overflow_from, 'imp');
   assert.equal(receipt(second).model, 'synthetic/deep');
 
@@ -177,7 +177,7 @@ console.log(JSON.stringify({ event: 'init', conversation_id: 'synthetic-routing'
   assert.equal(receipt(doc).model, 'gemini-4-hydrogen-high');
   assert.equal(receipt(doc).cli.agent, 'agy');
   const output = join(doc.task_dir, 'stdout.jsonl');
-  await until(() => fs.readFileSync(output, 'utf8').includes('synthetic-routing'));
+  await until(() => fs.readFileSync(output, 'utf8').includes('synthetic-routing'), t.signal);
   assert.equal(f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'create'), false);
 
   role(f, routing, { harness: 'cli', agent: 'codex', model: 'synthetic-small' });
@@ -273,7 +273,7 @@ test('standard/headless falls back to the active tab on validation or pre-input 
   f.overrideBin('pi-role', '#!/bin/sh\nexec node "$FAKE_BIN" pi-role "$@"\n');
   f.overrideBin('pi', '#!/bin/sh\necho "Received prompt"; exit 1\n');
   const delivered = await create(f, 'Failure after input reached pi.');
-  await until(() => read(join(delivered.task_dir, 'STATUS.json')).state === 'failed');
+  await until(() => read(join(delivered.task_dir, 'STATUS.json')).state === 'failed', t.signal);
   assert.equal(receipt(delivered).route.mode, 'headless');
   assert.equal(receipt(delivered).attempts.length, 1);
 });
@@ -314,7 +314,7 @@ test('overflow, queued overflow and retry keep the routed imp chain', async t =>
   assert.equal(queued.state, 'queued');
   assert.equal(queued.route.tier, 'hard');
   settings(f, { impOverflow: true, roleCaps: { imp: 1, general: 0 } });
-  await until(() => receipt(queued).dispatch_exit_code === 0, 10000);
+  await until(() => receipt(queued).dispatch_exit_code === 0, t.signal);
   assert.equal(receipt(queued).role, 'general');
   assert.equal(receipt(queued).model, 'synthetic/deep');
   assert.equal(api.requests.length, 1);

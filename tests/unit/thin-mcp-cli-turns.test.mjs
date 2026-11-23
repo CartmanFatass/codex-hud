@@ -21,7 +21,7 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'event-cli', 4);
   const job = await f.call('hud_create', { role: 'event-cli', request_key: 'events', task: 'Synthetic event sequences.' });
-  await until(() => cliState(job.task_dir)?.pid);
+  await until(() => cliState(job.task_dir)?.pid, t.signal);
   writeFixtureFile(join(job.task_dir, 'report.md'), 'Report before the long summary.\n');
   await new Promise((r) => setTimeout(r, 750));
   assert.equal(cliState(job.task_dir).state, 'working');
@@ -33,10 +33,10 @@ test('supervisor events: report then long summary, flapping, explicit continuati
     f.push(job.job, 'working');
   }
   const queries = statusQueries(f, job);
-  await until(() => statusQueries(f, job) > queries);
+  await until(() => statusQueries(f, job) > queries, t.signal);
   assert.equal(cliState(job.task_dir).state, 'working');
   f.push(job.job, 'done');
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
   assert.equal(cliState(job.task_dir).output_written, true);
   assert.equal(cliState(job.task_dir).quiet_decision, undefined);
   const first = JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json')));
@@ -45,11 +45,11 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   const second = JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json')));
   assert.equal(second.seq, first.seq + 1);
   assert.match(second.report_sig, /:/);
-  await until(() => cliState(job.task_dir)?.state === 'working');
+  await until(() => cliState(job.task_dir)?.state === 'working', t.signal);
   await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic retry.' });
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json'))).seq, second.seq);
   writeFixtureFile(join(job.task_dir, 'report.md'), 'Report before the long summary.\n'); // same bytes, new signature
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
   assert.equal(cliState(job.task_dir).output_written, true);
   assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === 'w4E:p1'), false);
   assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
@@ -107,14 +107,14 @@ test("a cli continuation in grace is judged against the report at that turn's st
     request_key: 'grok-cont',
     task: 'Synthetic continuation.',
   });
-  await until(() => graceArmed(f.env, job.task_dir), 5000);
+  await until(() => graceArmed(f.env, job.task_dir), t.signal);
   const sent = await f.call('hud_send', { job: job.job, message_key: 'more', text: 'Synthetic continuation.' });
   assert.equal(sent.sent, true);
   assert.equal(sent.queued, undefined);
-  await until(() => fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8').includes('two'), 5000);
+  await until(() => fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8').includes('two'), t.signal);
   await until(
     () => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true,
-    5000
+    t.signal
   );
 });
 
@@ -174,13 +174,13 @@ test('an unchanged cli report after continuation stays open without failing', { 
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
   fs.writeFileSync(join(f.env.HOME, 'unchanged-report'), '');
   const job = await f.call('hud_create', { role: 'short-cont', request_key: 'grok-same', task: 'Synthetic same.' });
-  await until(() => graceArmed(f.env, job.task_dir), 5000);
+  await until(() => graceArmed(f.env, job.task_dir), t.signal);
   await f.call('hud_send', { job: job.job, message_key: 'same', text: 'Synthetic continuation.' });
-  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.output_written === false, 5000);
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 5000);
+  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.output_written === false, t.signal);
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
   assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
   writeFixtureFile(join(job.task_dir, 'report.md'), 'Synthetic grok report two.\n');
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, t.signal);
 });
 
 test('quiet past grace turns waiting_orchestrator without pane notices and self-wake returns to working', { timeout: 60000 }, async (t) => {
@@ -216,7 +216,7 @@ test('hud_send queues into a working cli job', { timeout: 15000 }, async (t) => 
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-queue', task: 'Synthetic queue.' });
-  await until(() => cliState(job.task_dir)?.state === 'working');
+  await until(() => cliState(job.task_dir)?.state === 'working', t.signal);
   const sent = await f.call('hud_send', { job: job.job, message_key: 'q', text: 'Synthetic addendum.' });
   assert.equal(sent.queued, true);
   assert.equal(sent.sent, true);
@@ -234,21 +234,21 @@ test('hud_close stops a working cli job and closes an idle-grace one', { timeout
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const working = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-stop', task: 'Synthetic stop.' });
-  await until(() => cliState(working.task_dir)?.state === 'working');
+  await until(() => cliState(working.task_dir)?.state === 'working', t.signal);
   assert.equal(typeof cliState(working.task_dir).pid, 'number');
   assert.match(cliState(working.task_dir).pid_start_time, /^\d+$/);
   const { exit_code, last_line } = await f.call('hud_close', { job: working.job });
   assert.equal(exit_code, 0);
   assert.equal(last_line, 'Synthetic reap complete');
-  await until(() => cliState(working.task_dir)?.state === 'stopped');
+  await until(() => cliState(working.task_dir)?.state === 'stopped', t.signal);
   assert.equal(cliState(working.task_dir).exit_reason, 'stop requested');
   assert.equal(fs.existsSync(join(working.task_dir, 'STATUS.json.stop-requested')), true);
   fs.unlinkSync(join(f.env.HOME, 'hold-turn'));
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
   const grace = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-close', task: 'Synthetic close.' });
-  await until(() => cliState(grace.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(grace.task_dir)?.state === 'idle_grace', t.signal);
   await f.call('hud_close', { job: grace.job });
-  await until(() => cliState(grace.task_dir)?.state === 'closed');
+  await until(() => cliState(grace.task_dir)?.state === 'closed', t.signal);
   assert.equal(cliState(grace.task_dir).exit_reason, 'settled');
   assert.equal(fs.existsSync(join(grace.task_dir, 'STATUS.json.close-requested')), true);
 });
@@ -264,7 +264,7 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   );
   const notices = () =>
     f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args.at(-1)).includes('BLOCKED:'));
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator');
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
   const blocked = cliState(job.task_dir);
   assert.equal(blocked.blocked, true);
   assert.equal(blocked.harness, 'cli');
@@ -276,13 +276,13 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   assert.match(cardText(worker), /grok needs input in its pane/);
   assert.match(cardText(worker), /asking/);
   fs.writeFileSync(join(f.env.HOME, 'release-blocked'), '');
-  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.blocked === false, 5000);
+  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.blocked === false, t.signal);
   assert.equal(notices().length, 0);
   const resumed = workerFor(f, job.job);
   assert.equal(resumed.homeNeedsHuman, false);
   assert.equal(resumed.ask, undefined);
   fs.writeFileSync(join(f.env.HOME, 'release-turn'), '');
-  await until(() => cliState(job.task_dir)?.state === 'closed', 5000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
 });
 
 test('idle and unknown with a live agent settle only a stable new report', { timeout: 45000 }, async (t) => {
@@ -317,7 +317,7 @@ test(
     const f = await fixture(t);
     writeFixtureFile(join(f.env.HOME, 'grace-quiet'), 'idle');
     const held = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grace-idle', task: 'Synthetic grace.' });
-    await until(() => cliState(held.task_dir)?.state === 'closed', 8000);
+    await until(() => cliState(held.task_dir)?.state === 'closed', t.signal);
     assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
     assert.equal(cliState(held.task_dir).exit_reason, 'settled');
     assert.equal(cliState(held.task_dir).error, null);
@@ -332,7 +332,7 @@ test(
       request_key: 'grace-gone',
       task: 'Synthetic grace gone.',
     });
-    await until(() => cliState(gone.task_dir)?.state === 'closed', 8000);
+    await until(() => cliState(gone.task_dir)?.state === 'closed', t.signal);
     assert.equal(cliState(gone.task_dir).exit_reason, 'settled');
     assert.equal(cliState(gone.task_dir).output_written, true);
   }
@@ -378,14 +378,14 @@ test('report written while working settles only at turn end, not mid-turn slice 
         request_key: 'mid-report',
         task: 'Write report mid-turn while still working.',
       });
-      await until(() => fs.existsSync(join(job.task_dir, 'report.md')), 5000);
+      await until(() => fs.existsSync(join(job.task_dir, 'report.md')), t.signal);
       await new Promise((r) => setTimeout(r, 250));
       assert.equal(cliState(job.task_dir).state, 'working');
       assert.equal(cliState(job.task_dir).output_written, false);
       assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
       fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
-      await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
-      await until(() => cliState(job.task_dir)?.state === 'closed', 5000);
+      await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, t.signal);
+      await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
       assert.equal(cliState(job.task_dir).output_written, true);
       assert.equal(cliState(job.task_dir).exit_reason, 'settled');
     })(),
@@ -398,12 +398,12 @@ test('report written while working settles only at turn end, not mid-turn slice 
         request_key: 'no-quit-early',
         task: 'Must not send /quit before done.',
       });
-      await until(() => fs.existsSync(join(noCont.task_dir, 'report.md')), 5000);
+      await until(() => fs.existsSync(join(noCont.task_dir, 'report.md')), t.signal);
       await new Promise((r) => setTimeout(r, 250));
       assert.equal(cliState(noCont.task_dir).state, 'working');
       assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
       fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
-      await until(() => cliState(noCont.task_dir)?.state === 'closed', 5000);
+      await until(() => cliState(noCont.task_dir)?.state === 'closed', t.signal);
       assert.equal(cliState(noCont.task_dir).output_written, true);
       assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
     })(),

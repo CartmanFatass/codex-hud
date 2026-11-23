@@ -21,7 +21,7 @@ const { callWorkerTool } = await import(${JSON.stringify(moduleUrl('../../packag
 if (process.argv.includes(join(process.env.HUD_JOB_DIR, 'sonic-session.jsonl'))) {
   if (fs.existsSync(join(process.env.HOME, 'hold-sonic'))) {
     const { until } = await import(${JSON.stringify(moduleUrl('../helpers/thin-mcp-harness.mjs'))});
-    await until(() => fs.existsSync(join(process.env.HUD_JOB_DIR, 'release-sonic')));
+    await until(() => fs.existsSync(join(process.env.HUD_JOB_DIR, 'release-sonic')), Infinity); // Released or reaped by the test.
   }
   await callWorkerTool('hud_report', { text: 'Synthetic sonic facts.' });
   process.exit(0);
@@ -166,7 +166,7 @@ test('a sonic survives its headless pi parent asking; resume carries ready input
   for (const stop of [false, true]) {
     const job = await f.call('hud_create', { role: 'imp', mode: 'headless', task: 'Synthetic child ' + stop });
     const dir = job.task_dir;
-    await until(() => cliState(dir)?.state === 'waiting_orchestrator');
+    await until(() => cliState(dir)?.state === 'waiting_orchestrator', t.signal);
     const [id] = fs.readdirSync(join(dir, '.sonic')), child = join(f.env.HUD_HOME, 'jobs', id);
     const runner = cliState(child).pid;
     assert.ok(!isProcAlive(cliState(dir).pid) && isProcAlive(runner));
@@ -175,10 +175,10 @@ test('a sonic survives its headless pi parent asking; resume carries ready input
       assert.equal(cliState(child).state, 'stopped');
     } else {
       write(join(child, 'release-sonic'), '');
-      await closed({ task_dir: child });
+      await closed({ task_dir: child }, t.signal);
       assert.ok(!fs.existsSync(join(child, 'sonic-collected')));
       assert.equal((await f.call('hud_respond', { job: job.job, request_id: 'q1', answer: 'Collect after pause.' })).written, true);
-      await closed(job);
+      await closed(job, t.signal);
       assert.ok(fs.existsSync(join(child, 'sonic-collected')));
     }
     assert.ok(!isProcAlive(runner));
@@ -235,10 +235,10 @@ test('queued pi sends accompany the answer when the working turn ends with a que
   const queued = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Also check the fixture.' });
   assert.equal(resultValue(queued).queued, true);
   write(join(f.env.HOME, 'release-first'), '');
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator');
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
   const response = await taskCall(rpc, 'hud_respond', { job: job.job, request_id: 'q1', answer: 'Keep going.' });
   assert.equal(response.resultType, 'complete');
-  await closed(job);
+  await closed(job, t.signal);
   const result = await rpc('tasks/get', { taskId: task.taskId });
   assert.equal(result.status, 'completed');
   assert.match(result.result.content[0].text, /Keep going/);
@@ -250,11 +250,11 @@ test('the panel Answer action resumes the paused session and records who answere
   f.overrideBin('pi', fakePi);
   write(join(f.env.HOME, 'ask'), '');
   const job = await create(f), dir = job.task_dir;
-  await until(() => fs.existsSync(join(dir, 'qa/q1.md'))); // The owner can answer before the asking turn exits.
+  await until(() => fs.existsSync(join(dir, 'qa/q1.md')), t.signal); // The owner can answer before the asking turn exits.
   const action = `import { answerFromPanel } from ${JSON.stringify(moduleUrl('../../dist/panel/actions.js'))};\n    console.log(JSON.stringify(await answerFromPanel(process.env.HUD_HOME, process.argv[1], 'q1', 'Panel B.', 'imp')));`;
   const answer = () => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', action, job.job], { cwd: f.root, env: f.env, encoding: 'utf8' }));
   assert.deepEqual(answer(), { ok: true, written: true });
-  await closed(job);
+  await closed(job, t.signal);
   assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Panel B\./);
   assert.deepEqual(answer(), { ok: true, written: false });
   assert.equal(read(join(f.env.HUD_HOME, 'panel-actions.jsonl')).answer, 'Panel B.');
@@ -274,7 +274,7 @@ test('queued headless imp can overflow without borrowing the general role defini
   const queued = await create(f);
   assert.equal(queued.state, 'queued');
   write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ ...settings, impOverflow: true }));
-  await closed(queued);
+  await closed(queued, t.signal);
   const receipt = read(join(queued.task_dir, 'job.json'));
   assert.equal(receipt.role, 'general');
   assert.equal(receipt.overflow_from, 'imp');
@@ -284,7 +284,7 @@ test('queued headless imp can overflow without borrowing the general role defini
   const replacement = await f.call('hud_send', { job: queued.job, text: 'Expired overflow follow-up.' });
   assert.equal(replacement.continuation, 'repair');
   assert.equal(replacement.overflow_from, 'imp', JSON.stringify(replacement));
-  await closed(replacement);
+  await closed(replacement, t.signal);
   assert.equal(read(join(replacement.task_dir, 'job.json')).model, receipt.model);
 });
 
@@ -308,7 +308,7 @@ test('direct and queued unrouted headless creates skip incompatible places and p
       assert.equal(job.state, 'queued');
       write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { general: 0 } }));
     }
-    await closed(job);
+    await closed(job, t.signal);
     const receipt = read(join(job.task_dir, 'job.json'));
     assert.equal(receipt.attempts.length, 2);
     assert.match(receipt.attempts[0].reason, /claude has not trusted/);
@@ -329,9 +329,9 @@ test('old report cannot settle a resumed turn and unsupported launches refuse he
   assert.equal(cli.error, 'headless mode requires pi, claude or agy');
   f.overrideBin('pi', fakePi);
   const job = await create(f);
-  await closed(job);
+  await closed(job, t.signal);
   assert.equal((await f.call('hud_send', { job: job.job, text: 'No new report.' })).continuation, 'resumed');
-  await until(() => cliState(job.task_dir)?.state === 'failed');
+  await until(() => cliState(job.task_dir)?.state === 'failed', t.signal);
   assert.equal(cliState(job.task_dir).exit_reason, 'pi exited without a declared report');
   assert.ok(noTab(f));
 });
@@ -369,7 +369,7 @@ writeFileSync(process.env.HUD_JOB_DIR + '/pids', JSON.stringify([process.pid, ch
   for (const panel of [false, true]) {
     const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic live worker ' + panel, mode: 'headless' });
     const file = join(job.task_dir, 'pids');
-    await until(() => fs.existsSync(file) && fs.statSync(file).size);
+    await until(() => fs.existsSync(file) && fs.statSync(file).size, t.signal);
     const pids = [cliState(job.task_dir).pid, ...read(file)];
     if (panel) {
       const stop = `import { stopJob } from ${JSON.stringify(moduleUrl('../../dist/cli/panel-pane.js'))}; console.log((await stopJob(process.argv[1], process.env)).ok);`;

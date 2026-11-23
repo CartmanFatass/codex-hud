@@ -197,7 +197,7 @@ test('a headless sonic starts even when a legacy sonic fills the role cap', asyn
 
   const job = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query at cap.' });
   assert.notEqual(job.state, 'queued');
-  await until(() => cliState(job.task_dir)?.state === 'closed');
+  await until(() => cliState(job.task_dir)?.state === 'closed', 10000);
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
   assert.equal(receipt.headless, true);
   assert.equal(receipt.resume_s, undefined, 'headless sonic has no native resume window');
@@ -256,7 +256,7 @@ test('queued imp starts automatically when a working imp settles, picking the fi
   );
 
   // Settle working[0] to idle_grace (not a working state). Watcher must start q1 automatically on place 1!
-  await publishPiGrace(working[0], null);
+  await publishPiGrace(t, working[0], null);
   const readQ1Receipt = () => JSON.parse(fs.readFileSync(join(q1.task_dir, 'job.json'), 'utf8'));
   await until(() => cliState(q1.task_dir)?.state === 'working' && readQ1Receipt().dispatch_exit_code === 0, 30000);
 
@@ -416,11 +416,11 @@ test('MCP task client tracks a queued job from queued (#1) through watcher start
   assert.match(t2.statusMessage, /queued \(#1\)/);
 
   // Settle j1 so watcher starts j2.
-  await publishPiGrace(j1, null);
+  await publishPiGrace(t, j1, null);
   await until(() => cliState(j2.task_dir)?.state === 'working', 10000);
 
   // Settle j2 with report -> MCP task completes cleanly.
-  await publishPiGrace(j2, null);
+  await publishPiGrace(t, j2, null);
   const done = await rpc('tasks/get', { taskId: t2.taskId });
   assert.equal(done.status, 'completed');
   assert.match(done.result.content[0].text, /Synthetic settled pi report/);

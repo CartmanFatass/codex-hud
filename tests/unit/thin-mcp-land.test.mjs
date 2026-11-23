@@ -80,16 +80,16 @@ test('land queues for the checkout lease; watcher restart during the gate yields
   assert.equal((await f.call('hud_read', { job: flow })).step, 'main-checkout lease');
   assert.equal((await f.call('hud_land', { job })).flow, flow);
   assert.equal((await f.call('hud_lease', { name: 'main-checkout', release: true })).released, true);
-  await until(() => f.flowState(flow).step.startsWith('gate[2]'), 10000);
+  await until(() => f.flowState(flow).step.startsWith('gate[2]'), t.signal);
   // Run a fresh watcher against the same receipt while the helper owns the gate.
   const pidFile = join(f.home, 'watch.pid');
-  if (fs.existsSync(pidFile)) { process.kill(Number(fs.readFileSync(pidFile)), 'SIGTERM'); await until(() => !fs.existsSync(pidFile)); }
+  if (fs.existsSync(pidFile)) { process.kill(Number(fs.readFileSync(pidFile)), 'SIGTERM'); await until(() => !fs.existsSync(pidFile), t.signal); }
   const watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env: f.env, stdio: 'ignore' });
   const watcherExited = once(watcher, 'exit');
   f.onCleanup(() => stopChild(watcher, watcherExited, { killMs: 1000 }));
-  await until(() => fs.existsSync(pidFile));
+  await until(() => fs.existsSync(pidFile), t.signal);
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
-  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 10000);
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), t.signal);
   const done = await f.call('hud_read', { job: flow });
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.equal(done.changes.filter(s => s.includes(flow)).length, 1);
@@ -137,7 +137,7 @@ async function trainCheckout(t, gate = 'true') {
   const start = async id => (await f.call('hud_land', { job: id })).flow;
   const release = async list => {
     const blocker = await start(job);
-    await until(() => fs.existsSync(join(f.env.HOME, 'started')));
+    await until(() => fs.existsSync(join(f.env.HOME, 'started')), t.signal);
     const flows = [];
     for (const { id } of list) {
       const flow = await start(id);
@@ -335,7 +335,7 @@ test('hud_read names the land holding the lease and how long its gate step has r
     updated_at: new Date(Date.now() - 121000).toISOString(),
   }));
   const { flow } = await f.call('hud_land', { job });
-  await until(() => f.flowState(flow).step.startsWith('waiting for'));
+  await until(() => f.flowState(flow).step.startsWith('waiting for'), t.signal);
   const queued = await f.call('hud_read', { job: flow });
   assert.equal(queued.state, 'queued');
   assert.equal(queued.step, `waiting for ${holder} (gate step 2, 2 min)`);
@@ -348,7 +348,7 @@ for (const kind of ['gate', 'after']) test(`land bounds a hung ${kind} and kills
   const hung = `seq 50; sleep 60 & echo $! > "$HOME/sleeper"; ${kind === 'gate' ? 'exit 0' : 'wait'}`;
   const f = await checkout(t, kind === 'gate' ? [hung] : ['true'], { timeout_s: 1, ...(kind === 'after' ? { after: [hung] } : {}) });
   const { flow } = await f.call('hud_land', { job });
-  await until(() => f.flowState(flow).state === 'failed', 10000);
+  await until(() => f.flowState(flow).state === 'failed', t.signal);
   const done = await f.call('hud_read', { job: flow });
   assert.ok(done.step.startsWith(`${kind}[1]:`));
   assert.equal(done.error, 'timeout');
@@ -359,7 +359,7 @@ for (const kind of ['gate', 'after']) test(`land bounds a hung ${kind} and kills
     assert.equal(fs.readFileSync(done.reruns[0].output_path, 'utf8'), done.tail.join('\n'));
   } else assert.equal(done.reruns, undefined);
   const pid = Number(fs.readFileSync(join(f.env.HOME, 'sleeper'), 'utf8'));
-  await until(() => !isProcAlive(pid));
+  await until(() => !isProcAlive(pid), t.signal);
   assert.equal((await f.call('hud_lease', { name: 'main-checkout', wait_s: 2 })).granted, true);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
   assert.equal(!!done.landed_sha, kind === 'after');
@@ -370,14 +370,14 @@ for (const scenario of ['dirty touched path', 'moved base on overlapping path'])
   const rpc = taskRpc(f.rpc); await rpc('server/discover');
   const task = await taskCall(rpc, 'hud_land', { job });
   assert.equal(task.resultType, 'task'); assert.equal(task.status, 'working');
-  await until(() => f.flowState(task.taskId).step.startsWith('gate[1]'), 10000);
+  await until(() => f.flowState(task.taskId).step.startsWith('gate[1]'), t.signal);
   if (scenario === 'moved base on overlapping path') {
     fs.appendFileSync(join(f.main, 'tracked'), 'main overlap\n');
     f.git(f.main, 'commit', '-qam', 'moved overlapping');
   } else fs.writeFileSync(join(f.main, 'tracked'), 'owner edit\n');
   const base = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
-  await until(() => f.flowState(task.taskId).state === 'failed', 10000);
+  await until(() => f.flowState(task.taskId).state === 'failed', t.signal);
   const done = await rpc('tasks/get', { taskId: task.taskId });
   assert.equal(done.status, 'failed');
   assert.match(done.result.content[0].text, /fast-forward/);
@@ -408,10 +408,10 @@ test('a cancelled attempt can be retried with a new task and no stale cancel mar
   const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done']);
   const rpc = taskRpc(f.rpc); await rpc('server/discover');
   const { taskId: old } = await taskCall(rpc, 'hud_land', { job });
-  await until(() => f.flowState(old).step.startsWith('gate[1]'), 10000);
+  await until(() => f.flowState(old).step.startsWith('gate[1]'), t.signal);
   await rpc('tasks/cancel', { taskId: old });
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
-  await until(() => f.flowState(old).state === 'cancelled', 10000);
+  await until(() => f.flowState(old).state === 'cancelled', t.signal);
   const scratch = join(`${f.main}-wt`, `land-${old}`);
   assert.equal(fs.existsSync(scratch), true);
   const { taskId: flow } = await taskCall(rpc, 'hud_land', { job });
@@ -443,7 +443,7 @@ for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty l
   fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** claimed\n\n## Comments\n');
   f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed records');
   const { flow } = await f.call('hud_land', { job });
-  await until(() => f.flowState(flow).step.startsWith('after[1]'), 10000);
+  await until(() => f.flowState(flow).step.startsWith('after[1]'), t.signal);
   const { landed_sha, tested_sha, base_sha } = f.flowState(flow);
   assert.notEqual(landed_sha, tested_sha);
   fs.writeFileSync(join(f.main, 'unapproved'), 'unapproved code change\n');
@@ -451,7 +451,7 @@ for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty l
   const advanced = f.git(f.main, 'rev-parse', 'HEAD');
   if (dirty) fs.appendFileSync(join(f.main, 'tracked'), 'uncommitted owner edit\n');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
-  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 10000);
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), t.signal);
   const done = f.flowState(flow);
   assert.equal(done.state, dirty ? 'failed' : 'completed', JSON.stringify(done));
   assert.equal(done.step, dirty ? 'push' : 'done');
@@ -590,7 +590,7 @@ test('land repairs using its original modules after dist is rebuilt during the g
   fs.writeFileSync(join(jobDir(f), 'SESSION.txt'), 'PRIMARY=source-agent\n');
   fs.writeFileSync(join(jobDir(f), 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   const { flow } = await f.call('hud_land', { job });
-  await until(() => f.flowState(flow).step.startsWith('gate[1]'), 10000);
+  await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
   // The old lazy repair path imported thin-main here, but abstract-lock was already cached.
   const read = (name) => fs.readFileSync(join(f.dist, name), 'utf8');
   await f.publish({
@@ -947,7 +947,7 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
   const beforeBase = f.git(f.main, 'rev-parse', 'HEAD');
   const rpc = taskRpc(f.rpc); await rpc('server/discover');
   const { taskId: flow } = await taskCall(rpc, 'hud_land', { job });
-  await until(() => f.flowState(flow).step.startsWith('gate[1]'), 10000);
+  await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
   // Commit an unrelated ticket and STATE.md milestone edit on main while the gate is running.
   fs.mkdirSync(join(f.main, '.scratch/other/issues'), { recursive: true });
   fs.writeFileSync(join(f.main, '.scratch/other/issues/02-unrelated.md'), '# 02: Unrelated\n**Status:** claimed\n');
@@ -996,7 +996,7 @@ for (const green of [true, false]) test(`land re-gates disjoint code changes and
   fs.writeFileSync(join(f.main, 'contract'), 'second\n');
   f.git(f.main, 'add', 'contract', ticket); f.git(f.main, 'commit', '-qm', 'seed contract and ticket');
   const { flow } = await f.call('hud_land', { job });
-  await until(() => fs.existsSync(join(f.env.HOME, 'gate-heads')), 10000);
+  await until(() => fs.existsSync(join(f.env.HOME, 'gate-heads')), t.signal);
   fs.writeFileSync(join(f.main, 'contract'), green ? 'second\n\n' : 'incompatible\n');
   f.git(f.main, 'commit', '-qam', 'change contract on base');
   const movedBase = f.git(f.main, 'rev-parse', 'HEAD');
@@ -1038,7 +1038,7 @@ test('a main commit touching the landing ticket path during the gate stops befor
   fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** ready-for-agent\n- [ ] first\n\n## Comments\n');
   f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
   const { flow } = await f.call('hud_land', { job });
-  await until(() => f.flowState(flow).step.startsWith('gate[1]'), 10000);
+  await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
   fs.appendFileSync(join(f.main, ticket), '- Concurrent ticket note\n');
   f.git(f.main, 'commit', '-qam', 'edit ticket during gate');
   const movedBase = f.git(f.main, 'rev-parse', 'HEAD');

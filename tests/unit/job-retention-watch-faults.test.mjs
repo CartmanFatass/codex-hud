@@ -66,16 +66,16 @@ Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
   const warnings = (dir) => f.log().split('\n').filter((line) => line.includes(
     `keep ${dir.split('/').at(-1)} session preservation:`));
   const scans = () => fs.readFileSync(join(f.home, 'scans'), 'utf8').trim().split('\n').length;
-  await until(() => fs.existsSync(join(f.home, 'scans')) && bad.every((dir) => warnings(dir).length >= 1));
-  await until(() => scans() >= 4); // Three finished scans, even under scheduler load.
+  await until(() => fs.existsSync(join(f.home, 'scans')) && bad.every((dir) => warnings(dir).length >= 1), t.signal);
+  await until(() => scans() >= 4, t.signal); // Three finished scans, even under scheduler load.
   assert.equal(child.exitCode, null, 'working job keeps degraded scans running');
   for (const dir of bad) assert.equal(warnings(dir).length, 1, 'repeated failures within a minute are suppressed');
   setClock(now + 59999);
   const before = scans();
-  await until(() => scans() >= before + 2);
+  await until(() => scans() >= before + 2, t.signal);
   for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
   setClock(now + 60000);
-  await until(() => bad.every((dir) => warnings(dir).length >= 2));
+  await until(() => bad.every((dir) => warnings(dir).length >= 2), t.signal);
   for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again after one minute');
   writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
   await exited;
@@ -121,13 +121,13 @@ globalThis.setTimeout = (callback, delay, ...args) => {
   fs.appendFileSync(process.env.HUD_HOME + '/timers', delay + '\\n');
   return timeout(callback, delay, ...args);
 };`);
-  await until(() => child.exitCode !== null || fs.existsSync(join(f.home, 'timers')));
+  await until(() => child.exitCode !== null || fs.existsSync(join(f.home, 'timers')), t.signal);
   assert.equal(child.exitCode, null, stderr());
   assert.equal(fs.readFileSync(join(f.home, 'timers'), 'utf8').split('\n')[0], '1000', 'unconfigured degraded interval');
   const second = f.job({ state: 'working' }, {}, true);
   writeFixtureFile(join(second, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
   const settled = Date.now();
-  await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at);
+  await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at, t.signal);
   assert.equal(child.exitCode, null, 'the first failed deadline is still pending');
   assert.ok(Date.now() - settled <= 4000, 'new job reaped within a few fallback intervals');
   assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), second + '\n');
@@ -154,11 +154,11 @@ fs.watch = (...args) => {
 syncBuiltinESMExports();`;
     const { child, exited, stderr } = f.start(probe);
     await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) &&
-      f.log().includes(fault === 'later error' ? 'synthetic later watch error' : 'using file events only')));
+      f.log().includes(fault === 'later error' ? 'synthetic later watch error' : 'using file events only')), t.signal);
     assert.equal(child.exitCode, null, f.log() + stderr());
     const settled = Date.now();
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(expired()));
-    await until(() => child.exitCode !== null);
+    await until(() => child.exitCode !== null, t.signal);
     await exited;
     assert.equal(child.exitCode, 0);
     assert.ok(Date.now() - settled <= 800, 'settlement handled within the scaled fallback interval and reap overhead');
@@ -201,7 +201,7 @@ fs.watch = (...args) => {
   return watcher;
 };
 syncBuiltinESMExports();`);
-  await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'scans')) && f.log().includes('watch error:')));
+  await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'scans')) && f.log().includes('watch error:')), t.signal);
   assert.equal(child.exitCode, null);
   await new Promise((done) => setTimeout(done, 400));
   const stamps = (name) => fs.readFileSync(join(f.home, name), 'utf8').trim().split('\n').map(Number);
@@ -214,7 +214,7 @@ syncBuiltinESMExports();`);
   fs.rmdirSync(badFile);
   writeFixtureFile(badFile, JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-  await until(() => child.exitCode !== null);
+  await until(() => child.exitCode !== null, t.signal);
   await exited;
   assert.equal(child.exitCode, 0);
   assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
@@ -235,7 +235,7 @@ fs.watch = (...args) => {
   return watch(...args);
 };
 syncBuiltinESMExports();`);
-  await until(() => child.exitCode !== null);
+  await until(() => child.exitCode !== null, t.signal);
   await exited;
   assert.equal(child.exitCode, 0);
   assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');

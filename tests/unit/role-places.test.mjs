@@ -228,7 +228,7 @@ test('imp falls back to agy when pi-role is missing on PATH', { timeout: 10000 }
 
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-missing', task: 'Synthetic task.' });
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
-  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job)));
+  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job)), 10000);
   const start = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start');
   assert.equal(start.args[3], '--kind');
   assert.equal(start.args[4], 'agy');
@@ -267,7 +267,7 @@ test('quota failure marks pi exhausted for 1h, names next place, and falls back 
   fs.unlinkSync(join(f.env.HOME, 'pi-quota-fail'));
   const second = await f.call('hud_create', { role: 'imp', request_key: 'pi-quota-2', task: 'Synthetic task 2.' });
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
-  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(second.job)));
+  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(second.job)), 10000);
   const agyStart = f.commands().find((c) => c.command === 'herdr' && c.args[2] === `${second.job}-primary`);
   assert.equal(agyStart.args[4], 'agy');
 
@@ -438,7 +438,7 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   ]);
   const job = await f.call('hud_create', { role: 'oracle', request_key: 'ora-cli', task: 'Design question?' });
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
-  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job)));
+  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job)), 10000);
   const start = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start');
   assert.equal(start.args[4], 'claude');
   assert.deepEqual(start.args.slice(start.args.indexOf('--model'), start.args.indexOf('--model') + 2), ['--model', 'fable']);
@@ -470,7 +470,7 @@ test('reviewer uses its CLI instructions; sonic refuses interactive overrides; m
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'reviewer.json'), JSON.stringify({ role: 'reviewer', instructions: 'reviewer', can_continue: true, run }));
   const job = await f.call('hud_create', { role: 'reviewer', request_key: 'reviewer-cli', task: 'Task.' });
   const promptOf = () => f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job));
-  await until(promptOf);
+  await until(promptOf, 10000);
   const { args } = f.commands().find((c) => c.args[1] === 'start' && c.args[2] === `${job.job}-primary`);
   assert.equal(args[args.indexOf('--append-system-prompt-file') + 1], join(bundled, 'instructions/reviewer.md'));
   assert.match(promptOf().args[3], /^Carry out this brief:\n\nTask\./);

@@ -25,7 +25,7 @@ async function cliFixture(t, agent = 'claude', resume_s) {
   const worker = fakeCliWithChild(t, f);
   const job = await f.call('hud_create', { role: 'resumable', task: 'Synthetic original brief.' });
   const dir = job.task_dir;
-  await until(() => cliState(dir)?.pid === worker.pid && cliState(dir)?.agent_session_id);
+  await until(() => cliState(dir)?.pid === worker.pid && cliState(dir)?.agent_session_id, t.signal);
   write(join(dir, 'reap-worker'), '');
   const report = workerClient(t, f, dir);
   return { f, job, worker, report: (text) => report('hud_report', { text, turn: cliToken(dir), summary: text }) };
@@ -40,7 +40,7 @@ test('Claude closes without a read, resumes the exact session in a new pane, and
   assert.equal(cliState(dir).state, 'working');
   assert.equal(readCloseReaped(job), undefined);
   f.push(job.job, 'done');
-  await until(() => reaped(job) && dead(worker.pid));
+  await until(() => reaped(job) && dead(worker.pid), t.signal);
   assert.equal(json(dir, 'job.json').read_at, undefined);
   const originalPane = starts(f)[0].args[starts(f)[0].args.indexOf('--pane') + 1];
   const next = fakeCliWithChild(t, f);
@@ -56,10 +56,10 @@ test('Claude closes without a read, resumes the exact session in a new pane, and
   assert.equal(readCloseReaped(job), undefined);
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic duplicate.', message_key: 'next-turn' })).sent, false);
 
-  await until(() => cliState(dir)?.pid === next.pid && cliState(dir)?.agent_session_id === id);
+  await until(() => cliState(dir)?.pid === next.pid && cliState(dir)?.agent_session_id === id, t.signal);
   resultValue(await report('Synthetic second report.'));
   f.push(job.job, 'idle');
-  await until(() => reaped(job) && dead(next.pid));
+  await until(() => reaped(job) && dead(next.pid), t.signal);
   write(join(dir, 'STATUS.json'), JSON.stringify({ ...cliState(dir), ended_at: new Date(Date.now() - 1621_000).toISOString() }));
   const repair = await f.call('hud_send', { job: job.job, text: 'Synthetic expired continuation.' });
   assert.equal(repair.continuation, 'repair');
@@ -80,7 +80,7 @@ test('the watcher leaves a reopening CLI turn working and its send task complete
   write(join(other, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   resultValue(await report('Synthetic previous report.'));
   f.push(job.job, 'done');
-  await until(() => reaped(job) && dead(worker.pid) && dead(oldSupervisor));
+  await until(() => reaped(job) && dead(worker.pid) && dead(oldSupervisor), t.signal);
   f.closeTab(); // The old tab's closure is not a fact about the replacement either.
 
   const next = fakeCliWithChild(t, f), rpc = taskRpc(f.rpc);
@@ -90,10 +90,10 @@ test('the watcher leaves a reopening CLI turn working and its send task complete
   const changes = fs.watch(dir, (_event, name) => { if (name === 'STATUS.json') seen.add(cliState(dir)?.state); });
   t.after(() => changes.close());
   const sending = taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic next turn.' });
-  await until(() => json(dir, 'turn.json').seq === 2);
+  await until(() => json(dir, 'turn.json').seq === 2, t.signal);
   // The same dead PID really is current for the sibling, not for the reopened job.
   write(join(other, 'supervisor.pid'), `${oldSupervisor}\n`);
-  await until(() => cliState(other)?.state === 'waiting_orchestrator');
+  await until(() => cliState(other)?.state === 'waiting_orchestrator', t.signal);
   assert.equal(cliState(other).reason, 'supervisor exited; worker liveness unknown');
   assert.equal(cliState(dir).state, 'working');
   write(join(f.env.HOME, 'release-prompt-result'), '');
@@ -101,12 +101,12 @@ test('the watcher leaves a reopening CLI turn working and its send task complete
   assert.equal(task.continuation, 'resumed');
   const get = () => rpc('tasks/get', { taskId: task.taskId });
   assert.equal((await get()).status, 'working');
-  await until(() => cliState(dir)?.pid === next.pid);
+  await until(() => cliState(dir)?.pid === next.pid, t.signal);
   assert.deepEqual([...seen], ['working']);
   assert.equal((await get()).status, 'working');
   resultValue(await report('Synthetic resumed result.'));
   f.push(job.job, 'done');
-  await until(() => reaped(job));
+  await until(() => reaped(job), t.signal);
   const result = await get();
   assert.equal(result.status, 'completed');
   assert.match(result.result.content[0].text, /Synthetic resumed result/);
@@ -116,7 +116,7 @@ test('an unconfirmed native CLI session receives no input and falls back to repa
   const { f, job, worker, report } = await cliFixture(t);
   resultValue(await report('Synthetic report before mismatch.'));
   f.push(job.job, 'done');
-  await until(() => reaped(job) && dead(worker.pid));
+  await until(() => reaped(job) && dead(worker.pid), t.signal);
   const first = cliToken(job.task_dir);
   write(join(f.env.HOME, 'wrong-native-session'), '');
   const repair = await f.call('hud_send', { job: job.job, text: 'Synthetic repair after mismatch.' });
@@ -132,7 +132,7 @@ test('Codex uses the recorded thread ID and honors the role resume window', asyn
   assert.equal(json(job.task_dir, 'job.json').resume_s, 900);
   resultValue(await report('Synthetic Codex report.'));
   f.push(job.job, 'idle');
-  await until(() => reaped(job) && dead(worker.pid));
+  await until(() => reaped(job) && dead(worker.pid), t.signal);
   fakeCliWithChild(t, f);
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic Codex continuation.' })).continuation, 'resumed');
   const args = starts(f).at(-1).args;
@@ -154,8 +154,8 @@ test('pi closes on native settlement after hud_report and resumes the saved file
   const report = workerClient(t, f, dir);
   resultValue(await report('hud_report', { text: 'Synthetic native first result.', summary: 'First.' }));
   assert.equal(readCloseReaped(job), undefined, 'report publication alone is not a native turn end');
-  await publishPiGrace(job, worker, false, session);
-  await until(() => reaped(job) && dead(worker.pid));
+  await publishPiGrace(t, job, worker, false, session);
+  await until(() => reaped(job) && dead(worker.pid), t.signal);
   assert.equal(json(dir, 'job.json').read_at, undefined);
   const previous = json(dir, 'job.json').pi_sent_at;
   const rpc = taskRpc(f.rpc);
@@ -168,7 +168,7 @@ test('pi closes on native settlement after hud_report and resumes the saved file
   assert.deepEqual(args.slice(-2), ['--session', file]);
   assert.equal(cliState(dir).session_id, id);
   assert.ok(json(dir, 'job.json').pi_sent_at > previous);
-  await publishPiGrace(job, undefined, true, session);
+  await publishPiGrace(t, job, undefined, true, session);
   const result = await rpc('tasks/get', { taskId: task.taskId });
   assert.equal(result.status, 'completed');
 });
@@ -179,12 +179,12 @@ test('native Pi settlement does not close while a question is open', async (t) =
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic question job.' });
   const qa = join(job.task_dir, 'qa');
   write(join(qa, 'q1.md'), 'Synthetic decision?');
-  await publishPiGrace(job);
+  await publishPiGrace(t, job);
   await f.call('hud_read', { job: job.job });
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
   assert.equal(readCloseReaped(job), undefined);
   write(join(qa, 'q1.answer.md'), 'Synthetic answer.');
-  await until(() => reaped(job));
+  await until(() => reaped(job), t.signal);
 });
 
 const turn = { seq: 1, sent_at: new Date(0).toISOString(), report_sig: null };

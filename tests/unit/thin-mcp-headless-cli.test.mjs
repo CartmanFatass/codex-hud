@@ -141,14 +141,14 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
       if (state !== 'failed' && status()?.state === 'failed')
         assert.fail(`${status().exit_reason}: ${fs.readFileSync(join(dir, 'stderr.log'), 'utf8')}`);
       return status()?.state === state && (state === 'waiting_orchestrator' || read(join(dir, 'job.json')).reaped_at);
-    });
+    }, t.signal);
     await wait('waiting_orchestrator');
     assert.ok(!fs.existsSync(join(dir, 'continued-after-ask')));
     const [sonic] = fs.readdirSync(join(dir, '.sonic'));
     const childDir = id => join(f.env.HUD_HOME, 'jobs', id);
     assert.ok(isProcAlive(cliState(childDir(sonic)).pid));
     write(join(childDir(sonic), 'release-sonic'), '');
-    await until(() => cliState(childDir(sonic))?.state === 'closed');
+    await until(() => cliState(childDir(sonic))?.state === 'closed', t.signal);
     const id = status().agent_session_id;
     assert.ok(id && !isProcAlive(status().pid));
     assert.equal(status().slot, 'headless');
@@ -160,7 +160,7 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
     assert.equal((await f.call('hud_send', { job: job.job, text: 'Check C.' })).continuation, 'resumed');
     await wait('closed');
     const leftover = childDir(fs.readdirSync(join(dir, '.sonic')).find(id => id !== sonic));
-    await until(() => cliState(leftover)?.state === 'stopped');
+    await until(() => cliState(leftover)?.state === 'stopped', t.signal);
     assert.ok(!isProcAlive(cliState(leftover).pid));
     const land = `import { dispatchLandRepair } from ${JSON.stringify(url('../../dist/mcp/thin-main.js'))};
       console.log(await dispatchLandRepair(process.argv[1], process.cwd(), 'Synthetic repair.', 'land:test', null));`;

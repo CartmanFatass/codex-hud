@@ -83,7 +83,7 @@ try {
     const tools = result.tools.filter(({ name }) => name !== 'hud_statusline');
     const bytes = (value) => Buffer.byteLength(JSON.stringify(value), 'utf8');
     t.diagnostic(`tool declarations: ${bytes(tools)} B (create ${bytes(tools.find(({ name }) => name === 'hud_create'))} B)`);
-    await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers', 'w4E:p1.pid')));
+    await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers', 'w4E:p1.pid')), t.signal);
     const roster = await call('hud_roster', { cwd: f.root });
     assert.equal(roster.watcher_alive, true);
     assert.match(roster.hint, /^pi: native HUD notices/);
@@ -103,15 +103,15 @@ try {
       assert.ok(f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === created.agent));
       assert.equal(fs.existsSync(join(created.task_dir, 'report.md')), false, 'create waits for startup/prompt, not a report');
       // Simulate the worker finishing after create returns; the caller only awaits a native event.
-      await publishPiGrace(created);
-      await until(() => notices.includes(`${created.job} imp: idle_grace | report | ${readHint(created.job)}`));
+      await publishPiGrace(t, created);
+      await until(() => notices.includes(`${created.job} imp: idle_grace | report | ${readHint(created.job)}`), t.signal);
       const receipt = () => JSON.parse(fs.readFileSync(join(created.task_dir, 'job.json')));
       assert.equal(receipt().read_at, undefined, 'notification does not consume the report');
       assert.equal(cliState(created.task_dir).state, 'idle_grace');
       collected = await call('hud_read', { job: created.job });
       assert.equal(collected.digest.result, 'Synthetic settled pi report.');
       assert.ok(receipt().read_at);
-      await until(() => cliState(created.task_dir)?.exit_reason === 'closed after report read');
+      await until(() => cliState(created.task_dir)?.exit_reason === 'closed after report read', t.signal);
     }
     const normal = calls.splice(0);
     assert.deepEqual(normal.map(([name]) => name), ['hud_roster', 'hud_create', 'hud_read', 'hud_create', 'hud_read']);
@@ -396,7 +396,7 @@ test('hud_read starts the watcher and settles a dead stop-requested job without 
   writeFixtureFile(join(dir, 'STATUS.json.stop-requested'), '');
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), false);
   await f.call('hud_read', {});
-  await until(() => cliState(dir).state === 'stopped');
+  await until(() => cliState(dir).state === 'stopped', t.signal);
   assert.equal(cliState(dir).exit_reason, 'stop requested');
 });
 
@@ -488,7 +488,7 @@ test('hud watch adopts on catch-up and delivers an already pending question', as
   t.after(async () => { child.kill(); await exited; });
   let output = '';
   child.stdout.setEncoding('utf8').on('data', (text) => { output += text; });
-  await until(() => output.includes(`reply: hud_respond job=${orphan.job} request_id=q1`));
+  await until(() => output.includes(`reply: hud_respond job=${orphan.job} request_id=q1`), t.signal);
   assert.equal(ownerOf(orphan), 'w4E:p1');
 });
 
@@ -517,7 +517,7 @@ test('single-job reads and the panel get progress without changes or narration i
     assert.deepEqual(await f.call('hud_read'), { jobs: compact });
     assert.deepEqual((await f.call('hud_wait', { jobs: [job], wait_ms: 0 })).jobs, compact);
     status('done');
-    await until(() => streamed.length > 0);
+    await until(() => streamed.length > 0, t.signal);
     assert.deepEqual(streamed, [`${job} imp: done`]);
   } finally {
     ac.abort(); await watching;
@@ -846,9 +846,9 @@ test('hud_send to several jobs sends once per working job and skips read-closed 
   const working = await create('Synthetic working task.');
   const closed = await create('Synthetic settled task.');
   writeFixtureFile(join(working.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
-  await publishPiGrace(closed);
+  await publishPiGrace(t, closed);
   await f.call('hud_read', { job: closed.job });
-  await until(() => cliState(closed.task_dir)?.exit_reason === 'closed after report read');
+  await until(() => cliState(closed.task_dir)?.exit_reason === 'closed after report read', t.signal);
   const text = 'Synthetic shared message.';
   const result = await f.call('hud_send', { jobs: [closed.job, working.job, working.job], text });
   assert.deepEqual(result.sent, [working.job]);
@@ -1150,7 +1150,7 @@ syncBuiltinESMExports();`
   // 1. hud_read wait_ms wakes within 100 ms when qa/ and q1.md are created.
   const waitingQuestion = f.call('hud_read', { job: first.job, wait_ms: 5000 });
   await f.rpc('ping');
-  await until(() => fs.existsSync(join(f.env.HOME, 'watch-stats.json')) && watchStats().active > 0);
+  await until(() => fs.existsSync(join(f.env.HOME, 'watch-stats.json')) && watchStats().active > 0, t.signal);
   const questionAt = performance.now();
   fs.mkdirSync(join(first.dir, 'qa'), { recursive: true });
   writeFixtureFile(join(first.dir, 'qa', 'q1.md'), 'Synthetic event question.');
@@ -1165,7 +1165,7 @@ syncBuiltinESMExports();`
   // 2. hud_read wait_ms wakes within 100 ms on STATUS.json settlement.
   const waitingSettle = f.call('hud_read', { job: first.job, wait_ms: 5000 });
   await f.rpc('ping');
-  await until(() => watchStats().active > 0);
+  await until(() => watchStats().active > 0, t.signal);
   const settleAt = performance.now();
   writeFixtureFile(join(first.dir, 'report.md'), 'Synthetic fast report.');
   first.status('idle_grace');
@@ -1189,7 +1189,7 @@ syncBuiltinESMExports();`
   // 4. hud_wait wakes within 100 ms despite sessions/ symlink cycle and leaves no open watchers.
   const waitingJob = f.call('hud_wait', { jobs: [second.job], wait_ms: 5000 });
   await f.rpc('ping');
-  await until(() => watchStats().active > 0);
+  await until(() => watchStats().active > 0, t.signal);
   const waitAt = performance.now();
   second.status('done');
   const waited = await waitingJob;

@@ -95,7 +95,7 @@ test('a scout cannot ask; a failed query leaves a note and only the target notif
   assert.ok(!f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === f.env.HERDR_PANE_ID));
   fs.writeFileSync(join(target.task_dir, 'report.md'), 'Synthetic target result.');
   publishSonic(target.task_dir, { state: 'done' });
-  await until(() => lines.some((line) => line.includes(target.job)));
+  await until(() => lines.some((line) => line.includes(target.job)), t.signal);
   assert.equal(lines.length, 1);
   assert.match(lines[0], /report \| hud_read/);
   const { changes } = await f.call('hud_read', { view: 'recent' });
@@ -138,7 +138,7 @@ test('a scout that exceeds its time cap is closed and the target still starts', 
 test('sonic reports attached via from_jobs carry the unverified-facts prefix in the brief language (EN/ZH, local and browser)', async (t) => {
   const f = await fixture(t);
   const sonic = await f.call('hud_create', { role: 'sonic', task: 'Find the synthetic entry points.' });
-  await until(() => JSON.parse(fs.readFileSync(join(sonic.task_dir, 'STATUS.json'))).state === 'closed');
+  await until(() => JSON.parse(fs.readFileSync(join(sonic.task_dir, 'STATUS.json'))).state === 'closed', t.signal);
   const imp = await f.call('hud_create', { role: 'imp', task: 'Synthetic non-sonic upstream.' });
   fs.writeFileSync(join(imp.task_dir, 'report.md'), 'Synthetic imp report.\n');
   publishSonic(imp.task_dir, { state: 'done' });

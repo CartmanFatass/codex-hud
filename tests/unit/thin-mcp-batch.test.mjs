@@ -359,8 +359,8 @@ test('MCP tasks: batch responses deliver per-job compact notices with check-wait
     .map((c) => c.args[3]);
 
   // 1. A pre-upgrade job stays in grace so it can ask the follow-up below.
-  await publishLegacyPiGrace(plain);
-  await until(() => fs.existsSync(join(plain.task_dir, 'batch-notice.json')));
+  await publishLegacyPiGrace(t, plain);
+  await until(() => fs.existsSync(join(plain.task_dir, 'batch-notice.json')), t.signal);
   const plainNotice = panePrompts().find((m) => m.includes(plain.job));
   assert.match(plainNotice, new RegExp(`^${plain.job} \\(imp\\) — idle_grace\\nReport: hud_read job=${plain.job}`));
   const plainRec = JSON.parse(fs.readFileSync(join(plain.task_dir, 'batch-notice.json'), 'utf8'));
@@ -368,12 +368,12 @@ test('MCP tasks: batch responses deliver per-job compact notices with check-wait
   assert.equal(resultValue(await taskCall(rpc, 'hud_roster')).changes, undefined, 'pushed notice is not repeated in changes');
 
   // 2. Checked job settles -> waits for checks before pushing notice with Checks: 1/1 passed.
-  await publishPiGrace(checked);
-  await until(() => fs.existsSync(join(checked.task_dir, 'checks.json')));
+  await publishPiGrace(t, checked);
+  await until(() => fs.existsSync(join(checked.task_dir, 'checks.json')), t.signal);
   await new Promise((r) => setTimeout(r, 400));
   assert.equal(panePrompts().some((m) => m.includes(checked.job)), false, 'notice waits while check runs');
   writeFixtureFile(join(f.root, 'release-batch-check'), '');
-  await until(() => fs.existsSync(join(checked.task_dir, 'batch-notice.json')), 8000);
+  await until(() => fs.existsSync(join(checked.task_dir, 'batch-notice.json')), t.signal);
   const checkedNotice = panePrompts().find((m) => m.includes(checked.job));
   assert.match(checkedNotice, /Checks: 1\/1 passed/);
   const checkedRec = JSON.parse(fs.readFileSync(join(checked.task_dir, 'batch-notice.json'), 'utf8'));
@@ -399,7 +399,7 @@ test('MCP tasks: batch responses deliver per-job compact notices with check-wait
   // 4. Connection ends task mode before `disc` settles -> mcp-task.json released, normal non-task changes delivers settlement.
   await rpc('initialize');
   assert.equal(taskDelivery(disc.task_dir, f.env.HERDR_PANE_ID), false, 'disconnect releases mcp-task.json for hud-notify fallback');
-  await publishPiGrace(disc);
+  await publishPiGrace(t, disc);
   const nonTaskRoster = await f.call('hud_roster');
   assert.ok(nonTaskRoster.changes?.some((line) => line.includes(disc.job) && /idle_grace|closed/.test(line)));
 });
@@ -439,11 +439,11 @@ test('MCP tasks: batch follow-up sends and answers carry on live batch tasks wit
   assert.deepEqual(resultValue(ans).answers, [{ job: asking.job, request_id: 'q2', ok: true, written: true }]);
 
   writeFixtureFile(join(chain.task_dir, 'report.md'), 'Latest batch chain report.\n');
-  await publishPiGrace(chain, undefined, false);
+  await publishPiGrace(t, chain, undefined, false);
   writeFixtureFile(join(asking.task_dir, 'report.md'), 'Batch answered report.\n');
-  await publishPiGrace(asking, undefined, false);
+  await publishPiGrace(t, asking, undefined, false);
 
-  await until(() => fs.existsSync(join(chain.task_dir, 'batch-notice.json')) && fs.existsSync(join(asking.task_dir, 'batch-notice.json')), 8000);
+  await until(() => fs.existsSync(join(chain.task_dir, 'batch-notice.json')) && fs.existsSync(join(asking.task_dir, 'batch-notice.json')), t.signal);
   const chainNotices = panePrompts().filter((m) => m.includes(chain.job));
   const askingNotices = panePrompts().filter((m) => m.includes(asking.job));
   assert.equal(chainNotices.length, 1);

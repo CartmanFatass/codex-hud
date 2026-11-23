@@ -71,7 +71,7 @@ test(
     assert.equal(session.ORCH, 'w4E:p1');
     assert.equal(session.BASE, 'HEAD');
     assert.equal(session.PRIMARY, `${job.job}-primary`);
-    await until(() => fs.existsSync(join(f.env.HOME, 'seen-grace.json')));
+    await until(() => fs.existsSync(join(f.env.HOME, 'seen-grace.json')), t.signal);
     const grace = JSON.parse(fs.readFileSync(join(f.env.HOME, 'seen-grace.json'), 'utf8'));
     assertCliStatus(grace, job.task_dir);
     assert.equal(grace.state, 'idle_grace');
@@ -87,7 +87,7 @@ test(
     await until(() => {
       const file = join(job.task_dir, 'STATUS.json');
       return fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).state === 'closed';
-    });
+    }, t.signal);
     const closed = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'));
     assertCliStatus(closed, job.task_dir);
     assert.equal(closed.state, 'closed');
@@ -97,7 +97,7 @@ test(
     assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
     assert.match(cardText(workerFor(f, job.job)), /\bgeneral\b/);
     assert.match(cardText(workerFor(f, job.job)), /Synthetic grok report/);
-    await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
+    await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
     assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
   }
 );
@@ -238,7 +238,7 @@ test(
       '--dangerously-skip-permissions',
     ]);
     assert.equal(start.includes('--effort'), false);
-    await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+    await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
     const commands = f.commands();
     const promptAt = commands.findIndex((c) => c.args[1] === 'prompt' && c.args[3] !== '/quit');
     assert.ok(promptAt >= 0);
@@ -557,7 +557,7 @@ test('a codex role waits out a phantom startup and passes the start timeout', { 
   assert.ok(settleAt >= 0 && promptAt > settleAt);
   assert.equal(commands[settleAt].args[commands[settleAt].args.indexOf('--timeout') + 1], '60000');
   assert.equal(fs.existsSync(join(f.env.HOME, 'phantom-settled')), true);
-  await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
   const closed = cliState(job.task_dir);
   assert.equal(closed.agent, 'codex');
   assert.equal(closed.model, 'gpt-6.1-sol');
@@ -585,14 +585,14 @@ test(
       request_key: 'late-session',
       task: 'Synthetic late session.',
     });
-    await until(() => fs.existsSync(join(f.env.HOME, 'seen-grace.json'))).catch((error) => {
+    await until(() => fs.existsSync(join(f.env.HOME, 'seen-grace.json')), t.signal).catch((error) => {
       t.diagnostic(JSON.stringify({ status: cliState(job.task_dir), requests: f.socketRequests }));
       throw error;
     });
     const grace = JSON.parse(fs.readFileSync(join(f.env.HOME, 'seen-grace.json'), 'utf8'));
     assert.equal(grace.state, 'idle_grace');
     assert.equal(grace.agent_session_id, 'synthetic-grok-session');
-    await until(() => cliState(job.task_dir)?.state === 'closed');
+    await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
     assert.equal(cliState(job.task_dir).agent_session_id, 'synthetic-grok-session');
   }
 );
@@ -603,7 +603,7 @@ test('a failed cli job records agent_session_id published after start, before ex
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   fs.writeFileSync(join(f.env.HOME, 'exit-after-done'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'late-fail', task: 'Synthetic late fail.' });
-  await until(() => cliState(job.task_dir)?.state === 'failed');
+  await until(() => cliState(job.task_dir)?.state === 'failed', t.signal);
   assert.equal(cliState(job.task_dir).error, 'worker exited');
   assert.equal(cliState(job.task_dir).agent_session_id, 'synthetic-grok-session');
 });

@@ -26,7 +26,7 @@ test('helper receipt beside sonic sessions keeps the watcher alive and preserves
   const active = realSession(open, '.dispatch/sonic-1/sessions');
   const settled = realSession(old, '.dispatch/sonic-1/sessions');
   const { child, exited, stderr } = f.start();
-  await until(() => child.exitCode !== null || !fs.existsSync(old));
+  await until(() => child.exitCode !== null || !fs.existsSync(old), t.signal);
   assert.equal(child.exitCode, null, stderr());
   assert.equal(fs.existsSync(old), false);
   assert.deepEqual(fs.readFileSync(destination(f.pi)), settled.bytes);
@@ -446,7 +446,7 @@ fs.openSync = (file, ...args) => {
   return openSync(file, ...args);
 };
 syncBuiltinESMExports();`);
-  await until(() => fs.existsSync(join(f.home, 'stable-opens')));
+  await until(() => fs.existsSync(join(f.home, 'stable-opens')), t.signal);
   // Removing STATUS.json while job.json has dispatch_exit_code=0 keeps watcher open without stale cached STATUS.
   fs.unlinkSync(join(open, 'STATUS.json'));
   await new Promise((done) => setTimeout(done, 150));

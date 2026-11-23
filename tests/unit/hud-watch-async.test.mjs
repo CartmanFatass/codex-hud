@@ -92,7 +92,7 @@ test('watcher settles other jobs, starts checks and handles failures during a pe
     while (!fs.existsSync(${JSON.stringify(release)})) await delay(10);
   }`);
   const { child, exited } = f.start(herdr.preload + "process.env.HUD_WATCH_FAILED_RETENTION_MS = '0';");
-  await until(() => attempts(f, slow) && herdr.ready());
+  await until(() => attempts(f, slow) && herdr.ready(), t.signal);
 
   save(fast, 'STATUS.json', closed());
   save(checked, 'STATUS.json', { ...state, state: 'closed' });
@@ -173,9 +173,9 @@ test('unresolved worker-tree warnings are logged once per job across changing re
   const count = dir => log().split('\n').filter(line => line.includes(`reap ${basename(dir)} `) && line.includes('worker-tree snapshot unresolved')).length;
   const changed = dir => `reap ${basename(dir)} state=closed exit=2`;
   const first = f.start(retry);
-  await until(() => dirs.every(dir => count(dir) >= 1));
+  await until(() => dirs.every(dir => count(dir) >= 1), t.signal);
   for (const dir of dirs) fs.writeFileSync(join(dir, 'change-outcome'), '');
-  await until(() => dirs.every(dir => log().includes(changed(dir))));
+  await until(() => dirs.every(dir => log().includes(changed(dir))), t.signal);
   assert.deepEqual(dirs.map(count), [1, 1]);
   first.child.kill('SIGTERM');
   assert.deepEqual(await first.exited, [0, null]);
@@ -184,7 +184,7 @@ test('unresolved worker-tree warnings are logged once per job across changing re
   await until(() => {
     const current = log();
     return dirs.every(dir => current.lastIndexOf(changed(dir)) > current.lastIndexOf('start pid='));
-  });
+  }, t.signal);
   for (const dir of dirs) fs.rmdirSync(join(dir, 'worker-tree.json'));
   assert.deepEqual(await second.exited, [0, null]);
   assert.ok(dirs.every(dir => reaped(dir) && attempts(f, dir) >= 3));
@@ -234,19 +234,19 @@ for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [
       assert.equal(attempts(f, dir), 0);
       child.kill('SIGTERM');
     } else if (event === 'self close') {
-      await until(() => attempts(f, dir) === 1);
+      await until(() => attempts(f, dir) === 1, t.signal);
       herdr.closeTab('pi');
       await delay(100);
       assert.equal(status(dir).state, 'idle_grace');
       fs.writeFileSync(join(dir, 'release'), '');
-      await until(() => reaped(dir));
+      await until(() => reaped(dir), t.signal);
       assert.equal(status(dir).state, 'closed');
       assert.equal(status(dir).exit_reason, 'closed after report read');
     } else {
       assert.equal(herdr.pending(), 1);
       const start = performance.now();
       herdr.closeTab('pi');
-      await until(() => herdr.pending() === 0 && status(dir).state === 'failed');
+      await until(() => herdr.pending() === 0 && status(dir).state === 'failed', t.signal);
       assert.ok(performance.now() - start < 1000, 'cancel the query without waiting for its 2 s budget');
       assert.equal(status(dir).exit_reason, 'tab closed');
       assert.equal(attempts(f, dir), 0, 'failed tab is still in retention');
@@ -274,13 +274,13 @@ test('failed Pi read-close retries its live root after the tab disappears', asyn
   while (!fs.existsSync(join(dir, 'allow-retry-to-finish'))) await delay(10);`);
   const { exited } = f.start(herdr.preload);
   // The shared attempts log records entry, not which branch the reaper took.
-  await until(() => herdr.ready() && fs.existsSync(join(dir, 'waiting-for-tab-close')));
+  await until(() => herdr.ready() && fs.existsSync(join(dir, 'waiting-for-tab-close')), t.signal);
   herdr.closeTab('pi');
   fs.writeFileSync(join(dir, 'tab-gone'), '');
-  await until(() => f.log().includes('state=idle_grace exit=1'));
+  await until(() => f.log().includes('state=idle_grace exit=1'), t.signal);
   assert.equal(status(dir).state, 'idle_grace');
   fs.writeFileSync(join(dir, 'allow-retry-to-finish'), '');
-  await until(() => reaped(dir));
+  await until(() => reaped(dir), t.signal);
   assert.deepEqual(await exited, [0, null]);
   assert.equal(attempts(f, dir), 2);
   assert.equal(herdr.queries(), 1, 'the missing tab cannot answer another preflight');
@@ -326,7 +326,7 @@ else {
     };
     t.after(() => { for (const helper of helpers) if (alive(helper)) process.kill(helper.pid, 'SIGKILL'); });
     const herdrPid = join(f.home, 'herdr-pid');
-    await until(() => text(herdrPid));
+    await until(() => text(herdrPid), t.signal);
     for (const name of ['reap-pid', 'herdr-pid']) {
       const pid = Number(text(join(f.home, name)));
       helpers.push({ pid, start: procStat(pid).start });
@@ -354,14 +354,14 @@ await delay(30000);`);
   reapStub(f, `fs.writeFileSync(join(dir, 'leader'), String(process.pid));
 spawnSync('herdr', [], { stdio: 'ignore', env: ${token ? 'process.env' : "{ ...process.env, HUD_REAP_GROUP_TOKEN: 'unrelated' }"} });`);
   const run = runCommand('pi-role-reap', [dir], env, { killProcessGroup: true, killGraceMs: 100 });
-  await until(() => text(join(f.home, 'helper')));
+  await until(() => text(join(f.home, 'helper')), t.signal);
   const pid = Number(text(join(f.home, 'helper'))), start = procStat(pid).start;
   const alive = () => { const s = procStat(pid); return s?.start === start && !/^[ZXx]$/.test(s.state); };
   t.after(() => { if (alive()) process.kill(pid, 'SIGKILL'); });
   process.kill(Number(text(join(dir, 'leader'))), 'SIGKILL');
   const result = await run;
   assert.equal(result.reason, 'lost');
-  if (token) await until(() => !alive());
+  if (token) await until(() => !alive(), t.signal);
   else {
     assert.match(result.groupCleanupIssue, /ownership unverified; not signalling/);
     assert.ok(alive());

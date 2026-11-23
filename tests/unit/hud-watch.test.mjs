@@ -18,7 +18,7 @@ import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
-import { until as untilSettled } from '../helpers/until.mjs';
+import { until as waitUntil } from '../helpers/until.mjs';
 
 const readHint = (job) => `hud_read job=${job} (mode: "full" for the whole report)`;
 
@@ -50,14 +50,7 @@ function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function until(check, timeoutMs = 10000) {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end) {
-    if (check()) return;
-    await wait(25);
-  }
-  assert.fail('timed out waiting for expected watcher output');
-}
+const until = (check, signalOrLimit) => waitUntil(check, signalOrLimit, 'timed out waiting for expected watcher output');
 
 for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 'disposable', 'mixed ignored', 'unmerged', 'nested']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-worktree-'));
@@ -210,7 +203,7 @@ test('dead supervisor watcher preserves a live worker; both gone fail or close b
   workerExited = once(worker, 'exit');
   supervisor = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
   supervisorExited = once(supervisor, 'exit');
-  await until(() => procStat(worker.pid) !== null);
+  await until(() => procStat(worker.pid) !== null, t.signal);
   const initial = { state: 'working', pid: worker.pid, pid_start_time: procStat(worker.pid).start, supervisor_pid: supervisor.pid };
   const failed = writeJob(env.HUD_HOME, 'j00000000000000f1', 'w4E:p1', 'no-report', initial);
   const closed = writeJob(env.HUD_HOME, 'j00000000000000f2', 'w4E:p1', 'with-report', initial, true);
@@ -220,17 +213,17 @@ test('dead supervisor watcher preserves a live worker; both gone fail or close b
   supervisor.kill('SIGKILL');
   await supervisorExited;
   const status = (dir) => JSON.parse(fs.readFileSync(join(dir, 'STATUS.json')));
-  await until(() => status(failed).state === 'waiting_orchestrator');
+  await until(() => status(failed).state === 'waiting_orchestrator', t.signal);
   assert.equal(status(failed).reason, 'supervisor exited; worker still running');
   assert.equal(status(failed).error, null);
   // The watcher updates the two jobs one after the other.
-  await until(() => status(closed).state === 'waiting_orchestrator');
+  await until(() => status(closed).state === 'waiting_orchestrator', t.signal);
   const stamp = fs.statSync(join(failed, 'STATUS.json')).mtimeMs;
   await wait(120);
   assert.equal(fs.statSync(join(failed, 'STATUS.json')).mtimeMs, stamp, 'unchanged observation does not rewrite STATUS');
   worker.kill('SIGKILL');
   await workerExited;
-  await until(() => status(failed).state === 'failed' && status(closed).state === 'closed');
+  await until(() => status(failed).state === 'failed' && status(closed).state === 'closed', t.signal);
   assert.equal(status(failed).exit_reason, 'worker exited');
   assert.equal(status(closed).output_written, true);
 });
@@ -271,25 +264,25 @@ test('hud watch --verbose retains the existing MCP change lines', async (t) => {
     join(callerDir, 'STATUS.json'),
     JSON.stringify({ state: 'waiting_orchestrator', blocked: false, reason: 'quiet', harness: 'cli' })
   );
-  await until(() => lines.length === 1);
+  await until(() => lines.length === 1, t.signal);
 
   // 2: qa/q1.md appears -> QUESTION
   fs.mkdirSync(join(callerDir, 'qa'), { recursive: true });
   fs.writeFileSync(join(callerDir, 'qa', 'q1.md'), 'Synthetic question?\n');
-  await until(() => lines.length === 2);
+  await until(() => lines.length === 2, t.signal);
 
   // 3: qa/q1.answer.md + report.md -> report (QUESTION cleared)
   fs.writeFileSync(join(callerDir, 'qa', 'q1.answer.md'), 'Proceed.\n');
   fs.writeFileSync(join(callerDir, 'report.md'), 'Done report.\n');
-  await until(() => lines.length === 3);
+  await until(() => lines.length === 3, t.signal);
 
   // 4: STATUS -> done
   fs.writeFileSync(join(callerDir, 'STATUS.json'), JSON.stringify({ state: 'done', exit_reason: null }));
-  await until(() => lines.length === 4);
+  await until(() => lines.length === 4, t.signal);
 
   // New job appearing already failed after startup also prints.
   writeJob(hudHome, 'j00000000000000c3', 'w4E:p1', 'pkg-c', { state: 'failed', exit_reason: 'tab closed' });
-  await until(() => lines.length === 5);
+  await until(() => lines.length === 5, t.signal);
 
   ac.abort();
   assert.equal(await running, 0);
@@ -329,19 +322,19 @@ test('hud watch shows the signed settlement summary and ignores metadata-only wr
     env: { HUD_HOME: home }, stdout: (s) => lines.push(s.trim()), stderr: () => {},
   }, { signal: ac.signal, rescanMs: 30000, settlementWindowMs: 30 });
   try {
-    await until(() => scans > 0);
+    await until(() => scans > 0, t.signal);
     const initial = scans;
     writeReportMeta(dir, cachedReportSignature(dir), { summary: '«Synthetic» work completed.' });
     await wait(180);
     assert.equal(scans, initial, 'report-meta.json writes do not rescan jobs');
     assert.deepEqual(lines, []);
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-    await until(() => lines.length > 0);
+    await until(() => lines.length > 0, t.signal);
     assert.deepEqual(lines, [`${id} imp summary: idle_grace | report | Synthetic work completed. | ${readHint(id)}`]);
     writeReportMeta(stale, cachedReportSignature(stale), { summary: 'Stale synthetic metadata.' });
     writeFixtureFile(join(stale, 'report.md'), 'Rewritten synthetic report.');
     writeFixtureFile(join(stale, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-    await until(() => lines.length > 1);
+    await until(() => lines.length > 1, t.signal);
     assert.deepEqual(lines.slice(1), [`${staleId} imp stale: idle_grace | report | ${readHint(staleId)}`]);
   } finally {
     ac.abort();
@@ -358,12 +351,12 @@ test('hud watch skips child completion and report, but delivers questions and fa
     stdout: (line) => lines.push(line), stderr: () => {} }, { signal: ac.signal, rescanMs: 100 });
   fs.mkdirSync(join(dir, 'qa'));
   fs.writeFileSync(join(dir, 'qa/q1.md'), 'Synthetic question?');
-  await until(() => lines.length > 0);
+  await until(() => lines.length > 0, t.signal);
   assert.equal(lines.length, 1);
   assert.match(lines[0], /QUESTION q1/);
   fs.writeFileSync(join(dir, 'qa/q1.answer.md'), 'Answer.');
   fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"failed","exit_reason":"synthetic failure"}');
-  await until(() => lines.length > 1);
+  await until(() => lines.length > 1, t.signal);
   assert.match(lines[1], /failed \| synthetic failure$/m);
   assert.ok(lines.every((line) => !line.includes(' | report')));
   ac.abort();
@@ -398,7 +391,7 @@ for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbo
   const step = async (change) => {
     const before = scans;
     change();
-    await untilSettled(() => scans > before, t.signal);
+    await until(() => scans > before, t.signal);
   };
   const status = (state, reason) => writeFixtureFile(statusFile, JSON.stringify({ state, reason }));
   const qfile = join(dir, 'qa/q1.md');
@@ -423,7 +416,7 @@ for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbo
     await step(() => status('idle_grace')); // A new settlement is actionable even without rewriting the already-read report.
     await step(() => status('closed'));
     now += settlementWindowMs;
-    await untilSettled(() => lines.length >= (verbose ? 10 : 2), t.signal);
+    await until(() => lines.length >= (verbose ? 10 : 2), t.signal);
   } finally {
     ac.abort();
     assert.equal(await running, 0);
@@ -476,7 +469,7 @@ test('hud watch batches jobs settling within the settlement window into one noti
     await wait(80);
     assert.deepEqual(writes, [], 'hold settlements across scans');
   }
-  await until(() => writes.length > 0, 6000);
+  await until(() => writes.length > 0, t.signal);
   ac.abort();
   assert.equal(await running, 0);
   assert.deepEqual(writes, [ids.map((id) => `${id} imp batch: done\n`).join('')]);
@@ -526,7 +519,7 @@ test('hud watch catch-up prints pending questions, unread settlements and unread
   // Answer and next question can coalesce into one scan with the same count: never lose the new id.
   fs.writeFileSync(join(question, 'qa/q1.answer.md'), 'yes');
   fs.writeFileSync(join(question, 'qa/q3.md'), '# Question q3 from imp@demo\n\nNext question?\n\nDefault if unanswered: yes\n\nContext: ' + 'x'.repeat(2200) + 'NOT IN LINE');
-  await until(() => lines.length === 6);
+  await until(() => lines.length === 6, t.signal);
   assert.match(lines.at(-1), /QUESTION q3: Next question\?/);
   assert.doesNotMatch(lines.at(-1), /NOT IN LINE/);
   ac.abort();
@@ -615,7 +608,7 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
   child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   childExited = once(child, 'exit');
   const pidFile = join(home, 'watchers', 'w4E:p1.pid');
-  await until(() => fs.existsSync(pidFile));
+  await until(() => fs.existsSync(pidFile), t.signal);
   assert.equal(Number(fs.readFileSync(pidFile)), child.pid);
   const pushBoth = () => {
     const ask = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-ask.mjs'), '--dir', dir, '--question', 'Which layout?', '--default', 'rows', '--timeout', '0'], { env, encoding: 'utf8' });
@@ -681,7 +674,7 @@ test('mod watcher marker requires the live --mod process, start time, pane and h
   const child = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--mod'], { env: f.env, stdio: 'ignore' });
   const exited = once(child, 'exit');
   f.onCleanup(() => stopChild(child, exited));
-  await until(() => fs.existsSync(file));
+  await until(() => fs.existsSync(file), t.signal);
   const marker = JSON.parse(fs.readFileSync(file));
   assert.deepEqual(marker, { pid: child.pid, start: procStat(child.pid).start, home: f.home, pane, client: 'claude-mod' });
   assert.equal(watchingMod(pane, f.home), true);
@@ -721,7 +714,7 @@ test('mod catch-up lists two fresh reports, summarizes history, and preserves qu
   const run = watchCommand(['--mod'], { env: f.env, stdout: s => wakes.push(JSON.parse(s).lines), stderr: s => assert.fail(s) },
     { signal: ac.signal, rescanMs: 50, settlementWindowMs: 40 });
   try {
-    await until(() => wakes.length > 0);
+    await until(() => wakes.length > 0, t.signal);
     const [lines] = wakes;
     assert.equal(lines.length, 6);
     for (const id of fresh) assert.ok(lines.includes(`${id} imp fresh: closed | report | ${readHint(id)}`));
@@ -731,7 +724,7 @@ test('mod catch-up lists two fresh reports, summarizes history, and preserves qu
     assert.ok(lines.some(s => s.startsWith(`${failed} imp failure: failed | needs repair`)));
     assert.ok(lines.some(s => s.startsWith('[imp] QUESTION q1: Proceed?')));
     writeFixtureFile(join(working, 'STATUS.json'), JSON.stringify({ state: 'done' }));
-    await until(() => wakes.length > 1);
+    await until(() => wakes.length > 1, t.signal);
     assert.deepEqual(wakes.slice(1), [[`${active} imp new: done`]]);
   } finally { ac.abort(); await run; }
 });
@@ -745,7 +738,7 @@ test('mod catch-up uses the recorded delivery instead of the two-hour default', 
   const run = watchCommand(['--mod'], { env: { ...f.env, HUD_MOD_LAST_DELIVERY: String(now - 4 * hour) },
     stdout: s => wakes.push(JSON.parse(s)), stderr: s => assert.fail(s) }, { signal: ac.signal });
   try {
-    await until(() => wakes.length > 0);
+    await until(() => wakes.length > 0, t.signal);
     assert.deepEqual(wakes[0].lines, [`${id} imp newer: closed | report | ${readHint(id)}`, '1 older unread report — hud_read view:compact']);
     assert.ok(Number.isSafeInteger(wakes[0].at) && wakes[0].at >= now);
   } finally { ac.abort(); await run; }
@@ -759,7 +752,7 @@ test('mod JSONL uses shared actionable lines, sleeps only once clear, and resume
   const records = [], run = (env) => watchCommand(['--mod'], { env, stdout: s => { const r = JSON.parse(s); if (r.type !== 'band') records.push(r); }, stderr: s => assert.fail(s) },
     { signal: ac.signal, rescanMs: 50, queueIdleMs: 100, settlementWindowMs: 40 });
   const running = run({ ...f.env, HUD_MOD_CURSOR: '' });
-  await until(() => records.some(r => r.type === 'wake'));
+  await until(() => records.some(r => r.type === 'wake'), t.signal);
   await wait(150);
   assert.deepEqual(records.map(({ at, ...record }) => record), [
     { type: 'ready' }, { type: 'wake', lines: ['1 older unread report — hud_read view:compact'] },
@@ -802,7 +795,7 @@ test('mod retention does not announce old settlements entering the watch window'
     stdout: s => { const r = JSON.parse(s); if (r.type !== 'band') records.push(r); }, stderr: s => assert.fail(s) },
     { signal: ac.signal, rescanMs: 50, settlementWindowMs: 40 });
   try {
-    await until(() => records.some(r => r.type === 'ready'));
+    await until(() => records.some(r => r.type === 'ready'), t.signal);
     assert.deepEqual(records, [{ type: 'ready' }]);
     for (const { dir, receipt } of newerJobs.slice(0, 3)) {
       archiveJob(f.home, dir, receipt.job, receipt, status, Date.now(), (s) => assert.fail(s));
@@ -810,7 +803,7 @@ test('mod retention does not announce old settlements entering the watch window'
     }
     // A real settlement outside the previous window still arrives, even on the same rescan.
     writeFixtureFile(join(active.dir, 'STATUS.json'), JSON.stringify({ state: 'done' }));
-    await until(() => records.some(r => r.type === 'wake'));
+    await until(() => records.some(r => r.type === 'wake'), t.signal);
     assert.deepEqual(records.slice(1).map(({ type, lines }) => ({ type, lines })), [
       { type: 'wake', lines: [`${id(3)} imp retained: done | report | ${readHint(id(3))}`] },
     ]);
@@ -829,7 +822,7 @@ test('a live pi watcher suppresses fallback, but dead, reused and mismatched PID
   const child = spawn(process.execPath, [script], { env: f.env, stdio: 'ignore' });
   const exited = once(child, 'exit');
   f.onCleanup(() => stopChild(child, exited));
-  await until(() => fs.existsSync(pidFile));
+  await until(() => fs.existsSync(pidFile), t.signal);
   const marker = fs.readFileSync(pidFile, 'utf8'), pi = JSON.parse(marker);
   assert.equal(pi.pid, child.pid);
   assert.equal(watching(pane, f.home), true);
@@ -892,10 +885,10 @@ test('hud watch --queue queues catch-up and settlement silently and exits on age
   t.after(() => ac.abort());
   // Queue scans also run synthetic CLI subprocesses; keep headroom for the second scan.
   const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, settlementWindowMs: 1000 });
-  await until(() => fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')));
+  await until(() => fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), t.signal);
   writeFixtureFile(join(dir, 'report.md'), 'Done.');
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-  await until(() => f.deliveries().length > 0, 6000);
+  await until(() => f.deliveries().length > 0, t.signal);
   const deliveries = f.deliveries();
   assert.equal(deliveries.length, 1);
   assert.deepEqual(deliveries[0].args.slice(0, 4), ['queue', '--thread', '00000000-0000-4000-8000-000000000001', '--message']);
@@ -927,7 +920,7 @@ await setTimeout(3000);
   const watcher = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--queue'], { env: f.env, stdio: 'ignore' });
   const exited = once(watcher, 'exit');
   f.onCleanup(() => stopChild(watcher, exited, { killMs: 1000 }));
-  await until(() => fs.existsSync(started));
+  await until(() => fs.existsSync(started), t.signal);
   const start = performance.now();
   watcher.kill('SIGTERM');
   assert.deepEqual(await exited, [0, null]);
@@ -945,7 +938,7 @@ test('hud watch --queue typed fallback keeps running and exits after injectable 
   const ac = new AbortController(), stdout = [], stderr = [];
   t.after(() => ac.abort());
   const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, queueIdleMs: 100, settlementWindowMs: 250 });
-  await until(() => f.deliveries().length === 2);
+  await until(() => f.deliveries().length === 2, t.signal);
   await wait(180);
   assert.equal(fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), true, 'unread report prevents idle exit');
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
@@ -983,13 +976,13 @@ test('agy watcher types when idle, injects while working, and flushes pending on
   create(1, 'idle event');
   const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: (s) => stderr.push(s) },
     { signal: ac.signal, rescanMs: 80, settlementWindowMs: 30 });
-  await until(() => f.deliveries().length === 1);
+  await until(() => f.deliveries().length === 1, t.signal);
   assert.deepEqual(f.deliveries()[0].args, ['agent', 'prompt', pane, `j0000000000000001 imp idle event: idle_grace | report | ${readHint('j0000000000000001')}`]);
   assert.deepEqual(runAgyHook(f.env), {});
 
   writeFixtureFile(f.statusFile, 'working');
   create(2, 'working "事件"');
-  await until(() => fs.existsSync(file));
+  await until(() => fs.existsSync(file), t.signal);
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.deepEqual(runAgyHook({ ...f.env, HERDR_PANE_ID: '' }), {});
   assert.deepEqual(runAgyHook({ ...f.env, HUD_HOME: '' }), {});
@@ -998,10 +991,10 @@ test('agy watcher types when idle, injects while working, and flushes pending on
   assert.equal(f.deliveries().length, 1);
 
   create(3, 'pending until idle');
-  await until(() => fs.existsSync(file));
+  await until(() => fs.existsSync(file), t.signal);
   assert.equal(f.deliveries().length, 1);
   writeFixtureFile(f.statusFile, 'idle'); // Not under jobs/: only the safety rescan notices.
-  await until(() => f.deliveries().length === 2);
+  await until(() => f.deliveries().length === 2, t.signal);
   assert.deepEqual(f.deliveries()[1].args, ['agent', 'prompt', pane, `j0000000000000003 imp pending until idle: idle_grace | report | ${readHint('j0000000000000003')}`]);
   assert.deepEqual(runAgyHook(f.env), {});
   ac.abort();
@@ -1022,7 +1015,7 @@ test('agy hook processes and the watcher racing an idle flush deliver each event
   `], { env: f.env, stdio: 'ignore' });
   const exited = once(watcher, 'exit');
   f.onCleanup(() => stopChild(watcher, exited, { killMs: 1000 }));
-  await until(() => fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes('race-1') && fs.readFileSync(file, 'utf8').includes('race-2'));
+  await until(() => fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes('race-1') && fs.readFileSync(file, 'utf8').includes('race-2'), t.signal);
   const hooks = Array.from({ length: 6 }, async () => {
     const child = spawn(agyHook, [], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
     const closed = once(child, 'close');
@@ -1035,7 +1028,7 @@ test('agy hook processes and the watcher racing an idle flush deliver each event
   create(3);
   const injected = (await Promise.all(hooks)).flat();
   const typed = () => f.deliveries().flatMap(({ args }) => args[3].split('\n'));
-  await until(() => typed().length + injected.length >= 3 && !fs.existsSync(file));
+  await until(() => typed().length + injected.length >= 3 && !fs.existsSync(file), t.signal);
   watcher.kill('SIGTERM');
   assert.deepEqual(await exited, [0, null]);
   assert.deepEqual([...typed(), ...injected].sort(), [1, 2, 3].map((n) => {
@@ -1145,7 +1138,7 @@ syncBuiltinESMExports();`;
   const failedId = 'j00000000000000f6';
   const failed = writeJob(join(hudHome, 'staging'), failedId, 'w4E:p1', 'tab-gone', { state: 'failed', exit_reason: 'tab closed' });
   fs.renameSync(failed, join(hudHome, 'jobs', failedId));
-  await untilSettled(() => stdout.includes(`${failedId} imp tab-gone: failed | tab closed\n`), t.signal);
+  await until(() => stdout.includes(`${failedId} imp tab-gone: failed | tab closed\n`), t.signal);
 
   child.kill('SIGTERM');
   const [code, signal] = await closed;

@@ -116,7 +116,7 @@ test('quiet without a report and an in-turn child makes no Decision API call and
   assert.equal(cliState(job.task_dir).quiet_decision, undefined);
 
   worker.stop();
-  await until(() => !procStat(childPid) || procStat(childPid).state === 'Z', 5000);
+  await until(() => !procStat(childPid) || procStat(childPid).state === 'Z', t.signal);
   await until(() => prompts().length === 1, 15000);
   assert.equal(server.requests.length, 1, 'the real quiet-decision path runs once the child is gone');
 });
@@ -139,7 +139,7 @@ test('quiet decision discards a stale reply after working/done pushes during the
   });
   configureFakeDecision(f, server.baseUrl);
   job = await f.call('hud_create', { role: 'decision-race', request_key: 'decision-race', task: 'Synthetic decision race.' });
-  await until(() => cliState(job.task_dir)?.agent_session_id);
+  await until(() => cliState(job.task_dir)?.agent_session_id, t.signal);
   f.push(job.job, 'done');
   await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 25000);
   assert.equal(server.requests.length, 2);
@@ -249,7 +249,7 @@ test('quiet decision failed uses screen line and quota marks place exhausted', {
   const server = await fakeDecisionServer(t, () => decisionAnswer('failed', 0.96));
   configureFakeDecision(f, server.baseUrl);
   const job = await f.call('hud_create', { role: 'qd-fail', request_key: 'qd-fail', task: 'Synthetic quota fail.' });
-  await until(() => cliState(job.task_dir)?.state === 'failed', 8000);
+  await until(() => cliState(job.task_dir)?.state === 'failed', t.signal);
   const status = cliState(job.task_dir);
   assert.match(status.exit_reason, /429 rate limit exceeded/);
   assert.match(status.exit_reason, /next dispatch will use cli\/claude \(opus-5\.5\)/);
@@ -270,7 +270,7 @@ test('quiet decision failed without quota regex falls back to needs-human withou
   const server = await fakeDecisionServer(t, () => decisionAnswer('failed', 0.95));
   configureFakeDecision(f, server.baseUrl);
   const job = await f.call('hud_create', { role: 'qd-nonquota', request_key: 'qd-nonquota', task: 'Synthetic non-quota error.' });
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 8000);
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
   const status = cliState(job.task_dir);
   assert.equal(status.reason, 'quiet without a report; hud_send to continue or hud_close to stop');
   assert.equal(status.quiet_decision.choice, 'failed');
@@ -288,7 +288,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
   const sLow = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.79));
   configureFakeDecision(fLow, sLow.baseUrl);
   const jLow = await fLow.call('hud_create', { role: 'qd-low', request_key: 'qd-low', task: 'Synthetic low prob.' });
-  await until(() => cliState(jLow.task_dir)?.state === 'waiting_orchestrator', 8000);
+  await until(() => cliState(jLow.task_dir)?.state === 'waiting_orchestrator', t.signal);
   assert.equal(cliState(jLow.task_dir).quiet_decision.choice, 'finished-no-report');
   assert.equal(cliState(jLow.task_dir).quiet_decision.probability, 0.79);
   assert.equal(cliState(jLow.task_dir).quiet_decision.action, 'needs-human');
@@ -304,7 +304,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
   fs.mkdirSync(apiDir, { recursive: true });
   writeFixtureFile(join(apiDir, 'calls.json'), JSON.stringify([{ at: Date.now(), feature: 'outcome' }]));
   const jCap = await fCap.call('hud_create', { role: 'qd-cap', request_key: 'qd-cap', task: 'Synthetic cap.' });
-  await until(() => cliState(jCap.task_dir)?.state === 'waiting_orchestrator', 8000);
+  await until(() => cliState(jCap.task_dir)?.state === 'waiting_orchestrator', t.signal);
   assert.equal(sCap.requests.length, 0);
   assert.equal(cliState(jCap.task_dir).quiet_decision.action, 'needs-human');
   assert.equal(cliState(jCap.task_dir).quiet_decision.reason, 'cap');
@@ -317,7 +317,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
   const sErr = await fakeDecisionServer(t, () => ({ status: 500, body: { error: 'boom' } }));
   configureFakeDecision(fErr, sErr.baseUrl);
   const jErr = await fErr.call('hud_create', { role: 'qd-err', request_key: 'qd-err', task: 'Synthetic error.' });
-  await until(() => cliState(jErr.task_dir)?.state === 'waiting_orchestrator', 8000);
+  await until(() => cliState(jErr.task_dir)?.state === 'waiting_orchestrator', t.signal);
   assert.equal(sErr.requests.length, 1);
   assert.equal(cliState(jErr.task_dir).quiet_decision.action, 'needs-human');
   assert.equal(cliState(jErr.task_dir).quiet_decision.reason, 'error');
@@ -336,7 +336,7 @@ test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeo
   await f.startCliSocket();
   const handle = await taskCall(rpc, 'hud_create', { role: 'qd-prompt-fail', request_key: 'qd-prompt-fail', task: 'Synthetic failed report prompt.' });
   const job = taskJob(f, handle);
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 10000);
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
   const attention = await rpc('tasks/get', { taskId: handle.taskId });
   assert.equal(attention.status, 'completed');
   assert.match(attention.result.content[0].text, /waiting_orchestrator — quiet without a report; .*Use hud_read\/hud_peek/);
@@ -372,15 +372,15 @@ test('reportPromptSent persists across supervisor restart via hud_send', { timeo
   const job = await f.call('hud_create', { role: 'qd-prompt-respawn', request_key: 'qd-prompt-respawn', task: 'Synthetic respawn no repeat.' });
   const expectedPrompt = `Write your report to ${join(job.task_dir, 'report.md')} now; if work remains, finish it first.`;
   const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === expectedPrompt);
-  await until(() => prompts().length === 1 && cliState(job.task_dir)?.supervisor_pid, 10000);
+  await until(() => prompts().length === 1 && cliState(job.task_dir)?.supervisor_pid, t.signal);
   const oldSupPid = cliState(job.task_dir).supervisor_pid;
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json'), 'utf8')).report_prompt_sent, true);
 
   process.kill(oldSupPid, 'SIGKILL');
-  await until(() => procStat(oldSupPid) === null);
+  await until(() => procStat(oldSupPid) === null, t.signal);
   const sent = await f.call('hud_send', { job: job.job, message_key: 'respawn-no-repeat', text: 'Continue after supervisor restart.' });
   assert.equal(sent.sent, true);
-  await until(() => cliState(job.task_dir)?.supervisor_pid !== oldSupPid && cliState(job.task_dir)?.state === 'waiting_orchestrator', 10000);
+  await until(() => cliState(job.task_dir)?.supervisor_pid !== oldSupPid && cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
 
   assert.equal(prompts().length, 1);
   assert.ok(server.requests.length >= 2);

@@ -53,7 +53,7 @@ test('a rebuild drains overlapping calls and a broken candidate leaves the old s
     assert.equal(survivors.length, 0);
   });
   const rpc = rpcClient(child), held = rpc('hold');
-  await until(() => fs.existsSync(join(root, 'entered')));
+  await until(() => fs.existsSync(join(root, 'entered')), t.signal);
   assert.equal(generation(home, child.pid).stamp, buildStamp(root));
   publish('new');
   const a = rpc('next'), b = rpc('next');
@@ -89,7 +89,7 @@ test('one connection and watcher keep their work across two published generation
   const job = taskJob(f, task), marker = join(job.task_dir, 'mcp-task.json');
   const owner = fs.readFileSync(marker, 'utf8');
   const pidFile = join(f.env.HUD_HOME, 'watch.pid');
-  await until(() => fs.existsSync(pidFile));
+  await until(() => fs.existsSync(pidFile), t.signal);
   const watcher = fs.readFileSync(pidFile, 'utf8');
   const statusline = async () => (await taskCall(rpc, 'hud_statusline')).content[0].text;
   const get = () => rpc('tasks/get', { taskId: task.taskId });
@@ -105,14 +105,14 @@ test('one connection and watcher keep their work across two published generation
     assert.match(await statusline(), new RegExp(`build-${n}$`));
     await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch-build')) &&
       fs.readFileSync(join(f.env.HUD_HOME, 'watch-build'), 'utf8') === String(n) &&
-      (fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8').match(/reloaded pid=/g) ?? []).length === n);
+      (fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8').match(/reloaded pid=/g) ?? []).length === n, t.signal);
     assert.equal(fs.readFileSync(pidFile, 'utf8'), watcher);
   }
   publish(1);
   await checkBuild(1);
   assert.equal((await get()).status, 'working');
   assert.equal(fs.readFileSync(marker, 'utf8'), owner);
-  await publishPiGrace(job);
+  await publishPiGrace(t, job);
   const notice = await get();
   assert.equal(notice.status, 'completed');
   assert.equal(notice.result.content.length, 1);
@@ -257,7 +257,7 @@ test('generation.mjs runs generation 0 off the main thread and terminates retire
   assert.equal(info.isMainThread, false);
   assert.ok(info.threadId > 0);
   const inFlight = gen.call('slow');
-  await until(() => fs.existsSync(entered));
+  await until(() => fs.existsSync(entered), t.signal);
   const retired = gen.retire();
   await assert.rejects(() => gen.call('info'), /retiring/);
   fs.writeFileSync(gate, '');
@@ -347,7 +347,7 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
     assert.equal(survivors.length, 0);
   });
   const pidFile = join(hudHome, 'watch.pid'), logFile = join(hudHome, 'watch.log');
-  await until(() => fs.existsSync(pidFile) && fs.existsSync(logFile) && fs.readFileSync(logFile, 'utf8').includes('start pid='));
+  await until(() => fs.existsSync(pidFile) && fs.existsSync(logFile) && fs.readFileSync(logFile, 'utf8').includes('start pid='), t.signal);
   const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
   const freshPss = readProcPssMB(pid), current = generation(hudHome, pid);
   assert.equal(current.stamp, buildStamp(copy.root));
@@ -357,7 +357,7 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
   const originalRuntime = fs.readFileSync(runtimePath, 'utf8');
   fs.writeFileSync(runtimePath, 'export syntax error !');
   copy.stamp();
-  await until(() => fs.readFileSync(logFile, 'utf8').includes('keeping previous build:'));
+  await until(() => fs.readFileSync(logFile, 'utf8').includes('keeping previous build:'), t.signal);
   assert.equal(Number(fs.readFileSync(pidFile, 'utf8').trim()), pid);
   assert.equal((fs.readFileSync(logFile, 'utf8').match(/reloaded pid=/g) ?? []).length, 0);
   assert.deepEqual(generation(hudHome, pid), current);
@@ -366,7 +366,7 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
   fs.writeFileSync(runtimePath, originalRuntime);
   for (let i = 1; i <= 15; i++) {
     copy.stamp();
-    await until(() => (fs.readFileSync(logFile, 'utf8').match(/reloaded pid=/g) ?? []).length === i);
+    await until(() => (fs.readFileSync(logFile, 'utf8').match(/reloaded pid=/g) ?? []).length === i, t.signal);
     assert.equal(Number(fs.readFileSync(pidFile, 'utf8').trim()), pid);
     assert.equal(generation(hudHome, pid).stamp, buildStamp(copy.root));
   }

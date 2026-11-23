@@ -666,7 +666,7 @@ test('a slow CLI launch blocks only retries with the same request key, not other
   let retryFinished = false;
   const launch = f.call('hud_create', args).finally(() => { launchFinished = true; });
   const grokStarts = () => f.commands().filter(({ args }) => args[1] === 'start' && args.includes('grok'));
-  await until(() => grokStarts().length > 0);
+  await until(() => grokStarts().length > 0, t.signal);
   const retry = f.call('hud_create', args).finally(() => { retryFinished = true; });
   const release = join(f.env.HOME, 'release-prompt-result');
   try {
@@ -910,7 +910,7 @@ test('hud_create rejects invalid context paths, symlinks and binary content with
 test('hud_create references an upstream report without marking it read or closing its worker', async (t) => {
   const f = await fixture(t);
   const upstream = await f.call('hud_create', { role: 'imp', request_key: 'context-upstream', task: 'Synthetic upstream task.' });
-  await publishLegacyPiGrace(upstream);
+  await publishLegacyPiGrace(t, upstream);
   const receiptPath = join(upstream.task_dir, 'job.json');
   const original = fs.readFileSync(receiptPath, 'utf8');
   const downstream = await f.call('hud_create', {
@@ -1160,7 +1160,7 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
     role: 'wt-cli', cwd, isolation: 'worktree', package: 'Demo Slice',
     request_key: 'wt-cli-source', task: 'Synthetic initial work.',
   });
-  await until(() => cliState(source.task_dir)?.state === 'idle_grace', 8000);
+  await until(() => cliState(source.task_dir)?.state === 'idle_grace', t.signal);
   const sourceReceipt = JSON.parse(fs.readFileSync(join(source.task_dir, 'job.json'), 'utf8'));
   const wt = sourceReceipt.worktree;
   fs.writeFileSync(join(wt.root, 'feature.txt'), 'committed work\n');
@@ -1171,7 +1171,7 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
   fs.writeFileSync(join(wt.root, 'build', 'artifact.out'), 'ignored output\n');
 
   await f.call('hud_read', { job: source.job });
-  await until(() => cliState(source.task_dir)?.state === 'closed', 5000);
+  await until(() => cliState(source.task_dir)?.state === 'closed', t.signal);
   assert.equal(cliState(source.task_dir).exit_reason, 'closed after report read');
 
   // Transient agent_pane_busy clears on the single retry.
@@ -1196,9 +1196,9 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
   assert.deepEqual(readRepair.git_summary.overlaps, []);
 
   // A pane that stays busy falls back to a fresh tab and pane instead of failing dispatch.
-  await until(() => cliState(repair.task_dir)?.state === 'idle_grace', 8000);
+  await until(() => cliState(repair.task_dir)?.state === 'idle_grace', t.signal);
   await f.call('hud_read', { job: repair.job });
-  await until(() => cliState(repair.task_dir)?.state === 'closed', 5000);
+  await until(() => cliState(repair.task_dir)?.state === 'closed', t.signal);
   writeFixtureFile(join(f.env.HOME, 'tab-seq'), '1');
   writeFixtureFile(join(f.env.HOME, 'busy-pane-id'), 'w4E:p2');
   const third = await f.call('hud_send', { job: repair.job, text: 'Synthetic follow-up on fresh pane.' });
@@ -1224,7 +1224,7 @@ test('retry_of a failed continuation keeps the source worktree and falls back wh
     role: 'wt-retry-cli', cwd, isolation: 'worktree', package: 'Retry Slice',
     request_key: 'wt-retry-source', task: 'Synthetic initial work.',
   });
-  await until(() => cliState(source.task_dir)?.state === 'idle_grace', 8000);
+  await until(() => cliState(source.task_dir)?.state === 'idle_grace', t.signal);
   const sourceReceipt = JSON.parse(fs.readFileSync(join(source.task_dir, 'job.json'), 'utf8'));
   const wt = sourceReceipt.worktree;
   fs.writeFileSync(join(wt.root, 'work.txt'), 'source commit\n');
@@ -1233,7 +1233,7 @@ test('retry_of a failed continuation keeps the source worktree and falls back wh
   const sourceCommit = git(wt.root, 'rev-parse', 'HEAD');
 
   await f.call('hud_read', { job: source.job });
-  await until(() => cliState(source.task_dir)?.state === 'closed', 5000);
+  await until(() => cliState(source.task_dir)?.state === 'closed', t.signal);
 
   // Make the continuation dispatch fail so we can retry_of it.
   writeFixtureFile(join(f.env.HOME, 'fail-start-grok'), 'synthetic start failure');

@@ -39,7 +39,7 @@ test('hud_ask does not block other worker MCP calls while Codex queue is slow', 
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic worker question.' });
   // hud_create checks the caller's pane for a queue watcher in the background (its second `pane get`). If that
   // check ran after the Codex stub below, it would start a watcher that takes the delivery ("delivered by hud watch").
-  await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2);
+  await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2, t.signal);
   // A shell stub: a Node one can miss the 2 s pane-lookup budget under full-suite load and fall back to hud watch.
   f.overrideBin('herdr', `#!/bin/sh
 case "$2" in
@@ -56,7 +56,7 @@ await setTimeout(2000);
 `);
   const call = workerClient(t, f, parent.task_dir, '0');
   const pending = call('hud_ask', { question: 'Which layout?', default: 'rows' });
-  await until(() => fs.existsSync(queued));
+  await until(() => fs.existsSync(queued), t.signal);
   const start = performance.now();
   assert.deepEqual((await call.rpc('ping')).result, {});
   const pingMs = performance.now() - start;
@@ -79,7 +79,7 @@ await setTimeout(2000);
   `], { env: { ...f.env, HUD_JOB_DIR: parent.task_dir, HUD_ASK_TIMEOUT: '0' }, stdio: 'inherit' });
   const exited = once(cancellable, 'exit');
   t.after(async () => { cancellable.kill('SIGTERM'); await exited; });
-  await until(() => fs.existsSync(queued));
+  await until(() => fs.existsSync(queued), t.signal);
   const cancelStart = performance.now();
   cancellable.kill('SIGTERM');
   assert.deepEqual(await exited, [0, null]);
@@ -92,7 +92,7 @@ await setTimeout(2000);
 test('worker ping can release a contended Antigravity hud_ask mailbox before flock times out', async (t) => {
   const f = await fixture(t);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic mailbox question.' });
-  await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2);
+  await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2, t.signal);
   f.overrideBin('herdr', `#!/bin/sh\necho '{"result":{"pane":{"agent":"agy","agent_status":"working"}}}'\n`);
   f.overrideBin('flock', '#!/bin/sh\ntouch "$HOME/waiting-on-mailbox"\nexec /usr/bin/flock "$@"\n');
   const dir = join(f.env.HUD_HOME, 'watchers');
@@ -103,7 +103,7 @@ test('worker ping can release a contended Antigravity hud_ask mailbox before flo
     assert.equal(spawnSync('/usr/bin/flock', ['-nx', '3'], { stdio: ['ignore', 'ignore', 'ignore', fd] }).status, 0);
     const call = workerClient(t, f, parent.task_dir, '0');
     pending = call('hud_ask', { question: 'Which layout?', default: 'rows' });
-    await until(() => fs.existsSync(join(f.env.HOME, 'waiting-on-mailbox')));
+    await until(() => fs.existsSync(join(f.env.HOME, 'waiting-on-mailbox')), t.signal);
     assert.deepEqual((await call.rpc('ping')).result, {});
   } finally { fs.closeSync(fd); }
   assert.match((await pending).content[0].text, /pending for Antigravity delivery/);
@@ -130,7 +130,7 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
     assert.equal(job.model, 'synthetic/sonic');
     assert.equal(job.thinking, 'high');
     assert.equal(job.thinking_source, 'default');
-    await until(() => f.commands().some((cmd) => cmd.dir === dir(id)));
+    await until(() => f.commands().some((cmd) => cmd.dir === dir(id)), t.signal);
     const launched = f.commands().find((cmd) => cmd.dir === dir(id)).args;
     assert.ok(launched.includes('--print'));
     assert.ok(launched.includes('--exclude-tools'));
@@ -145,13 +145,13 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   assert.deepEqual(await wait(first), stillWorking, 'a report file alone does not settle a child');
   assert.deepEqual(await wait(second, '0.2'), stillWorking);
   assert.deepEqual(resultValue(await call('hud_sonic', { timeout_s: 0 })), { reports: [], working: [first, second].sort(), failed: [] });
-  await until(() => workerFor(f, first)?.latest_progress?.text === 'Checking synthetic input.');
+  await until(() => workerFor(f, first)?.latest_progress?.text === 'Checking synthetic input.', t.signal);
   writeFixtureFile(join(dir(first), 'report.md'), 'Synthetic implementation report.');
   assert.deepEqual(await wait(first), stillWorking, 'an undeclared report does not end a live query');
   const changes = async () => (await f.call('hud_read')).changes ?? [];
   const waiting = call('hud_sonic', { timeout_s: 10 });
   fs.writeFileSync(join(dir(first), 'release-sonic'), '');
-  await until(() => cliState(dir(first))?.state === 'closed');
+  await until(() => cliState(dir(first))?.state === 'closed', t.signal);
   assert.ok(fs.statSync(join(dir(first), 'stdout.jsonl')).size > 0);
   assert.match(fs.readFileSync(join(dir(first), 'stderr.log'), 'utf8'), /Synthetic diagnostic/);
   assert.ok(!(await changes()).some((line) => line.startsWith(first)), 'child settlement stays quiet');
@@ -214,7 +214,7 @@ test('hud_sonic inherits the parent managed worktree cwd, not the worker MCP ser
   const child = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
   assert.equal(child.parent_job, parent.job);
   assert.equal(child.cwd, worktree);
-  await until(() => f.commands().some((cmd) => cmd.dir === dir && cmd.cwd === worktree));
+  await until(() => f.commands().some((cmd) => cmd.dir === dir && cmd.cwd === worktree), t.signal);
 });
 
 test('hud_sonic accepts a project cwd relative to the parent and refuses paths outside the project', async (t) => {
@@ -708,7 +708,7 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   assert.deepEqual(firstMeta.files, ['src/synthetic.ts']);
   assert.equal(fs.statSync(meta).mode & 0o777, 0o600);
   // The worker is still in its original chat turn; an explicit continuation invalidates its token.
-  await until(() => cliState(dir)?.state === 'working');
+  await until(() => cliState(dir)?.state === 'working', t.signal);
   assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).sent, true);
   const second = cliToken(dir);
   assert.notEqual(first, second);
@@ -731,14 +731,14 @@ for (const refused of [false, true]) {
     const job = await f.call('hud_create', { role: 'gap-worker', task: 'Synthetic first prompt.' });
     const dir = job.task_dir, call = workerClient(t, f, dir);
     const first = cliToken(dir);
-    await until(() => cliState(dir)?.state === 'working');
+    await until(() => cliState(dir)?.state === 'working', t.signal);
     assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic second prompt.' })).sent, true);
     const second = cliToken(dir);
     writeFixtureFile(join(f.env.HOME, refused ? 'rejected-prompt' : 'hold-prompt-result'), '');
     const sending = f.call('hud_send', { job: job.job, text: 'Synthetic third prompt.' });
     let third;
     try {
-      await until(() => (third = cliToken(dir)) !== second);
+      await until(() => (third = cliToken(dir)) !== second, t.signal);
       assert.equal((await call('hud_report', { text: 'Too old.', turn: first })).isError, true);
       assert.deepEqual(resultValue(await call('hud_report', { text: 'Second turn finished.', turn: second })),
         { path: join(dir, 'report.md') });
@@ -761,7 +761,7 @@ for (const refused of [false, true]) {
         { path: join(dir, 'report.md') });
     }
     f.push(job.job, 'idle');
-    await until(() => cliState(dir)?.state === 'closed' && cliState(dir).output_written);
+    await until(() => cliState(dir)?.state === 'closed' && cliState(dir).output_written, t.signal);
   });
 }
 
@@ -925,7 +925,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
 
     const first = cliToken(dir);
     assertPrompt(first);
-    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.agent_session_id);
+    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.agent_session_id, t.signal);
     const session = cliState(dir).agent_session_id;
     if (mode === 'shell fallback') writeFixtureFile(report, 'Synthetic first agy report.\n');
     assert.equal(await declare(first, 'Synthetic first agy report.\n'), undefined);
@@ -933,7 +933,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
     assert.equal(turnToken(done), first);
     assert.equal(done.report_sig, reportSignature(dir));
     f.push(job.job, 'idle');
-    await until(() => cliState(dir)?.state === 'closed' && readCloseReaped(job));
+    await until(() => cliState(dir)?.state === 'closed' && readCloseReaped(job), t.signal);
 
     assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).continuation, 'resumed');
     const resumed = f.commands().filter(({ args }) => args[1] === 'start').at(-1).args;
@@ -941,7 +941,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
     const second = cliToken(dir);
     assert.notEqual(first, second);
     assertPrompt(second);
-    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.pid);
+    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.pid, t.signal);
     if (mode === 'shell fallback') writeFixtureFile(report, 'Synthetic second agy report.\n');
     assert.match(await declare(first, 'Stale agy report.\n'), /use the turn token from the prompt you are answering/);
     assert.deepEqual(receipt(), done);
@@ -952,7 +952,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
     assert.equal(readReportMeta(dir).summary, 'Synthetic agy result.');
     assert.deepEqual(readReportMeta(dir).files, ['src/synthetic.ts']);
     f.push(job.job, 'idle');
-    await until(() => cliState(dir)?.state === 'closed' && cliState(dir)?.output_written === true);
+    await until(() => cliState(dir)?.state === 'closed' && cliState(dir)?.output_written === true, t.signal);
     assert.equal(cliState(dir).agent_session_id, session);
   });
 }
@@ -1035,7 +1035,7 @@ test(
     writeFixtureFile(join(dir, 'SESSION.txt'), 'LEFT=w4E:p2\nORCH=w4E:p1\n');
     const call = workerClient(t, f, dir);
     const pending = call('hud_ask', { question: 'Which layout?', options: ['rows', 'columns'], default: 'rows', context: 'card width' });
-    await until(() => fs.existsSync(join(dir, 'qa', 'q1.md')));
+    await until(() => fs.existsSync(join(dir, 'qa', 'q1.md')), t.signal);
     assert.equal(fs.statSync(join(dir, 'qa', 'q1.md')).mode & 0o777, 0o600);
     const body = fs.readFileSync(join(dir, 'qa', 'q1.md'), 'utf8');
     assert.match(body, /^# Question q1 from grok-imp@MyHUD\n/);
@@ -1044,7 +1044,7 @@ test(
     assert.match(body, /Default if unanswered: rows/);
     assert.match(body, /Context: card width/);
     assert.match(body, /Answer: write the answer to .*q1\.answer\.md/);
-    await until(() => f.commands().some((c) => String(c.args.at(-1)).includes('QUESTION q1')));
+    await until(() => f.commands().some((c) => String(c.args.at(-1)).includes('QUESTION q1')), t.signal);
     const notice = f.commands().find((c) => String(c.args.at(-1)).includes('QUESTION q1'));
     assert.equal(notice.args[2], 'w4E:p1');
     assert.match(
@@ -1146,7 +1146,7 @@ test('worker-tools ask and waitSonic wake within 100 ms, settle on timeout, and 
 
   // 1. ask wakes within 100 ms when q1.answer.md is written and closes its watcher.
   const waitingAsk = ask({ dir: parentDir, job: parentJob }, { question: 'Which mode?', default: 'fast' }, '5');
-  await until(() => stats.active === 1);
+  await until(() => stats.active === 1, t.signal);
   const answerAt = performance.now();
   writeFixtureFile(join(parentDir, 'qa', 'q1.answer.md'), 'event-driven\n');
   const reply = await waitingAsk;
@@ -1172,7 +1172,7 @@ test('worker-tools ask and waitSonic wake within 100 ms, settle on timeout, and 
   // 3. ask abort rejects immediately and leaves zero open watchers.
   const askAbort = new AbortController();
   const abortedAsk = ask({ dir: parentDir, job: parentJob }, { question: 'Cancel me?', default: 'no' }, '30', askAbort.signal);
-  await until(() => stats.active === 1);
+  await until(() => stats.active === 1, t.signal);
   const askAbortAt = performance.now();
   askAbort.abort();
   await assert.rejects(() => abortedAsk, (error) => error?.name === 'AbortError');
@@ -1201,10 +1201,10 @@ test('worker-tools ask and waitSonic wake within 100 ms, settle on timeout, and 
   const c2Dir = makeChild(c2);
 
   const waitingSonic = waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c1, c2], 5);
-  await until(() => stats.active === 2);
+  await until(() => stats.active === 2, t.signal);
   writeFixtureFile(join(c1Dir, 'report.md'), 'Child one report.');
   writeFixtureFile(join(c1Dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true }));
-  await until(() => stats.active === 1);
+  await until(() => stats.active === 1, t.signal);
 
   const reportAt = performance.now();
   writeFixtureFile(join(c2Dir, 'report.md'), 'Child two report.');
@@ -1229,7 +1229,7 @@ test('worker-tools ask and waitSonic wake within 100 ms, settle on timeout, and 
   const c3 = 'j00000000000000b3';
   const c3Dir = makeChild(c3);
   const waitingTrunc = waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c3], 5);
-  await until(() => stats.active === 1);
+  await until(() => stats.active === 1, t.signal);
   writeFixtureFile(join(c3Dir, 'report.md'), 'Child three report.');
   fs.writeFileSync(join(c3Dir, 'STATUS.json'), '{"state":');
   setTimeout(() => writeFixtureFile(join(c3Dir, 'STATUS.json'), JSON.stringify({ state: 'done' })), 20);
@@ -1251,7 +1251,7 @@ test('worker-tools ask and waitSonic wake within 100 ms, settle on timeout, and 
 
   const sonicAbort = new AbortController();
   const abortedSonic = waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c4], 30, sonicAbort.signal);
-  await until(() => stats.active === 1);
+  await until(() => stats.active === 1, t.signal);
   const sonicAbortAt = performance.now();
   sonicAbort.abort();
   await assert.rejects(() => abortedSonic, (error) => error?.name === 'AbortError');
@@ -1296,7 +1296,7 @@ syncBuiltinESMExports();`;
 
   // 1. hud_ask via MCP wakes within 100 ms of hud_respond.
   const pendingAsk = call('hud_ask', { question: 'Ship now?', default: 'wait' });
-  await until(() => fs.existsSync(join(parent.task_dir, 'qa', 'q1.md')) && fs.existsSync(statsPath) && watchStats().active > 0);
+  await until(() => fs.existsSync(join(parent.task_dir, 'qa', 'q1.md')) && fs.existsSync(statsPath) && watchStats().active > 0, t.signal);
   const respondAt = performance.now();
   await f.call('hud_respond', { job: parent.job, request_id: 'q1', answer: 'ship it' });
   const askResult = await pendingAsk;
@@ -1311,7 +1311,7 @@ syncBuiltinESMExports();`;
   writeFixtureFile(join(childDir, 'job.json'), JSON.stringify({ ...receipt, role: 'sonic', parent_job: parent.job }));
   writeFixtureFile(join(childDir, 'report.md'), 'Synthetic implementation report.');
   const pendingSonic = call('hud_sonic', { wait: [child], timeout_s: 5 });
-  await until(() => watchStats().active > 0);
+  await until(() => watchStats().active > 0, t.signal);
   const settleAt = performance.now();
   publishSonic(childDir, { state: 'closed', output_written: true });
   const sonicResult = resultValue(await pendingSonic);
