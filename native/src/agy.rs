@@ -26,10 +26,7 @@ struct Slot {
 
 impl Slot {
     fn new(entry: &Path, caller: &str) -> Option<Self> {
-        // The launcher supplies PID:start_ticks from the verified agy ancestor, never from stdin.
-        if caller.is_empty() {
-            return None;
-        }
+        // Caller is PID:start_ticks from the agy ancestor, never from stdin.
         let home = state::home()?;
         let dir = home.join("display/statusline-agy-v1");
         state::no_links(&dir).ok()?;
@@ -149,7 +146,7 @@ impl Slot {
         let age = (state::now_ms() as u64).checked_sub(born.parse().ok()?)?;
         let line = raw.strip_suffix('\n')?;
         if age >= MAX_AGE_MS
-            || !line.strip_prefix("\x1b[0m").is_some_and(|s| !s.is_empty())
+            || line.is_empty()
             || raw.contains('\0')
             || bytes.len() > LINE_LIMIT
             || fields.next()? != sha256::hex(raw.as_bytes())
@@ -190,7 +187,7 @@ impl Slot {
         let output = Command::new("timeout")
             .args(["-k", ".2s", "2s", "node"])
             .arg(entry)
-            .arg("--agy-render")
+            .arg("--agy-cache-v1")
             .stdin(Stdio::inherit())
             .stderr(Stdio::null())
             .output();
@@ -202,23 +199,22 @@ impl Slot {
             .map(|s| s.trim_end_matches('\n'))
             .filter(|s| !s.is_empty());
         let _ = fs::remove_file(&tmp);
-        let stored = fresh
-            .filter(|s| s.strip_prefix("\x1b[0m").is_some_and(|s| !s.is_empty()))
-            .and_then(|s| {
-                let raw = format!("{s}\n");
-                let record = format!(
-                    "{} {} {} {}\n{raw}",
-                    self.key,
-                    self.stamp,
-                    state::now_ms() as u64,
-                    sha256::hex(raw.as_bytes())
-                );
-                if record.len() > LINE_LIMIT {
-                    return None;
-                }
-                private_file(&tmp).ok()?.write_all(record.as_bytes()).ok()?;
-                fs::rename(&tmp, &line).ok()
-            });
+        let frame = fresh.and_then(|s| s.strip_prefix("hud-statusline-v1:"));
+        let stored = frame.filter(|s| !s.is_empty()).and_then(|s| {
+            let raw = format!("{s}\n");
+            let record = format!(
+                "{} {} {} {}\n{raw}",
+                self.key,
+                self.stamp,
+                state::now_ms() as u64,
+                sha256::hex(raw.as_bytes())
+            );
+            if record.len() > LINE_LIMIT {
+                return None;
+            }
+            private_file(&tmp).ok()?.write_all(record.as_bytes()).ok()?;
+            fs::rename(&tmp, &line).ok()
+        });
         if stored.is_none() {
             let _ = fs::remove_file(line);
         }
@@ -226,7 +222,7 @@ impl Slot {
         let _ = fs::remove_file(marker);
         // Missing timeout: decline and replay through the launcher's plain agy-only TS path.
         output.as_ref().ok()?;
-        Some(fresh.unwrap_or("HUD unavailable").into())
+        Some(frame.or(fresh).unwrap_or("HUD unavailable").into())
     }
     fn prune(&self) {
         for i in 0..SLOTS {
@@ -251,20 +247,47 @@ fn private_file(path: &Path) -> io::Result<File> {
         .open(path)
 }
 
-// A probe has no stdin. Only a complete frame authorizes the launcher to drain it (fresh)
-// or give it to a detached single-flight refresh (stale).
-pub fn lookup(entry: &Path, caller: &str) -> Option<String> {
-    let slot = Slot::new(entry, caller)?;
+fn identity(pid: &str) -> Option<String> {
+    if pid.starts_with('0') || !pid.bytes().all(|b| b.is_ascii_digit()) || pid.is_empty() {
+        return None;
+    }
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (name, fields) = stat.split_once(" (")?.1.rsplit_once(") ")?;
+    let birth = fields.split_ascii_whitespace().nth(19)?;
+    (matches!(name, "agy" | "antigravity") && birth.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| format!("{pid}:{birth}"))
+}
+
+// Only a complete frame authorizes us to drain stdin (fresh) or pass it to a detached refresh (stale).
+pub fn hit(entry: &Path, pid: &str) -> Option<(String, bool)> {
+    let caller = identity(pid)?;
+    let slot = Slot::new(entry, &caller)?;
     let (frame, age) = slot.read()?;
     if slot.marked() {
         return None;
     }
-    let action = if age < FRESH_MS { "fresh" } else { &slot.stamp };
-    Some(format!("{action}\n{frame}"))
+    let fresh = age < FRESH_MS;
+    if !fresh
+        && !Command::new("setsid")
+            .arg("-f")
+            .arg(env::current_exe().ok()?)
+            .arg("--agy-refresh-v1")
+            .arg(entry)
+            .args([&caller, &slot.stamp])
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()?
+            .success()
+    {
+        return None;
+    }
+    Some((frame, fresh))
 }
 
-pub fn serve(entry: &Path, caller: &str) -> Option<String> {
-    let slot = Slot::new(entry, caller)?;
+pub fn serve(entry: &Path, pid: &str) -> Option<String> {
+    let slot = Slot::new(entry, &identity(pid)?)?;
     let lock = slot.lock_file()?;
     let deadline = Instant::now() + Duration::from_millis(MAX_AGE_MS);
     let cached = slot.read();
@@ -306,8 +329,8 @@ pub fn refresh(entry: &Path, caller: &str, expected_stamp: &str) -> Option<()> {
     Some(())
 }
 
-// A losing refresh worker still owns the producer's pipe. Exit after 1 s even without EOF;
-// the short-lived process drops the reader thread on exit. Successful renders use Node's bounded reader.
+// Fresh hits and losing refresh workers still own the producer's pipe. Exit after 1 s even
+// without EOF; the process drops the reader thread on exit. Renders use Node's bounded reader.
 pub fn drain() {
     let (done, wait) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

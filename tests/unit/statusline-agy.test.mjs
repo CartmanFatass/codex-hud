@@ -64,6 +64,7 @@ function fixture(t) {
           assert.equal(status, 0, stderr);
           assert.equal(stderr, '');
           assert.ok(!stdout.includes(email), 'email never goes to stdout');
+          assert.ok(!stdout.includes('\x1b'), 'NO_COLOR disables terminal escapes');
           resolveRun(strip(stdout));
         } catch (err) { rejectRun(err); }
       });
@@ -217,6 +218,7 @@ function agyCaller(t, shim, env) {
     assert.equal(status, 0, stderr);
     assert.equal(stderr, '');
     assert.ok(!stdout.includes(email));
+    assert.ok(!stdout.includes('\x1b'), 'NO_COLOR disables terminal escapes on the cache path');
     return strip(stdout);
   };
 }

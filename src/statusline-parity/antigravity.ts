@@ -1,4 +1,5 @@
 import { renderBar, type BarQuotaWindow } from '../render/layout/bar-fields.js';
+import { displayConfig } from '../render/hud-config.js';
 import type { WorkSignals } from '../render/work-summary.js';
 import { monitorText } from '../render/monitor-text.js';
 import { formatWindowLabel } from '../render/quota.js';
@@ -53,7 +54,8 @@ export function renderAntigravity(
   }
   const cwd = label(workspace.project_dir) || label(value.cwd);
   const project = cwd.split(/[/\\]/).filter(Boolean).at(-1) || (cwd.startsWith('/') ? '/' : '');
-  return '\x1b[0m' + renderBar({
+  const reset = displayConfig().theme === 'none' ? '' : '\x1b[0m';
+  return reset + renderBar({
     model: { name: modelName, id: id || undefined },
     context: used === undefined ? undefined : { percent: used, shown: `${used}%`, window },
     project: project ? { name: project, branch: null } : undefined,

@@ -189,13 +189,19 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
 fn main() -> ExitCode {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
     match args.as_slice() {
+        // Keep the probe flag so an older binary also leaves stdin alone on a miss.
         [flag, entry, caller] if flag == "--agy-lookup-v1" => {
-            return match agy::lookup(Path::new(entry), caller) {
-                Some(line) => frame(&line, true),
-                None => ExitCode::from(75),
+            let Some((mut line, fresh)) = agy::hit(Path::new(entry), caller) else {
+                return ExitCode::from(75);
             };
+            line.push('\n');
+            let _ = io::stdout().lock().write_all(line.as_bytes());
+            if fresh {
+                agy::drain();
+            }
+            return ExitCode::SUCCESS; // A hit already took ownership of stdin.
         }
-        [flag, entry, caller] if flag == "--agy-launcher-v1" => {
+        [flag, entry, caller] if flag == "--agy-launcher-v2" => {
             return match agy::serve(Path::new(entry), caller) {
                 Some(line) => frame(&line, true),
                 None => ExitCode::from(75),

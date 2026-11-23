@@ -46,7 +46,7 @@ Compact output remains the default; presentation options do not change settings.
 See docs/reference.md (Claude statusline and shared facts) for fields, settings and recovery.
 `;
 
-export async function statuslineCommand(args: readonly string[], io: HudIO, antigravityOnly = false): Promise<number> {
+export async function statuslineCommand(args: readonly string[], io: HudIO, agyMode: false | 'render' | 'cache' = false): Promise<number> {
   if (args.length === 1 && args[0] === '--help') {
     await io.stdout(STATUSLINE_HELP);
     return 0;
@@ -139,7 +139,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
     ttyColumns: tty,
     onInput: (bytes, value) => {
       if (Object.hasOwn(value, 'email')) delete value.email;
-      else if (!antigravityOnly && isClaude(value)) forwardInput(parity?.forward, bytes, io.env);
+      else if (!agyMode && isClaude(value)) forwardInput(parity?.forward, bytes, io.env);
     },
     degraded: (width) => truncateAnsi('HUD unavailable', width),
     stdout: async (text) => {
@@ -158,9 +158,10 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, anti
         const now = Date.now();
         const scope = { project: null, pane: io.env.HERDR_PANE_ID ?? null };
         const snapshot = await collectJobLanes(getHudHome(io.env), scope, { settledBefore: now }).catch(() => undefined);
-        return renderAntigravity(input, width, options, snapshot && workSignals(snapshot.lanes, now));
+        const frame = renderAntigravity(input, width, options, snapshot && workSignals(snapshot.lanes, now));
+        return agyMode === 'cache' ? `hud-statusline-v1:${frame}` : frame;
       }
-      if (antigravityOnly || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
+      if (agyMode || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
       const now = Date.now();
       recordClaudeQuota(value, io.env, now);
       const home = getHudHome(io.env), pane = io.env.HERDR_PANE_ID ?? null;
