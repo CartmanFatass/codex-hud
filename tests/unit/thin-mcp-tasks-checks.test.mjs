@@ -103,12 +103,14 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   assert.equal(JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'))).repair_of, job.job);
 });
 
-test('late Claude mod watch stands down new tasks, enables batch create, and stops main-pane typing', async (t) => {
+test('late Claude mod watch stands down new tasks, enables batch create, and stops main-pane typing', { timeout: 30_000 }, async (t) => {
   const f = await fixture(t), rpc = taskRpc(f.rpc);
   await rpc('server/discover');
   // Settle while the connection is using tasks, after its original changes baseline.
   const old = taskJob(f, await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic old task.' }));
   await publishPiGrace(old);
+  // Take the handover baseline after the watcher has closed the old job, not during idle_grace.
+  await until(() => readCloseReaped(old), t.signal);
   appendPanelAction(f.env.HUD_HOME, { type: 'retry', job: old.job });
   const watch = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--mod'], { cwd: f.root, env: f.env, stdio: 'ignore' });
   const exited = once(watch, 'exit');

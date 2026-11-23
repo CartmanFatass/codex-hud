@@ -21,7 +21,7 @@ for (const layout of ['sessions', '.dispatch/helper/sessions']) {
       fs.symlinkSync(join(folder, 'absent.jsonl'), dangling);
       const { child, exited } = f.start();
       await until(() => child.exitCode !== null || (!fs.existsSync(old) && links.every((link) =>
-        !fs.lstatSync(link, { throwIfNoEntry: false }))));
+        !fs.lstatSync(link, { throwIfNoEntry: false }))), t.signal);
       assert.equal(child.exitCode, null, 'watcher survives startup with an open job');
       assert.equal(fs.existsSync(old), false);
       assert.ok(links.every((link) => !fs.lstatSync(link, { throwIfNoEntry: false })));
@@ -255,7 +255,10 @@ fs.watch = (...args) => {
   const watcher = watch(...args);
   if (${fault === 'transient later error'} && attempts === 1) {
     setTimeout(() => watcher.emit('error', Error('synthetic transient later error')), 100);
-  } else writeFixtureFile(process.env.HUD_HOME + '/watch-ready', String(attempts));
+  } else {
+    // Registration precedes the synchronous catch-up scan. Publish its barrier on the next turn.
+    setImmediate(() => writeFixtureFile(process.env.HUD_HOME + '/watch-ready', String(attempts)));
+  }
   return watcher;
 };
 syncBuiltinESMExports();`);
