@@ -53,7 +53,7 @@ export function installPiPackage(
 ) {
   const env: NodeJS.ProcessEnv = { ...(deps.env ?? process.env), HUD_HOME: binding.hudHome };
   let footer: ReturnType<typeof createP10kFooter> | undefined;
-  const segment = createPiSegment({ env, ...deps.segment, onSignals: (signals) => footer?.setWork(signals),
+  const segment = createPiSegment({ env, ...deps.segment, onSignals: (counts, localLoad) => footer?.setWork(counts, localLoad),
     statusVisible: () => !footer?.ownsFooter() });
   type State = {
     ctx: PiPackageContext;

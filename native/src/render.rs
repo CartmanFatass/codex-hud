@@ -2,6 +2,7 @@
 use crate::{
     config::{Display, Policy},
     json::{self, Value},
+    local_load::LocalLoad,
     quota::WINDOWS,
     state::{self, MachineWork},
 };
@@ -56,6 +57,7 @@ enum Field {
     Quota,
     Tps,
     Notice,
+    LocalLoad,
     Loaded,
 }
 struct Segment {
@@ -664,17 +666,10 @@ pub struct Evidence<'a> {
     pub git: &'a Value,
     pub transcript: &'a Value,
     pub work: MachineWork,
+    pub local_load: Option<&'a LocalLoad>,
     pub mcp: u64,
 }
-pub fn bar(
-    input: &Value,
-    e: Evidence,
-    policy: &Policy,
-    display: &Display,
-    now: f64,
-    width: usize,
-) -> Option<String> {
-    let t = e.transcript;
+pub fn supports_bar(input: &Value, t: &Value, policy: &Policy, display: &Display, now: f64) -> bool {
     let visible_notice = display.fields[5];
     // Recent detailed events use the reference renderer (locale sorting and word wrapping). Silent/expired events
     // do not prevent the compact snapshot, vitals, transcript TPS and loaded counts from taking the fast path.
@@ -692,7 +687,7 @@ pub fn bar(
                     .list()
                     .is_some_and(|s| s.iter().any(|s| recent(s.get("at"))))))
     {
-        return None;
+        return false;
     }
     // Reset timestamps outside JavaScript's Date range are not part of Claude's native protocol.
     if WINDOWS.iter().any(|(key, _)| {
@@ -703,12 +698,21 @@ pub fn bar(
             .num()
             .is_some_and(|n| n > 8.64e12)
     }) {
-        return None;
+        return false;
     }
     let rate = t.get("speed").get("response").get("tps");
-    if rate != &Value::Null && rate.num().is_none() {
-        return None;
-    }
+    rate == &Value::Null || rate.num().is_some()
+}
+pub fn bar(
+    input: &Value,
+    e: Evidence,
+    policy: &Policy,
+    display: &Display,
+    now: f64,
+    width: usize,
+) -> String {
+    let t = e.transcript;
+    let rate = t.get("speed").get("response").get("tps");
     let mut list: Vec<_> = [
         Some(model(input, t, policy, display.ascii)),
         Some(context(e.context, e.compact)),
@@ -728,6 +732,14 @@ pub fn bar(
     .zip(display.fields)
     .filter_map(|(seg, on)| if on { seg } else { None })
     .collect();
+    if let Some(load) = e.local_load.filter(|_| display.fields[5]) {
+        let forms = load
+            .forms()
+            .into_iter()
+            .map(|text| vec![piece(text, ValueRole)])
+            .collect();
+        list.push(Segment::new(Field::LocalLoad, (110, 235), forms));
+    }
     if display.fields[6] {
         let skills = if policy.skills {
             t.get("skills").list().map_or(0, |s| s.len() as u64)
@@ -759,7 +771,7 @@ pub fn bar(
             ));
         }
     }
-    Some(fit(list, display, width))
+    fit(list, display, width)
 }
 
 fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
@@ -785,6 +797,8 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
         Some(Quota),
         Some(Project),
         Some(Tps),
+        Some(LocalLoad),
+        Some(LocalLoad),
         Some(Model),
         Some(Context),
         Some(Project),

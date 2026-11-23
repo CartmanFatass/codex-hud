@@ -1,6 +1,8 @@
 import { getHudHome } from '../hud-home.js';
 import { formatMachineWork } from '../render/work-summary.js';
 import { readMachineWork } from '../collectors/work-summary-snapshot.js';
+import { collectLocalLoad } from '../collectors/local-load.js';
+import { fitLocalLoad } from '../render/local-load.js';
 import { fileURLToPath } from 'node:url';
 import { truncateAnsi, visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
@@ -32,7 +34,7 @@ export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--sourc
        hud statusline settings restore --backup ABSOLUTE_FILE
        hud-statusline [same arguments]
 
-Render stdin Claude or Antigravity facts and fresh machine-wide HUD job counts.
+Render stdin Claude or Antigravity facts, machine-wide HUD job counts and Linux/WSL load.
 Claude quota windows may be cached locally for the panel.
 No network access or installation by default.
 The shared bar uses HUD config.json statusline preferences, or defaults when absent.
@@ -151,25 +153,25 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
         const terminal = input.terminal_width;
         if (!widthArgs.length && typeof terminal === 'number' && Number.isSafeInteger(terminal) && terminal > 0)
           width = Math.max(1, Math.min(500, terminal - (parity?.widthMargin ?? 0)));
-        const work = readMachineWork(getHudHome(io.env), Date.now());
+        const home = getHudHome(io.env), now = Date.now();
+        const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now, io.env);
         if (!options.details) applyBarSettings();
-        const frame = renderAntigravity(input, width, options, work);
+        const frame = renderAntigravity(input, width, options, work, localLoad);
         return agyMode === 'cache' ? `hud-statusline-v1:${frame}` : frame;
       }
       if (agyMode || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
       const now = Date.now();
       recordClaudeQuota(value, io.env, now);
-      const work = readMachineWork(getHudHome(io.env), now);
-      if (parity && !options.details) {
+      const home = getHudHome(io.env);
+      const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now, io.env);
+      if (!options.details) {
         applyBarSettings();
-        return collectAndRenderParity(value, width, parity, io.env, now, work);
+        return collectAndRenderParity(value, width, parity, io.env, now, work, localLoad);
       }
       const first = renderStatuslineSession(value, width, options);
       const load = work ? formatMachineWork(work) : '';
-      if (!load || visualLength(load) > width) return first;
-      if (options.details) return [first, load].filter(Boolean).join('\n');
-      const line = [first, load].filter(Boolean).join(' │ ');
-      return visualLength(line) <= width ? line : first;
+      return [first, load && visualLength(load) <= width ? load : undefined, fitLocalLoad(localLoad, width)]
+        .filter(Boolean).join('\n');
     },
   });
 }

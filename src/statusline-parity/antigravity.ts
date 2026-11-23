@@ -2,6 +2,8 @@ import { renderBar, type BarQuotaWindow } from '../render/layout/bar-fields.js';
 import { displayConfig } from '../render/hud-config.js';
 import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
 import { formatMachineWork } from '../render/work-summary.js';
+import type { LocalLoad } from '../collectors/local-load.js';
+import { fitLocalLoad } from '../render/local-load.js';
 import { visualLength } from '../render/colors.js';
 import { monitorText } from '../render/monitor-text.js';
 import { formatWindowLabel } from '../render/quota.js';
@@ -18,7 +20,8 @@ export function renderAntigravity(
   input: unknown,
   width: number,
   options: StatuslineSessionOptions,
-  work?: MachineWorkCounts
+  work?: MachineWorkCounts,
+  localLoad?: LocalLoad
 ): string {
   const value = record(input), model = record(value.model), context = record(value.context_window);
   const id = label(model.id), displayName = label(model.display_name);
@@ -54,7 +57,8 @@ export function renderAntigravity(
       },
     }, width, language, windows.map((w) => `${w.label} ${w.shown}`));
     const load = work && formatMachineWork(work);
-    return load && visualLength(load) <= width ? `${native}\n${load}` : native;
+    return [native, load && visualLength(load) <= width ? load : undefined, fitLocalLoad(localLoad, width)]
+      .filter(Boolean).join('\n');
   }
   const cwd = label(workspace.project_dir) || label(value.cwd);
   const project = cwd.split(/[/\\]/).filter(Boolean).at(-1) || (cwd.startsWith('/') ? '/' : '');
@@ -65,5 +69,6 @@ export function renderAntigravity(
     project: project ? { name: project, branch: null } : undefined,
     quota: windows.length ? { windows, trailing: true } : undefined,
     work,
+    localLoad,
   }, width).line;
 }

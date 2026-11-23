@@ -42,7 +42,8 @@ test('Claude statusline estimates the latest linked response from its bounded tr
         effort: 'high',
         context_window: { used_percentage: 42, context_window_size: 200000 },
       }),
-      env: { HOME: home, HUD_HOME: hud, CLAUDE_CONFIG_DIR: join(home, 'claude'), NO_COLOR: '1' },
+      env: { HOME: home, HUD_HOME: hud, HUD_STATUSLINE_PROC_ROOT: join(home, 'proc'),
+        CLAUDE_CONFIG_DIR: join(home, 'claude'), NO_COLOR: '1' },
       encoding: 'utf8',
       timeout: 25000,
     });

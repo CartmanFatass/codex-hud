@@ -1347,13 +1347,19 @@ model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s �
 Context is ten cells, green below 70%, yellow from 70%, red from 85%, measured against the client's compaction window when known.
 Claude/Codex show only their own tightest quota window, blue then magenta from 75%, red from 90%; pi has session cost instead (in its top-right editor ribbon, not duplicated below).
 Missing facts are absent.
-The notice zone is, in order: native approvals, machine-wide HUD job counts, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
+The notice zone is, in order: native approvals, machine-wide HUD job counts, local CPU/RAM, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
 
 `HUD (OS): 2 running, 1 queued` counts jobs across all projects under the same `$HUD_HOME`.
 Panes show the same counts, even if a pane has no jobs of its own. Model, context, project and quotas are still session-local.
 Running jobs include workers waiting for the main session; those questions are not owner requests and do not add an alert badge.
 Queued jobs have not started. Settled jobs and native client subagents are not counted.
 If the machine census is missing, stale or incomplete, the load is omitted rather than showing a pane count or guessing zero.
+
+`Linux: CPU 27% RAM 5.3/16.0 GiB` reports local OS load, not a per-session reading. In WSL it says `WSL:` and measures only the Linux guest, never the Windows host.
+CPU is the change in aggregate `/proc/stat` ticks since the previous sample. A single private sample lives at `$HUD_HOME/display/cpu-sample.v1.json`.
+The first reading, a gap of more than 30 seconds, or unusable counters leaves CPU blank; the bar does not wait for a second sample.
+RAM used is `MemTotal − MemAvailable` from `/proc/meminfo`. Swap used/total appears only when RAM available is below 10% and swap is in use.
+
 Open approvals are pinned first, the first one named (`! Approve: Bash`) and `+2` for the others, `! 3 needs` when even that does not fit; nothing open, nothing pinned.
 No clock, task count, hooks count, tool-at-work or idle fallback.
 
@@ -1374,7 +1380,7 @@ Both fit on one row; saved retired styles load as `line`.
 With colour disabled, the bar uses `line`.
 `barFields` selects from `model,context,project,quota,tps,notice,loaded` without reordering them.
 If you use a field allowlist, include `tps` to show the rate.
-Narrow bars (a main pane beside the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts; both gauges' cells together; the quota's reset and the branch's `↑n`; a subagent's title (a few words, then none); the rate; the older of two subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context.
+Narrow bars (a main pane beside the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts; both gauges' cells together; the quota's reset and the branch's `↑n`; a subagent's title (a few words, then none); the rate; swap, then local CPU/RAM; the older of two subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context.
 The model is never dropped.
 The two machine counts stay together. If the load label and both numbers still do not fit, the segment is omitted whole.
 pi keeps the same editor ribbon in both styles, and other extensions' statuses remain visible.
@@ -1388,7 +1394,7 @@ To switch back, select **Default status line** from the same picker.
 EXP’s **Track native status line** switch only records when MyHUD was last seen for each local profile; it does not change what Codex displays.
 
 The compact footer puts model and effort, context, then quota first.
-It shows the same machine-wide HUD job counts when a fresh census is available.
+It shows the same machine-wide HUD job counts when a fresh census is available, followed by available Linux/WSL load.
 On a narrow footer, Codex cuts the right end with `…`; `codexH`'s tmux bar keeps its width-aware layout.
 
 ### pi controls

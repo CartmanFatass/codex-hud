@@ -1,6 +1,7 @@
 mod agy;
 mod config;
 mod json;
+mod local_load;
 mod quota;
 mod render;
 mod sha256;
@@ -165,6 +166,10 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
         0
     };
     let compact = compact_window(&value)?;
+    if !render::supports_bar(&value, &transcript.value, &policy, &display, now) {
+        return None;
+    }
+    let load = local_load::collect(&home, now);
     let out = render::bar(
         &value,
         render::Evidence {
@@ -173,13 +178,14 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
             git: &git,
             transcript: &transcript.value,
             work,
+            local_load: load.as_ref(),
             mcp,
         },
         &policy,
         &display,
         now,
         width,
-    )?;
+    );
     if let (Some(file), Some(data)) = (file, write_context) {
         let _ = state::write(&state::cache_path(&home, "context", file), &data);
     }

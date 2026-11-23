@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { parityFixture } from '../../dist-test/fixtures/claude-hud-parity/fixture.js';
+import { syntheticProc } from '../fixtures/local-load.mjs';
 
 const launcher = resolve('bin/hud-statusline');
 const native = resolve('dist/native/hud-statusline');
@@ -38,7 +39,7 @@ function setup(hud) {
 }
 function environment(home) {
   return { HOME: home, HUD_HOME: join(home, 'hud'), CLAUDE_CONFIG_DIR: join(home, '.claude'),
-    PATH: process.env.PATH, LANG: 'C.UTF-8', TZ: 'UTC' };
+    HUD_STATUSLINE_PROC_ROOT: join(home, 'proc'), PATH: process.env.PATH, LANG: 'C.UTF-8', TZ: 'UTC' };
 }
 function run(cmd, args, env, input, status = 0) {
   if (!Buffer.isBuffer(input) && typeof input !== 'string') input = JSON.stringify(input);
@@ -110,6 +111,55 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
   const exact = Buffer.from(JSON.stringify(base).padEnd(65536, ' '));
   assert.deepEqual(run(launcher, [], env, exact), rust(env, exact), 'exactly 64 KiB remains valid');
   assert.deepEqual(run(launcher, [], env, Buffer.concat([exact, Buffer.from([0])])), ts(env, Buffer.alloc(65537, 32)));
+});
+
+test('Claude processes share a private CPU sample and show RAM and swap only as observed', { skip: process.platform !== 'linux' }, (t) => {
+  const home = receipt(t), env = { ...environment(home), NO_COLOR: '1' };
+  setup(env.HUD_HOME);
+  const { write } = syntheticProc(home, '6.6.0-microsoft-standard-WSL2');
+  const sample = join(env.HUD_HOME, 'display/cpu-sample.v1.json');
+  const input = { model: { display_name: 'Synthetic' } };
+  const render = (renderer = ts, width = 160) => renderer(env, input, ['--width', String(width)]).toString();
+  const mem = (available, free = 0) => write('meminfo',
+    `MemTotal: 8388608 kB\nMemAvailable: ${available} kB\nSwapTotal: 1048576 kB\nSwapFree: ${free} kB\n`);
+
+  mem(4194304);
+  write('stat', `cpu  100 20 40 800 10 5 5 20 30 4\n${'cpu0 0 0 0 0\n'.repeat(80)}`);
+  const first = render();
+  assert.match(first, /WSL: RAM 4\.0\/8\.0 GiB/);
+  assert.doesNotMatch(first, /CPU|swap/);
+  assert.equal(fs.statSync(sample).mode & 0o777, 0o600);
+
+  // +30 busy ticks, +70 idle (including iowait); the guest time is already in user/nice.
+  write('stat', 'cpu  115 25 47 860 20 6 6 21 40 6\n');
+  mem(419430);
+  const second = render(hasNative ? rust : ts);
+  assert.match(second, /WSL: CPU 30% RAM 7\.6\/8\.0 GiB swap 1\.0\/1\.0 GiB/);
+  write('stat', 'cpu  145 25 47 930 20 6 6 21 40 6\n');
+  const third = render();
+  assert.equal(third, second, 'TypeScript and native use the same sample format and text');
+  const narrow = render(hasNative ? rust : ts, 85);
+  assert.match(narrow, /WSL: RAM 7\.6\/8\.0 GiB/);
+  assert.doesNotMatch(narrow, /swap/);
+
+  const prior = JSON.parse(fs.readFileSync(sample, 'utf8'));
+  fs.writeFileSync(sample, JSON.stringify({ ...prior, at: Date.now() - 31_000 }));
+  write('stat', 'cpu  175 25 47 1000 20 6 6 21 40 6\n');
+  mem(419430, 1048576);
+  const afterGap = render(hasNative ? rust : ts);
+  assert.match(afterGap, /WSL: RAM 7\.6\/8\.0 GiB/);
+  assert.doesNotMatch(afterGap, /CPU|swap/, 'stale CPU and unused swap are omitted');
+
+  fs.rmSync(sample);
+  write('meminfo', 'MemTotal: 10485760 kB\nMemAvailable: 1048576 kB\nSwapTotal: 1048576 kB\nSwapFree: 0 kB\n');
+  const atThreshold = render(hasNative ? rust : ts);
+  assert.match(atThreshold, /WSL: RAM 9\.0\/10\.0 GiB/);
+  assert.doesNotMatch(atThreshold, /CPU|swap/, 'no prior sample, and exactly 10% RAM available is not pressure');
+  if (hasNative) {
+    delete env.NO_COLOR;
+    env.HUD_BAR_STYLE = 'p10k';
+    assert.equal(render(rust), render(ts), 'local load also matches in capsules');
+  }
 });
 
 test('Claude shows the same machine counts inside herdr, outside herdr and in an idle pane', { timeout: 60000 }, async (t) => {

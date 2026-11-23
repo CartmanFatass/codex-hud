@@ -38,6 +38,7 @@ export function parityFixture(home: string, scenario: Scenario) {
   const env: NodeJS.ProcessEnv = {
     HOME: home,
     HUD_HOME: hud,
+    HUD_STATUSLINE_PROC_ROOT: join(home, 'proc'),
     CODEX_HOME: join(home, 'codex'),
     CLAUDE_CONFIG_DIR: claude,
     PATH: process.env.PATH,

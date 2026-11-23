@@ -24,6 +24,7 @@ import {
   sonicTask,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { syntheticProc } from '../fixtures/local-load.mjs';
 
 test('CLI state trust defaults, owner overrides, roster facts and dispatch snapshots agree', async (t) => {
   const f = await fixture(t);
@@ -146,6 +147,7 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
   const f = await fixture(t, true, `
     import fs from 'node:fs';
     import { syncBuiltinESMExports } from 'node:module';
+    process.env.HUD_STATUSLINE_PROC_ROOT = process.env.HOME + '/proc';
     const readdir = fs.readdirSync;
     fs.readdirSync = (path, ...args) => {
       if (fs.existsSync(process.env.HOME + '/footer-reads') && /\\/(jobs|sessions)(\\/|$)/.test(String(path))) {
@@ -200,15 +202,17 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
       { limit_id: 'codex', primary_limit: windowOf(300, 115), secondary_limit: windowOf(10080, 99, 1) },
     ] },
   };
-  const load = 'HUD (OS): 2 running, 0 queued';
-  const ordered = ['6.2-sol high', 'ctx 38%', '5h 72% left', '7d 56% left', load];
+  const { write } = syntheticProc(f.env.HOME, '6.6.0-microsoft-standard-WSL2');
+  write('meminfo', 'MemTotal: 8388608 kB\nMemAvailable: 2097152 kB\n');
+  const load = ['HUD (OS): 2 running, 0 queued', ...(process.platform === 'linux' ? ['WSL: RAM 6.0/8.0 GiB'] : [])];
+  const ordered = ['6.2-sol high', 'ctx 38%', '5h 72% left', '7d 56% left', ...load];
   assert.deepEqual(footerText(await readFooter(f, a)), ordered);
-  assert.deepEqual(footerText(await readFooter(f, b)), ['Example B', 'ctx 12%', '5h 0% left', load]);
+  assert.deepEqual(footerText(await readFooter(f, b)), ['Example B', 'ctx 12%', '5h 0% left', ...load]);
   assert.deepEqual(footerText(await readFooter(f, a)), ordered);
   assert.deepEqual(footerText(await readFooter(f, {
     thread: { model: { id: null, display_name: null }, usage: { context: { used_percentage: -1 } } },
     account: { rate_limits: [{ limit_id: 'codex', primary_limit: windowOf(null, 9) }] },
-  })), [load]);
+  })), load);
 
   // Time across stdio with a warmed jobs cache and EXP enabled, including the first last-seen write.
   const exp = join(f.env.HUD_HOME, 'exp');
@@ -228,7 +232,7 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
     assert.ok(samples.at(-1) < 250, `footer RPC too slow: ${stats} ms`);
   }
   fs.unlinkSync(workSummaryPath(f.env.HUD_HOME));
-  assert.deepEqual(footerText(await readFooter(f)), [], 'no fallback to job scans or stale counts');
+  assert.deepEqual(footerText(await readFooter(f)), load.slice(1), 'local RAM survives; stale job counts do not');
   assert.equal(fs.existsSync(join(f.env.HOME, 'footer-scans')), false);
   assert.deepEqual(f.commands(), []);
   assert.deepEqual(f.socketRequests, []);
@@ -239,6 +243,7 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
     import { readFileSync } from 'node:fs';
     import { join } from 'node:path';
     process.env.CODEX_HOME = join(process.env.HOME, '.codex-link');
+    process.env.HUD_STATUSLINE_PROC_ROOT = join(process.env.HOME, 'proc');
     const now = Date.now;
     Date.now = () => {
       try { return Number(readFileSync(join(process.env.HOME, 'footer-clock'), 'utf8')); }

@@ -17,6 +17,8 @@ import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLen
 import { formatTokenCount } from '../lines/activity-line.js';
 import { activeBarStyle, displayConfig, iconSet, type BarField } from '../hud-config.js';
 import { formatMachineWork } from '../work-summary.js';
+import { localLoadForms } from '../local-load.js';
+import type { LocalLoad } from '../../collectors/local-load.js';
 import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import { providerMark } from '../providers.js';
 
@@ -110,6 +112,7 @@ export interface BarFacts {
   events?: BarEvent[];
   /** Fresh machine-wide HUD load. */
   work?: MachineWorkCounts;
+  localLoad?: LocalLoad;
   loaded?: { counts: ReadonlyArray<readonly [string, number | null | undefined]>; words?: Form[] };
 }
 
@@ -212,7 +215,7 @@ const bg = (index: number) => `\x1b[48;5;${index}m`;
 const RESET = '\x1b[0m';
 
 interface Seg {
-  id: BarField;
+  id: BarField | 'localLoad';
   /** Longest first. A segment gives up form by form, then goes. */
   forms: Form[];
   ink: Ink;
@@ -497,11 +500,12 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
  * Who gives up the next form when the line is too wide, cheapest loss first. The vitals' numbers outrank everything
  * round them, so the order is: the loaded counts; both gauges'
  * cells (`meters`: the two go together); the quota's reset; the branch's marks; a subagent's title (`title`, twice: a few
- * words, then altogether); the output rate; the older of two subagent items (`notice`, which also cuts the newest at a word, and shortens a pinned
- * need to `N needs`); the effort; the context's window; the branch; the quota; the project; the context. The model alone
+ * words, then altogether); the output rate; swap, then the local CPU/RAM segment; the older of two subagent items
+ * (`notice`, which also cuts the newest at a word, and shortens a pinned need to `N needs`); the effort; the context's
+ * window; the branch; the quota; the project; the context. The model alone
  * is never dropped. The load is omitted whole if it still cannot fit.
  */
-const LADDER: Array<BarField | 'meters' | 'title'> = [
+const LADDER: Array<Seg['id'] | 'meters' | 'title'> = [
   'loaded',
   'loaded',
   'meters',
@@ -510,6 +514,8 @@ const LADDER: Array<BarField | 'meters' | 'title'> = [
   'title',
   'title',
   'tps',
+  'localLoad',
+  'localLoad',
   'notice',
   'model',
   'context',
@@ -539,6 +545,9 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const load: Seg | null = on.has('notice') && facts.work
     ? { id: 'notice', forms: [[[formatMachineWork(facts.work), 'value']]], ink: P10K.info, at: 0 }
     : null;
+  const localLoad: Seg | null = on.has('notice') && facts.localLoad
+    ? { id: 'localLoad', forms: localLoadForms(facts.localLoad).map((text) => [[text, 'value']]), ink: P10K.info, at: 0 }
+    : null;
   const left = [
     on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
@@ -547,6 +556,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     on.has('tps') ? tpsSeg(facts.tps) : null,
     alertSeg,
     load,
+    localLoad,
   ].filter((seg): seg is Seg => seg !== null);
   const right = on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null;
   const all = right ? [...left, right] : left;

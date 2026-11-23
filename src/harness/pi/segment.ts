@@ -2,6 +2,8 @@
 import { readMachineWork, type MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import { getHudHome } from '../../hud-home.js';
 import { formatMachineWork } from '../../render/work-summary.js';
+import { collectLocalLoad, type LocalLoad } from '../../collectors/local-load.js';
+import { formatLocalLoad } from '../../render/local-load.js';
 
 export const HUD_STATUS_KEY = 'hud-delegation';
 export interface SegmentContext {
@@ -14,8 +16,8 @@ export function createPiSegment(options: {
   env: NodeJS.ProcessEnv;
   now?: () => number;
   schedule?: (callback: () => void, ms: number) => () => void;
-  onSignals?: (counts: MachineWorkCounts | undefined) => void;
-  /** The HUD-owned footer already shows the counts. */
+  onSignals?: (counts: MachineWorkCounts | undefined, localLoad?: LocalLoad) => void;
+  /** The HUD-owned footer already shows these readings. */
   statusVisible?: () => boolean;
 }) {
   let current: { ctx: SegmentContext; isCurrent(): boolean; home: string } | null = null;
@@ -36,9 +38,12 @@ export function createPiSegment(options: {
       stop();
       return;
     }
-    const counts = readMachineWork(state.home, (options.now ?? Date.now)());
-    options.onSignals?.(counts);
-    const next = counts && options.statusVisible?.() !== false ? formatMachineWork(counts) : undefined;
+    const now = (options.now ?? Date.now)();
+    const counts = readMachineWork(state.home, now), localLoad = collectLocalLoad(state.home, now, options.env);
+    options.onSignals?.(counts, localLoad);
+    const next = options.statusVisible?.() !== false
+      ? [counts && formatMachineWork(counts), localLoad && formatLocalLoad(localLoad)].filter(Boolean).join(' │ ') || undefined
+      : undefined;
     if (current === state && (!published || next !== text)) {
       published = true;
       text = next;

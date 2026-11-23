@@ -13,6 +13,7 @@ import { createWorkSummaryPublisher } from '../../dist/collectors/work-summary-s
 import { createPiSegment } from '../../dist/harness/pi/segment.js';
 import { writePrivateFile } from '../../dist/utils/atomic-fs.js';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
+import { syntheticProc } from '../fixtures/local-load.mjs';
 
 const pane = 'w4E:p1';
 function fixture(t, stop) {
@@ -68,18 +69,22 @@ test('equivalent fact snapshots keep the published thin-jobs inode', (t) => {
   assert.equal(same.mtimeNs, initial.mtimeNs);
 });
 
-test('passive pi status follows the machine census and clears on stop', (t) => {
+test('passive pi status shows available machine readings and clears on stop', (t) => {
   const { home, job } = fixture(t);
   job(1, 'queued');
   let timer, text;
-  const segment = createPiSegment({ env: { HUD_HOME: home }, schedule(fn) { timer = fn; return () => {}; } });
+  const { root, write } = syntheticProc(home);
+  write('meminfo', 'MemTotal: 8388608 kB\nMemAvailable: 4194304 kB\n');
+  const ram = process.platform === 'linux' ? 'Linux: RAM 4.0/8.0 GiB' : undefined;
+  const segment = createPiSegment({ env: { HUD_HOME: home, HUD_STATUSLINE_PROC_ROOT: root },
+    schedule(fn) { timer = fn; return () => {}; } });
   t.after(() => segment.stop());
   const ctx = { mode: 'tui', hasUI: true, ui: { setStatus(_key, value) { text = value; } } };
   segment.start(ctx, () => true);
-  assert.equal(text, undefined);
+  assert.equal(text, ram);
   createWorkSummaryPublisher(home, 'hud-mcp').publish();
   timer();
-  assert.equal(text, 'HUD (OS): 0 running, 1 queued');
+  assert.equal(text, ['HUD (OS): 0 running, 1 queued', ram].filter(Boolean).join(' │ '));
   segment.stop();
   timer();
   assert.equal(text, undefined);

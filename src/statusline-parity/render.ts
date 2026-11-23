@@ -4,6 +4,7 @@ import { monitorText } from '../render/monitor-text.js';
 import * as bar from '../render/layout/bar-fields.js';
 import { shortModel } from '../render/providers.js';
 import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
+import type { LocalLoad } from '../collectors/local-load.js';
 import { record } from './storage.js';
 import type { ParitySettings } from './settings.js';
 import type { TranscriptView } from './transcript.js';
@@ -72,7 +73,8 @@ export function renderParity(
   evidence: ParityEvidence,
   now: number,
   env: NodeJS.ProcessEnv = {},
-  work?: MachineWorkCounts
+  work?: MachineWorkCounts,
+  localLoad?: LocalLoad
 ): string {
   const v = record(input),
     m = record(v.model),
@@ -115,6 +117,7 @@ export function renderParity(
     tps: t.tps,
     events: events(t, d.showAgents, d.showSkills),
     work,
+    localLoad,
     loaded: {
       counts: [
         ['MCP', c.mcpCount],

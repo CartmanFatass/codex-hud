@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { createWorkSummaryPublisher } from '../../dist/collectors/work-summary-snapshot.js';
+import { syntheticProc } from '../fixtures/local-load.mjs';
 
 const bin = resolve('bin/hud-statusline');
 const email = 'user@example.invalid';
@@ -45,7 +46,8 @@ function fixture(t) {
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hud = join(home, 'hud');
   fs.mkdirSync(hud);
-  const env = { ...process.env, HOME: home, HUD_HOME: hud, CLAUDE_CONFIG_DIR: join(home, 'claude'), NO_COLOR: '1' };
+  const env = { ...process.env, HOME: home, HUD_HOME: hud, HUD_STATUSLINE_PROC_ROOT: join(home, 'proc'),
+    CLAUDE_CONFIG_DIR: join(home, 'claude'), NO_COLOR: '1' };
   // Do not inherit the caller's HUD bar overrides or another pane's data.
   for (const key of Object.keys(env)) {
     if (/^(?:CODEX_)?HUD_(THEME|ICONS|BAR_FIELDS|BAR_STYLE|SETTINGS_PATH)$/.test(key) || key === 'HERDR_PANE_ID')
@@ -98,6 +100,15 @@ test('Antigravity renders fresh/mid-turn/quotas, EN/ZH details and the caller wi
     'model Gemini 4 Carbon (High) · ctx [----------] 0% · cwd /synthetic/work/demo · left 0% · in 0 tokens · out 0 tokens',
     '模型 Gemini 4 Carbon (High) · 上下文 [----------] 0% · 目录 /synthetic/work/demo · 剩余 0% · 输入 0 词元 · 输出 0 词元',
   ]);
+});
+
+test('Antigravity shows local readings in its bar and details', { skip: process.platform !== 'linux' }, async (t) => {
+  const { home, env, run } = fixture(t);
+  delete env.WSL_INTEROP;
+  const { write } = syntheticProc(home);
+  write('meminfo', 'MemTotal: 8388608 kB\nMemAvailable: 2097152 kB\n');
+  assert.equal(await run(payload), `${wide} │ Linux: RAM 6.0/8.0 GiB`);
+  assert.match(await run(payload, ['--details']), /\nLinux: RAM 6\.0\/8\.0 GiB$/);
 });
 
 test('Antigravity draws machine-wide counts, including long-running jobs outside the caller pane', async (t) => {

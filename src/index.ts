@@ -31,6 +31,7 @@ import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { BarNoticeTracker } from './collectors/bar-notices.js';
 import { readMachineWork } from './collectors/work-summary-snapshot.js';
+import { collectLocalLoad } from './collectors/local-load.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
 import type { HudData } from './types.js';
@@ -216,7 +217,10 @@ async function mainLoop(): Promise<void> {
     const scopeKey = sessionFinder.getCurrentSession()?.sessionId ?? '';
     const now = Date.now();
     if (!adaptivePollDue(adaptive, scopeKey, now)) {
-      if (cachedHudData) cachedHudData.work = readMachineWork(hudHome, now);
+      if (cachedHudData) {
+        cachedHudData.work = readMachineWork(hudHome, now);
+        cachedHudData.localLoad = collectLocalLoad(hudHome, now);
+      }
       repaintCached();
       return;
     }
@@ -224,7 +228,9 @@ async function mainLoop(): Promise<void> {
     try {
       const data = await collectData();
       data.notices = notices.observe(data, Date.now());
-      data.work = readMachineWork(hudHome, Date.now());
+      const sampledAt = Date.now();
+      data.work = readMachineWork(hudHome, sampledAt);
+      data.localLoad = collectLocalLoad(hudHome, sampledAt);
       renderToStdout(data, HUD_PANE_HEIGHT);
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.

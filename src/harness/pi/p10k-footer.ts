@@ -19,6 +19,7 @@ import { activeBarStyle, displayConfig, type BarStyle } from '../../render/hud-c
 import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
+import type { LocalLoad } from '../../collectors/local-load.js';
 import { applyBarSettings } from '../../bar-settings.js';
 import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
@@ -486,6 +487,7 @@ export function createP10kFooter(
       },
       quota,
       work,
+      localLoad,
       loaded: {
         counts: [
           ['MCP', enabled('mcp') ? capturedLoaded.mcp : 0],
@@ -526,8 +528,9 @@ export function createP10kFooter(
     }
   }
   let capturedLoaded: LoadedCounts = { mcp: 0, skills: 0 };
-  /** Machine-wide HUD load, pushed by the Work segment's timer. */
+  /** Machine-wide readings, pushed by the Work segment's timer. */
   let work: MachineWorkCounts | undefined;
+  let localLoad: LocalLoad | undefined;
   let repaint: (() => void) | null = null;
   let mounted = false;
   let live = true;
@@ -703,6 +706,7 @@ export function createP10kFooter(
     mounted = true;
     config = fromSettings();
     work = undefined;
+    localLoad = undefined;
     applyBarSettings();
     lensFiles.clear();
     lensAnalyzed = false;
@@ -734,8 +738,9 @@ export function createP10kFooter(
     requestStarted: subscription.requestStarted,
     requestWindows: subscription.requestWindows,
     /** Work signals also refresh idle ledger balances (other workers or cycle rollover); no new timer. */
-    setWork(counts: MachineWorkCounts | undefined) {
+    setWork(counts: MachineWorkCounts | undefined, load?: LocalLoad) {
       work = counts;
+      localLoad = load;
       apiQuota = readApiQuota(current);
       repaint?.();
     },

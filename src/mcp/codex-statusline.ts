@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { expNativePath, readExpNativeSeen } from '../collectors/exp-native.js';
 import { writePrivateFile, readFileBounded } from '../utils/atomic-fs.js';
 import { readMachineWork } from '../collectors/work-summary-snapshot.js';
+import { collectLocalLoad } from '../collectors/local-load.js';
+import { formatLocalLoad } from '../render/local-load.js';
 import { truncateAnsi } from '../render/colors.js';
 import { formatMachineWork } from '../render/work-summary.js';
 import { monitorText } from '../render/monitor-text.js';
@@ -112,6 +114,8 @@ export function readCodexStatusline(meta: unknown, home: string, now = Date.now(
 
   const work = readMachineWork(home, now);
   if (work) children.push(text('status-state', formatMachineWork(work)));
+  const localLoad = collectLocalLoad(home, now);
+  if (localLoad) children.push(text('status-state', formatLocalLoad(localLoad)));
   const tree = { type: 'row', props: { gap: 2, wrap: 'nowrap' }, children };
   if (state) recordLastSeen(home, now);
   return { contents: [{ uri: URI, mimeType: MIME, text: JSON.stringify(tree) }] };
