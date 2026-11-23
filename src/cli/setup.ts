@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import { readJsonFile as readJson, writeFileAtomic } from '../utils/atomic-fs.js';
 import { fileURLToPath } from 'node:url';
 import { getHudHome } from '../hud-home.js';
+import { proposedDisposablePaths } from '../mcp/managed-worktree.js';
 import { projectRoot, registeredProject } from '../roles/projects.js';
 import { executable, projectReason, roleRegistry, type Role } from '../roles/roster.js';
 import type { HudIO } from './hud.js';
@@ -12,7 +13,7 @@ import { CliError } from './private-home.js';
 const USAGE = 'usage: hud setup --detect [--cwd DIR] | --apply PLAN [--cwd DIR] | --remove [--cwd DIR]';
 const DEFAULT_SKILL_ROOTS = ['~/.pi/agent/skills', '~/.claude/skills', '~/.agents/skills'];
 const NAME = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
-const PLAN_FIELDS = new Set(['version', 'roles', 'pi_roles', 'runs', 'skills', 'agents', 'convention']);
+const PLAN_FIELDS = new Set(['version', 'roles', 'pi_roles', 'runs', 'skills', 'agents', 'convention', 'disposable']);
 const ROLE_FIELDS = new Set(['from', 'pi_role', 'model', 'thinking', 'split', 'can_continue', 'skills']);
 type Registry = ReturnType<typeof roleRegistry>;
 type Kind = 'missing' | 'file' | 'link' | 'dir' | 'other';
@@ -32,6 +33,7 @@ interface Plan {
   skills: Record<string, string>;
   agents: Record<string, string>;
   convention: 'keep' | 'copy-default';
+  disposable?: string[];
 }
 interface Records {
   land?: unknown;
@@ -51,7 +53,7 @@ export async function setupCommand(args: readonly string[], io: HudIO): Promise<
   const parsed = parse(args);
   const cwd = parsed.cwd ? directory(parsed.cwd) : process.cwd();
   if (parsed.mode === 'detect') {
-    await io.stdout(JSON.stringify(detect(cwd, io.env), null, 2) + '\n');
+    await io.stdout(JSON.stringify(await detect(cwd, io.env), null, 2) + '\n');
     return 0;
   }
   if (parsed.mode === 'remove') return remove(cwd, io.env, io);
@@ -90,7 +92,7 @@ function directory(arg: string): string {
   throw new CliError(`not a directory: ${arg}`);
 }
 
-function detect(cwd: string, env: NodeJS.ProcessEnv) {
+async function detect(cwd: string, env: NodeJS.ProcessEnv) {
   const hudHome = getHudHome(env),
     bundled = bundledRoot(),
     gate = registeredProject(hudHome, cwd);
@@ -129,6 +131,7 @@ function detect(cwd: string, env: NodeJS.ProcessEnv) {
       skilled.sort((a, b) => cmp(a.role, b.role)).map((role) => [role.role, role.skills])
     ),
     skill_links: gate.registered ? skillLinks(gate.root) : [],
+    proposed_disposable: gate.registered ? await proposedDisposablePaths(hudHome, gate.root) : [],
   };
 }
 
@@ -395,7 +398,11 @@ function loadPlan(path: string, hudHome: string, root: string, env: NodeJS.Proce
   for (const [name, entry] of Object.entries(pi_roles)) {
     if (!roleFiles.has(name)) roleFiles.set(name, roleBody(name, entry, reference));
   }
-  return { roles: parsed.roles as string[], roleFiles, skills, agents, convention };
+  const disposable = parsed.disposable;
+  if (disposable !== undefined && (!Array.isArray(disposable) || disposable.some(
+    (glob) => typeof glob !== 'string' || !glob.trim() || /[\x00-\x1f\x7f]/.test(glob)
+  ))) bad('disposable');
+  return { roles: parsed.roles as string[], roleFiles, skills, agents, convention, disposable };
 }
 function loadRuns(value: unknown, known: Set<string>, piRoles: Record<string, PlanRole>, reference: Registry) {
   const files = new Map<string, RoleBody>();
@@ -650,6 +657,14 @@ async function apply(planPath: string, cwd: string, env: NodeJS.ProcessEnv, io: 
   if (projectKind === 'link' || projectKind === 'dir' || projectKind === 'other')
     throw new CliError('refusing: .hud/project.json is not a file');
   const records = loadRecords(projectFile);
+  let worktree = records.worktree;
+  if (plan.disposable?.length) {
+    if (worktree !== undefined && !isRecord(worktree)) throw new CliError('refusing: invalid worktree configuration');
+    const current = worktree?.disposable;
+    if (current !== undefined && (!Array.isArray(current) || current.some(glob => typeof glob !== 'string')))
+      throw new CliError('refusing: invalid worktree.disposable configuration');
+    worktree = { ...worktree, disposable: [...new Set([...(current ?? []), ...plan.disposable])] };
+  }
   const parents = [
     ...(plan.roleFiles.size || records.role_files.size
       ? [['.hud/roles', join(hud, 'roles')] as const]
@@ -721,7 +736,7 @@ async function apply(planPath: string, cwd: string, env: NodeJS.ProcessEnv, io: 
         role_files: [...next.role_files].sort(cmp),
         agents: [...next.agents].sort(cmp),
         convention: next.convention,
-        land: records.land, worktree: records.worktree, scratch: records.scratch,
+        land: records.land, worktree, scratch: records.scratch,
       },
       null,
       2

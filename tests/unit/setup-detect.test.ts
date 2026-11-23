@@ -109,7 +109,9 @@ async function detect(f: ReturnType<typeof fixture>, cwd: string) {
     'skills',
     'worker_skills',
     'skill_links',
+    'proposed_disposable',
   ]);
+  assert.deepEqual(doc.proposed_disposable, []);
   return doc;
 }
 

@@ -419,6 +419,9 @@ test('invalid plans write nothing', async (t) => {
     ['agents.imp', { version: 1, roles: ['imp'], agents: { imp: 1 } }],
     ['agents.imp too long', { version: 1, roles: ['imp'], agents: { imp: 'x'.repeat(65537) } }],
     ['convention', { version: 1, roles: ['imp'], convention: 'nope' }],
+    ['disposable', { version: 1, roles: ['imp'], disposable: 'dist/**' }],
+    ['disposable', { version: 1, roles: ['imp'], disposable: ['dist/**', 4] }],
+    ['disposable', { version: 1, roles: ['imp'], disposable: ['dist/**\0'] }],
   ];
   for (const [reason, body] of cases) {
     f.reset();

@@ -276,8 +276,7 @@ the main checkout's HEAD. An empty list means no overlaps found, `null` means th
 `overlaps_incomplete` flags partial coverage. After the job closes, the watcher removes the checkout and branch only
 if the worktree is clean and its branch is unchanged, merged, or every slice commit has a patch-equivalent commit
 on the base branch. It keeps dirty worktrees and those with unpicked or amended patches, recording
-`worktree_kept_reason`. A later scan can reconsider an unpicked branch if the base HEAD changed; it never retries
-a dirty checkout. A registered project's `worktree.disposable` in `.hud/project.json` lists globs of **ignored** build outputs that cleanup may discard (for example `["dist/**"]`, default `[]`). When tracked files live under `node_modules/`, worktree setup links the untracked entries from the main checkout and cleanup treats ignored entries under `node_modules/` as removable dependency state. Other ignored files and untracked or tracked changes are preserved. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
+`worktree_kept_reason`, including up to five paths that made the worktree dirty. A later scan can reconsider an unpicked branch if the base HEAD changed; regular scans don't retry dirty checkouts. A registered project's `worktree.disposable` in `.hud/project.json` lists globs of **ignored** build outputs that cleanup may discard (for example `["dist/**"]`, default `[]`). A `dir/**` glob covers hidden descendants too. When tracked files live under `node_modules/`, worktree setup links the untracked entries from the main checkout and cleanup treats ignored entries under `node_modules/` as removable dependency state. Other ignored files and untracked or tracked changes are preserved. Project lists these checkouts as the jobs' own, not as unlisted worktrees.
 
 Call `hud_land({ job })` on a successfully settled managed worktree (`idle_grace`, `done` or `closed`). Configure `land` in the registered main checkout's `.hud/project.json`, for example:
 
@@ -525,6 +524,7 @@ Codex and pi, asks; these commands only read or write.
 (shipped and `$HUD_HOME/roles`), project roles with their ordered `run` chains,
 the enabled set, invalid role files, skills and worker-skill links. Optional roles in the inventory
 carry an `enabled` flag; enabling one is a machine-wide choice in Control, not a project setup change.
+From a registered main checkout, `proposed_disposable` lists suggested globs for ignored leftovers in kept worktrees.
 Skill roots come from `$HUD_HOME/setup.json` `skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
 `~/.agents/skills`), always followed by the checkout's `integrations/skills`. A skill is a directory with `SKILL.md`; its name is the
 frontmatter `name`. Each skill includes `model_invocable`: false when that
@@ -546,8 +546,8 @@ be committed:
 The plan is version 1: `roles` (enabled names), `pi_roles` (pi tuning only: `from`,
 `pi_role`, `model`, `thinking`, `split`, `can_continue`, `skills`), optional `runs`
 (role name to a non-empty ordered list of places), `skills` (name to an absolute
-skill directory), `agents` (role to markdown) and `convention` (`keep` or
-`copy-default`). `runs` can name reference roles or copies in `pi_roles`. If both
+skill directory), `agents` (role to markdown), `convention` (`keep` or
+`copy-default`), and optional `disposable` (only globs the owner accepts). Apply adds these globs to `worktree.disposable`; it does not run cleanup or remove existing globs. `runs` can name reference roles or copies in `pi_roles`. If both
 fields name a role, `runs` sets its order and `pi_roles` fills in defaults for each
 pi place. It prints `removed`, `wrote`, `linked`,
 `skipped (exists)`, `registered`, or `no changes`. The same plan again changes

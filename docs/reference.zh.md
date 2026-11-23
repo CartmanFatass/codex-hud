@@ -162,10 +162,10 @@ split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--
 其中 `overlaps` 列出同一检出下也改动了这些文件的其他托管任务及重叠文件，排除其他工作树中已提交且文件版本与主检出 HEAD 一致的改动。
 空列表表示未发现重叠，`null` 表示当前任务的 Git 摘要读取失败，`overlaps_incomplete` 表示结果不完整。
 任务关闭后，只有工作树干净且分支未改动、已合并或每个切片提交在基分支上都有等价补丁时，watcher 才会移除检出和分支。
-若工作树不干净，或仍有未摘取的补丁（包括集成时被修改的补丁），则保留并在 `job.json` 记录 `worktree_kept_reason`。
-基分支 HEAD 变化后，后续扫描可重新检查因补丁未摘取而保留的分支；不会重试脏工作树。Project 把这些检出视为任务自己的，不算未登记的 worktree。
+若工作树不干净，或仍有未摘取的补丁（包括集成时被修改的补丁），则保留并在 `job.json` 记录 `worktree_kept_reason`；脏工作树最多列出五条阻止清理的路径。
+基分支 HEAD 变化后，后续扫描可重新检查因补丁未摘取而保留的分支；常规扫描不会重试脏工作树。Project 把这些检出视为任务自己的，不算未登记的 worktree。
 
-已注册项目可在主检出的 `.hud/project.json` 中设置 `worktree.disposable`（例如 `["dist/**"]`，默认为 `[]`）。清理时豁免匹配的已忽略文件；当 `node_modules/` 下存在已跟踪文件时，建树会链接主检出中其余未跟踪项，清理也会把 `node_modules/` 下的已忽略项视为可移除的依赖状态。其他忽略文件、未跟踪文件及已跟踪的改动仍会保留。
+已注册项目可在主检出的 `.hud/project.json` 中设置 `worktree.disposable`（例如 `["dist/**"]`，默认为 `[]`）。清理时豁免匹配的已忽略文件，`dir/**` 也匹配其中的隐藏文件和目录；当 `node_modules/` 下存在已跟踪文件时，建树会链接主检出中其余未跟踪项，清理也会把 `node_modules/` 下的已忽略项视为可移除的依赖状态。其他忽略文件、未跟踪文件及已跟踪的改动仍会保留。
 
 `hud_land({job})` 集成成功结算（`idle_grace`、`done` 或 `closed`）的托管工作树。主检出的项目配置示例：
 
@@ -355,6 +355,7 @@ hud setup --remove [--cwd DIR]
 `--detect` 打印一份 JSON，不写任何文件。它给出 `--cwd` 的 git 顶层（否则就是 `--cwd`）、
 该根是否已注册、参考角色（内置与 `$HUD_HOME/roles`）、项目角色及其有序的 `run` 链、启用集合、无效角色文件、
 技能，以及工作者技能链接。清单中的可选角色带有 `enabled` 标记；是否启用由控制标签中的全局开关决定，不属于项目设置。
+对于已注册的主检出，`proposed_disposable` 根据保留的工作树中仍存在的已忽略文件提出 glob 建议。
 技能根目录来自 `$HUD_HOME/setup.json` 的 `skill_roots`
 （默认 `~/.pi/agent/skills`、`~/.claude/skills` 和 `~/.agents/skills`），其后总是包含本仓库自带的
 `integrations/skills`。技能是含 `SKILL.md`
@@ -375,8 +376,8 @@ hud setup --remove [--cwd DIR]
 
 计划为 version 1：`roles`（启用的名字）、`pi_roles`（只调 pi：`from`、`pi_role`、`model`、
 `thinking`、`split`、`can_continue`、`skills`）、可选的 `runs`（角色名到非空的有序运行位置列表）、
-`skills`（名字到技能目录的绝对路径）、`agents`（角色到 markdown）和 `convention`（`keep` 或
-`copy-default`）。`runs` 可指定参考角色或 `pi_roles` 中复制的角色。若两处都指定同一角色，`runs`
+`skills`（名字到技能目录的绝对路径）、`agents`（角色到 markdown）、`convention`（`keep` 或
+`copy-default`），以及可选的 `disposable`（只列出所有者同意的 glob）。apply 会将这些 glob 加入 `worktree.disposable`，不会移除原有 glob，也不会运行清理。`runs` 可指定参考角色或 `pi_roles` 中复制的角色。若两处都指定同一角色，`runs`
 决定顺序，`pi_roles` 为其中每个 pi 位置补充默认设置。打印 `removed`、
 `wrote`、`linked`、`skipped (exists)`、`registered`，或 `no changes`。同一计划再跑一次不会改任何东西。
 不是本命令创建的文件或链接会留下，并报 `skipped (exists)`。

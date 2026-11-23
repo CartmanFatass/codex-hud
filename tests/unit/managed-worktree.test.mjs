@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import {
   addWorktree,
@@ -119,6 +119,119 @@ for (const blocker of ['untracked-outside', 'ignored-outside', 'tracked-nm-edit'
     }
   });
 }
+
+test('reapWorktree reports only the first five blockers, with control characters quoted', async (t) => {
+  const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'managed-wt-reasons-')));
+  cleanupFixture(t, { root: home });
+  const main = initRepo(home), id = 'j00000000000000d1', wt = await planWorktree(main, id, 'imp');
+  await addWorktree(wt);
+  await populateWorktree(wt);
+  for (const name of ['a\nb', 'b', 'c', 'd', 'e', 'f', 'ignored.txt']) fs.writeFileSync(join(wt.root, name), 'keep');
+
+  const result = await reapWorktree(id, { job: id, cwd: wt.root, worktree: wt }, join(home, 'hud'));
+  assert.equal(result.worktree_kept_reason,
+    'worktree is dirty (tracked, untracked or ignored files): "a\\nb", "b", "c", "d", "e"');
+  assert.equal(fs.existsSync(wt.root), true);
+});
+
+test('reapWorktree removes a landed checkout with hidden leftovers under a disposable directory', async (t) => {
+  const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'managed-wt-dot-')));
+  cleanupFixture(t, { root: home });
+  const main = initRepo(home), hud = join(home, 'hud');
+  fs.appendFileSync(join(main, '.gitignore'), '.tsbuild/\n');
+  git(main, 'commit', '-qam', 'ignore build directory');
+  fs.mkdirSync(join(main, '.hud'));
+  fs.writeFileSync(join(main, '.hud/project.json'), JSON.stringify({ worktree: { disposable: ['.tsbuild/**'] } }));
+  fs.mkdirSync(hud);
+  fs.writeFileSync(join(hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: main }] }));
+
+  const id = 'j00000000000000d0', wt = await planWorktree(main, id, 'imp');
+  await addWorktree(wt);
+  await populateWorktree(wt);
+  fs.appendFileSync(join(wt.root, 'tracked.txt'), 'landed change\n');
+  git(wt.root, 'commit', '-qam', 'work');
+  const source_sha = git(wt.root, 'rev-parse', 'HEAD');
+  git(main, 'commit', '--allow-empty', '-qm', 'advance base');
+  git(main, 'cherry-pick', source_sha);
+  const landed_sha = git(main, 'rev-parse', 'HEAD');
+  assert.notEqual(landed_sha, source_sha);
+  fs.mkdirSync(join(wt.root, '.tsbuild/x/.fingerprint'), { recursive: true });
+  fs.writeFileSync(join(wt.root, '.tsbuild/x/.lock'), 'build output\n');
+  fs.writeFileSync(join(wt.root, '.tsbuild/x/.fingerprint/hash'), 'build output\n');
+
+  const result = await reapWorktree(id, { job: id, cwd: wt.root, worktree: wt }, hud, { source_sha, landed_sha });
+  assert.ok(result.worktree_removed_at, result.worktree_kept_reason);
+  assert.equal(fs.existsSync(wt.root), false);
+});
+
+test('setup proposes ignored leftovers and the watcher reaps only after the glob is accepted', async (t) => {
+  const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'setup-wt-disposable-')));
+  cleanupFixture(t, { root: home });
+  const main = initRepo(home), hud = join(home, 'hud');
+  fs.appendFileSync(join(main, '.gitignore'), '__pycache__/\n');
+  git(main, 'commit', '-qam', 'ignore Python cache');
+  fs.mkdirSync(join(hud, 'archive'), { recursive: true });
+  fs.writeFileSync(join(hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: main }] }));
+  fs.mkdirSync(join(main, '.hud'));
+  const projectFile = join(main, '.hud/project.json');
+  const existing = { disposable: ['dist/**', 'scripts/__pycache__'], note: 'keep' };
+  fs.writeFileSync(projectFile, JSON.stringify({ version: 1, roles: ['imp'], worktree: existing }));
+
+  const make = async (id, path) => {
+    const wt = await planWorktree(main, id, 'imp');
+    await addWorktree(wt);
+    await populateWorktree(wt);
+    const file = join(wt.root, path);
+    fs.mkdirSync(dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'synthetic leftover');
+    return { job: id, cwd: wt.root, worktree: wt };
+  };
+  const cacheFile = 'scripts/__pycache__/translate.cpython-314.pyc';
+  const job = await make('j00000000000000c1', cacheFile);
+  const archived = await make('j00000000000000c2', 'ignored.txt');
+  const now = new Date().toISOString();
+  const denied = await reapWorktree(job.job, job, hud);
+  assert.match(denied.worktree_kept_reason, /scripts\/__pycache__\/translate\.cpython-314\.pyc/);
+  const dir = join(hud, 'jobs', job.job);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ ...job, role: 'imp', project_root: main, created_at: now,
+    reaped_at: now, worktree_kept_reason: 'worktree is dirty (tracked, untracked or ignored files)' }));
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: now }));
+  fs.writeFileSync(join(hud, 'archive/2026-11.jsonl'), JSON.stringify({
+    job: archived.job, project: main, state: 'closed', ended_at: now, reaped_at: now,
+  }) + '\n');
+
+  const env = { ...process.env, HOME: home, HUD_HOME: hud, HERDR_SOCKET_PATH: join(home, 'absent.sock') };
+  const run = (bin, ...args) => {
+    const result = spawnSync(process.execPath, [resolve(bin), ...args], { env, encoding: 'utf8', timeout: 15000 });
+    assert.equal(result.status, 0, result.stderr || String(result.error));
+    return result.stdout;
+  };
+  const detect = () => JSON.parse(run('bin/hud', 'setup', '--detect', '--cwd', main)).proposed_disposable;
+  const apply = (disposable) => {
+    const plan = join(home, 'plan.json');
+    fs.writeFileSync(plan, JSON.stringify({ version: 1, roles: ['imp'], disposable }));
+    return run('bin/hud', 'setup', '--apply', plan, '--cwd', main);
+  };
+  const proposed = 'scripts/__pycache__/**';
+  const before = fs.readFileSync(projectFile, 'utf8');
+  assert.deepEqual(detect(), ['ignored.txt', proposed]);
+  assert.equal(fs.readFileSync(projectFile, 'utf8'), before);
+  apply();
+  assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')).worktree, existing);
+  assert.equal(fs.existsSync(join(job.cwd, cacheFile)), true);
+
+  apply([proposed]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(projectFile, 'utf8')).worktree,
+    { ...existing, disposable: [...existing.disposable, proposed] });
+  assert.equal(apply([proposed]), 'no changes\n');
+  assert.deepEqual(detect(), ['ignored.txt']);
+  assert.equal(fs.existsSync(join(job.cwd, cacheFile)), true, 'setup never deletes leftovers');
+  run('packages/hud-mcp/bin/hud-watch.mjs');
+  assert.equal(fs.existsSync(job.cwd), false);
+  assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).worktree_removed_at);
+  assert.equal(fs.readFileSync(join(archived.cwd, 'ignored.txt'), 'utf8'), 'synthetic leftover');
+});
 
 test('watcher one-time sweep removes stale closed and archived managed worktrees while preserving user files, open jobs and manual worktrees', async (t) => {
   const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'watch-wt-sweep-')));

@@ -1,10 +1,11 @@
 import * as fs from 'node:fs';
 import { basename, dirname, join, matchesGlob, resolve } from 'node:path';
+import { JobIndexCache } from '../roles/job-index-cache.js';
 import { registeredProject } from '../roles/projects.js';
 import { readBytes } from '../statusline-parity/storage.js';
-import { parseWorktreeList, worktreeGit as git, type WorktreeGit } from '../collectors/worktrees.js';
+import { parseWorktreeList, WORKTREE_LIMIT, worktreeGit as git, type WorktreeGit } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
-import type { ManagedWorktree } from './job-contracts.js';
+import type { Job, ManagedWorktree } from './job-contracts.js';
 export type { ManagedWorktree } from './job-contracts.js';
 
 const oid = (value: unknown) => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
@@ -51,12 +52,12 @@ export async function populateWorktree(wt: ManagedWorktree) {
   else if (linkStat.isDirectory()) linkMissingDependencies(source, link);
 }
 
-const status = (root: string, filters: string[], ignored: boolean, run: WorktreeGit = git) => run(root, [...filters,
+const status = (root: string, filters: string[], ignored: boolean | 'matching', run: WorktreeGit = git) => run(root, [...filters,
   'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all', '--ignore-submodules=dirty',
-  ...(ignored ? ['--ignored'] : []),
+  ...(ignored === 'matching' ? ['--ignored=matching'] : ignored ? ['--ignored'] : []),
 ]);
 const fields = (text: string) => text ? text.slice(0, -1).split('\0') : [];
-function dependencyLink(wt: ManagedWorktree, relPath = 'node_modules') {
+function dependencyLink(wt: Pick<ManagedWorktree, 'root' | 'main_root'>, relPath = 'node_modules') {
   if (relPath !== 'node_modules' && !relPath.startsWith('node_modules/')) return false;
   if (relPath.split('/').includes('..')) return false;
   const link = join(wt.root, relPath);
@@ -220,6 +221,15 @@ function disposablePaths(home: string, root: string): string[] {
     return Array.isArray(globs) && globs.every(g => typeof g === 'string') ? globs : [];
   } catch { return []; }
 }
+function matchesDisposable(rel: string, glob: string): boolean {
+  if (matchesGlob(rel, glob)) return true;
+  if (!glob.endsWith('/**')) return false;
+  // A recursive directory glob covers the whole subtree, even hidden descendants.
+  const dir = glob.slice(0, -3);
+  for (let end = rel.lastIndexOf('/'); end > 0; end = rel.lastIndexOf('/', end - 1))
+    if (matchesGlob(rel.slice(0, end), dir)) return true;
+  return false;
+}
 export async function reapWorktree(
   id: string,
   job: { job: string; cwd: string; worktree: ManagedWorktree },
@@ -247,11 +257,15 @@ export async function reapWorktree(
     const removable = (row: string) => {
       const rel = row.slice(3);
       return row.startsWith('!! ')
-        ? globs.some(g => matchesGlob(rel, g)) || (trackedDeps && (rel === 'node_modules' || rel.startsWith('node_modules/'))) || dependencyLink(wt, rel)
+        ? globs.some(g => matchesDisposable(rel, g)) || (trackedDeps && (rel === 'node_modules' || rel.startsWith('node_modules/'))) || dependencyLink(wt, rel)
         : row.startsWith('?? ') && dependencyLink(wt, rel);
     };
-    if (pending.some(row => !removable(row)))
-      return kept('worktree is dirty (tracked, untracked or ignored files)');
+    const blockers: string[] = [];
+    for (const row of pending) {
+      if (!removable(row)) blockers.push(JSON.stringify(row.slice(3)));
+      if (blockers.length === 5) break;
+    }
+    if (blockers.length) return kept(`worktree is dirty (tracked, untracked or ignored files): ${blockers.join(', ')}`);
     const nested = nestedGitReason(wt.root);
     if (nested) return kept(nested);
     let picked = false;
@@ -317,6 +331,51 @@ export function archivedClosedJobs(home: string, liveIds: ReadonlySet<string>): 
     } catch { /* Best effort; skip unreadable archive files. */ }
   }
   return out;
+}
+
+/** Read-only setup suggestions, including legacy keeps and archived jobs with no live receipt. */
+export async function proposedDisposablePaths(home: string, root: string): Promise<string[]> {
+  let trees: Awaited<ReturnType<typeof list>>;
+  try { trees = await list(root); } catch { return []; }
+  const [main, ...linked] = trees;
+  if (main?.path !== root || main.bare || !linked.length) return [];
+  const cache = new JobIndexCache(home), ids = cache.listJobIds();
+  const live = new Map<string, boolean>();
+  for (const id of ids) {
+    const read = cache.readJob<Job>(id);
+    if (read.status !== 'ok') continue;
+    const job = read.value, wt = job?.worktree;
+    if (wt?.main_root !== root || job.worktree_removed_at) continue;
+    // A reused checkout may also have a receipt that is not a keep.
+    const reason = job.worktree_kept_reason;
+    live.set(wt.root, live.get(wt.root) !== false && typeof reason === 'string' && reason.startsWith('worktree is dirty'));
+  }
+  const archived = archivedClosedJobs(home, new Set(ids)), globs = disposablePaths(home, root);
+  const proposed = new Set<string>();
+  let probes = 0;
+  for (const tree of linked) {
+    if (tree.locked !== undefined || tree.prunable !== undefined || !oid(tree.head)) continue;
+    const name = basename(tree.path), match = MANAGED_WT_NAME.exec(name);
+    if (!match || tree.branch !== `wt/${name}` || tree.path !== pathFor(root, name)) continue;
+    if (!(live.get(tree.path) ?? archived.get(match[1])?.some(row => !row.project || row.project === root))) continue;
+    if (++probes > WORKTREE_LIMIT) break;
+    try {
+      if (fs.realpathSync(tree.path) !== tree.path) continue;
+      const filters = await neutralizeFilters(git, tree.path);
+      // Git reports a directory here only if that directory itself matches an ignore rule.
+      for (const row of fields(await status(tree.path, filters, 'matching'))) {
+        if (!row.startsWith('!! ')) continue;
+        const path = row.slice(3), directory = path.endsWith('/');
+        // Don't turn filenames containing glob syntax or control characters into patterns.
+        if (!/^[A-Za-z0-9._ /-]+$/.test(path)) continue;
+        if (globs.some(g => (!directory || g.endsWith('/**')) && matchesDisposable(path, g))) continue;
+        if (dependencyLink({ main_root: root, root: tree.path }, path)) continue;
+        proposed.add(directory ? `${path}**` : path);
+        if (proposed.size === 20) return [...proposed].sort();
+      }
+    } catch { /* Best effort; skip unreadable worktrees. */ }
+  }
+  return [...proposed].sort();
 }
 
 export async function sweepArchivedWorktrees(
