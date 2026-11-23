@@ -158,7 +158,9 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
       assert.equal(cliState(dir).settled_at, grace.settled_at);
       assert.equal(cliState(dir).idle_deadline_at, grace.idle_deadline_at);
     } else {
-      assert.deepEqual(turn(), provisional);
+      const { pending_from, ...submitted } = provisional;
+      assert.equal(pending_from.seq, prior.seq);
+      assert.deepEqual(turn(), submitted, 'an ambiguous result keeps the new baseline but closes the old-token window');
       await until(() => cliState(dir)?.state === 'idle_grace' && cliState(dir).settled_at !== grace.settled_at, 15000);
       assert.equal(cliState(dir).output_written, true);
       assert.match((await f.call('hud_read', { job: job.job })).digest.result, /fast report after input/);

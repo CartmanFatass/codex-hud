@@ -1,7 +1,7 @@
 /** One CLI job: pushed facts -> pure judge -> effects. No subprocesses or STATUS writes at rest. */
 import { recordFailureExhaustion } from '../roles/roster.js';
 import { decideQuietJob } from '../mcp/quiet-decision.js';
-import { cliWorkerTools, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
+import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
 import { procStat } from '../utils/proc.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { reportWasRead } from '../collectors/thin-jobs.js';
@@ -271,8 +271,9 @@ export async function main() {
       if (next.action === 'collect-sonic') {
         const { open, uncollected } = sonicChildren(dir);
         if (open || !uncollected.length) { wake(); return; }
-        const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, writeTurn(dir, { by: 'hud' }), cli.agent);
-        const { result, aborted } = await effect('sonic', ['agent', 'prompt', name, prompt]);
+        const submission = await beginPrompt(dir, { by: 'hud' });
+        const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, submission.turn, cli.agent);
+        const { result, aborted } = await effect('sonic', ['agent', 'prompt', name, prompt]).finally(() => endPrompt(dir, submission));
         if (stopped || aborted) return;
         diskDirty = true;
         if (!result.ok) {
@@ -303,10 +304,11 @@ export async function main() {
         let prompted = false;
         if (decision.action === 'prompt-report') {
           reportPromptSent = true;
-          const sent = writeTurn(dir, { by: 'hud', reportPromptSent: true });
+          const submission = await beginPrompt(dir, { by: 'hud', reportPromptSent: true });
+          const sent = submission.turn;
           const prompt = withDonePrompt(tools ? 'If work remains, finish it first.' :
             `Write your report to ${output} now; if work remains, finish it first.`, bundled, dir, sent, cli.agent);
-          const reply = await effect('prompt', ['agent', 'prompt', name, prompt]);
+          const reply = await effect('prompt', ['agent', 'prompt', name, prompt]).finally(() => endPrompt(dir, submission));
           if (stopped || reply.aborted) return;
           diskDirty = true;
           const after = collect(false, !reply.result.ok);

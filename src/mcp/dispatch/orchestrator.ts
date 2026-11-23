@@ -21,7 +21,7 @@ import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { waitUntilFs } from '../../utils/fs-wait.js';
 import { procStat } from '../../utils/proc.js';
 import {
-  cliWorkerTools, readTurn, saveTurn, REPORT_READ_EXIT, writeTurn, withDonePrompt, workerAlive, turnToken,
+  beginPrompt, cliWorkerTools, endPrompt, readTurn, saveTurn, REPORT_READ_EXIT, withDonePrompt, workerAlive, turnToken,
 } from '../cli-judge.js';
 import type { StandingBriefRef } from '../cli-worker-startup.js';
 import { repairImpRoute, pickImpRoute } from '../imp-routing.js';
@@ -1241,18 +1241,12 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   if (!current.cli) current.pi_sent_at = recorded_at;
   save(current);
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
-  const prior = current.cli ? readTurn(dir) : null;
-  const turn = current.cli ? writeTurn(dir, { send: { key, pid: process.pid, start: procStat(process.pid)?.start ?? null } }) : null;
+  const submission = current.cli ? await beginPrompt(dir, { send: { key, pid: process.pid, start: procStat(process.pid)?.start ?? null } }) : null;
+  const turn = submission?.turn;
   const taskEntry = session.taskClient && !workingOnly && !land && !carryTask
     ? beginTask(current, row.report_mtime, undefined, row, statusAt) : undefined;
   const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
-  if (turn && refusedBeforeInput(result)) {
-    const active = readTurn(dir);
-    if (active?.seq === turn.seq && active.send?.key === key && active.send.pid === process.pid) {
-      if (prior) saveTurn(dir, prior);
-      else fs.unlinkSync(join(dir, jobFiles.turn));
-    }
-  }
+  if (submission) await endPrompt(dir, submission, refusedBeforeInput(result));
   const latest = findJobMutable(id) ?? current;
   const attempted = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
   attempted.exit_code = result.exit_code;

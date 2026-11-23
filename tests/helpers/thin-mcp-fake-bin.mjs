@@ -465,7 +465,7 @@ if (command === 'pi-dispatch') {
     }
     matched('done');
   } else if (until.includes('idle') || until.includes('unknown')) matched('idle');
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && args[4] === '--wait' &&
+} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' &&
     fs.existsSync(join(process.env.HOME, 'hold-prompt-result'))) {
   waitToReply();
 } else if (

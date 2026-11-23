@@ -1,6 +1,6 @@
 /** Worker protocol shared by MCP, the native pi extension and the CLI fallbacks. */
 import { normalizeReportMeta, writeReportMeta } from '../roles/report-meta.js';
-import { DONE_FILE, readTurn, turnToken, reportSignature } from '../mcp/cli-judge.js';
+import { DONE_FILE, readTurn, saveTurn, turnToken, reportSignature, withTurnLock, workerAlive } from '../mcp/cli-judge.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { takeLease, LEASE_TOOL } from '../roles/lease.js';
@@ -67,16 +67,26 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
   }
   const path = join(dir, jobFiles.report);
   if (job.cli) {
-    const current = readTurn(dir);
-    if (!current || turn !== turnToken(current)) throw new Error('use the turn token from the prompt you are answering');
-    if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
-    const sig = reportSignature(dir);
-    if (!sig || sig === current.report_sig) throw new Error('write a fresh report for this turn first');
-    const latest = readTurn(dir);
-    if (!latest || turnToken(latest) !== turn) throw new Error('the turn changed; no receipt recorded');
-    writeReportMeta(dir, sig, fields);
-    if (job.headless) capturePiTree(dir);
-    writeJsonPrivate(join(dir, DONE_FILE), { seq: current.seq, sent_at: current.sent_at, report_sig: sig, at: new Date().toISOString() } satisfies DoneReceipt, { mkdir: false });
+    await withTurnLock(dir, () => {
+      const current = readTurn(dir);
+      const prior = current?.pending_from;
+      const answering = current && turn === turnToken(current) ? current :
+        prior && turn === turnToken(prior) && workerAlive(prior.pid, prior.start) === true ? prior : null;
+      if (!current || !answering) throw new Error('use the turn token from the prompt you are answering');
+      if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
+      const sig = reportSignature(dir);
+      if (!sig || sig === answering.report_sig) throw new Error('write a fresh report for this turn first');
+      const latest = readTurn(dir);
+      if (!latest || turnToken(latest) !== turnToken(current)) throw new Error('the turn changed; no receipt recorded');
+      writeReportMeta(dir, sig, fields);
+      if (job.headless) capturePiTree(dir);
+      if (prior) {
+        if (answering === prior) current.report_sig = sig; // The next turn needs its own fresh report.
+        else delete current.pending_from; // Its token proves the prompt already arrived.
+        saveTurn(dir, current);
+      }
+      writeJsonPrivate(join(dir, DONE_FILE), { seq: answering.seq, sent_at: answering.sent_at, report_sig: sig, at: new Date().toISOString() } satisfies DoneReceipt, { mkdir: false });
+    });
   } else {
     // Pi declares completion natively. Capture ancestry before native shutdown can orphan it.
     if (turn !== undefined) throw new Error('pi does not use a turn token');

@@ -1,4 +1,6 @@
+import { realpathSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { withAbstractLock } from '../utils/abstract-lock.js';
 import { writeJsonPrivate } from '../utils/atomic-fs.js';
 import {
   isActiveProcState,
@@ -30,9 +32,11 @@ export function withDonePrompt(text: string, bundled: string, dir: string, turn:
   return `${text}\n\n${finish}${fallback}\n`;
 }
 
+type TurnOptions = { by?: 'hud'; restarted?: boolean; reportPromptSent?: boolean; send?: Turn['send']; callerToken?: string };
+
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string, options: { by?: 'hud'; restarted?: boolean; reportPromptSent?: boolean; send?: Turn['send']; callerToken?: string } = {}): Turn {
-  const prev = readTurn(dir);
+export function writeTurn(dir: string, options: TurnOptions = {}, prev = readTurn(dir)): Turn {
+  const start = options.send?.start ?? (options.by && procStat(process.pid)?.start);
   const sent = options.reportPromptSent || (!options.restarted && prev?.report_prompt_sent);
   const sent_at = new Date().toISOString();
   const initial = options.restarted ? sent_at : prev && firstInput(prev);
@@ -40,6 +44,7 @@ export function writeTurn(dir: string, options: { by?: 'hud'; restarted?: boolea
     seq: (prev?.seq ?? 0) + 1,
     sent_at,
     report_sig: reportSignature(dir),
+    ...(prev && start ? { pending_from: { seq: prev.seq, sent_at: prev.sent_at, report_sig: prev.report_sig, pid: process.pid, start } } : {}),
     ...(sent ? { report_prompt_sent: true } : {}),
     ...(initial ? { first_sent_at: initial } : {}),
     ...(options.callerToken ? { caller_token: options.callerToken } : options.by === 'hud' && prev ? { caller_token: prev.caller_token ?? turnToken(prev) } : {}),
@@ -47,6 +52,31 @@ export function writeTurn(dir: string, options: { by?: 'hud'; restarted?: boolea
   };
   saveTurn(dir, turn);
   return turn;
+}
+
+// Serialize only disk updates with hud_report, never hold the lock across prompt delivery.
+export const withTurnLock = <T>(dir: string, fn: () => T) => withAbstractLock('cli-turn', realpathSync(dir), fn);
+export function beginPrompt(dir: string, options: Pick<TurnOptions, 'by' | 'send' | 'reportPromptSent'>) {
+  return withTurnLock(dir, () => {
+    const prior = readTurn(dir);
+    return { prior, turn: writeTurn(dir, options, prior) };
+  });
+}
+export function endPrompt(dir: string, { prior, turn }: Awaited<ReturnType<typeof beginPrompt>>, refused = false) {
+  return withTurnLock(dir, () => {
+    const active = readTurn(dir);
+    if (!active || turnToken(active) !== turnToken(turn) || active.send?.key !== turn.send?.key || active.send?.pid !== turn.send?.pid) return;
+    if (refused) {
+      if (turn.pending_from && !active.pending_from) return; // A declaration with the new token proves delivery.
+      if (prior) {
+        delete prior.pending_from; // Do not reopen an overlapping, older submission window.
+        saveTurn(dir, prior);
+      } else unlinkSync(join(dir, jobFiles.turn));
+    } else if (active.pending_from) {
+      delete active.pending_from;
+      saveTurn(dir, active);
+    }
+  });
 }
 
 export function saveTurn(dir: string, turn: Turn): void {

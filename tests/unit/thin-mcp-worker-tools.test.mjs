@@ -710,6 +710,48 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   assert.equal(turnToken(JSON.parse(fs.readFileSync(file, 'utf8'))), second);
 });
 
+for (const refused of [false, true]) {
+  test(`hud_report during a pending CLI prompt belongs to the old turn (${refused ? 'refused' : 'delivered'})`, async (t) => {
+    const f = await fixture(t);
+    writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
+    writeCliRole(f, 'gap-worker', 20, true, 'agy');
+    const job = await f.call('hud_create', { role: 'gap-worker', task: 'Synthetic first prompt.' });
+    const dir = job.task_dir, call = workerClient(t, f, dir);
+    const first = cliToken(dir);
+    await until(() => cliState(dir)?.state === 'working');
+    assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic second prompt.' })).sent, true);
+    const second = cliToken(dir);
+    writeFixtureFile(join(f.env.HOME, refused ? 'rejected-prompt' : 'hold-prompt-result'), '');
+    const sending = f.call('hud_send', { job: job.job, text: 'Synthetic third prompt.' });
+    let third;
+    try {
+      await until(() => (third = cliToken(dir)) !== second);
+      assert.equal((await call('hud_report', { text: 'Too old.', turn: first })).isError, true);
+      assert.deepEqual(resultValue(await call('hud_report', { text: 'Second turn finished.', turn: second })),
+        { path: join(dir, 'report.md') });
+    } finally {
+      writeFixtureFile(join(f.env.HOME, 'release-prompt-result'), '');
+      assert.equal((await sending).ok, !refused);
+    }
+    const done = JSON.parse(fs.readFileSync(join(dir, 'done.json'), 'utf8'));
+    assert.equal(turnToken(done), second);
+    assert.equal(done.report_sig, reportSignature(dir));
+    if (refused) {
+      assert.equal(cliToken(dir), second);
+    } else {
+      assert.equal(cliToken(dir), third);
+      assert.equal((await call('hud_report', { text: 'Too late.', turn: second })).isError, true);
+      assert.notEqual(runProgress(f, dir, '--done', '--turn', third).status, 0, 'cannot redeclare the gap report for the new turn');
+      assert.equal(fs.readFileSync(join(dir, 'report.md'), 'utf8'), 'Second turn finished.');
+      assert.equal(cliState(dir).state, 'working');
+      assert.deepEqual(resultValue(await call('hud_report', { text: 'Third turn finished.', turn: third })),
+        { path: join(dir, 'report.md') });
+    }
+    f.push(job.job, 'idle');
+    await until(() => cliState(dir)?.state === 'closed' && cliState(dir).output_written);
+  });
+}
+
 for (const mode of ['hud_report', 'shell fallback']) {
   test(`${mode} refuses dirty managed worktree reports until the changes are committed`, async (t) => {
     const f = await fixture(t), main_root = initRepo(f.root);
