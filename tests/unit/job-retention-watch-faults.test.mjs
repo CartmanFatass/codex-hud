@@ -190,22 +190,37 @@ test('persistent asynchronous watch errors stay at one scan per second and throt
   fs.mkdirSync(badFile);
   const { child, exited } = f.start(scanProbe + `
 import { EventEmitter } from 'node:events';
-let attempts = 0;
-const watch = fs.watch;
+import { writeFixtureFile } from ${JSON.stringify(atomicWriter)};
+let attempts = 0, reportingError = false;
+const delays = [], watch = fs.watch, timer = globalThis.setTimeout;
+globalThis.setTimeout = (fn, ms, ...args) => {
+  if (reportingError) delays.push(ms);
+  return timer(fn, ms, ...args);
+};
 fs.watch = (...args) => {
   if (!args[1]?.recursive) return watch(...args);
   fs.appendFileSync(process.env.HUD_HOME + '/attempts', Date.now() + '\\n');
   const watcher = new EventEmitter();
   watcher.close = () => {};
-  process.nextTick(() => watcher.emit('error', Error('synthetic async watch failure ' + (++attempts))));
+  process.nextTick(() => {
+    reportingError = true;
+    watcher.emit('error', Error('synthetic async watch failure ' + (++attempts)));
+    reportingError = false;
+    if (attempts === 4) {
+      const stamps = (name) => fs.readFileSync(process.env.HUD_HOME + '/' + name, 'utf8').trim().split('\\n').map(Number);
+      writeFixtureFile(process.env.HUD_HOME + '/scan-sample', JSON.stringify({ scans: stamps('scans'), attempts: stamps('attempts'), delays }));
+    }
+  });
   return watcher;
 };
 syncBuiltinESMExports();`);
   await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'scans')) && f.log().includes('watch error:')), t.signal);
   assert.equal(child.exitCode, null);
-  await new Promise((done) => setTimeout(done, 400));
-  const stamps = (name) => fs.readFileSync(join(f.home, name), 'utf8').trim().split('\n').map(Number);
-  const scans = stamps('scans'), attempts = stamps('attempts');
+  // Take a coherent snapshot in the watcher after four watch attempts, not after a parent-side sleep.
+  const sample = join(f.home, 'scan-sample');
+  await until(() => fs.existsSync(sample), t.signal);
+  const { scans, attempts, delays } = JSON.parse(fs.readFileSync(sample, 'utf8'));
+  assert.deepEqual(delays, attempts.map(() => DEGRADED_MS), 'each error schedules the configured retry interval');
   assert.ok(scans.length >= 3 && scans.length <= 5, `expected about one scan per ${DEGRADED_MS}ms, got ${scans.length}`);
   for (let i = 1; i < scans.length; i++) assert.ok(scans[i] - scans[i - 1] >= DEGRADED_MS * 0.9, 'no error-handler scan loop');
   assert.equal(attempts.length, scans.length, 'watch installs only at startup and timer scans');
@@ -246,8 +261,12 @@ for (const fault of ['healthy watch', 'transient startup failure', 'transient la
     const f = fixture(t, DEGRADED_MS), dir = f.job({ state: 'working' }, {}, true);
     const { child, exited, stderr } = f.start(scanProbe + `
 import { writeFixtureFile } from ${JSON.stringify(atomicWriter)};
-const watch = fs.watch;
-let attempts = 0;
+const watch = fs.watch, timer = globalThis.setTimeout;
+let attempts = 0, recovered = false;
+globalThis.setTimeout = (fn, ms, ...args) => {
+  if (recovered) fs.appendFileSync(process.env.HUD_HOME + '/recovery-timers', ms + '\\n');
+  return timer(fn, ms, ...args);
+};
 fs.watch = (...args) => {
   if (!args[1]?.recursive) return watch(...args);
   attempts++;
@@ -256,7 +275,8 @@ fs.watch = (...args) => {
   if (${fault === 'transient later error'} && attempts === 1) {
     setTimeout(() => watcher.emit('error', Error('synthetic transient later error')), 100);
   } else {
-    // Registration precedes the synchronous catch-up scan. Publish its barrier on the next turn.
+    recovered = true;
+    // Registration precedes the synchronous catch-up scan and its decision whether to arm another timer.
     setImmediate(() => writeFixtureFile(process.env.HUD_HOME + '/watch-ready', String(attempts)));
   }
   return watcher;
@@ -269,7 +289,7 @@ syncBuiltinESMExports();`);
     const before = scans();
     assert.equal(Number(fs.readFileSync(join(f.home, 'watch-ready'), 'utf8')),
       fault === 'healthy watch' ? 1 : fault === 'transient startup failure' ? 3 : 2);
-    await new Promise((done) => setTimeout(done, 300));
+    assert.equal(fs.existsSync(join(f.home, 'recovery-timers')), false, 'a working watch did not arm a periodic scan');
     assert.equal(scans(), before, 'no periodic scans with a working watch');
     if (fault === 'healthy watch') assert.equal(before, 1, 'exactly the initial catch-up scan');
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));

@@ -42,8 +42,8 @@ async function repair(f, flow, index) {
   }, 20000);
   return f.flowState(flow).repairs[index].job;
 }
-async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry } = {}) {
-  const f = await fixture(t, { mcpEntry });
+async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry, probe } = {}) {
+  const f = await fixture(t, { mcpEntry, probe });
   const home = f.env.HUD_HOME, main = f.root, root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
   cleanupFixture(t, { root: `${main}-wt` });
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: f.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -521,7 +521,20 @@ exit 1
 });
 
 for (const ask of [false, true]) test(`a CLI land repair ignores pre-turn attention and ${ask ? 'hands back its new question' : 'lands its fresh report'}`, async t => {
-  const f = await checkout(t, ['grep fixed tracked']);
+  const preload = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const stat = fs.statSync;
+fs.statSync = (path, ...args) => {
+  if (String(path).endsWith('/${job}/STATUS.json') && new Error().stack.includes('at repairLand ')) {
+    fs.appendFileSync(process.env.HOME + '/repair-polls', 'poll\\n');
+  }
+  return stat(path, ...args);
+};
+syncBuiltinESMExports();`;
+  const f = await checkout(t, ['grep fixed tracked'], {
+    probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(preload))};`,
+  });
   const dir = jobDir(f), jobFile = join(dir, 'job.json'), statusFile = join(dir, 'STATUS.json');
   writeFixtureFile(jobFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(jobFile)),
     cli: { agent: 'claude', can_continue: true, idle_grace_s: 60 } }));
@@ -544,7 +557,9 @@ exec node "$FAKE_BIN" herdr "$@"
   const { flow } = await f.call('hud_land', { job });
   assert.equal(await repair(f, flow, 0), job);
   assert.equal(JSON.parse(fs.readFileSync(join(dir, 'turn.json'))).seq, 2);
-  await new Promise(resolve => setTimeout(resolve, 500)); // Let the repair poll the unchanged old row.
+  const polls = join(f.env.HOME, 'repair-polls');
+  // Two polls prove the first one already ignored the unchanged pre-turn row.
+  await until(() => fs.existsSync(polls) && fs.readFileSync(polls, 'utf8').startsWith('poll\npoll\n'), t.signal);
   assert.equal(f.flowState(flow).state, 'running', JSON.stringify(f.flowState(flow)));
   if (ask) {
     fs.mkdirSync(join(dir, 'qa'));

@@ -339,7 +339,8 @@ test('MCP tasks: batch responses deliver per-job compact notices with check-wait
   const f = await fixture(t, true, '', 200);
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
 
-  const checkCmd = 'for ((i=0; i<120; i++)); do [[ -f release-batch-check ]] && break; sleep .05; done; test -f release-batch-check';
+  const checkCmd = 'touch batch-check-started; while [[ ! -f release-batch-check ]]; do sleep .05; done';
+  f.onCleanup(() => writeFixtureFile(join(f.root, 'release-batch-check'), ''));
   const { jobs: [plain, checked, disc] } = await f.call('hud_create', {
     jobs: [
       { role: 'imp', task: 'Batch plain job.', request_key: 'tc-plain' },
@@ -369,8 +370,7 @@ test('MCP tasks: batch responses deliver per-job compact notices with check-wait
 
   // 2. Checked job settles -> waits for checks before pushing notice with Checks: 1/1 passed.
   await publishPiGrace(t, checked);
-  await until(() => fs.existsSync(join(checked.task_dir, 'checks.json')), t.signal);
-  await new Promise((r) => setTimeout(r, 400));
+  await until(() => fs.existsSync(join(checked.task_dir, 'checks.json')) && fs.existsSync(join(f.root, 'batch-check-started')), t.signal);
   assert.equal(panePrompts().some((m) => m.includes(checked.job)), false, 'notice waits while check runs');
   writeFixtureFile(join(f.root, 'release-batch-check'), '');
   await until(() => fs.existsSync(join(checked.task_dir, 'batch-notice.json')), t.signal);

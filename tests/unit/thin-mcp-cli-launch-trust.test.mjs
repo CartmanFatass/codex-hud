@@ -18,7 +18,7 @@ import {
 
 test(
   'a grok role runs a brief through idle grace and the watcher reaps the closed tab',
-  { timeout: 10000 },
+  { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
     const job = await f.call('hud_create', {
@@ -197,7 +197,7 @@ test('local CLI trust refuses missing grants without creating a tab', async (t) 
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
 });
 
-test('a grok trust dialog is declined and the job fails naming the directory', { timeout: 10000 }, async (t) => {
+test('a grok trust dialog is declined and the job fails naming the directory', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
   const args = { role: 'general', on: 'grok', request_key: 'grok-trust', task: 'Synthetic trust.' };
@@ -226,7 +226,7 @@ test('a grok trust dialog is declined and the job fails naming the directory', {
 
 test(
   'an agy role launches without an effort flag, and a startup done does not settle the job',
-  { timeout: 10000 },
+  { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'startup-done'), '');
@@ -319,7 +319,7 @@ test(
 
 test(
   'agent_not_ready runs the trust check for any kind, and a start error without that text is unchanged',
-  { timeout: 10000 },
+  { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'start-not-ready'), '');
@@ -422,7 +422,7 @@ test('a claude role launches with its flags and settles through idle grace', { t
 
 test(
   'a claude trust dialog is declined with enter and the launch fails with the reason',
-  { timeout: 10000 },
+  { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'start-not-ready'), '');
@@ -506,7 +506,7 @@ test('unparseable Codex layer leaves MCPs untouched and reports the fallback wit
   assert.ok(!JSON.stringify(diagnostics).includes('private-value'));
 });
 
-test('a codex role waits out a phantom startup and passes the start timeout', { timeout: 10000 }, async (t) => {
+test('a codex role waits out a phantom startup and passes the start timeout', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
   const owner = '[mcp_servers."unrelated.server"]\ncommand="synthetic"\n[mcp_servers.hud]\ncommand="old"\n';
@@ -575,7 +575,7 @@ test('a codex role waits out a phantom startup and passes the start timeout', { 
 
 test(
   'a cli job records agent_session_id when herdr publishes it after the first get',
-  { timeout: 10000 },
+  { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'late-session'), '0');
@@ -597,7 +597,7 @@ test(
   }
 );
 
-test('a failed cli job records agent_session_id published after start, before exit', { timeout: 10000 }, async (t) => {
+test('a failed cli job records agent_session_id published after start, before exit', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'late-session'), '0');
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');

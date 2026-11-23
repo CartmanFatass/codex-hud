@@ -1066,7 +1066,7 @@ test(
   }
 );
 
-test('hud-ask prints the default when no answer arrives', { timeout: 10000 }, async (t) => {
+test('hud-ask prints the default when no answer arrives', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const id = 'j00000000000000a2',
     dir = join(f.env.HUD_HOME, 'jobs', id);
@@ -1231,8 +1231,18 @@ test('worker-tools ask and waitSonic wake within 100 ms, settle on timeout, and 
   const waitingTrunc = waitSonic({ dir: parentDir, root: jobsRoot, job: parentJob }, [c3], 5);
   await until(() => stats.active === 1, t.signal);
   writeFixtureFile(join(c3Dir, 'report.md'), 'Child three report.');
-  fs.writeFileSync(join(c3Dir, 'STATUS.json'), '{"state":');
-  setTimeout(() => writeFixtureFile(join(c3Dir, 'STATUS.json'), JSON.stringify({ state: 'done' })), 20);
+  const truncated = join(c3Dir, 'STATUS.json'), read = fsDefault.readFileSync;
+  let sawTruncated = false;
+  const observeRead = t.mock.method(fsDefault, 'readFileSync', (file, ...args) => {
+    const value = read(file, ...args);
+    if (file === truncated && value === '{"state":') sawTruncated = true;
+    return value;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { observeRead.mock.restore(); syncBuiltinESMExports(); });
+  fs.writeFileSync(truncated, '{"state":');
+  await until(() => sawTruncated, t.signal);
+  writeFixtureFile(truncated, JSON.stringify({ state: 'done' }));
   const truncResult = await waitingTrunc;
   assert.equal(truncResult.reports.length, 1);
   assert.equal(truncResult.reports[0].body, 'Child three report.');

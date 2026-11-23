@@ -197,7 +197,7 @@ test('a headless sonic starts even when a legacy sonic fills the role cap', asyn
 
   const job = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query at cap.' });
   assert.notEqual(job.state, 'queued');
-  await until(() => cliState(job.task_dir)?.state === 'closed', 10000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
   assert.equal(receipt.headless, true);
   assert.equal(receipt.resume_s, undefined, 'headless sonic has no native resume window');

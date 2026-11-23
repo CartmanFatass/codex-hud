@@ -23,7 +23,8 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   const job = await f.call('hud_create', { role: 'event-cli', request_key: 'events', task: 'Synthetic event sequences.' });
   await until(() => cliState(job.task_dir)?.pid, t.signal);
   writeFixtureFile(join(job.task_dir, 'report.md'), 'Report before the long summary.\n');
-  await new Promise((r) => setTimeout(r, 750));
+  const afterReport = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= afterReport + 2, t.signal);
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).quiet_decision, undefined);
   // Each transient done is immediately revoked. Sleeping while done could legitimately
@@ -379,7 +380,8 @@ test('report written while working settles only at turn end, not mid-turn slice 
         task: 'Write report mid-turn while still working.',
       });
       await until(() => fs.existsSync(join(job.task_dir, 'report.md')), t.signal);
-      await new Promise((r) => setTimeout(r, 250));
+      const afterReport = statusQueries(f, job);
+      await until(() => statusQueries(f, job) >= afterReport + 2, t.signal);
       assert.equal(cliState(job.task_dir).state, 'working');
       assert.equal(cliState(job.task_dir).output_written, false);
       assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
@@ -399,7 +401,8 @@ test('report written while working settles only at turn end, not mid-turn slice 
         task: 'Must not send /quit before done.',
       });
       await until(() => fs.existsSync(join(noCont.task_dir, 'report.md')), t.signal);
-      await new Promise((r) => setTimeout(r, 250));
+      const afterReport = statusQueries(f, noCont);
+      await until(() => statusQueries(f, noCont) >= afterReport + 2, t.signal);
       assert.equal(cliState(noCont.task_dir).state, 'working');
       assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
       fs.writeFileSync(join(f.env.HOME, 'release-done'), '');

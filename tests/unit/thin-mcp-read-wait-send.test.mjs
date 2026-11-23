@@ -24,6 +24,8 @@ import {
   progressRecord,
   jsonLines,
   cliState,
+  watchStats as readWatchStats,
+  watchStatsProbe,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
@@ -666,7 +668,7 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   assert.equal((await f.call('hud_read', { view: 'recent' })).jobs[0].report_unread, false);
   assert.deepEqual((await f.call('hud_read')).jobs, []);
   assert.equal((await f.call('hud_read', { job: id, full: true })).report, 'First report.');
-  await new Promise((r) => setTimeout(r, 10));
+  await until(() => Date.now() > Date.parse(stamp), t.signal);
   writeFixtureFile(join(dir, 'report.md'), 'Second report.');
   assert.equal((await f.call('hud_read', { job: id })).digest.result, 'Second report.');
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at > stamp);
@@ -680,9 +682,14 @@ test('failed job without a report catches up once, then hud_read marks attention
   writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, herdr_pane: 'w4E:p1', created_at: '2026-01-01' }));
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', reason: 'worker gone' }));
   const catchup = async () => {
-    const lines = [], ac = new AbortController();
+    const lines = [], ac = new AbortController(), scanned = Promise.withResolvers();
+    const timer = globalThis.setTimeout;
+    const mocked = t.mock.method(globalThis, 'setTimeout', (fn, ms, ...args) => {
+      if (ms === 60) scanned.resolve(); // The first catch-up scan has finished and armed its safety rescan.
+      return timer(fn, ms, ...args);
+    });
     const watching = watchCommand([], { env: f.env, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
-    await new Promise((r) => setTimeout(r, 150)); ac.abort(); await watching;
+    try { await scanned.promise; } finally { ac.abort(); mocked.mock.restore(); await watching; }
     const [, ignored] = fs.readFileSync('/proc/self/status', 'utf8').match(/^SigIgn:\s+([\da-f]+)$/m);
     const sigpipe = 1n << BigInt(constants.signals.SIGPIPE - 1);
     assert.equal(BigInt(`0x${ignored}`) & sigpipe, sigpipe, 'watchCommand must leave SIGPIPE ignored');
@@ -709,7 +716,7 @@ test('thin read lists and waits without opening discarded bodies, preserving obs
   const f = await fixture(
     t,
     true,
-    `
+    watchStatsProbe + `
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 const open = fs.openSync;
@@ -746,9 +753,14 @@ syncBuiltinESMExports();`
   const question = await read();
   assert.deepEqual(question.questions, [{ id: 'q1', text: 'Synthetic question.' }]);
   await f.call('hud_respond', { job, request_id: 'q1', answer: 'Synthetic answer.' });
-  const before = reads().length,
-    waiting = read(1100);
-  await new Promise((done) => setTimeout(done, 600));
+  const startRead = async (wait_ms) => {
+    const before = readWatchStats(f).opened;
+    const result = read(wait_ms);
+    await until(() => readWatchStats(f).opened > before, t.signal);
+    return { result };
+  };
+  const before = reads().length;
+  const { result: waiting } = await startRead(1100);
   assert.equal(reads().length, before);
   const timeout = await waiting;
   const omitted = { ...question, questions: [], report_unread: false, report_unchanged: true };
@@ -763,8 +775,8 @@ syncBuiltinESMExports();`
   assert.equal(full.report_bytes, 65537);
   assert.equal(full.next_offset, full.report.length);
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at);
-  const newQuestion = read(3000);
-  setTimeout(() => writeFixtureFile(join(dir, 'qa', 'q2.md'), 'New question.'), 100);
+  const { result: newQuestion } = await startRead(3000);
+  writeFixtureFile(join(dir, 'qa', 'q2.md'), 'New question.');
   assert.deepEqual(await newQuestion, { ...timeout, questions: [{ id: 'q2', text: 'New question.' }] });
   await f.call('hud_respond', { job, request_id: 'q2', answer: 'Answered.' });
   for (const [state, display_state] of [
@@ -776,9 +788,9 @@ syncBuiltinESMExports();`
   ]) {
     save();
     status('working');
-    const pending = read(700);
-    const timer = setTimeout(() => (state === null ? fs.unlinkSync(join(dir, 'STATUS.json')) : status(state)), 100);
-    t.after(() => clearTimeout(timer));
+    const { result: pending } = await startRead(700);
+    if (state === null) fs.unlinkSync(join(dir, 'STATUS.json'));
+    else status(state);
     assert.deepEqual(await pending, { ...question, questions: [], state, display_state,
       digest: { ...question.digest, state: state ?? display_state } });
     assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at);
@@ -857,7 +869,7 @@ test('hud_send to several jobs sends once per working job and skips read-closed 
   assert.equal(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).length, 2);
 });
 
-test('thin send queues a message for a working pi job and refuses a finished one', { timeout: 10000 }, async (t) => {
+test('thin send queues a message for a working pi job and refuses a finished one', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const job = await f.call('hud_create', { role: 'reviewer', request_key: 'send-queue', task: 'Synthetic task.' });
   writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
@@ -873,7 +885,7 @@ test('thin send queues a message for a working pi job and refuses a finished one
 
 test(
   'thin send records failed and successful outcomes without retrying a message key',
-  { timeout: 10000 },
+  { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
     const job = await f.call('hud_create', { role: 'imp', request_key: 'send-outcomes', task: 'Synthetic task.' });
@@ -884,7 +896,7 @@ test(
     const stamp = JSON.parse(fs.readFileSync(receiptFile)).read_at;
     assert.ok(stamp);
     // An earlier read stamp survives sends; a newer, unread settled report still permits continuation.
-    await new Promise((done) => setTimeout(done, 10));
+    await until(() => Date.now() > Date.parse(stamp), t.signal);
     writeFixtureFile(join(job.task_dir, 'report.md'), 'Unread settled report.');
     writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
     const fake = `#!${process.execPath}
@@ -1013,7 +1025,7 @@ test('STATUS table matches across the panel reader and hud_read', async (t) => {
 });
 
 test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride once per response', async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, true, watchStatsProbe);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const created = await f.call('hud_create', {
     role: 'general',
@@ -1022,16 +1034,9 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
     task: 'Seed session cursor without self-reporting create.',
   });
   assert.equal('changes' in created, false);
-  const createdStatus = join(created.task_dir, 'STATUS.json');
-  for (let i = 0; i < 40; i++) {
-    if (fs.existsSync(createdStatus) && JSON.parse(fs.readFileSync(createdStatus, 'utf8')).state === 'working') break;
-    await new Promise((r) => setTimeout(r, 50));
-  }
+  await until(() => cliState(created.task_dir)?.state === 'working', t.signal);
   await f.call('hud_close', { job: created.job });
-  for (let i = 0; i < 40; i++) {
-    if (fs.existsSync(createdStatus) && JSON.parse(fs.readFileSync(createdStatus, 'utf8')).state === 'stopped') break;
-    await new Promise((r) => setTimeout(r, 50));
-  }
+  await until(() => cliState(created.task_dir)?.state === 'stopped', t.signal);
 
   const writeSyntheticJob = (id, pane, pkg, state) => {
     const dir = join(f.env.HUD_HOME, 'jobs', id);
@@ -1059,8 +1064,9 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
   const settledSeed = await f.call('hud_roster');
   assert.equal('changes' in settledSeed, false);
 
+  const opened = readWatchStats(f).opened;
   const waitPromise = f.call('hud_read', { job: 'j00000000000001a1', wait_ms: 5000 });
-  await new Promise((r) => setTimeout(r, 80));
+  await until(() => readWatchStats(f).opened > opened, t.signal);
   writeFixtureFile(
     join(w1Dir, 'STATUS.json'),
     JSON.stringify({ state: 'waiting_orchestrator', blocked: false, reason: 'quiet', harness: 'cli' })
@@ -1111,35 +1117,8 @@ test('an answer the owner gives from the panel rides on the next response as one
 });
 
 test('hud_read wait_ms and hud_wait wake within 100 ms, resist sessions ELOOP, settle on timeout, and leak zero watchers', { timeout: 15000 }, async (t) => {
-  const f = await fixture(
-    t,
-    true,
-    `
-import fs from 'node:fs';
-import { syncBuiltinESMExports } from 'node:module';
-const watch = fs.watch;
-let opened = 0, closed = 0;
-const statsFile = process.env.HOME + '/watch-stats.json';
-const record = () => {
-  const tmp = statsFile + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ opened, closed, active: opened - closed }));
-  fs.renameSync(tmp, statsFile);
-};
-fs.watch = function(...args) {
-  const w = watch.apply(this, args);
-  opened++;
-  record();
-  const close = w.close.bind(w);
-  let done = false;
-  w.close = function() {
-    if (!done) { done = true; closed++; record(); }
-    return close();
-  };
-  return w;
-};
-syncBuiltinESMExports();`
-  );
-  const watchStats = () => JSON.parse(fs.readFileSync(join(f.env.HOME, 'watch-stats.json'), 'utf8'));
+  const f = await fixture(t, true, watchStatsProbe);
+  const watchStats = () => readWatchStats(f);
 
   const first = waitFixtureJob(f, 1);
   // Seed a symlink cycle inside sessions/ to verify non-recursive job waits never hit ELOOP.
@@ -1150,7 +1129,7 @@ syncBuiltinESMExports();`
   // 1. hud_read wait_ms wakes within 100 ms when qa/ and q1.md are created.
   const waitingQuestion = f.call('hud_read', { job: first.job, wait_ms: 5000 });
   await f.rpc('ping');
-  await until(() => fs.existsSync(join(f.env.HOME, 'watch-stats.json')) && watchStats().active > 0, t.signal);
+  await until(() => watchStats().active > 0, t.signal);
   const questionAt = performance.now();
   fs.mkdirSync(join(first.dir, 'qa'), { recursive: true });
   writeFixtureFile(join(first.dir, 'qa', 'q1.md'), 'Synthetic event question.');

@@ -65,6 +65,13 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
       return open(file, ...args);
     };
   }
+  if (isWatcher && process.env.HUD_TEST_WATCHER_CLOCK === '1') {
+    const clock = join(process.env.HOME, 'watcher-clock'), now = Date.now;
+    Date.now = () => {
+      try { return Number(fs.readFileSync(clock, 'utf8')); }
+      catch (error) { if (error.code === 'ENOENT') return now(); throw error; }
+    };
+  }
   if (isWatcher || isCli) {
     const flag = join(process.env.HOME, 'snapshot-enospc'),
       rename = fs.renameSync,

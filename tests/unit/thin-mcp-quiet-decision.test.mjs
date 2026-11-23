@@ -349,8 +349,9 @@ test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeo
   assert.equal(turn.seq, 2);
   assert.equal(turn.report_prompt_sent, true);
 
-  // Even after turn.json watch/debounce wakes the supervisor, waiting_orchestrator holds.
-  await new Promise((r) => setTimeout(r, 350));
+  // After another completed status query, waiting_orchestrator still holds.
+  const queries = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= queries + 2, t.signal);
   assert.equal(cliState(job.task_dir).state, 'waiting_orchestrator');
   assert.equal(cliState(job.task_dir).quiet_decision.reason, 'prompt-failed');
   assert.equal(server.requests.length, 1);

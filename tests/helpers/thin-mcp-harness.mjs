@@ -354,6 +354,36 @@ export const resultValue = (result) => {
 
 export { until };
 
+// A parent can drive an input only once the MCP has subscribed to the job directory.
+export const watchStatsProbe = `{
+  const fs = (await import('node:fs')).default;
+  const { syncBuiltinESMExports } = await import('node:module');
+  const watch = fs.watch, statsFile = process.env.HOME + '/watch-stats.json';
+  let opened = 0, closed = 0;
+  const record = () => {
+    const tmp = statsFile + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ opened, closed, active: opened - closed }));
+    fs.renameSync(tmp, statsFile);
+  };
+  fs.watch = function(...args) {
+    const w = watch.apply(this, args);
+    opened++;
+    record();
+    const close = w.close.bind(w);
+    let done = false;
+    w.close = function() {
+      if (!done) { done = true; closed++; record(); }
+      return close();
+    };
+    return w;
+  };
+  syncBuiltinESMExports();
+}`;
+export function watchStats(f) {
+  const file = join(f.env.HOME, 'watch-stats.json');
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : { opened: 0, closed: 0, active: 0 };
+}
+
 export const tasksExtension = 'io.modelcontextprotocol/tasks';
 export function taskRpc(rpc) {
   return async (method, params = {}) => {

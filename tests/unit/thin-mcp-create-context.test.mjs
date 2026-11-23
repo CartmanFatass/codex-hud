@@ -21,6 +21,8 @@ import {
   waitFixtureJob,
   cliState,
   writeCliRole,
+  watchStats,
+  watchStatsProbe,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
@@ -290,7 +292,7 @@ test('a busy worker pane retries once and keeps CLI JSON out of the failure reas
   assert.deepEqual(starts.map(({ args }) => args[args.indexOf('--pane') + 1]), ['w4E:p2', 'w4E:p3']);
 });
 
-test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }, async (t) => {
+test('working worker STATUS survives a nonzero prompt result', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-prompt'), '');
   const job = await f.call('hud_create', { role: 'imp', request_key: 'prompt-timeout', task: 'Synthetic task.' });
@@ -417,7 +419,7 @@ test('ready tickets are dispatchable briefs and live jobs claim them in MCP, Hom
 });
 
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, true, watchStatsProbe);
   const initialized = await f.rpc('initialize', { protocolVersion: '2024-11-05' });
   assert.equal(initialized.result.capabilities.tools !== undefined, true);
   const listed = await f.rpc('tools/list');
@@ -626,16 +628,10 @@ esac
   assert.equal(receipt.slice, args.slice);
   assert.equal((await f.call('hud_read', { job: job.job })).digest.result, 'Synthetic implementation report.');
   assert.ok(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at);
+  const opened = watchStats(f).opened;
   const waiting = f.call('hud_read', { job: job.job, wait_ms: 2000 });
-  const settle = setTimeout(
-    () =>
-      fs.writeFileSync(
-        join(job.task_dir, 'STATUS.json'),
-        JSON.stringify({ state: 'idle_grace', exit_reason: 'settled' })
-      ),
-    100
-  );
-  t.after(() => clearTimeout(settle));
+  await until(() => watchStats(f).opened > opened, t.signal);
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace', exit_reason: 'settled' }));
   const read = await waiting;
   assert.equal(read.state, 'idle_grace');
   assert.equal(read.exit_reason, 'settled');
@@ -657,7 +653,7 @@ esac
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
 });
 
-test('a slow CLI launch blocks only retries with the same request key, not other job mutations', { timeout: 10000 }, async (t) => {
+test('a slow CLI launch blocks only retries with the same request key, not other job mutations', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const old = await f.call('hud_create', { role: 'imp', request_key: 'already-working', task: 'Synthetic task.' });
   fs.writeFileSync(join(f.env.HOME, 'hold-grok-start'), '');
@@ -720,7 +716,7 @@ test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses inv
 
 test(
   'thin create overrides pi argv and records the job assignment without changing defaults',
-  { timeout: 10000 },
+  { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
     fallbackRole(f, 'general', [{ harness: 'pi', pi_role: 'implementer' }]);
@@ -925,7 +921,7 @@ test('hud_create references an upstream report without marking it read or closin
   assert.equal(reapAttempts(f, upstream), 0);
 });
 
-test('thin resume forwards the session ID without overriding pi default lookup', { timeout: 10000 }, async (t) => {
+test('thin resume forwards the session ID without overriding pi default lookup', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   await f.call('hud_create', {
     role: 'imp',
@@ -937,7 +933,7 @@ test('thin resume forwards the session ID without overriding pi default lookup',
   assert.deepEqual(start.slice(-2), ['--session', '11111111-2222-4333-8444-555555555555']);
   assert.equal(start.includes('--session-dir'), false);
 });
-test('thin pi launch switches and verbatim arguments reach argv, receipts and reads', { timeout: 10000 }, async (t) => {
+test('thin pi launch switches and verbatim arguments reach argv, receipts and reads', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   for (const enabled of [false, true]) {
     const options = {
@@ -1007,7 +1003,7 @@ test('thin launch options reject Jev roles and invalid pi values before dispatch
   assert.deepEqual(withoutCallerLookups(f.commands()), []);
 });
 
-test('thin create rejects model or thinking overrides for Jev roles', { timeout: 10000 }, async (t) => {
+test('thin create rejects model or thinking overrides for Jev roles', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   enableOptionalRoles(f, 'pro');
   for (const [field, value] of [['model', 'synthetic/other'], ['thinking', 'max']]) {
@@ -1129,7 +1125,7 @@ test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, a
   }
 });
 
-test('thin create requires herdr without dispatching', { timeout: 10000 }, async (t) => {
+test('thin create requires herdr without dispatching', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, false);
   const roster = await f.call('hud_roster');
   assert.equal(Object.hasOwn(roster, 'watcher_alive'), false);

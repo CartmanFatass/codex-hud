@@ -98,7 +98,7 @@ test('forced fail after cli hud_create', async (t) => {
   record(f.env.HUD_HOME);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'fail-cli', task: 'Synthetic.' });
-  await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
   assert.fail('forced failure with live hud-watch and hud-cli');
 });
 
@@ -108,7 +108,7 @@ test('forced fail while hud-watch and hud-cli are SIGSTOPped', async (t) => {
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'stopped-cli', 8);
   const job = await f.call('hud_create', { role: 'stopped-cli', request_key: 'sigstop-cli', task: 'Synthetic.' });
-  await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
   process.kill(cliState(job.task_dir).supervisor_pid, 'SIGSTOP');
   process.kill(Number(fs.readFileSync(join(f.env.HUD_HOME, 'watch.pid'), 'utf8')), 'SIGSTOP');
   assert.fail('forced failure while processes are stopped');
@@ -119,7 +119,7 @@ test('forced timeout while hud_read wait_ms blocks hud-mcp', { timeout: 1200 }, 
   record(f.env.HUD_HOME);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'timeout-cli', task: 'Synthetic.' });
-  await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await until(() => cliState(job.task_dir)?.supervisor_pid && fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
   await f.call('hud_read', { job: job.job, wait_ms: 120000 });
 });
 
@@ -127,7 +127,7 @@ test('forced timeout with a live role-places watcher', async (t) => {
   const f = await rolePlacesFixture(t);
   record(f.env.HUD_HOME);
   await f.call('hud_create', { role: 'imp', request_key: 'role-timeout', task: 'Synthetic.' });
-  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
   await t.test('hung operation', { timeout: 200 }, async () => {
     const tick = setInterval(() => {}, 1000);
     t.after(() => clearInterval(tick));
@@ -149,7 +149,7 @@ test('forced fail with SIGTERM-resistant job-retention watcher', async (t) => {
   record(f.home);
   f.job({ state: 'working' });
   f.start('process.on("SIGTERM", () => {});');
-  await until(() => fs.existsSync(join(f.home, 'watch.pid')));
+  await until(() => fs.existsSync(join(f.home, 'watch.pid')), t.signal);
   assert.fail('forced failure with SIGTERM-resistant hud-watch');
 });
 `);

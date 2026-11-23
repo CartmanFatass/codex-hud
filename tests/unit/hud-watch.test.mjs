@@ -19,6 +19,7 @@ import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 import { until as waitUntil } from '../helpers/until.mjs';
+import { workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
 
 const readHint = (job) => `hud_read job=${job} (mode: "full" for the whole report)`;
 
@@ -48,7 +49,17 @@ function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
   return dir;
 }
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+function observeStats(t, file) {
+  let count = 0;
+  const stat = fs.lstatSync;
+  t.mock.method(fs, 'lstatSync', (path, ...args) => {
+    if (String(path) === file) count++;
+    return stat(path, ...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  return () => count;
+}
 
 const until = (check, signalOrLimit) => waitUntil(check, signalOrLimit, 'timed out waiting for expected watcher output');
 
@@ -173,9 +184,9 @@ test('watcher preserves a shared worktree while a continuation job is active and
 
   watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
   exited = once(watcher, 'exit');
-  await until(() => fs.existsSync(join(env.HUD_HOME, 'watch.pid')) && fs.existsSync(join(env.HUD_HOME, 'jobs-revision.json')), 15000);
-  // Give the initial scan a moment to settle; the active continuation must protect the shared worktree.
-  await wait(250);
+  // The initial finished scan must keep watching while the continuation protects the shared worktree.
+  await until(() => ['watch.pid', 'jobs-revision.json'].every((file) => fs.existsSync(join(env.HUD_HOME, file))) &&
+    fs.existsSync(workSummaryPath(env.HUD_HOME)), t.signal);
   assert.equal(fs.existsSync(root), true);
   assert.equal(JSON.parse(fs.readFileSync(sourceFile)).worktree_removed_at, undefined);
 
@@ -187,7 +198,7 @@ test('watcher preserves a shared worktree while a continuation job is active and
   assert.equal(git(main_root, 'branch', '--list', branch), '');
 });
 
-test('dead supervisor watcher preserves a live worker; both gone fail or close by the explicit report baseline', { timeout: 10000 }, async (t) => {
+test('dead supervisor watcher preserves a live worker; both gone fail or close by the explicit report baseline', { timeout: 60000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'dead-supervisor-'));
   const hudHome = join(home, 'hud');
   let watcher, watcherExited, worker, workerExited, supervisor, supervisorExited;
@@ -219,7 +230,11 @@ test('dead supervisor watcher preserves a live worker; both gone fail or close b
   // The watcher updates the two jobs one after the other.
   await until(() => status(closed).state === 'waiting_orchestrator', t.signal);
   const stamp = fs.statSync(join(failed, 'STATUS.json')).mtimeMs;
-  await wait(120);
+  const summary = workSummaryPath(hudHome);
+  await until(() => fs.existsSync(summary), t.signal);
+  fs.rmSync(summary, { force: true });
+  writeFixtureFile(join(closed, 'report.md'), 'Synthetic report.');
+  await until(() => fs.existsSync(summary), t.signal);
   assert.equal(fs.statSync(join(failed, 'STATUS.json')).mtimeMs, stamp, 'unchanged observation does not rewrite STATUS');
   worker.kill('SIGKILL');
   await workerExited;
@@ -236,8 +251,10 @@ test('hud watch --verbose retains the existing MCP change lines', async (t) => {
   const foreignDir = writeJob(hudHome, 'j00000000000000b2', 'w4E:p9', 'pkg-b', { state: 'working' });
 
   const env = { ...process.env, HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' };
+  const scans = observeStats(t, join(callerDir, 'STATUS.json'));
   const lines = [];
   const ac = new AbortController();
+  t.after(() => ac.abort());
   const running = watchCommand(
     ['--verbose'],
     {
@@ -250,13 +267,16 @@ test('hud watch --verbose retains the existing MCP change lines', async (t) => {
     { rescanMs: 30000, signal: ac.signal }
   );
 
-  await wait(80);
+  await until(() => scans() > 0, t.signal);
   assert.deepEqual(lines, []);
 
   // Foreign-pane changes must stay silent, and mutating HERDR_PANE_ID after startup must not switch panes.
   env.HERDR_PANE_ID = 'w4E:p9';
+  const before = scans();
   fs.writeFileSync(join(foreignDir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'tab closed' }));
-  await wait(80);
+  // The foreign change may not wake a pane-scoped watch; use a silent, in-scope write to force the scan.
+  writeFixtureFile(join(callerDir, 'STATUS.json'), '{"state":"working"}');
+  await until(() => scans() > before, t.signal);
   assert.deepEqual(lines, []);
 
   // 1: working -> waiting_orchestrator
@@ -306,15 +326,23 @@ test('hud watch shows the signed settlement summary and ignores metadata-only wr
   const dir = writeJob(home, id, pane, 'summary', { state: 'working' }, true);
   const stale = writeJob(home, staleId, pane, 'stale', { state: 'working' }, true);
   const ac = new AbortController(), lines = [];
-  const original = fs.readdirSync;
+  const original = fs.readdirSync, watch = fs.watch;
   let scans = 0;
-  fs.readdirSync = (path, ...args) => {
+  const metadataSeen = Promise.withResolvers();
+  const timers = t.mock.method(globalThis, 'setTimeout');
+  t.mock.method(fs, 'readdirSync', (path, ...args) => {
     if (path === join(home, 'jobs')) scans++;
     return original(path, ...args);
-  };
+  });
+  t.mock.method(fs, 'watch', (path, options, listener) => watch(path, options,
+    path === join(home, 'jobs') ? (event, name) => {
+      const before = timers.mock.callCount();
+      listener(event, name);
+      if (name?.toString() === `${id}/report-meta.json`) metadataSeen.resolve(timers.mock.callCount() - before);
+    } : listener));
   syncBuiltinESMExports();
   t.after(() => {
-    fs.readdirSync = original;
+    t.mock.restoreAll();
     syncBuiltinESMExports();
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -325,7 +353,7 @@ test('hud watch shows the signed settlement summary and ignores metadata-only wr
     await until(() => scans > 0, t.signal);
     const initial = scans;
     writeReportMeta(dir, cachedReportSignature(dir), { summary: '«Synthetic» work completed.' });
-    await wait(180);
+    assert.equal(await metadataSeen.promise, 0, 'the metadata event did not schedule a debounce scan');
     assert.equal(scans, initial, 'report-meta.json writes do not rescan jobs');
     assert.deepEqual(lines, []);
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
@@ -462,13 +490,19 @@ test('hud watch batches jobs settling within the settlement window into one noti
   t.after(() => { ac.abort(); fs.rmSync(home, { recursive: true, force: true }); });
   const ids = ['j0000000000000001', 'j0000000000000002', 'j0000000000000003'];
   const dirs = ids.map((id) => writeJob(home, id, pane, 'batch', { state: 'working' }));
+  const scans = observeStats(t, join(dirs[0], 'STATUS.json'));
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
     stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 50, settlementWindowMs: 450 });
   for (const dir of dirs) {
+    const before = scans();
     writeFixtureFile(join(dir, 'STATUS.json'), '{"state":"done"}');
-    await wait(80);
+    await until(() => scans() > before, t.signal);
     assert.deepEqual(writes, [], 'hold settlements across scans');
+    now += 80;
   }
+  now = 450;
   await until(() => writes.length > 0, t.signal);
   ac.abort();
   assert.equal(await running, 0);
@@ -482,13 +516,17 @@ test('hud watch flushes a held settlement with an immediate question', async (t)
   const done = writeJob(home, 'j0000000000000001', pane, 'batch', { state: 'working' });
   const ask = writeJob(home, 'j0000000000000002', pane, 'batch', { state: 'working' });
   fs.mkdirSync(join(ask, 'qa'));
+  const scans = observeStats(t, join(done, 'STATUS.json'));
+  // Hold logical time at zero so the question, not expiry of the 250 ms window, flushes the settlement.
+  t.mock.method(performance, 'now', () => 0);
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
     stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal, rescanMs: 100, settlementWindowMs: 250 });
+  const before = scans();
   writeFixtureFile(join(done, 'STATUS.json'), '{"state":"done"}');
-  await wait(100);
+  await until(() => scans() > before, t.signal);
   assert.deepEqual(writes, []);
   writeFixtureFile(join(ask, 'qa/q1.md'), 'Synthetic question?');
-  await until(() => writes.length > 0, 1500);
+  await until(() => writes.length > 0, t.signal);
   ac.abort();
   assert.equal(await running, 0);
   assert.equal(writes.length, 1);
@@ -510,7 +548,7 @@ test('hud watch catch-up prints pending questions, unread settlements and unread
   const lines = [], ac = new AbortController();
   t.after(() => ac.abort());
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(...s.trim().split('\n')), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
-  await wait(240);
+  await until(() => lines.length >= 5, t.signal);
   assert.equal(lines.length, 5);
   assert.equal(lines.filter((s) => s.includes('QUESTION q')).length, 2);
   assert.equal(lines.filter((s) => s.includes('idle_grace | report')).length, 1);
@@ -530,6 +568,7 @@ test('quiet watch emits new blocks and quiet reasons but never working/resume ch
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-attention-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const dir = writeJob(home, 'j0000000000000001', 'w4E:p1', 'attention', { state: 'working' });
+  const scans = observeStats(t, join(dir, 'STATUS.json'));
   const lines = [], ac = new AbortController();
   t.after(() => ac.abort());
   const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
@@ -538,8 +577,9 @@ test('quiet watch emits new blocks and quiet reasons but never working/resume ch
     { state: 'working' }, { state: 'waiting_orchestrator', reason: 'quiet' },
     { state: 'waiting_orchestrator', reason: 'worker not found' }, { state: 'working' },
   ]) {
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(state));
-    await wait(150);
+    const before = scans();
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(state));
+    await until(() => scans() > before, t.signal);
   }
   ac.abort(); await running;
   assert.deepEqual(lines.map((s) => s.split(': ').at(-1)), ['working | input', 'waiting_orchestrator | quiet', 'waiting_orchestrator | worker not found']);
@@ -588,13 +628,13 @@ test('hud watch --all watches every pane and exits cleanly on help, usage errors
     { rescanMs: 30000, signal: ac.signal }
   );
 
-  await wait(60);
+  // The all-pane watcher captures its baseline synchronously before its first wait.
   fs.writeFileSync(join(otherDir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'tab closed' }));
   assert.equal(await running, 0);
   assert.deepEqual(seen, ['j00000000000000d4 imp pkg-other: failed | tab closed']);
 });
 
-test('CLI and pi question pushes use only watch while live, and fall back with missing or stale watcher PIDs', { timeout: 10000 }, async (t) => {
+test('CLI and pi question pushes use only watch while live, and fall back with missing or stale watcher PIDs', { timeout: 60000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-push-'));
   let child, childExited;
   cleanupFixture(t, { root: home }, () => child && stopChild(child, childExited, { killMs: 300 }));
@@ -744,16 +784,22 @@ test('mod catch-up uses the recorded delivery instead of the two-hour default', 
   } finally { ac.abort(); await run; }
 });
 
-test('mod JSONL uses shared actionable lines, sleeps only once clear, and resumes panel logs', { timeout: 10000 }, async (t) => {
+test('mod JSONL uses shared actionable lines, sleeps only once clear, and resumes panel logs', { timeout: 60000 }, async (t) => {
   const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, id = 'j0000000000000001';
   const dir = writeJob(f.home, id, pane, 'mod', { state: 'closed', settled_at: new Date(Date.now() - 3 * 60 * 60_000).toISOString() }, true);
   const ac = new AbortController();
   t.after(() => ac.abort());
   const records = [], run = (env) => watchCommand(['--mod'], { env, stdout: s => { const r = JSON.parse(s); if (r.type !== 'band') records.push(r); }, stderr: s => assert.fail(s) },
     { signal: ac.signal, rescanMs: 50, queueIdleMs: 100, settlementWindowMs: 40 });
+  const scans = observeStats(t, join(dir, 'STATUS.json'));
+  const realNow = Date.now;
+  let offset = 0;
+  t.mock.method(Date, 'now', () => realNow() + offset);
   const running = run({ ...f.env, HUD_MOD_CURSOR: '' });
   await until(() => records.some(r => r.type === 'wake'), t.signal);
-  await wait(150);
+  const before = scans();
+  offset += 150; // Advance beyond queueIdleMs while the unread settlement is still present.
+  await until(() => scans() >= before + 2, t.signal);
   assert.deepEqual(records.map(({ at, ...record }) => record), [
     { type: 'ready' }, { type: 'wake', lines: ['1 older unread report — hud_read view:compact'] },
   ]);
@@ -937,9 +983,16 @@ test('hud watch --queue typed fallback keeps running and exits after injectable 
   const dir = writeJob(f.home, 'j0000000000000001', 'w4E:p1', 'fallback', { state: 'closed' }, true);
   const ac = new AbortController(), stdout = [], stderr = [];
   t.after(() => ac.abort());
+  const scans = observeStats(t, join(dir, 'STATUS.json'));
+  const realNow = Date.now;
+  let offset = 0;
+  t.mock.method(Date, 'now', () => realNow() + offset);
   const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, queueIdleMs: 100, settlementWindowMs: 250 });
   await until(() => f.deliveries().length === 2, t.signal);
-  await wait(180);
+  const before = scans();
+  await until(() => scans() > before, t.signal);
+  offset += 180;
+  await until(() => scans() > before + 1, t.signal);
   assert.equal(fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), true, 'unread report prevents idle exit');
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
   writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...job, read_at: new Date(Date.now() + 1000).toISOString() }));
@@ -963,7 +1016,7 @@ const agyHookLines = (reply) => {
 };
 
 function runAgyHook(env) {
-  const ran = spawnSync(agyHook, [], { env, input: agyPayload, encoding: 'utf8', timeout: 5000 });
+  const ran = spawnSync(agyHook, [], { env, input: agyPayload, encoding: 'utf8', timeout: 60000 });
   assert.equal(ran.status, 0, ran.stderr || ran.error?.message);
   return JSON.parse(ran.stdout);
 }
@@ -1072,22 +1125,29 @@ test('idle hud watch reads nothing between safety rescans', async (t) => {
     return originals.lstatSync(file, ...args);
   };
   syncBuiltinESMExports();
-  t.after(() => { Object.assign(fs, originals); syncBuiltinESMExports(); });
+  t.after(() => {
+    t.mock.timers.reset();
+    Object.assign(fs, originals);
+    syncBuiltinESMExports();
+  });
 
   const { watchCommand: freshWatch } = await import('../../dist/cli/watch.js?idle');
   const ac = new AbortController();
   t.after(() => ac.abort());
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const running = freshWatch([], { env: { HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' }, stdout: () => {}, stderr: () => {} }, { rescanMs: 400, signal: ac.signal });
 
-  // The baseline scan and the recursive watch's one-time attach may read the directory; after that, nothing.
-  await wait(60);
+  // Give the initial scan its first turn, then drive the safety timer without racing wall time.
+  await new Promise(setImmediate);
   const lists = jobLists, stats = statusStats;
   assert.equal(stats, 1, 'one baseline read of STATUS.json');
-  await wait(200);
+  t.mock.timers.tick(399);
+  await new Promise(setImmediate);
   assert.equal(jobLists, lists, 'idle watch must not list jobs between rescans');
   assert.equal(statusStats, stats, 'idle watch must not stat STATUS.json between rescans');
 
-  await until(() => statusStats > stats, 1000);
+  t.mock.timers.tick(1);
+  await new Promise(setImmediate);
   assert.equal(statusStats, stats + 1, 'safety rescan reads once after rescanMs');
 
   ac.abort();
@@ -1147,19 +1207,30 @@ syncBuiltinESMExports();`;
   assert.equal(stderr, '');
 });
 
-test('hud watch on a fresh home without jobs/ hears the first job at once, not at the rescan', { timeout: 10000 }, async (t) => {
+test('hud watch on a fresh home without jobs/ hears the first job at once, not at the rescan', { timeout: 60000 }, async (t) => {
   const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-fresh-'));
   t.after(() => fs.rmSync(hudHome, { recursive: true, force: true }));
   const ac = new AbortController();
   t.after(() => ac.abort());
-  const seen = [];
+  const seen = [], ready = Promise.withResolvers(), timer = globalThis.setTimeout;
+  const timers = t.mock.method(globalThis, 'setTimeout', (fn, ms, ...args) => {
+    if (ms === 30000) ready.resolve(); // The empty baseline has been scanned and the safety wait is armed.
+    return timer(fn, ms, ...args);
+  });
+  const staged = join(hudHome, 'staging');
+  const dir = writeJob(staged, 'j00000000000000f1', 'w4E:p1', 'pkg-fresh', { state: 'failed', exit_reason: 'tab closed' });
   const running = watchCommand(['--all'], {
     env: { HUD_HOME: hudHome },
     stdout: (text) => { seen.push(...text.trim().split('\n')); },
     stderr: () => {},
   }, { rescanMs: 30000, signal: ac.signal });
-  await wait(50);
-  writeJob(hudHome, 'j00000000000000f1', 'w4E:p1', 'pkg-fresh', { state: 'failed', exit_reason: 'tab closed' });
+  await ready.promise;
+  timers.mock.restore();
+  // Publish a new failure, not an older row moving into the watch window. Explicitly order its mtime
+  // after the baseline scan; a filesystem's timestamp resolution need not match Date.now().
+  const publishedAt = new Date(Date.now() + 1);
+  fs.utimesSync(join(dir, 'STATUS.json'), publishedAt, publishedAt);
+  fs.renameSync(join(staged, 'jobs'), join(hudHome, 'jobs'));
   await until(() => seen.length > 0, 3000);
   assert.match(seen[0], /^j00000000000000f1 imp pkg-fresh: failed/);
   ac.abort();

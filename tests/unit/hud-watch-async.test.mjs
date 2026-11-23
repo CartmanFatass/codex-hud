@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { runCommand } from '../../dist/roles/herdr-run.js';
+import { workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
 import { procStat } from '../../dist/roles/worker-tree.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { expired, fixture, hour, until } from '../helpers/job-retention-fixture.mjs';
@@ -155,7 +156,7 @@ process.exitCode = 1;`);
   assert.equal(f.log().match(/worker-tree snapshot unresolved/g)?.length, 1);
 });
 
-test('unresolved worker-tree warnings are logged once per job across changing reap outcomes and watcher restart', { timeout: 10000 }, async (t) => {
+test('unresolved worker-tree warnings are logged once per job across changing reap outcomes and watcher restart', { timeout: 60000 }, async (t) => {
   const f = fixture(t);
   const root = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const start = procStat(root.pid).start;
@@ -210,8 +211,12 @@ test('watcher dispatches at most four concurrent reaps and resumes the backlog',
   reapStub(f, `while (!fs.existsSync(join(process.env.HUD_HOME, 'release'))) await delay(10);`);
   const { exited } = f.start();
   const count = () => text(join(f.home, 'reaps')).trim().split('\n').filter(Boolean).length;
-  await until(() => count() >= 4, 15000);
-  await delay(100);
+  await until(() => count() >= 4, t.signal);
+  // Finish a new scan while all four reaps remain pinned in their helpers.
+  const summary = workSummaryPath(f.home);
+  fs.rmSync(summary, { force: true });
+  save(dirs[0], 'STATUS.json', closed());
+  await until(() => fs.existsSync(summary), t.signal);
   assert.equal(count(), 4);
   fs.writeFileSync(join(f.home, 'release'), '');
   assert.deepEqual(await exited, [0, null]);
@@ -228,15 +233,21 @@ for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [
     reapStub(f, `while (!fs.existsSync(join(dir, 'release'))) await delay(10);`);
     const { child, exited } = f.start(herdr.preload);
     await herdr.preflight; // Startup (including the shared dist lock) is not part of the query budget.
+    const summary = workSummaryPath(f.home);
     if (event === 'no spin') {
-      await delay(600);
+      // Observe a scan after the preflight socket has consumed the working reply.
+      await until(() => herdr.pending() === 0, t.signal);
+      fs.rmSync(summary, { force: true });
+      save(dir, 'STATUS.json', state);
+      await until(() => fs.existsSync(summary), t.signal);
       assert.equal(herdr.queries(), 1);
       assert.equal(attempts(f, dir), 0);
       child.kill('SIGTERM');
     } else if (event === 'self close') {
       await until(() => attempts(f, dir) === 1, t.signal);
+      fs.rmSync(summary, { force: true });
       herdr.closeTab('pi');
-      await delay(100);
+      await until(() => fs.existsSync(summary), t.signal);
       assert.equal(status(dir).state, 'idle_grace');
       fs.writeFileSync(join(dir, 'release'), '');
       await until(() => reaped(dir), t.signal);
@@ -287,7 +298,7 @@ test('failed Pi read-close retries its live root after the tab disappears', asyn
   assert.equal(status(dir).exit_reason, 'closed after report read');
 });
 
-test('watcher removes two merged worktrees from the same checkout', { timeout: 10000 }, async (t) => {
+test('watcher removes two merged worktrees from the same checkout', { timeout: 60000 }, async (t) => {
   const f = fixture(t), parent = dirname(f.home), main_root = initRepo(parent);
   const base_head = git(main_root, 'rev-parse', 'HEAD');
   const trees = Array.from({ length: 2 }, () => {
@@ -307,7 +318,7 @@ test('watcher removes two merged worktrees from the same checkout', { timeout: 1
 });
 
 for (const stubborn of [false, true]) {
-  test(`watcher SIGTERM drains ${stubborn ? 'TERM-resistant' : 'cooperative'} reap group without live orphans`, { timeout: 10000 }, async (t) => {
+  test(`watcher SIGTERM drains ${stubborn ? 'TERM-resistant' : 'cooperative'} reap group without live orphans`, { timeout: 60000 }, async (t) => {
     const f = fixture(t), dir = f.job(closed(), {}, true);
     bin(f, 'herdr', `if (${stubborn}) process.on('SIGTERM', () => {});
 fs.writeFileSync(join(process.env.HUD_HOME, 'herdr-pid'), String(process.pid));

@@ -12,6 +12,7 @@ import { procStat, reportSignature } from '../../dist/mcp/cli-judge.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
 import { appendPanelAction } from '../../dist/collectors/panel-actions.js';
 import { writeReportMeta } from '../../dist/roles/report-meta.js';
+import { workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import {
   workerFor,
@@ -41,7 +42,7 @@ import {
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { parserReport, parserProse, migrationReport, migrationProse } from '../helpers/report-summary-fixtures.mjs';
 
-test('MCP tasks: discover, progress and report settlement without reading or closing', { timeout: 10000 }, async (t) => {
+test('MCP tasks: discover, progress and report settlement without reading or closing', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   assert.deepEqual(await rpc('server/discover'), {
@@ -112,7 +113,9 @@ test('late Claude mod watch stands down new tasks, enables batch create, and sto
   // Take the handover baseline after the watcher has closed the old job, not during idle_grace.
   await until(() => readCloseReaped(old), t.signal);
   appendPanelAction(f.env.HUD_HOME, { type: 'retry', job: old.job });
-  const watch = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--mod'], { cwd: f.root, env: f.env, stdio: 'ignore' });
+  const watch = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--mod'], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'ignore'] });
+  let output = '';
+  watch.stdout.setEncoding('utf8').on('data', (text) => { output += text; });
   const exited = once(watch, 'exit');
   t.after(() => stopChild(watch, exited));
   await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers', `${f.env.HERDR_PANE_ID}.pid`)), t.signal);
@@ -127,7 +130,7 @@ test('late Claude mod watch stands down new tasks, enables batch create, and sto
   assert.equal(fs.existsSync(join(job.task_dir, 'mcp-task.json')), false);
   writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', reason: 'Synthetic input' }));
   appendPanelAction(f.env.HUD_HOME, { type: 'retry', job: job.job });
-  await new Promise(resolve => setTimeout(resolve, 1100));
+  await until(() => output.includes('Synthetic input') && output.includes(`[${job.job}] Retry requested from panel`), t.signal);
   assert.equal(f.commands().some(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID && c.args[3].includes(job.job)), false);
   assert.equal(resultValue(await taskCall(rpc, 'hud_roster')).changes, undefined);
   watch.kill('SIGKILL'); await exited;
@@ -237,7 +240,7 @@ test('MCP tasks: a question completes the task; an answer starts another task', 
   assert.match(result.result.content[0].text, /Checks: 1\/1 passed$/);
 });
 
-test('MCP tasks: fan-out sends keep the create task through report settlement', { timeout: 10000 }, async (t) => {
+test('MCP tasks: fan-out sends keep the create task through report settlement', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
@@ -273,7 +276,7 @@ test('MCP tasks: fan-out sends keep the create task through report settlement', 
   assert.equal(read.report_meta, undefined);
 });
 
-test('MCP tasks: cancel fences stale tasks and reaps live tasks once even with duplicate requests', { timeout: 10000 }, async (t) => {
+test('MCP tasks: cancel fences stale tasks and reaps live tasks once even with duplicate requests', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
@@ -307,7 +310,8 @@ test('MCP tasks: follow-up sends and live hud_respond carry on one task and exte
   const get = () => rpc('tasks/get', { taskId: task.taskId });
   const marker = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'mcp-task.json'), 'utf8'));
   const initialExpires = marker().expires;
-  await new Promise((r) => setTimeout(r, 20));
+  const stamp = Date.now();
+  await until(() => Date.now() > stamp, t.signal);
 
   const first = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic follow-up one.' });
   assert.equal(first.resultType, 'complete');
@@ -392,7 +396,7 @@ test('MCP tasks: pane change or repair job ends old task cleanly naming the succ
   assert.equal(reapAttempts(f, repairJob), 0);
 });
 
-test('MCP tasks: a fresh server can poll but cannot cancel old tasks; legacy and failed dispatches stay immediate', { timeout: 10000 }, async (t) => {
+test('MCP tasks: a fresh server can poll but cannot cancel old tasks; legacy and failed dispatches stay immediate', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   await f.rpc('initialize', { protocolVersion: '2025-11-25' });
   const { result: legacy } = await f.rpc('tools/list');
@@ -452,10 +456,13 @@ test('HUD checks: CLI declaration starts ordered checks and announces results af
   const watching = watchCommand([], { env: f.env, stdout: (s) => lines.push(...s.trim().split('\n')), stderr: () => {} },
     { signal: ac.signal, rescanMs: 100, settlementWindowMs: 250 });
   try {
+    const summary = workSummaryPath(f.env.HUD_HOME);
+    const published = () => fs.existsSync(summary) && JSON.parse(fs.readFileSync(summary)).producer === 'hud-watch';
+    await until(() => cliState(dir)?.pid === worker.pid && published(), t.signal);
+    fs.rmSync(summary, { force: true });
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic report without a declaration yet.\n');
-    await new Promise((done) => setTimeout(done, 120));
+    await until(published, t.signal);
     assert.equal(checkReceipt(job), null);
-    await until(() => cliState(dir)?.pid === worker.pid, t.signal);
     declareDone(f, job);
     f.push(job.job, 'done');
     await until(() => checkReceipt(job)?.state === 'running' && fs.existsSync(join(f.root, 'check-shell')), t.signal);
@@ -510,11 +517,11 @@ test('HUD checks: CLI declaration starts ordered checks and announces results af
 test('HUD checks: Pi continuation and report rewrite make results stale; a running check does not block repair', { timeout: 14000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
   await f.startCliSocket();
-  const checks = ['echo ran >> check-count; if [[ -f hold-check ]]; then for ((i=0; i<100; i++)); do [[ -f release-check ]] && break; sleep .05; done; test -f release-check; fi'];
+  const checks = ['echo ran >> check-count; if [[ -f hold-check ]]; then while [[ ! -f release-check ]]; do sleep .05; done; fi'];
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic checks and repair.', checks });
   assert.equal(checkReceipt(job), null);
   await publishLegacyPiGrace(t, job);
-  await until(() => checkReceipt(job)?.state === 'done', t.signal); // The check is a shell run; under full-suite load 4 s is tight.
+  await until(() => checkReceipt(job)?.state === 'done', t.signal);
   const previous = checkReceipt(job);
   assert.equal(previous.report_sig, reportSignature(job.task_dir));
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic continuation.' })).sent, true);

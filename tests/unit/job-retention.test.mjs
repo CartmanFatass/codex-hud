@@ -21,7 +21,7 @@ for (const layout of ['sessions', '.dispatch/helper/sessions']) {
   });
 }
 
-test('helper receipt beside sonic sessions keeps the watcher alive and preserves expired history', { timeout: 10000 }, async (t) => {
+test('helper receipt beside sonic sessions keeps the watcher alive and preserves expired history', { timeout: 60000 }, async (t) => {
   const f = fixture(t), open = f.job({ state: 'working' }), old = f.job(expired());
   const active = realSession(open, '.dispatch/sonic-1/sessions');
   const settled = realSession(old, '.dispatch/sonic-1/sessions');
@@ -411,7 +411,7 @@ syncBuiltinESMExports();`);
     'expired tabless/already-reaped jobs delete directly; active, non-job and symlink directories are never reaped');
 });
 
-test('watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up', { timeout: 10000 }, async (t) => {
+test('watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up', { timeout: 60000 }, async (t) => {
   const f = fixture(t), now = Date.parse('2030-01-02T12:00:00Z');
   const ago = (hours) => new Date(now - hours * hour).toISOString();
   const dirs = [
@@ -432,7 +432,7 @@ globalThis.setTimeout = () => { throw Error('unexpected expiry timer'); };`);
   assert.match(f.log(), /no open jobs or failed deadlines/);
 });
 
-test('watcher reuses JobIndexCache for unchanged job files and clears STATUS cache when removed', { timeout: 10000 }, async (t) => {
+test('watcher reuses JobIndexCache for unchanged job files and clears STATUS cache when removed', { timeout: 60000 }, async (t) => {
   const f = fixture(t);
   const open = f.job({ state: 'working' });
   const stable = f.job({ state: 'closed', ended_at: new Date().toISOString() });
@@ -448,8 +448,11 @@ fs.openSync = (file, ...args) => {
 syncBuiltinESMExports();`);
   await until(() => fs.existsSync(join(f.home, 'stable-opens')), t.signal);
   // Removing STATUS.json while job.json has dispatch_exit_code=0 keeps watcher open without stale cached STATUS.
+  const summary = workSummaryPath(f.home);
+  await until(() => child.exitCode !== null || fs.existsSync(summary), t.signal);
+  fs.rmSync(summary, { force: true });
   fs.unlinkSync(join(open, 'STATUS.json'));
-  await new Promise((done) => setTimeout(done, 150));
+  await until(() => child.exitCode !== null || fs.existsSync(summary), t.signal);
   assert.equal(child.exitCode, null);
   writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
   await exited;

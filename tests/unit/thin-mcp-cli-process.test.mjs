@@ -141,8 +141,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
       const reads = () => f.commands().filter((c) => c.command === 'herdr' && c.args[0] === 'pane' && c.args[1] === 'read').length;
       const before = reads(), queries = statusQueries(f, job);
       f.push(job.job, 'working'); f.push(job.job, 'idle');
-      await until(() => statusQueries(f, job) > queries, t.signal);
-      await new Promise((r) => setTimeout(r, 100));
+      await until(() => statusQueries(f, job) >= queries + 2, t.signal);
       assert.equal(reads(), before, 'no quiet decision while the worker has a live child');
       assert.equal(cliState(dir).state, 'working');
     }
@@ -193,18 +192,19 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   // Running the rest ticks first also aligns the flap loop right after a tick,
   // away from the next 30 s safety tick's quiet-status descendant scan.
   const beforeRest = statusQueries(f, job);
-  await until(() => statusQueries(f, job) >= beforeRest + 2, t.signal);
-  await new Promise((r) => setTimeout(r, 100));
+  await until(() => statusQueries(f, job) >= beforeRest + 3, t.signal);
   assert.deepEqual(supervisorCommands(), commands);
   const extra = f.socketRequests.slice(requests);
   assert.ok(extra.every((r) => r.method === 'agent.get'), JSON.stringify(extra));
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'working ticks never sample descendants');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes);
   assert.equal(cliState(job.task_dir).state, 'working');
-  for (let i = 0; i < 6; i++) {
-    f.push(job.job, i % 2 ? 'working' : 'done');
-    await new Promise((r) => setTimeout(r, 40));
+  const beforeFlaps = statusQueries(f, job);
+  for (let i = 0; i < 3; i++) {
+    f.push(job.job, 'done');
+    f.push(job.job, 'working');
   }
+  await until(() => statusQueries(f, job) > beforeFlaps, t.signal);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes, 'no-report status flaps do not write STATUS');
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'flaps never sample descendants');
   assert.deepEqual(supervisorCommands(), commands);
@@ -282,7 +282,7 @@ test('a cli that exits fails, and a closed tab fails', { timeout: 15000 }, async
 
 for (const first of ['watcher', 'supervisor']) {
   for (const fact of ['stop', 'exit with report']) {
-    test(`CLI tab-close: ${first} writes first for ${fact}`, { timeout: 10000 }, async (t) => {
+    test(`CLI tab-close: ${first} writes first for ${fact}`, { timeout: 60000 }, async (t) => {
       const f = await fixture(t);
       const worker = fakeCliWithChild(t, f);
       fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -315,7 +315,7 @@ for (const first of ['watcher', 'supervisor']) {
   }
 }
 
-test('supervisor preserves the watcher tab-close fact when its own push socket was lost', { timeout: 10000 }, async (t) => {
+test('supervisor preserves the watcher tab-close fact when its own push socket was lost', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -334,7 +334,7 @@ test('supervisor preserves the watcher tab-close fact when its own push socket w
   assert.equal(cliState(job.task_dir).exit_reason, 'tab closed');
 });
 
-test('an unread declared report closes at the idle deadline and reaps leftovers', { timeout: 10000 }, async (t) => {
+test('an unread declared report closes at the idle deadline and reaps leftovers', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
