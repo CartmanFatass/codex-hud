@@ -5,6 +5,7 @@ Claude Code、Codex 与 pi 的当前操作说明。[English](./reference.md) ·
 
 - [安装](#安装)
 - [通用 CLI 与 MCP](#通用-cli-与-mcp)
+- [Claude Code mod](#claude-code-mod)
 - [项目工作者](#项目工作者)
 - [首页](#首页)
 - [项目](#项目)
@@ -267,6 +268,24 @@ CLI 任务的监督进程只观察；只有事实能结束任务：记录的进�
 任务正常结算（`done` 或已有报告且已关闭）后，watcher 在 `resume_s` 到期后的扫描中删除 `stdout.jsonl` 和 `stderr.log`。
 Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或已停止任务的原始日志保留到任务目录被删除为止。
 删除任务目录前，watcher 向 `$HUD_HOME/archive/YYYY-MM.jsonl` 追加一行任务事实，不含任务说明或报告正文；写入失败不影响删除，HUD 暂不读取或清理归档。
+
+## Claude Code mod
+
+`integrations/claude-mod/` 是 Claude Code 的 function-hooks 插件（`hud-mod`），让主会话的上下文保持精简。它只改变本会话保存的内容：
+MCP 服务器返回给其他客户端的结果不变。面板、toast 与事件唤醒不在其中，`./install` 也尚未注册它；试用请运行
+`claude --plugin-dir integrations/claude-mod`，并对该目录执行 `claude plugin validate` 与 `claude plugin test` 检查。
+
+- **精简结果。** 对 HUD MCP 工具的 `tool.call` 钩子把 JSON 结果改写成 `key: value` 行：去掉 null、空值和默认值（`blocked: false`、
+  `open_questions: 0` 等），以及同级字段已表达的值（与 `state` 相同的 `display_state`、与 `progress` 末项相同的 `latest_progress`、
+  `digest.state`）。超过五项的 `changed_files` 变为总数加前五项（`16: a, b, c, d, e +11 more`）；`hud_read({job, mode: "full"})`
+  仍带工作者自己报告的 `report_meta.files`。任务 ID、状态、问题及其 `hud_respond` 回复方式、`read_hint`、摘要和报告正文保持原样。
+  非 JSON 结果、失败（`ok: false`）以及其他服务器的工具不受影响。
+- **合并通知。** 同一回合内，已经由 Monitor 行或 `changes` 送达的 HUD 行不再重复。已保存的行无法删除，因此一个回合的第一条
+  Monitor 行保持完整；同一任务的后续行只保留新增的行，并去掉 task id 与摘要（没有新增时写 `(HUD events already shown this turn)`），
+  已显示过的 `changes` 行从工具结果中消失。不含 HUD 行的通知行不受影响。
+- **报告读取。** 对 `…/jobs/<id>/report.md` 使用 `Read`，或 `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` 命令，会被拒绝并提示
+  `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` 其他读取照常。工作者会话
+  （设置了 `HUD_JOB_DIR`）没有 `hud_read`，可直接读取该文件，`from_jobs` 就是把报告作为文件交给工作者的。
 
 ## 项目工作者
 

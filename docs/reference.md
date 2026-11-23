@@ -5,6 +5,7 @@ Current controls for Claude Code, Codex and pi. [中文](./reference.zh.md) ·
 
 - [Installing](#installing)
 - [Universal CLI and MCP](#universal-cli-and-mcp)
+- [Claude Code mod](#claude-code-mod)
 - [Project workers](#project-workers)
 - [Home](#home)
 - [Project](#project)
@@ -413,6 +414,27 @@ On a scan after `resume_s` expires, the watcher removes `stdout.jsonl` and `stde
 (`done` or closed with a report). Sonic and older jobs without `resume_s` get the default 1620 seconds.
 Failed or stopped jobs keep their raw logs until their directories expire.
 Before deletion the watcher appends job facts, not the brief or report, to `$HUD_HOME/archive/YYYY-MM.jsonl`; append failures do not delay deletion, and HUD neither reads nor expires the archive.
+
+## Claude Code mod
+
+`integrations/claude-mod/` is a Claude Code function-hooks plugin (`hud-mod`) that keeps the main session's context lean.
+It changes only what this session stores: the MCP server's replies to other clients stay as they are. The panel, toasts and
+event wake are not part of it, and `./install` does not register it yet; try it with
+`claude --plugin-dir integrations/claude-mod`, check it with `claude plugin validate` and `claude plugin test` on that folder.
+
+- **Compact results.** A `tool.call` hook on the HUD MCP tools rewrites a JSON result as `key: value` lines. It drops null, empty and
+  default values (`blocked: false`, `open_questions: 0`, …) and values a sibling already says (`display_state` equal to `state`,
+  `latest_progress` equal to the last `progress` entry, `digest.state`). A `changed_files` list of more than five becomes a count and the
+  first five (`16: a, b, c, d, e +11 more`); `hud_read({job, mode: "full"})` still has the worker's own `report_meta.files`. Job ids, states,
+  questions with their `hud_respond` reply, `read_hint`, summaries and report text are kept as sent. Results that are not JSON, failures
+  (`ok: false`) and other servers' tools are untouched.
+- **Merged notices.** Within one turn a HUD line already delivered, by a Monitor row or by `changes`, is not said again. A stored row
+  cannot be removed, so the first Monitor row of a turn stays whole; a later row of the same task shrinks to its new lines without
+  task id and summary (`(HUD events already shown this turn)` when none), and `changes` lines already shown leave the tool result.
+  Rows that are not HUD lines are untouched.
+- **Report reads.** A `Read`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command, on `…/jobs/<id>/report.md` is refused with
+  `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` Other reads pass. A worker
+  session (`HUD_JOB_DIR` set) has no `hud_read` and may read the file, as `from_jobs` hands reports to workers as files.
 
 ## Project workers
 

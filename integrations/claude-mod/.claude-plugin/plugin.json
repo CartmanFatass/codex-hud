@@ -1,0 +1,6 @@
+{
+  "name": "hud-mod",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Keeps the main session's HUD context lean: compact HUD tool results, merged job notices, reports read through hud_read."
+}
