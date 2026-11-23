@@ -42,7 +42,7 @@ export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] 
 
 /**
  * A lane's right side: one state glyph per non-child job, oldest dispatch first (`✓●` unread, `✓` done, `◉` running,
- * `?` asking, `✗` failed, `◷` queued/stalled, `−` stopped). Older jobs that do not fit `room` are `+N`.
+ * `?` asking, `✗` failed, `○` queued, `◷` stalled, `−` stopped). Older jobs that do not fit `room` are `+N`.
  */
 export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room: number, extra = ''): string {
   const main = mainLaneWorkers(lane);
@@ -54,7 +54,7 @@ export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room
     unread: theme.board.success(mark('✓●', '+*')),
     done: theme.board.success(mark('✓', '+')),
     run: theme.board.active(mark('◉', '@')),
-    queue: theme.board.muted(mark('◷', '~')),
+    queue: theme.board.muted(mark('○', 'o')),
     stall: theme.board.stalled(mark('◷', '~')),
     ask: theme.board.attention('?'),
     fail: theme.board.danger(mark('✗', 'x')),

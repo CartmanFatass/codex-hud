@@ -11,6 +11,7 @@ import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { ticketTitle } from '../../dist/collectors/ticket-title.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { workStateGlyph } from '../../dist/render/work-card.js';
 
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/home-jobs-frames.json', import.meta.url), 'utf8'));
 const laneRows = (lines) => lines.slice(lines.findIndex((l) => l.startsWith('✗  export-csv/02')));
@@ -30,10 +31,10 @@ test('at 80 columns the 14 jobs take 15 rows (38 before); a header only where a 
   assert.equal(laneRows(lines).length, 15);
   assert.equal(lines.filter((l) => /^perf-ts\/05 /.test(l)).length, 1);
   assert.equal(lines.filter((l) => /^\S+\/\d\d /.test(l)).length, 1, 'no other lane has a header');
-  assert.equal(lines.find((l) => l.startsWith('◷')), '◷  queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05');
+  assert.equal(lines.find((l) => l.startsWith('○')), '○  queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05');
   assert.match(lines.find((l) => l.startsWith('✓  done')), /^✓ {2}done 2 · cache-v1\/06 · export-csv\/01/);
-  assert.match(jobFrame(50).find((l) => l.startsWith('◷')), / \+1$/, 'ids that do not fit are +N');
-  assert.match(jobFrame(80, 'zh').find((l) => l.startsWith('◷')), /^◷ {2}排队 3 · /);
+  assert.match(jobFrame(50).find((l) => l.startsWith('○')), / \+1$/, 'ids that do not fit are +N');
+  assert.match(jobFrame(80, 'zh').find((l) => l.startsWith('○')), /^○ {2}排队 3 · /);
 });
 
 test('an unread report, a failed or asking job and the owner opening a fold keep their rows; Enter on a fold lists its jobs', () => {
@@ -48,8 +49,8 @@ test('an unread report, a failed or asking job and the owner opening a fold keep
   const keptLines = jobFrame(80, 'en', opened, withState(initialMonitorState(), { home: { expanded: new Set([key(kept)]) } }));
   assert.ok(keptLines.some((l) => /^✓ {2}export-csv\/01 /.test(l)), 'a job the owner opened is not folded away under them');
   const open = jobFrame(80, 'en', jobsBoard(), withState(initialMonitorState(), { home: { expanded: new Set(['fold:queued']) } }));
-  assert.equal(open.filter((l) => /^◷ {2}\S+\/\d\d /.test(l)).length, 3, 'one row per queued job');
-  assert.match(open.find((l) => l.startsWith('◷  queued')), /^◷ {2}queued 3\s*$/, 'the opened fold drops its id list');
+  assert.equal(open.filter((l) => /^○ {2}\S+\/\d\d /.test(l)).length, 3, 'one row per queued job');
+  assert.match(open.find((l) => l.startsWith('○  queued')), /^○ {2}queued 3\s*$/, 'the opened fold drops its id list');
   assert.equal(laneRows(jobFrame(80)).filter((l) => /asking|Keep fallback/.test(l)).length, 0, 'the asking job is the slab, not a lane row');
 });
 
@@ -64,7 +65,7 @@ test('the cursor stops on a fold, Enter opens it into one row per job and Enter 
   assert.equal(state.home.cursor?.item, 'fold:queued');
   assert.equal(state.home.expanded.size, 0, 'arriving does not open it');
   press('enter');
-  assert.equal(draw().lines.map(stripAnsi).filter((l) => /^◷ {2}\S+\/\d\d .*queued #\d/.test(l)).length, 3);
+  assert.equal(draw().lines.map(stripAnsi).filter((l) => /^○ {2}\S+\/\d\d .*queued #\d/.test(l)).length, 3);
   press('enter');
   assert.equal(state.home.expanded.size, 0);
 });
@@ -88,4 +89,13 @@ test('ticketTitle reads the heading of .scratch/<feature>/issues/NN-*.md, once p
   assert.equal(ticketTitle(root, 'metrics-lite/01', '', NOW + 60_000), 'Changed');
   for (const bad of ['../../etc/passwd', 'metrics-lite/09', 'metrics-lite', '']) assert.equal(ticketTitle(root, bad, '', NOW), undefined, bad);
   assert.equal(ticketTitle(null, 'metrics-lite/01', '', NOW), undefined);
+});
+
+test('a queued job and a stalled job do not share a glyph, in icons or text mode', (t) => {
+  const queued = { worker: { state: 'running' }, state: 'queued' }, stalled = { worker: { state: 'running' }, state: 'stalled' };
+  for (const [icons, want] of [['unicode', ['○', '◷']], ['text', ['o', '~']]]) {
+    const previous = setDisplayConfig({ theme: 'none', icons });
+    t.after(() => setDisplayConfig(previous));
+    assert.deepEqual([workStateGlyph(queued), workStateGlyph(stalled)], want, icons);
+  }
 });

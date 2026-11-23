@@ -51,7 +51,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['s r t', 'Settings: save / reset / test'],
   ];
   const home = [
-    ['g', 'job: go to its herdr tab'],
+    ['g', 'job: go to its herdr tab; headless: its output in the Inspector'],
     ['1-4 d', 'job: answer its open question'],
     ['X', 'job: stop it (y confirms)'],
     ['r', 'failed job: request a retry'],
@@ -110,7 +110,10 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const marks = [
     section(t('Marks'), half),
     ...legend('Jobs', [entry(active(mark('◉', '@')), 'running'), entry(attention('?'), 'asking'), entry(stalled(mark('◷', '~')), 'stalled')],
-      [entry(success(mark('✓', '+')), 'done'), entry(danger(mark('✗', 'x')), 'failed'), entry(muted(mark('−', '-')), 'stopped')]),
+      [entry(success(mark('✓', '+')), 'done'), entry(danger(mark('✗', 'x')), 'failed'), entry(muted(mark('−', '-')), 'stopped')],
+      [entry(muted(mark('○', 'o')), 'queued'), entry(theme.board.roleInk.sonic(`${mark('⚡', '*')}N`), 'sonic running')]),
+    ...legend('Route', [entry(muted(mark('▂', '-')), 'light'), entry(muted(mark('▄', '=')), 'standard'), entry(muted(mark('▆', '#')), 'hard')],
+      [entry(muted(mark('∅', 'h')), 'headless: no herdr tab')]),
     ...legend('Slices', [entry(active(mark('◐', '@')), 'working'), entry(attention(mark('◆', '!')), 'blocked'), entry(muted(mark('◇', 'o')), 'to try')],
       [entry(success(mark('✓', '+')), 'accepted'), entry(muted(mark('○', '-')), 'todo')]),
     ...legend('Answers', [entry(attention(mark('◆', '*')), 'differs from the default')], [entry(muted(mark('◇', 'o')), 'as proposed')]),

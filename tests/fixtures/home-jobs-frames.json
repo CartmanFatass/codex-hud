@@ -19,7 +19,7 @@
     "  ◉  Review round 1                                                                                       ⚖ ✻ sonnet● 3m",
     "◉  metrics-lite/01  Trim idle poll interval                                                         ✦ ◎ sol-fast◕ ⚡2 6m",
     "◉  docs-sweep/04  Compare retry backoff options                                                            ◈ ✻ opus● 21m",
-    "◷  queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
+    "○  queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
     "✓  done 2 · cache-v1/06 · export-csv/01"
   ],
   "zh-120": [
@@ -42,7 +42,7 @@
     "  ◉  第 1 轮评审                                                                                         ⚖ ✻ sonnet● 3分",
     "◉  metrics-lite/01  降低空闲轮询频率                                                               ✦ ◎ sol-fast◕ ⚡2 6分",
     "◉  docs-sweep/04  对比重试退避方案                                                                        ◈ ✻ opus● 21分",
-    "◷  排队 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
+    "○  排队 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
     "✓  完成 2 · cache-v1/06 · export-csv/01"
   ],
   "en-80": [
@@ -65,7 +65,7 @@
     "  ◉  Review round 1                                               ⚖ ✻ sonnet● 3m",
     "◉  metrics-lite/01  Trim idle poll interval                 ✦ ◎ sol-fast◕ ⚡2 6m",
     "◉  docs-sweep/04  Compare retry backoff options                    ◈ ✻ opus● 21m",
-    "◷  queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
+    "○  queued 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
     "✓  done 2 · cache-v1/06 · export-csv/01"
   ],
   "zh-80": [
@@ -88,7 +88,7 @@
     "  ◉  第 1 轮评审                                                 ⚖ ✻ sonnet● 3分",
     "◉  metrics-lite/01  降低空闲轮询频率                       ✦ ◎ sol-fast◕ ⚡2 6分",
     "◉  docs-sweep/04  对比重试退避方案                                ◈ ✻ opus● 21分",
-    "◷  排队 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
+    "○  排队 3 · cache-v2/04 · export-csv/03 · auth-refresh/05",
     "✓  完成 2 · cache-v1/06 · export-csv/01"
   ],
   "en-50": [
@@ -111,7 +111,7 @@
     "  ◉  Review round 1                 ⚖ ✻ sonnet● 3m",
     "◉  metrics-lite/01  Trim idle poll in… ✦ ◎◕ ⚡2 6m",
     "◉  docs-sweep/04  Compare retry bac… ◈ ✻ opus● 21m",
-    "◷  queued 3 · cache-v2/04 · export-csv/03 +1",
+    "○  queued 3 · cache-v2/04 · export-csv/03 +1",
     "✓  done 2 · cache-v1/06 · export-csv/01"
   ],
   "zh-50": [
@@ -134,7 +134,7 @@
     "  ◉  第 1 轮评审                   ⚖ ✻ sonnet● 3分",
     "◉  metrics-lite/01  降低空闲轮询频率  ✦ ◎◕ ⚡2 6分",
     "◉  docs-sweep/04  对比重试退避方案  ◈ ✻ opus● 21分",
-    "◷  排队 3 · cache-v2/04 · export-csv/03 +1",
+    "○  排队 3 · cache-v2/04 · export-csv/03 +1",
     "✓  完成 2 · cache-v1/06 · export-csv/01"
   ]
 }

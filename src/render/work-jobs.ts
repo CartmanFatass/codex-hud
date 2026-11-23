@@ -99,9 +99,9 @@ function headerRow(lane: WorkLane, shown: readonly OwnerWorker[], c: Ctx): Monit
   return { text: muted ? theme.board.muted(stripAnsi(text)) : text, item: key, key };
 }
 
-/** `◷ queued 3 · cache-v2/04 · export-csv/03 +1`: whole ids while they fit, then `+N`; `open` leaves the ids to the rows below. */
+/** `○ queued 3 · cache-v2/04 · export-csv/03 +1`: whole ids while they fit, then `+N`; `open` leaves the ids to the rows below. */
 export function foldText(kind: FoldKind, ids: readonly string[], width: number, open = false): string {
-  const glyph = kind === 'queued' ? theme.board.muted(mark('◷', '~')) : theme.board.success(mark('✓', '+'));
+  const glyph = kind === 'queued' ? theme.board.muted(mark('○', 'o')) : theme.board.success(mark('✓', '+'));
   const head = t(kind === 'queued' ? 'queued {n}' : 'done {n}', { n: ids.length });
   const list = (n: number) => ids.slice(0, n).map((id) => ' · ' + id).join('') + (n < ids.length ? ` +${ids.length - n}` : '');
   let n = open ? 0 : ids.length;

@@ -41,7 +41,7 @@ Running the current panel against a synthetic `HUD_HOME` with 6 main workers (1 
 | Whole frame (tab row, job area, Waiting / Latest / Progress / footer) | 51 rows | 34 rows |
 
 - One row per job: state glyph (fixed two-cell column), ticket id, ticket title, then role icon (`ROLE_GLYPHS`), model mark, `⚡N` and age on the right. A lane header only when a lane holds more than one job.
-- Landing: one sub-row (`land · gate[3] test:mjs · 1m`); the report sentence leaves Home. Failed keeps its card; asking keeps the Ask Slab. Queued jobs fold into one `◷ queued N · ids` row, read finished jobs into one `✓ done N · ids` row; Enter opens a fold.
+- Landing: one sub-row (`land · gate[3] test:mjs · 1m`); the report sentence leaves Home. Failed keeps its card; asking keeps the Ask Slab. Queued jobs fold into one `○ queued N · ids` row, read finished jobs into one `✓ done N · ids` row; Enter opens a fold.
 - The build needs a short ticket title on `OwnerWorker` (ticket file heading, else `briefTitle`), the report sentence in the Inspector, and two Chinese words (`排队 {n}`, `完成 {n}`).
 - **Built (ticket `home-compact/02`).** Classic Home renders v2 (`src/render/work-jobs.ts`; the job rows of all six Classic frames match this sample cell for cell, checked against the fixture in `tests/fixtures/home-jobs.mjs`). Split's list row gets the role icon and the same two folds; the sample has no Split frames. The Inspector already shows the report sentence (its card opens in full), so nothing was added there. Model outcome labels (`[partial]`), `⚠ looping` and the checks chip stay on the job row's right, before the age.
 

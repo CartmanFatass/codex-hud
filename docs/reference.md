@@ -486,7 +486,7 @@ Running jobs with unanswered questions need you; an unanswered question left on 
 finished job does not. A report is not proof of success, and display labels are not
 acceptance or a merge decision. Unknown evidence stays unknown.
 
-Home draws **one row per job**: a state glyph in a fixed two-cell column, the ticket id, the short title, then on the right the role's icon (`⚒ ✎ ✦ ◈ ⚖ ⚡ •`, ASCII `I F G O R * .`, the statusline's table), the provider/short-model/effort mark (narrowing `◎ sol-fast◕` → `◎◕` → `◎` before the title is cut below 16 cells), the route marks of a routed or headless job (the tier `▂` light, `▄` standard or `▆` hard, ASCII `- = #`, then `∅`, ASCII `h`, when the job runs headless, e.g. `◎ sol-fast◕ ▂∅ ⚡2 6m`; a job with neither has none, and a tab job has no mode mark), active `⚡N`, a state word (`failed`, `stalled`) and the age. The title is the heading of the job's ticket file (`.scratch/<feature>/issues/NN-*.md` for the job's `ticket`, its `NN:` prefix off), else the brief heading, else the model's short name; the raw task text only when nothing else names the job. A lane gets a header (ticket id, title, phase at the right) only when it shows more than one job; its jobs indent under it. Open questions render as amber slabs at the top (with model/effort marks and any active `⚡N` on the header, and no duplicate row in the lane below). A failed job keeps its card (red reason row) until the failure is observed or superseded; a job with an active land or scout flow gets one sub-row (`land · gate[3] test:mjs · 1m`, `scouting · 1m`; a land waiting for another keeps its own wait line); an unread report (`✓●`, ASCII `+*`) keeps its own row; a failed flow keeps its chain row. Queued jobs fold into one `◷ queued N · cache-v2/04 · …` row and read finished jobs inside the hide window into one `✓ done N · …` row (whole ids while they fit, then `+N`); Enter on a fold lists one row per job. Enter on a job row expands its card in place (sentence, milestone, activity) and keeps the row out of the folds while it is open; the report sentence is also in the Inspector.
+Home draws **one row per job**: a state glyph in a fixed two-cell column (`◉` running, `?` asking, `○` queued, `◷` stalled, `✓` done, `✗` failed, `−` stopped; ASCII `@ ? o ~ + x -`), the ticket id, the short title, then on the right the role's icon (`⚒ ✎ ✦ ◈ ⚖ ⚡ •`, ASCII `I F G O R * .`, the statusline's table), the provider/short-model/effort mark (narrowing `◎ sol-fast◕` → `◎◕` → `◎` before the title is cut below 16 cells), the route marks of a routed or headless job (the tier `▂` light, `▄` standard or `▆` hard, ASCII `- = #`, then `∅`, ASCII `h`, when the job runs headless, e.g. `◎ sol-fast◕ ▂∅ ⚡2 6m`; a job with neither has none, and a tab job has no mode mark), active `⚡N`, a state word (`failed`, `stalled`) and the age. The title is the heading of the job's ticket file (`.scratch/<feature>/issues/NN-*.md` for the job's `ticket`, its `NN:` prefix off), else the brief heading, else the model's short name; the raw task text only when nothing else names the job. A lane gets a header (ticket id, title, phase at the right) only when it shows more than one job; its jobs indent under it. Open questions render as amber slabs at the top (with model/effort marks and any active `⚡N` on the header, and no duplicate row in the lane below). A failed job keeps its card (red reason row) until the failure is observed or superseded; a job with an active land or scout flow gets one sub-row (`land · gate[3] test:mjs · 1m`, `scouting · 1m`; a land waiting for another keeps its own wait line); an unread report (`✓●`, ASCII `+*`) keeps its own row; a failed flow keeps its chain row. Queued jobs fold into one `○ queued N · cache-v2/04 · …` row and read finished jobs inside the hide window into one `✓ done N · …` row (whole ids while they fit, then `+N`); Enter on a fold lists one row per job. Enter on a job row expands its card in place (sentence, milestone, activity) and keeps the row out of the folds while it is open; the report sentence is also in the Inspector.
 A brief heading in the panel language supplies the title when the job has no ticket file. For a foreign heading,
 the same sentence request can supply a localized short name that replaces it (and a ticket heading in the wrong language).
 Without model text the ticket or brief heading remains; narrow lane labels keep their numeric suffix. Classic's job rows never open by themselves; native subagent cards and Split's preview still open the newest current settled card until its fold
@@ -950,7 +950,7 @@ Home, Project and Control become **a list above and a preview of the cursor row 
 - **Home.** One row per package lane and per block (Waiting for you,
   Progress), always the same height, whatever runs: mark, name, phase, then the role icon and the state
   of the lane's most important job. Queued lanes and read finished lanes are one row each
-  (`◷ queued N · ids`, `✓ done N · ids`) whose preview lists their cards. A question or a failure keeps a reason row, so what
+  (`○ queued N · ids`, `✓ done N · ids`) whose preview lists their cards. A question or a failure keeps a reason row, so what
   needs you is always on screen; the cursor starts on the first such row. Below the
   list the preview shows that row: the question's slab and the lane's cards, the
   waiting items with the newest pending trials, or the milestone and ticket rollup.
@@ -990,8 +990,10 @@ One waiting item's page and the Projects list are Classic's frames in either lay
 
 Press `?` for shortcuts grouped by where they work. From Project or Control, Help
 opens at that tab’s section; from Home, EXP or Settings it opens at Everywhere.
-The Split shortcuts appear only in the Split layout. Marks are grouped by jobs,
-slices, answers and places. At 80 columns and wider, Marks sit to the right of the
+The Split shortcuts appear only in the Split layout. Marks are grouped by jobs
+(state glyphs, queued, and `⚡N` for running sonic children), route (the tier bars
+`▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places. `g` is
+the job's herdr tab, or the Inspector's Output for a headless job. At 80 columns and wider, Marks sit to the right of the
 shortcuts. Scroll with ↑↓, PgUp/PgDn or the wheel to reach the **Backup skills**
 section; Esc, `?` or Enter returns to the previous page.
 
@@ -1053,7 +1055,7 @@ Reset all or picture.
 Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default.
 Saving a changed width resizes every client's panel, preserving 41 columns for the
 agent where possible. Window resizing reapplies it; border drags and unrelated saves
-do not. Fold default 5 minutes, Hide default 15 (stored 1–1440). Stall threshold is
+do not. Fold default 5 minutes, Hide default 5 (stored 1–1440). Stall threshold is
 10 minutes (1–120); job session writes count as activity even with models off.
 
 Themes: `terminal` (default), `titanium`, `mocha`, `arctic`, `ember`, `contrast`,

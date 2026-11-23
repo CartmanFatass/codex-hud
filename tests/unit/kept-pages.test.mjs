@@ -61,7 +61,7 @@ test("frames: all seven kept pages in Home's kit", (t) => {
       assert.match(help, /Backup skills ─+ 17/);
       assert.match(help, /m\s+role\/place: picker in this\s+pane;/);
       assert.match(help, /one click or Enter sets/);
-      assert.match(help, /Esc\s+back; clear a filter first;\s+does nothing at a tab root/);
+      assert.match(help, /Esc\s+back; clear a filter first;[^\n]*\n\s+does nothing at a tab root/);
       assert.match(help, /Esc\s+picker: clear filter, then\s+close/);
       assert.match(help, /\^R\s+picker: refresh model lists/);
       assert.match(help, /Space\s+mark a to-try row/);
@@ -382,6 +382,10 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   const body = plainFrame(help).join('\n');
   assert.match(body, /jobs\s+@ running\s+\? asking\s+~ stalled/);
   assert.match(body, /\+ done\s+x failed\s+- stopped/);
+  assert.match(body, /o queued\s+\*N sonic running/);
+  assert.match(body, /route\s+- light\s+= standard\s+# hard/);
+  assert.match(body, /h headless: no herdr tab/);
+  assert.match(body, /g\s+job: go to its herdr tab;\s+headless: its output in the\s+Inspector/);
   assert.doesNotMatch(body, /click|Codex's own panel|Timeline|press .* first/);
   assert.match(body, /switch tab/);
   assert.equal(help.state.subpage?.cursor, cursor);
@@ -400,4 +404,8 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   assert.match(chinese, /Esc\s+选择器：先清空筛选，再关闭/);
   assert.match(chinese, /\^R\s+选择器：刷新模型列表/);
   assert.doesNotMatch(chinese, /On Control|pick a model/);
+  assert.match(chinese, /o 排队中\s+\*N sonic 运行中/);
+  assert.match(chinese, /分流\s+- 轻量\s+= 标准\s+# 复杂/);
+  assert.match(chinese, /h 无界面：没有 herdr 标签页/);
+  assert.match(chinese, /无界面任务：在详情\s*页看输出/);
 });

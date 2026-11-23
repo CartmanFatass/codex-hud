@@ -28,7 +28,7 @@ export const workStateWord = (card: WorkCard) => {
 };
 export const workStateGlyph = (card: WorkCard) => {
   if (card.worker.state === 'stopped') return mark('−', '-');
-  if (card.state === 'queued') return mark('◷', '~');
+  if (card.state === 'queued') return mark('○', 'o');
   if (failed(card)) return mark('✗', 'x');
   if (card.state === 'needs-you') return '?';
   if (card.state === 'stalled') return mark('◷', '~');
@@ -227,7 +227,7 @@ function flowOutcome(flow: WorkFlow): string {
 export function flowSummary(flow: WorkFlow): string {
   const sep = mark(' ▸ ', ' > ');
   const glyph = (s: WorkFlowStep['state']) =>
-    s === 'active' ? (flow.state === 'queued' ? mark('◷', '~') : mark('◉', '@'))
+    s === 'active' ? (flow.state === 'queued' ? mark('○', 'o') : mark('◉', '@'))
       : s === 'done' ? mark('✓', '+')
       : s === 'failed' ? mark('✗', 'x')
       : s === 'cancelled' ? mark('−', '-')
@@ -248,7 +248,7 @@ export function flowLine(flow: WorkFlow, width: number, ink: (s: string) => stri
     const label = t(s.key);
     if (s.state === 'active') {
       return flow.state === 'queued'
-        ? theme.board.muted(`${mark('◷', '~')} ${label}`)
+        ? theme.board.muted(`${mark('○', 'o')} ${label}`)
         : theme.board.active(`${mark('◉', '@')} ${label}`);
     }
     if (s.state === 'done') return theme.board.success(`${mark('✓', '+')} ${label}`);
