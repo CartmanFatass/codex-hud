@@ -1,5 +1,6 @@
 import type { EngineInterface, On, Timer } from 'claude-code';
 import { takeBand } from './band';
+import { offerCommands } from './commands';
 import { mergeChanges, type Turn } from './compact';
 import { watchProcess } from './watch';
 
@@ -99,6 +100,7 @@ export function registerWake(on: On, turn: Turn) {
   });
   on('session.start', async ($, e, next) => {
     const started = await next(e);
+    if (e.isInteractive) await offerCommands($);
     if (e.isInteractive && await inPane($)) {
       await $.env.set('HUD_CLAUDE_MOD', '1').catch(() => {}); // Marker takeover also works for an existing server.
       lane = await wakeLane($, e.cwd, turn);

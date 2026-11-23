@@ -9,7 +9,7 @@ import { loadSettings } from '../settings.js';
 /** `waiting`: STATE's `Waiting for the owner` items (settled `(waits on …)` ones dropped) with the first one's text; `accept`: slices to try, as Accept all counts them. */
 export interface Band { type: 'band'; lang: Language; waiting: number; first: string; accept: number; fresh: boolean }
 
-const NO_WORKERS: WorkboardSnapshot = { revision: '', lanes: [], workers: [], decisions: [], coverage: { incomplete: false, workspace: null, diagnostics: [] } };
+export const NO_WORKERS: WorkboardSnapshot = { revision: '', lanes: [], workers: [], decisions: [], coverage: { incomplete: false, workspace: null, diagnostics: [] } };
 
 /** Reads the band for `cwd`; each read answers a record only when the band changed, `fresh` when something new needs the owner (never on the first read), and nothing when the read failed. */
 export function bandReader(cwd: string, home: string, env: NodeJS.ProcessEnv) {

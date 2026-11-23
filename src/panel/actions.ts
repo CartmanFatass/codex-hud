@@ -4,7 +4,7 @@ import { focusJobTab, openEditorPane, stopJob } from '../cli/panel-pane.js';
 import { readExpData, saveExpEdit } from '../collectors/exp-store.js';
 import { answerJobQuestion, appendPanelAction, recordPanelAnswer, type AnswerResult } from '../collectors/panel-actions.js';
 import type { ProjectVisits } from '../collectors/project-visits.js';
-import { appendTry, TryLog } from '../collectors/try-records.js';
+import { acceptAll, TryLog } from '../collectors/try-records.js';
 import { finishChain } from '../render/chain-input.js';
 import { effectiveModel } from '../render/control-view.js';
 import { harnessItem } from '../render/harness-page.js';
@@ -80,14 +80,8 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           if (host.projectDisplayRoot() !== root) break;
           const ledger = visits.snapshot(root)?.ledger;
           if (!ledger) break;
-          const marks = tries.marks(root, ledger);
-          const slices = ledger.filter((r) => r.state === 'try' && marks.get(r.id) !== 'accept');
-          if (!slices.length) break;
-          const milestones = slices.map((r) => r.milestone), mixed = milestones.some((m) => m !== milestones[0]);
           try {
-            appendTry(home, root, 'accept', { slices, milestone: mixed ? '—' : milestones[0], ...(mixed ? { milestones } : {}) });
-            host.notice('');
-            host.collect();
+            if (acceptAll(home, root, ledger, tries)) { host.notice(''); host.collect(); }
           } catch { host.notice(t('Could not accept all')); }
           break;
         }

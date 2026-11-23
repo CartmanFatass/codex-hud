@@ -1,11 +1,12 @@
 import type { EngineInterface, On } from 'claude-code';
 import type { Band } from '../types';
+import { act, openPanel } from './commands';
 
 // The band is for the owner, not the main session: it shows only what needs the owner now, otherwise nothing.
 const BAND = { plugin: 'hud-mod', key: 'band' } as const;
 const WORDS = {
-  en: { waiting: (n: number) => `${n} waiting for you`, toTry: (n: number) => `${n} to try`, accept: 'Accept all in the panel', toast: 'Needs you' },
-  zh: { waiting: (n: number) => `${n} 项等你处理`, toTry: (n: number) => `${n} 待试用`, accept: '在面板中全部验收', toast: '需要你' },
+  en: { waiting: (n: number) => `${n} waiting for you`, toTry: (n: number) => `${n} to try`, open: 'Open', accept: 'Accept all', toast: 'Needs you' },
+  zh: { waiting: (n: number) => `${n} 项等你处理`, toTry: (n: number) => `${n} 待试用`, open: '打开', accept: '全部验收', toast: '需要你' },
 };
 const wide = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/;
 const cells = (text: string) => [...text].reduce((n, ch) => n + (wide.test(ch) ? 2 : 1), 0);
@@ -22,14 +23,19 @@ function fitCells(text: string, columns: number): string {
   return `${out}…`;
 }
 
-/** At most two rows: the waiting count with its first item, then the slices to try. None when nothing needs the owner. */
-export function bandRows(band: Band | undefined, columns: number): string[] {
+/** At most two rows, each its text and the button that acts on it: the waiting count with its first item (Open the panel), then the slices to try (Accept all). None when nothing needs the owner. */
+export function bandRows(band: Band | undefined, columns: number): { key: 'open' | 'accept'; text: string; label: string }[] {
   const w = band && (WORDS[band.lang] ?? WORDS.en);
   if (!band || !w) return [];
   return [
-    band.waiting > 0 && `? ${w.waiting(band.waiting)}${band.first ? ` · ${band.first}` : ''}`,
-    band.accept > 0 && `${w.toTry(band.accept)} · ${w.accept}`,
-  ].filter((row): row is string => !!row).map(row => fitCells(row, columns));
+    band.waiting > 0 && { key: 'open' as const, text: `? ${w.waiting(band.waiting)}${band.first ? ` · ${band.first}` : ''}`, label: w.open },
+    band.accept > 0 && { key: 'accept' as const, text: w.toTry(band.accept), label: w.accept },
+  ].filter(row => !!row).map(row => ({ ...row, text: fitCells(row.text, Math.max(1, columns - cells(row.label) - 1)) }));
+}
+
+/** A press: Accept all records the acceptance (the panel's action), Open shows the panel; the result is a toast, never a model turn. */
+async function press($: EngineInterface, key: 'open' | 'accept') {
+  $.ui.toast(key === 'accept' ? await act($, 'try') : await openPanel($) ?? 'Run /hud to open the panel');
 }
 
 /** The watch's `band` record: kept in `$.state` for the band to draw, and one toast when something new needs the owner. */
@@ -49,10 +55,15 @@ export function registerBand(on: On) {
     const band = (await $.state.get(BAND).catch(() => undefined))?.value;
     const rows = e.props.hasSurvey ? [] : bandRows(band, e.props.bodyColumns);
     if (!rows.length) return next(e);
-    const { Box, Text } = $.ui.resolve(e);
+    const { Box, Button, Text } = $.ui.resolve(e);
     return (
       <Box flexDirection="column">
-        {rows.map(row => <Text wrap="truncate-end" maxLines={1} color="warning">{row}</Text>)}
+        {rows.map(row => (
+          <Box key={row.key}>
+            <Text wrap="truncate-end" maxLines={1} color="warning">{row.text}{' '}</Text>
+            <Button key={row.key} variant={row.key === 'accept' ? 'primary' : undefined} onPress={() => press($, row.key)}>{row.label}</Button>
+          </Box>
+        ))}
       </Box>
     );
   });

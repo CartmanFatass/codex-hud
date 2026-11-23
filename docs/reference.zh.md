@@ -69,6 +69,8 @@ hud statusline --help
 hud import --help
 hud trust <dir>           # 把该目录加入 grok、agy 和 claude 的信任列表
 hud watch                 # 本窗格 HUD 任务每次状态变化一行（--all：所有任务）
+hud act answer <job> <qN> <answer...>  # 面板里的负责人操作改用命令：只写一次回答，并恢复无头任务
+hud act try [--cwd DIR]   # 全部验收（收件箱的），记入 tries.jsonl；hud act retry|stop <job>
 hud doctor                # 对本地安装执行只读预检
 hud doctor <jobId>        # 只读查看单个任务的本地记录
 hud stats [--days N] [--by role|model|route|feature]  # 任务用量和结果统计
@@ -332,12 +334,19 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。失败或�
 - **合并通知。** 同一回合内，已经由 Monitor 行、唤醒通道或 MCP 精简结果中的 `changes` 送达的 HUD 行不再重复。
   同一任务的后续 Monitor 行只保留新增的行，并去掉 task id 与摘要（没有新增时写 `(HUD events already shown this turn)`）。
   mod 只从工具结果中移除已经显示的 `changes` 行，不重新格式化其他字段。不含 HUD 行的通知行不受影响。
-- **负责人横条。** 输入框上方只显示此刻需要负责人处理的事，没有则不显示：最多两行，按横条宽度截断，语言跟随面板。
-  `? N 项等你处理 · <第一项>` 统计 STATE「Waiting for the owner」中的条目（`(waits on …)` 所列工单已完成的条目会消失，与项目收件箱一致）；
-  `N 待试用 · 在面板中全部验收` 即收件箱「全部验收」的数量。运行中的工作者、失败和工作者提问不显示（状态栏和主会话负责）。
+- **负责人横条。** 输入框上方只显示此刻需要负责人处理的事，没有则不显示：最多两行，按横条宽度截断，语言跟随面板，每行末尾带一个按钮。
+  `? N 项等你处理 · <第一项> [打开]` 统计 STATE「Waiting for the owner」中的条目（`(waits on …)` 所列工单已完成的条目会消失，与项目收件箱一致）；
+  「打开」在本窗格旁打开面板，项目首页列出这些条目。`N 待试用 [全部验收]` 即收件箱「全部验收」的数量；按钮与面板一样记录验收（`hud act try`）。
+  按下后只弹出一条提示，不触发模型回合。运行中的工作者、失败和工作者提问不显示（状态栏和主会话负责）。
   监听器在 `ready` 之后发送一条 `band` 记录，之后仅在内容变化时再发；横条只读取会话状态绘制，不做 I/O，问卷占用横条时保持为空。
   出现新条目或待试用切片时弹出一次提示（`需要你: …`），每条记录最多一次，监听器启动时已有的内容不提示。
   监听器运行期间横条会刷新；十分钟空闲退出后，要到下次重启（调用 HUD 或出现面板决定）才更新。
+- **负责人命令。** 在负责人的会话中（工作者会话没有），mod 声明若干立即执行的斜杠命令（回合进行中也可用），输出只给负责人看：
+  显示出来，但不进入任何模型请求，也不增加 MCP schema。`/hud` 打开面板（在 herdr 窗格中；其他情况由 skill 回答）。
+  `/jobs` 列出运行中的任务和未读报告，`/jobs <id>` 查看单个任务，不会把报告标为已读。
+  `/answer <job> <qN> <answer>`、`/try`（全部验收）、`/retry <job>` 和 `/stop <job>` 调用 `hud act`，效果与面板相同：回答只写一次
+  `qa/qN.answer.md`、恢复无头任务并通知主会话（`ANSWERED qN from panel`）；重试只记录请求，由主会话决定；`/stop` 对未结束的任务先确认。
+  `/land <job>` 通过会话的 HUD 连接直接调用 `hud_land` 开始合并，任务报告未读时先确认。没有逐条切片的试用操作。
 - **报告读取。** 对 `…/jobs/<id>/report.md` 使用 `Read`，或 `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` 命令，会被拒绝并提示
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` 其他读取照常。工作者会话
   （设置了 `HUD_JOB_DIR`）没有 `hud_read`，可直接读取该文件，`from_jobs` 就是把报告作为文件交给工作者的。

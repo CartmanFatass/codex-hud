@@ -6,42 +6,76 @@ const surfaces = ['terminal', 'desktop', 'vscode', 'mobile'] as const;
 const props = { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 8, bodyColumns: 60, scroll: { offset: 0, bodyRows: 8 }, view: {} };
 const state = { lang: 'en', waiting: 2, first: 'Decide the export format', accept: 3 };
 
-/** What the band draws from the state `held` says (none when undefined): the words of its rows. */
+/** What the band draws from the state `held` says (none when undefined): each row's words, its button in brackets. */
 function band(on: On) {
   let held: unknown;
   on('state.get', () => ({ value: { value: held ?? null, version: held === undefined ? 0 : 1 } }));
   return async ($: Engine, state: unknown, surface: (typeof surfaces)[number] = 'terminal', extra = {}) => {
     held = state;
     const ui = await $.ui.mount({ plugin: 'hud-mod', surface, component: 'AbovePrompt', props: { ...props, ...extra } });
-    const found = (await ui.findAll({ type: 'Text' })).map(text => text.text);
+    const texts = (await ui.findAll({ type: 'Text' })).map(text => text.text);
+    const buttons = (await ui.findAll({ type: 'Button' })).map(button => button.text);
     await ui.unmount();
-    return found;
+    return texts.map((text, i) => `${text.trimEnd()} [${buttons[i]}]`);
   };
 }
 
-for (const surface of surfaces) test(`the band shows the waiting item and the slices to try, on ${surface}`, async ($, on) => {
+for (const surface of surfaces) test(`the band shows the waiting item and the slices to try, each with its button, on ${surface}`, async ($, on) => {
   const rows = band(on);
-  expect(await rows($, state, surface)).toEqual(['? 2 waiting for you · Decide the export format', '3 to try · Accept all in the panel']);
+  expect(await rows($, state, surface)).toEqual(['? 2 waiting for you · Decide the export format [Open]', '3 to try [Accept all]']);
 });
 
 test('one row for each thing that needs the owner, none when nothing does or a survey holds the band', async ($, on) => {
   const rows = band(on);
-  expect(await rows($, { ...state, accept: 0 })).toEqual(['? 2 waiting for you · Decide the export format']);
-  expect(await rows($, { ...state, waiting: 0, first: '' })).toEqual(['3 to try · Accept all in the panel']);
-  expect(await rows($, { ...state, waiting: 1, first: '' })).toEqual(['? 1 waiting for you', '3 to try · Accept all in the panel']);
+  expect(await rows($, { ...state, accept: 0 })).toEqual(['? 2 waiting for you · Decide the export format [Open]']);
+  expect(await rows($, { ...state, waiting: 0, first: '' })).toEqual(['3 to try [Accept all]']);
+  expect(await rows($, { ...state, waiting: 1, first: '' })).toEqual(['? 1 waiting for you [Open]', '3 to try [Accept all]']);
   expect(await rows($, { ...state, waiting: 0, first: '', accept: 0 })).toEqual([]);
   expect(await rows($, undefined)).toEqual([]);
   expect(await rows($, state, 'terminal', { hasSurvey: true })).toEqual([]);
 });
 
-test('the band follows the panel language and is cut to the columns it has', async ($, on) => {
+test('the band follows the panel language and is cut to the columns it has, its buttons whole', async ($, on) => {
   const rows = band(on), zh = { ...state, lang: 'zh', first: '决定导出格式' };
-  expect(await rows($, zh)).toEqual(['? 2 项等你处理 · 决定导出格式', '3 待试用 · 在面板中全部验收']);
+  expect(await rows($, zh)).toEqual(['? 2 项等你处理 · 决定导出格式 [打开]', '3 待试用 [全部验收]']);
   // Chinese characters take two cells each.
-  expect(await rows($, zh, 'terminal', { bodyColumns: 24 })).toEqual(['? 2 项等你处理 · 决定导…', '3 待试用 · 在面板中全部…']);
-  const english = await rows($, state, 'terminal', { bodyColumns: 30 });
-  expect(english).toEqual(['? 2 waiting for you · Decide …', '3 to try · Accept all in the …']);
+  expect(await rows($, zh, 'terminal', { bodyColumns: 24 })).toEqual(['? 2 项等你处理 · … [打开]', '3 待试用 [全部验收]']);
+  expect(await rows($, state, 'terminal', { bodyColumns: 30 })).toEqual(['? 2 waiting for you · De… [Open]', '3 to try [Accept all]']);
+  expect(await rows($, state, 'terminal', { bodyColumns: 20 })).toEqual(['? 2 waiting fo… [Open]', '3 to try [Accept all]']);
 });
+
+/** The two presses: what `hud` is asked to do (argv, nothing run for the model) and the toast the owner sees. */
+function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[number]) {
+  const runs: string[][] = [], toasts: string[] = [];
+  mock.env(on, { HUD_HOME: '/state', ...(pane ? { HERDR_PANE_ID: pane } : {}) });
+  on('state.get', () => ({ value: { value: state, version: 1 } }));
+  on('session.cwd', () => ({ value: '/demo' }));
+  on('process.run', (_, e) => {
+    runs.push([...e.argv]);
+    return { value: { exitCode: 0, stdout: e.argv[1] === 'panel' ? 'w4E:p9\n' : 'Accepted 3 to try\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
+  });
+  on('ui.toast', (_, e) => { toasts.push(e.text); return { value: undefined }; });
+  return async ($: Engine, key: string) => {
+    const ui = await $.ui.mount({ plugin: 'hud-mod', surface, component: 'AbovePrompt', props });
+    await ui.press({ key });
+    await ui.unmount();
+    return { runs, toasts };
+  };
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`Accept all records the acceptance through hud act, and says what it did, on ${surface}`, async ($, on) => {
+    expect(await presses(on, 'w4E:p1', surface)($, 'accept')).toEqual({ runs: [['hud', 'act', 'try']], toasts: ['Accepted 3 to try'] });
+  });
+
+  test(`Open shows the panel beside the pane, and only in a herdr pane, on ${surface}`, async ($, on) => {
+    expect(await presses(on, 'w4E:p1', surface)($, 'open')).toEqual({ runs: [['hud', 'panel']], toasts: ['HUD panel w4E:p9'] });
+  });
+
+  test(`Open outside a herdr pane starts nothing, on ${surface}`, async ($, on) => {
+    expect(await presses(on, undefined, surface)($, 'open')).toEqual({ runs: [], toasts: ['Run /hud to open the panel'] });
+  });
+}
 
 /** A session whose watch child yields `records`, one after the other. */
 function session(on: On, records: object[]) {

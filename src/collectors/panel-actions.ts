@@ -9,7 +9,8 @@ import { writePrivateFile } from '../utils/atomic-fs.js';
 import { basename, join } from 'node:path';
 
 export const PANEL_ACTIONS_FILE = 'panel-actions.jsonl';
-const JOB = /^j[0-9a-f]{16}$/, QID = /^q\d+$/;
+export const JOB = /^j[0-9a-f]{16}$/;
+const QID = /^q\d+$/;
 const MAX_READ = 256 * 1024;
 interface AnswerRecord { at: string; type: 'answer'; job: string; qid: string; role: string | null; answer: string }
 type Intent = { type: 'retry'; job: string } | { type: 'land'; root: string; slices: string[] };

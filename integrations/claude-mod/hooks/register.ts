@@ -1,6 +1,7 @@
 // The HUD mod for a Claude Code main session: slims what HUD adds to the conversation.
 import type { Register } from 'claude-code';
 import { registerBand } from './band';
+import { registerCommands } from './commands';
 import { mergeNotice, newTurn, reportRead } from './compact';
 import { registerWake } from './wake';
 
@@ -9,6 +10,7 @@ export const register: Register = (on) => {
   const turn = newTurn();
   registerWake(on, turn);
   registerBand(on);
+  registerCommands(on);
 
   // Fallback job notices: repeated HUD lines in a Monitor row shrink to what is new. Other rows pass untouched.
   on('session.append', { origin: { kind: 'task-notification' } }, ($, e, next) => {

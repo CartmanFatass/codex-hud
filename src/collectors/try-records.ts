@@ -44,6 +44,16 @@ export function appendTry(home: string, root: string, action: TryAction, target:
   finally { fs.closeSync(fd); }
 }
 
+/** Accept every slice still to try, as one record: how many (0 when nothing was pending). Shared by the panel's Accept all and `hud act try`. */
+export function acceptAll(home: string, root: string, ledger: Slice[], tries = new TryLog(home)): number {
+  const marks = tries.marks(root, ledger);
+  const slices = ledger.filter((r) => r.state === 'try' && marks.get(r.id) !== 'accept');
+  if (!slices.length) return 0;
+  const milestones = slices.map((r) => r.milestone), mixed = milestones.some((m) => m !== milestones[0]);
+  appendTry(home, root, 'accept', { slices, milestone: mixed ? '—' : milestones[0], ...(mixed ? { milestones } : {}) });
+  return slices.length;
+}
+
 const pending = (record: TryRecord, slice: Slice, i: number) => {
   const milestone = record.milestones?.[i] ?? record.milestone;
   return slice.state === 'try' && typeof milestone === 'string' && slice.milestone.toLowerCase() === milestone.toLowerCase() &&

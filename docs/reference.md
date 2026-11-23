@@ -82,6 +82,8 @@ hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
 hud watch                 # pending questions and actionable events (--verbose: every change; --all: every pane)
+hud act answer <job> <qN> <answer...>  # the owner's panel actions from a command: answer once, resuming a headless job
+hud act try [--cwd DIR]   # Accept all (the Inbox's), recorded in tries.jsonl; hud act retry|stop <job>
 hud doctor                # run the read-only local install preflight
 hud doctor <jobId>        # print one job's local facts without changing it
 hud stats [--days N] [--by role|model|route|feature]  # per-job usage and outcomes
@@ -499,13 +501,23 @@ Claude's user scope. Selecting `claude` alone does not install the mod. To try i
   (`(HUD events already shown this turn)` when none). The mod removes already-shown `changes` lines without reformatting
   the rest of the tool result. Rows that are not HUD lines are untouched.
 - **Owner band.** Above the prompt the mod shows only what needs the owner now, and nothing otherwise: up to two rows, cut to the band's
-  width, in the panel's language. `? N waiting for you · <first item>` counts STATE's `Waiting for the owner` items (items whose
-  `(waits on …)` tickets are done drop out, as in the Project Inbox); `N to try · Accept all in the panel` is the Inbox's Accept all count.
-  Running workers, failures and worker questions are not shown (the statusline and the main session carry those). The watch sends
+  width, in the panel's language, each ending in a button. `? N waiting for you · <first item> [Open]` counts STATE's `Waiting for the owner`
+  items (items whose `(waits on …)` tickets are done drop out, as in the Project Inbox); Open shows the panel beside the pane, where the
+  Project hub lists them. `N to try [Accept all]` is the Inbox's Accept all count; the button records it as the panel does (`hud act try`).
+  A press answers with a toast, never a model turn. Running workers, failures and worker questions are not shown (the statusline and the
+  main session carry those). The watch sends
   a `band` record after `ready` and again only when it changes; the band is drawn from the session's state with no I/O and stays
   empty while a survey holds it. One toast (`Needs you: …`) appears when a new item or slice arrives, once per record and never
   for what was already there when the watch started. The band refreshes while the watch runs; after the ten-minute idle exit it
   updates at the next restart (a HUD call or panel decision).
+- **Owner commands.** In an owner session (not a worker's) the mod declares slash commands that run at once, even mid-turn, and print
+  for the owner only: their output is shown and goes in no model request, and no MCP schema is added. `/hud` opens the panel (in a herdr
+  pane; elsewhere the skill answers). `/jobs` lists running jobs and unread reports and `/jobs <id>` peeks one, without marking a report
+  read. `/answer <job> <qN> <answer>`, `/try` (Accept all), `/retry <job>` and `/stop <job>` run `hud act`, so they do what the panel
+  does: an answer writes `qa/qN.answer.md` once, resumes a headless job and tells the main session
+  (`ANSWERED qN from panel`); a retry records the request for the main session to decide; `/stop` asks first unless the job is
+  finished. `/land <job>` starts the land flow itself with `hud_land` on the session's HUD connection, asking first when the job's report
+  is unread. There is no per-slice try action.
 - **Report reads.** A `Read`, or a `cat`/`head`/`tail`/`less`/`sed`/`awk`/`grep`/`rg` command, on `…/jobs/<id>/report.md` is refused with
   `Read HUD job reports with hud_read job=<id> (mode: "full" for the whole report), not from the file.` Other reads pass. A worker
   session (`HUD_JOB_DIR` set) has no `hud_read` and may read the file, as `from_jobs` hands reports to workers as files.
