@@ -10,6 +10,7 @@ const nativeOutputs = new Set(nativeFiles.map(name => join('native', name)));
 const root = fs.realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const legacy = 'packages/hud-mcp/dist';
 const cacheRoot = '.tsbuild';
+const buildInfoName = 'build-info.json';
 const stagePattern = /^\.dist(?:-test)?-stage-([1-9]\d*)$/;
 
 function pidIsAlive(pid) {
@@ -106,6 +107,22 @@ function publish(source, stage, dist, main, native) {
       throw new Error(`Build output path changed file/directory type: ${name}; run npm run clean while HUD is stopped`);
     }
   }
+  if (main) {
+    // A tested prebuilt tree keeps the commit and time at which it was built, not
+    // the HEAD and clock of the checkout receiving it.
+    if (staged.get(buildInfoName)?.isFile()) {
+      fs.copyFileSync(join(source, buildInfoName), join(stage, buildInfoName));
+      staged.delete(buildInfoName);
+    } else {
+      const { version } = JSON.parse(fs.readFileSync(join(root, 'package.json'), 'utf8'));
+      const archiveCommit = '$Format:%H$'; // Filled in by git archive for source releases.
+      const oid = /^[0-9a-f]{40,64}$/;
+      const sourceCommit = oid.test(archiveCommit) ? archiveCommit : fs.existsSync(join(root, '.git'))
+        ? spawnSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout?.trim() : undefined;
+      fs.writeFileSync(join(stage, buildInfoName), JSON.stringify({ version,
+        commit: sourceCommit && oid.test(sourceCommit) ? sourceCommit : null, builtAt: new Date().toISOString() }) + '\n');
+    }
+  }
   const replace = (name) => {
     const tmp = join(stage, name), dest = join(dist, name);
     fs.mkdirSync(dirname(tmp), { recursive: true });
@@ -126,7 +143,7 @@ function publish(source, stage, dist, main, native) {
     if (!sentinels.includes(name)) replace(name);
   }
   for (const [name, entry] of live) {
-    if (staged.has(name)) continue;
+    if (staged.has(name) || (main && name === buildInfoName)) continue;
     const path = join(dist, name);
     if (entry.isDirectory()) fs.rmdirSync(path);
     else {
@@ -135,6 +152,7 @@ function publish(source, stage, dist, main, native) {
     }
   }
   if (!main) return;
+  fs.renameSync(join(stage, buildInfoName), join(dist, buildInfoName));
   if (changed.length) replace('index.js');
   else {
     // codex-hud compares source mtimes with index.js even when emitted bytes are unchanged.

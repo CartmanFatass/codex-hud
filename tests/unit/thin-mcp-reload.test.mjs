@@ -10,6 +10,12 @@ import { openGeneration } from '../../packages/hud-mcp/bin/generation.mjs';
 import { fixture, legacyFixture, publishPiGrace, rpcClient, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { reapFixtureProcesses, stopChild, trackFixture } from '../helpers/process-cleanup.mjs';
 
+const generation = (home, pid) => JSON.parse(fs.readFileSync(join(home, `generations/${pid}.json`), 'utf8'));
+const buildStamp = (root) => {
+  const { ino, ctimeNs } = fs.statSync(join(root, 'dist/index.js'), { bigint: true });
+  return `${ino}:${ctimeNs}`;
+};
+
 test('a rebuild drains overlapping calls and a broken candidate leaves the old server connected', { timeout: 10000 }, async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-reload-drain-'));
   const untrack = trackFixture({ root });
@@ -31,7 +37,11 @@ test('a rebuild drains overlapping calls and a broken candidate leaves the old s
     fs.writeFileSync(join(dist, 'index.js'), version);
   };
   publish('old');
-  const child = spawn(process.execPath, [join(bin, 'hud-mcp.mjs')], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
+  const home = join(root, 'hud');
+  fs.mkdirSync(home, { mode: 0o700 });
+  const child = spawn(process.execPath, [join(bin, 'hud-mcp.mjs')], {
+    cwd: root, env: { ...process.env, HUD_HOME: home }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
   const exit = once(child, 'exit');
   let stderr = '';
   child.stderr.on('data', (data) => stderr += data);
@@ -44,15 +54,20 @@ test('a rebuild drains overlapping calls and a broken candidate leaves the old s
   });
   const rpc = rpcClient(child), held = rpc('hold');
   await until(() => fs.existsSync(join(root, 'entered')));
+  assert.equal(generation(home, child.pid).stamp, buildStamp(root));
   publish('new');
   const a = rpc('next'), b = rpc('next');
   fs.writeFileSync(join(root, 'release'), '');
   assert.deepEqual((await Promise.all([held, a, b])).map(r => r.result), [['old', 1], ['new', 2], ['new', 3]]);
+  const current = generation(home, child.pid);
+  assert.equal(current.stamp, buildStamp(root));
   publish('broken');
   assert.deepEqual((await rpc('next')).result, ['new', 4]);
   assert.deepEqual((await rpc('next')).result, ['new', 5]);
+  assert.deepEqual(generation(home, child.pid), current);
   publish('fixed');
   assert.deepEqual((await rpc('next')).result, ['fixed', 6]);
+  assert.equal(generation(home, child.pid).stamp, buildStamp(root));
   child.stdin.end();
   assert.deepEqual(await exit, [0, null]);
   assert.equal(stderr.match(/keeping previous build/g)?.length, 1);
@@ -312,6 +327,7 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
   const copy = reloadCopy(t);
   const hudHome = join(copy.root, 'hud');
   const jobDir = join(hudHome, 'jobs', 'j0000000000000001');
+  fs.mkdirSync(hudHome, { mode: 0o700 });
   fs.mkdirSync(jobDir, { recursive: true });
   fs.writeFileSync(join(jobDir, 'job.json'), JSON.stringify({ job: 'j0000000000000001', role: 'imp', dispatch_exit_code: 0 }));
   fs.writeFileSync(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
@@ -333,7 +349,8 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
   const pidFile = join(hudHome, 'watch.pid'), logFile = join(hudHome, 'watch.log');
   await until(() => fs.existsSync(pidFile) && fs.existsSync(logFile) && fs.readFileSync(logFile, 'utf8').includes('start pid='));
   const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
-  const freshPss = readProcPssMB(pid);
+  const freshPss = readProcPssMB(pid), current = generation(hudHome, pid);
+  assert.equal(current.stamp, buildStamp(copy.root));
 
   // Broken candidate keeps the previous watcher alive with the same PID.
   const runtimePath = join(copy.root, 'dist/runtime/watch-runtime.js');
@@ -343,6 +360,7 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
   await until(() => fs.readFileSync(logFile, 'utf8').includes('keeping previous build:'));
   assert.equal(Number(fs.readFileSync(pidFile, 'utf8').trim()), pid);
   assert.equal((fs.readFileSync(logFile, 'utf8').match(/reloaded pid=/g) ?? []).length, 0);
+  assert.deepEqual(generation(hudHome, pid), current);
 
   // Recover and perform 15 synthetic reloads via execve.
   fs.writeFileSync(runtimePath, originalRuntime);
@@ -350,6 +368,7 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
     copy.stamp();
     await until(() => (fs.readFileSync(logFile, 'utf8').match(/reloaded pid=/g) ?? []).length === i);
     assert.equal(Number(fs.readFileSync(pidFile, 'utf8').trim()), pid);
+    assert.equal(generation(hudHome, pid).stamp, buildStamp(copy.root));
   }
   assert.equal(fs.existsSync(join(hudHome, 'watch-handoff.json')), false);
   if (typeof process.execve === 'function' && !['win32', 'os400'].includes(process.platform) && fs.existsSync(`/proc/${pid}/cmdline`)) {

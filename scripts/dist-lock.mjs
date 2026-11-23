@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { realpathSync, statSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { createServer } from 'node:net';
+import { homedir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const releaseRoot = new URL('..', import.meta.url);
@@ -9,13 +11,54 @@ const releaseRoot = new URL('..', import.meta.url);
 // Published (or touched for a script-only rebuild) by each successful main build.
 export function buildStamp() {
   try {
-    const s = statSync(new URL('../dist/index.js', import.meta.url), { bigint: true });
+    const s = fs.statSync(new URL('../dist/index.js', import.meta.url), { bigint: true });
     return `${s.ino}:${s.ctimeNs}`;
   } catch { return null; }
 }
 
+// Best-effort evidence for doctor, not a lock or source of runtime state. Publish only
+// after a generation starts successfully; a failed reload keeps the old receipt.
+const generationStart = (pid) => {
+  try {
+    const raw = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return raw.slice(raw.lastIndexOf(')') + 1).trim().split(/\s+/)[19];
+  } catch { return undefined; }
+};
+let registeredGenerationExit = false;
+export function publishGeneration(kind, stamp) {
+  if (!stamp) return;
+  const pid = process.pid, start = generationStart(pid);
+  const home = (process.env.HUD_HOME || join(process.env.HOME || homedir(), '.hud')).replace(/\/+$/, '');
+  if (!start || !isAbsolute(home)) return;
+  const dir = join(home, 'generations'), file = join(dir, `${pid}.json`), temp = join(dir, `${pid}.tmp`);
+  try {
+    const privateDirectory = (path) => {
+      const st = fs.lstatSync(path);
+      return st.isDirectory() && st.uid === process.getuid() && !(st.mode & 0o077);
+    };
+    if (!privateDirectory(home) || fs.realpathSync(home) !== home) return;
+    try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') return; }
+    if (!privateDirectory(dir)) return;
+    if (!fs.existsSync(file)) {
+      // A crash can strand receipts. Keep a fixed ceiling without evicting live services.
+      const entries = fs.readdirSync(dir).filter((name) => /^\d+\.(?:json|tmp)$/.test(name));
+      if (entries.length >= 256) {
+        for (const name of entries) if (!generationStart(Number.parseInt(name, 10))) try { fs.unlinkSync(join(dir, name)); } catch {}
+        if (fs.readdirSync(dir).length >= 256) return;
+      }
+    }
+    try { fs.unlinkSync(temp); } catch (e) { if (e.code !== 'ENOENT') return; }
+    fs.writeFileSync(temp, JSON.stringify({ kind, stamp, start }), { flag: 'wx', mode: 0o600 });
+    fs.renameSync(temp, file);
+    if (!registeredGenerationExit) {
+      registeredGenerationExit = true;
+      process.once('exit', () => { try { fs.unlinkSync(file); } catch {} });
+    }
+  } catch { /* An unavailable receipt must not affect the service. */ }
+}
+
 export async function acquireBuildLock(kind, root = releaseRoot) {
-  const name = `\0myhud-${kind}-${createHash('sha256').update(realpathSync(root)).digest('hex')}`;
+  const name = `\0myhud-${kind}-${createHash('sha256').update(fs.realpathSync(root)).digest('hex')}`;
   // Linux/WSL releases abstract sockets even after SIGKILL. No files or daemon to clean up.
   const lock = createServer((socket) => socket.destroy());
   const deadline = performance.now() + 15_000;

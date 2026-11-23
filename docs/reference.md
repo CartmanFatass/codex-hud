@@ -69,6 +69,7 @@ See [installer extensions](../install.d/README.md) for backups and multiple Code
 
 ```sh
 hud --help
+hud --version             # print the version, build commit and build time
 hud panel --help
 hud panel                 # beside the caller in herdr, otherwise in this terminal
 hud panel --here          # no split
@@ -77,6 +78,7 @@ hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
 hud watch                 # pending questions and actionable events (--verbose: every change; --all: every pane)
+hud doctor                # run the read-only local install preflight
 hud doctor <jobId>        # print one job's local facts without changing it
 hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
@@ -92,6 +94,13 @@ these select observations, not execution identity. Without explicit selection,
 `HERDR_PANE_ID` permits a one-second `herdr pane current` lookup for the caller's
 Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
+
+`hud doctor` checks Node, local herdr reachability, the pi commands on PATH, installed dependency versions,
+client HUD bindings (resolved checkout and Node), registered project trust, the dist build stamp and live
+MCP/watcher generations, leases, and managed worktrees without owning job receipts. It only checks the mode
+of `credentials.env` (0600 if present); it never opens the file. Each failed check has one fix hint and any
+failure makes the exit status non-zero. A service that starts on demand need not be running, but an older live
+process that does not report its generation cannot be verified. The command does not apply any fixes.
 
 `hud doctor <jobId>` reads one directory under `$HUD_HOME/jobs`. It shows identity, the shared job state, raw
 `STATUS.json`, open questions, checks, last progress, stop/close markers and recorded process liveness when

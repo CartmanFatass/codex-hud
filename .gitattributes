@@ -2,6 +2,7 @@
 tests/fixtures/workboard-frames/*.txt whitespace=-blank-at-eol
 
 # Source release: runtime/build inputs, current user documentation and the docs it links to.
+/scripts/build.mjs export-subst
 /tests export-ignore
 /docs/* export-ignore
 /docs/ARCHITECTURE.md -export-ignore

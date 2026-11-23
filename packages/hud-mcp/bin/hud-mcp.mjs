@@ -8,7 +8,7 @@ if (major < 24) {
   process.exit(1);
 }
 import { selectMcpEntry } from './surface.mjs';
-import { applyV8HeapCaps, buildStamp, withDistLock } from '../../../scripts/dist-lock.mjs';
+import { applyV8HeapCaps, buildStamp, publishGeneration, withDistLock } from '../../../scripts/dist-lock.mjs';
 import { createInterface } from 'node:readline';
 import { openGeneration } from './generation.mjs';
 
@@ -28,6 +28,7 @@ try {
     stamp = buildStamp();
   });
   await current.call('start');
+  publishGeneration('mcp', stamp);
   const calls = new Set();
   let switching;
   async function reload(seen) {
@@ -44,6 +45,7 @@ try {
       await current.call('stop');
       await current.retire();
       current = next;
+      publishGeneration('mcp', seen);
       toolsChanged = typeof state?.toolsList === 'string' && typeof started?.toolsList === 'string' && state.toolsList !== started.toolsList;
     } catch (error) {
       await next?.retire();

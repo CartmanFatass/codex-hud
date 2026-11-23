@@ -41,6 +41,10 @@ export async function prepareMain(
     if (args[0] === 'import') {
       const { importCommand } = await import('./import.js');
       run = () => importCommand(args.slice(1), io);
+    } else if (args[0] === 'doctor' || (args.length === 1 && args[0] === '--version')) {
+      // Keep the preflight out of the panel and other unrelated CLI import graphs.
+      const { doctorCommand, versionCommand } = await import('./doctor.js');
+      run = () => args[0] === 'doctor' ? doctorCommand(args.slice(1), io) : versionCommand(io);
     } else {
       const cli = await import('./hud-main.js');
       run = () => cli.main(args, io);

@@ -58,6 +58,7 @@ Claude 设置跟随符号链接并保留一次性普通备份；Codex 在官方 
 
 ```sh
 hud --help
+hud --version             # 打印版本、构建提交和构建时间
 hud panel --help
 hud panel                 # 在 herdr 中于调用者旁打开，否则在当前终端显示
 hud panel --here          # 不分割窗格
@@ -66,6 +67,7 @@ hud statusline --help
 hud import --help
 hud trust <dir>           # 把该目录加入 grok、agy 和 claude 的信任列表
 hud watch                 # 本窗格 HUD 任务每次状态变化一行（--all：所有任务）
+hud doctor                # 对本地安装执行只读预检
 hud doctor <jobId>        # 只读查看单个任务的本地记录
 hud setup --detect        # 打印本项目的工作者配置 JSON
 hud setup --apply PLAN    # 按计划写入 .hud/
@@ -79,6 +81,12 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 `--harness claude|pi|codex --session ID --source ABS` 选择观测，不建立执行身份。
 没有显式选择时，`HERDR_PANE_ID` 允许用一秒预算向 `herdr pane current` 查询调用者的 Claude 转写或 Codex 会话（herdr 窗格内回退读取 `CODEX_THREAD_ID`）；
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
+
+`hud doctor` 检查 Node、本地 herdr 的连通性、PATH 上的 pi 命令、已安装依赖的版本、客户端的 HUD 绑定
+（解析到的检出目录和 Node）、已注册项目的 CLI 信任、dist 构建标记与正在运行的 MCP／观察进程所载入的构建、
+租约，以及没有对应任务记录的受管工作树。`credentials.env` 若存在，仅检查权限是否为 0600，绝不打开文件。
+每项失败会给出一条修复提示；任一项失败都会以非零状态退出。按需启动的服务不必正在运行，
+但旧版进程若未报告载入的构建则无法验证。命令不会执行任何修复。
 
 `hud doctor <jobId>` 读取 `$HUD_HOME/jobs` 下的单个任务目录。它显示任务身份、共享读取器给出的状态、原始
 `STATUS.json`、未答问题、检查结果、最新进度，以及适用的停止／关闭标记和记录中的进程是否存活。

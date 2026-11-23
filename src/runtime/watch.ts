@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
-import { buildStamp } from '../../scripts/dist-lock.mjs';
+import { buildStamp, publishGeneration } from '../../scripts/dist-lock.mjs';
 
 type Runtime = ReturnType<typeof import('./watch-runtime.js').openRuntime>;
 type Handoff = NonNullable<Awaited<ReturnType<Runtime['pause']>>>;
@@ -173,6 +173,7 @@ export async function openWatcher() {
   process.on('SIGTERM', () => void finish('signal=SIGTERM'));
   process.on('SIGINT', () => void finish('signal=SIGINT'));
   if (!reloaded || !ownsPid()) writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
+  publishGeneration('watcher', stamp);
   if (process.connected) process.send?.('ready', () => {});
   log(`${reloaded ? 'reloaded' : 'start'} pid=${process.pid}`);
   return async () => {

@@ -8,7 +8,7 @@ import { setupCommand } from './setup.js';
 import { ticketsCommand } from './tickets.js';
 import { watchCommand } from './watch.js';
 import { boardCommand } from './board.js';
-import { doctorCommand } from './doctor.js';
+import { doctorCommand, versionCommand } from './doctor.js';
 
 export async function main(args: readonly string[], io: HudIO): Promise<number> {
   try {
@@ -27,6 +27,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
     if (args[0] === 'watch') return await watchCommand(args.slice(1), io);
     if (args[0] === 'board') return await boardCommand(args.slice(1), io);
     if (args[0] === 'doctor') return await doctorCommand(args.slice(1), io);
+    if (args.length === 1 && args[0] === '--version') return await versionCommand(io);
     if (args.length === 1 && (args[0] === '--help' || args[0] === 'help')) {
       await io.stdout(
         'Usage: hud panel --help          Open the interactive panel\n' +
@@ -38,7 +39,9 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud setup --remove [--cwd DIR]  Drop project registration\n' +
           '       hud tickets sync [--cwd DIR]  Mirror GitHub parent/sub-issues into .scratch/\n' +
           '       hud watch [--all]         Stream job change lines for this pane (or all jobs)\n' +
+          '       hud doctor               Check the local installation without changing it\n' +
           '       hud doctor <jobId>       Print one job\'s disk facts without changing it\n' +
+          '       hud --version            Print version, build commit and build time\n' +
           '       hud board [--html] [--cwd DIR] [--out FILE] [--open]  Write the HTML review board\n' +
           '       hud codex [ARG ...]        Existing codex-hud launcher (alias: codex-hud)\n' +
           '       hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'

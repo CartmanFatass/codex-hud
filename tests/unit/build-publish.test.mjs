@@ -63,7 +63,7 @@ test('TypeScript errors leave the live files and timestamps intact', async (t) =
   const f = fixture(t);
   await f.run();
   f.put('dist/orphan.js', 'not pruned on failure');
-  const files = ['dist/tree-page.js', 'dist/index.js', 'dist/orphan.js'].map(f.file);
+  const files = ['dist/tree-page.js', 'dist/index.js', 'dist/build-info.json', 'dist/orphan.js'].map(f.file);
   const snapshot = () => files.map((file) => [signature(file), fs.readFileSync(file, 'utf8')]);
   const before = snapshot();
   f.put('src/render/sub.ts', 'export const generation: number = "wrong";\n');
@@ -334,8 +334,10 @@ test('--publish-from publishes a prebuilt tree through the staged publisher with
   fs.chmodSync(other.file('dist/native/hud-statusline'), 0o755);
   const srcDist = other.file('dist');
   const beforeSrc = fs.readFileSync(join(srcDist, 'render/sub.js'), 'utf8');
+  const provenance = fs.readFileSync(join(srcDist, 'build-info.json'), 'utf8');
   await f.run(['--publish-from', srcDist]);
   assert.match(fs.readFileSync(f.file('dist/render/sub.js'), 'utf8'), /generation = 99/);
+  assert.equal(fs.readFileSync(f.file('dist/build-info.json'), 'utf8'), provenance);
   assert.equal(fs.existsSync(f.file('dist/stale.js')), false);
   assert.equal(fs.existsSync(f.file('dist/native/hud-statusline')), false);
   assert.equal(fs.readFileSync(other.file('dist/native/hud-statusline'), 'utf8'), 'synthetic tested binary');
