@@ -351,8 +351,10 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
   or adopted/dropped skills. Main reads a skill on owner request. (17.12)
 - Keep Inspector (`v`), Settings and Help in Home's look. No old Timeline page (not Project's Timeline
   layout), Activity hub, Summary, diagnostics pages or old Agents pane. Keep only the model-call count
-  from diagnostics in Settings → LLM. No Settings panel picture, Look presets, Nerd Font or emoji icon
-  sets, motion switch, stack/tabs layouts, foot status card or rows only they used. (11.06)
+  from diagnostics in Settings → LLM. No Settings panel picture, Look presets, emoji icon
+  set, motion switch, stack/tabs layouts, foot status card or rows only they used. (11.06)
+- Icons: a Nerd Font set (Font Awesome glyphs in the Basic Multilingual Plane) is the default, with `unicode`
+  and `text` fallbacks. Home rows show no model or effort; the role icon leads the row. (22.24)
 - Changes: Git/worktree summary only (branch, ahead/behind, change counts, row per worktree); no file lists,
   diffs or previews. (12.06)
 

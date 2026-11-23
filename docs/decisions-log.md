@@ -93,6 +93,11 @@ The owner approved the lean spec and resolved the draft questions:
   First slice: main-session context slimming (compact HUD tool results and notices, merge duplicate events,
   route report reads through `hud_read`). Panel inside Claude Code and event wake come later. Installed as an
   `./install` extension like the others.
+- **D-2026-11-22-24** (§2.2.9, §2.2.3): Owner after trying the title-less Home: Home rows show no model, effort or
+  route marks; the role icon leads the row; no running glyph. Icons become a Nerd Font set (Font Awesome BMP
+  glyphs, owner picked from a live render in MesloLGS NF) as the default, with `unicode` and `text` kept as
+  fallbacks; emoji stays out (double width). Reverses the Nerd Font part of D-2026-11-11-06. Home's top line
+  counts workers per role since the panel opened, whatever their state; no cross-session total.
 
 ## 2026-11-21
 

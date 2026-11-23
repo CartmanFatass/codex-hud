@@ -1,6 +1,6 @@
 # 03: Home rows drop the title; marks show progress and a short summary sits under each running job
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** none
 
