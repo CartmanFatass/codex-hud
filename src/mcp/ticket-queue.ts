@@ -57,6 +57,15 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     return q;
   });
 }
+/** Answering the question that stopped a queue is the main session's judgement, so that queue resumes. */
+export async function resumeQueueAfterAnswer(home: string, jobId: string, request: string, pane: string | null) {
+  if (!pane) return undefined;
+  const q = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at)).find(q => q.tickets.some(item => item.job === jobId));
+  if (!q || q.state !== 'failed' || q.pane !== pane || !q.reason?.includes(`(${jobId}): worker question ${request} `)) return undefined;
+  try { return (await startTicketQueue(home, q.root, pane, false, { feature: q.feature, max_parallel: q.max_parallel }))?.flow; }
+  catch { return undefined; }
+}
 export function ticketQueueTask(home: string, q: TicketQueue, cancel = false) {
   if (cancel) cancelTicketQueue(home, q);
   if (q.state === 'working') {

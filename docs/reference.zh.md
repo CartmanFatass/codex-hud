@@ -538,7 +538,7 @@ MCP 重启后，同一调用方仍可在任务有效期内查询已有的工作�
 `ready` 返回无阻塞且无活动任务的 `ready-for-agent` 工单，格式为 `tickets: [{ticket, path, title, what}]`。
 将 `ticket`（`feature/NN`）及 `path`（作为 `brief_file`）传给 `hud_create`；
 活动任务在项目面板和首页进度中即算认领，无需提交认领记录，`hud_land` 将工单更新并入落地提交（`**Owner try:** no` 记为 `done`，`yes` 或省略记为 `ready-for-human`），不再追加 `STATE.md`。
-`run` 按 `feature` 派发就绪工单并自动落地符合条件的任务；可用 `cwd` 指定其他项目。新队列的 `max_parallel` 默认使用 imp 的并发上限；`**Role:** frontend-imp` 选择该角色，`**Main review:** yes` 则停止自动落地。
+`run` 按 `feature` 派发就绪工单并自动落地符合条件的任务；可用 `cwd` 指定其他项目。新队列的 `max_parallel` 默认使用 imp 的并发上限；`**Role:** frontend-imp` 选择该角色，`**Main review:** yes` 则停止自动落地。worker 提问会让批次停下；用 `hud_respond` 回答该问题后批次自动恢复（`queue_resumed`）。
 处理失败原因后，以同一项目和 `feature` 再次调用 `run`。新一轮队列保留已有任务和已完成的落地，并重试符合条件、在快进前失败的落地，不再重新派发这些工单；除非显式覆盖，沿用原 `max_parallel`。
 以同一 `feature` 和 `cancel: true` 调用 `run` 会停止后续派发与落地，不干预已有任务和正在进行的落地。
 `add` 按 `feature` 和 `tickets` 批量建单（可选 `owner_try` 布尔值，在状态行下写入 `**Owner try:** yes` 或 `no`）；

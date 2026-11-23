@@ -29,7 +29,7 @@ import type { Job } from '../job-contracts.js';
 import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
-import { startTicketQueue, ticketQueueTask, wakeTicketQueue } from '../ticket-queue.js';
+import { resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask, wakeTicketQueue } from '../ticket-queue.js';
 import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
@@ -680,7 +680,14 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
       },
     });
   }
-  if (name === 'hud_respond') return respondJob(args, false, scan.summaryJobs());
+  if (name === 'hud_respond') {
+    const result = await respondJob(args, false, scan.summaryJobs());
+    const answered = fs.existsSync(join(directory(job.job), jobFiles.qa, `${args.request_id}.answer.md`));
+    const resumed = answered ? await resumeQueueAfterAnswer(hudHome, job.job, String(args.request_id), callerPane) : undefined;
+    if (!resumed) return result;
+    if (callerPane) void ensureQueueWatcher(callerPane, hudHome);
+    return 'resultType' in result ? result : { ...result, queue_resumed: resumed };
+  }
   return closeJob(job);
 }
 

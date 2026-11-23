@@ -145,6 +145,12 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   assert.equal(result.changes.length, 1);
   assert.match(result.changes[0], /worker question q1.*Still running:/);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+
+  // The answer to the stopping question resumes the queue with the same jobs.
+  const answered = await f.call('hud_respond', { job: first, request_id: 'q1', answer: 'Take the synthetic path.' });
+  assert.match(answered.queue_resumed, /^q[0-9a-f]{16}$/);
+  assert.equal(f.flow(answered.queue_resumed).state, 'working');
+  assert.deepEqual(f.flow(answered.queue_resumed).tickets.map(x => x.job), [first, peer]);
 });
 
 test('ticket queue keeps going past an answered worker question', { timeout: 30_000 }, async t => {

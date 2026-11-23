@@ -510,7 +510,7 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
   `what` is one line from the ticket's What to build section.
   Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
   The live job claims the ticket in the panel and Home progress without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` when `**Owner try:** no`, else `ready-for-human`) without touching `STATE.md`.
-- **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land.
+- **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land. A worker question stops the batch; `hud_respond` to that question resumes it (`queue_resumed`).
   After addressing a failure, call `run` again with the same project and `feature`. A new queue attempt keeps existing jobs and completed lands, and retries eligible lands that failed before fast-forward without dispatching their tickets again. It keeps the previous `max_parallel` unless you override it.
   `run` with the same `feature` and `cancel: true` stops new dispatches and lands; it leaves existing jobs and lands alone.
 - **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?}]`.
