@@ -15,7 +15,7 @@ import { rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
 import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cli-turn.js';
 import { REPORT_SETTLED_EXIT } from './cli-judge.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
-import { progress } from '../worker/tools.js';
+import { progress } from '../worker/progress.js';
 import { monitorSonic, sonicLimitDefaults, type SonicLimits, type SonicStop } from './sonic-policy.js';
 
 export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file?: string; id?: string; initialId?: string }, limits?: SonicLimits) {

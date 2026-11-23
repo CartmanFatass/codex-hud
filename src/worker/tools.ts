@@ -12,11 +12,14 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
-import { dispatchJob } from '../mcp/thin-main.js'; // Cyclic binding, called only after startup.
+import { dispatchJob } from '../mcp/dispatch/orchestrator.js';
 import { notify, taskDelivery } from '../roles/notify.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
+import { progress } from './progress.js';
+
+export { progress } from './progress.js';
 
 const idPattern = /^j[0-9a-f]{16}$/;
 type Worker = ReturnType<typeof workerJob>;
@@ -89,28 +92,6 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
     if (job.headless) writeJsonPrivate(join(dir, DONE_FILE), { report_sig: sig }, { mkdir: false });
   }
   return { path };
-}
-
-export function progress({ dir }: Pick<Worker, 'dir'>, message: string, source?: 'checkpoint') {
-  const text = [...message.replace(/[\r\n\u2028\u2029]+/gu, ' ').replace(/\p{Cc}/gu, '').trim()]
-    .slice(0, 240).join('').trimEnd();
-  if (!text) throw new Error('usage: hud-progress [--dir <job-dir>] <message>');
-  const record = JSON.stringify({ at: new Date().toISOString(), text, source }) + '\n';
-  const file = join(dir, jobFiles.progress);
-  const { O_RDWR, O_CREAT, O_APPEND, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-  const fd = fs.openSync(file, O_RDWR | O_CREAT | O_APPEND | O_NOFOLLOW | O_NONBLOCK, 0o600);
-  try {
-    const limit = 64 * 1024;
-    if (!fs.fstatSync(fd).isFile()) throw new Error('progress.jsonl is not a regular file');
-    const buffer = Buffer.alloc(limit + 1);
-    const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    if (size > limit) throw new Error('progress.jsonl exceeds 64 KiB');
-    const previous = buffer.subarray(0, size).toString('utf8');
-    const rows = previous.trimEnd().split('\n').filter(Boolean);
-    if (rows.length < 50 && (!previous || previous.endsWith('\n'))) fs.appendFileSync(fd, record);
-    else writePrivateFile(file, [...rows.slice(-49), record.trimEnd()].join('\n') + '\n', { mkdir: false });
-  } finally { fs.closeSync(fd); }
-  return { ok: true };
 }
 
 export async function startSonic({ job: parent }: Pick<Worker, 'job'>, task: string, cwd?: unknown) {
