@@ -113,7 +113,7 @@ function fixture(t) {
   const put = (id, extra, status = { state: 'working' }, files = {}) => {
     const dir = join(home, 'jobs', id);
     fs.mkdirSync(dir, { recursive: true });
-    const all = { 'job.json': { job: id, herdr_pane: PANE, role: 'imp', package: id.slice(-2), created_at: new Date(NOW - 240_000).toISOString(), ...extra },
+    const all = { 'job.json': { job: id, [id === HEADLESS ? 'caller_pane' : 'herdr_pane']: PANE, role: 'imp', package: id.slice(-2), created_at: new Date(NOW - 240_000).toISOString(), ...extra },
       'STATUS.json': status, 'brief.md': `# ${id.slice(-2).toUpperCase()}: synthetic job`, ...files };
     for (const [file, body] of Object.entries(all)) fs.writeFileSync(join(dir, file), typeof body === 'string' ? body : JSON.stringify(body));
     return dir;

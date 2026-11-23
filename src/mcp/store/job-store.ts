@@ -8,6 +8,7 @@ import { jobRow } from '../../collectors/thin-jobs.js';
 import { createWorkSummaryPublisher } from '../../collectors/work-summary-snapshot.js';
 import { computeQueuePositions, queuedTimestamp } from '../../roles/concurrency.js';
 import { JobIndexCache, JOB_ID_RE, type CachedJsonResult } from '../../roles/job-index-cache.js';
+import { jobCallerPane } from '../../roles/job-pane.js';
 import { recordFailureExhaustion } from '../../roles/roster.js';
 import { readJsonFile, readFileBounded } from '../../utils/atomic-fs.js';
 import { firstReportProse } from '../../utils/report-summary.js';
@@ -74,7 +75,14 @@ export function save(job: Job, newAttempt = false): void {
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
   const receipt = findJob(job.job);
   // A session watch can adopt the receipt while this process awaits a launch or send.
-  if (receipt?.herdr_pane) job.herdr_pane = receipt.herdr_pane;
+  const owner = (receipt && jobCallerPane(receipt)) || jobCallerPane(job);
+  if (job.headless) {
+    if (owner) job.caller_pane = owner;
+    delete job.herdr_pane;
+  } else {
+    if (owner) job.herdr_pane = owner;
+    delete job.caller_pane;
+  }
   const existing = newAttempt ? null : receipt;
   for (const key of ['read_at', 'observed_at', 'pi_sent_at'] as const) {
     const at = existing?.[key];

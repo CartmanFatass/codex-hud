@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { isCliDirTrusted } from '../../cli/trust.js';
 import { cliKinds, type CliAgent } from '../../roles/cli-kinds.js';
-import { herdrId, runHerdr } from '../../roles/herdr-run.js';
+import { herdrId } from '../../roles/herdr-run.js';
 import type { RolePlace } from '../../roles/roster.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isProcAlive } from '../../utils/proc.js';
@@ -15,11 +15,11 @@ import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from '../cli
 import type { JobStatus, Job, SessionReceipt } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
 import { startHeadlessProcess } from '../sonic-process.js';
-import { jobCache, directory, bundled, hudHome, writeCreateStatus } from '../store/job-store.js';
+import { jobCache, directory, bundled, hudHome, save, writeCreateStatus } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
 import {
-  run, binScript, launchError, rejectLaunch, dispatchBase, tabLabel, workspaceArgs, startAgentWithBusyWait,
-  isAgentPaneBusy, startupFailure, paneText, refusedBeforeInput, type DispatchResult,
+  run, binScript, launchError, rejectLaunch, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
+  startupFailure, paneText, refusedBeforeInput, type DispatchResult,
 } from './proc.js';
 
 function agentStatus(stdout: string): string | null {
@@ -94,7 +94,7 @@ export function failCli(dir: string, job: Job, place: RolePlace, reason: string)
     settled_at: now,
     idle_deadline_at: null,
     ended_at: now,
-    exit_reason: reason,
+    exit_reason: 'untrusted_cwd',
     error: reason,
     updated_at: now,
   };
@@ -184,9 +184,15 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
       if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
       argv.push('--', ...agentArgs);
-      started = await startAgentWithBusyWait(argv);
-      if (!isAgentPaneBusy(started) || tabAttempt === 1) break;
-      await runHerdr(['tab', 'close', openedTab], process.env, { budgetMs: 3000 });
+      // Keep start arguments in detailed diagnostics only; never record the first prompt.
+      if (!tabAttempt) {
+        const args = agentArgs.slice(0, 32).map(arg => arg.length <= 128 ? arg : `${arg.slice(0, 127)}…`);
+        if (args.length < agentArgs.length) args.push('…');
+        job.launch_agent_args = [...(job.launch_agent_args ?? []).slice(-3), { place: job.place_key ?? place.agent!, args }];
+        save(job);
+      }
+      started = await run('herdr', argv);
+      if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
       openedTab = undefined;
     }
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');

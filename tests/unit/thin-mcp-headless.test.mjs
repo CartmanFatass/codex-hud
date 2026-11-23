@@ -283,6 +283,8 @@ test('direct and queued unrouted headless creates skip incompatible places and p
     assert.match(receipt.attempts[0].reason, /claude has not trusted/);
     assert.equal(receipt.model, 'synthetic/fallback');
     assert.equal(receipt.headless, true);
+    assert.equal(receipt.caller_pane, 'w4E:p1');
+    assert.equal(Object.hasOwn(receipt, 'herdr_pane'), false);
   }
 });
 

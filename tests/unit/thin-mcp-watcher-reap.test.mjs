@@ -434,7 +434,8 @@ test('startup failure closes the tab, reports the pi-roles cause instead of the 
   assert.match(job.reason, /synthetic start failed/);
   const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
   assert.equal(status.state, 'failed');
-  assert.match(status.exit_reason, /synthetic start failed/);
+  assert.equal(status.exit_reason, 'dispatch_failed');
+  assert.match(status.error, /synthetic start failed/);
   assert.ok(Number.isFinite(Date.parse(status.ended_at)));
   assert.match(cardText(workerFor(f, job.job)), /synthetic start failed/);
   assert.deepEqual(f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'close')?.args,

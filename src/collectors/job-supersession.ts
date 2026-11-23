@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { parseLedger, statePaths } from './state-ledger.js';
 import { targetKey, ticketFileEvidence } from './ticket-evidence.js';
 import { TryLog } from './try-records.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
 
 export interface Receipt {
-  job?: unknown; role?: unknown; created_at?: unknown; herdr_pane?: unknown; project_root?: unknown; cwd?: unknown;
+  job?: unknown; role?: unknown; created_at?: unknown; caller_pane?: unknown; herdr_pane?: unknown; project_root?: unknown; cwd?: unknown;
   package?: unknown; ticket?: unknown; slice?: unknown; target_hint?: unknown; title?: unknown; task_length?: unknown;
   retry_of?: unknown; repair_of?: unknown; from_jobs?: unknown; worktree?: unknown;
 }
@@ -46,7 +47,7 @@ export function supersession(home: string, jobs: Receipt[], read: (path: string)
     if (!legacyRoots.has(cwd)) legacyRoots.set(cwd, sharedRoot(cwd));
     return legacyRoots.get(cwd)!;
   };
-  const scope = (j: Receipt) => rootOf(j) || `pane:${text(j.herdr_pane)}`;
+  const scope = (j: Receipt) => rootOf(j) || `pane:${jobCallerPane(j)}`;
   const byTarget = new Map<string, number>();
   let replaced: Map<string, number> | undefined;
   const targets = new Map<Receipt, string>(), indexed = new Set<string>(), landed = new Map<string, Set<string>>();

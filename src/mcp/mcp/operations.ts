@@ -23,6 +23,7 @@ import { required, jobCwd, type Args } from '../dispatch/context.js';
 import { sendJob, dispatchJob, resumeJob, pendingScouts } from '../dispatch/orchestrator.js';
 import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/places.js';
 import { paneText, ensureWatcher } from '../dispatch/proc.js';
+import { jobCallerPane } from '../../roles/job-pane.js';
 import type { Job } from '../job-contracts.js';
 import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
 import { startLand, landTask } from '../land.js';
@@ -257,6 +258,7 @@ function jobDiagnostics(job: Job) {
       : {}),
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
+    ...(job.launch_agent_args && { launch_agent_args: job.launch_agent_args }),
   };
 }
 type GitSummary = Awaited<ReturnType<typeof gitSummary>>;
@@ -688,7 +690,7 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   const row = polled?.row;
   const state = row?.state ?? row?.display_state;
   const canCarry = !!oldTask && oldTask.view.status === 'working' &&
-    job.herdr_pane === oldTask.pane && taskFence(job) === oldTask.fence &&
+    jobCallerPane(job) === oldTask.pane && taskFence(job) === oldTask.fence &&
     state !== 'failed' && state !== 'stopped' && !fs.existsSync(join(dir, jobFiles.stopRequested));
   if (oldTask && !canCarry) sampleTask(oldTask);
   const task = !canCarry && row?.question_ids.includes(request)

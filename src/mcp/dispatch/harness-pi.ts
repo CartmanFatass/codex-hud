@@ -1,7 +1,8 @@
 /** Pi launch and native session setup. */
 import * as fs from 'node:fs';
 import { isAbsolute, join, dirname } from 'node:path';
-import { herdrId, runHerdr } from '../../roles/herdr-run.js';
+import { jobCallerPane } from '../../roles/job-pane.js';
+import { herdrId } from '../../roles/herdr-run.js';
 import { executable, type Role, type RolePlace } from '../../roles/roster.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { briefPrompt } from '../brief-prompt.js';
@@ -15,8 +16,8 @@ import { directory, findJob, readCachedStatus, hudHome, bundled, save, jobCache 
 import type { NativeResume } from '../worker-resume.js';
 import { registry, roleCwd } from './places.js';
 import {
-  rejectLaunch, binScript, quote, run, dispatchBase, tabLabel, workspaceArgs, startAgentWithBusyWait,
-  isAgentPaneBusy, startupFailure, launchError, refusedBeforeInput, type DispatchResult,
+  rejectLaunch, binScript, quote, run, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
+  startupFailure, launchError, refusedBeforeInput, type DispatchResult,
 } from './proc.js';
 
 /** A skill name is one path segment under `.hud/skills`. Anything else is not a link we made. */
@@ -107,9 +108,10 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     argv.push('--allow-write', output);
     if (!job.headless || sessionWorker) argv.push('--qa-dir', join(dir, jobFiles.qa));
     if (sessionWorker) argv.push('--qa-timeout', '0');
-    if ((!job.headless || sessionWorker) && job.herdr_pane) {
+    const owner = jobCallerPane(job);
+    if ((!job.headless || sessionWorker) && owner) {
       const notify = binScript('hud-notify.mjs');
-      argv.push('--notify', [process.execPath, notify, hudHome, job.herdr_pane, job.job].map(quote).join(' '));
+      argv.push('--notify', [process.execPath, notify, hudHome, owner, job.job].map(quote).join(' '));
     }
     const instructionsName = role.instructions ?? role.role;
     if (plainSkillName(instructionsName)) {
@@ -188,7 +190,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
           TAB_NAME: tabName,
           LEFT: left,
           RIGHT: right,
-          ORCH: job.herdr_pane,
+          ORCH: owner,
           BASE: base,
           PRIMARY: name,
         };
@@ -222,9 +224,8 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
         if (!herdrId(right)) throw new Error('split did not return a pane id');
         record();
       }
-      started = await startAgentWithBusyWait(['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
-      if (!isAgentPaneBusy(started) || tabAttempt === 1) break;
-      await runHerdr(['tab', 'close', openedTab], process.env, { budgetMs: 3000 });
+      started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
+      if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
       openedTab = undefined;
     }
     if (started.exit_code !== 0) return reject(await startupFailure(started, left));

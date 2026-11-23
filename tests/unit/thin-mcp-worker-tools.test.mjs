@@ -123,7 +123,8 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
     assert.match(id, /^j[0-9a-f]{16}$/);
     const job = JSON.parse(fs.readFileSync(join(dir(id), 'job.json')));
     assert.equal(job.parent_job, parent.job);
-    assert.equal(job.herdr_pane, 'w4E:p1');
+    assert.equal(job.caller_pane, 'w4E:p1');
+    assert.equal(Object.hasOwn(job, 'herdr_pane'), false);
     assert.equal(job.cwd, f.root);
     assert.equal(job.role, 'sonic');
     assert.equal(job.model, 'synthetic/sonic');

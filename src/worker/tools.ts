@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { dispatchJob } from '../mcp/dispatch/orchestrator.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { notify, taskDelivery } from '../roles/notify.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
@@ -173,7 +174,7 @@ export async function startSonic({ job: parent }: Pick<Worker, 'job'>, task: str
   if (!task.trim()) throw new Error('the sub-task is empty');
   const result = await dispatchJob({
     role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd, task,
-  }, parent.herdr_pane, parent);
+  }, jobCallerPane(parent), parent);
   if (!('job' in result) || !result.job) {
     const code = 'code' in result ? result.code : undefined;
     const message = ('error' in result ? result.error : undefined) ?? code;
@@ -423,7 +424,7 @@ export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: Ques
   let pushed = 'not pushed (no --notify / --orchestrator)';
   // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
   const receipt = readJob(dir);
-  const orch = receipt.herdr_pane || orchestrator(dir);
+  const orch = jobCallerPane(receipt) || orchestrator(dir);
   if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
   else if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
   else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {

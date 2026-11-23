@@ -236,7 +236,7 @@ pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里�
 报告正文每页经 JSON 转义后最多 24 KiB。还有后续内容时，响应含 `report_bytes`（文件总字节数）、`report_truncated: true` 和 `next_offset`。
 将该字节偏移量传给 `hud_read({ job, mode: "full", offset: next_offset })`，依次拼接每页的 `report`，直到不再返回 `next_offset`。
 用 `jobs: [id, …]` 代替 `job` 可按输入顺序收取 `jobs` 结果数组，所有任务使用同一模式；找不到编号只影响对应条目。后续页需按任务分别读取。
-`detail: true` 可在读取时附带启动诊断；只想检查时用 `hud_peek`。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
+`detail: true` 可在读取时附带启动诊断；`launch_agent_args` 记录最近几次 CLI 标签页启动所用的参数（长度有限，不含提交的提示）。Herdr 报告工作窗格忙时，HUD 会关闭该标签页，稍候在新标签页中重试一次。启动失败时，`exit_reason` 保存简短错误码，`stderr_tail` 保留命令输出。只想检查时用 `hud_peek`。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
 返回报告摘要或正文时都会记录 `read_at`，不代表验收。当前回合有效声明报告且回合结束后，即使报告未读也关闭工作进程和窗格。
 CLI 声明后 120 秒仍未结束时，交由主会话处理，不强制中断。未回答的问题、未结束或未收取结果的 Sonic 子任务会阻止关闭。
 此变更前已启动的任务仍使用原有宽限期。读取失败或受阻状态会单独标记为已查看。

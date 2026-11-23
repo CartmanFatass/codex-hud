@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { notify, taskDelivery } from '../roles/notify.js';
 import type { Job } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
@@ -16,7 +17,8 @@ export async function runNotifyCli() {
       const receipt = readJsonFile(join(dir, jobFiles.job)) as Job;
       // Scouts hand all outcomes to their target. Other children and land repairs still forward questions.
       if (receipt.scout_only === true || ((receipt.parent_job || receipt.land_turn) && /^\[.*\] DONE /.test(message))) process.exit(0);
-      if (typeof receipt.herdr_pane === 'string' && receipt.herdr_pane && !/[\x00-\x1f\x7f-\x9f]/.test(receipt.herdr_pane)) pane = receipt.herdr_pane;
+      const owner = jobCallerPane(receipt);
+      if (owner && !/[\x00-\x1f\x7f-\x9f]/.test(owner)) pane = owner;
       if (taskDelivery(dir, pane)) process.exit(0);
     } catch { /* No receipt: keep the launch delivery path. */ }
   }

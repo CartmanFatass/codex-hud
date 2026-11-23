@@ -9,6 +9,7 @@ import { taskTarget } from '../../collectors/job-supersession.js';
 import type { JobRow } from '../../collectors/thin-jobs.js';
 import { isWorkingForCap, loadConcurrencySettings, capForRole, QUEUE_START_MARKER } from '../../roles/concurrency.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
+import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { MAX_CHECKS, MAX_CHECK_COMMAND } from '../../roles/job-checks.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
@@ -55,7 +56,7 @@ import {
   piOptionKeys, placementOverrides, hasPiPlacement, roleCwd, registry, launchPlan, harnessSwitchFailure,
   replayOptions, harnessesSourceFor, argsForPlace,
 } from './places.js';
-import { ensureWatcher, launchError, canTryNext, rejectLaunch, run, refusedBeforeInput, type DispatchResult } from './proc.js';
+import { ensureWatcher, launchError, launchFailure, canTryNext, rejectLaunch, run, refusedBeforeInput, type DispatchResult } from './proc.js';
 
 function derivedKey(kind: string, ...parts: unknown[]): string {
   return `${kind}:${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`;
@@ -216,7 +217,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
   let discard = false;
   try {
     const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
-      target.herdr_pane, `scout:${target.job}`, false, target.job, undefined, undefined, { scoutContextCwd: contextCwd });
+      jobCallerPane(target), `scout:${target.job}`, false, target.job, undefined, undefined, { scoutContextCwd: contextCwd });
     if (!('job' in result)) {
       return { failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch' };
     }
@@ -425,7 +426,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         cwd: reusedWorktree?.root ?? cwd,
         project_root: sharedRoot(cwd),
         ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
-        herdr_pane: pane,
+        caller_pane: pane,
         created_at: nowIso,
         queued_at: nowIso,
         ...(queuedRoute && { route: queuedRoute }),
@@ -485,7 +486,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       cwd: landCwd ?? reusedWorktree?.root ?? cwd,
       project_root: sharedRoot(cwd),
       ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
-      herdr_pane: pane,
+      caller_pane: pane,
       created_at: new Date().toISOString(),
       task_length: task.length,
       ...(checks?.length ? { checks } : {}),
@@ -624,7 +625,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       }
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
       else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing);
-      reason = result.exit_code === 0 ? '' : launchReason(result);
+      base.launch_agent_args = job.launch_agent_args;
+      reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
@@ -634,7 +636,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
       job.route = plan.fallback;
     const launchRow = finishLaunch(job, dir, result, reason, !scoutQuestion);
-    if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && job.herdr_pane === scoutTask.pane) {
+    if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && jobCallerPane(job) === scoutTask.pane) {
       scoutTask.fence = taskFence(job);
       extendTask(scoutTask, job);
     }
@@ -685,7 +687,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     } catch (error) {
       const latest = findJobMutable(id) ?? base;
       finishLaunch(latest, dir, { ...launchError(String(error)), preInput: true }, String(error), false);
-      if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && latest.herdr_pane === scoutTask.pane) {
+      if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && jobCallerPane(latest) === scoutTask.pane) {
         scoutTask.fence = taskFence(latest);
         persistTask(scoutTask);
       }
@@ -722,7 +724,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       if (code) existing.dispatch_code = code;
       existing.stderr_tail = reason;
       save(existing);
-      writeCreateStatus(dir, { state: 'failed', role, exit_reason: reason, error: reason, ended_at: new Date().toISOString() });
+      writeCreateStatus(dir, { state: 'failed', role, exit_reason: code ?? 'dispatch_failed', error: reason, ended_at: new Date().toISOString() });
       return { started: false, failed: true, reason };
     };
     let task: string;
@@ -875,7 +877,8 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
       else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, { callerToken: existing.created_at });
-      reason = result.exit_code === 0 ? '' : launchReason(result);
+      base.launch_agent_args = job.launch_agent_args;
+      reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
@@ -954,24 +957,14 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
   catch (error) { return launchError(String(error)); }
 }
 
-function launchReason(result: DispatchResult) {
-  let detail = result.stderr.trim();
-  if (!detail) {
-    try {
-      const error = JSON.parse(result.stdout)?.error;
-      if (typeof error?.message === 'string') detail = [error.code, error.message].filter(Boolean).join(': ');
-    } catch { /* The command may return plain text. */ }
-  }
-  return (detail || result.stdout.trim().split(/\r?\n/, 1)[0] || `launch exited ${result.exit_code}`).slice(0, 500);
-}
-
 function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string, advanceCursor = true): JobRow | undefined {
   job.dispatch_exit_code = result.exit_code;
   if (result.code) job.dispatch_code = result.code;
   if (result.path) job.dispatch_path = result.path;
-  job.stderr_tail = result.stderr;
+  const failure = result.exit_code === 0 ? null : launchFailure(result);
+  job.stderr_tail = failure?.stderr_tail ?? result.stderr;
   const statusFile = join(dir, jobFiles.status);
-  if (result.exit_code !== 0 && (result.preInput || !fs.existsSync(statusFile))) {
+  if (failure && (result.preInput || !fs.existsSync(statusFile))) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reason);
     if (outcome.marked) {
       job.exhaustion_marked = true;
@@ -982,7 +975,8 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
       state: 'failed',
       harness: job.place?.harness,
       ...(job.bro ? { provider: job.bro.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
-      exit_reason: outcome.reason,
+      exit_reason: failure.code,
+      error: outcome.reason,
       ended_at: new Date().toISOString(),
     });
   }
@@ -1048,7 +1042,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const priorTurn = current.cli ? readTurn(dir) : null;
   if (current.cli && !priorTurn) return;
   const oldTask = activeTasks.get(id);
-  if (oldTask && !(answerRequest && current.herdr_pane === oldTask.pane && taskFence(current) === oldTask.fence)) sampleTask(oldTask);
+  if (oldTask && !(answerRequest && jobCallerPane(current) === oldTask.pane && taskFence(current) === oldTask.fence)) sampleTask(oldTask);
   const carryTask = oldTask && !land && activeTasks.get(id) === oldTask && oldTask.view.status === 'working'
     ? oldTask : undefined;
   const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
@@ -1105,9 +1099,10 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const latest = findJobMutable(id) ?? next;
   const recorded = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
   recorded.exit_code = result.exit_code;
-  recorded.stderr_tail = result.stderr;
-  if (result.preInput) { // The failed launch still owns a tab; let the watcher retry cleanup.
-    writeCreateStatus(dir, { ...result.status, state: 'failed', exit_reason: launchReason(result), ended_at: new Date().toISOString() });
+  const failure = result.exit_code === 0 ? null : launchFailure(result);
+  recorded.stderr_tail = failure?.stderr_tail ?? result.stderr;
+  if (failure && result.preInput) { // The failed launch still owns a tab; let the watcher retry cleanup.
+    writeCreateStatus(dir, { ...result.status, state: 'failed', exit_reason: failure.code, error: failure.reason, ended_at: new Date().toISOString() });
   }
   save(latest);
   const ok = result.exit_code === 0;
@@ -1121,14 +1116,14 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
       extendTask(carryTask, latest);
     } else if (batchTasks.get(id) !== carryTask) sampleTask(carryTask);
   }
-  if (ok && !session.taskClient && !land) void ensureQueueWatcher(latest.herdr_pane, hudHome);
+  if (ok && !session.taskClient && !land) void ensureQueueWatcher(jobCallerPane(latest), hudHome);
   const continuation = 'resumed' as const;
   if (batch) registerBatchTask(taskEntry, latest, ok);
   else {
     const task = finishTask(taskEntry, latest, ok, continuation);
     if (task) return { ...task, job: id, continuation };
   }
-  return { ok, sent: ok, ...(answerRequest && { written: true }), job: id, continuation, ...(ok ? {} : { code: 'send_failed', stderr_tail: result.stderr }) };
+  return { ok, sent: ok, ...(answerRequest && { written: true }), job: id, continuation, ...(ok ? {} : { code: 'send_failed', stderr_tail: recorded.stderr_tail }) };
 }
 
 export async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean, land = false, batch = false) {
@@ -1316,7 +1311,7 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
     ...(source.route?.tier === 'light' && { mode: undefined }) };
   // A closed but successfully settled job isn't a public retry target. Use the same keyed create path,
   // retaining retry provenance and the original checkout rather than starting at a clean main tip.
-  const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? source.herdr_pane, key, false,
+  const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? jobCallerPane(source), key, false,
     undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source }));
   if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
   throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);

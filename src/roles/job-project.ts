@@ -3,13 +3,14 @@ import { tryAbstractLock } from '../utils/abstract-lock.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId, listedPanes, runHerdr } from './herdr-run.js';
+import { jobCallerPane } from './job-pane.js';
 import { sharedRoot } from './projects.js';
 import { JOB_ID_RE, type JobIndexCache } from './job-index-cache.js';
 import { jobFiles } from '../mcp/paths.js';
 import type { Job } from '../mcp/job-contracts.js';
 
 type JobProject = Partial<Pick<Job, 'cwd' | 'project_root' | 'worktree'>>;
-type JobOwner = JobProject & Partial<Pick<Job, 'job' | 'herdr_pane'>>;
+type JobOwner = JobProject & Partial<Pick<Job, 'job' | 'herdr_pane' | 'caller_pane'>>;
 
 /** Older receipts resolve their cwd once per scan per directory. */
 export function projectJobFilter(cwd: string) {
@@ -27,7 +28,7 @@ export function projectJobFilter(cwd: string) {
 /** Missing/malformed herdr evidence cannot transfer ownership. Never use a workspace-filtered list. */
 export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv,
   owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache, onAdopt?: (id: string) => void) {
-  const other = jobs.filter((job) => herdrId(job.herdr_pane) && job.herdr_pane !== pane);
+  const other = jobs.filter((job) => herdrId(jobCallerPane(job)) && jobCallerPane(job) !== pane);
   if (!other.length) return false;
   const matches = projectJobFilter(cwd);
   const candidates = other.filter(matches);
@@ -37,7 +38,7 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
   if (!listed) return false;
   const live = new Set(listed.map((row) => row.paneId));
   if (!live.has(pane)) return false;
-  const orphans = candidates.filter((job) => !live.has(job.herdr_pane as string));
+  const orphans = candidates.filter((job) => !live.has(jobCallerPane(job)));
   if (!orphans.length) return false;
 
   const root = join(home, 'jobs');
@@ -62,8 +63,8 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
         } else {
           latest = readJsonFile(file) as Partial<Job>;
         }
-        if (latest?.job !== job.job || latest.herdr_pane !== job.herdr_pane || !matches(latest) || !owesCaller(dir, latest)) continue;
-        const updated = { ...latest, herdr_pane: pane };
+        if (latest?.job !== job.job || jobCallerPane(latest) !== jobCallerPane(job) || !matches(latest) || !owesCaller(dir, latest)) continue;
+        const updated = { ...latest, [latest.caller_pane !== undefined ? 'caller_pane' : 'herdr_pane']: pane };
         if (cache) cache.writeJsonAtomic(file, updated, { indent: 2, mkdir: false });
         else writePrivateFile(file, JSON.stringify(updated, null, 2) + '\n', { mkdir: false });
         adopted = true;

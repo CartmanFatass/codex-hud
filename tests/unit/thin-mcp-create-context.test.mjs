@@ -200,6 +200,31 @@ test('hud_create retains every pre-input cause on one failed job and stays withi
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
 });
 
+test('a rejected CLI prompt falls through, retaining its attempted start arguments in detail', async t => {
+  const f = await fixture(t);
+  fallbackRole(f, 'invalid-arg');
+  writeFixtureFile(join(f.env.HOME, 'invalid-prompt-once'), '');
+  const job = await f.call('hud_create', { role: 'invalid-arg', task: 'Synthetic fallback.' });
+  assert.equal(job.used_place, 'pi (synthetic/second)');
+  assert.equal(job.attempts[0].reason, 'invalid_agent_argument: synthetic rejection');
+  const detail = await f.call('hud_peek', { job: job.job, detail: true });
+  assert.ok(detail.diagnostics.launch_agent_args[0].args.includes('synthetic-first'));
+});
+
+test('a busy worker pane retries once and keeps CLI JSON out of the failure reason', async t => {
+  const f = await fixture(t);
+  writeFixtureFile(join(f.env.HOME, 'busy-pane-count'), '3');
+  writeFixtureFile(join(f.env.HOME, 'tab-seq'), '1');
+  const job = await f.call('hud_create', { role: 'general', on: 'grok', task: 'Synthetic busy launch.' });
+  assert.equal(job.ok, false);
+  assert.equal(job.reason, 'agent_pane_busy: worker pane w4E:p3 is busy');
+  assert.equal(cliState(job.task_dir).exit_reason, 'agent_pane_busy');
+  assert.equal(job.attempts[0].reason, job.reason);
+  assert.equal(JSON.parse(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).stderr_tail).error.code, 'agent_pane_busy');
+  const starts = f.commands().filter(({ args }) => args[1] === 'start');
+  assert.deepEqual(starts.map(({ args }) => args[args.indexOf('--pane') + 1]), ['w4E:p2', 'w4E:p3']);
+});
+
 test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-prompt'), '');
@@ -1078,8 +1103,8 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
   await until(() => cliState(source.task_dir)?.state === 'closed', 5000);
   assert.equal(cliState(source.task_dir).exit_reason, 'closed after report read');
 
-  // Transient agent_pane_busy clears within the bounded wait.
-  writeFixtureFile(join(f.env.HOME, 'busy-pane-count'), '2');
+  // Transient agent_pane_busy clears on the single retry.
+  writeFixtureFile(join(f.env.HOME, 'busy-pane-count'), '1');
   const repair = await f.call('hud_send', { job: source.job, text: 'Synthetic follow-up in same worktree.' });
   assert.equal(repair.continued_as, repair.job);
   assert.notEqual(repair.job, source.job);
@@ -1092,7 +1117,7 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
   assert.equal(git(repairReceipt.cwd, 'rev-parse', 'HEAD'), sourceCommit);
   assert.deepEqual(fs.readdirSync(join(f.root, 'demo-wt')), [wt.root.split('/').at(-1)]);
   const repairStarts = f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'start' && args[2] === `${repair.job}-primary`);
-  assert.equal(repairStarts.length, 3, 'two busy responses followed by one successful start');
+  assert.equal(repairStarts.length, 2, 'one busy response followed by one successful start');
   const readRepair = await f.call('hud_read', { job: repair.job, mode: 'full' });
   assert.deepEqual(readRepair.worktree, { ...wt, owner: source.job });
   assert.equal(readRepair.git_summary.ahead_commits, 1);

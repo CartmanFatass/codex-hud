@@ -211,7 +211,7 @@ test('a grok trust dialog is declined and the job fails naming the directory', {
   assertCliStatus(status, job.task_dir);
   assert.equal(status.state, 'failed');
   assert.equal(status.error, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
-  assert.equal(status.exit_reason, status.error);
+  assert.equal(status.exit_reason, 'untrusted_cwd');
   const commands = f.commands();
   const decline = commands.find((c) => c.args[1] === 'send-keys');
   assert.deepEqual(decline.args.slice(3), ['n']);
@@ -349,7 +349,9 @@ test(
       task: 'Synthetic not ready.',
     });
     assert.equal(f.commands().filter((c) => c.args[1] === 'send-keys').length, 1);
-    assert.match(cliState(bare.task_dir).exit_reason, /agent_not_ready/);
+    assert.equal(cliState(bare.task_dir).exit_reason, 'agent_not_ready');
+    const bareReceipt = JSON.parse(fs.readFileSync(join(bare.task_dir, 'job.json')));
+    assert.equal(JSON.parse(bareReceipt.stderr_tail).error.code, 'agent_not_ready', 'JSON emitted on stdout is retained');
     assert.equal(fs.existsSync(join(bare.task_dir, 'supervisor.pid')), false);
     fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
     const grok = await f.call('hud_create', {

@@ -27,7 +27,8 @@ export interface Job extends PiOptions {
   request_key: string;
   cwd: string;
   project_root?: string;
-  herdr_pane: string;
+  herdr_pane?: string; // Caller for tabbed jobs and older headless receipts.
+  caller_pane?: string; // Headless workers have no pane of their own.
   created_at: string;
   queued_at?: string;
   overflow_from?: string;
@@ -73,6 +74,7 @@ export interface Job extends PiOptions {
   jev?: Role;
   cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory'; mcp_scope_warning?: string };
   attempts?: LaunchAttempt[];
+  launch_agent_args?: { place: string; args: string[] }[];
   used_place?: string;
   dispatch_exit_code: number | null;
   dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments';

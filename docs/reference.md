@@ -347,8 +347,11 @@ escaping. If more remains, the result includes `report_bytes` (total file size),
 `next_offset`. Pass that byte offset to `hud_read({ job, mode: "full", offset: next_offset })` and append each
 `report` until `next_offset` is absent. Use `jobs: [id, …]` instead of `job` to get results in input order;
 all use the same mode, and an unknown ID returns an error only for that entry. Continue each paged report separately.
-`detail: true` includes launch diagnostics such as effective CLI `idle_grace_s`;
-use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
+`detail: true` includes launch diagnostics such as effective CLI `idle_grace_s` and `launch_agent_args`
+(bounded arguments from recent CLI tab starts, not the submitted prompt). If Herdr reports a busy worker pane,
+HUD closes that tab and retries once in a fresh tab after a short delay. Failed launches keep a short `exit_reason`
+and the command output in `stderr_tail`.
+Use peek instead when you do not want to collect. `wait_ms` waits at most 120000 ms, stopping at settlement, a
 question or timeout. Collecting either the digest or the report body stamps `read_at` (including during work and idle grace), not
 acceptance. With a current-turn declaration, the worker process and pane close at turn end, even if the report is unread.
 A CLI that has not ended within 120 seconds of declaring is handed back to main, not cut off. An open question

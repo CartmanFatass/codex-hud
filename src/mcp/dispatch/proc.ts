@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
+import { jobCallerPane } from '../../roles/job-pane.js';
 import { isQuotaFailure } from '../../roles/roster.js';
 import type { Job, JobStatus } from '../job-contracts.js';
 import { callerPane, rememberCallerHarness } from '../mcp/session-state.js';
@@ -33,44 +34,55 @@ export function run(
     child.on('close', (code) => done({ exit_code: code ?? -1, stdout, stderr, notStarted: child.pid === undefined }));
   });
 }
-const AGENT_PANE_BUSY_DELAYS_MS = [100, 200, 400, 800] as const;
-export function isAgentPaneBusy(result: Awaited<ReturnType<typeof run>>): boolean {
-  if (result.exit_code === 0) return false;
-  for (const text of [result.stdout, result.stderr]) {
-    try {
-      if (JSON.parse(text)?.error?.code === 'agent_pane_busy') return true;
-    } catch { /* Herdr may also render plain text or trailing lines. */ }
-    if (/\bagent_pane_busy\b/.test(text)) return true;
+function cliError(result: DispatchResult): { code: string; message?: string } | undefined {
+  for (const stream of [result.stderr, result.stdout]) {
+    const text = stream.trim(), first = text.split(/\r?\n/, 1)[0];
+    if (text.startsWith('{')) {
+      for (const json of new Set([text, first])) {
+        try {
+          const error = JSON.parse(json)?.error;
+          if (typeof error?.code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(error.code))
+            return { code: error.code, message: typeof error.message === 'string' ? error.message : undefined };
+        } catch { /* Pretty-printed JSON, or a JSON line followed by CLI output. */ }
+      }
+    }
+    const match = /^(?:Error:\s*)?(agent_not_ready|agent_not_found|invalid_agent_argument|agent_pane_busy)(?=[:\s]|$)[:\s]*(.*)$/.exec(first);
+    if (match) return { code: match[1], message: match[2] };
   }
-  return false;
 }
-export async function startAgentWithBusyWait(argv: string[]) {
-  let started = await run('herdr', argv);
-  for (const delay of AGENT_PANE_BUSY_DELAYS_MS) {
-    if (!isAgentPaneBusy(started)) return started;
-    await sleep(delay);
-    started = await run('herdr', argv);
-  }
-  return started;
+export function launchFailure(result: DispatchResult) {
+  const error = cliError(result);
+  const text = result.stderr.trim() || result.stdout.trim();
+  const code = error?.code ?? result.code ?? result.status?.exit_reason ?? 'dispatch_failed';
+  // An unrecognized CLI JSON envelope is still evidence, not a human-readable reason.
+  const plain = text.startsWith('{') || (text.startsWith('[') && !text.startsWith('[roles]')) ? '' : text.split(/\r?\n/, 1)[0];
+  const detail = error ? [code, error.message].filter(Boolean).join(': ') : plain;
+  const reason = code === 'agent_pane_busy' && result.pane ? `agent_pane_busy: worker pane ${result.pane} is busy`
+    : result.detail || detail || `launch exited ${result.exit_code}`;
+  return { code, reason: reason.slice(0, 500), stderr_tail: [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n').slice(-4096) };
+}
+/** Retry once in a fresh tab, and only after confirming the old one closed. */
+export async function retryBusyPane(result: DispatchResult, attempt: number, tab: string) {
+  if (attempt || result.exit_code === 0 || cliError(result)?.code !== 'agent_pane_busy') return false;
+  if (!(await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 })).ok) return false;
+  await sleep(100);
+  return true;
 }
 export function refusedBeforeInput(result: Awaited<ReturnType<typeof run>>): boolean {
-  if (result.exit_code === 0) return false;
-  if (result.notStarted) return true;
-  let code;
-  try { code = JSON.parse(result.stdout)?.error?.code; } catch { /* Herdr can also render the error on stderr. */ }
-  code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(result.stderr.trim())?.[1];
-  return code === 'agent_not_ready' || code === 'agent_not_found';
+  return result.exit_code !== 0 && (result.notStarted ||
+    ['agent_not_ready', 'agent_not_found', 'invalid_agent_argument'].includes(cliError(result)?.code ?? ''));
 }
 export async function dispatchBase(cwd: string): Promise<string> {
   const git = await run('git', ['rev-parse', 'HEAD'], cwd);
   return git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
 }
 export async function workspaceArgs(job: Job): Promise<string[]> {
-  const result = await run('herdr', ['pane', 'get', job.herdr_pane]);
+  const owner = jobCallerPane(job);
+  const result = await run('herdr', ['pane', 'get', owner]);
   if (result.exit_code !== 0) return [];
   try {
     const pane = JSON.parse(result.stdout).result.pane;
-    if (job.herdr_pane === callerPane) rememberCallerHarness(pane.agent);
+    if (owner === callerPane) rememberCallerHarness(pane.agent);
     return herdrId(pane.workspace_id) ? ['--workspace', pane.workspace_id] : [];
   } catch {
     return [];
@@ -123,17 +135,17 @@ export function paneText(stdout: string): string {
   return stdout;
 }
 export async function startupFailure(result: DispatchResult, pane: string): Promise<DispatchResult> {
-  if (result.stderr.trim() && !/timed? out|timeout|agent_not_ready/i.test(result.stderr)) return result;
+  if (result.stderr.trim() && !/timed? out|timeout|agent_not_ready/i.test(result.stderr)) return { ...result, pane };
   const read = await runHerdr(['pane', 'read', pane, '--source', 'recent'], process.env, { budgetMs: 2000 });
   const reason = read.ok && paneText(read.stdout).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').split('\n')
     .reverse().map((line) => line.trim()).find((line) =>
       /^(?:\[roles\]|(?:\w*Error|fatal):)\s+\S/i.test(line) || isQuotaFailure(line));
-  return reason ? { ...result, stderr: reason } : result;
+  return { ...result, pane, ...(reason && { detail: reason }) };
 }
 
 export type DispatchResult = {
   exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
-  preInput?: boolean; cleanupFailed?: boolean; status?: JobStatus; path?: string;
+  pane?: string; detail?: string; preInput?: boolean; cleanupFailed?: boolean; status?: JobStatus; path?: string;
 };
 export const canTryNext = (job: Job, result: DispatchResult) => job.role !== 'sonic' && result.preInput && !result.cleanupFailed;
 export const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });

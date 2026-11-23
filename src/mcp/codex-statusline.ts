@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expNativePath, readExpNativeSeen } from '../collectors/exp-native.js';
 import { writePrivateFile, readFileBounded } from '../utils/atomic-fs.js';
 import { jobRow } from '../collectors/thin-jobs.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { isFileStampCurrent } from '../roles/job-index-cache.js';
 import { truncateAnsi } from '../render/colors.js';
 import { askOf, NOTICE_MS } from '../render/layout/bar-fields.js';
@@ -65,7 +66,7 @@ function workReminder(home: string, pane: string | null, now: number): string | 
     const snap = obj(raw), json = obj(snap?.json);
     if (!match || typeof stamp !== 'string' || !json || snap?.whole !== true || !nonnegative(snap.at)) continue;
     const [, id, kind] = match;
-    if (kind === 'job' && (json.job !== id || json.herdr_pane !== pane)) continue;
+    if (kind === 'job' && (json.job !== id || jobCallerPane(json) !== pane)) continue;
     (kind === 'job' ? receipts : statuses).set(id, { path: join(home, 'jobs', rel), stamp, at: snap.at, json });
   }
   let best: { reminder: string; priority: number; at: number; receipt: Fact; status: Fact } | undefined;

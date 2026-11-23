@@ -4,6 +4,7 @@ import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { join, resolve } from 'node:path';
 import type { Job, JobRoute, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
@@ -56,7 +57,7 @@ function sameStamps(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
   return true;
 }
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
-const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'headless', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
+const factKeys = new Set(['job', 'role', 'herdr_pane', 'caller_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'headless', 'title', 'package', 'ticket', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string, idx: JobIndexCache): void {
   if (hydrated.has(idx)) return;
@@ -76,7 +77,7 @@ function restore(home: string, idx: JobIndexCache): void {
       if (typeof rel !== 'string' || !/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object' && !Array.isArray(snap.json)))) throw Error('cache');
-      if (rel.endsWith('/job.json') && snap.factsVersion !== 6) { allCurrent = false; continue; } // Older projections lack route or headless evidence.
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 7) { allCurrent = false; continue; } // Older projections lack the explicit caller pane.
       facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
       const kind = !snap.whole ? 'truncated' : snap.json === null ? 'invalid' : 'ok';
       stamps.set(join(home, 'jobs', rel), `${kind}:${stamp}`);
@@ -93,7 +94,7 @@ function persist(home: string, idx: JobIndexCache, seenStamps: Map<string, strin
     if (liveStamp !== null && liveStamp === prev.fileStamp) return;
   }
   // Entry order in JobIndexCache reflects recent lookups, not a change in facts.
-  const text = JSON.stringify(idx.exportFacts(seenStamps.keys(), factKeys, { factsVersion: 6 }).sort(([a], [b]) => a.localeCompare(b)));
+  const text = JSON.stringify(idx.exportFacts(seenStamps.keys(), factKeys, { factsVersion: 7 }).sort(([a], [b]) => a.localeCompare(b)));
   if (text.length > 1048576) return;
   try {
     const { bytes, truncated } = readFileBounded(file, 1048576);
@@ -290,7 +291,7 @@ export function jobRow(
   const openQuestions = extras?.openQuestions ?? questionIds.length;
   const reason =
     displayState === 'failed'
-      ? (word(s.exit_reason) ?? word(s.error) ?? word(s.reason) ?? (!hasStatus ? stderrFirstLine : null))
+      ? (word(s.error) ?? word(s.exit_reason) ?? word(s.reason) ?? (!hasStatus ? stderrFirstLine : null))
       : blocked
         ? (word(s.reason) ?? (cliJob ? `${cliAgent} needs input in its pane` : 'needs input in its pane'))
         : displayState === 'working' && rawState === 'waiting_orchestrator'
@@ -501,7 +502,7 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
   const statuses = new Map<string, Partial<JobStatus> | null>();
   for (const { id, dir, job } of receipts) {
     if (rows.length === 200) break;
-    if (job.scout_only === true || (pane !== null && job.herdr_pane !== pane)) continue;
+    if (job.scout_only === true || (pane !== null && jobCallerPane(job) !== pane)) continue;
     const statusRes = cache.readStatus<JobStatus>(id);
     const status = statusRes.status === 'ok' ? statusRes.value : null;
     statuses.set(id, status);
@@ -704,7 +705,7 @@ export function readThinJobs(
       // Overflow discovery already loaded these receipts to identify parents. Persist their
       // facts and skip STATUS entirely on other panes. Small windows retain the status-first path.
       const receipt = dirs.length > 200 ? readFact(join(root, id, 'job.json')) : null;
-      if (receipt?.v.job === id && typeof receipt.v.role === 'string' && receipt.v.herdr_pane !== scope.pane) {
+      if (receipt?.v.job === id && typeof receipt.v.role === 'string' && jobCallerPane(receipt.v) !== scope.pane) {
         receipts.push(receipt.v);
         return [];
       }
@@ -729,7 +730,7 @@ export function readThinJobs(
         job.job !== id ||
         typeof job.role !== 'string' ||
         !herdrId(scope.pane) ||
-        job.herdr_pane !== scope.pane
+        jobCallerPane(job) !== scope.pane
       )
         return [];
       const created = when(job.created_at);

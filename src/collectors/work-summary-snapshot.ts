@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
@@ -77,8 +78,8 @@ export function collectWorkSummary(
     const asking = openQuestions > 0 || (cliJob && (row.blocked || row.state === 'waiting_orchestrator'));
     const role = job.role.trim().toLowerCase() || 'job';
     addRole(global, role, asking);
-    const pane = typeof job.herdr_pane === 'string' && herdrId(job.herdr_pane) ? job.herdr_pane : null;
-    if (pane) {
+    const pane = jobCallerPane(job);
+    if (herdrId(pane)) {
       const paneScope = rawPanes[pane] ?? (Object.keys(rawPanes).length < WORK_SUMMARY_MAX_PANES ? (rawPanes[pane] = emptyWorkSummaryScope()) : null);
       if (paneScope) addRole(paneScope, role, asking);
       else complete = false;

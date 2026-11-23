@@ -544,6 +544,13 @@ if (command === 'pi-dispatch') {
   command === 'herdr' &&
   args[0] === 'agent' &&
   args[1] === 'prompt' &&
+  fs.existsSync(join(process.env.HOME, 'invalid-prompt-once'))
+) {
+  fs.unlinkSync(join(process.env.HOME, 'invalid-prompt-once'));
+  console.error(JSON.stringify({ error: { code: 'invalid_agent_argument', message: 'synthetic rejection' } }));
+  process.exit(1);
+} else if (
+  command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' &&
   fs.existsSync(join(process.env.HOME, 'fail-prompt'))
 ) {
   console.error('synthetic prompt timeout');

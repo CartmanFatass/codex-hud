@@ -6,6 +6,7 @@ import { herdrId } from '../../roles/herdr-run.js';
 import { adoptProjectJobs, projectJobFilter } from '../../roles/job-project.js';
 import { ensureQueueWatcher, watchingMod } from '../../roles/notify.js';
 import { resumedWorkerRefusal } from '../../roles/resume-guard.js';
+import { jobCallerPane } from '../../roles/job-pane.js';
 import type { Job } from '../job-contracts.js';
 import { isWorker, hudHome, findJob, jobCache, scanForCall, readRow, directory, type JobScan } from '../store/job-store.js';
 import { rememberCreatedJob } from '../task-bounds.js';
@@ -70,7 +71,7 @@ export async function adoptSessionJobs(scan: JobScan) {
   return true;
 }
 export function ownsJob(job: Job) {
-  return !job.scout_only && (callerPane ? job.herdr_pane === callerPane : session.createdJobs.has(job.job));
+  return !job.scout_only && (callerPane ? jobCallerPane(job) === callerPane : session.createdJobs.has(job.job));
 }
 export function sessionJobs(scan: JobScan) {
   const own = scan.all().filter(ownsJob);

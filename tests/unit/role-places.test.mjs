@@ -245,8 +245,9 @@ test('quota failure marks pi exhausted for 1h, names next place, and falls back 
   const first = await f.call('hud_create', { role: 'imp', request_key: 'pi-quota-1', task: 'Synthetic task.' });
   const read = await f.call('hud_read', { job: first.job });
   assert.equal(read.state, 'failed');
-  assert.match(read.exit_reason, /429/);
-  assert.match(read.exit_reason, /next dispatch will use cli\/agy \(gemini-4-hydrogen-high\)/);
+  assert.equal(read.exit_reason, 'dispatch_failed');
+  assert.match(read.reason, /429/);
+  assert.match(read.reason, /next dispatch will use cli\/agy \(gemini-4-hydrogen-high\)/);
 
   const marks = readExhausted(f.env.HUD_HOME);
   assert.equal(marks.has('pi:gpt-6.1-sol'), true);

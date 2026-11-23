@@ -10,6 +10,7 @@ import { writeJsonPrivate, readJsonBounded, readDirSafe, writePrivateFile } from
 import { procStat } from '../../utils/proc.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { readTurn, turnToken } from '../cli-judge.js';
+import { jobCallerPane } from '../../roles/job-pane.js';
 import type { BatchNotice, Job, McpTaskMarker } from '../job-contracts.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../headless-sends.js';
 import { readLand, activeLand, isFlowId } from '../land-state.js';
@@ -100,7 +101,7 @@ export function resumeTaskReceipts() {
     if (tasks.has(entry.id) || activeTasks.has(entry.job)) continue;
     try {
       const job = findJob(entry.job);
-      if (!job || job.herdr_pane !== entry.pane || taskFence(job) !== entry.fence ||
+      if (!job || jobCallerPane(job) !== entry.pane || taskFence(job) !== entry.fence ||
           (callerPane && taskDelivery(directory(entry.job), callerPane))) continue;
       const task = recoverTask(entry);
       activeTasks.set(task.job, task);
@@ -137,7 +138,7 @@ export function evictTask(task: HudTask) {
 }
 const markerFile = (task: HudTask) => join(directory(task.job), jobFiles.task);
 export function claimTask(task: HudTask, job: Job) {
-  if (!callerPane || job.herdr_pane !== callerPane) return;
+  if (!callerPane || jobCallerPane(job) !== callerPane) return;
   try {
     writePrivateFile(markerFile(task), JSON.stringify({ id: task.id, pane: callerPane, pid: process.pid,
       start: procStat(process.pid)?.start, expires: task.expiresAt ?? (Date.parse(task.createdAt) + TASK_TTL) } satisfies McpTaskMarker), { mkdir: false });
@@ -176,7 +177,7 @@ export function beginTask(job: Job, reportBefore: number | null = null, answer?:
   const qa = jobCache.readQa(dir);
   const openSet = new Set(qa.openIds);
   const task: HudTask = {
-    id: `${job.job}:${randomBytes(8).toString('hex')}`, job: job.job, role: job.role, pane: job.herdr_pane, createdAt,
+    id: `${job.job}:${randomBytes(8).toString('hex')}`, job: job.job, role: job.role, pane: jobCallerPane(job), createdAt,
     reportBefore,
     attentionBefore: prior && needsAttention(prior)
       ? (priorStatusAt !== undefined ? (priorStatusAt ?? undefined) : (readCachedStatus(job.job).at ?? undefined))
@@ -265,7 +266,7 @@ function sampleBatchTasks() {
       continue;
     }
     const job = findJob(id);
-    if (!job || job.herdr_pane !== task.pane || taskFence(job) !== task.fence) {
+    if (!job || jobCallerPane(job) !== task.pane || taskFence(job) !== task.fence) {
       batchTasks.delete(id);
       releaseTask(task);
       continue;
@@ -352,11 +353,11 @@ function taskCheckOutcome(dir: string, job: Job, status: ReturnType<typeof readR
 export function sampleTask(task: HudTask): TaskView {
   if (task.view.status !== 'working') return task.view;
   const job = findJob(task.job);
-  if (!job || job.herdr_pane !== task.pane || taskFence(job) !== task.fence) {
+  if (!job || jobCallerPane(job) !== task.pane || taskFence(job) !== task.fence) {
     const reason = !job
       ? 'job no longer present'
-      : job.herdr_pane !== task.pane
-        ? `moved to pane ${job.herdr_pane}`
+      : jobCallerPane(job) !== task.pane
+        ? `moved to pane ${jobCallerPane(job)}`
         : 'superseded by a newer turn';
     const message = `${taskLabel(task, reason)}. Use hud_read for the job's current state.`;
     return updateTask(task, 'cancelled', message, message);
