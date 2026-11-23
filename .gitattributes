@@ -13,6 +13,7 @@ tests/fixtures/workboard-frames/*.txt whitespace=-blank-at-eol
 /.github export-ignore
 /.codegraph export-ignore
 /.hud export-ignore
+/.claude export-ignore
 /AGENTS.md export-ignore
 /CLAUDE.md export-ignore
 **/CLAUDE.md export-ignore
