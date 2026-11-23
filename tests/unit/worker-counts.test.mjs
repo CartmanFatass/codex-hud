@@ -43,24 +43,30 @@ test('the panel’s job pipeline feeds the counts from each board it composes an
   const home = fs.mkdtempSync(join(tmpdir(), 'worker-counts-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const scope = { project: null, pane: 'w4E:p1' }, tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
-  const now = Date.now();
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() - 2 * MIN });
   const put = (n, role, state) => {
     const id = 'j' + n.toString(16).padStart(16, '0'), dir = join(home, 'jobs', id);
+    const at = new Date().toISOString();
     fs.mkdirSync(join(dir, 'sessions'), { recursive: true });
-    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role, herdr_pane: scope.pane, created_at: new Date(now).toISOString() }));
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, ...(state === 'working' ? {} : { settled_at: new Date(now).toISOString() }) }));
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role, herdr_pane: scope.pane, created_at: at }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, ...(state === 'working' ? {} : { settled_at: at }) }));
     fs.writeFileSync(join(dir, 'brief.md'), `# Synthetic counted job ${n}`);
     fs.writeFileSync(join(dir, 'sessions/session.jsonl'), '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Synthetic progress"}]}}\n');
   };
-  const panel = new PanelJobPipeline(home, scope, now - MIN);
+  const panel = new PanelJobPipeline(home, scope);
   t.after(() => panel.dispose());
   assert.equal(panel.workerCounts.counts().size, 0, 'nothing before the first board');
+  t.mock.timers.tick(MIN);
   put(1, 'imp', 'working'); put(2, 'imp', 'done'); put(3, 'oracle', 'working');
   await panel.refresh();
   panel.workboard(tree);
   assert.deepEqual(Object.fromEntries(panel.workerCounts.counts()), { imp: 2, oracle: 1 });
-  const restarted = new PanelJobPipeline(home, scope, now - MIN);
+  t.mock.timers.tick(1);
+  // A reload keeps the board's visibility window, but starts a fresh count.
+  const restarted = new PanelJobPipeline(home, scope, panel.openedAt);
   t.after(() => restarted.dispose());
+  await restarted.refresh();
+  assert.equal(restarted.workboard(tree).workers.length, 3);
   assert.equal(restarted.workerCounts.counts().size, 0);
 });
 
