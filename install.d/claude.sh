@@ -15,8 +15,10 @@ const writeSettings = () => {
   // Write through a symlink (e.g. into a dotfiles repo); keep the target's mode.
   const target = fs.existsSync(file) ? fs.realpathSync(file) : file;
   const mode = fs.existsSync(target) ? fs.statSync(target).mode & 0o777 : 0o600;
-  fs.writeFileSync(target + '.hud-tmp', JSON.stringify(settings, null, 2) + '\n', { mode });
-  fs.renameSync(target + '.hud-tmp', target);
+  const tmp = target + '.hud-tmp';
+  fs.writeFileSync(tmp, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+  fs.chmodSync(tmp, mode); // The installer's creation umask need not match the owner's.
+  fs.renameSync(tmp, target);
 };
 if (action === 'install') {
   if (!fs.existsSync(backup)) {

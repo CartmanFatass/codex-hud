@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { promisify } from 'node:util';
 import { parityFixture } from '../../dist-test/fixtures/claude-hud-parity/fixture.js';
 
 const launcher = resolve('bin/hud-statusline');
@@ -113,13 +114,25 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
   assert.deepEqual(run(launcher, [], env, Buffer.concat([exact, Buffer.from([0])])), ts(env, Buffer.alloc(65537, 32)));
 });
 
-test('Claude outside herdr shows no workers from another pane', (t) => {
-  const env = { ...environment(receipt(t)), NO_COLOR: '1' };
-  setup(env.HUD_HOME);
-  for (const render of hasNative ? [ts, rust] : [ts]) {
-    assert.match(render({ ...env, HERDR_PANE_ID: 'synthetic-pane' }, base).toString(), /!1/);
-    assert.doesNotMatch(render(env, base).toString(), /!1/);
-    assert.deepEqual(render(env, base), render({ ...env, HERDR_PANE_ID: 'empty-pane' }, base));
+test('Claude outside herdr shows no workers from another pane', { timeout: 60000 }, async (t) => {
+  const { env, entry } = localInstall(t);
+  env.NO_COLOR = '1';
+  const renderers = [[process.execPath, [entry]]];
+  if (hasNative) renderers.push([native, []]);
+  for (const [cmd, args] of renderers) {
+    const render = async (pane) => {
+      const run = promisify(execFile)(cmd, args, {
+        env: pane ? { ...env, HERDR_PANE_ID: pane } : env, signal: t.signal, encoding: 'buffer',
+      });
+      run.child.stdin.end(JSON.stringify(base));
+      const { stdout, stderr } = await run;
+      assert.equal(stderr.length, 0);
+      return stdout;
+    };
+    assert.match((await render('synthetic-pane')).toString(), /!1/);
+    const outside = await render();
+    assert.doesNotMatch(outside.toString(), /!1/);
+    assert.deepEqual(outside, await render('empty-pane'));
   }
 });
 
@@ -195,7 +208,9 @@ function localInstall(t) {
     fs.copyFileSync(resolve('bin',file), join(localBin,file));
   }
   fs.symlinkSync(resolve('dist/cli'), join(localDist,'cli'));
-  fs.symlinkSync(resolve('scripts'), join(root,'scripts'));
+  // Keep this install's startup lock private, just like its HOME and receipts.
+  fs.mkdirSync(join(root, 'scripts'));
+  fs.copyFileSync(resolve('scripts/dist-lock.mjs'), join(root, 'scripts/dist-lock.mjs'));
   fs.symlinkSync(resolve('package.json'), join(root,'package.json'));
   const entry = join(localBin, 'hud-statusline');
   const input = Buffer.from(`\ufeff \r\n${JSON.stringify({ ...base, model: { display_name: '示例' } })}\n\n`);

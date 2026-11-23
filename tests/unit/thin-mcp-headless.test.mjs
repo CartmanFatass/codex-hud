@@ -83,7 +83,7 @@ const closed = (job, limit) => until(() => {
 }, limit);
 const noTab = f => !f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'create');
 
-test('question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair', async t => {
+test('question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair', { timeout: 60000 }, async t => {
   const f = await fixture(t);
   f.overrideBin('pi', fakePi);
   write(join(f.env.HOME, 'ask'), '');
@@ -91,7 +91,7 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   fs.symlinkSync(f.root, cwd);
   const job = await f.call('hud_create', { role: 'imp', mode: 'headless', cwd, task: 'Synthetic change.' }), dir = job.task_dir;
   assert.equal(job.mode, 'headless');
-  await until(() => cliState(dir)?.state === 'waiting_orchestrator');
+  await until(() => cliState(dir)?.state === 'waiting_orchestrator', t.signal);
   const paused = cliState(dir);
   assert.ok(!isProcAlive(paused.pid));
   assert.equal(workerFor(f, job.job)?.latest_progress?.text, 'Synthetic progress.');
@@ -100,14 +100,14 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.match(JSON.stringify(peek), /Synthetic progress/);
   const answer = { job: job.job, request_id: 'q1', answer: 'Choose B.' };
   assert.equal((await f.call('hud_respond', answer)).written, true);
-  await closed(job);
+  await closed(job, t.signal);
   assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Choose B\./);
   assert.equal((await f.call('hud_respond', answer)).written, false);
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Check C.' })).continuation, 'resumed');
-  await closed(job);
+  await closed(job, t.signal);
   const land = `import { dispatchLandRepair } from ${JSON.stringify(moduleUrl('../../dist/mcp/thin-main.js'))};\n    console.log(await dispatchLandRepair(${JSON.stringify(job.job)}, ${JSON.stringify(cwd)}, 'Synthetic land repair.', 'land:test', null));`;
   assert.equal(execFileSync(process.execPath, ['--input-type=module', '-e', land], { cwd: f.root, env: f.env, encoding: 'utf8' }).trim(), job.job);
-  await closed(job);
+  await closed(job, t.signal);
   const lines = fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trimEnd().split('\n').map(x => JSON.parse(x));
   assert.equal(lines.length, 4);
   assert.deepEqual(lines.map(x => x.id), Array(4).fill(paused.session_id));
@@ -120,7 +120,7 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.equal(repair.continuation, 'repair');
   assert.notEqual(repair.job, job.job);
   assert.equal(repair.mode, 'headless');
-  await until(() => cliState(repair.task_dir)?.state === 'waiting_orchestrator');
+  await until(() => cliState(repair.task_dir)?.state === 'waiting_orchestrator', t.signal);
   assert.notEqual(cliState(repair.task_dir).session_id, paused.session_id);
   assert.equal((await f.call('hud_close', { job: repair.job })).exit_code, 0);
   assert.equal(cliState(repair.task_dir).state, 'stopped');

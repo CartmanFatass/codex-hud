@@ -277,26 +277,29 @@ for (const fault of ['rename', 'open']) test(`pi reap: --done snapshot ${fault} 
   assert.match(done.stderr, /synthetic ENOSPC in hud-progress/);
 });
 
-test('read-close: rejected CLI quit keeps closed while the watcher retries terminal reap', { timeout: 10000 }, async (t) => {
+test('read-close: rejected CLI quit keeps closed while the watcher retries terminal reap', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, true, '', 450);
   const worker = fakeCliWithChild(t, f);
-  writeCliRole(f, 'cli-retry', 8);
+  writeCliRole(f, 'cli-retry', 1800); // The accelerated idle deadline is not the trigger under test.
   const job = await f.call('hud_create', { role: 'cli-retry', request_key: 'cli-retry', task: 'Synthetic cleanup retry.' });
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
+  const holdRetry = join(f.env.HOME, 'hold-reap');
+  fs.writeFileSync(holdRetry, '');
   fs.writeFileSync(join(f.env.HOME, 'reject-quit'), '');
   fs.writeFileSync(join(job.task_dir, 'fail-reap-once'), '');
   fs.writeFileSync(join(job.task_dir, 'reap-worker'), '');
   assert.match((await f.call('hud_read', { job: job.job })).digest.result, /^Synthetic /);
   const log = join(f.env.HUD_HOME, 'watch.log');
-  await until(() => fs.readFileSync(log, 'utf8').includes(`reap ${job.job} state=closed exit=1`));
+  await until(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes(`reap ${job.job} state=closed exit=1`), t.signal);
   assert.ok(procStat(worker.pid), 'the rejected quit and failed reap did not stop the worker');
   assert.equal(readCloseReaped(job), undefined);
   assert.equal(cliState(job.task_dir).state, 'closed');
   assert.ok(readCloseQuit(f, job));
-  await until(() => readCloseReaped(job));
+  fs.unlinkSync(holdRetry); // Outside the job directory: the watcher must schedule the retry itself.
+  await until(() => readCloseReaped(job), t.signal);
   assert.equal(reapAttempts(f, job), 2);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
-  await until(() => !procStat(worker.pid));
+  await until(() => !procStat(worker.pid), t.signal);
 });
 
 test('read-close: CLI pre-quit snapshot failure hands cleanup to the watcher and retries', { timeout: 10000 }, async (t) => {

@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { basename, join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 
 // Most callers invoke a named symlink; the two pi launchers pass their names explicitly.
@@ -604,6 +605,8 @@ if (command === 'pi-dispatch') {
     fs.unlinkSync(fail);
     process.exit(1);
   }
+  // Let the observer inspect the failed attempt even if the retry has already started.
+  while (fs.existsSync(join(process.env.HOME, 'hold-reap'))) await delay(20);
   if (fs.existsSync(join(dir, 'reap-worker'))) {
     try {
       process.kill(Number(fs.readFileSync(join(process.env.HOME, 'cli-pid'))), 'SIGTERM');

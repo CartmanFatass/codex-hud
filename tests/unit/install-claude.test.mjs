@@ -9,7 +9,9 @@ import test from 'node:test';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const commandLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
 
-test('Claude install maintains the global statusline and reverses only its changes', () => {
+test('Claude install maintains the global statusline and reverses only its changes', (t) => {
+  const inheritedMask = process.umask(0o022);
+  t.after(() => process.umask(inheritedMask));
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-claude-'));
   try {
     const home = path.join(temp, 'home');
@@ -96,6 +98,7 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     };
     fs.writeFileSync(settings, JSON.stringify(earlier, null, 2) + '\n');
     fs.mkdirSync(retired);
+    process.umask(0o077); // The installer must retain the existing mode, not its own creation mode.
     assert.match(run('--skip-build').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
     assert.ok(fs.statSync(retired).isDirectory());
     assert.deepEqual(

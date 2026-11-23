@@ -124,10 +124,11 @@ test('watcher settles other jobs, starts checks and handles failures during a pe
   assert.equal(child.exitCode, 0);
 });
 
-for (const outcome of ['closed tab', 'missing or renamed tab']) test(`watcher reaps an exited root without a snapshot once (${outcome}), idles, then archives it at retention`, { timeout: 10000 }, async (t) => {
+for (const outcome of ['closed tab', 'missing or renamed tab']) test(`watcher reaps an exited root without a snapshot once (${outcome}), idles, then archives it at retention`, { timeout: 60000 }, async (t) => {
   const f = fixture(t);
-  const root = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  const root = spawn(process.execPath, ['-e', 'process.stdin.resume()']);
   const start = procStat(root.pid).start;
+  root.stdin.end();
   await once(root, 'exit');
   const dir = f.job({ ...expired(), state: 'stopped' });
   save(dir, 'STATUS.json', { ...status(dir), slot: 'primary', task_dir: dir, pid: root.pid, pid_start_time: start });
@@ -137,7 +138,7 @@ for (const outcome of ['closed tab', 'missing or renamed tab']) test(`watcher re
 console.error('pi-role-reap: ' + dir + ': TAB synthetic-tab name changed or missing; not closing');
 process.exitCode = 1;`);
   const { child, exited } = f.start("process.env.HUD_WATCH_CLI_CHECK_MS = '30';");
-  await until(() => child.exitCode !== null || attempts(f, dir) >= 2);
+  await until(() => child.exitCode !== null || attempts(f, dir) >= 2, t.signal);
   assert.equal(attempts(f, dir), 1, f.log());
   assert.deepEqual(await exited, [0, null]);
   const stamp = reaped(dir);
