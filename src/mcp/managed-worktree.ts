@@ -23,12 +23,15 @@ export async function planWorktree(cwd: string, job: string, label: string): Pro
   return { main_root, root: pathFor(main_root, name), branch: `wt/${name}`, base_head };
 }
 
+// Writing a whole checkout can take far longer than a status probe on a loaded machine (5 s timed out on 2026-11-23).
+const CHECKOUT_TIMEOUT_MS = 120_000;
+
 export async function addWorktree(wt: ManagedWorktree) {
   const parent = dirname(wt.root);
   fs.mkdirSync(parent, { recursive: true });
   if (fs.realpathSync(parent) !== parent || fs.lstatSync(wt.root, { throwIfNoEntry: false }))
     throw new Error('worktree destination already exists or is redirected');
-  await git(wt.main_root, ['worktree', 'add', '--no-checkout', '-b', wt.branch, '--', wt.root, wt.base_head]);
+  await git(wt.main_root, ['worktree', 'add', '--no-checkout', '-b', wt.branch, '--', wt.root, wt.base_head], CHECKOUT_TIMEOUT_MS);
 }
 
 function linkMissingDependencies(source: string, target: string) {
@@ -43,8 +46,8 @@ function linkMissingDependencies(source: string, target: string) {
 export async function populateWorktree(wt: ManagedWorktree) {
   // Discover filters after branch registration: includeIf may differ in the new worktree.
   const filters = await neutralizeFilters(git, wt.root);
-  await git(wt.root, [...filters, 'read-tree', 'HEAD']);
-  await git(wt.root, [...filters, 'checkout-index', '--all']);
+  await git(wt.root, [...filters, 'read-tree', 'HEAD'], CHECKOUT_TIMEOUT_MS);
+  await git(wt.root, [...filters, 'checkout-index', '--all'], CHECKOUT_TIMEOUT_MS);
   const source = join(wt.main_root, 'node_modules'), link = join(wt.root, 'node_modules');
   if (!fs.statSync(source, { throwIfNoEntry: false })?.isDirectory()) return;
   const linkStat = fs.lstatSync(link, { throwIfNoEntry: false });
