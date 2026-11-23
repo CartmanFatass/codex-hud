@@ -20,7 +20,8 @@
       "dist-test/**",
       ".tsbuild/**",
       "tmp/**",
-      "hud-*.tar.gz"
+      "hud-*.tar.gz",
+      "node_modules/**"
     ]
   },
   "land": {
