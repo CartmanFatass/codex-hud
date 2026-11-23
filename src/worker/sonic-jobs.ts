@@ -1,9 +1,9 @@
 /** Shared sonic settlement and collection protocol for wait and both parent drivers. */
 import { jobFiles } from '../mcp/paths.js';
 import * as fs from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
-import type { JobStatus } from '../mcp/job-contracts.js';
+import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
 
 type SonicState = { state: 'failed'; reason: string } | { state: 'settled' | 'open'; reason?: undefined };
@@ -17,10 +17,27 @@ export function sonicState(dir: string): SonicState {
   return { state: ['idle_grace', 'closed', 'done'].includes(status?.state ?? '') ? 'settled' : 'open' };
 }
 
+function childIds(dir: string): string[] {
+  try { return fs.readdirSync(join(dir, jobFiles.sonic)); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return []; }
+}
+
+/** Resolve the durable job relationship, including after a headless parent's runner has exited. */
+export function headlessSonicChildren(dir: string) {
+  return childIds(dir).flatMap(id => {
+    if (!/^j[0-9a-f]{16}$/.test(id)) return [];
+    const child = join(dirname(dir), id);
+    try {
+      if (!fs.lstatSync(child).isDirectory()) return [];
+      const job = readJsonFile(join(child, jobFiles.job)) as Job;
+      if (job.job !== id || job.role !== 'sonic' || !job.headless || job.parent_job !== basename(dir)) return [];
+      return [{ id, dir: child, state: sonicState(child).state }];
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return []; }
+  });
+}
+
 export function sonicChildren(dir: string) {
-  let ids: string[];
-  try { ids = fs.readdirSync(join(dir, jobFiles.sonic)); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; ids = []; }
+  const ids = childIds(dir);
   const uncollected = [];
   let open = false;
   for (const id of ids) {

@@ -39,6 +39,7 @@ import {
 import { jobFiles } from '../paths.js';
 import { sendHistory, piReportSettlement } from '../pi-read-settlement.js';
 import { stopSonic } from '../sonic-process.js';
+import { headlessSonicChildren } from '../../worker/sonic-jobs.js';
 import { pickSonicThinking } from '../sonic-thinking.js';
 import {
   directory, readRow, hudHome, primary, jobs, readCachedStatus, findJob, settled, save, bundled,
@@ -1070,6 +1071,13 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
       message = `Answer to ${answerRequest}: ${message}\nOther decisions are in ${join(dir, jobFiles.qa)}.`;
   }
   if (pending.length) message = [message, ...pending.map(({ text }) => text)].filter(Boolean).join('\n\n');
+  // A previous runner's in-memory ready watches ended with its turn. Carry the facts,
+  // not the report bodies, into the native continuation; hud_sonic wait still collects.
+  if (current.headless) {
+    for (const child of headlessSonicChildren(dir)) if (!fs.existsSync(join(child.dir, 'sonic-collected'))) {
+      message += `\n\nSonic ${child.id} ${child.state === 'open' ? 'still running' : child.state}. Collect its result with hud_sonic (wait: ["${child.id}"]).`;
+    }
+  }
   const taskEntry = session.taskClient && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;
   // The reaper has finished the old turn. Publish a nonterminal status before replacing its ownership.
   writeCreateStatus(dir, { state: 'working' });

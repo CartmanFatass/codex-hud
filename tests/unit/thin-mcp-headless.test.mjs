@@ -19,6 +19,10 @@ import { randomUUID } from 'node:crypto';
 if (!process.argv.includes('--print')) process.exit(1);
 const { callWorkerTool } = await import(${JSON.stringify(moduleUrl('../../packages/hud-mcp/bin/worker-tools.mjs'))});
 if (process.argv.includes(join(process.env.HUD_JOB_DIR, 'sonic-session.jsonl'))) {
+  if (fs.existsSync(join(process.env.HOME, 'hold-sonic'))) {
+    const { until } = await import(${JSON.stringify(moduleUrl('../helpers/thin-mcp-harness.mjs'))});
+    await until(() => fs.existsSync(join(process.env.HUD_JOB_DIR, 'release-sonic')));
+  }
   await callWorkerTool('hud_report', { text: 'Synthetic sonic facts.' });
   process.exit(0);
 }
@@ -46,6 +50,7 @@ if (fs.existsSync(join(home, 'hold-' + gate))) {
 }
 await tools.hud_progress.execute('progress', { message: 'Synthetic progress.' });
 if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
+  if (fs.existsSync(join(home, 'hold-sonic'))) await tools.hud_sonic.execute('start', { task: 'Read a fact before the decision.' });
   const event = { toolName: 'hud_ask', input: { mode: 'async', question: 'Which value?', default: 'A' } };
   hooks.tool_call(event);
   assert.equal(event.input.mode, 'sync');
@@ -55,6 +60,12 @@ if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
   hooks.turn_end({ toolResults: [{ toolName: 'hud_ask' }] }, { abort: () => ended = true });
   assert.ok(ended);
 } else if (prompt !== 'No new report.') {
+  if (prompt.startsWith('Collect after pause.')) {
+    const child = fs.readdirSync(join(dir, '.sonic'))[0];
+    assert.ok(prompt.includes('Sonic ' + child + ' settled. Collect its result with hud_sonic'));
+    const collected = await tools.hud_sonic.execute('wait', { wait: [child], timeout_s: 0 });
+    assert.equal(collected.details.reports[0].body, 'Synthetic sonic facts.');
+  }
   if (prompt === 'Check C.') {
     const started = await tools.hud_sonic.execute('start', { task: 'Read a synthetic fact.' });
     const collected = await tools.hud_sonic.execute('wait', { wait: [started.details.job] });
@@ -114,6 +125,33 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.equal((await f.call('hud_close', { job: repair.job })).exit_code, 0);
   assert.equal(cliState(repair.task_dir).state, 'stopped');
   assert.ok(noTab(f));
+});
+
+test('a sonic survives its headless pi parent asking; resume carries ready input, stop reaps instead', async t => {
+  const f = await fixture(t);
+  f.overrideBin('pi', fakePi);
+  write(join(f.env.HOME, 'hold-sonic'), '');
+  write(join(f.env.HOME, 'ask'), '');
+  for (const stop of [false, true]) {
+    const job = await f.call('hud_create', { role: 'imp', mode: 'headless', task: 'Synthetic child ' + stop });
+    const dir = job.task_dir;
+    await until(() => cliState(dir)?.state === 'waiting_orchestrator');
+    const [id] = fs.readdirSync(join(dir, '.sonic')), child = join(f.env.HUD_HOME, 'jobs', id);
+    const runner = cliState(child).pid;
+    assert.ok(!isProcAlive(cliState(dir).pid) && isProcAlive(runner));
+    if (stop) {
+      assert.equal((await f.call('hud_close', { job: job.job })).exit_code, 0);
+      assert.equal(cliState(child).state, 'stopped');
+    } else {
+      write(join(child, 'release-sonic'), '');
+      await closed({ task_dir: child });
+      assert.ok(!fs.existsSync(join(child, 'sonic-collected')));
+      assert.equal((await f.call('hud_respond', { job: job.job, request_id: 'q1', answer: 'Collect after pause.' })).written, true);
+      await closed(job);
+      assert.ok(fs.existsSync(join(child, 'sonic-collected')));
+    }
+    assert.ok(!isProcAlive(runner));
+  }
 });
 
 test('queued pi sends run in order after a report and keep the original MCP task', async t => {

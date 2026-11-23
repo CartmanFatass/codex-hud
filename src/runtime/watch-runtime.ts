@@ -2,7 +2,7 @@
 import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT } from '../mcp/cli-judge.js';
 import { piSessionIdentity, resumeDeadline } from '../mcp/worker-resume.js';
-import { sonicChildren } from '../worker/sonic-jobs.js';
+import { headlessSonicChildren, sonicChildren } from '../worker/sonic-jobs.js';
 import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
 import { piReportSettlement } from '../mcp/pi-read-settlement.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
@@ -34,7 +34,7 @@ import { request } from '../runtime/herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
 import { pruneJobLogs, pruneProjectScratch } from './work-retention.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
-import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 
 const bundled = BUNDLED_ROOT;
 
@@ -354,6 +354,12 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     const identity = !job.cli && status.slot === 'headless' && piSessionIdentity(job, status.session_file);
     if (!job.cli && end.state === 'waiting_orchestrator' && (!identity || (status.session_id && identity.id !== status.session_id)))
       end = { state: 'failed', exit_reason: 'pi exited without the session needed to answer its question' };
+    // A pause (or a plain turn end without a report) is not a job close. On an
+    // actual close, hand remaining sonic jobs to their own reapers before publishing it.
+    if (status.slot === 'headless' && (stopped || end.state === 'closed')) {
+      for (const child of headlessSonicChildren(dir)) if (child.state === 'open')
+        writePrivateFile(join(child.dir, jobFiles.stopRequested), '', { mkdir: false });
+    }
     const waiting = !stopped && end.state === 'waiting_orchestrator';
     writeJsonAtomic(statusFile, { ...status, ...end, ...(identity && !status.session_id && { session_id: identity.id }), ...(stopped ? { state: 'stopped', exit_reason: 'stopped' } : {}),
       output_written: !waiting && fs.existsSync(join(dir, jobFiles.report)), ...(waiting ? {} : { settled_at: now, ended_at: now }),

@@ -17,6 +17,7 @@ import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cl
 import { REPORT_SETTLED_EXIT } from './cli-judge.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 import { progress } from '../worker/progress.js';
+import { headlessSonicChildren } from '../worker/sonic-jobs.js';
 import { monitorSonic, sonicLimitDefaults, type SonicLimits, type SonicStop } from './sonic-policy.js';
 
 export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file?: string; id?: string; initialId?: string }, limits?: SonicLimits) {
@@ -218,7 +219,7 @@ export async function killSonicRoot(dir: string, status: Partial<JobStatus>) {
   return root() === 'gone';
 }
 
-export async function stopSonic(dir: string) {
+async function stopOne(dir: string) {
   const read = () => (readJsonBounded(join(dir, jobFiles.status), 8192) as JobStatus).state;
   const terminal = (state: string) => ['closed', 'failed', 'stopped'].includes(state);
   if (hasHeadlessSends(dir) || !fs.existsSync(join(dir, jobFiles.status)) || !terminal(read())) {
@@ -235,4 +236,12 @@ export async function stopSonic(dir: string) {
       } });
   }
   return true;
+}
+
+export async function stopSonic(dir: string) {
+  if (!await stopOne(dir)) return false;
+  // No launcher remains to add children. A paused or already-ended turn may have
+  // children outside its last process tree; stop waits for their own verified reaps.
+  const children = headlessSonicChildren(dir).filter(child => child.state === 'open');
+  return (await Promise.all(children.map(child => stopOne(child.dir)))).every(Boolean);
 }

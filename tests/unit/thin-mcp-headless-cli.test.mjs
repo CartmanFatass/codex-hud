@@ -47,10 +47,6 @@ console.log(JSON.stringify({ type: 'assistant', event: 'step_update', session_id
 if (!prompt.startsWith('No init.')) console.log(JSON.stringify(init));
 console.log(JSON.stringify({ pid: process.pid, resumed, prompt: prompt.split('\\n')[0] }));
 if (prompt.startsWith('No init.') || prompt.startsWith('Wrong init.')) process.exit(0);
-if (!resumed && prompt.includes('Synthetic plain turn.')) {
-  await until(() => fs.existsSync(join(dir, 'release-first')));
-  process.exit(0);
-}
 const hud = JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers.hud;
 const child = spawn(hud.command, hud.args ?? [], { env: { ...process.env, ...hud.env }, stdio: ['pipe', 'pipe', 'inherit'] });
 const exited = once(child, 'exit');
@@ -67,11 +63,25 @@ try {
   };
   await call('hud_progress', { message: 'Synthetic headless CLI progress.' });
   if (!resumed) {
-    await call('hud_ask', { question: 'Which value?', default: 'A' });
-    fs.writeFileSync(join(dir, 'continued-after-ask'), 'Unexpected next action');
-    setInterval(() => {}, 1000); // The fake never volunteers to end the turn.
+    await call('hud_sonic', { task: 'Read a synthetic fact.' });
+    if (prompt.includes('Synthetic plain turn.')) await until(() => fs.existsSync(join(dir, 'release-first')));
+    else {
+      await call('hud_ask', { question: 'Which value?', default: 'A' });
+      fs.writeFileSync(join(dir, 'continued-after-ask'), 'Unexpected next action');
+      setInterval(() => {}, 1000); // The fake never volunteers to end the turn.
+    }
   } else {
     const turn = /turn: (\\S+)/.exec(prompt)[1];
+    if (prompt.startsWith('Choose B.') || prompt.startsWith('Synthetic next CLI turn.')) {
+      const [id] = fs.readdirSync(join(dir, '.sonic'));
+      const plain = prompt.startsWith('Synthetic next CLI turn.');
+      assert.ok(prompt.includes('Sonic ' + id + (plain ? ' still running.' : ' settled.')));
+      if (plain) fs.writeFileSync(join(process.env.HUD_HOME, 'jobs', id, 'release-sonic'), '');
+      const result = JSON.parse(await call('hud_sonic', { wait: [id] }));
+      assert.equal(result.reports[0].body, 'Synthetic implementation report.');
+    }
+    // CLI reports need not have collected all children. Closing cannot leak this runner.
+    if (prompt.startsWith('Check C.')) await call('hud_sonic', { task: 'Another synthetic fact.' });
     await call('hud_report', { turn, text: 'Synthetic report: ' + prompt.split('\\n')[0] });
   }
 } finally { child.stdin.end(); }
@@ -81,6 +91,7 @@ assert.deepEqual(await exited, [0, null]);
 test('working headless Claude resumes queued input after a plain turn end', async t => {
   const f = await fixture(t), rpc = taskRpc(f.rpc);
   f.overrideBin('claude', fakeCli('claude'));
+  write(join(f.env.HOME, 'hold-sonic'), '');
   const roles = join(f.env.HUD_HOME, 'roles');
   fs.mkdirSync(roles, { recursive: true });
   write(join(roles, 'frontend-imp.json'), JSON.stringify({ role: 'frontend-imp', harness: 'cli', agent: 'claude',
@@ -111,6 +122,7 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
   test(`${agent} headless runs one MCP-enabled process per question, answer, send and repair turn`, async t => {
     const f = await fixture(t);
     f.overrideBin(agent, fakeCli(agent));
+    write(join(f.env.HOME, 'hold-sonic'), '');
     const roles = join(f.env.HUD_HOME, 'roles');
     fs.mkdirSync(roles, { recursive: true });
     write(join(roles, `${role}.json`), JSON.stringify({ role, harness: 'cli', agent, can_continue: true,
@@ -131,6 +143,11 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
     });
     await wait('waiting_orchestrator');
     assert.ok(!fs.existsSync(join(dir, 'continued-after-ask')));
+    const [sonic] = fs.readdirSync(join(dir, '.sonic'));
+    const childDir = id => join(f.env.HUD_HOME, 'jobs', id);
+    assert.ok(isProcAlive(cliState(childDir(sonic)).pid));
+    write(join(childDir(sonic), 'release-sonic'), '');
+    await until(() => cliState(childDir(sonic))?.state === 'closed');
     const id = status().agent_session_id;
     assert.ok(id && !isProcAlive(status().pid));
     assert.equal(status().slot, 'headless');
@@ -141,6 +158,9 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
     assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Choose B\./);
     assert.equal((await f.call('hud_send', { job: job.job, text: 'Check C.' })).continuation, 'resumed');
     await wait('closed');
+    const leftover = childDir(fs.readdirSync(join(dir, '.sonic')).find(id => id !== sonic));
+    await until(() => cliState(leftover)?.state === 'stopped');
+    assert.ok(!isProcAlive(cliState(leftover).pid));
     const land = `import { dispatchLandRepair } from ${JSON.stringify(url('../../dist/mcp/thin-main.js'))};
       console.log(await dispatchLandRepair(process.argv[1], process.cwd(), 'Synthetic repair.', 'land:test', null));`;
     assert.equal(execFileSync(process.execPath, ['--input-type=module', '-e', land, job.job], { cwd: f.root, env: f.env, encoding: 'utf8' }).trim(), job.job);

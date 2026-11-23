@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   isActiveProcState as active,
@@ -121,6 +121,13 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
         const current = readProcStat(child.pid);
         // Check the child first, then recheck the parent's identity: a recycled PPID alone is not ancestry.
         if (current?.start !== child.start || current.ppid !== parent.pid || readProcStat(parent.pid)?.start !== parent.start) continue;
+        // detached:true creates a new session, but not a new PPID. A registered sonic
+        // runner owns its entire subtree; other detached helpers still belong to this turn.
+        if (slot === 'headless' && current.session === child.pid) {
+          const argv = readProcCmdline(child.pid), childDir = argv?.[2];
+          if (argv?.[1] === binScript('sonic-run') && childDir && dirname(childDir) === dirname(dir) &&
+              fs.existsSync(join(dir, jobFiles.sonic, basename(childDir)))) continue;
+        }
         parents.push(child);
         add(child);
       }
