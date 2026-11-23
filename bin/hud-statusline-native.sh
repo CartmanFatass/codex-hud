@@ -12,8 +12,33 @@ statusline_ts() {
   esac
 }
 
+# Only a verified agy process can share a cached frame. Its sh -c wrapper has a new PID each call.
+agy_identity() {
+  local pid=$PPID stat tail comm hop
+  local -a fields
+  for ((hop = 0; hop < 4; hop++)); do
+    [[ $pid =~ ^[1-9][0-9]*$ ]] && IFS= read -r stat < "/proc/$pid/stat" || return 1
+    tail=${stat##*) }; comm=${stat#* (}; comm=${comm%") $tail"}
+    IFS=' ' read -r -a fields <<< "$tail"
+    case $comm in
+      agy|antigravity) [[ ${fields[19]} =~ ^[0-9]+$ ]] || return 1; caller=$pid:${fields[19]}; return 0 ;;
+      sh|dash|bash|zsh|fish) pid=${fields[1]} ;;
+      *) return 1 ;;
+    esac
+  done
+  return 1
+}
+mode=(--launcher-v1 "$@")
+if (( $# == 0 )) || [[ $# == 1 && $1 == --agy-render ]]; then
+  caller=
+  if agy_identity 2>/dev/null || [[ ${1-} == --agy-render ]]; then
+    umask 077
+    mode=(--agy-launcher-v1 "$entry" "$caller")
+    set -- --agy-render # Even a missing binary must not send this caller's input to Claude's forwarder.
+  fi
+fi
 if [[ ! -x $native || $OSTYPE != linux* || $HOSTTYPE != x86_64 || ! ${EPOCHREALTIME:-} || -t 0 ]] ||
-   { (( $# )) && [[ $# != 2 || $1 != --width || ! $2 =~ ^[1-9][0-9]{0,2}$ || $2 -gt 500 ]]; } ||
+   { (( $# )) && [[ ${mode[0]} != --agy-launcher-v1 ]] && [[ $# != 2 || $1 != --width || ! $2 =~ ^[1-9][0-9]{0,2}$ || $2 -gt 500 ]]; } ||
    { [[ -t 1 && ! ${COLUMNS:-} =~ ^[1-9][0-9]*$ ]] && (( $# == 0 )); }; then
   statusline_ts "$@"
 fi
@@ -45,10 +70,23 @@ statusline_replay() {
   if ((${#nul_chunks[@]})); then printf '%s\0' "${nul_chunks[@]}"; fi
   printf '%s' "$chunk"
 }
+# A cache lookup does not need input. Keep the producer's pipe untouched until we have a complete frame.
+end=$'\n:end-hud-statusline-v1'
+if [[ ${mode[0]} == --agy-launcher-v1 && $caller ]] &&
+   frame=$(exec "$native" --agy-lookup-v1 "$entry" "$caller" </dev/null 2>/dev/null) && [[ $frame == hud-statusline-v1:*$'\n'*"$end" ]]; then
+  frame=${frame#hud-statusline-v1:}; action=${frame%%$'\n'*}; frame=${frame#*$'\n'}
+  if [[ $action == fresh ]]; then
+    printf '%s\n' "${frame%"$end"}"
+    LC_ALL=C IFS= read -r -d '' -n 65537 -t 1 ignored 2>/dev/null
+    exit 0
+  elif [[ $action =~ ^[a-f0-9]{64}$ ]] && setsid -f "$native" --agy-refresh-v1 "$entry" "$caller" "$action" >/dev/null 2>&1; then
+    printf '%s\n' "${frame%"$end"}"
+    exit 0
+  fi
+fi
 statusline_buffer
 # A killed, missing-loader or wrong-version renderer cannot leak half a frame.
-end=$'\n:end-hud-statusline-v1'
-if frame=$(exec "$native" --launcher-v1 "$@" 2>/dev/null < <(statusline_replay)) && [[ $frame == hud-statusline-v1:*"$end" ]]; then
+if frame=$(exec "$native" "${mode[@]}" 2>/dev/null < <(statusline_replay)) && [[ $frame == hud-statusline-v1:*"$end" ]]; then
   frame=${frame#hud-statusline-v1:}
   printf '%s\n' "${frame%"$end"}"
   exit 0

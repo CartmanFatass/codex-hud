@@ -1,3 +1,4 @@
+mod agy;
 mod config;
 mod json;
 mod quota;
@@ -187,6 +188,27 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
 }
 fn main() -> ExitCode {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
+    match args.as_slice() {
+        [flag, entry, caller] if flag == "--agy-lookup-v1" => {
+            return match agy::lookup(Path::new(entry), caller) {
+                Some(line) => frame(&line, true),
+                None => ExitCode::from(75),
+            };
+        }
+        [flag, entry, caller] if flag == "--agy-launcher-v1" => {
+            return match agy::serve(Path::new(entry), caller) {
+                Some(line) => frame(&line, true),
+                None => ExitCode::from(75),
+            };
+        }
+        [flag, entry, caller, stamp] if flag == "--agy-refresh-v1" => {
+            if agy::refresh(Path::new(entry), caller, stamp).is_none() {
+                agy::drain();
+            }
+            return ExitCode::SUCCESS;
+        }
+        _ => {}
+    }
     let launcher = args.first().is_some_and(|a| a == "--launcher-v1");
     if launcher {
         args.remove(0);
@@ -202,6 +224,9 @@ fn main() -> ExitCode {
     let Some(line) = execute(&args, &bytes) else {
         return ExitCode::from(75);
     };
+    frame(&line, launcher)
+}
+fn frame(line: &str, launcher: bool) -> ExitCode {
     let mut stdout = io::stdout().lock();
     let result = if launcher {
         writeln!(stdout, "hud-statusline-v1:{line}\n:end-hud-statusline-v1")

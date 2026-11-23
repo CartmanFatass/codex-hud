@@ -164,7 +164,7 @@ function localInstall(t) {
   const root = join(home, 'install with spaces'), localBin = join(root, 'bin'), localDist = join(root, 'dist');
   fs.mkdirSync(localBin, { recursive: true });
   fs.mkdirSync(join(localDist, 'native'), { recursive: true });
-  for (const file of ['hud-statusline', 'hud-statusline-cache.sh', 'hud-statusline-native.sh']) {
+  for (const file of ['hud-statusline', 'hud-statusline-native.sh']) {
     fs.copyFileSync(resolve('bin',file), join(localBin,file));
   }
   fs.symlinkSync(resolve('dist/cli'), join(localDist,'cli'));

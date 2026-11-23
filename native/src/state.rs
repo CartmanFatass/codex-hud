@@ -53,7 +53,7 @@ pub fn no_links(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
-fn regular(path: &Path, no_follow: bool) -> io::Result<(File, Metadata)> {
+pub fn regular(path: &Path, no_follow: bool) -> io::Result<(File, Metadata)> {
     // Linux O_NONBLOCK plus optional O_NOFOLLOW; do not hang on a FIFO even during a replacement.
     let file = OpenOptions::new()
         .read(true)
@@ -83,7 +83,7 @@ fn bytes(path: &Path, limit: usize, private: bool, no_follow: bool) -> io::Resul
     }
     Ok(out)
 }
-fn own_uid() -> Option<u32> {
+pub fn own_uid() -> Option<u32> {
     let text = fs::read_to_string("/proc/self/status").ok()?;
     text.lines()
         .find_map(|l| l.strip_prefix("Uid:"))?

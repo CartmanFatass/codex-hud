@@ -1164,7 +1164,7 @@ does not fit; nothing open, nothing pinned. No clock, task count, hooks count, t
   other looks, forwarding, admin commands and `--details`/`--source` use the TypeScript renderer. Claude quota facts
   are still published locally; stdin is not stored for replay. A source install can build the binary with Cargo; a
   Linux x64 release built with Cargo carries it, so Cargo is not needed on the receiving machine.
-- Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same worker zone (this pane's jobs, read as Claude's is), without reading its transcript or forwarding its payload. `--details --lang en|zh` also shows reported input and output totals. The Linux launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws; a change may appear on the next refresh rather than immediately.
+- Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same worker zone (this pane's jobs, read as Claude's is), without reading its transcript or forwarding its payload. `--details --lang en|zh` also shows reported input and output totals. With the Linux x64 native binary, the launcher reuses the last line for the same agy process and working directory, refreshing roughly once a second during redraws. A change may appear on the next refresh; without the binary, TypeScript renders each call.
 - Codex bar: `~N t/s` shows the existing output-rate estimate from the rollout.
 
 Settings Bar style: `line`, `p10k`, `gauge` (Gauge Plates), `tide`, `micro`, `stacked`,

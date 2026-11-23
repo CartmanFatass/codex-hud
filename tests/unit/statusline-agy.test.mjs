@@ -199,8 +199,8 @@ function agyCaller(t, shim, env) {
     import { createInterface } from 'node:readline';
     process.title = 'agy';
     for await (const line of createInterface({ input: process.stdin })) {
-      const { input, cwd } = JSON.parse(line);
-      const child = spawnSync('sh', ['-c', '"$1"; exit $?', 'sh', ${JSON.stringify(shim)}], {
+      const { input, cwd, args } = JSON.parse(line);
+      const child = spawnSync('sh', ['-c', '"$@"; exit $?', 'sh', ${JSON.stringify(shim)}, ...args], {
         input, cwd, encoding: 'utf8', timeout: 10000,
       });
       console.log(JSON.stringify({ status: child.status, stdout: child.stdout, stderr: child.stderr }));
@@ -209,8 +209,8 @@ function agyCaller(t, shim, env) {
   const exited = new Promise((done) => caller.once('exit', done));
   t.after(async () => { caller.stdin.end(); await exited; });
   const replies = createInterface({ input: caller.stdout })[Symbol.asyncIterator]();
-  return async (value, cwd) => {
-    caller.stdin.write(JSON.stringify({ input: typeof value === 'string' ? value : JSON.stringify(value), cwd }) + '\n');
+  return async (value, cwd, args = []) => {
+    caller.stdin.write(JSON.stringify({ input: typeof value === 'string' ? value : JSON.stringify(value), cwd, args }) + '\n');
     const reply = await replies.next();
     assert.ok(!reply.done, 'fake agy exited before replying');
     const { status, stdout, stderr } = JSON.parse(reply.value);
@@ -222,14 +222,10 @@ function agyCaller(t, shim, env) {
 }
 
 test('Antigravity cache revalidates by age, isolates callers and recovers from corruption or a dead worker', { timeout: 60000 }, async (t) => {
-  const helpers = spawnSync('bash', ['-c', 'for c in flock setsid sha256sum; do command -v "$c" >/dev/null || exit 1; done; command -v timeout'], { encoding: 'utf8' });
-  if (helpers.status !== 0)
-    return t.skip('Linux cache helpers unavailable');
+  if (!fs.existsSync(resolve('dist/native/hud-statusline'))) return t.skip('native cache unavailable');
+  const helpers = spawnSync('sh', ['-c', 'command -v setsid >/dev/null && command -v timeout'], { encoding: 'utf8' });
+  if (helpers.status !== 0) return t.skip('Linux refresh helpers unavailable');
   const { home, hud, env } = fixture(t);
-  // Drive cache age from the fixture, not from the time it takes to schedule three processes.
-  const now = 1795000000000;
-  env.BASH_ENV = join(home, 'cache-clock');
-  fs.writeFileSync(env.BASH_ENV, `unset EPOCHREALTIME\nEPOCHREALTIME=${now / 1000}.000000\n`);
   // This scenario tests caching, not the production 2 s cold-render cutoff. Keep a watchdog
   // but allow Node to start under load; the installed launcher and timeout are unchanged.
   const helpersDir = join(home, 'bin');
@@ -252,8 +248,13 @@ test('Antigravity cache revalidates by age, isolates callers and recovers from c
   const changed = { ...payload, quota: { 'gemini-5h': bucket(0.25, 7143) } };
   const next = `${plain} │ 5h 25% left`;
   assert.equal(await fromAgy(changed), wide, 'returns the previous line within the fresh interval');
-  const makeStale = () => fs.writeFileSync(cache, fs.readFileSync(cache, 'utf8').replace(
-    /^([a-f0-9]+ [a-f0-9]+) \d+ /, `$1 ${now - 1500} `));
+  assert.equal(await fromAgy(changed, undefined, ['--agy-render']), wide, 'explicit agy render shares the verified caller cache');
+  const makeStale = (age = 1500) => fs.writeFileSync(cache, fs.readFileSync(cache, 'utf8').replace(
+    /^([a-f0-9]+ [a-f0-9]+) \d+ /, `$1 ${Date.now() - age} `));
+  makeStale(3100);
+  assert.equal(await fromAgy(changed), next, 'a frame beyond the stale cap is never served');
+  fs.writeFileSync(join(hud, 'config.json'), '{}');
+  assert.equal(await fromAgy(payload), wide, 'config changes invalidate even a fresh frame');
   makeStale();
   const seen = await fromAgy(changed);
   assert.ok(seen === wide || seen === next, `got ${seen}`);

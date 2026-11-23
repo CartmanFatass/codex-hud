@@ -782,7 +782,7 @@ reviewer `⚖`、其它角色 `•`、sonic `⚡`（`⚒3  ✦2  ◈1  ⚡4`）�
   工作摘要或缓存缺失、过期，原生程序不可用，有实时转录通知，或使用其它样式、转发、管理命令、`--details`、`--source` 时，回退到 TypeScript。
   Claude 额度数据仍发布到本地；标准输入不落盘。源码安装可用 Cargo 构建原生程序；用 Cargo 打包的 Linux x64 发布归档已包含它，安装机器不需要 Cargo。
 - Codex 状态行：`~N t/s` 显示从会话日志得出的现有输出速率估值。
-- Antigravity 状态行：同一个 `hud-statusline` 命令显示模型、上下文、可识别的额度（如 `5h 80% left`，按当前模型选 Gemini 或第三方模型那组）以及同样的工作者区（读取本窗格的任务，方式与 Claude 相同），不读取其转录，也不转发其输入。`--details --lang en|zh` 另显示输入／输出词元总数。Linux 启动器对同一 agy 进程和工作目录复用上一次结果，重绘时约每秒刷新一次，变化可能在下次刷新时才出现。
+- Antigravity 状态行：同一个 `hud-statusline` 命令显示模型、上下文、可识别的额度（如 `5h 80% left`，按当前模型选 Gemini 或第三方模型那组）以及同样的工作者区（读取本窗格的任务，方式与 Claude 相同），不读取其转录，也不转发其输入。`--details --lang en|zh` 另显示输入／输出词元总数。有 Linux x64 原生二进制时，启动器对同一 agy 进程和工作目录复用上一次结果，重绘时约每秒刷新一次，变化可能在下次刷新时才出现。没有该二进制时，每次都由 TypeScript 渲染。
 
 设置样式：`line`、`p10k`、`gauge`、`tide`、`micro`、`stacked`、`headline`、`triptych`。
 Stacked 在 Claude/pi 为两行，Codex 回退 line；Tide 底色需 truecolor。文字图标／无色仍保留含义。
