@@ -1,11 +1,11 @@
 /** Statusline/footer Work counts from the same passive jobs as the panel. */
 import type { OwnerWorker, WorkLane } from '../collectors/workboard-types.js';
 import type { WorkSummaryScope } from '../collectors/work-summary-snapshot.js';
-import { projectWorkCard } from '../collectors/work-card.js';
+import { workState } from '../collectors/work-job.js';
 import { truncateAnsi } from './colors.js';
 import type { BarWorker } from './layout/bar-fields.js';
 const wordOf = (worker: OwnerWorker, now: number): string => {
-  const state = projectWorkCard(worker, now).state;
+  const state = workState(worker, now);
   return worker.work?.failed
     ? 'failed'
     : state === 'needs-you'

@@ -102,7 +102,7 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly modelSentence?: string;
   /** Newest working session, selected/stat'ed once by the thin-job collector. */
   readonly sessionFile?: { readonly path: string; readonly at: number };
-  readonly work?: import('./work-card.js').WorkFacts;
+  readonly work?: import('./work-job.js').WorkFacts;
   readonly id: string;
   readonly laneId: string;
   /** Only real tree nodes have an Inspector/native navigation mapping. */

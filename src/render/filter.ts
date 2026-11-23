@@ -5,14 +5,14 @@
  * clears it; leaving the view (tab, page, project, Help, Inspector) clears it. Home and Project each own their filter.
  */
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
-import { projectWorkCard } from '../collectors/work-card.js';
+import { projectWorkJob } from '../collectors/work-job.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { ledgerTasks } from '../collectors/acceptance-tasks.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { activeFilter, activeTabState, projectPage, type ViewFilter } from './monitor-state.js';
-import { failed } from './work-card.js';
+import { failed } from './work-job-row.js';
 import { boardRow, mark, type FooterHints } from './workboard-rows.js';
 import { monitorText, pair } from './monitor-text.js';
 import { theme } from './colors.js';
@@ -38,7 +38,7 @@ const has = (needle: string, ...fields: (string | null | undefined)[]) => fields
 export function homeMatcher(board: WorkboardSnapshot, needle: string, now: number, stall?: number) {
   const label = new Map(board.lanes.map((l) => [l.id, l.label]));
   const own = (w: OwnerWorker) => {
-    const card = projectWorkCard(w, now, stall), { plain, spans } = keywordMarks(monitorText(w.modelSentence ?? ''));
+    const card = projectWorkJob(w, now, stall), { plain, spans } = keywordMarks(monitorText(w.modelSentence ?? ''));
     const word = failed(card) ? 'failed' : w.state === 'stopped' ? 'stopped' : card.state === 'needs-you' ? 'asking'
       : card.state === 'stalled' ? 'stalled' : card.state === 'in-progress' ? 'working' : 'done';
     return has(needle, label.get(w.laneId), card.title, card.role, w.harness, word, t(word), w.reportMeta?.summary,

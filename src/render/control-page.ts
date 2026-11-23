@@ -4,19 +4,15 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { placeDestination, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { controlRoleItem, controlRoleOf, type ControlViewState } from './monitor-state.js';
-import { effectiveModel, glyph, modelFieldRows, needsAttention, placeRows, placeTarget, presetName, presetTag,
-  radarFacts, radarRows, radarSummary, roleModelDestination, roleName, roleToday, sourceLabel } from './control-view.js';
+import { effectiveModel, glyph, modelFieldRows, needsAttention, placeRows, placeTarget, presetName,
+  radarFacts, radarRows, radarSummary, roleModelDestination, roleName, roleToday, sourceLabel, harnessErrorRow } from './control-view.js';
 import { projectItem } from './project-view.js';
-import { projectSplitScene, type Shown } from './split-project.js';
 import { boardRow, footerLayout, kvRows, mark, pack, section, type FooterHints } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { age } from './monitor-labels.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
-import { harnessErrorRow } from './harness-page.js';
-import { presetSheet } from './preset-input.js';
-import { chainSheet, roleModelIndex, takesModel } from './chain-input.js';
-import { splitPreviewRoom } from './split-frame.js';
+import { roleModelIndex, takesModel } from './chain-input.js';
 
 const muted = theme.board.muted;
 const target = placeDestination;
@@ -87,7 +83,7 @@ export function roleRows(role: RoleFact, width: number, now: number): MonitorRow
     .flatMap((message) => flowLines(message, width - 6).map((part) => ({ ...extra, text: fit(`      ${theme.board.attention(part)}`, width) })))];
 }
 
-function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: number): MonitorRow[] {
+export function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: number): MonitorRow[] {
   const today = radarFacts(data.radar).roles.find(([name]) => name === role.role)?.[1];
   const source = `${sourceLabel(role.source)} · ${role.source === 'project' ? '.hud/roles/' : ''}${basename(role.path)}`;
   const locked = t('project file · read-only here');
@@ -138,7 +134,7 @@ function jobUsageRows(stats: ProjectSnapshot['jobStats'], width: number): Monito
     ...rows(roles, 'By role'), ...rows(places, 'By role / place / mode')];
 }
 
-function controlList(data: ProjectSnapshot, view: ControlViewState, width: number, now: number, classic: boolean): MonitorRow[] {
+export function controlList(data: ProjectSnapshot, view: ControlViewState, width: number, now: number, classic: boolean): MonitorRow[] {
   const needs = (r: RoleFact) => r.optionalEnabled !== false && (!!r.missingPreset || needsAttention(r));
   const attention = data.roles.filter(needs).sort((a, b) => Number(!active(a)) - Number(!active(b)));
   const healthy = (['roles', 'project', 'browser'] as const).flatMap((group) =>
@@ -196,27 +192,6 @@ function controlList(data: ProjectSnapshot, view: ControlViewState, width: numbe
 
 export const controlRows = (data: ProjectSnapshot | undefined, view: ControlViewState, width: number, now: number) =>
   data ? controlList(data, view, width, now, true) : [boardRow(t('Loading…'))];
-
-export function controlScene(data: ProjectSnapshot, state: MonitorState, listWidth: number, now: number, previewWidth: number, height: number, notes: number) {
-  const view = state.control.roles, list = controlList(data, view, listWidth, now, false);
-  const preview = (item?: string): Shown => {
-    const role = data.roles.find((r) => controlRoleItem(r.role) === item);
-    const hints = controlHints(data, item);
-    return role ? { label: roleName(role), right: presetTag(role.preset), rows: roleDetail(data, role, previewWidth, now), hints }
-      : { label: '', rows: [], hints };
-  };
-  const hints = controlHints(data), overlay = state.overlay;
-  const preset = overlay?.kind === 'control-preset' ? overlay.sheet : undefined;
-  const scene = projectSplitScene(view.nav, { list, preview, hints, start: list.find((r) => r.item)?.item },
-    `control|${state.selectedProject ?? ''}|${preset?.mode ?? ''}`);
-  if (overlay?.kind === 'control-chain' || overlay?.kind === 'control-preset') {
-    const room = splitPreviewRoom({ ...scene, compact: true }, state.prefs.splitRatio, scene.nav.split.focus, height, notes);
-    const sheet = overlay.kind === 'control-chain' ? chainSheet(overlay, data.models, previewWidth, room, now)
-      : presetSheet(overlay.sheet, previewWidth, room);
-    return { ...scene, rule: sheet.rule, preview: sheet.rows, sub: sheet.cursor, hints: sheet.hints, compact: true };
-  }
-  return scene;
-}
 
 function roleActions(role: RoleFact, width: number): MonitorRow[] {
   const actions = [

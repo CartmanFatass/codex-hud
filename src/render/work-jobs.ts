@@ -13,7 +13,7 @@ import { activeFlow, currentWorker, unattendedFailure } from './work-visibility.
 import { isUnreadReport, laneSonicRunning, mainLaneWorkers, sonicBadge, sonicChildrenRunning, workerModelName } from './worker-roster.js';
 import { roleIcon } from './model-glyphs.js';
 import { iconSet } from './hud-config.js';
-import { roleInk } from './project-view.js';
+import { jobTitle, roleInk } from './work-job-row.js';
 import { fit, flowLines, monitorText, pair } from './monitor-text.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
 import { mark, minuteAge, stateMark } from './workboard-rows.js';
@@ -54,13 +54,6 @@ function foldKind(w: OwnerWorker, lane: WorkLane, c: Ctx): FoldKind | undefined 
   if (!currentWorker(w, c.now, c.state.prefs) || cardExpanded(c.state, targetKey({ kind: 'worker', laneId: lane.id, workerId: w.id }))) return undefined;
   if (w.settledAt === null) return w.state === 'queued' ? 'queued' : undefined;
   return unattendedFailure(w) || isUnreadReport(w) || activeFlow(w) || w.flow?.state === 'failed' || sonicChildrenRunning(c.pool, w.id) ? undefined : 'done';
-}
-
-/** The ticket's heading, else the brief's (a child under its lane header leads with the brief's); raw task text only when nothing else names the job. */
-export function jobTitle(w: OwnerWorker, child: boolean): string {
-  const heading = child ? (w.briefTitle ?? w.ticketTitle) : (w.ticketTitle ?? w.briefTitle);
-  const text = monitorText(heading ?? (w.displayId ? '' : w.task)), id = monitorText(w.displayId ?? '');
-  return id && text.startsWith(id) ? text.slice(id.length).replace(/^[\s:–—-]+/, '') : text;
 }
 
 /** `scouting · 1m`: a scouted dispatch's step and the time in it, under the job's row. */

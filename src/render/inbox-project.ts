@@ -10,11 +10,11 @@ import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './mon
 import {
   PAGE_WORD, PROJECT_PAGES, acceptedText, asksYou, barText, clampClean, clampLines,
   currentRows, featureCodes, inFlight, landedNewest, pageRows, pageSummary, progressSegments, projectOrder,
-  roleInk, sinceText, sliceInk, ticketPreview, projectOriginal, tryCount, unlisted, unsliced, waitingRows, type ProjectPage,
+  sinceText, sliceInk, ticketPreview, projectOriginal, tryCount, unlisted, unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
 import { glyph, roleName } from './control-view.js';
 import { HUB_HINTS, inboxRolePreview, slicePreview, type Part, type Shown } from './split-project.js';
-import { jobTitle } from './work-jobs.js';
+import { jobTitle, roleInk } from './work-job-row.js';
 import { sonicBadge, sonicChildrenRunning } from './worker-roster.js';
 import { boardRow, mark, minuteAge, section } from './workboard-rows.js';
 import { cutWords, fit, monitorText, pair } from './monitor-text.js';

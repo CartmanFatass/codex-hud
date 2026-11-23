@@ -3,8 +3,9 @@ import type { WorkboardSnapshot, WorkLane, OwnerWorker } from '../collectors/wor
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { cardExpanded, failed, milestoneLine, pulseLine, renderWorkCard, workPhaseText } from './work-card.js';
-import { boardRow, mark, stateMark } from './workboard-rows.js';
+import { cardExpanded, milestoneLine, pulseLine, renderWorkCard, workPhaseText } from './work-card.js';
+import { laneStrip } from './work-job-row.js';
+import { boardRow } from './workboard-rows.js';
 import { pair, monitorText } from './monitor-text.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { currentWorker, foldedWorker, unattendedFailure, activeFlow } from './work-visibility.js';
@@ -40,57 +41,7 @@ export function orderedLanes(board: WorkboardSnapshot, now: number, steady = fal
   return [...board.lanes].sort((a, b) => rank(a) - rank(b));
 }
 
-/**
- * A lane's right side: one state glyph per non-child job, oldest dispatch first (`✓●` unread, `✓` done, `◉` running,
- * `?` asking, `✗` failed, `○` queued, `◷` stalled, `−` stopped). Older jobs that do not fit `room` are `+N`.
- */
-export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room: number, extra = ''): string {
-  const main = mainLaneWorkers(lane);
-  const cards = [...main]
-    .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
-    .map((w) => projectWorkCard(w, now, state.prefs.cardStallMinutes));
-  if (!cards.length) return extra;
-  const glyph = {
-    unread: theme.board.success(stateMark.unread()),
-    done: theme.board.success(stateMark.done()),
-    run: theme.board.active(mark('◉', '@')),
-    queue: theme.board.muted(stateMark.queued()),
-    stall: theme.board.stalled(stateMark.stalled()),
-    ask: theme.board.attention(stateMark.asking()),
-    fail: theme.board.danger(stateMark.failed()),
-    stop: theme.board.muted(stateMark.stopped()),
-  };
-  const tokens = cards.map((c) => {
-    const kind =
-      c.worker.state === 'stopped'
-        ? 'stop'
-        : failed(c)
-          ? 'fail'
-          : c.state === 'needs-you'
-            ? 'ask'
-            : c.state === 'queued'
-              ? 'queue'
-              : c.state === 'stalled'
-                ? 'stall'
-                : c.state === 'in-progress'
-                  ? 'run'
-                  : isUnreadReport(c.worker)
-                    ? 'unread'
-                    : 'done';
-    const painted = glyph[kind];
-    return c.worker.superseded ? theme.board.muted(stripAnsi(painted)) : painted;
-  });
-  const tail = extra ? ' ' + extra : '';
-  let keep = tokens.length;
-  const measure = (n: number) => {
-    const slice = tokens.slice(-n);
-    const olderW = n < tokens.length ? String(tokens.length - n).length + 2 : 0;
-    return olderW + slice.reduce((sum, tok) => sum + visualLength(tok), 0) + Math.max(0, slice.length - 1);
-  };
-  while (keep > 1 && measure(keep) + visualLength(tail) > room) keep--;
-  const older = tokens.length - keep ? theme.board.muted(`+${tokens.length - keep}`) + ' ' : '';
-  return older + tokens.slice(-keep).join(' ') + tail;
-}
+export { laneStrip } from './work-job-row.js';
 
 /** A lane header's phase: a thin-job lane reads its non-child workers (`review r1 · fixing`, `landing`); others use their own. */
 export function lanePhase(lane: WorkLane, visibleMain: readonly OwnerWorker[], now: number): string {

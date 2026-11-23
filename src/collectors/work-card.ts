@@ -1,77 +1,10 @@
-/** Pure work presentation. These facts never change execution, wait or acceptance. */
-import type { OwnerWorker, EvidenceRef } from './workboard-types.js';
+/** Legacy card projection and native workers. */
+import type { OwnerWorker } from './workboard-types.js';
 import type { SubagentTreeNode } from '../types.js';
-export type WorkState = 'needs-you' | 'in-progress' | 'queued' | 'awaiting-acceptance' | 'stalled' | 'done';
-export interface WorkFacts {
-  readonly episode: string;
-  readonly activityAt: number | null;
-  readonly activityBasis: 'producer' | 'observed' | 'unknown';
-  readonly signature: string;
-  readonly phases: readonly string[];
-  readonly request: boolean;
-  readonly requestId?: string;
-  readonly requestInfo?: {
-    /** Display overlay only; answer keys always select from the original options below. */
-    readonly display?: import('./work-artifacts.js').QuestionFields;
-    readonly id: string;
-    readonly question: string;
-    readonly suggested: string;
-    readonly options: readonly string[];
-    readonly context?: string;
-    readonly evidence?: EvidenceRef;
-  };
-  readonly failed: boolean;
-  readonly result: boolean;
-  readonly facadeClosed?: boolean;
-  readonly facadeClosedAt?: number | null;
-  readonly reason?: string;
-}
-export interface WorkCard {
-  readonly state: WorkState;
-  readonly role: string;
-  readonly title: string;
-  readonly phases: readonly string[];
-  readonly reason: string | null;
-  readonly elapsedMinutes: number | null;
-  readonly inactivityMinutes: number | null;
-  readonly worker: OwnerWorker;
-}
-export const workMinute = (at: number | null | undefined, now: number): number | null =>
-  typeof at === 'number' && Number.isFinite(at) ? Math.max(0, Math.floor((now - at) / 60000)) : null;
-export function projectWorkCard(worker: OwnerWorker, now: number, stallMinutes = 10): WorkCard {
-  const w = worker.work;
-  const result = worker.settledAt !== null;
-  const inactive = workMinute(w?.activityAt, now);
-  const state: WorkState =
-    worker.homeNeedsHuman || (w?.failed && !worker.failureObserved && !worker.superseded)
-      ? 'needs-you'
-      : worker.state === 'queued'
-        ? 'queued'
-        : result
-          ? w?.facadeClosed
-            ? 'done'
-            : 'awaiting-acceptance'
-          : worker.stale || (inactive !== null && inactive >= stallMinutes)
-            ? 'stalled'
-            : 'in-progress';
-  return {
-    state,
-    role: worker.role || 'agent',
-    title: worker.task,
-    phases: w?.phases ?? [],
-    reason: w?.reason ?? null,
-    elapsedMinutes: workMinute(
-      worker.homeNeedsHuman
-        ? worker.humanEndedAt
-        : state === 'stalled'
-          ? w?.activityAt
-          : (worker.settledAt ?? worker.startedAt),
-      now
-    ),
-    inactivityMinutes: inactive,
-    worker,
-  };
-}
+
+export { projectWorkJob as projectWorkCard, workMinute } from './work-job.js';
+export type { WorkJob as WorkCard, WorkFacts, WorkState } from './work-job.js';
+
 /** A native card has no invented phase strip or facade closure. */
 export function nativeWorker(node: SubagentTreeNode, laneId = `native:${node.id}`): OwnerWorker {
   const start = node.turnStartedAt?.getTime() ?? node.startedAt?.getTime() ?? null;

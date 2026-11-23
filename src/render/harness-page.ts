@@ -7,7 +7,7 @@ import { boardRow, footerLayout, kvRows, mark, section, type FooterHints } from 
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
-import { presetTag } from './control-view.js';
+import { harnessErrorRow, presetTag } from './control-view.js';
 
 const GROUPS = [['runner', 'Runner'], ['cli', 'CLI agents'], ['browser', 'Browser tools'], ['provider', 'Pi providers']] as const;
 const muted = theme.board.muted;
@@ -34,13 +34,6 @@ function switchText(h: HarnessSwitchFact, width: number, showPresence = false): 
 function switchRow(h: HarnessSwitchFact, width: number, restore = false): MonitorRow {
   return { text: switchText(h, width, h.off),
     item: restore ? `control:restore:${h.id}` : harnessItem(h.id), harnessOff: h.off };
-}
-
-export function harnessErrorRow(data: ProjectSnapshot, width: number): MonitorRow[] {
-  return data.harnessSwitchError ? [{
-    text: fit(theme.board.attention('! ') + t('Invalid or unreadable harnesses.json'), width),
-    files: [data.harnessSwitchError], item: 'project:file:harnesses.json',
-  }] : [];
 }
 
 export function harnessRows(data: ProjectSnapshot, view: ControlViewState, width: number): MonitorRow[] {

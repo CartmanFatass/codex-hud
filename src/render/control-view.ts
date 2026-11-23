@@ -19,6 +19,12 @@ export const glyph = (state: PlaceState) => ({
   off: () => theme.board.muted(mark('⊘', 'x')),
   missing: () => theme.board.muted(mark('−', '-')),
 })[state]();
+export function harnessErrorRow(data: ProjectSnapshot, width: number): MonitorRow[] {
+  return data.harnessSwitchError ? [{
+    text: fit(theme.board.attention('! ') + t('Invalid or unreadable harnesses.json'), width),
+    files: [data.harnessSwitchError], item: 'project:file:harnesses.json',
+  }] : [];
+}
 /** A role needs the owner when one of its places is exhausted or none can run. Healthy roles are the rest. */
 export const needsAttention = (role: RoleFact) =>
   role.places.some((p) => p.state === 'exhausted') || !role.places.some((p) => p.state === 'active');

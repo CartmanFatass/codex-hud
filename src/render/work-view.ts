@@ -23,7 +23,8 @@ import { paintSplit, splitPreviewRoom, type SplitScene } from './split-frame.js'
 import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 import { controlShown, expShown, mainTabs } from './main-tabs.js';
-import { controlHeader, controlHints, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
+import { controlHeader, controlHints, controlRows, presetFooterControls, roleRows } from './control-page.js';
+import { controlScene } from './split-control.js';
 import { presetSheet } from './preset-input.js';
 import { chainSheet } from './chain-input.js';
 import { glyph } from './control-view.js';

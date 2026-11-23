@@ -4,7 +4,6 @@ import type { MonitorRow } from './monitor.js';
 import { theme, visualLength } from './colors.js';
 import { displayConfig } from './hud-config.js';
 import { pair, monitorText, fit, flowLines } from './monitor-text.js';
-import { ageText } from './work-card.js';
 import { t } from './i18n.js';
 export const asciiBoard = () => displayConfig().icons === 'text';
 /** A mark in the icon set in use; `nerd` is the Font Awesome glyph where one is chosen (as `\uXXXX`), else the Unicode mark. */
@@ -24,6 +23,12 @@ export const stateMark = {
 };
 export const boardCursor = (text: string) =>
   theme.board.selected(text.replace(/\x1b\[48;[0-9;]+m|\x1b\[38;2;25;21;13m/g, ''));
+export function ageText(minutes: number, padMinutes = false): string {
+  const rest = minutes % 60;
+  return minutes < 60 ? t('{n}m', { n: minutes }) : t('{h}h{m}m', {
+    h: Math.floor(minutes / 60), m: padMinutes ? String(rest).padStart(2, '0') : rest,
+  });
+}
 export function minuteAge(at: number | null, now: number): string {
   return at === null ? '' : ageText(Math.max(0, Math.floor((now - at) / 60000)));
 }

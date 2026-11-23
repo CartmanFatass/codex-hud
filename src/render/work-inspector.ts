@@ -1,11 +1,13 @@
-/** Expanded Home cards, honest local facts and openable workflow files. No I/O. */
+/** Job details, local facts and openable workflow files. No I/O. */
 import { OUTPUT_ROWS } from '../collectors/headless-output.js';
 import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-types.js';
-import { targetKey } from '../collectors/workboard-types.js';
-import { projectWorkCard } from '../collectors/work-card.js';
+import { projectWorkJob } from '../collectors/work-job.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { ageText, flowSummary, renderWorkCard, requestLines, questionOriginalRows, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-card.js';
+import { flowSummary, jobDetailRows, requestLines, questionOriginalRows, stemLines, workPhaseText,
+  labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-job-detail.js';
+import { failed, laneStrip, renderJobRow, workStateGlyph, workStateInk } from './work-job-row.js';
 import {
+  ageText,
   kvRows,
   section,
   itemRow,
@@ -17,7 +19,6 @@ import {
 import { theme } from './colors.js';
 import { monitorText, fit } from './monitor-text.js';
 import { providerMark } from './providers.js';
-import { laneStrip } from './work-lanes.js';
 import { t } from './i18n.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { formatTokenCount } from './lines/activity-line.js';
@@ -44,7 +45,7 @@ function facts(entries: [string, string][], width: number): MonitorRow[] {
       rows.push(boardRow(fit(parts[i][j]?.text ?? '', half) + fit(parts[i + 1]?.[j]?.text ?? '', width - half)));
   return rows;
 }
-/** A headless job has no tab to look at: its newest output, one row per line, under the card (auto-route/04). */
+/** A headless job has no tab to look at: show its newest output, one row per line. */
 function outputRows(worker: OwnerWorker, width: number): MonitorRow[] {
   const { output } = worker;
   if (!output) return [];
@@ -63,20 +64,19 @@ export function workInspectorRows(
   now: number,
   _heading = true
 ): MonitorRow[] {
-  const card = projectWorkCard(worker, now, state.prefs.cardStallMinutes),
-    target: WorkTarget = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  const expanded = { ...state, home: { ...state.home, expanded: new Set([targetKey(target)]) } };
+  const job = projectWorkJob(worker, now, state.prefs.cardStallMinutes);
+  const heading = boardRow(theme.board.title(renderJobRow(job, width)));
   const rows =
-    card.state === 'needs-you'
+    job.state === 'needs-you'
       ? [
-          boardRow(renderWorkCard(card, expanded, width)[0]),
-          ...[...requestLines(card, true, answerable(worker) !== undefined).flatMap((s) => stemLines(s, width, theme.board.attention)),
+          heading,
+          ...[...requestLines(job, true, answerable(worker) !== undefined).flatMap((s) => stemLines(s, width, theme.board.attention)),
             // An answerable question says how: its option keys and the default.
             ...(answerKeys(worker).length ? stemLines(answerKeys(worker).join('  '), width, theme.board.muted, 1) : []),
           ].map((text) => boardRow(theme.board.slab(text))),
-          ...questionOriginalRows(card, state, width),
+          ...questionOriginalRows(job, state, width),
         ]
-      : renderWorkCard(card, expanded, width).map((text) => boardRow(text));
+      : [heading, ...jobDetailRows(job, width).map((text) => boardRow(text))];
   const milestone = milestoneLine(worker, width);
   if (milestone) rows.push(boardRow(milestone));
   const pulse = pulseLine(worker, width);
@@ -119,8 +119,8 @@ export function workInspectorRows(
         ['looping', worker.labels?.looping !== undefined ? `${Math.round(worker.labels.looping * 100)}%` : ''],
         ['category', t(worker.labels?.category ?? '')],
         ['findings', labelSummary({ severity: worker.labels?.severity })],
-        // Same rule as the card: a settled job's old decision is history, unless it is why the job failed.
-        ['quiet', worker.settledAt === null || ((worker.work?.failed || ['failed', 'error'].includes(worker.state)) && worker.quietDecision?.action === 'fail') ? quietDecisionSummary(worker.quietDecision) : ''],
+        // A settled job's old decision is history, unless it is why the job failed.
+        ['quiet', worker.settledAt === null || (failed(job) && worker.quietDecision?.action === 'fail') ? quietDecisionSummary(worker.quietDecision) : ''],
         ['started', stamp(worker.startedAt)],
         [
           worker.homeNeedsHuman ? 'asked' : worker.settledAt !== null ? 'ended' : 'activity',
@@ -221,16 +221,14 @@ export function boardInspectorRows(
       ),
       boardRow(''),
       section(t('Jobs'), width),
-      ...lane.workers.map((w) => ({
-        ...itemRow(
-          workStateInk(projectWorkCard(w, now))(workStateGlyph(projectWorkCard(w, now))),
-          monitorText(`${w.role ?? ''}  ${w.task}`),
-          minuteAge(w.startedAt, now),
-          width
-        ),
-        item: 'file:' + w.id,
-        files: w.files?.find((f) => f.kind === 'report')?.paths ?? w.files?.find((f) => f.kind === 'brief')?.paths,
-      })),
+      ...lane.workers.map((w) => {
+        const job = projectWorkJob(w, now);
+        return {
+          ...itemRow(workStateInk(job)(workStateGlyph(job)), monitorText(`${w.role ?? ''}  ${w.task}`), minuteAge(w.startedAt, now), width),
+          item: 'file:' + w.id,
+          files: w.files?.find((f) => f.kind === 'report')?.paths ?? w.files?.find((f) => f.kind === 'brief')?.paths,
+        };
+      }),
     ];
   return [];
 }

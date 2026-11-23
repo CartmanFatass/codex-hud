@@ -2,8 +2,9 @@
 import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { ledgerTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
-import { projectWorkCard } from '../collectors/work-card.js';
-import { jobSentenceRows, stemLines, workCardDetail, labelSummary } from './work-card.js';
+import { projectWorkJob } from '../collectors/work-job.js';
+import { jobSentenceRows, stemLines, workJobDetail, labelSummary } from './work-job-detail.js';
+import { roleInk } from './work-job-row.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { projectPage } from './monitor-state.js';
 import { basename } from 'node:path';
@@ -212,7 +213,7 @@ export function projectOriginal(source: string | undefined, id: string, folded: 
   const key = `original:${id}`;
   return originalRows(source, `project:fold:${key}`, folded.has(key), width);
 }
-export const roleInk = (role: string) => (theme.board.roleInk as Record<string, (s: string) => string>)[role] ?? ((s: string) => s);
+export { roleInk }; // Also used by the Project list and previews.
 /** STATE's current milestone's ledger rows with their counts; a ledger that has none of them (or no current milestone) is counted whole. */
 export function currentRows(data: ProjectSnapshot) {
   const mine = data.ledger.filter((r) => (r.release ?? r.milestone) === data.ladder.current), rows = mine.length ? mine : data.ledger;
@@ -315,7 +316,7 @@ export function sliceDetailRows(r: LedgerSlice, data: ProjectSnapshot, width: nu
   if (worker && s) {
     rows.push(plain(`  ${muted(t('now:'))} ${roleInk(worker.role ?? '')(monitorText(worker.role ?? ''))} ${muted(worker.homeNeedsHuman ? `${t('asking')} ?` : minuteAge(s.at ?? null, now))}`));
     rows.push(...(modelEnabled && worker.modelSentence ? jobSentenceRows(worker.modelSentence, width, muted, true).map(plain)
-      : stemLines(workCardDetail(projectWorkCard(worker, now)), width, muted, 3).map(plain)));
+      : stemLines(workJobDetail(projectWorkJob(worker, now)), width, muted, 3).map(plain)));
     const labels = labelSummary(worker.labels);
     if (labels) rows.push(plain('  ' + labels));
   } else if (r.commit || r.at !== undefined) rows.push(plain('  ' + muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? new Date(r.at).toISOString().slice(5, 10) : ''].filter(Boolean).join(' · '))));
