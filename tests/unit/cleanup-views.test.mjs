@@ -32,17 +32,17 @@ test('Settings → Models shows real hourly usage/cap, including zero and with m
       for (const width of [32, 40, 56]) {
         const state = { draft, selected: SETTING_ROWS.findIndex((r) => r.key === 'modelCallsPerHour'), offset: 0 };
         const health = { state: undefined, modelCalls: model.usage() };
-        const frame = renderSettingsPage(state, width, 24, health);
+        const height = 12;
+        const frame = renderSettingsPage(state, width, height, health);
         assert.ok(frame.lines.every((line) => visualLength(line) === width));
         const text = frame.lines.map(stripAnsi).join('\n');
         assert.match(text, calls.length ? /2\/7/ : /0\/7/);
         assert.match(text, language === 'en' ? /Calls this hour/ : /本小时调用/);
-        const display = renderSettingsPage({ ...state, selected: 0 }, width, 20, health);
-        assert.doesNotMatch(
-          display.lines.map(stripAnsi).join('\n'),
-          /Calls this hour|本小时调用/,
-          'short viewport scrolls to selected Display row'
-        );
+        const themeRow = SETTING_ROWS.findIndex((r) => r.key === 'theme');
+        const display = renderSettingsPage({ ...frame.state, selected: themeRow }, width, height, health);
+        assert.ok(display.state.offset < frame.state.offset, 'selecting Theme scrolls back to Display');
+        assert.ok(display.rows.includes(themeRow));
+        assert.doesNotMatch(display.lines.map(stripAnsi).join('\n'), /Calls this hour|本小时调用/);
       }
     }
   }

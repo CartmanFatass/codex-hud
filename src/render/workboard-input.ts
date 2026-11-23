@@ -200,7 +200,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (view) view.folded = folded;
       else next.project.folded = folded;
     };
-    // A hub entry may span two rows (the bar); the cursor visits it once.
+    // A selectable entry may span multiple rows; the cursor visits it once.
     const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
       at = rows.findIndex((r) => r.item === cursor);
     const harnesses = control && next.control.subTab === 'harnesses';
@@ -337,10 +337,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         tryOnly();
         return result();
       }
-      const tried = (next.prefs.acceptance !== 'slice' || onlyTry(next.project.view) || next.prefs.projectLayout === 'board' || next.prefs.projectLayout === 'inbox') && tryInput(next, key, rows[at]);
+      const tried = tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
-    if (!control && classic && !projectPageOf(next) && !listed && (next.prefs.acceptance !== 'slice' || next.prefs.projectLayout === 'inbox')) {
+    if (!control && classic && !projectPageOf(next) && !listed) {
       const tried = tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
@@ -423,8 +423,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // Home's block is the panel's own project's.
     useProject(undefined);
     if (id === 'waiting') {
-      // The hub's Waiting block, with the cursor on its fold.
-      next = transitionProjectView(next, { kind: 'hub' }, { cursor: 'project:fold:waiting' });
+      // The hub starts on its first selectable Needs-you entry.
+      next = transitionProjectView(next, { kind: 'hub' });
       return;
     }
     if (/^wait:\d+$/.test(id)) return readWait(Number(id.slice(5)));

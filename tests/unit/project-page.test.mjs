@@ -107,11 +107,10 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
         /NEVER_RENDER|unrelated bullet|Tickets|工单|INVISIBLE|M5|NOT-A-MILESTONE/
       );
       assert.match(text(pages.tickets), lang === 'en' ? /Project › Tickets\n\n  none/ : /项目 › 工单\n\n  无/);
-      // The current milestone's bar and counts (STATE has no dates here, so older work is one row a milestone, newest first).
+      // The current milestone's bar and counts; accepted slices are folded under Done.
       assert.match(text(pages.progress), lang === 'en' ? /^ {3}M3b {2}[█▒░]+ 0\/2 accepted$/m : /^ {3}M3b {2}[█▒░]+ 0\/2 已验收$/m);
       assert.match(text(pages.progress), /^ {2}1 (working|工作中) {2}1 (to try|待试用)$/m);
-      assert.match(text(pages.progress), /^ {2}▸ M3 +✓ 1/m);
-      assert.match(text(pages.progress), /^ {2}▸ M3b +◇ 1/m);
+      assert.match(text(pages.progress), /^▸ (Done|已完成) ─+ 1$/m);
       assert.match(text(pages.progress), lang === 'en' ? /^Next ─+ 5$/m : /^下一步 ─+ 5$/m);
       if (width >= 80) {
         assert.match(text(pages.progress), /Which synthetic option\?/);
@@ -336,15 +335,15 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
   for (const { frame, row } of found) {
     if (frame.state.activeTab === 'control') frame.state.control.roles.nav.cursor = row.item;
     else frame.state.project.nav.cursor = row.item;
-    for (const key of /^project:(wait:|try$|role:[^:]+$)/.test(row.item) ? ['open-session'] : ['enter', 'open-session'])
+    for (const key of /^(?:project:(?:wait:|try$|role:[^:]+$|fold:)|inbox:ask:)/.test(row.item) ? ['open-session'] : ['enter', 'open-session'])
       assert.deepEqual(press(frame, key).action, { type: 'open-files', files: row.files });
   }
-  const { frame, row: file } = found.find(({ row }) => row.files[0] === join(f.sliceJob, 'report.md'));
+  const { frame, row: file } = found.find(({ row }) => row.files[0] === f.data.docs[1].path);
   frame.state.project.nav.cursor = file.item;
   await openEditorPane(press(frame, 'enter').action.files, env);
   assert.deepEqual(calls(), [
     ['pane', 'get', 'w4E:p2'],
-    ['tab', 'create', '--workspace', 'w4E', '--cwd', process.cwd(), '--label', 'report.md', '--focus'],
+    ['tab', 'create', '--workspace', 'w4E', '--cwd', process.cwd(), '--label', '2026-11-12-review.md', '--focus'],
     ['pane', 'run', 'w4E:p3', `vim '${file.files[0]}'; exit`],
   ]);
   await openEditorPane([join(f.root, "a file's name.md"), join(f.root, 'second file.md')], {
@@ -434,22 +433,16 @@ test('Home and overlays collect nothing; warm Project uses signatures and git wa
 });
 const hubEntries = (frame) => [...new Set(frame.workboard.rows.map((r) => r.item).filter((i) => i?.startsWith('project:page:')))];
 const click = (frame, x, y) => handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x, y }, ctx(frame));
-test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; Esc and the crumb return to the hub', async (t) => {
+test('Hub: project name, first attention row, one entry per page; Enter opens a page; Esc and the crumb return to the hub', async (t) => {
   const f = await fixture(t);
   let frame = f.render(80);
   assert.match(plain(frame).join('\n'), /^demo-project ─/m);
   assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
-  assert.equal(frame.state.project.nav.cursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
+  assert.equal(frame.state.project.nav.cursor, 'inbox:ask:j0000000000000002', 'the cursor starts on the first asking job');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
-  assert.match(plain(frame).join('\n'), /^Progress +1 to try · 1 working$/m);
+  assert.match(plain(frame).join('\n'), /^Progress +M3b · 1 to try · 1 working$/m);
   assert.doesNotMatch(plain(frame).join('\n'), /^Control plane /m);
-  frame.state.project.nav.cursor = 'project:fold:waiting';
-  frame = f.render(80, 'en', press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /▸ Waiting for you/);
-  assert.doesNotMatch(plain(frame).join('\n'), /Try the Project tab/);
-  frame = f.render(80, 'en', press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /Try the Project tab/);
-  // Down visits each entry once: the Progress bar row below its entry does not trap the cursor.
+  // Down visits each page entry once.
   frame.state.project.nav.cursor = 'project:page:progress';
   const visited = [];
   for (let i = 0; i < 4; i++) {
@@ -477,65 +470,13 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   // Esc on the hub is not consumed: the panel decides what it means there.
   assert.equal(projectPageOf(press(frame, 'escape').state), undefined);
   assert.equal(press(frame, 'escape').state.activeTab, 'project');
-  // One click opens a hub entry, the Progress bar included; no editor or execution action.
-  for (const [page, at] of [['docs', 'project:page:docs'], ['progress', 'project:page:progress']]) {
-    const rows = frame.workboard.rows, index = rows.findIndex((r) => r.item === at) + (page === 'progress' ? 1 : 0);
+  // One click opens a hub entry; no editor or execution action.
+  for (const page of ['docs', 'progress']) {
+    const rows = frame.workboard.rows, index = rows.findIndex((r) => r.item === `project:page:${page}`);
     const result = click(frame, 10, index + 1);
     assert.equal(projectPageOf(result.state), page);
     assert.equal(result.action, undefined);
   }
-});
-test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a row a page; a short panel loses Latest first, then the bar and the gaps, never the rest', async (t) => {
-  const f = await fixture(t), hub = (width, height, lang = 'en', data = f.rich) => f.render(width, lang, undefined, height, data);
-  for (const lang of ['en', 'zh']) {
-    const frame = hub(40, 40, lang), text = plain(frame).join('\n'), word = (en, zh) => (lang === 'en' ? en : zh);
-    for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
-    const at = (re) => text.search(re);
-    const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2 · 5 ${word('to try', '待试用')}$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
-      new RegExp(`^${word('Latest', '最近完成')} ─+$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m].map(at);
-    assert.ok(order.every((n, i) => n >= 0 && (!i || order[i - 1] < n)), `${lang}: ${order}`);
-    // Now: a slice with its text when it fits whole and the word for its state; a job no slice shows with its role and minutes.
-    assert.match(text, new RegExp(`^ {2}◐ PAGE-ONE {10,}${word('working', '工作中')}$`, 'm'));
-    assert.match(text, new RegExp(`^ {2}◆ PAGE-TWO {2}waits for page one +${word('blocked', '受阻')}$`, 'm'));
-    assert.match(text, new RegExp(`^ {2}◉ imp {2}Tidy the synthetic docs.* 5${word('m', '分')}$`, 'm'));
-    // Latest: the three newest landed slices by commit date, each with its state and age.
-    assert.deepEqual(text.match(/^ {2}[◇✓] [A-Z-]+/gm), ['  ◇ DATA-ONE', '  ◇ WATCH-LINK', '  ◇ SENTENCE-CUT']);
-    assert.match(text, new RegExp(`^ {2}◇ DATA-ONE {10,}${word('to try 1d', '待试用 1天')}$`, 'm'));
-    assert.match(text, new RegExp(`^ {2}◇ SENTENCE-CUT {10,}${word('to try 7d', '待试用 7天')}$`, 'm'));
-    assert.match(text, /^[█▒░]{40}$/m, 'the current milestone\'s bar under Progress');
-    // The rows under Latest each open their page.
-    assert.deepEqual([...new Set(frame.workboard.rows.map((r) => r.item).filter((i) => i?.startsWith('project:page:')))], ['progress', 'tree', 'docs'].map((p) => `project:page:${p}`));
-  }
-  // Wider: five rows of Latest, accepted ones with their word; an accepted slice and its text on one row.
-  const wide = plain(hub(120, 40)).join('\n');
-  assert.deepEqual(wide.match(/^ {2}[◇✓] [A-Z-]+/gm), ['  ◇ DATA-ONE', '  ◇ WATCH-LINK', '  ◇ SENTENCE-CUT', '  ✓ REVIEW-ONE', '  ◇ NATIVE-ROWS']);
-  assert.match(wide, /^ {2}✓ REVIEW-ONE {2}the whole-project review, changes required {10,}accepted 8d$/m);
-  // A short panel: `room` is the height less the tab row and the footer. Latest gives up its oldest rows one by one, then goes;
-  // then the bar, then the blank rows; Waiting for you, Now and the page rows stay (the page scrolls for the rest).
-  const shape = (height) => {
-    const rows = hub(40, height).workboard.rows, plainRows = rows.map((r) => stripAnsi(r.text).trimEnd());
-    return { rows: rows.length, latest: plainRows.filter((r) => /^ {2}[◇✓] /.test(r)).length, bar: plainRows.some((r) => /^[█▒░]+$/.test(r)), blank: plainRows.filter((r) => !r).length,
-      kept: ['Waiting for you', 'Now', 'Progress', 'Working tree', 'Docs'].every((h) => plainRows.some((r) => r.startsWith(h))) && plainRows.filter((r) => /^([?!]|  [◐◆◉]) /.test(r)).length === 5 };
-  };
-  const heights = [40, 22, 21, 20, 19, 17, 16, 15, 12, 6];
-  const shapes = Object.fromEntries(heights.map((h) => [h, shape(h)]));
-  assert.deepEqual([40, 22, 21, 20, 19].map((h) => shapes[h].latest), [3, 3, 2, 1, 0], 'Latest folds to its newest rows first');
-  assert.ok([40, 22, 21, 20, 19, 17].every((h) => shapes[h].bar), 'the bar stays while Latest folds');
-  assert.deepEqual([17, 16, 15, 12, 6].map((h) => [shapes[h].bar, shapes[h].blank]), [[true, 3], [false, 3], [false, 0], [false, 0], [false, 0]], 'then the bar, then the gaps');
-  for (const h of heights) {
-    assert.ok(shapes[h].kept, `${h}: Waiting for you, Now and the pages stay`);
-    if (h >= 16) assert.ok(shapes[h].rows <= h - 2, `${h}: the hub fits the room it has`);
-  }
-  assert.equal(shapes[40].rows, 21, 'the hub on a tall panel: the one waiting item that needs it has its second row');
-  // Nothing landed: no Latest section; nothing waiting: no Waiting for you; the pages never go.
-  const quiet = plain(hub(40, 40, 'en', { ...f.rich, ledger: [], waiting: [] })).join('\n');
-  assert.doesNotMatch(quiet, /Latest|Waiting for you/);
-  assert.match(quiet, /^Docs /m);
-  // The shortest panel scrolls: the cursor goes down to the last page row and the view follows it.
-  let frame = hub(40, 8);
-  frame.state.project.nav.cursor = 'project:page:docs';
-  frame = f.render(40, 'en', frame.state, 8, f.rich);
-  assert.match(plain(frame).join('\n'), /^Docs /m);
 });
 test('Each Project page keeps its own cursor and scroll, leaving it and across a panel reload', async (t) => {
   const f = await fixture(t), height = 8;
@@ -594,22 +535,20 @@ test('polish: Next text aligns without filename tails and slice states use the b
           assert.deepEqual(press(frame, key).action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
       }
     }
-  const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
-  // The hub's bar counts the whole ledger when no milestone is current: working first, then blocked.
-  const whole = f.render(120, 'en', undefined, 56, { ...f.data, ladder: { ...f.data.ladder, current: undefined } }, true, 'unicode', 'mocha');
-  const bar = whole.workboard.rows.find((r) => /^[█▒░]+$/.test(stripAnsi(r.text).trimEnd())).text;
+  // The Progress bar counts the whole ledger when no milestone is current: working first, then blocked.
+  const whole = f.render(120, 'en', 'progress', 56, { ...f.data, ladder: { ...f.data.ladder, current: undefined } }, true, 'unicode', 'mocha');
+  const bar = whole.workboard.rows.find((r) => r.item?.endsWith(':bar')).text;
   const inks = [...bar.matchAll(/(\x1b\[[0-9;]+m)[█▒░]+/g)].map((m) => m[1]);
-  const row = (frame, id) =>
-    frame.workboard.rows.find((r) => stripAnsi(r.text).includes(id) && /:slice:\d+$/.test(r.item ?? '')).text;
-  assert.ok(row(coloured, 'NATIVE-TREE').includes(inks[0] + '◐'));
-  assert.ok(row(coloured, 'BLOCKED').includes(inks[1] + '◆'));
-  assert.match(stripAnsi(row(coloured, 'ORPHAN')), /^  ! /);
-  assert.doesNotMatch(plain(coloured).join('\n'), /NO-JOB/, 'a worktree with no ledger row is not work in flight');
+  const row = (frame, id) => frame.workboard.rows.find((r) => r.item?.endsWith(`:slice:${id}`)).text;
+  assert.ok(row(whole, 'NATIVE-TREE').includes(inks[0] + '◐'));
+  assert.ok(row(whole, 'BLOCKED').includes(inks[1] + '◆'));
+  assert.match(stripAnsi(row(whole, 'ORPHAN')), /^  ! /);
+  assert.doesNotMatch(plain(whole).join('\n'), /NO-JOB/, 'an unlisted worktree is not work in flight');
   const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
   assert.match(stripAnsi(row(ascii, 'NATIVE-TREE')), /^  @ /);
   assert.match(stripAnsi(row(ascii, 'BLOCKED')), /^  ! /);
 });
-test('bar proportions fill the hub row in EN/ZH and text icons; the Progress page names only the states that have slices', async (t) => {
+test('bar proportions fill the allotted cells; the Progress page names only the states that have slices', async (t) => {
   const f = await fixture(t);
   for (const width of [32, 80, 120]) {
     const segments = progressSegments(f.data.counts, width);
@@ -618,19 +557,11 @@ test('bar proportions fill the hub row in EN/ZH and text icons; the Progress pag
       width
     );
     for (const s of segments) assert.ok(Math.abs(s.width - (width * f.data.counts[s.state]) / 7) <= 1);
-    // The hub's bar is the current milestone's (M3b: one working, one landed), up to 60 cells, and the row is the panel's width.
-    for (const lang of ['en', 'zh']) {
-      const bar = f.render(width, lang).workboard.rows.find((r) => /^[█▒░]+$/.test(stripAnsi(r.text).trimEnd()));
-      assert.equal(visualLength(bar.text), width);
-      assert.equal(stripAnsi(bar.text).trimEnd().length, Math.min(width, 60));
-      assert.equal(bar.item, 'project:page:progress');
-    }
   }
-  const ascii = f.render(80, 'en', undefined, 56, f.data, true, 'text');
+  const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
   // One working (#) and one landed to try (=): without colour the glyphs still tell them apart.
-  assert.ok(ascii.workboard.rows.some((r) => /^#{30}={30}$/.test(stripAnsi(r.text).trimEnd())));
+  assert.match(plain(ascii).join('\n'), /#{12}={12} 0\/2 accepted/);
   assert.doesNotMatch(plain(ascii).join('\n'), /[█▒░●]/);
-  assert.doesNotMatch(plain(f.render(80, 'en', 'progress', 56, f.data, true, 'text')).join('\n'), /[█▒░●]/);
   // The Progress page's counts name the states that have slices in the current milestone, none with a zero.
   const text = plain(f.render(120, 'en', 'progress', 56)).join('\n');
   assert.match(text, /^ {2}1 working {2}1 to try$/m);
@@ -648,7 +579,7 @@ test('drift distinguishes a missing worktree, an unlisted tree and a landed tree
   assert.equal(data.slices.find((s) => s.label === 'NO-JOB').ledgerState, 'try');
   const text = plain(f.render(120, 'en', 'progress', 56, data)).join('\n');
   assert.match(text, /updated 12:35 · ! 2/);
-  assert.match(text, /! NO-JOB.*ledger: try/);
+  assert.match(text, /◇ NO-JOB/);
   assert.match(text, /! ORPHAN.*no worktree/);
   assert.doesNotMatch(text, /! BLOCKED/);
   f.put(state, original.replace('Milestone: M3b', 'Milestone: UNMATCHED'));
@@ -663,18 +594,18 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
     worker = f.board.workers.find((w) => w.evidence[0]?.sourceId === 'j0000000000000002');
   const home = renderWorkCard(projectWorkCard(worker, NOW), sliceState(), 120).map(stripAnsi).join('\n');
   assert.match(home, /Question: Which synthetic option\?/);
-  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /now: Question: Which synthetic option\?/);
+  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /Question: Which synthetic option\?/);
   worker.modelSentence = 'Building «synthetic agents» in the Home lane.';
-  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /now: Building synthetic agents in the Home lane\./);
+  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /Building synthetic agents in the Home lane\./);
   const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
   assert.match(
-    coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('now: Building')).text,
+    coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('Building synthetic agents')).text,
     /\x1b\[[0-9;]+msynthetic agents\x1b\[0m/
   );
   assert.doesNotMatch(plain(f.render(120, 'en', 'progress', 56, f.data, false)).join('\n'), /Building synthetic agents/);
   assert.match(
     plain(f.render(120, 'en', 'progress', 56, f.data, false)).join('\n'),
-    /now: Question: Which synthetic option\?/
+    /Question: Which synthetic option\?/
   );
   worker.state = 'done';
   worker.settledAt = NOW - 3600000;
@@ -684,7 +615,7 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
     hidden.workboard.snapshot.workers.some((w) => w.id === worker.id),
     false
   );
-  assert.match(plain(hidden).join('\n'), /now: Building synthetic agents/);
+  assert.match(plain(hidden).join('\n'), /Building synthetic agents/);
   fs.unlinkSync(join(f.sliceJob, 'report.md'));
   let data = await f.collector.collect(true, f.board, NOW + 1);
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.sliceJob, 'brief.md'));
@@ -692,7 +623,7 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
   data = await f.collector.collect(true, f.board, NOW + 2);
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.cwd, 'docs/handoff/STATE.md'));
   const frame = f.render(120, 'en', 'progress', 56, data);
-  for (const suffix of ['summary', 'bar', 'slice:0']) {
+  for (const suffix of ['summary', 'bar', 'slice:NATIVE-TREE']) {
     frame.state.project.nav.cursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
     assert.deepEqual(press(frame, 'enter').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
   }

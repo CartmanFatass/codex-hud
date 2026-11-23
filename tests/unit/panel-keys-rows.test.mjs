@@ -247,7 +247,7 @@ test('n flags a to-try row and does nothing on Home; > and < are Home’s next a
   home.run({ type: 'key', key: 'previous-trouble', text: '<' });
   assert.equal(home.state.home.split.listCursor, start, '< comes back');
   // The hub's to-try rows (Split): `n` flags, `>` and `<` do nothing.
-  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' } }) });
+  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' }, project: { nav: { cursor: 'project:slice:DATA-ONE' } } }) });
   for (const input of [{ type: 'key', key: 'next-trouble', text: '>' }, { type: 'key', key: 'previous-trouble', text: '<' }]) {
     const out = hub.run(input);
     assert.equal(out.action, undefined);

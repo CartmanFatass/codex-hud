@@ -5,8 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
-import { acceptsRawText, applyViewPrefs, blocksReload, hasUnsavedDraft } from '../../dist/render/monitor-state.js';
-import { defaultSettings } from '../../dist/settings.js';
+import { acceptsRawText, blocksReload, hasUnsavedDraft } from '../../dist/render/monitor-state.js';
 import { split, splitFixture } from '../fixtures/split-layout.mjs';
 import { NOW, PROJECTS, TREE, onControl, onPage } from '../fixtures/project-page.mjs';
 
@@ -48,8 +47,7 @@ test('painting twice gives the same frame without modifying the supplied state',
     withState(initial, { activeTab: 'exp', prefs: { experiments: true }, overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }),
     withState(initial, { subpage: { kind: 'inspector', scroll: 0, target } }), withState(initial, { subpage: { kind: 'changes', scroll: 0 } }),
     onPage('progress', { help: {} }), onPage('progress', { project: { trySelection: marked, filter: { query: 'try', editing: false } } }),
-    ...['timeline', 'board', 'inbox'].flatMap((projectLayout) => [undefined, 'progress', 'tickets', 'tree', 'docs', 'waiting']
-      .map((page) => onPage(page, { prefs: { projectLayout } }))),
+    ...[undefined, 'progress', 'tickets', 'tree', 'docs', 'waiting'].map((page) => onPage(page)),
   ];
   for (const panelLayout of ['classic', 'split']) for (const candidate of cases) {
     const state = structuredClone(withState(candidate, { prefs: { panelLayout } })), before = structuredClone(state);
@@ -75,7 +73,7 @@ test('Classic Home and Project keep their selected rows across tab changes', asy
   assert.deepEqual(returnedHome.workboard.selected, home.workboard.selected);
 });
 
-test('Home keeps its Split preview and task folds across a tab, project or Project-layout switch', async (t) => {
+test('Home keeps its Split preview and task folds across a tab or project switch', async (t) => {
   const f = await fixture(t);
   const project = { ...f.rich, ledger: [
     { id: 'ONE', milestone: 'M-TEST', text: 'First synthetic slice', state: 'try', at: NOW - 2000 },
@@ -106,9 +104,7 @@ test('Home keeps its Split preview and task folds across a tab, project or Proje
   assert.equal(switched.project.nav.split.focus, 'list');
   assert.equal(switched.project.nav.split.previewScroll, 0);
   assert.deepEqual(switched.home, other.state.home);
-  const prefs = applyViewPrefs(switched, { ...defaultSettings(), panelLayout: 'split', projectLayout: 'board' });
-  assert.deepEqual(prefs.home, switched.home);
-  const back = step(draw(prefs), 'shift-tab');
+  const back = step(draw(switched), 'shift-tab');
   assert.equal(back.state.activeTab, 'home');
   assert.deepEqual(back.state.home.split, home.split);
   assert.deepEqual(back.state.home.expandedTasks, home.expandedTasks);

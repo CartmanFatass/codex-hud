@@ -233,7 +233,7 @@ test('EXP edits every group, Esc drops drafts, and another project sees the same
   assert.ok(cfg.grants['anthropic-api'].schedule.startsAt > NOW);
   assert.equal(cfg.grants['openai-api'].grantMicros, 12_345_678);
   assert.equal(cfg.grants['openai-api'].enabled, false);
-  const reloaded = panel(f, withState(initialMonitorState(), { activeTab: 'exp', selectedProject: '/synthetic/other-project', prefs: { panelLayout: 'split', projectLayout: 'inbox', experiments: true } }));
+  const reloaded = panel(f, withState(initialMonitorState(), { activeTab: 'exp', selectedProject: '/synthetic/other-project', prefs: { panelLayout: 'split', experiments: true } }));
   assert.match(plain(reloaded.frame()), /Second profile \(\.codex-secondary\)/);
   assert.match(plain(reloaded.frame()), /60 min/);
   assert.match(plain(reloaded.frame()), /anthropic-api\s+on · uncalibrated/);

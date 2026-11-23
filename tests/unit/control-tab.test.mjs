@@ -90,12 +90,11 @@ test('Control shows active lease name, holder and age for the selected project',
 test('Project hubs have no Control row; Inbox alert links to its role on the same root in both layouts', async (t) => {
   const f = await fixture(t), data = { ...richControl(f.data), ledger: [], waiting: [], tickets: [], slices: [] };
   const root = PROJECTS[1].root;
-  for (const panelLayout of ['classic', 'split']) for (const projectLayout of ['timeline', 'board', 'inbox']) {
+  for (const panelLayout of ['classic', 'split']) {
     const draw = (state, projectDisplayRoot = root) => f.render(40, 'en', state, 36, data, true, 'unicode', 'none', { projects: PROJECTS, projectDisplayRoot });
-    const state = onPage(undefined, { selectedProject: root, project: { nav: { cursor: 'inbox:role:pro' } }, prefs: { panelLayout, projectLayout } });
+    const state = onPage(undefined, { selectedProject: root, project: { nav: { cursor: 'inbox:role:pro' } }, prefs: { panelLayout } });
     const frame = draw(state);
     assert.ok(!frame.workboard.rows.some((r) => r.item === 'project:page:control'));
-    if (projectLayout !== 'inbox') continue;
     assert.deepEqual(send(frame, 'open-session').action, { type: 'open-files', files: ['/synthetic/default/roles/pro.json'] });
     const next = send(frame, 'enter');
     assert.equal(next.action, undefined);

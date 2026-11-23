@@ -370,11 +370,10 @@ export function renderWorkboardFrame(
     files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))?.item ?? files[0]?.item);
   const nav = controlView?.nav ?? (project ? state.project.nav : undefined);
   const hasCursor = (cursor?: string) => rows.some((r) => r.item && r.item === cursor);
-  // A new hub or page starts on its first destination (Inbox hub: first Needs-you row; else a page row, not the Waiting fold).
+  // A new hub starts on its first destination, ahead of the project switch.
   const cursor = nav && !hasCursor(nav.cursor) && (project || (!addingHarness && !sheet && input.project))
-    ? (project ? (!page && !list && state.prefs.projectLayout === 'inbox'
-      ? rows.find((r) => r.item && r.item !== 'project:switch') : rows.find((r) => r.item?.startsWith('project:page:')))
-      ?? rows.find((r) => r.item) : rows.find((r) => r.item))?.item : nav?.cursor;
+    ? ((project && !page && !list ? rows.find((r) => r.item && r.item !== 'project:switch') : undefined)
+      ?? rows.find((r) => r.item))?.item : nav?.cursor;
   const expCursor = experiment && !expEdit && !hasCursor(experiment.cursor) ? rows.find((r) => r.item)?.item : experiment?.cursor;
   const key = addingHarness ? harnessAdd?.pick : sheet ? sheet.cursor : nav ? cursor : inspector ? inspectCursor
     : experiment ? expEdit ? undefined : expCursor : item ?? (selected ? targetKey(selected) : '');
@@ -408,7 +407,7 @@ export function renderWorkboardFrame(
     const row = rows[offset + i];
     if (!row) continue;
     const text = fit(row.paint?.() ?? row.text, width);
-    // A Projects list entry is two rows and the cursor marks both.
+    // The cursor marks every row of the selected Projects list entry.
     const marked = offset + i === cursorAt || ((list || control) && !!key && row.item === key);
     frame.lines[i + 1 + top] = !help && !changes && marked ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 + top });
@@ -424,12 +423,12 @@ export function renderWorkboardFrame(
             : sheet ? sheet.hints : controlHints(input.project, cursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : page === 'progress' ? (progressOnly ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
-            : onTry && (state.prefs.acceptance !== 'slice' || state.prefs.projectLayout === 'board' || state.prefs.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
+            : onTry ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
             : state.prefs.acceptance !== 'slice' && state.project.nav.cursor?.startsWith('project:fold:task:') ? ['⏎ details', 'Esc back', 'o file', 't to try']
             : ['t to try', '⏎ open', 'Esc back'])
           : page === 'tickets' && state.prefs.acceptance !== 'slice' ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
-          : onTry && (state.prefs.acceptance !== 'slice' || state.prefs.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
+          : onTry ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
           : ['⏎ open', ...projectSwitch])
         : experiment ? expHints(experiment, expEdit) : onTry ? [...TRY_ACTIONS, '⏎ details', 'o file'] : homeKeys(state, source, 'expand');
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);

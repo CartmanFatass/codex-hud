@@ -26,8 +26,6 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   modelEnabled: boolean;
   /** How Home and Project are laid out (owner, 2026-11-17): the layouts being tried, one of which stays. */
   panelLayout: 'classic' | 'split';
-  /** How the Project tab's pages are arranged (owner, 2026-11-20): Timeline (default), Board or Inbox. */
-  projectLayout: 'timeline' | 'board' | 'inbox';
   acceptance: 'task' | 'slice';
   experiments: boolean;
   /** Draft-only; persisted solely as config.json decisions.primary. */
@@ -64,7 +62,7 @@ export const DEFAULT_ROLE_CAPS: Readonly<Record<string, number>> = Object.freeze
 
 /** Display defaults shared by settings and the pure panel initializer. */
 export const DEFAULT_PANEL_VIEW = {
-  panelLayout: 'classic', projectLayout: 'timeline', acceptance: 'task', experiments: false,
+  panelLayout: 'classic', acceptance: 'task', experiments: false,
   cardStallMinutes: 10, cardFoldMinutes: 5, cardHideMinutes: 5,
 } as const;
 
@@ -135,7 +133,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
   panelLayout: oneOf('classic', 'split'),
-  projectLayout: oneOf('timeline', 'board', 'inbox'),
   acceptance: oneOf('task', 'slice'),
   experiments: isBoolean,
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),

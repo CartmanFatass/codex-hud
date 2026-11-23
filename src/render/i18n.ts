@@ -350,7 +350,6 @@ const ZH: Record<string, string> = {
   // Help
   // Round 3: the prefix, the buttons, the help's sections
   Help: '帮助',
-  older: '已收起',
   Resume: '继续',
   Switch: '切换',
   Keys: '按键',

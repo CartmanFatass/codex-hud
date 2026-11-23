@@ -1,8 +1,8 @@
 /**
- * Inbox project layout (PROJECT-UX direction C, `.scratch/project-layouts/spec.md`):
+ * Project Inbox (PROJECT-UX direction C):
  * ranked Needs you, Running, `last accepted` line and page rows on the hub; To try (every milestone, newest first),
  * Blocked, Working, Next and Done folded to one row on Progress; Needs you / Running / Quiet on the Projects list.
- * Tickets stay Timeline's; role alerts link to Control. Pure.
+ * Role alerts link to Control. Pure.
  */
 import { SLICE_STATES, type ActiveJob, type LedgerSlice, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
@@ -27,7 +27,8 @@ import { theme, truncateAnsi, visualLength } from './colors.js';
 import { basename } from 'node:path';
 import { t } from './i18n.js';
 
-const muted = theme.board.muted, NEEDS_CAP = 7;
+const muted = (text: string) => theme.board.muted(text);
+const NEEDS_CAP = 7;
 const bare = (rows: MonitorRow[]): MonitorRow[] => rows.map(({ item: _i, files: _f, ...row }) => row);
 const plain = (text: string, width: number): MonitorRow => ({ text: fit(text, width) });
 const cutText = (b: string, room: number) => room < 1 ? '' : visualLength(b) <= room ? b : cutWords(b, room);

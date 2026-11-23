@@ -528,11 +528,11 @@ test('Progress, To-try, Home, HTML board and TryLog read landed slices from .scr
   assert.equal(accepted.waiting.length, 0, 'accepting ticket-derived try slice settles waits-on item');
   assert.deepEqual(new TryLog(f.hud).changes(f.cwd), [`try accepted project ${s2.milestone}: ${s2.id}`]);
 
-  // Projects list overview derives counts/latest from tickets even with no STATE.md at all.
+  // Projects list overview derives pending counts from tickets even with no STATE.md at all.
   fs.unlinkSync(join(f.cwd, 'docs/handoff/STATE.md'));
   const overviews = new ProjectOverviews((r) => new ProjectCollector(r, f.hud, f.env, f.home), f.cwd);
   const overview = (await overviews.read([f.cwd], EMPTY_BOARD, NOW + 3)).get(f.cwd);
   assert.equal(overview.hasState, true);
-  assert.equal(overview.latest.state, 'try');
-  assert.deepEqual(overview.latest.ids, ['ORCH-LEAN-2-03']);
+  assert.equal(overview.counts.try, 2);
+  assert.equal(overview.tryTasks, 1);
 });

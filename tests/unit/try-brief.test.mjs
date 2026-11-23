@@ -41,9 +41,9 @@ test('Classic at 40 columns: a long to-try slice and a long waiting item wrap wh
   fits(tryView);
   whole(tryView, 'ENDOFLEDGER');
   assert.ok(text(tryView).split('\n').filter((l) => /watcher|loop|folder|every open|ENDOFLEDGER/.test(l)).length >= 3, 'the text is on several rows under the id');
-  const hub = f.render(40, 'en', 40, withState(sliceState(), { activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']) } }), data);
+  const hub = f.render(40, 'en', 40, withState(sliceState(), { activeTab: 'project', project: { nav: { cursor: 'project:wait:0' } } }), data);
   fits(hub);
-  assert.ok(flat(hub).includes('ENDOFWAITING'), 'the hub flows the waiting item whole into its spare rows');
+  assert.ok(flat(hub).includes('ENDOFWAITING'), 'the selected waiting item in Classic shows its whole text');
 });
 
 test('Classic short of room: the row the cursor is on keeps its whole text, the others keep two rows', async (t) => {
@@ -58,10 +58,10 @@ test('Classic short of room: the row the cursor is on keeps its whole text, the 
 
 test('Split at 40 columns: the hub and Progress preview wrap a long to-try slice and a long waiting item whole', async (t) => {
   const { f, data } = await fixture(t);
-  const hub = f.render(40, 'en', 60, split({ activeTab: 'project' }), data);
+  const hub = f.render(40, 'en', 60, split({ activeTab: 'project', project: { nav: { cursor: 'project:page:progress' } } }), data);
   fits(hub);
   whole(hub, 'ENDOFLEDGER');
-  const waiting = f.render(40, 'en', 60, split({ activeTab: 'project', project: { nav: { cursor: 'project:fold:waiting' } } }), data);
+  const waiting = f.render(40, 'en', 60, split({ activeTab: 'project', project: { nav: { cursor: 'project:wait:0' } } }), data);
   fits(waiting);
   assert.ok(flat(waiting).includes('ENDOFWAITING'));
   const page = f.render(40, 'en', 60, asSplit(withState(progress(), { project: { nav: { cursor: 'project:slice:DATA-ONE' } } })), data);
@@ -80,7 +80,7 @@ test('a to-try row with a brief: its id and age on one row, the first sentence b
   const SENTENCE = 'Job rows no longer vanish when a session file loops back.';
   // The id row, then the rows under it up to the next row that starts at the margin (the next slice).
   const under = (lines) => { const at = lines.findIndex((l) => /^\s*[◇✓] DATA-ONE/.test(l)); return { id: lines[at], text: lines.slice(at + 1).slice(0, 3).filter((l) => /^ {2,}[^\s◇◆◐○✓▸]/.test(l)).map((l) => l.trim()).join(' ') }; };
-  for (const [view, state] of [['Classic to-try view', progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } })], ['Classic history', progress()], ['Split Progress list', asSplit(withState(progress(), { project: { nav: { cursor: 'project:slice:DATA-ONE' } } }))]]) {
+  for (const [view, state] of [['Classic to-try view', progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } })], ['Classic Progress', progress()], ['Split Progress list', asSplit(withState(progress(), { project: { nav: { cursor: 'project:slice:DATA-ONE' } } }))]]) {
     const frame = f.render(40, 'en', 60, state, withBrief);
     fits(frame);
     const lines = view.startsWith('Split') ? frame.panes.find((p) => p.id === 'agents').rows.map((r) => stripAnsi(r.text).trimEnd()) : plain(frame);
@@ -102,23 +102,13 @@ test('a to-try row with a brief: its id and age on one row, the first sentence b
   fits(frame);
   assert.ok(under(plain(frame)).text.startsWith('会话文件回环时，任务行不再消失。'), 'the sentence under the id');
   assert.doesNotMatch(flat(frame), /其余保持不变/);
-  // The hub's Latest is a one-row list: it says the id alone unless a useful part of the sentence fits. Split's To try gives the id a row.
-  const hub = f.render(40, 'en', 60, withState(sliceState(), { activeTab: 'project', project: { folded: new Set(FOLDED) } }), withBrief);
-  assert.match(plain(hub).find((l) => /◇ DATA-ONE/.test(l)), /DATA-ONE {2}Job rows|DATA-ONE\s+to try/);
-  const preview = f.render(40, 'en', 60, split({ activeTab: 'project' }), withBrief);
-  fits(preview);
-  const rows = plain(preview), idRow = rows.findIndex((l) => /◇ DATA-ONE/.test(l));
-  assert.equal(rows.filter((l) => /◇ DATA-ONE/.test(l)).length, 1, 'Split hub: one id row');
-  assert.equal(under(rows).text, SENTENCE, 'and the sentence under it');
-  assert.doesNotMatch(flat(preview), /ENDOFLEDGER/);
-  assert.ok(idRow > 0);
 });
 
 test('without a brief (model off, pending or failed) a to-try row keeps the whole original text, wrapped, none of it broken inside a word or a path', async (t) => {
   const { f, data } = await fixture(t);
   const path = '.scratch/panel-ux/issues/01-owner-text-counts-keys.md';
   const long = { ...data, ledger: data.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, text: `ticket ${path} and an overlong-hyphenated-compound-name-that-has-no-spaces-at-all-ENDOFPATH (d0e1f2a3)` } : r)) };
-  for (const state of [progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), split({ activeTab: 'project' })]) {
+  for (const state of [progress({ project: { view: { kind: 'progress', onlyTry: { scroll: 0 } } } }), split({ activeTab: 'project', project: { nav: { cursor: 'project:page:progress' } } })]) {
     const frame = f.render(40, 'en', 60, state, long);
     fits(frame);
     const lines = plain(frame).map((l) => l.trimEnd());

@@ -22,7 +22,7 @@ async function fixture(t) {
 const press = (frame, input) => handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW, standalone: true });
 const legend = (lines) => lines[lines.findIndex(l => /^  [█▒░]/.test(l)) + 1];
 
-test('Home top line counts STATE waiting items with job questions, ✓ only when both are zero, and opens the hub\'s Waiting block', async (t) => {
+test('Home top line counts STATE waiting items with job questions, ✓ only when both are zero, and opens the Project Inbox', async (t) => {
   const f = await fixture(t);
   assert.match(plain(f.quiet(38, 'en', 46))[1], /^\? 2 waiting for you *$/);
   assert.match(plain(f.quiet(38, 'zh', 46))[1], /^\? 2 项等你处理 *$/);
@@ -34,7 +34,7 @@ test('Home top line counts STATE waiting items with job questions, ✓ only when
   // A done-today count of 0 is not shown.
   assert.doesNotMatch(plain(f.quiet(38, 'en', 46)).at(-1), /done today/);
   assert.doesNotMatch(plain(f.quiet(38, 'zh', 46)).at(-1), /今日完成/);
-  // Enter and a click on the line open the Project hub on its Waiting block.
+  // Enter and a click on the line open the Project Inbox.
   let frame = f.quiet(38, 'en', 46);
   assert.equal(homeAnchor(frame.state.home), 'home-progress:waiting', 'an idle Home rests on its first stop');
   const click = { type: 'mouse', button: 'left', x: 4, y: frame.workboard.rows.findIndex((r) => r.item === 'home-progress:waiting') + 1 };
@@ -42,10 +42,9 @@ test('Home top line counts STATE waiting items with job questions, ✓ only when
     const state = press(frame, input).state;
     assert.equal(state.activeTab, 'project');
     assert.equal(projectPageOf(state), undefined);
-    assert.equal(state.project.nav.cursor, 'project:fold:waiting');
     const hub = f.quiet(38, 'en', 46, state);
-    assert.equal(hub.state.project.nav.cursor, 'project:fold:waiting', 'the hub keeps the cursor on the Waiting fold');
-    assert.ok(plain(hub).some((l) => /^Waiting for you ─+ 2 · 1 to try$/.test(l)));
+    assert.equal(hub.state.project.nav.cursor, 'project:wait:0', 'the hub starts on the first waiting item');
+    assert.ok(plain(hub).some((l) => /^Needs you ─+ 2 · 1 to try$/.test(l)));
   }
 });
 
@@ -68,7 +67,7 @@ test('Enter or a click on a waiting item on Home opens its whole text on the Pro
       const hub = f.quiet(38, lang, 46, press(page, { type: 'key', key: 'escape' }).state);
       assert.equal(projectPageOf(hub.state), undefined);
       assert.equal(hub.state.project.nav.cursor, 'project:wait:1');
-      assert.equal(plain(hub).findIndex((l) => l.startsWith('? Choose the browser profile')) >= 0, true, 'the item is on the hub');
+      assert.equal(plain(hub).findIndex((l) => l.trimStart().startsWith('? Choose the browser profile')) >= 0, true, 'the item is on the hub');
     }
   }
 });
@@ -78,9 +77,7 @@ test('Home counts the current milestone\'s slices as the hub does; without one t
   for (const width of [38, 80]) {
     const home = plain(f.quiet(width, 'en', 46)), hub = plain(f.quiet(width, 'en', 46, { ...sliceState(), activeTab: 'project' }));
     const progress = hub.find((l) => /^Progress /.test(l));
-    // The name row already shows the milestone, so both facts fit on the Progress row.
-    assert.match(hub.find((l) => l.startsWith('Project ─')), / M3b$/);
-    assert.match(progress, /^Progress +1 to try · 1 working$/);
+    assert.match(progress, width === 38 ? /^Progress +M3b · 1 to try$/ : /^Progress +M3b · 1 to try · 1 working$/);
     assert.match(legend(home), /◐ 1 working/);
     assert.match(legend(home), /◇ 1 to try/);
     assert.doesNotMatch(legend(home), /blocked|todo|accepted|dropped/);

@@ -20,7 +20,7 @@ import { frameDiff } from '../render/frame-diff.js';
 import { t, setLanguage, resolveLanguage } from '../render/i18n.js';
 import { controlShown, expShown } from '../render/main-tabs.js';
 import { renderMonitor, fit, initialMonitorState, handleMonitorInput, type MonitorFrame, type MonitorState } from '../render/monitor.js';
-import { acceptsMonitorInput, applyViewPrefs, blocksReload, filterBatchInputs, onlyTry, reconcileMonitor } from '../render/monitor-state.js';
+import { acceptsMonitorInput, applyViewPrefs, blocksReload, filterBatchInputs, reconcileMonitor } from '../render/monitor-state.js';
 import { projectListOpen, projectPageOf } from '../render/project-view.js';
 import { projectList } from '../roles/projects.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
@@ -178,7 +178,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       : painted.activeTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
     const page = projectPageOf(painted);
     const taskMode = painted.prefs.acceptance !== 'slice';
-    const showTries = taskMode || painted.prefs.panelLayout === 'split' || painted.prefs.projectLayout === 'board' || painted.prefs.projectLayout === 'inbox' ? !page || page === 'progress' : !!onlyTry(painted.project.view);
+    const showTries = !page || page === 'progress';
     const homeTries = taskMode && painted.activeTab === 'home' && !painted.subpage && !painted.help && !settingsFlow.open;
     const tryMarks = (homeTries || projectShown(painted, settingsFlow.open) && !listing(painted) && showTries) && shown.snapshot
       ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;

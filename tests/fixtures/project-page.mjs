@@ -175,15 +175,15 @@ export const withChainPicker = (state, patch) => ({ ...state, overlay: { ...stat
   mode: { ...state.overlay.mode, picker: { ...state.overlay.mode.picker, ...patch } } } });
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
 export const PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'];
-/** The hub at 40/80/120 (and text icons at 40), and each page at 40 and 120, so a regression shows in the diff. */
+/** The hub and Progress at 40/80/120 EN/ZH (and text icons at 40); other pages at 40/120. */
 export function projectFrames(f) {
   const frames = {}, baseline = { ...f.data, radar: undefined }; // Keep the no-radar baseline despite synthetic jobs from today.
   for (const lang of ['en', 'zh']) {
     for (const width of [40, 80, 120]) frames[`hub-${width}-${lang}`] = plain(f.render(width, lang, undefined, 24));
-    for (const page of PAGES.filter((p) => p !== 'tickets')) for (const width of [40, 120])
+    for (const page of PAGES.filter((p) => p !== 'tickets')) for (const width of page === 'progress' ? [40, 80, 120] : [40, 120])
       frames[`${page}-${width}-${lang}`] = plain(f.render(width, lang, page, 40, baseline));
   }
-  const open = onPage('progress', { project: { folded: new Set(['agents', 'healthy', 'files', 'hist:m:M3b', 'hist:m:M4', 'hist:DATA-ONE', 'next', 'next:1']) } });
+  const open = onPage('progress', { project: { folded: new Set(['inbox:done', 'hist:DATA-ONE', 'next', 'next:1']) } });
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`progress-rich-${width}-${lang}`] = plain(f.render(width, lang, 'progress', 64, f.rich));
   frames['progress-rich-open-40-en'] = plain(f.render(40, 'en', open, 80, f.rich));
   frames['progress-rich-40-text'] = plain(f.render(40, 'en', 'progress', 64, f.rich, true, 'text'));
@@ -191,7 +191,7 @@ export function projectFrames(f) {
   for (const lang of ['en', 'zh']) frames[`hub-switch-40-${lang}`] = plain(f.render(40, lang, onPage(undefined, { selectedProject: PROJECTS[1].root }), 24, f.data, true, 'unicode', 'none', second));
   frames['progress-switch-40-en'] = plain(f.render(40, 'en', onPage('progress', { selectedProject: PROJECTS[1].root }), 12, f.data, true, 'unicode', 'none', second));
   const control = richControl(baseline);
-  // The hub on a tall panel and on shorter ones: Latest loses rows, then goes, then the bar and the blank rows.
+  // The hub on a tall panel and on shorter ones: keep ranked Needs-you rows ahead of optional facts.
   for (const [height, lang] of [[40, 'en'], [40, 'zh'], [20, 'en'], [16, 'en'], [12, 'en']]) frames[`hub-rich-40-${height}-${lang}`] = plain(f.render(40, lang, undefined, height, f.rich));
   frames['hub-rich-120-40-en'] = plain(f.render(120, 'en', undefined, 40, f.rich));
   // The Control plane: what needs the owner first, healthy roles folded; opened, with the files.

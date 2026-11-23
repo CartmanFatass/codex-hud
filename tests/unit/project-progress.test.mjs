@@ -32,66 +32,11 @@ const send = (frame, raw) => handleMonitorInput(frame.state, key(raw), { tree: T
 const text = (frame) => plain(frame).join('\n');
 const extra = { projects: PROJECTS };
 
-test('Progress: the current milestone, Now, Next and History from a synthetic ledger, cell-exact at 32/40/80/120 EN/ZH and in text icons', async (t) => {
-  const f = await fixture(t);
-  for (const width of [32, 40, 80, 120]) for (const lang of ['en', 'zh']) {
-    const frame = f.render(width, lang, 'progress', 80, f.rich);
-    for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-    const page = text(frame), word = (en, zh) => (lang === 'en' ? en : zh);
-    // The current milestone: its bar with accepted/total, the states that have slices, and what the earlier ones accepted in all.
-    assert.match(page, new RegExp(`^ {3}0\\.1\\.3 {2}[█▒░]+ 0/4 ${word('accepted', '已验收')}$`, 'm'));
-    for (const [n, en, zh] of [[1, 'working', '工作中'], [1, 'blocked', '受阻'], [1, 'to try', '待试用'], [1, 'todo', '待办']])
-      assert.match(page, new RegExp(`${n} ${word(en, zh)}`));
-    assert.doesNotMatch(page, /accepted 0|0 (working|blocked|to try|todo)|已验收 0/);
-    // (At 32 columns, below the 40 a panel is built for, the end of that row is cut.)
-    assert.match(page, new RegExp(width < 40 ? word('^  ✓ 4 accepted in 3 ', '^  ✓ 此前 3 个') : word('^  ✓ 4 accepted in 3 earlier milestones$', '^  ✓ 此前 3 个里程碑已验收 4 项$'), 'm'));
-    assert.match(page, new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'));
-    assert.match(page, new RegExp(`^${word('Next', '下一步')} ─+ 4$`, 'm'));
-    assert.match(page, new RegExp(`^${word('History', '历史')} ─+$`, 'm'));
-    // History: the last seven days in full, newest first (a landed slice with its age), then one row a milestone with its days.
-    assert.deepEqual(page.match(/DATA-ONE|WATCH-LINK|SENTENCE-CUT/g), ['DATA-ONE', 'WATCH-LINK', 'SENTENCE-CUT']);
-    assert.match(page, new RegExp(`^  ◇ DATA-ONE\\b.* ${word('to try 1d', '待试用 1天')}$`, 'm'));
-    assert.match(page, new RegExp(`^  ◇ SENTENCE-CUT\\b.* ${word('to try 7d', '待试用 7天')}$`, 'm'));
-    assert.match(page, new RegExp(`^  ▸ M4 +✓ 1\\b.*${word('8d', '8天')}$\\n^  ▸ M3b +✓ 1\\b.*${word('19–20d', '19–20天')}$\\n^  ▸ M3 +✓ 2\\b.*${word('29–30d', '29–30天')}$\\n^  ▸ ${word('other', '其他')} +✓ 1\\b.*${word('28d', '28天')}$`, 'm'));
-    assert.doesNotMatch(page, /NATIVE-ROWS|REVIEW-ONE|NO-HASH|BAR-LINES|SKILL-MOVE|ONE-PAGE|PANEL-KEYS/);
-    assert.doesNotMatch(page, /\(d0e1f2a3\)/);
-    // In flight: a slice, a blocked one, and the job no slice shows.
-    assert.match(page, /PAGE-ONE/);
-    assert.match(page, /◆ PAGE-TWO/);
-    assert.match(page, /◉ imp/);
-    assert.match(page, /Tidy the synthetic docs/);
-    // Next: two bullets of at most two rows, the cut one ending in an ellipsis, and a row for the other two.
-    const rows = (id) => frame.workboard.rows.filter((r) => r.item === `project:fold:next:${id}`);
-    assert.equal(rows(1).length, 2, 'a long bullet folds to two rows');
-    assert.match(stripAnsi(rows(1)[1].text), /…\s*$/);
-    assert.ok(rows(1).every((r) => r.files?.[0] === f.rich.statePath));
-    assert.equal(rows(0).length, 0, 'a bullet that fits has no fold');
-    assert.equal(new Set(frame.workboard.rows.map((r) => r.item).filter((i) => /:next:\d+$/.test(i ?? ''))).size, 2, 'two bullets show');
-    assert.match(stripAnsi(frame.workboard.rows.find((r) => r.item === 'project:fold:next').text), new RegExp(`^  ▸ ${word('2 more', '还有 2 项')}`));
-  }
-  const ascii = text(f.render(40, 'en', 'progress', 80, f.rich, true, 'text'));
-  assert.doesNotMatch(ascii, /[▸▾→●◐◆◉░▒█─━‹›✓◇○]/);
-  assert.match(ascii, /^  > M4 +\+ 1/m);
-  assert.match(ascii, /^  > A long bullet/m);
-  assert.match(ascii, /^  o DATA-ONE +to try 1d$/m);
-});
-test('Progress folds through real input: milestone rows open their slices, a landed slice shows its commit and day, Next shows the rest, a long bullet expands', async (t) => {
+test('Progress folds through real input: a to-try slice shows its commit and day; Next shows the rest and a long bullet expands', async (t) => {
   const f = await fixture(t), height = 90;
   let frame = f.render(40, 'en', 'progress', height, f.rich);
   const at = (item) => { frame.state.project.nav.cursor = item; return frame; };
-  assert.doesNotMatch(text(frame), /NATIVE-ROWS|REVIEW-ONE|BAR-LINES|SKILL-MOVE/);
-  for (const [id, shown] of [['hist:m:M4', /REVIEW-ONE/], ['hist:m:M3b', /NATIVE-ROWS[\s\S]*ONE-PAGE/], ['hist:m:M3', /BAR-LINES[\s\S]*PANEL-KEYS|PANEL-KEYS[\s\S]*BAR-LINES/], ['hist:m:', /SKILL-MOVE/]]) {
-    frame = f.render(40, 'en', send(at(`project:fold:${id}`), '\r').state, height, f.rich);
-    assert.match(text(frame), shown, id);
-    frame = f.render(40, 'en', send(at(`project:fold:${id}`), '\r').state, height, f.rich);
-    assert.doesNotMatch(text(frame), shown, `${id} folds again`);
-  }
-  // Newest first inside a milestone: the dated slice, then the one with no commit date (which shows none).
-  frame = f.render(40, 'en', send(at('project:fold:hist:m:M4'), '\r').state, height, f.rich);
-  assert.deepEqual(text(frame).match(/REVIEW-ONE|NO-HASH/g), ['REVIEW-ONE', 'NO-HASH']);
-  assert.match(text(frame), /^ {4}◇ NO-HASH +to try\n +landed with no commit in its/m);
-  assert.match(text(frame), /^ {4}✓ REVIEW-ONE +8d$/m);
-  // Enter on a landed slice of the last seven days shows its milestone, commit and day; again folds it.
+  // Enter on a to-try slice shows its milestone, commit and day; again folds it.
   frame = f.render(40, 'en', send(at('project:fold:hist:DATA-ONE'), '\r').state, height, f.rich);
   assert.match(text(frame), /^ {6}0\.1\.3 · d0e1f2a · 11-11$/m);
   frame = f.render(40, 'en', send(at('project:fold:hist:DATA-ONE'), '\r').state, height, f.rich);
@@ -100,7 +45,7 @@ test('Progress folds through real input: milestone rows open their slices, a lan
   // Next: the row for the rest shows all four bullets and `fewer`, and Enter again folds them.
   assert.doesNotMatch(text(frame), /Another short bullet/);
   frame = f.render(40, 'en', send(at('project:fold:next'), '\r').state, height, f.rich);
-  assert.match(text(frame), /→ Another short bullet that still fits/);
+  assert.match(text(frame), /→ Another short bullet/);
   assert.match(text(frame), /^ {2}▾ fewer$/m);
   frame = f.render(40, 'en', send(at('project:fold:next'), '\r').state, height, f.rich);
   assert.doesNotMatch(text(frame), /Another short bullet/);
@@ -113,9 +58,6 @@ test('Progress folds through real input: milestone rows open their slices, a lan
   assert.deepEqual(send(at(long.item), 'o').action, { type: 'open-files', files: [f.data.statePath] }, 'o opens the file where Enter folds');
   const short = frame.workboard.rows.find((r) => /:next:0$/.test(r.item ?? ''));
   for (const raw of ['\r', 'o']) assert.deepEqual(send(at(short.item), raw).action, { type: 'open-files', files: [f.data.statePath] });
-  // A milestone row has no file: o folds it like Enter.
-  assert.equal(send(at('project:fold:hist:m:M3b'), 'o').action, undefined);
-  assert.ok(send(at('project:fold:hist:m:M3b'), 'o').state.project.folded.has('hist:m:M3b'));
 });
 test('a project with no STATE.md says so on Progress and its other pages work; its live jobs still show', async (t) => {
   const f = await fixture(t), bare = join(f.root, 'bare');
@@ -189,7 +131,7 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   const f = await fixture(t), height = 24;
   const hub = (state) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'demo-project' });
   let frame = hub(onPage());
-  assert.match(text(frame), /^demo-project ─+ M3b ▾ project 1\/3$/m);
+  assert.match(text(frame), /^demo-project ─+ ▾ project 1\/3$/m);
   assert.deepEqual(frame.projects, PROJECTS);
   assert.match(plain(frame).at(-1), /\[ \] project/);
   assert.equal(f.render(40, 'en').projects, undefined, 'one project: no switch, no hint');
@@ -212,7 +154,7 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   // A page: its crumb names the project, the page stays open, and the page's cursor, scroll and folds start fresh.
   const page = (state) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
   assert.match(plain(f.render(40, 'en', 'progress'))[0], /^‹ Project › Progress/, 'one project: the crumb says Project');
-  frame = page(onPage('progress', { project: { nav: { cursor: 'project:file:x:slice:1', scroll: 4 }, savedPages: { docs: { cursor: 'project:file:y:0', scroll: 2 } }, folded: new Set(['agents', 'hist:m:M3b']) } }));
+  frame = page(onPage('progress', { project: { nav: { cursor: 'project:file:x:slice:1', scroll: 4 }, savedPages: { docs: { cursor: 'project:file:y:0', scroll: 2 } }, folded: new Set(['agents', 'inbox:done']) } }));
   frame = page(send(frame, ']').state);
   assert.equal(projectPageOf(frame.state), 'progress');
   assert.equal(frame.state.selectedProject, PROJECTS[1].root);
@@ -234,9 +176,9 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   const place = readPanelPlace();
   assert.equal(place.state.selectedProject, PROJECTS[1].root);
   frame = f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
-  assert.match(text(frame), /^second-project ─+ M3b ▾ project 2\/3$/m);
+  assert.match(text(frame), /^second-project ─+ ▾ project 2\/3$/m);
   // A root that left projects.json is the panel's own again, not an empty page.
-  assert.match(text(f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS.slice(2), projectName: 'x' })), /^x ─+ M3b$/m);
+  assert.match(text(f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS.slice(2), projectName: 'x' })), /^x ─+$/m);
 });
 test('the panel keeps one collector per visited root: at most four, the panel own never dropped, the oldest other one first', () => {
   const made = [], visits = new ProjectVisits('/own', (root) => { made.push(root); return { root }; });
@@ -330,7 +272,7 @@ await runLivePage();
   await until(() => rows().some((r) => /2\/2/.test(r)), 'the switch');
   // The held collection has not finished: the tab still shows a page, and what it shows is the first project's.
   assert.ok(rows().some((r) => /^Progress +1 to try/.test(r)), screen.join('\n'));
-  assert.ok(rows().some((r) => /^project ─+ M3b ▾ project 2\/2$/.test(r)), 'the first project\'s name goes with its page; the index already says 2/2');
+  assert.ok(rows().some((r) => /^project ─+ ▾ project 2\/2$/.test(r)), 'the first project\'s name goes with its page; the index already says 2/2');
   assert.ok(rows().filter(Boolean).length >= 6, 'not a blank body');
   fs.writeFileSync(release, '');
   await until(() => rows().some((r) => /^Progress +no STATE\.md/.test(r)) && rows().some((r) => /^other-/.test(r)), 'the second project hub');
@@ -384,8 +326,8 @@ test('Progress to try: Enter on the count shows only the ledger\'s `try` slices 
   const f = await fixture(t), data = twoMilestones(f);
   for (const lang of ['en', 'zh']) {
     const word = (en, zh) => (lang === 'en' ? en : zh), render = (state, height = 40) => f.render(38, lang, state, height, data);
-    // The full feed on a short panel, the cursor on a History row below the fold: its footer offers the filter.
-    const full = render(onPage('progress', { project: { nav: { cursor: 'project:fold:hist:m:M3b' } } }), 14);
+    // On a short panel, select Done below the fold; the footer still offers the filter.
+    const full = render(onPage('progress', { project: { nav: { cursor: 'project:fold:inbox:done' } } }), 14);
     assert.ok(full.state.project.nav.scroll > 0, 'the full feed is scrolled');
     assert.match(plain(full).at(-1), new RegExp(word('t to try', 't 待试用')));
     // The to-try count is a stop; Enter on it turns the filter on, remembering where the full feed was.
@@ -424,15 +366,16 @@ test('Progress to try: Enter on the count shows only the ledger\'s `try` slices 
 });
 test('Progress to try: `t`, a click on the count or the header toggle it; the cursor and scroll come back exactly; leaving the page clears it; nothing to try says so', async (t) => {
   const f = await fixture(t), data = twoMilestones(f), render = (state, height = 14) => f.render(38, 'en', state, height, data);
-  const full = render(onPage('progress', { project: { nav: { cursor: 'project:fold:hist:m:M3b' } } })), key = (k) => ({ type: 'key', key: 'settings-test', text: k });
+  const done = 'project:fold:inbox:done';
+  const full = render(onPage('progress', { project: { nav: { cursor: done } } })), key = (k) => ({ type: 'key', key: 'settings-test', text: k });
   // `t` filters from wherever the cursor is, and again, or Esc, brings back the same rows at the same scroll with the cursor on the same row.
   for (const off of [key('t'), ESC]) {
     const on = render(press(full, key('t')).state);
-    assert.equal(onlyTry(on.state.project.view).cursor, 'project:fold:hist:m:M3b');
+    assert.equal(onlyTry(on.state.project.view).cursor, done);
     assert.match(plain(on).join('\n'), /Only to try/);
     const back = render(press(on, off).state);
     assert.equal(onlyTry(back.state.project.view), undefined);
-    assert.equal(back.state.project.nav.cursor, 'project:fold:hist:m:M3b');
+    assert.equal(back.state.project.nav.cursor, done);
     assert.equal(back.state.project.nav.scroll, full.state.project.nav.scroll);
     assert.deepEqual(plain(back), plain(full));
   }
@@ -442,7 +385,7 @@ test('Progress to try: `t`, a click on the count or the header toggle it; the cu
   const on = press(count, { type: 'mouse', button: 'left', x: 5, y });
   assert.ok(onlyTry(on.state.project.view));
   assert.equal(on.action, undefined);
-  assert.equal(press(count, OPEN).action, undefined, 'the cursor is not on the count');
+  assert.equal(count.state.project.nav.cursor, done, 'a mouse target need not be under the cursor');
   assert.deepEqual(press(render(withState(count.state, { project: { nav: { cursor: 'project:try' } } }), 40), OPEN).action, { type: 'open-files', files: [data.statePath] });
   const filtered = render(on.state, 40), header = plain(filtered).findIndex((l) => /^Only to try/.test(l));
   assert.ok(header > 0);

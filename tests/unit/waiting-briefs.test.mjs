@@ -7,7 +7,7 @@ import { WaitingBriefs } from '../../dist/collectors/waiting-briefs.js';
 import { SmallModel } from '../../dist/collectors/small-model.js';
 import { requestLines, questionOriginalRows } from '../../dist/render/work-card.js';
 import { answerable } from '../../dist/render/job-actions.js';
-import { taskHeaderRows, ticketPreview, waitingPreview } from '../../dist/render/project-view.js';
+import { taskHeaderRows, ticketPreview, waitingRows, projectOriginal } from '../../dist/render/project-view.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -48,7 +48,10 @@ test('panel translations: one capped batch, only open foreign prose, original fo
   reopened.configure(true, 'zh');
   reopened.update(board, project);
   const shown = reopened.project(project), card = { worker: reopened.board(board).workers[0] };
-  const lines = (folds = []) => text(waitingPreview(shown.waiting[0], 0, 40, 0, new Set(folds)));
+  const lines = (folds = []) => text([
+    ...waitingRows(shown.waiting[0], 0, 40, 0, Infinity),
+    ...projectOriginal(shown.waiting[0].original, 'wait:0', new Set(folds), 40),
+  ]);
   assert.match(lines(), /确认 BAY-02[\s\S]*原文/);
   assert.doesNotMatch(lines(), /Approve/);
   assert.match(lines(['original:wait:0']), /Approve BAY-02/);

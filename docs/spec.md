@@ -218,9 +218,8 @@ Reference: `docs/design/panel-v8/` (option 2) and `docs/design/panel-v8/notes.md
   override Home/Project layout rules in Split. Never hide owner needs. Split ratio: `=` / `-`, no drag.
   Compact the list on preview focus; zero-width right-edge scrollbar on scrollable previews. `/` filters
   Home, Progress slices and Tickets live. (17.13, 18.08, 18.09, 19.03)
-- Main tabs: Home, Project, Control and experimental EXP. Project layouts apply only to Project pages.
-  (11.04, 20.01, 22.02)
-- The old panel-level Inbox is removed, not Project's Inbox layout (§2.2.4). (18.08, 20.06, 22.05)
+- Main tabs: Home, Project, Control and experimental EXP. (11.04, 20.01, 22.02)
+- There is no panel-level Inbox tab; the Inbox is Project's hub (§2.2.4). (18.08, 22.05, 22.27)
 
 #### 2.2.3 Home and native subagents
 
@@ -237,10 +236,9 @@ Reference: `docs/design/panel-v8/` (option 2) and `docs/design/panel-v8/notes.md
 - Spare rows: compact board and the milestone and ticket rollup (started features, unstarted folded into one row); cards win. (22.14) Top line counts STATE waiting items with questions.
   Idle Home lists waiting items and newest landed slices above progress. (12.04, 17.10)
 
-#### 2.2.4 Project hub, progress, layouts and export
+#### 2.2.4 Project Inbox, progress and export
 
-Reference: `docs/design/project-ux/` (A: Timeline; B and C: Board and Inbox),
-`.scratch/project-layouts/spec.md`.
+Reference: `docs/design/project-ux/` (direction C: Inbox).
 
 - Project can switch among the panel's project and `hud setup` projects. Home stays local. Progress,
   Tickets, Working tree and Docs each have a hub summary row and their own page. (12.04, 14.04, 22.02)
@@ -249,13 +247,13 @@ Reference: `docs/design/project-ux/` (A: Timeline; B and C: Board and Inbox),
   read time from linked jobs, STATE slices, commits naming the ticket and accepted tries, else the file's own
   status; a ticket waiting only on unfinished predecessors shows as queued, not blocked, alongside its blockers,
   package lane links, checklist and latest comment. (12.04, 14.04)
-- Progress reads project files: STATE `## Now` summary, one stacked bar and legend from `## Slices` (working,
-  blocked, landed to try, accepted, todo, dropped), §5 chips with current from `Milestone:`, in-flight slice
-  blocks with current job work, and `## Next`. Include running project jobs; group to-try and accepted slices
-  by milestone, older folded. (12.04, 14.04)
-- Timeline hub: Now (who, slice, duration) and Latest (landed slices, age, awaiting try) above page rows;
-  fold Latest first when short. Hub bar is current milestone. Progress: dated feed of the last 7 days, one
-  row per older milestone. Tickets: state lanes and For-you. (14.04)
+- Inbox hub: ranked Needs you (asking jobs, STATE waiting items, pending trials, asking tickets, blocked
+  slices, exhausted roles), then Running (one row per running job, sonic children counted on their parent),
+  last accepted and the page rows. Enter on a role alert opens that role on Control. (20.06, 22.27)
+- Progress reads STATE's summary, milestone, slices and Next. At task detail, show milestone tasks with
+  pending trials first. At slice detail, show the current milestone's bar and sections for To try (newest
+  first across milestones), Blocked, Working, Next and folded Done. Include running project jobs. Tickets
+  keeps its feature rows at task detail and its state lanes at slice detail. (12.04, 14.04, 20.06, 22.27)
 - In Progress's to-try view, `y` accepts and `n` flags one slice or all still-to-try slices on a milestone
   row. Multi-select
   emits one record and one line. Write only under `$HUD_HOME`, never to project files. Mark at once.
@@ -270,9 +268,7 @@ Reference: `docs/design/project-ux/` (A: Timeline; B and C: Board and Inbox),
   language when needed, with the original folded below (22.14). For to-try slices it writes a short brief
   explaining what changed in plain words, and steps for trying it, from the ledger line, ticket and commits. List: ID and first sentence. Preview or expanded row:
   full brief and steps, ledger text folded below. No model or no brief: wrap full original text. (18.07, 19.02)
-- Settings → Panel → Project layout offers Timeline (default), Board and Inbox in Classic and Split. It
-  only arranges Project pages; counts, keys, to-try rows, cuts, words, Home and Tickets stay unchanged.
-  (20.06, 22.05)
+- Inbox is the only Project layout in Classic and Split; old saved Project layout values are ignored. (22.27)
 - `hud board [--html] [--open]` or panel `w` exports self-contained static HTML for the project and to-try
   review, with no network fetches or resident server. (18.09)
 
@@ -351,8 +347,8 @@ Reference: `docs/design/exp-usage-plan.md`, `.scratch/exp/`.
 
 - Help (`?`) shows shortcuts and marks, not the optional skills list. The shipped, uninstalled skills (§2.3.2)
   are listed in [`docs/optional-skills.md`](optional-skills.md); the main session reads one at the owner's request. (22.27)
-- Keep Inspector (`v`), Settings and Help in Home's look. No old Timeline page (not Project's Timeline
-  layout), Activity hub, Summary, diagnostics pages or old Agents pane. Keep only the model-call count
+- Keep Inspector (`v`), Settings and Help in Home's look. No Timeline page, Activity hub, Summary,
+  diagnostics pages or old Agents pane. Keep only the model-call count
   from diagnostics in Settings → LLM. No Settings panel picture, Look presets, emoji icon
   set, motion switch, stack/tabs layouts, foot status card or rows only they used. (11.06)
 - Icons: a Nerd Font set (Font Awesome glyphs in the Basic Multilingual Plane) is the default, with `unicode`

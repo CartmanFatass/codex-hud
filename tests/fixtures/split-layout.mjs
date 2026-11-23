@@ -71,16 +71,18 @@ export async function splitFixture(root, { idle = false } = {}) {
   };
   return { ...f, board, data, rich, control: richControl(rich), render };
 }
-/** The frames the snapshot keeps: Home busy, idle and short, the hub, and the pages, at 40 columns in both languages (80 and 120 for Home busy). */
+/** Split frames at 40 columns EN/ZH, also 80 and 120 for the Project hub and Progress and for busy Home (EN). */
 export function splitFrames(busy, idle) {
   const frames = {}, page = (p, extra) => split(withState({ activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(p) } }, extra));
   for (const lang of ['en', 'zh']) {
     frames[`home-busy-40-${lang}`] = plain(busy.render(40, lang, 40));
     frames[`home-short-40-${lang}`] = plain(busy.render(40, lang, 24));
     frames[`home-idle-40-${lang}`] = plain(idle.render(40, lang, 40));
-    frames[`hub-40-${lang}`] = plain(busy.render(40, lang, 40, page(undefined), busy.control));
+    for (const width of [40, 80, 120]) {
+      frames[`hub-${width}-${lang}`] = plain(busy.render(width, lang, 40, page(undefined), busy.control));
+      frames[`progress-${width}-${lang}`] = plain(busy.render(width, lang, 40, page('progress'), busy.rich));
+    }
     frames[`hub-short-40-${lang}`] = plain(busy.render(40, lang, 24, page(undefined), busy.control));
-    frames[`progress-40-${lang}`] = plain(busy.render(40, lang, 40, page('progress'), busy.rich));
     const control = { ...busy.control, radar: undefined };
     frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, onControl(undefined, split({ activeTab: 'control' })), control));
     const unfolded = onControl({ cursor: 'project:role:reviewer', folded: new Set(['agents', 'usage', 'files']) }, split({ activeTab: 'control' }));

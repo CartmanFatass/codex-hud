@@ -73,13 +73,13 @@ test('Detail defaults to task and the Panel setting persists slice, with bilingu
   assert.equal(loadSettings().acceptance, 'task');
 });
 
-test('task acceptance in all Progress layouts keeps one row, the oldest age and all slices under filter and keys', async (t) => {
+test('task acceptance in Classic and Split Progress keeps one row, the oldest age and all slices under filter and keys', async (t) => {
   const f = await fixture(t);
-  for (const panelLayout of ['classic', 'split']) for (const projectLayout of ['timeline', 'board', 'inbox']) {
-    const state = () => onPage('progress', { project: { nav: { cursor: taskItem } }, prefs: { acceptance: 'task', panelLayout, projectLayout } });
+  for (const panelLayout of ['classic', 'split']) {
+    const state = () => onPage('progress', { project: { nav: { cursor: taskItem } }, prefs: { acceptance: 'task', panelLayout } });
     const frame = f.draw(state());
     const rows = frame.panes[0].rows.filter((r) => r.tryTarget);
-    assert.equal(rows.length, 2, `${panelLayout}/${projectLayout}`);
+    assert.equal(rows.length, 2, panelLayout);
     assert.match(rows.find((r) => r.item === taskItem).text, /◇ M-ALPHA.*◇ 3.*1d/);
     assert.deepEqual(targetIds(rows.find((r) => r.item === taskItem).tryTarget), memberIds);
     assert.deepEqual(targetIds(rows.find((r) => r.item.endsWith(':SOLO')).tryTarget), ['SOLO']);
@@ -214,11 +214,9 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     for (const key of ['try-accept', 'try-flag']) assert.deepEqual(targetIds(press(progress, key).action?.target), ['CSV']);
     const filtered = render('progress', milestone, { project: { filter: { query: 'column chooser', editing: false } } });
     assert.deepEqual(targetIds(press(filtered, 'try-accept').action?.target), ['CSV']);
-    for (const projectLayout of ['timeline', 'board', 'inbox']) {
-      const hub = render(undefined, 'project:page:progress', { prefs: { projectLayout } });
-      assert.match(text(hub), lang === 'en' ? /1 to try · 3 tasks/ : /1 待试用 · 3 个任务/);
-      assert.match(text(hub), lang === 'en' ? /Tickets\s+2 features/ : /工单\s+2 个功能/);
-    }
+    const hub = render(undefined, 'project:page:progress');
+    assert.match(text(hub), lang === 'en' ? /1 to try · 3 tasks/ : /1 待试用 · 3 个任务/);
+    assert.match(text(hub), lang === 'en' ? /Tickets\s+2 features/ : /工单\s+2 个功能/);
     record(`Progress — ${panelLayout}`, progress, width, lang);
   }
   if (process.env.OWNER_VIEW_TASK_FRAMES) fs.writeFileSync(process.env.OWNER_VIEW_TASK_FRAMES, frames.join('\n'));

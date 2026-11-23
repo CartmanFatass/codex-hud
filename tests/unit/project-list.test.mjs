@@ -12,7 +12,6 @@ import { pathToFileURL } from 'node:url';
 import { listFixture, listFrames } from '../fixtures/project-list.mjs';
 import { NOW, TREE, plain, onPage } from '../fixtures/project-page.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
-import { projectOrder } from '../../dist/render/project-view.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -29,66 +28,24 @@ const send = (frame, raw) => handleMonitorInput(frame.state, keyOf(raw), ctx(fra
 const esc = (frame) => handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, ctx(frame));
 const click = (frame, x, y) => handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x, y }, ctx(frame));
 const text = (frame) => plain(frame).join('\n');
-const names = (frame) => text(frame).match(/^[a-z]+-project/gm);
-const UP = '\x1b[A', DOWN = '\x1b[B';
+const DOWN = '\x1b[B';
 
-test('Projects list frames: two rows a project at 40/80/120 EN/ZH and in text icons, from real synthetic projects', async (t) => {
+test('Projects list frames: grouped projects at 40/80/120 EN/ZH and in text icons, from real synthetic projects', async (t) => {
   const l = await fixture(t);
   assert.deepEqual(listFrames(l), expected);
   for (const width of [32, 40, 80, 120]) for (const lang of ['en', 'zh']) for (const icons of ['unicode', 'text'])
     for (const line of l.list(width, lang, undefined, 24, icons).lines) assert.equal(visualLength(line), width, stripAnsi(line));
 });
-test('Projects list: the panel project first, then waiting, running, then the most recent; each project is two rows', async (t) => {
-  const l = await fixture(t), frame = l.list(40);
-  assert.deepEqual(names(frame), ['demo-project', 'waiting-project', 'busy-project', 'bare-project', 'quiet-project', 'old-project']);
-  const rows = plain(frame);
-  const entry = (name) => rows.slice(rows.findIndex((r) => r.startsWith(name)), rows.findIndex((r) => r.startsWith(name)) + 2);
-  // Name, milestone, waiting `?` and running `◉`; then what it is doing now (working slices, else the newest landed one) and the age.
-  assert.match(entry('demo-project')[0], /^demo-project  M3b +\? 2  ◉ 1$/);
-  assert.match(entry('demo-project')[1], /^  ◐ NATIVE-TREE, ORPHAN working +0m$/);
-  assert.match(entry('waiting-project')[0], /^waiting-project  M5 +\? 2$/);
-  assert.match(entry('waiting-project')[1], /^  ◇ B-TWO to try +5h$/, 'no working slice: the newest landed one, and it is still to try');
-  // Two running jobs (one asking) count; the settled one and the idle_grace one in another project do not.
-  assert.match(entry('busy-project')[0], /^busy-project  M2 +◉ 2$/);
-  assert.match(entry('busy-project')[1], /^  ◐ C-ONE, C-TWO working +20m$/);
-  assert.match(entry('quiet-project')[1], /^  ◐ A-THREE working +3d$/, 'a working slice wins over the accepted ones before it');
-  assert.match(entry('old-project')[0], /^old-project  M1$/);
-  assert.match(entry('old-project')[1], /^  ✓ D-ONE accepted +40d$/);
-  // No STATE.md says so; the open tickets say how many and the newest ticket is its age.
-  assert.match(entry('bare-project')[1], /^  no STATE\.md · 1 open +2d$/);
-  // The last-activity column goes through t(): minutes, hours and days in Chinese too.
-  assert.match(text(l.list(40, 'zh')), /^  无 STATE\.md · 1 未完成 +2天$/m);
-  assert.match(text(l.list(40, 'zh')), /^  ◐ NATIVE-TREE, ORPHAN 工作中 +0分$/m);
-  assert.match(text(l.list(40, 'zh')), /^  ◇ B-TWO 待试用 +5小时$/m);
-  // The overview carries it: the working slices, else the newest landed one (ledger order, no dates and no Git behind the list).
-  const latest = (name) => l.projects.find((p) => p.name === name).overview.latest;
-  assert.deepEqual(latest('demo-project'), { state: 'working', ids: ['NATIVE-TREE', 'ORPHAN'] });
-  assert.deepEqual(latest('waiting-project'), { state: 'try', ids: ['B-TWO'] });
-  assert.deepEqual(latest('old-project'), { state: 'accepted', ids: ['D-ONE'] });
-  assert.equal(latest('bare-project'), undefined);
-  // A wide row keeps the bar before it.
-  assert.match(text(l.list(80)), /^  [█▒░]{24}  ◐ NATIVE-TREE, ORPHAN working +0m$/m);
-  const zh = text(l.list(40, 'zh'));
-  for (const age of ['0分', '5小时', '20分', '3天', '40天']) assert.match(zh, new RegExp(`${age}$`, 'm'));
-  assert.doesNotMatch(zh, /\b\d+[mhd]$/m, 'no English unit left in the Chinese list');
-  assert.match(plain(l.list(40, 'zh'))[0], /^‹ 项目列表/);
-  assert.match(plain(frame)[0], /^‹ Projects/);
-  assert.match(plain(frame).at(-1), /Esc back  \? help$/);
-  // Text icons: no unicode glyph at all.
-  assert.doesNotMatch(text(l.list(40, 'en', undefined, 24, 'text')), /[‹›▾◉█▒░…]/);
-  assert.match(text(l.list(40, 'en', undefined, 24, 'text')), /^demo-project {2}M3b +\? 2 {2}@ 1$/m);
-  // The order is a function of what each project shows, not of the list's own order.
-  const [own, ...rest] = l.projects;
-  assert.deepEqual(projectOrder([own, ...rest.slice().reverse()]).map((p) => p.name), names(frame));
-  // No overview yet (the first frame): names only, never a crash.
-  assert.deepEqual(names(l.list(40, 'en', undefined, 24, 'unicode', l.projects.map(({ root, name }) => ({ root, name })))), l.projects.map((p) => p.name));
+test('Projects list keeps projects visible before their overviews load', async (t) => {
+  const l = await fixture(t), choices = l.projects.map(({ root, name }) => ({ root, name }));
+  assert.deepEqual(text(l.list(40, 'en', undefined, 24, 'unicode', choices)).match(/^  [a-z]+-project/gm).map((row) => row.trim()), choices.map((p) => p.name));
 });
 test('Projects list through real input: name row opens it, Enter opens a hub, Esc and the crumb come back, 2 opens the hub, reload keeps it', async (t) => {
   const l = await fixture(t), { projects } = l, byName = (name) => projects.find((p) => p.name === name).root;
   const view = (state) => l.render(40, 'en', state, 24, l.data, true, 'unicode', 'none', {
     projects, projectName: (projects.find((p) => p.root === state.selectedProject) ?? projects[0]).name });
   let frame = view(onPage());
-  assert.match(text(frame), /^demo-project ─+ M3b ▾ project 1\/6$/m);
+  assert.match(text(frame), /^demo-project ─+ ▾ project 1\/6$/m);
   // Enter on the name row opens the list with the cursor on the shown project.
   frame.state.project.nav.cursor = 'project:switch';
   frame = view(send(frame, '\r').state);
@@ -101,7 +58,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(frame, '\r').state);
   assert.equal(frame.state.selectedProject, byName('busy-project'));
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), projectPageOf(frame.state)], [false, undefined]);
-  assert.match(text(frame), /^busy-project ─+ M3b ▾ project 4\/6$/m, 'the hub of that project, numbered by the switch order');
+  assert.match(text(frame), /^busy-project ─+ ▾ project 4\/6$/m, 'the hub of that project, numbered by the switch order');
   // Stepping on with ] leaves that hub: Esc no longer goes back to the list it was opened from.
   const stepped = view(send(frame, ']').state);
   assert.equal(stepped.state.project.fromProjectsList, false);
@@ -114,7 +71,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('busy-project')]);
   // That hub was not reached from the list now: Esc on it does what it always did (nothing here), so keys can be given back.
   assert.equal((esc(frame).state.project.view.kind === 'projects-list'), false);
-  assert.match(text(view(esc(frame).state)), /^busy-project ─+ M3b ▾ project 4\/6$/m);
+  assert.match(text(view(esc(frame).state)), /^busy-project ─+ ▾ project 4\/6$/m);
   // One click on an entry opens its hub; a click on the crumb row returns to the shown project's hub.
   frame = view(onPage(undefined, { project: { view: { kind: 'projects-list' } } }));
   const at = frame.workboard.rows.findIndex((r) => r.item === `project:list:${byName('waiting-project')}`);
@@ -126,6 +83,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('waiting-project')]);
   // A page: Esc goes up to the hub, then (the hub being reached from the list) to the list.
   frame = view(send(view(onPage(undefined, { project: { view: { kind: 'projects-list' } } })), '\r').state);
+  frame.state.project.nav.cursor = 'project:page:progress';
   frame = view(send(frame, '\r').state);
   assert.equal(projectPageOf(frame.state), 'progress');
   frame = view(esc(frame).state);
@@ -140,7 +98,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(view(onPage(undefined, { selectedProject: byName('quiet-project'), project: { view: { kind: 'projects-list' } } })), '\x1b[D').state);
   frame = view(send(frame, '\x1b[C').state);
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('quiet-project')]);
-  assert.match(text(frame), /^quiet-project ─+ M3b ▾ project 2\/6$/m);
+  assert.match(text(frame), /^quiet-project ─+ ▾ project 2\/6$/m);
   // The list survives the panel's own restart: the whole state goes through the reload place.
   const listed = onPage(undefined, { selectedProject: byName('quiet-project'), project: { view: { kind: 'projects-list' } } });
   process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: listed, settings: null });
@@ -148,7 +106,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.deepEqual([(place.state.project.view.kind === 'projects-list'), place.state.selectedProject], [true, byName('quiet-project')]);
   assert.match(plain(view(place.state))[0], /^‹ Projects/);
   // A root that left the list is the panel's own again; a list that shrank to one project is the plain hub.
-  assert.match(text(l.render(40, 'en', place.state, 24, l.data, true, 'unicode', 'none', { projects: projects.slice(0, 1), projectName: 'demo-project' })), /^demo-project ─+ M3b$/m);
+  assert.match(text(l.render(40, 'en', place.state, 24, l.data, true, 'unicode', 'none', { projects: projects.slice(0, 1), projectName: 'demo-project' })), /^demo-project ─+$/m);
 });
 test('one project shows no list: no `▾ i/n`, no list, Esc and [ ] as before', async (t) => {
   const l = await fixture(t), one = l.projects.slice(0, 1);
@@ -160,7 +118,8 @@ test('one project shows no list: no `▾ i/n`, no list, Esc and [ ] as before', 
   assert.equal((esc(forced).state.project.view.kind === 'projects-list'), true, 'a stale flag is left alone, never acted on');
   assert.doesNotMatch(plain(view(esc(forced).state))[0], /Projects/);
   assert.equal(send(forced, ']').state.selectedProject, undefined);
-  // Enter on the first row opens a page, exactly as with no list at all.
+  // A stale list flag does not stop hub links from opening pages.
+  forced.state.project.nav.cursor = 'project:page:progress';
   assert.equal(projectPageOf(send(forced, '\r').state), 'progress');
   assert.deepEqual(plain(view(onPage())), plain(l.render(40, 'en', onPage(), 24, l.data, true, 'unicode', 'none', { projectName: 'demo-project' })));
 });

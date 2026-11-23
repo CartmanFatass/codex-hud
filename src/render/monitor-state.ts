@@ -80,7 +80,7 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
 export type SubpageState = { kind: 'inspector'; target: WorkTarget; cursor?: string; scroll: number; selectedNodeId?: string; revealed?: string }
   | { kind: 'changes'; scroll: number };
 export interface HelpOverlay { scroll?: number }
-export type ViewPrefs = Pick<HudSettings, 'experiments' | 'panelLayout' | 'projectLayout' | 'acceptance' | 'cardStallMinutes' | 'cardFoldMinutes' | 'cardHideMinutes'> & { splitRatio?: number };
+export type ViewPrefs = Pick<HudSettings, 'experiments' | 'panelLayout' | 'acceptance' | 'cardStallMinutes' | 'cardFoldMinutes' | 'cardHideMinutes'> & { splitRatio?: number };
 export interface MonitorState {
   activeTab: MainTab;
   selectedProject?: string;
@@ -234,18 +234,17 @@ export function transitionProjectView(state: MonitorState, view: ProjectView, op
 }
 
 export function viewPrefs(settings: HudSettings): ViewPrefs {
-  const { experiments, panelLayout, projectLayout, acceptance, cardStallMinutes, cardFoldMinutes, cardHideMinutes } = settings;
-  return { experiments, panelLayout, projectLayout, acceptance, cardStallMinutes, cardFoldMinutes, cardHideMinutes };
+  const { experiments, panelLayout, acceptance, cardStallMinutes, cardFoldMinutes, cardHideMinutes } = settings;
+  return { experiments, panelLayout, acceptance, cardStallMinutes, cardFoldMinutes, cardHideMinutes };
 }
 export function applyViewPrefs(state: MonitorState, settings: HudSettings): MonitorState {
   const prefs = { ...viewPrefs(settings), splitRatio: state.prefs.splitRatio };
   let next = reconcileMonitor({ ...state, prefs });
   const layout = prefs.panelLayout !== state.prefs.panelLayout;
   const acceptance = prefs.acceptance !== state.prefs.acceptance;
-  const projectDisplay = prefs.projectLayout !== state.prefs.projectLayout || acceptance;
   if (layout || acceptance) next = { ...next, home: { ...next.home, trySelection: undefined,
     ...(layout ? { cursor: undefined, scroll: 0, revealed: undefined, split: emptySplitNav() } : {}) } };
-  if (layout || projectDisplay) {
+  if (layout || acceptance) {
     const project = next.project;
     next = { ...next, project: { ...project, view: project.view.kind === 'progress' ? { kind: 'progress' } : project.view,
       nav: emptyClassicSplitNav(), trySelection: undefined } };

@@ -16,7 +16,7 @@ const request = (w: OwnerWorker) => {
 };
 /** The route reason the card shows (the fallback, else the mode's, else the tier's) and the field it is in. */
 const whyKey = (r: NonNullable<OwnerWorker['route']>): 'fallback' | 'mode_reason' | 'reason' => r.fallback !== undefined ? 'fallback' : r.mode_reason !== undefined ? 'mode_reason' : 'reason';
-/** The newest landed slices, which Home's and the hub's Latest rows name by their ledger text. */
+/** The newest landed slices in ledger order, for the display copy used by Home and Project. */
 const latest = (p: ProjectSnapshot) => p.ledger.filter((r) => r.state === 'accepted' || r.state === 'try').slice(-6);
 const keyOf = (lang: Language, text: string) => createHash('sha256').update(lang).update('\0').update(text).digest('hex');
 

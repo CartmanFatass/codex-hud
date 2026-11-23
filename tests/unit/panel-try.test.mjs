@@ -74,10 +74,10 @@ test('the live panel flags a milestone, accepts one slice and immediately remove
   const { key, frame, painted, recorded, close } = panel(f);
 
   key('\x1b[C');
-  await painted(/^Progress +3 to try/m);
-  key('\r');
+  await painted(/^Progress +0\.1\.4 · 3 to try/m);
+  key('Gkk\r'); // Docs → Working tree → Progress.
   await painted(/Progress.*updated/);
-  key('ynt'); // Neither result key acts in the full feed.
+  key('ynt'); // The bar row is not a try target.
   await painted(/^Only to try ─+ 3$/m);
   assert.match(frame(), /y accept  n flag/);
   key('yn'); // The filter's header is not a milestone.
@@ -117,7 +117,7 @@ test('task acceptance writes each pending slice of the milestone in one record',
   const f = fixture(t), { key, painted, recorded, close } = panel(f, { acceptance: 'task' });
   key('\x1b[C');
   await painted(/^Progress +2 to try/m);
-  key('\rtj');
+  key('Gkk\rtj');
   await painted(/^Only to try ─+ 2$/m);
   await painted(/◇ 0\.1\.4 +2 slices/);
   key(' ');
@@ -141,10 +141,10 @@ test('Space marks two rows, then y writes one try record and one watch line in C
     const f = fixture(t);
     const { key, frame, painted, recorded, close } = panel(f, { layout: view === 'classic' ? 'classic' : 'split', columns: 40 });
     key('\x1b[C');
-    await painted(/^.*Progress +3 to try/m);
+    await painted(/^Needs you ─+ 3 to try/m);
     let slices = ['TWO', 'ONE'];
     if (view === 'classic') {
-      key('\rt');
+      key('Gkk\rt');
       await painted(/^Only to try /m);
       key('jj ');
       await painted(/▣ ◇ TWO/);
@@ -158,12 +158,10 @@ test('Space marks two rows, then y writes one try record and one watch line in C
       key(' ');
       await painted(/^ {4}◇ TWO/m); // Toggle the same row off.
     } else if (view === 'split-progress') {
-      key('\r');
+      key('Gkk\r');
       await painted(/^‹ .*Progress/m);
-      slices = ['ONE', 'TWO'];
     } else {
-      await painted(/^To try/m);
-      slices = ['TWO', 'OLDER']; // One record across milestones.
+      slices = ['TWO', 'OLDER']; // One record across milestones from the Inbox list.
     }
     assert.match(frame(), /Space mark/);
     key(' ');

@@ -601,7 +601,7 @@ completion reopens an agent; fresh finished metadata or a caught-up public
 **Ordering.** Home uses the built-in order, not model ranking. A saved `homeMode`
 setting is ignored; previously selecting Recommended does not change the order.
 
-**Top line.** Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering). The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear. The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in the statusline's order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker). The counts live in the panel's memory only, so a panel restart starts from zero, and nothing shows until a worker has started; the left side takes its shorter forms before the counts go. With STATE waiting items, Enter or a click on the top line in Classic opens the Project hub on its Waiting block. The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
+**Top line.** Both Classic and Split Home start with a one-row summary strip (hidden while `/` filtering). The left side highlights what needs action: `? N waiting for you` (STATE's "Waiting for the owner" items plus open job questions, with `· ✗N` if unhandled failures exist), `✗ N failed`, `✓● N unread`, or `✓ Nothing needs you` when clear. The right side counts the workers each role has started since this panel opened, in any state (running, done and failed alike): one icon and its count per role in the statusline's order (imp, frontend-imp, general, oracle, reviewer, other, sonic; `<imp> 5  <frontend-imp> 2  <sonic> 7`; a sonic child counts under sonic, a native agent is not a HUD worker). The counts live in the panel's memory only, so a panel restart starts from zero, and nothing shows until a worker has started; the left side takes its shorter forms before the counts go. With STATE waiting items, Enter or a click on the top line in Classic opens the Project Inbox. The footer shows `✓ N done today` (excluding sonic children) from 56 columns, `✓ N` below 56, and no count at zero.
 
 **Spare rows.** Cards get space first. Remaining rows show, top to bottom: STATE's
 waiting items (a row each, up to five, then `+N more`), the newest landed work (three rows at 38–55
@@ -615,79 +615,49 @@ than listed. In Split Home the Progress row names the milestone, how many items 
 are working, or the accepted fraction when idle. The Waiting row separates decisions from pending trials. The block takes its rows before the two lists, which take what is left.
 As height falls the latest list shrinks first, then waiting, tickets, the summary's extra
 rows, legend, summary, bar and the block. Enter or a click on a waiting item opens its page (Esc
-returns to its row on the hub), on the Waiting header the hub's Waiting block, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
+returns to its row on the hub), on the Waiting header the Project Inbox, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
 
 ## Project
 
-Project is a hub with one page per section, laid out as a timeline: what waits for you,
-what is happening, what landed, then where each page stands. Top to bottom the hub has:
+Project opens to the Inbox in both Classic and Split. Below the project name:
 
-- the project's name row (the panel's directory name; see Switching projects below) with the
-  current milestone;
-- **Waiting for you**: STATE's waiting items, folding with Enter (an item ending `(waits on ID, feature/NN)` drops out by itself once those slices are accepted or dropped and those tickets done); the header says how many there are
-  and how much work is still to try (`4 · 5 to try`; the second number follows the Acceptance setting, across all milestones). An item whose text does not
-  fit one row flows on under its first word, whole, into the hub's spare rows, top down (what the owner tries is
-  never cut to a name); a panel too short for that cuts it to one row, before Latest or the page rows give way,
-  except the item the cursor is on, which keeps its whole text. Enter or a
-  click on an item opens its whole text on a page (`‹ Project › Waiting`): the bullet as STATE
-  writes it, continuation lines included, in its own words and order (a line that continues a
-  sentence flows on; a numbered or `-` line starts a paragraph of its own). The page scrolls with the
-  movement keys and the wheel; Esc or a click on the crumb returns with the cursor on the same item;
-  `o` opens STATE.md. No model call;
-- **Now**: a row per working or blocked slice (`◐ ID  text`, then the job's role and minutes,
-  `asking ?`, `blocked`, or what is out of step), then the project's unsettled HUD jobs that no
-  slice shows (`◉ role  title  age`). A slice's text goes on its row only when it fits whole.
-  Worktrees with no ledger row are not work in flight: they are counted on the Working tree row.
-  With nothing in flight it says `Nothing in progress`;
-- **Latest**: the newest landed work (to try or accepted), newest first by known commit date;
-  three rows at 40 columns, five wider;
-- one row per page with a one-line summary: **Progress** (to try, blocked, working: the milestone is already on the project name row, and the last facts drop first on a short row; the
-  current milestone's bar under it), **Tickets** (done/total, working, blocked; absent when the
-  project has no tickets), **Working tree** (worktrees with no ledger row, branch, changed, worktrees,
-  ahead/behind, editing jobs; its page lists the unlisted ones), and **Docs** (spec milestone, newest review). A row too short for its facts drops the last ones, never part
-  of one.
+- **Needs you**, in order: asking jobs, STATE waiting items, pending trials (newest first), tickets
+  asking for an answer, blocked slices and exhausted roles. The heading counts STATE waiting items
+  and pending trials across all milestones (`4 · 5 to try`), in the units of the Detail setting.
+  Enter on `N more` reveals the remaining items. Enter on a role alert opens that role on Control;
+  `o` opens its file.
+- **Running**: one row per running job with role, ticket or job title, `⚡N` for its running sonic
+  children and elapsed time. Slices, worktrees and those children do not get separate rows. A
+  `last accepted` line shows the newest accepted slice.
+- One summary row per page: **Progress**, **Tickets** (absent if there are no tickets), **Working tree**
+  (including the unlisted worktree count), and **Docs**. A narrow row drops optional facts from the end.
 
-A panel shorter than the hub loses **Latest** first (to its newest rows, then whole), then the
-bar and the blank rows between blocks; Waiting for you, Now and the page rows stay (the page
-scrolls with the cursor when even those do not fit). Enter or one click opens a page; its crumb row
-`‹ Project › Page` replaces the tabs, and Esc or a click on the crumb returns to the
-hub with the cursor on that page's row. Each page keeps its own cursor and
-scroll, also across the panel's self-reload.
+Enter or click a page row to open it; Esc or the crumb (`‹ Project › Page`) returns to that row.
+Each page keeps its own cursor and scroll, even across panel reloads. Enter on a waiting item opens
+its whole text on its own scrolling page, including continuation lines; Esc or the crumb returns to
+its row, and `o` opens STATE.md. An item ending in `(waits on ID, feature/NN)` drops out once the
+named slices are accepted or dropped and the tickets are done or dropped.
 
 Facts come from `docs/handoff/STATE.md` (root `STATE.md` fallback), `docs/spec.md`,
 reviews, roles/convention/instructions and Git/worktrees. No milestone or completion
 is guessed. Key rows contain names/presence only; Browser ✓ means Chrome and
 `jev-ask` exist on PATH, not a running/logged-in browser.
 
-**Progress page.** STATE's Now summary (two rows at most), then the current milestone (`Milestone:`,
-or the whole ledger when none is current): its name, a bar and `accepted/total`, the states
-that have slices (`1 working  1 blocked  2 to try  3 todo`, none with a zero), and one row for
-what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`). Then three sections:
-
-- **Now**: ledger slices in `working`/`blocked` (drift marks mean a missing worktree or a
-  non-active ledger state, never a write back to STATE; worktrees with no ledger row are on
-  the Working tree page), each with its
-  job's line from Home's card text, then the project's HUD jobs that have not settled
-  and no slice shows (role, title, age). A job's title is the workboard's description, else its
-  `job.json` title, else the first heading (or line) of its `brief.md`, from the collector's
-  signature-cached, size-bounded read (full collection only). Each such row is a stop of its own: Enter or `o`
-  opens its report, else its brief, and a long list pages by keyboard.
-- **Next**: STATE's `## Next`, the first two bullets of at most two rows each (Enter on a cut one,
-  `…`, shows all of it, again folds it; a bullet that fits opens STATE.md) and a `2 more` row that
-  shows the rest (`fewer` folds them again).
-- **History**: the last seven days in full, newest first, as a dated feed: a row per landed
-  slice (`◇`/`✓`, its id, its text and its age, `to try 1d` or `3d`), where Enter shows its
-  milestone, commit and day. Older work is one row per milestone (`▸ M4  ✓ 7 accepted  ◇ 1 to try  15–24d`,
-  with the span of days) that Enter opens into its slices; a slice with no commit date is never
-  guessed and sits under its milestone. The date is the ledger row's last hash (7-40 hex) read
-  through the safe Git policy, in the one batched `git log` the collector already runs.
+**Progress page (slice detail).** The bar counts the current milestone (or the whole ledger if no
+milestone matches). Sections follow in order: **To try** across all milestones, newest first;
+**Blocked** and **Working**, including project jobs outside the ledger under Working; **Next** from
+STATE; and **Done**, folded to an accepted count and the newest accepted slice. Enter unfolds Done
+in Classic; Split previews the accepted rows. Unlisted worktrees are on the Working tree page, not
+in flight. In Classic, Next first shows up to two bullets, each folded to one row if necessary.
+Enter unfolds a long bullet or opens STATE.md for one that fits; `N more` reveals the rest.
+A job's row can open its report or, if none, its brief.
 
 **Detail.** Settings → Panel → **Detail** (`acceptance` in `hud-settings.json`) defaults to `task`.
-Progress shows one row per milestone, with the worst state's mark first and a slice count per state.
+Progress shows one row per milestone, with tasks awaiting trial first and each row showing the worst state's mark and slice counts by state.
 A `—` or empty milestone keeps each slice separate. Tickets shows one row per `.scratch` feature,
 with resolved/total (including dropped tickets as resolved) and the oldest open ticket's status.
 Enter in Classic or the Split preview shows the members with their usual details. Hub counts features
-and tasks; Waiting's to-try count is the number of tasks with pending slices. Space, `y` and `n` mark,
+and tasks; the Inbox's to-try count is the number of tasks with pending slices. Space, `y` and `n` mark,
 accept and flag only a task's `try` slices. A filter matching one member still shows the whole task or feature.
 Home and the HTML board still use the setting for their to-try rows. Watch/MCP notices and brief generation
 are unchanged. Set `slice` for the previous per-slice and per-ticket views.
@@ -848,17 +818,12 @@ that block returns to it. The panel keeps one collector per visited project (at 
 panel's own never dropped, the oldest other one first) and collects only the shown one.
 With one project there is no `▾ project i/n` and no list.
 
-**Projects list.** Two rows per project: its name, current milestone, `?` the count of
-STATE's waiting items and `◉` the count of unsettled HUD jobs under its root; then what it is
-doing now (`◐ A-ONE, A-TWO working`: the slices working, else blocked, else the newest landed
-one `◇ B-TWO to try`, else the newest accepted `✓ D-ONE accepted`, in ledger order) and the time
-since it was last touched (STATE.md or a ticket file, whichever is newer; a ledger commit date
-would need Git). At 80+ columns the project's stacked bar leads the row. A project without
-STATE.md shows `no STATE.md` and its open tickets. Order:
-the panel's own project, then projects with waiting items, then with running jobs, then
-the rest, each group newest first. Enter or one click opens that project's hub. From a hub opened this way, Esc
-returns to the list. On the Project tab's root hub, Esc does nothing. The cursor marks both rows of an
-entry. The list is read only while it is visible: for each listed project STATE and
+**Projects list.** Groups are Needs you (STATE waiting items or work to try), Running, and Quiet.
+Entries show counts and, when known, time since the last change to STATE.md or a ticket file. Quiet
+projects take one row and show their milestone or `no STATE.md` when known. Within each group the
+panel's own project comes first, then projects with waiting items, then those with running jobs,
+then the most recently touched. Enter or one click opens the project's hub; Esc returns to the list
+from a hub opened that way. On the root hub, Esc does nothing. The list is read only while it is visible: for each listed project STATE and
 tickets as Home reads them (cached by file signature) and, in one pass over the newest
 64 top-level jobs and up to 64 of their children, the unsettled jobs per root, at most once every five seconds while
 the list stays open (opening it again reads at once). No Git, no roles, no full collection;
@@ -901,18 +866,8 @@ Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classi
 Control are laid out; saving switches the open panel at once, no restart. **Classic** is the default described above.
 **Split** puts a list over a preview of the selected row (see [Split layout](#split-layout)).
 
-Settings → Panel → **Project layout** (`projectLayout` in `hud-settings.json`: `timeline`, `board`, `inbox`) arranges
-the Project tab's pages in both Classic and Split without changing Home, Control, Tickets, counts or keys; saving applies live.
-**Timeline** is the default. **Board** draws a milestone map (one row per milestone, one cell per slice with `n/m`, age
-and `+N` when full), a `latest` line, a one-row legend, In flight and gauge page rows on the hub; opens the current
-milestone into its slices in cell order on Progress (older milestones as map rows, jobs outside the ledger, Next); and draws the Projects list as a one-row-per-project table (`ms`, `ledger`, `?`,
-`◉`, `age`). **Inbox** opens the hub with a ranked Needs you list (questions and STATE's waiting items, to-try slices
-newest first, tickets asking for an answer, blocked slices, roles at their limit, each with its reason word on the
-right and the same `N · M to try` header figures as Timeline), followed by Running (one row per running job: role,
-ticket title, `⚡N` for its running sonic children as on Home, age; slices, worktrees and sonic children are not rows),
-a `last accepted` line and the page rows; orders Progress as To try (every milestone, newest first), Blocked, Working, Next and Done folded to one row;
-groups the Projects list into Needs you, Running and Quiet (one row per quiet project); and keeps Timeline's Tickets.
-Enter on an Inbox role alert opens that role on Control; `o` still opens its file.
+There is no separate Project layout setting. Old `projectLayout` values, including `timeline` and
+`board`, are ignored: Project opens to the Inbox.
 
 On a to-try task row, or on a slice row in the to-try view, Space toggles a mark (`▣`, or `*` with text icons).
 `y` accepts and `n` flags the marked rows, or the current row if nothing is marked. All affected slices go into
@@ -1025,15 +980,16 @@ Home, Project and Control become **a list above and a preview of the cursor row 
   the cursor is not on shows, in the row's free cells, the marked keywords of its
   model sentence (else its reason or the phases so far); when the width leaves under
   six cells, nothing.
-- **Project hub.** Waiting for you and the pages are the list; the preview of the
-  cursor row is that page's substance (Progress: summary, bar, work to try, Now,
-  latest accepted). Rows in those two state groups keep their marks and ages without repeating the state word. Enter on a page opens it, as before. A waiting item shows its whole text, wrapped, and a slice to try its
-  brief's first sentence (or, without a brief, its whole text wrapped); the preview scrolls with PgUp/PgDn when it is long.
-- **Progress.** One ledger list (working, blocked, to try, todo; accepted, Next and
-  History are one row each) with the cursor slice explained underneath: its whole ledger
-  text and state (on the preview rule). On the list row, the mark carries the state and the ledger text is cut at a word boundary. For a slice to try with a stored brief, the list still shows its first sentence instead; the preview shows the brief and acceptance steps with the ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). In the hub's
-  Progress preview, Space starts on the highlighted to-try row and moves the keys into
-  the preview. Without Space marks, `y` / `n` on the hub preview act on the next row to try.
+- **Project hub.** The Inbox lists Needs you, Running, last accepted and the page rows. A waiting
+  item previews its whole text; a role alert previews its places. The Progress preview shows the
+  summary, milestone bar, pending slices at slice detail, Running and last accepted. Enter on a
+  page row opens it. PgUp/PgDn scroll a long preview.
+- **Progress.** At slice detail the list groups To try, Blocked and Working, then offers Next and
+  Done previews. A slice previews its full ledger text and state. For a slice with a stored brief,
+  the list shows the first sentence and the preview shows the brief and acceptance steps above
+  the folded ledger text. Enter focuses the preview when there is a fold to open; `o` opens the
+  source file. In the hub's Progress preview at slice detail, Space moves focus to the highlighted
+  pending slice. Without Space marks, `y` / `n` act on the next slice to try.
 - **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the chain and opens the place sheet on the next Enter. Drafts and discard confirmation stay in the preview. On a role row, `c` / `C` switch presets and `p` opens the preset list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
 - **Tickets, Working tree, Docs.** A row each, the ticket's checklist and latest
   comment or the fact's whole text underneath; Enter opens the file.
@@ -1092,7 +1048,7 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 | Group | Rows |
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
-| Panel | Layout, Project layout, Detail, Width, Notifications; in **Advanced**: Stall threshold, Fold after, Hide after, Refresh, Mouse, Experiments |
+| Panel | Layout, Detail, Width, Notifications; in **Advanced**: Stall threshold, Fold after, Hide after, Refresh, Mouse, Experiments |
 | Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking, Imp routing; in **Advanced**: Decision cap (with hourly counter), Summary interval |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
@@ -1153,7 +1109,7 @@ requests and native finals keep two-minute floors. Outcome labels are independen
 |---|---|
 | Thin-job sentence/name | Only the worker's one-line summary (≤160 Unicode code points) when translating it; otherwise brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a 32 KiB working-session tail |
 | To-try brief and steps | One per slice still to try, while Home or Project shows the board: its ledger line, the subjects and bodies of up to 5 commits it names (1200 chars each), up to 4 ticket files (3000 bytes each) under the `.scratch/<slug>/` it names; cached per slice by a hash of those inputs |
-| Panel translation | Waiting items from STATE (first 8, ≤2 KiB each), open worker questions (question, options, context and default, ≤4 KiB), open ticket titles (≤512 bytes each), the route reason a card shows (≤512 bytes) and the ledger text of the newest 6 landed slices on Latest (≤512 bytes each). Only wrong-language prose is sent, up to 25 strings / 4 KiB per call on the shared text budget. Translations are cached by text and language; expand Original below the translation to compare. Answer keys still select the worker's original options. |
+| Panel translation | Waiting items from STATE (first 8, ≤2 KiB each), open worker questions (question, options, context and default, ≤4 KiB), open ticket titles (≤512 bytes each), the route reason a card shows (≤512 bytes) and the ledger text of the newest 6 landed slices (≤512 bytes each). Only wrong-language prose is sent, up to 25 strings / 4 KiB per call on the shared text budget. Translations are cached by text and language; expand Original below the translation to compare. Answer keys still select the worker's original options. |
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
 | Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
 | Outcome label | Final state + the same settled report excerpt, independently judged once per settlement |
