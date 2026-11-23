@@ -5,6 +5,7 @@ import type { EngineInterface, Timer } from 'claude-code';
 export function watchProcess($: EngineInterface, cwd: string, home: string, project: boolean, receive: (lines: string[]) => Promise<void>) {
   let child: ReturnType<typeof $.process.spawn> | undefined, ready: Promise<void> | undefined;
   let retry: Timer | undefined, sleeper: Timer | undefined, stopped = false, failures = 0;
+  // Empty starts a bounded catch-up. Only a clean sleep has a cursor to replay from.
   let cursor = '';
   const delays = [1000, 5000, 15000];
 

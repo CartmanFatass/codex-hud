@@ -89,7 +89,7 @@ export function landNotice(f: LandFlow) {
     }), ...(f.tail ?? [])].join('\n');
 }
 /** Native/watch and MCP changes share one terminal notice claim for the calling pane. */
-export function landEvents(home: string, pane: string | null, all = false, cwd = process.cwd()) {
+export function landEvents(home: string, pane: string | null, all = false, cwd = process.cwd(), modCatchup = false) {
   const dir = join(home, 'flows');
   const lines: string[] = [];
   let pending = false;
@@ -115,6 +115,7 @@ export function landEvents(home: string, pane: string | null, all = false, cwd =
     if (activeLand(f)) { pending = true; continue; }
     try { fs.closeSync(fs.openSync(marker, 'wx', 0o600)); }
     catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e; }
+    if (modCatchup && f.state !== 'failed') continue;
     // Queued transports (and hud watch) use one physical line per event.
     lines.push(landNotice(f).replace(/\r?\n/g, ' | ').replace(/[\x00-\x1f\x7f-\x9f]/g, ' '));
   }

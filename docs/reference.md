@@ -456,7 +456,8 @@ Install it alongside the Claude integration with `./install --with claude,claude
   It sends only the watch's status lines: job and report notices, questions, sonic checkpoints, land and panel decisions. Settlements
   share a three-second window; questions do not wait for it. One batch submits a prompt when idle, without editing the draft.
   During work the mod appends a merged note; on interruption it parks pending events for the next prompt rather than waking again.
-  No MCP tasks are created or panel messages typed while the mod owns wake; `hud_create({jobs})` works. After ten minutes with
+  On takeover, open questions and unobserved failures are shown individually; older unread reports share one count.
+  While the mod owns wake, tools omit `changes`, no MCP tasks are created, and no panel messages are typed; `hud_create({jobs})` works. After ten minutes with
   nothing pending the child exits. A HUD call starts it again, as does a new panel decision in a sleeping HUD project.
   A dead watch leaves `changes` and `hud_wait` available. Sessions without the mod keep their existing MCP task or Monitor delivery.
 

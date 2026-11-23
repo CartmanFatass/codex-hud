@@ -41,8 +41,9 @@ const isBrokenPipe = (error: unknown): boolean => {
 
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
 type Notice = { line: string; defer?: boolean };
-function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup = false): Notice[] {
-  return rows.flatMap((row) => {
+function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup: boolean | 'mod' = false): Notice[] {
+  let olderReports = 0;
+  const notices = rows.flatMap((row) => {
     const old = prev.get(row.job);
     const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
           const file = join(home, 'jobs', row.job, 'qa', `${id}.md`);
@@ -67,7 +68,13 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
       if (job.status === 'ok' && status && status.status !== 'error')
         attentionUnread = failureUnobserved(join(home, 'jobs', row.job), job.value.observed_at, status.status === 'missing' ? null : status.at);
     }
-    const pending = (!row.parent_job && settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));
+    const attention = attentionUnread && (row.blocked || row.display_state === 'failed');
+    const unread = !row.parent_job && settled(row) && row.report_unread;
+    if (catchup === 'mod' && unread && !attention) {
+      olderReports++;
+      return questions;
+    }
+    const pending = unread || attention;
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
     const escalation = row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason);
     const checks = checksJustFinished(row, old);
@@ -80,6 +87,8 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
     const defer = !row.blocked && row.display_state !== 'failed' && !escalation && (settled(row) || report || checks);
     return [...questions, { line: formatJobChange(row), defer }];
   });
+  if (olderReports) notices.push({ line: `${olderReports} older unread report${olderReports === 1 ? '' : 's'} — hud_read view:compact` });
+  return notices;
 }
 
 function sonicCheckpointNotices() {
@@ -240,13 +249,16 @@ export async function watchCommand(
   const home = getHudHome(io.env), tries = new TryLog(home), answers = new PanelActionLog(home);
   // A sleeping mod resumes its two log readers at the last completed scan, not the new EOF.
   const modHandshake = mod && io.env.HUD_MOD_CURSOR !== undefined;
+  let freshMod = mod;
   if (modHandshake) {
     const [t, a] = (io.env.HUD_MOD_CURSOR ?? '').split(':').map(Number);
     if (Number.isSafeInteger(t) && t >= 0 && Number.isSafeInteger(a) && a >= 0) {
       tries.delivered = t;
       answers.offset = a;
+      freshMod = false;
     }
   }
+  if (freshMod) tries.seekEnd();
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue || mod ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
@@ -315,7 +327,6 @@ export async function watchCommand(
     if (mod) {
       unregister = registerWatcher(callerPane!, home, 'claude-mod');
       if (!unregister) throw new Error('could not register Claude mod watcher');
-      if (modHandshake) await io.stdout('{"type":"ready"}\n');
     } else if (pidFile) {
       writePrivateFile(pidFile, `${process.pid}\n`);
     }
@@ -340,10 +351,14 @@ export async function watchCommand(
       const rows = all ? readThinJobRows(home, { pane: null }) : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
-      const flows = landEvents(home, callerPane, all);
+      const modCatchup = first && freshMod;
+      const flows = landEvents(home, callerPane, all, process.cwd(), modCatchup);
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
-      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...checkpoints(rows)];
-      const events = first || !verbose ? actionable(home, prev, rows, first) : [];
+      const progress = checkpoints(rows); // Seed the cursor, but don't replay progress from before the switch.
+      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...(modCatchup ? [] : progress)];
+      const events = first || !verbose ? actionable(home, prev, rows, modCatchup ? 'mod' : first) : [];
+      // Release the mod's first HUD call only after capturing its pre-call baseline.
+      if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       if (queue || mod) {
         const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running'))) ||
           actionable(home, new Map(), rows, true).length > 0;
@@ -373,7 +388,7 @@ export async function watchCommand(
         }
         continue;
       }
-      for (const line of lines) {
+      for (const line of modCatchup && lines.length ? [lines.join('\n')] : lines) {
         if (stopped) break;
         try {
           if (queue) {

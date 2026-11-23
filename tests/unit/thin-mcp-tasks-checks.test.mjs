@@ -106,6 +106,10 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
 test('late Claude mod watch stands down new tasks, enables batch create, and stops main-pane typing', async (t) => {
   const f = await fixture(t), rpc = taskRpc(f.rpc);
   await rpc('server/discover');
+  // Settle while the connection is using tasks, after its original changes baseline.
+  const old = taskJob(f, await taskCall(rpc, 'hud_create', { role: 'imp', task: 'Synthetic old task.' }));
+  await publishPiGrace(old);
+  appendPanelAction(f.env.HUD_HOME, { type: 'retry', job: old.job });
   const watch = spawn(process.execPath, [resolve('bin/hud'), 'watch', '--mod'], { cwd: f.root, env: f.env, stdio: 'ignore' });
   const exited = once(watch, 'exit');
   t.after(() => stopChild(watch, exited));
@@ -113,16 +117,24 @@ test('late Claude mod watch stands down new tasks, enables batch create, and sto
   const roster = resultValue(await taskCall(rpc, 'hud_roster'));
   assert.equal(roster.watcher_alive, true);
   assert.match(roster.hint, /Claude mod owns event wake/);
+  assert.equal(roster.changes, undefined);
   const batch = resultValue(await taskCall(rpc, 'hud_create', { jobs: [{ role: 'imp', task: 'Synthetic mod batch.' }] }));
+  assert.equal(batch.changes, undefined);
   const [job] = batch.jobs;
   assert.match(job.job, /^j[0-9a-f]{16}$/);
   assert.equal(fs.existsSync(join(job.task_dir, 'mcp-task.json')), false);
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', reason: 'Synthetic input' }));
   appendPanelAction(f.env.HUD_HOME, { type: 'retry', job: job.job });
   await new Promise(resolve => setTimeout(resolve, 1100));
-  assert.equal(f.commands().some(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID), false);
+  assert.equal(f.commands().some(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID && c.args[3].includes(job.job)), false);
+  assert.equal(resultValue(await taskCall(rpc, 'hud_roster')).changes, undefined);
   watch.kill('SIGKILL'); await exited;
+  appendPanelAction(f.env.HUD_HOME, { type: 'land', root: f.root, slices: ['AFTER'] });
   const fallback = resultValue(await taskCall(rpc, 'hud_roster'));
   assert.equal(fallback.watcher_alive, false);
+  assert.ok(fallback.changes[0].startsWith(`${job.job} imp: waiting_orchestrator | Synthetic input`));
+  assert.deepEqual(fallback.changes.slice(1), [`[${job.job}] Retry requested from panel`, `Land requested from panel: ${f.root.split('/').at(-1)}: AFTER`]);
+  assert.equal(resultValue(await taskCall(rpc, 'hud_roster')).changes, undefined);
   assert.ok((await rpc('tools/list')).tools.some(tool => tool.name === 'hud_wait'));
 });
 

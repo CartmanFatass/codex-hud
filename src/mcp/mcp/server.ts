@@ -1,5 +1,4 @@
 /** MCP request handling and generation handoff. */
-import { watchingMod } from '../../roles/notify.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import * as workerTools from '../../worker/tools.js';
 import { statuslineTool, statuslineResource, readCodexStatusline } from '../codex-statusline.js';
@@ -9,9 +8,9 @@ import { isWorker, hudHome, publishWorkSummary, scanForCall, writeScan, findJob 
 import { locks, keyLock } from '../store/key-lock.js';
 import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js';
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
-import { syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
+import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
-import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows } from './session-state.js';
+import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
   resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, tasks,
   evictTask, activeTasks, loadTaskReceipt, TASK_TTL, saveTaskReceipt, stopBatchDelivery, beginHandoff,
@@ -24,16 +23,6 @@ const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
 
 const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
 const resultText = process.env.HUD_MCP_JSON === '1' ? JSON.stringify : compactResult;
-
-// A mod loaded after discovery takes over this connection too. If it stops, use changes /
-// hud_wait: jobs already dispatched without tasks cannot start producing task completions.
-// Keep serving any task IDs issued before takeover until their original receipts expire.
-async function checkModTakeover() {
-  if (session.taskClient && watchingMod(callerPane, hudHome)) {
-    session.taskClient = false;
-    await syncPanelDelivery();
-  }
-}
 
 async function toolsListResult() {
   return {
@@ -70,7 +59,8 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       session.discovered = true;
       session.taskCapable = !worker && !session.resumeRefusal && meta?.['io.modelcontextprotocol/protocolVersion'] === '2026-07-28' &&
         Object.hasOwn(meta?.['io.modelcontextprotocol/clientCapabilities']?.extensions ?? {}, TASK_EXTENSION);
-      session.taskClient = session.taskCapable && process.env.HUD_CLAUDE_MOD !== '1' && !watchingMod(callerPane, hudHome);
+      const modLive = refreshModWatch();
+      session.taskClient = session.taskCapable && process.env.HUD_CLAUDE_MOD !== '1' && !modLive;
       if (session.taskClient) resumeTaskReceipts();
       await syncPanelDelivery();
       result = { supportedVersions: ['2026-07-28'], ...privateCache,
@@ -216,7 +206,7 @@ async function snapshot() {
   pruneLandTasks(landTasks, landActive);
   pruneTasks(tasks, Date.now(), evictTask);
   return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
-    callerHarness: session.callerHarness, sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint, createdJobs: session.createdJobs, cursor: session.cursor, triesAt: tries.delivered, answersAt: answers.offset };
+    callerHarness: session.callerHarness, sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint, createdJobs: session.createdJobs, cursor: session.cursor, modLive: session.modLive, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
   return {
@@ -233,6 +223,7 @@ export function openRuntime() {
         sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint,
         createdJobs: session.createdJobs, cursor: session.cursor } = state);
       session.taskCapable = state.taskCapable ?? state.taskClient;
+      session.modLive = state.modLive ?? false;
       tries.delivered = state.triesAt;
       answers.offset = state.answersAt;
       restoreTaskMaps(state);

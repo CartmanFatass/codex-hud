@@ -675,6 +675,39 @@ test('mod watcher marker requires the live --mod process, start time, pane and h
   assert.equal(watchingMod(pane, f.home), false);
 });
 
+test('mod catch-up summarizes history, preserves questions and failures, and streams new settlements', async (t) => {
+  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID;
+  for (let i = 0; i < 30; i++) writeJob(f.home, `j${i.toString(16).padStart(16, '0')}`, pane, 'old', { state: 'closed' }, true);
+  const failed = 'j00000000000000a1', ask = 'j00000000000000a2', active = 'j00000000000000a3';
+  writeJob(f.home, failed, pane, 'failure', { state: 'failed', reason: 'needs repair' }, true);
+  const observed = writeJob(f.home, 'j00000000000000a4', pane, 'seen', { state: 'failed' });
+  const receipt = join(observed, 'job.json');
+  writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), observed_at: new Date(Date.now() + 1000).toISOString() }));
+  const question = writeJob(f.home, ask, pane, 'ask', { state: 'waiting_orchestrator' });
+  fs.mkdirSync(join(question, 'qa'));
+  writeFixtureFile(join(question, 'qa/q1.md'), '# Question q1 from imp\n\nProceed?\n\nDefault if unanswered: yes\n');
+  const working = writeJob(f.home, active, pane, 'new', { state: 'working' });
+  fs.mkdirSync(join(f.home, 'flows'));
+  for (const [flow, state] of [['f00000000000000a1', 'completed'], ['f00000000000000a2', 'failed']]) {
+    writeFixtureFile(join(f.home, 'flows', `${flow}.json`), JSON.stringify({ flow, state, step: 'gate', job: failed, pane, wt: { main_root: process.cwd() } }));
+  }
+  const ac = new AbortController(), wakes = [];
+  const run = watchCommand(['--mod'], { env: f.env, stdout: s => wakes.push(JSON.parse(s).lines), stderr: s => assert.fail(s) },
+    { signal: ac.signal, rescanMs: 50, settlementWindowMs: 40 });
+  try {
+    await until(() => wakes.length > 0);
+    const [lines] = wakes;
+    assert.equal(lines.length, 4);
+    assert.ok(lines.includes(`f00000000000000a2 (land ${failed}) — failed: gate`));
+    assert.ok(lines.includes('30 older unread reports — hud_read view:compact'));
+    assert.ok(lines.some(s => s.startsWith(`${failed} imp failure: failed | needs repair`)));
+    assert.ok(lines.some(s => s.startsWith('[imp] QUESTION q1: Proceed?')));
+    writeFixtureFile(join(working, 'STATUS.json'), JSON.stringify({ state: 'done' }));
+    await until(() => wakes.length > 1);
+    assert.deepEqual(wakes.slice(1), [[`${active} imp new: done`]]);
+  } finally { ac.abort(); await run; }
+});
+
 test('mod JSONL uses shared actionable lines, sleeps only once clear, and resumes panel logs', { timeout: 10000 }, async (t) => {
   const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, id = 'j0000000000000001';
   const dir = writeJob(f.home, id, pane, 'mod', { state: 'closed' }, true);
@@ -685,7 +718,7 @@ test('mod JSONL uses shared actionable lines, sleeps only once clear, and resume
   const running = run({ ...f.env, HUD_MOD_CURSOR: '' });
   await until(() => records.some(r => r.type === 'wake'));
   await wait(150);
-  assert.deepEqual(records, [{ type: 'ready' }, { type: 'wake', lines: [`${id} imp mod: closed | report | ${readHint(id)}`] }]);
+  assert.deepEqual(records, [{ type: 'ready' }, { type: 'wake', lines: ['1 older unread report — hud_read view:compact'] }]);
   const receipt = join(dir, 'job.json');
   writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), read_at: new Date().toISOString() }));
   assert.equal(await running, 0);

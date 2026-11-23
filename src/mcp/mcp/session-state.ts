@@ -17,6 +17,7 @@ export const session = {
   sentConventionVersion: undefined as string | undefined,
   sentCreateHint: false,
   discovered: false, taskCapable: false, taskClient: false, agyClient: false,
+  modLive: false,
   createdJobs: new Set<string>(),
   cursor: new Map<string, JobRow>(),
 };
@@ -86,3 +87,15 @@ export function sessionRows(markExhaustion: boolean, scan = scanForCall()): JobR
     });
 }
 export const tries = new TryLog(hudHome), answers = new PanelActionLog(hudHome);
+
+/** Retain a fallback baseline from the handover, not from the start of the MCP connection. */
+export function refreshModWatch() {
+  const live = !isWorker && !session.resumeRefusal && watchingMod(callerPane, hudHome);
+  if (live && !session.modLive) {
+    session.cursor = new Map(sessionRows(false).map(row => [row.job, row]));
+    tries.seekEnd();
+    answers.offset = new PanelActionLog(hudHome).offset;
+  }
+  session.modLive = live;
+  return live;
+}

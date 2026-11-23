@@ -12,7 +12,7 @@ import { CHECKS_FILE, jobChecks } from '../../roles/job-checks.js';
 import { JOB_ID_RE } from '../../roles/job-index-cache.js';
 import { projectJobFilter } from '../../roles/job-project.js';
 import { takeLease } from '../../roles/lease.js';
-import { ensureQueueWatcher, paneInfo, watching, watchingMod, notify } from '../../roles/notify.js';
+import { ensureQueueWatcher, paneInfo, watching, notify } from '../../roles/notify.js';
 import { piSwitches } from '../../roles/roster.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { reapWorkerTree } from '../../roles/worker-tree.js';
@@ -42,7 +42,7 @@ import { rememberLandTask } from '../task-bounds.js';
 import { ensureJobWatcher } from '../watch-pid.js';
 import {
   ownsJob, sessionJobs, adoptSessionJobs, callerPane, session, rememberCallerHarness, deliveryHint,
-  sessionRows, tries, answers,
+  sessionRows, tries, answers, refreshModWatch,
 } from './session-state.js';
 import {
   landTasks, landActive, saveTaskReceipt, TASK_TTL, isTaskReply, activeTasks, taskFence, sampleTask,
@@ -817,15 +817,24 @@ export async function syncPanelDelivery() {
     await stopBatchDelivery(true);
   }
 }
+// Once a mod takes over, new jobs do not have tasks. A dead watch falls back to changes /
+// hud_wait; task IDs issued before takeover remain valid until their receipts expire.
+export async function checkModTakeover() {
+  const live = refreshModWatch();
+  if (live && session.taskClient) {
+    session.taskClient = false;
+    await syncPanelDelivery();
+  }
+  return live;
+}
 export async function withChanges(value: unknown, markExhaustion: boolean, scan: JobScan): Promise<unknown> {
-  // Snapshot, diff and advance the shared cursors synchronously, in response order.
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || await checkModTakeover()) return value;
   if (session.taskClient) {
     const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges())];
     return changes.length ? { ...value, changes } : value;
   }
   const rows = sessionRows(markExhaustion, scan);
-  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...(watchingMod(callerPane, hudHome) ? [] : landEvents(hudHome, callerPane).lines)];
+  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...landEvents(hudHome, callerPane).lines];
   session.cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }

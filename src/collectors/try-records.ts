@@ -80,6 +80,7 @@ export class TryLog {
     });
     return new Map(marks.values());
   }
+  seekEnd() { this.delivered = this.read().length; }
   changes(root?: string): string[] {
     const catchup = this.delivered === undefined;
     const records = this.read(), fresh = records.slice(this.delivered ?? 0), ledgers = new Map<string, Map<string, Slice>>();
