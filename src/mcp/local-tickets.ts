@@ -108,8 +108,8 @@ function withOwnerTry(body: string, value: 'yes' | 'no', ticket: number): string
 export function landedTicket(original: string, ticket: number, comment: string) {
   const start = original.search(/^## Comments[ \t]*\r?$/m);
   const before = start < 0 ? original : original.slice(0, start);
-  const skipTry = /(?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*no\b/im.test(before);
-  const body = withStatus(before, skipTry ? 'done' : 'ready-for-human', ticket)
+  const needsTry = /(?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*yes[ \t]*(?=·|\r?$)/im.test(before);
+  const body = withStatus(before, needsTry ? 'ready-for-human' : 'done', ticket)
     .replace(/^([ \t]*[-*] \[) \]/gm, '$1x]');
   return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
 }

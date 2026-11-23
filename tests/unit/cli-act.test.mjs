@@ -1,10 +1,9 @@
-/** `hud act`: the owner's panel actions from a command (the Claude mod's slash commands and band buttons). Synthetic data only. */
+/** `hud act`: the owner's panel actions from a command (including the Claude mod's slash commands). Synthetic data only. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { bandReader } from '../../dist/cli/watch-band.js';
 import { main } from '../../dist/cli/hud-main.js';
 import { PanelActionLog, PANEL_ACTIONS_FILE } from '../../dist/collectors/panel-actions.js';
 import { TRIES_FILE } from '../../dist/collectors/try-records.js';
@@ -33,13 +32,11 @@ function fixture(t) {
   return { hud, cwd, env, run, lines, dir: (id) => join(hud, 'jobs', id) };
 }
 
-test('try accepts what the band counts, in one record, and says so when nothing is left', async (t) => {
-  const f = fixture(t), read = bandReader(f.cwd, f.hud, f.env);
-  assert.equal((await read(Date.now())).accept, 2);
+test('hud act try still accepts legacy pending tickets in one record and says when nothing is left', async (t) => {
+  const f = fixture(t);
   assert.deepEqual(await f.run('try', '--cwd', f.cwd), { code: 0, stdout: 'Accepted 2 to try\n', stderr: '' });
   const [record, ...more] = f.lines(TRIES_FILE);
-  assert.deepEqual([record.action, record.slices.length, more.length, fs.statSync(join(f.hud, TRIES_FILE)).mode & 0o777], ['accept', 2, 0, 0o600]);
-  assert.equal((await read(Date.now())).accept, 0, 'the band no longer counts them');
+  assert.deepEqual([record.action, record.slices, more.length, fs.statSync(join(f.hud, TRIES_FILE)).mode & 0o777], ['accept', ['EXPORT-02', 'EXPORT-03'], 0, 0o600]);
   assert.equal((await f.run('try', '--cwd', f.cwd)).stdout, 'Nothing to try\n');
   assert.equal(f.lines(TRIES_FILE).length, 1);
   assert.equal((await f.run('try', '--cwd')).code, 2);

@@ -42,7 +42,7 @@ test('Project uses Inbox for old saved layouts and no longer offers a layout set
   }
 });
 
-test('Inbox hub at 40 cols EN and ZH (Split and Classic): width, ranked Needs you, Running, last accepted and one Accept all action', async (t) => {
+test('Inbox at 40 cols EN and ZH: ranked Needs you, Running, last accepted, and Accept all only in ticket diagnostics', async (t) => {
   const { busy } = await fixture(t), data = busy.control, tries = tryCount(data);
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
@@ -55,7 +55,7 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): width, ranked Needs yo
         ...data.ledger.map((r) => r.text), ...data.tickets.flatMap((f) => f.tickets.map((tk) => tk.title))].join(' ');
       assertNoMidWordCut(lines, corpus, `hub ${layout} ${lang}`);
       assert.match(text, new RegExp(`^${lang === 'zh' ? '需要你处理' : 'Needs you'} ─+ ${data.waiting.length}$`, 'm'));
-      assert.match(text, new RegExp(`^${lang === 'zh' ? '全部验收' : 'Accept all'} +${tries} ${lang === 'zh' ? '待试用' : 'to try'}$`, 'm'));
+      assert.doesNotMatch(text, /Accept all|全部验收|\d+\/\d+ (?:accepted|已验收)/);
       const order = ['Try the Project tab', 'Vocabulary', 'PAGE-TWO', 'imp'].map((s) => text.indexOf(s));
       assert.ok(order.every((i) => i >= 0) && order.every((v, i) => i === 0 || order[i - 1] < v), `${layout} ${lang}: Needs you ranked order`);
       assert.doesNotMatch(text, /DATA-ONE|WATCH-LINK|How to try|Space mark/);
@@ -63,15 +63,18 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): width, ranked Needs yo
       assert.match(text, lang === 'zh' ? /✓ 最近验收 REVIEW-ONE 8天/ : /✓ last accepted REVIEW-ONE 8d/);
       assert.match(text, lang === 'zh' ? /pi 已耗尽 42分/ : /pi out 42m/);
       if (lang === 'zh') assert.doesNotMatch(text, /\b(Needs you|Running|last accepted|to try|blocked|working|Control plane|Working tree|pi out)\b/);
+      const tickets = onPage('tickets', { prefs: { panelLayout: layout } });
+      const td = driver(busy, { data, state: tickets, height: 42, lang });
+      assert.match(td.lines().join('\n'), new RegExp(`^${lang === 'zh' ? '全部验收' : 'Accept all'} +${tries} ${lang === 'zh' ? '待试用' : 'to try'}$`, 'm'));
       const click = () => {
-        const pane = d.frame.panes.find(p => p.id === 'agents');
+        const pane = td.frame.panes.find(p => p.id === 'agents');
         const y = pane.y + pane.rows.findIndex(r => r.item === 'project:accept-all') - pane.offset;
-        return d.run({ type: 'mouse', button: 'left', x: 4, y }).action;
+        return td.run({ type: 'mouse', button: 'left', x: 4, y }).action;
       };
       assert.equal(click(), undefined, 'first click only selects');
-      assert.equal(d.state.project.nav.cursor, 'project:accept-all');
+      assert.equal(td.state.project.nav.cursor, 'project:accept-all');
       assert.deepEqual(click(), { type: 'accept-all' });
-      const partial = busy.render(40, lang, 42, state, { ...data, ticketTotals: { ...data.ticketTotals, partial: true } });
+      const partial = busy.render(40, lang, 42, tickets, { ...data, ticketTotals: { ...data.ticketTotals, partial: true } });
       const action = partial.workboard.rows.find(r => r.item === 'project:accept-all');
       assert.match(stripAnsi(action.text), lang === 'zh' ? /^全部验收 +不完整 · / : /^Accept all +Partial · /);
     }
@@ -152,7 +155,8 @@ test('Inbox Projects list at 40/80/120 cols EN and ZH: Needs you / Running / Qui
     assert.match(quietRows[2], lang === 'zh' ? /old-project\s+M1\s+40天/ : /old-project\s+M1\s+40d/);
     // Counts come from the project overview.
     assert.match(text, lang === 'zh' ? /demo-project\s+M3b\s+2 待处理/ : /demo-project\s+M3b\s+2 waiting/);
-    assert.match(text, lang === 'zh' ? /1 待试用 · 1 运行中/ : /1 to try · 1 running/);
+    assert.match(text, lang === 'zh' ? /1 运行中/ : /1 running/);
+    assert.doesNotMatch(text, /\d+ to try|\d+ 待试用/);
     assert.match(text, lang === 'zh' ? /2 运行中/ : /2 running/);
     if (lang === 'zh') {
       const uiLines = lines.filter((l) => !/^\s*[a-z]+-project/.test(l)).join('\n');

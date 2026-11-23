@@ -247,7 +247,8 @@ ProjectCollector.prototype.collect = async function (shown, ...rest) {
 };
 await runLivePage();
 `);
-  const place = encodePanelPlace({ state: { ...sliceState(), activeTab: 'project' }, settings: null });
+  const state = sliceState();
+  const place = encodePanelPlace({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'tickets' } } }, settings: null });
   const child = livePanel(f, runner, { HUD_PANEL_RELOAD_PLACE: place });
   // Keep the last row across chunks: the cursor marker or row text may be split at any byte.
   const screen = [];
@@ -268,17 +269,17 @@ await runLivePage();
   };
   const rows = () => screen.filter((r) => r !== undefined);
   const hasAcceptAll = () => rows().some((r) => /^Accept all +1 to try/.test(r));
-  await until(hasAcceptAll, 'the own project hub');
+  await until(hasAcceptAll, 'the first project’s ticket diagnostics');
+  child.stdin.write('G');
+  await until(() => rows().some((r) => /⏎ accept all/.test(r)), 'the first project’s Accept all row is selected');
   child.stdin.write(']');
-  await until(() => rows().some((r) => /2\/2/.test(r)), 'the switch');
-  // The held collection has not finished: the tab still shows a page, and what it shows is the first project's.
+  await until(() => !rows().some((r) => /⏎ accept all/.test(r)), 'the project switch resets the cursor');
+  // The held collection has not finished: the tab still shows the first project's page.
   assert.ok(hasAcceptAll(), screen.join('\n'));
-  assert.ok(rows().some((r) => /^project ─+ ▾ project 2\/2$/.test(r)), 'the first project\'s name goes with its page; the index already says 2/2');
-  assert.ok(rows().filter(Boolean).length >= 6, 'not a blank body');
   child.stdin.write('G\r');
   await until(() => rows().some((r) => /⏎ accept all/.test(r)), 'the stale Accept all row is selected');
   fs.writeFileSync(release, '');
-  await until(() => rows().some((r) => /^Progress +No tickets/.test(r)) && rows().some((r) => /^other-/.test(r)), 'the second project hub');
+  await until(() => !hasAcceptAll(), 'the second project’s empty ticket diagnostics');
   assert.ok(!fs.existsSync(join(f.hud, 'tries.jsonl')), 'a row painted for the previous root cannot record acceptance');
 });
 test('the live panel collects only the project it shows; Home and the other tab stay on its own project', async (t) => {

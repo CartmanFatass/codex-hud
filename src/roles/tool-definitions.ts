@@ -185,7 +185,7 @@ export const ROLE_TOOLS = [
             what: text,
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
-            owner_try: { type: 'boolean', description: 'Owner tries post-land (default yes).' },
+            owner_try: { type: 'boolean', description: 'Owner try post-land (default no).' },
           },
           required: ['title', 'blocked_by', 'what', 'acceptance'],
           additionalProperties: false,

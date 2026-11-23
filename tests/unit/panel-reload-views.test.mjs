@@ -36,12 +36,12 @@ for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspe
   }
 });
 
-test('the 40-column Project hub restores the selected Accept all row without running it', async (t) => {
-  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project' }, settings: null }), { columns: 40 });
+test('the 40-column Tickets page restores the selected Accept all row without running it', async (t) => {
+  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'tickets' } } }, settings: null }), { columns: 40 });
   const issues = join(f.env.CODEX_HUD_CWD, '.scratch/reload/issues');
   mkdirSync(issues, { recursive: true });
   writeFixtureFile(join(issues, '01-reload.md'), '# 01: Synthetic reload ticket\n**Status:** try\n**Blocked by:** none\n');
-  await until(() => f.output().includes('Accept all'), 'the Inbox did not render');
+  await until(() => f.output().includes('Accept all'), 'ticket diagnostics did not render');
   f.child.stdin.write('G');
   await until(() => f.output().includes('⏎ accept all'), 'Accept all was not selected');
   const at = f.output().length;

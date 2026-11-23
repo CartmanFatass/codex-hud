@@ -357,7 +357,7 @@ Always retain `frame.state`: reconciliation preserves selection by identity and 
 Cards show a title plus two sentence rows, expanding in place; raw workflow files open from the Inspector or `o`.
 
 Settings → Panel → Layout (`panelLayout`) defaults to Classic (`home-view.ts` and `project-view.ts`); Split is the other choice.
-Both layouts offer one Accept all action on the Inbox hub.
+Both layouts offer one explicit Accept all action in Project → Tickets, not on the Inbox hub.
 Off the paint path, `panel/actions.ts` uses the displayed project's unfiltered ledger and appends one `accept` record under `$HUD_HOME`, never to project files.
 The `TryLog` reader still understands old `flag` and `accept` records; the list of flagged items shown to the owner comes from STATE Waiting.
 

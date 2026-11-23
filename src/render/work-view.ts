@@ -7,7 +7,7 @@ import { homeRows, newestCard } from './home-view.js';
 import { activeFilter, homeAnchor, homeCursor, homeTarget, type ClassicSplitNav, type HomeCursor } from './monitor-state.js';
 import { roleIcon } from './model-glyphs.js';
 import { roleMark } from './work-jobs.js';
-import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
+import { ACCEPT_ALL, projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, homeDoneCount, mark, stateMark, type FooterHints } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
@@ -18,7 +18,6 @@ import { t } from './i18n.js';
 import { ageText } from './work-card.js';
 import { homeScene } from './split-home.js';
 import { projectScene } from './split-project.js';
-import { ACCEPT_ALL } from './inbox-project.js';
 import { paintSplit, splitPreviewRoom, type SplitScene } from './split-frame.js';
 import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
@@ -418,9 +417,10 @@ export function renderWorkboardFrame(
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
+          : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
-          : [cursor === ACCEPT_ALL ? '⏎ accept all' : '⏎ open', ...projectSwitch])
+          : ['⏎ open', ...projectSwitch])
         : experiment ? expHints(experiment, expEdit) : homeKeys(state, source, 'expand');
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (control && !harnesses && height > 1) presetFooterControls(frame, hints, width, height - 1);

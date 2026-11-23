@@ -433,16 +433,16 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
   assert.equal(frame.state.project.nav.cursor, 'inbox:ask:j0000000000000002', 'the cursor starts on the first asking job');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /^Progress +\d+ tasks · M3b/m);
-  assert.match(plain(frame).join('\n'), /^Accept all +1 to try$/m);
+  assert.doesNotMatch(plain(frame).join('\n'), /Accept all|\d+ to try/);
   assert.doesNotMatch(plain(frame).join('\n'), /^Control plane /m);
   // Down visits each page entry once.
   frame.state.project.nav.cursor = 'project:page:progress';
   const visited = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     frame = f.render(80, 'en', press(frame, 'down').state);
     visited.push(frame.state.project.nav.cursor);
   }
-  assert.deepEqual(visited, ['project:page:tickets', 'project:page:tree', 'project:page:docs', 'project:accept-all']);
+  assert.deepEqual(visited, ['project:page:tickets', 'project:page:tree', 'project:page:docs']);
   for (const page of ['progress', 'tickets', 'tree', 'docs']) {
     frame.state.project.nav.cursor = `project:page:${page}`;
     frame = f.render(80, 'en', press(frame, 'enter').state);

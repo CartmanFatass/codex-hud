@@ -77,7 +77,7 @@ hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
 hud watch                 # pending questions and actionable events (--verbose: every change; --all: every pane)
 hud act answer <job> <qN> <answer...>  # the owner's panel actions from a command: answer once, resuming a headless job
-hud act try [--cwd DIR]   # Accept all (the Inbox's), recorded in tries.jsonl; hud act retry|stop <job>
+hud act try [--cwd DIR]   # Accept all pending tries, recorded in tries.jsonl; hud act retry|stop <job>
 hud doctor                # run the read-only local install preflight
 hud doctor <jobId>        # print one job's local facts without changing it
 hud stats [--days N] [--by role|model|route|feature]  # per-job usage and outcomes
@@ -356,7 +356,7 @@ Successful runs write no excerpt.
 Excerpts are kept with their flow receipt and swept if it is removed.
 
 On green, HUD folds the update to the job's local `ticket` (`feature/NN`), if present, into the last tested commit in the integration checkout.
-The ticket is marked `done` if it says `**Owner try:** no`, or `ready-for-human` if it says `yes` or omits the field.
+The ticket is marked `done` by default, or `ready-for-human` if it says `**Owner try:** yes`.
 Its acceptance boxes are ticked, and a comment says `Landed in this commit`, with the replay base and passed/total gate commands.
 On the base branch, `git blame -- <ticket-path>` identifies the commit that added that line; `hud_read` on the flow also returns its `landed_sha`.
 This does not update `STATE.md` or use the owner's index.
@@ -509,7 +509,7 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
 - **`ready`**: lists unblocked `ready-for-agent` tickets with no live job as `tickets: [{ticket, path, title, what}]`.
   `what` is one line from the ticket's What to build section.
   Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
-  The live job claims the ticket in the panel and Home progress without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` when `**Owner try:** no`, else `ready-for-human`) without touching `STATE.md`.
+  The live job claims the ticket in the panel and Home progress without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` by default; `ready-for-human` with `**Owner try:** yes`) without touching `STATE.md`.
 - **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land. A worker question stops the batch; `hud_respond` to that question resumes it (`queue_resumed`).
   After addressing a failure, call `run` again with the same project and `feature`. A new queue attempt keeps existing jobs and completed lands, and retries eligible lands that failed before fast-forward without dispatching their tickets again. It keeps the previous `max_parallel` unless you override it.
   `run` with the same `feature` and `cancel: true` stops new dispatches and lands; it leaves existing jobs and lands alone.
@@ -517,7 +517,7 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing.
   `acceptance` is a list of checklist item strings.
-  Optional `owner_try` writes `**Owner try:** yes` or `no` under Status (`yes` or omitted requires owner trial on land; `no` lands straight to `done`).
+  Optional `owner_try` writes `**Owner try:** yes` or `no` under Status (`yes` opts into an owner try; `no` or omitted lands as `done`).
   The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
 - **`update`**: pass `feature`, `ticket` (number), and any of `status`, `owner_try`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers); or pass `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
   An invalid acceptance item reports the valid range and leaves that ticket unchanged, even if other ticks in the same update are valid.
@@ -598,13 +598,12 @@ The panel remains the herdr panel.
   The mod removes already-shown `changes` lines without reformatting the rest of the tool result.
   Rows that are not HUD lines are untouched.
 - **Owner band.**
-  Above the prompt the mod shows only what needs the owner now, and nothing otherwise: up to two rows, cut to the band's width, in the panel's language, each ending in a button.
+  Above the prompt the mod shows one row for explicit owner waiting items, cut to the band's width in the panel's language, and nothing otherwise.
   `? N waiting for you · <first item> [Open]` counts STATE's `Waiting for the owner` items (items whose `(waits on …)` tickets are done drop out, as in the Project Inbox); Open shows the panel beside the pane, where the Project hub lists them.
-  `N to try [Accept all]` is the Inbox's Accept all count; the button records it as the panel does (`hud act try`).
   A press answers with a toast, never a model turn.
   Running workers, failures and worker questions are not shown (the statusline and the main session carry those).
   The watch sends a `band` record after `ready` and again only when it changes; the band is drawn from the session's state with no I/O and stays empty while a survey holds it.
-  One toast (`Needs you: …`) appears when a new item or slice arrives, once per record and never for what was already there when the watch started.
+  One toast (`Needs you: …`) appears when a new waiting item arrives, once per record and never for what was already there when the watch started.
   The band refreshes while the watch runs; after the ten-minute idle exit it updates at the next restart (a HUD call or panel decision).
 - **Owner commands.**
   In an owner session (not a worker's) the mod declares slash commands that run at once, even mid-turn, and print for the owner only: their output is shown and goes in no model request, and no MCP schema is added.
@@ -805,15 +804,6 @@ Below the project name:
   A `last accepted` line shows the newest accepted ticket.
 - One summary row per page: **Progress**, **Tickets** (absent if there are no tickets), **Working tree** (including the unlisted worktree count), and **Docs**.
   A narrow row drops optional facts from the end.
-- **Accept all** appears below the page links when there are tickets to try.
-  Select it and press Enter (or click the selected row).
-  It accepts all observed pending tickets in the displayed project in one `$HUD_HOME/tries.jsonl` record.
-  If the read is partial, only the tickets found are included.
-  Landed tickets marked `**Owner try:** no` go straight to done; the main session verifies them.
-  The panel reflects the result without writing to project files; `hud watch` and MCP `changes` receive one line.
-  There is no per-slice acceptance, flagging or landing action.
-  Old records are still readable.
-
 Enter or click a page row to open it; Esc or the crumb (`‹ Project › Page`) returns to that row.
 Each page keeps its own cursor and scroll, even across panel reloads.
 Enter on a waiting item opens its whole text on its own scrolling page, including continuation lines; Esc or the crumb returns to its row, and `o` opens STATE.md.
@@ -825,7 +815,7 @@ No milestone or completion is guessed.
 Key rows contain names/presence only; Browser ✓ means Chrome and `jev-ask` exist on PATH, not a running/logged-in browser.
 
 **Progress page.**
-One row per ticket feature shows the most important state mark and ticket counts by state.
+One row per ticket feature shows the most important state mark and counts by state, not a project completion percentage.
 Enter in Classic or the Split preview shows the member tickets, with `o` to open the ticket file.
 Next and the Now summary still come from STATE, which is not a slice ledger.
 A job's row can open its report or, if none, its brief.
@@ -841,15 +831,16 @@ Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
 `hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh` (open parent issues with sub-issues, plus already-mirrored parents so closed features receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
 A recorded acceptance or done/closed/complete/resolved status completes a ticket, as does a fully checked nonempty checklist unless it awaits a try.
 Dropped tickets count as resolved on the Tickets page.
-A pending landing record or a ticket ID in the latest 64 commit subjects shows **to try** and releases its dependents.
+A ticket ID in the latest 64 commit subjects can show a ticket as landed and release its dependents; it shows **to try** only with `**Owner try:** yes`. Legacy pending records remain readable.
 Local numbers/titles and `feature/NN` blockers resolve across the scanned project.
 Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Stalled**.
 Working jobs and managed worktrees are linked at read time, never written back to the tracker.
 The lookup of the newest 64 top-level jobs and up to 64 of their children is shared with Progress.
 **Tickets page**: one row per `.scratch` feature, with resolved/total (including dropped tickets as resolved) and the oldest open ticket's status.
+**Accept all** appears here when there are pending tries. Select it and press Enter (or click the selected row) to accept all observed pending tickets in the displayed project in one `$HUD_HOME/tries.jsonl` record. If the read is partial, only the tickets found are included. The action does not write to project files; `hud watch` and MCP `changes` receive one line. Old records remain readable.
 Open a feature to see its tickets in lanes by state, one row each (`◐ hp 06 Projects list  imp 12m  1/3`: state mark, the feature's code, number and title; on the right what matters for the lane, then checked/total).
 **For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`, `ready-for-human`) with their latest comment under the row, whatever else holds them.
-**Working** holds tickets with active work or a fresh claim; landed tickets have a **to try** lane.
+**Working** holds tickets with active work or a fresh claim; pending owner tries have a **to try** lane.
 **Ready** holds work that can start; **Queued** starts folded and holds tickets waiting on ordinary predecessors.
 **Stalled** is for genuine blockers.
 Dependency rows name their blockers (`← 03 ●`, the mark that of the blocker); **Done** also starts folded.
@@ -1038,7 +1029,7 @@ The panel keeps one collector per visited project (at most four, the panel's own
 With one project there is no `▾ project i/n` and no list.
 
 **Projects list.**
-Groups are Needs you (STATE waiting items or work to try), Running, and Quiet.
+Groups are Needs you (STATE waiting items), Running, and Quiet.
 Entries show counts and, when known, time since the last change to STATE.md or a ticket file.
 Quiet projects take one row and show their milestone or `no STATE.md` when known.
 Within each group the panel's own project comes first, then projects with waiting items, then those with running jobs, then the most recently touched.
@@ -1058,7 +1049,7 @@ Reads do not start a browser or MCP.
 ## Review board
 
 `hud board [--html] [--cwd DIR] [--out FILE] [--open]` writes the project's review board: one static HTML file for a browser, with no script, font, image, link or network request (its Content-Security-Policy allows inline style only) and every project string escaped.
-Sections: the header (project, branch with changed/ahead/behind, milestone, time written, and a stacked bar of working / blocked / to try / accepted / todo); **Needs you** (STATE's waiting items and open job questions with their options and default, when there are any); **To try** (read-only ticket cards grouped by feature: feature, age, commit, ticket text and checklist, and per-file `--numstat` bars); **In flight** (working and blocked tickets, running jobs with role, model, elapsed time and current sentence); **Tickets** (per-feature meters, unfinished tickets with their checklists); and the **latest milestone review**.
+Sections: the header (project, branch with changed/ahead/behind, milestone, time written, and counts by ticket state); **Needs you** (STATE's waiting items and open job questions with their options and default, when there are any); **To try** (read-only ticket cards grouped by feature: feature, age, commit, ticket text and checklist, and per-file `--numstat` bars); **In flight** (working and blocked tickets, running jobs with role, model, elapsed time and current sentence); **Tickets** (per-feature meters, unfinished tickets with their checklists); and the **latest milestone review**.
 Sections with nothing in them are left out.
 The page follows the system light/dark setting, or the Auto / Dark / Light switch at its top (pure CSS), and reads from phone width up.
 
@@ -1180,7 +1171,7 @@ The preview uses Classic's cards and sentences; a question slab doesn't repeat t
   On a short panel blank rows go first, then the preview from its bottom; the list never gives way (a very short panel scrolls it with its cursor).
   A lane at work that the cursor is not on shows, in the row's free cells, the marked keywords of its model sentence (else its reason or the phases so far); when the width leaves under six cells, nothing.
 - **Project hub.**
-  The Inbox lists Needs you, Running, last accepted, the page rows and Accept all when there is pending work.
+  The Inbox lists Needs you, Running, last accepted and the page rows. Accept all is explicit in the Tickets page when there are pending tries.
   A waiting item previews its whole text; a role alert previews its places.
   The Progress preview shows the summary, milestone bar, Running and last accepted.
   Enter on a page row opens it.

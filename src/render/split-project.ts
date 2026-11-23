@@ -3,7 +3,7 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import type { ClassicSplitNav } from './monitor-state.js';
-import { clampLines, roleInk, sliceInk, ticketRows, unlisted, unsliced, projectItem, taskItem, taskLabel,
+import { ACCEPT_ALL, clampLines, roleInk, sliceInk, ticketAcceptRows, ticketRows, unlisted, unsliced, projectItem, taskItem, taskLabel,
   progressTasks, progressTaskHeader, progressTaskDetails, progressTasksHeading, sliceDetailRows, featureItem, featureRow,
   type ProjectPage } from './project-view.js';
 import { glyph, placeRows, placeTarget, radarFacts, roleToday } from './control-view.js';
@@ -78,8 +78,9 @@ export function inboxRolePreview(data: ProjectSnapshot, width: number, now: numb
 
 /** Tickets: select a feature to see its tickets by state; Enter moves into the preview. */
 function ticketsPart(data: ProjectSnapshot, state: MonitorState, width: number, now: number): Part {
-  const list = data.tickets.map((feature) => featureRow(feature, width));
+  const list = [...data.tickets.map((feature) => featureRow(feature, width)), ...ticketAcceptRows(data, width)];
   const preview = (cursor?: string): Shown => {
+    if (cursor === ACCEPT_ALL) return { label: t('Accept all'), rows: [], hints: ['⏎ accept all', 'Esc back'] };
     const feature = data.tickets.find((f) => featureItem(f) === cursor);
     return feature ? { label: monitorText(feature.slug), rows: ticketRows(data, state.project.folded, width, now, feature).slice(1) } : { label: '', rows: [] };
   };

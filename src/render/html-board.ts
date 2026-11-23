@@ -55,7 +55,6 @@ h2 .n{color:var(--text);border:1px solid var(--rule);border-radius:99px;padding:
 .chip{display:inline-block;max-width:100%;border:1px solid currentColor;border-radius:99px;padding:0 .7em;font:600 12px/1.8 system-ui,sans-serif;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 a.chip{text-decoration:none}.chip.plain,.chip.todo,.chip.ready,.chip.dropped,.plain{color:var(--mute)}.chip.working{color:var(--working)}.chip.blocked{color:var(--blocked)}.chip.try,.chip.dirty{color:var(--trying)}.chip.accepted,.chip.ok,.chip.done{color:var(--accepted)}
 .lede{max-width:70ch;color:var(--mute);margin:0 0 20px}
-.bar{display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--rule);gap:2px}.bar i{display:block;min-width:4px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;padding:0;list-style:none;font-size:13px;color:var(--mute)}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}.legend b{color:var(--text)}
 .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}.grid.s{grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))}
@@ -158,7 +157,6 @@ function page({ projectName, root, project, workboard, reviewText, generatedAt: 
     chip('plain', `${t('Generated')} ${new Date(now).toISOString().slice(0, 16).replace('T', ' ')} UTC`),
   ].join('')}</div>
 ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
-<div class="bar" role="img" aria-label="${e(STATES.map(([s, l]) => `${displayCount(s)} ${t(l)}`).join(', '))}">${STATES.filter(([s]) => project.counts[s] > 0).map(([s, l]) => `<i title="${e(`${displayCount(s)} ${t(l)}`)}" style="flex:${count(project.counts[s])};background:var(--${s === 'try' ? 'trying' : s})"></i>`).join('')}</div>
 <ul class="legend">${STATES.map(([s, l]) => `<li><i style="background:var(--${s === 'try' ? 'trying' : s})"></i><b>${count(displayCount(s))}</b> ${e(t(l))}</li>`).join('')}<li>${count(total)} ${e(t('slices'))}</li></ul></header>`;
 
   const activeIds = new Set(project.active.map((job) => job.jobId));

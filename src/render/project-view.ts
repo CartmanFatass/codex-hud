@@ -227,6 +227,17 @@ const inline = (head: string, text: string, right: string, width: number) => {
 };
 /** All pending slices in the project, not just the current milestone. */
 export const tryCount = (data: Pick<ProjectSnapshot, 'ledger'>) => data.ledger.filter((r) => r.state === 'try').length;
+export const ACCEPT_ALL = 'project:accept-all';
+/** Explicit action in ticket diagnostics, not an owner request on the Project hub. */
+export function ticketAcceptRows(data: ProjectSnapshot, width: number): MonitorRow[] {
+  const n = tryCount(data);
+  if (!n) return [];
+  const label = t('Accept all'), count = t('{n} to try', { n });
+  const partial = data.ticketTotals?.partial ? t('Partial') : '';
+  const facts = [partial, count].filter(Boolean).join(' · ');
+  const right = [facts, partial].find((text) => visualLength(label) + 1 + visualLength(text) <= width) ?? '';
+  return [{ item: ACCEPT_ALL, text: pair(theme.board.active(label), theme.board.muted(right), width) }];
+}
 /** `3/8 accepted`: what a milestone's bar counts, in words (accepted slices of all but the dropped). */
 export const acceptedText = (counts: ProjectSnapshot['counts'], rows: number) =>
   t('{done}/{total} accepted', { done: counts.accepted, total: rows - counts.dropped });
@@ -501,6 +512,7 @@ export function pageRows(
       rows.push(featureRow(feature, width, open));
       if (open) rows.push(...ticketRows(data, folded, width, now, feature).slice(1));
     }
+    rows.push(...ticketAcceptRows(data, width));
   } else if (page === 'tree') {
     if (data.git) item({ label: 'branch', value: [
       data.git.branch, t('{n} changed', { n: data.git.changed }),

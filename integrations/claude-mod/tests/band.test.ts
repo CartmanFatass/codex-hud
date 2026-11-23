@@ -4,7 +4,7 @@ import type { On } from 'claude-code';
 
 const surfaces = ['terminal', 'desktop', 'vscode', 'mobile'] as const;
 const props = { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 8, bodyColumns: 60, scroll: { offset: 0, bodyRows: 8 }, view: {} };
-const state = { lang: 'en', waiting: 2, first: 'Decide the export format', accept: 3 };
+const state = { lang: 'en', waiting: 2, first: 'Decide the export format' };
 
 /** What the band draws from the state `held` says (none when undefined): each row's words, its button in brackets. */
 function band(on: On) {
@@ -20,31 +20,29 @@ function band(on: On) {
   };
 }
 
-for (const surface of surfaces) test(`the band shows the waiting item and the slices to try, each with its button, on ${surface}`, async ($, on) => {
+for (const surface of surfaces) test(`the band shows the waiting item and no Accept all prompt on ${surface}`, async ($, on) => {
   const rows = band(on);
-  expect(await rows($, state, surface)).toEqual(['? 2 waiting for you · Decide the export format [Open]', '3 to try [Accept all]']);
+  expect(await rows($, { ...state, accept: 3 }, surface)).toEqual(['? 2 waiting for you · Decide the export format [Open]']);
 });
 
-test('one row for each thing that needs the owner, none when nothing does or a survey holds the band', async ($, on) => {
+test('the band is empty without waiting items (even with legacy pending tries) or during a survey', async ($, on) => {
   const rows = band(on);
-  expect(await rows($, { ...state, accept: 0 })).toEqual(['? 2 waiting for you · Decide the export format [Open]']);
-  expect(await rows($, { ...state, waiting: 0, first: '' })).toEqual(['3 to try [Accept all]']);
-  expect(await rows($, { ...state, waiting: 1, first: '' })).toEqual(['? 1 waiting for you [Open]', '3 to try [Accept all]']);
-  expect(await rows($, { ...state, waiting: 0, first: '', accept: 0 })).toEqual([]);
+  expect(await rows($, { ...state, waiting: 0, first: '', accept: 3 })).toEqual([]);
+  expect(await rows($, { ...state, waiting: 1, first: '' })).toEqual(['? 1 waiting for you [Open]']);
   expect(await rows($, undefined)).toEqual([]);
   expect(await rows($, state, 'terminal', { hasSurvey: true })).toEqual([]);
 });
 
 test('the band follows the panel language and is cut to the columns it has, its buttons whole', async ($, on) => {
   const rows = band(on), zh = { ...state, lang: 'zh', first: '决定导出格式' };
-  expect(await rows($, zh)).toEqual(['? 2 项等你处理 · 决定导出格式 [打开]', '3 待试用 [全部验收]']);
+  expect(await rows($, zh)).toEqual(['? 2 项等你处理 · 决定导出格式 [打开]']);
   // Chinese characters take two cells each.
-  expect(await rows($, zh, 'terminal', { bodyColumns: 24 })).toEqual(['? 2 项等你处理 · … [打开]', '3 待试用 [全部验收]']);
-  expect(await rows($, state, 'terminal', { bodyColumns: 30 })).toEqual(['? 2 waiting for you · De… [Open]', '3 to try [Accept all]']);
-  expect(await rows($, state, 'terminal', { bodyColumns: 20 })).toEqual(['? 2 waiting fo… [Open]', '3 to try [Accept all]']);
+  expect(await rows($, zh, 'terminal', { bodyColumns: 24 })).toEqual(['? 2 项等你处理 · … [打开]']);
+  expect(await rows($, state, 'terminal', { bodyColumns: 30 })).toEqual(['? 2 waiting for you · De… [Open]']);
+  expect(await rows($, state, 'terminal', { bodyColumns: 20 })).toEqual(['? 2 waiting fo… [Open]']);
 });
 
-/** The two presses: what `hud` is asked to do (argv, nothing run for the model) and the toast the owner sees. */
+/** The Open press: argv (nothing run for the model) and the toast the owner sees. */
 function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[number]) {
   const runs: string[][] = [], toasts: string[] = [];
   mock.env(on, { HUD_HOME: '/state', ...(pane ? { HERDR_PANE_ID: pane } : {}) });
@@ -52,7 +50,7 @@ function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[nu
   on('session.cwd', () => ({ value: '/demo' }));
   on('process.run', (_, e) => {
     runs.push([...e.argv]);
-    return { value: { exitCode: 0, stdout: e.argv[1] === 'panel' ? 'w4E:p9\n' : 'Accepted 3 to try\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
+    return { value: { exitCode: 0, stdout: 'w4E:p9\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
   });
   on('ui.toast', (_, e) => { toasts.push(e.text); return { value: undefined }; });
   return async ($: Engine, key: string) => {
@@ -64,10 +62,6 @@ function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[nu
 }
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`Accept all records the acceptance through hud act, and says what it did, on ${surface}`, async ($, on) => {
-    expect(await presses(on, 'w4E:p1', surface)($, 'accept')).toEqual({ runs: [['hud', 'act', 'try']], toasts: ['Accepted 3 to try'] });
-  });
-
   test(`Open shows the panel beside the pane, and only in a herdr pane, on ${surface}`, async ($, on) => {
     expect(await presses(on, 'w4E:p1', surface)($, 'open')).toEqual({ runs: [['hud', 'panel']], toasts: ['HUD panel w4E:p9'] });
   });
@@ -96,7 +90,7 @@ function session(on: On, records: object[]) {
   });
   return { clock, toasts, writes };
 }
-const record = (extra: object) => ({ type: 'band', lang: 'en', waiting: 1, first: 'Pick a name', accept: 0, fresh: false, ...extra });
+const record = (extra: object) => ({ type: 'band', lang: 'en', waiting: 1, first: 'Pick a name', fresh: false, ...extra });
 const start = { cwd: '/demo', surface: 'terminal' as const, isInteractive: true };
 
 test('the watch records are kept in state, and a toast shows only for a new item, once for each record', async ($, on) => {
@@ -104,23 +98,23 @@ test('the watch records are kept in state, and a toast shows only for a new item
     record({}), // Catch-up on the first read: shown, never announced.
     record({ waiting: 2, fresh: true }),
     record({ waiting: 0, first: '', accept: 4, fresh: true }),
-    record({ waiting: 0, first: '', accept: 0 }), // Resolved: the band clears without a toast.
-    { type: 'band', lang: 'fr', waiting: 'x', first: 1, accept: 0, fresh: true }, // Not a band this mod knows.
+    record({ waiting: 0, first: '' }), // Resolved: the band clears without a toast.
+    { type: 'band', lang: 'fr', waiting: 'x', first: 1, fresh: true }, // Not a band this mod knows.
   ]);
   await $.session.start(start);
   await f.clock.advance(100);
   expect(f.writes).toEqual([
-    { lang: 'en', waiting: 1, first: 'Pick a name', accept: 0 },
-    { lang: 'en', waiting: 2, first: 'Pick a name', accept: 0 },
-    { lang: 'en', waiting: 0, first: '', accept: 4 },
-    { lang: 'en', waiting: 0, first: '', accept: 0 },
+    { lang: 'en', waiting: 1, first: 'Pick a name' },
+    { lang: 'en', waiting: 2, first: 'Pick a name' },
+    { lang: 'en', waiting: 0, first: '' },
+    { lang: 'en', waiting: 0, first: '' },
   ]);
-  expect(f.toasts).toEqual(['Needs you: 2 waiting for you', 'Needs you: 4 to try']);
+  expect(f.toasts).toEqual(['Needs you: 2 waiting for you']);
 });
 
 test('the toast follows the panel language', async ($, on) => {
-  const f = session(on, [record({ lang: 'zh', waiting: 1, accept: 2, fresh: true })]);
+  const f = session(on, [record({ lang: 'zh', waiting: 1, fresh: true })]);
   await $.session.start(start);
   await f.clock.advance(100);
-  expect(f.toasts).toEqual(['需要你: 1 项等你处理 · 2 待试用']);
+  expect(f.toasts).toEqual(['需要你: 1 项等你处理']);
 });

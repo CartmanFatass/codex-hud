@@ -55,7 +55,7 @@ export class TicketRollup {
     for (const { slug, tickets } of [...this.features].reverse()) for (const t of tickets) {
       const id = key(slug, t.number), job = t.job?.state, claimed = live(job), gitLanded = landed.has(id);
       if (t.state !== 'done' && t.state !== 'dropped' && t.state !== 'try') {
-        if (gitLanded) t.state = t.ownerTry === false ? 'done' : 'try';
+        if (gitLanded) t.state = t.ownerTry ? 'try' : 'done';
         else if (job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
         else if (claimed || this.trees.has(t)) t.state = 'working';
         else if (/^claimed\b/i.test(t.status)) t.state = !job && now - t.at < 7200000 ? 'working' : 'blocked';

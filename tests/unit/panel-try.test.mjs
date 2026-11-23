@@ -87,6 +87,9 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   const { key, frame, painted, close, modelLog } = panel(f, layout);
   await painted(/Choose the sample filename/);
   key('\x1b[C');
+  await painted(/Tickets +1 feature/m);
+  assert.doesNotMatch(frame(), /Accept all|3 to try/);
+  key('Gkk\r'); // Docs → Working tree → Tickets, then open its diagnostics.
   await painted(/^Accept all +3 to try/m);
   key('G');
   await painted(/⏎ accept all/);
@@ -94,6 +97,8 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   assert.deepEqual(f.records(), []);
   key('\r\r');
   await until(() => f.records().length > 0 && !/Accept all/.test(frame()), frame);
+  key('\x1b');
+  await painted(/Choose the sample filename/);
   await close();
   assert.doesNotMatch(frame(), /Only to try|How to try|Space mark|m request land/);
   assert.match(frame(), /Choose the sample filename/);

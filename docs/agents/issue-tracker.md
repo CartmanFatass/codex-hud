@@ -14,7 +14,9 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 
 For implementation tickets, call `hud_tickets` with no arguments for the method and template. The main session
 publishes with `op: add` and changes status or ticks acceptance items with `op: update`. Specs and wayfinding
-notes are separate markdown files under `.scratch/<feature-slug>/`.
+notes are separate markdown files under `.scratch/<feature-slug>/`. The main session chooses ordinary slices,
+order and dependencies within the approved scope. `hud_land` records local tickets as `done` by default; set
+`owner_try: true` (`**Owner try:** yes`) only when the owner must try the result. That lands as `ready-for-human`.
 
 If a project tracks tickets on GitHub and mirrors them into `.scratch/`, edit the issues with `gh` and then call
 `hud_tickets` with `op: sync`; never edit the mirror directly.

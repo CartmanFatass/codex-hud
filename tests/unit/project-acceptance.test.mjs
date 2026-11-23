@@ -97,10 +97,12 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     const filtered = render('progress', milestone, { project: { filter: { query: 'choose columns', editing: false } } });
     const filteredDetail = panelLayout === 'classic' ? draw('progress', press(filtered, 'enter').state, width, lang) : filtered;
     assert.match(text(filteredDetail), /Download CSV/);
-    const hub = render(undefined, 'project:accept-all');
-    assert.match(text(hub), lang === 'en' ? /Accept all\s+1 to try/ : /全部验收\s+1 待试用/);
+    const hub = render(undefined);
+    assert.doesNotMatch(text(hub), /Accept all|全部验收/);
     assert.match(text(hub), lang === 'en' ? /Tickets\s+2 features/ : /工单\s+2 个功能/);
-    assert.deepEqual(press(hub, 'enter').action, { type: 'accept-all' });
+    const accept = render('tickets', 'project:accept-all');
+    assert.match(text(accept), lang === 'en' ? /Accept all\s+1 to try/ : /全部验收\s+1 待试用/);
+    assert.deepEqual(press(accept, 'enter').action, { type: 'accept-all' });
     record(`Progress — ${panelLayout}`, progress, width, lang);
   }
   if (process.env.OWNER_VIEW_TASK_FRAMES) fs.writeFileSync(process.env.OWNER_VIEW_TASK_FRAMES, frames.join('\n'));

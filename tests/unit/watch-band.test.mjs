@@ -26,34 +26,34 @@ function fixture(t, lang = 'en_US.UTF-8') {
 }
 const board = { revision: 'synthetic', workers: [], lanes: [], decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
 
-test('the band holds what the Project Inbox counts: waiting items without the settled ones, and Accept all', async (t) => {
+test('the band and Project hub show explicit waiting items, not a prompt to try pending tickets', async (t) => {
   const f = fixture(t), band = await f.read(NOW);
-  assert.deepEqual(band, { type: 'band', lang: 'en', waiting: 2, first: 'Decide the export format', accept: 2, fresh: false });
+  assert.deepEqual(band, { type: 'band', lang: 'en', waiting: 2, first: 'Decide the export format', fresh: false });
 
   const project = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect('home', board, NOW);
   assert.deepEqual(project.waiting.map((item) => item.value), ['Decide the export format', 'Send a sample file (waits on export/04)']);
   const hub = plain(renderMonitor({ state: onPage(undefined), tree: TREE, workboard: board, project, width: 60, height: 40, nowMs: NOW })).join('\n');
   assert.match(hub, new RegExp(`^Needs you ─+ ${band.waiting}$`, 'm'));
-  assert.match(hub, new RegExp(`^Accept all +${band.accept} to try$`, 'm'));
+  assert.equal(project.ledger.filter((row) => row.state === 'try').length, 2);
+  assert.doesNotMatch(hub, /Accept all|\d+ to try/);
 });
 
 test('the band is read again only when it changes, and announces only what is new', async (t) => {
-  const f = fixture(t), at = { waiting: 2, accept: 2 };
-  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Decide the export format', fresh: false, ...at });
+  const f = fixture(t);
+  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Decide the export format', fresh: false, waiting: 2 });
   assert.equal(await f.read(NOW), undefined);
 
   f.state('Decide the export format', 'Choose a locale', 'Send a sample file (waits on export/04)');
-  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Decide the export format', fresh: true, waiting: 3, accept: 2 });
+  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Decide the export format', fresh: true, waiting: 3 });
 
   f.state('Choose a locale'); // Two items were handled and none added: nothing new to announce.
-  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Choose a locale', fresh: false, waiting: 1, accept: 2 });
+  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Choose a locale', fresh: false, waiting: 1 });
 
   f.ticket(4, 'try');
-  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Choose a locale', fresh: true, waiting: 1, accept: 3 });
+  assert.equal(await f.read(NOW), undefined, 'a new try does not redraw the band or announce anything');
 
   f.state();
-  ['resolved', 'resolved', 'resolved', 'resolved'].forEach((status, i) => f.ticket(i + 1, status));
-  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: '', fresh: false, waiting: 0, accept: 0 });
+  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: '', fresh: false, waiting: 0 });
 });
 
 test('the band carries the panel language, and a folder without STATE or tickets has an empty band', async (t) => {
@@ -62,7 +62,7 @@ test('the band carries the panel language, and a folder without STATE or tickets
   fs.writeFileSync(join(f.cwd, '..', 'settings.json'), '{"language":"en"}');
   assert.equal((await f.read(NOW)).lang, 'en');
   const empty = bandReader(join(f.cwd, 'missing'), f.hud, f.env);
-  assert.deepEqual(await empty(NOW), { type: 'band', lang: 'en', waiting: 0, first: '', accept: 0, fresh: false });
+  assert.deepEqual(await empty(NOW), { type: 'band', lang: 'en', waiting: 0, first: '', fresh: false });
 });
 
 test('hud watch --mod sends the band after ready, again only when it changes, and not without the mod handshake', async (t) => {
@@ -84,10 +84,10 @@ test('hud watch --mod sends the band after ready, again only when it changes, an
 
   const mod = run({ HUD_MOD_CURSOR: '' });
   await until(() => mod.records.length >= 2);
-  assert.deepEqual(mod.records, [{ type: 'ready' }, { type: 'band', lang: 'en', waiting: 2, first: 'Decide the export format', accept: 2, fresh: false }]);
+  assert.deepEqual(mod.records, [{ type: 'ready' }, { type: 'band', lang: 'en', waiting: 2, first: 'Decide the export format', fresh: false }]);
   f.state('Decide the export format', 'Choose a locale');
   await until(() => mod.records.length >= 3);
   await new Promise((r) => setTimeout(r, 200));
   await mod.stop();
-  assert.deepEqual(mod.records.slice(2), [{ type: 'band', lang: 'en', waiting: 2, first: 'Decide the export format', accept: 2, fresh: true }]);
+  assert.deepEqual(mod.records.slice(2), [{ type: 'band', lang: 'en', waiting: 2, first: 'Decide the export format', fresh: true }]);
 });

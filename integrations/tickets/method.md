@@ -19,9 +19,9 @@ Break the work into **tracer-bullet** slices:
 - Each fits a single implementer session. Do any prefactoring first.
 - Declare **Blocked by** edges: tickets that must finish before this one starts.
 
-### 3. Check granularity with the owner
+### 3. Check granularity and dependencies
 
-Present a numbered list showing **Title**, **Blocked by**, and **What it delivers**. Ask whether granularity is right, blocking edges genuinely gate each ticket, and any tickets should merge or split. Iterate until approved.
+The main session chooses slices and their order within the approved scope. Check that blocking edges genuinely gate work and that each slice can be verified; don't ask the owner to approve the routine slice list.
 
 A ticket whose acceptance cannot be written, or whose boundary depends on something the spec leaves open, is a spec gap: write it as an owner question in `docs/handoff/questions/` and keep that ticket out of `ready-for-agent`. Do not settle the spec yourself.
 
@@ -29,14 +29,14 @@ A ticket whose acceptance cannot be written, or whose boundary depends on someth
 
 Publish blockers first in dependency order. Do not close or rewrite a parent issue. Open items in the spec keep derived tickets from `ready-for-agent`; otherwise label `ready-for-agent`.
 
-- **Local markdown:** call `hud_tickets` with `op: add`, the `feature` slug, and a `tickets` list. Give each draft a `title`, `blocked_by` (local ticket numbers or `feature/NN` references, or `[]`), `what`, `acceptance` (a list of items), optional `status` (default `ready-for-agent`), and optional `owner_try` (`true`/`false`, written as `**Owner try:** yes` or `**Owner try:** no` under Status; omit or set `true` for visible UI, install, or live-session behaviour tests cannot cover; set `false` when tests fully cover it). The tool numbers the drafts after the existing tickets in list order, writes `.scratch/<feature>/issues/NN-<slug>.md` from the local template below, and returns the paths and numbers.
+- **Local markdown:** call `hud_tickets` with `op: add`, the `feature` slug, and a `tickets` list. Give each draft a `title`, `blocked_by` (local ticket numbers or `feature/NN` references, or `[]`), `what`, `acceptance` (a list of items), optional `status` (default `ready-for-agent`), and optional `owner_try` (`true`/`false`, written as `**Owner try:** yes` or `**Owner try:** no` under Status; set `true` only when the owner must try the result; omitted or `false` lands as `done`). The tool numbers the drafts after the existing tickets in list order, writes `.scratch/<feature>/issues/NN-<slug>.md` from the local template below, and returns the paths and numbers.
 - **GitHub with `.scratch/` mirror:** publish the spec as the parent issue (if not already published), then create each ticket as a GitHub sub-issue of that parent (`gh issue create --parent N` or `gh issue edit N --add-sub-issue M`). Express blocking as native blocked-by edges or a single body line `Blocked by: #N, #M`. Never write `.scratch/`. After publishing, call `hud_tickets` with `op: sync`; sync reports the `<slug>` derived from the parent title and writes each mirrored ticket file to `.scratch/<slug>/issues/<N>-<slug>.md` (where `N` is the GitHub issue number).
 
 ### 5. Ownership and HUD dispatch
 
 - **Single writer:** the main session is the only ticket writer and ticks acceptance checkboxes after checking results; workers never edit ticket files or issues. For local tickets, call `hud_tickets` with `op: update`, `feature`, `ticket` (number), and `status` (including `claimed` and `done`), `owner_try` (`true`/`false`), `blocked_by` (replacement blockers), and/or `tick` (1-based acceptance item numbers). For GitHub with a `.scratch/` mirror, tick acceptance on the GitHub issue, then call `hud_tickets` with `op: sync` again—never edit mirror files.
 - **Dispatching:**
-  - **Local markdown:** use `hud_tickets` with `op: ready` for dispatchable tickets. Pass the returned `ticket` (`<feature>/<NN>`) and `path` (as `brief_file`) to `hud_create`, and `slice` for a differently named STATE slice. The live job claims the ticket without a file edit or commit; `hud_land` folds the ticket update into the landed commit (marking `done` with the sha when `**Owner try:** no`, or `ready-for-human` with the sha when `yes` or missing) without appending to `STATE.md`.
+  - **Local markdown:** use `hud_tickets` with `op: ready` for dispatchable tickets. Pass the returned `ticket` (`<feature>/<NN>`) and `path` (as `brief_file`) to `hud_create`, and `slice` for a differently named STATE slice. The live job claims the ticket without a file edit or commit; `hud_land` folds the ticket update into the landed commit (recording the landing and marking `done` by default, or `ready-for-human` with `**Owner try:** yes`) without appending to `STATE.md`.
   - **GitHub with `.scratch/` mirror:** pass `package: "<slug>"` (the slug that sync reports from the parent title) to `hud_create` and name `.scratch/<slug>/issues/<N>-<slug>.md` or `#N` in the brief.
 
 <local-ticket-template>
@@ -44,7 +44,7 @@ Publish blockers first in dependency order. Do not close or rewrite a parent iss
 # NN: Ticket title
 
 **Status:** ready-for-agent
-**Owner try:** yes
+**Owner try:** no
 **Blocked by:** none
 
 **What to build:** end-to-end behavior this ticket delivers, from the user's perspective.

@@ -862,7 +862,7 @@ test('passing neighbor', () => appendFileSync(join(process.env.HOME, 'green-ran'
 });
 
 for (const [label, ownerTryLine, expectedStatus] of [
-  ['omitted', '', 'ready-for-human'],
+  ['omitted', '', 'done'],
   ['yes', '**Owner try:** yes\n', 'ready-for-human'],
   ['no', '**Owner try:** no\n', 'done'],
 ]) test(`land folds ${expectedStatus} and a resolvable record into one commit without STATE.md change (owner_try ${label})`, async t => {
@@ -898,6 +898,7 @@ for (const [label, ownerTryLine, expectedStatus] of [
   const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
   const latest = landedNewest(project).map(({ r }) => r);
   assert.equal(latest.find(r => r.id === 'FEATURE-01')?.commit, done.landed_sha);
+  assert.equal(latest.find(r => r.id === 'FEATURE-01')?.state, expectedStatus === 'done' ? 'accepted' : 'try');
   assert.equal(latest.find(r => r.id === 'FEATURE-02')?.state, 'try');
 });
 

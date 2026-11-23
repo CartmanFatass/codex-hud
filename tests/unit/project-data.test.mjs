@@ -10,7 +10,6 @@ import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
 import { clearJobIndexCaches } from '../../dist/roles/job-index-cache.js';
 import { acceptAll, appendTry, TryLog } from '../../dist/collectors/try-records.js';
-import { bandReader } from '../../dist/cli/watch-band.js';
 import { currentRows, homeProgressRows, landedNewest, pageRows } from '../../dist/render/project-view.js';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
@@ -185,13 +184,14 @@ test('ticket items and latest ## Comments bullet parsed; absent comments omitted
 test('Home and Project derive ticket, commit, job, and cross-feature dependency states without tracker writes', async (t) => {
   const f = makeTemp(t);
   initRepo(f.cwd, [{ file: 'a', msg: 'deliver base/02; not OTHER-BASE-03', date: '2026-11-10T08:00:00Z' }]);
-  const issue = (slug, n, blocked = 'none', state = 'ready-for-agent') => {
+  const issue = (slug, n, blocked = 'none', state = 'ready-for-agent', ownerTry = '') => {
     const file = join(f.cwd, `.scratch/${slug}/issues/${n}-item.md`);
-    f.put(file, `# ${n}: Item ${n}\n**Status:** ${state}\n**Blocked by:** ${blocked}\n`);
+    f.put(file, `# ${n}: Item ${n}\n**Status:** ${state}\n${ownerTry}**Blocked by:** ${blocked}\n`);
     return file;
   };
   const file = issue('base', '01', 'none', 'try');
-  issue('base', '02'); issue('base', '03'); issue('next', '01', 'base/01, base/02');
+  issue('base', '02', 'none', undefined, '**Owner try:** yes\n');
+  issue('base', '03'); issue('next', '01', 'base/01, base/02');
   issue('next', '02', 'base/03'); issue('next', '03', '02'); issue('next', '04', 'absent/01');
   const receipt = (id, cwd, state) => {
     const dir = join(f.hud, `jobs/j${id.padStart(16, '0')}`);
@@ -256,8 +256,8 @@ test('subject cache follows the resolved SHA of a linked checkout (packed and lo
   assert.equal(await tick(), 'ready'); assert.equal(calls.length, 2);
   f.put(join(tree, 'a'), 'delivered\n');
   git(tree, 'commit', '-am', 'deliver DEMO-01');
-  assert.equal(await tick(), 'try'); assert.equal(await tick(), 'try'); assert.equal(calls.length, 3);
-  git(tree, 'checkout', '--detach'); assert.equal(await tick(), 'try'); assert.equal(calls.length, 3);
+  assert.equal(await tick(), 'done'); assert.equal(await tick(), 'done'); assert.equal(calls.length, 3);
+  git(tree, 'checkout', '--detach'); assert.equal(await tick(), 'done'); assert.equal(calls.length, 3);
 });
 
 test('projectList orders panel root first, deduplicates by realpath, drops missing dirs, caps at 16, tolerates bad files', async (t) => {
@@ -413,7 +413,7 @@ test('multiple ProjectCollectors, ProjectOverviews and Control share one JobInde
   assert.equal(updatedCtrl.radar.roleStats.imp.ok, 2);
 });
 
-test('scratch-only subjects do not land tickets; only landed owner-try tickets go to Accept all and the band', async (t) => {
+test('scratch-only subjects do not land tickets; commit-only landings default to done unless owner try is requested', async (t) => {
   const f = makeTemp(t);
   initRepo(f.cwd, [{ file: 'code.txt', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
   const git = (...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
@@ -421,24 +421,25 @@ test('scratch-only subjects do not land tickets; only landed owner-try tickets g
   }).trim();
   const base = git('rev-parse', 'HEAD');
   const issue = (n, ownerTry, record = '') => f.put(join(f.cwd, `.scratch/demo/issues/${n}-工单.md`),
-    `# ${n}: Sample ${n}\n**Status:** ready-for-agent · **Owner try:** ${ownerTry}\n**Blocked by:** none\n${record}`);
+    `# ${n}: Sample ${n}\n**Status:** ready-for-agent${ownerTry ? ` · **Owner try:** ${ownerTry}` : ''}\n**Blocked by:** none\n${record}`);
   issue('01', 'no'); issue('02', 'no'); issue('03', 'yes');
   issue('04', 'no', `\n## Comments\n- Landed in this commit (replay base ${base}); gate 1/1 passed.\n`);
+  issue('05');
   git('add', '.scratch'); git('commit', '-m', 'demo/01: add tickets');
   f.put(join(f.hud, 'jobs/j0000000000000001/job.json'), { cwd: f.cwd, role: 'imp', ticket: 'demo/01' });
   f.put(join(f.cwd, 'code.txt'), 'land the changes\n');
-  git('commit', '-am', 'deliver demo/02 and DEMO-03');
+  git('commit', '-am', 'deliver demo/02, DEMO-03 and demo/05');
   const landed = git('rev-parse', 'HEAD');
   issue('03', 'yes', '\n## Comments\n- Follow-up note.\n');
   git('commit', '-am', 'demo/03: update tracker');
 
   const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect('home', EMPTY_BOARD, NOW);
-  assert.deepEqual(data.tickets[0].tickets.map(t => t.state), ['working', 'done', 'try', 'done']);
+  assert.deepEqual(data.tickets[0].tickets.map(t => t.state), ['working', 'done', 'try', 'done', 'done']);
   assert.deepEqual(data.ledger.map(r => [r.id, r.state, r.landed, r.commit]), [
     ['DEMO-01', 'working', undefined, undefined], ['DEMO-02', 'accepted', true, landed],
     ['DEMO-03', 'try', true, landed], ['DEMO-04', 'accepted', true, undefined],
+    ['DEMO-05', 'accepted', true, landed],
   ]);
-  assert.equal((await bandReader(f.cwd, f.hud, f.env)(NOW)).accept, 1);
   assert.equal(acceptAll(f.hud, f.cwd, data.ledger), 1);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(f.hud, 'tries.jsonl'), 'utf8')).slices, ['DEMO-03']);
 });

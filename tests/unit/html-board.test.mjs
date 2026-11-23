@@ -118,7 +118,8 @@ test('Needs you, In flight, tickets and the review appear when there is somethin
   assert.doesNotMatch(html, /Finished one/);
   assert.match(html, /<section id="tickets">[^]*?<b>panel-v2<\/b><span class="plain">0\/2<\/span>/);
   assert.match(html, /<section id="review">[^]*?class="root">2026-11-12-review\.md<\/p><div class="review"><b># Review /);
-  assert.match(html, /<i title="1 working" style="flex:1;background:var\(--working\)">/);
+  assert.doesNotMatch(html, /class="bar"/, 'counts are not an overall project progress meter');
+  assert.match(html, /<li><i style="background:var\(--working\)"><\/i><b>1<\/b> working<\/li>/);
   assert.match(html, /<li><i style="background:var\(--trying\)"><\/i><b>1<\/b> to try<\/li>/);
   assert.match(html, /branch wt\/[^]*?3 changed[^]*?2 ahead[^]*?Milestone M5/);
 

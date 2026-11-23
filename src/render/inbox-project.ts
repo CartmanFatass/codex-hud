@@ -1,6 +1,6 @@
 /**
  * Project Inbox (PROJECT-UX direction C):
- * Ranked Needs you, Running, last accepted, page links and the accept-all action on the hub.
+ * Ranked Needs you, Running, last accepted and page links on the hub.
  * Needs you / Running / Quiet on the Projects list.
  * Role alerts link to Control. Pure.
  */
@@ -8,9 +8,9 @@ import type { ActiveJob, ProjectSnapshot } from '../collectors/project-board.js'
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import {
-  PAGE_WORD, PROJECT_PAGES, acceptedText, asksYou, barText, clampClean, clampLines,
-  currentRows, featureCodes, inFlight, landedNewest, pageRows, pageSummary, progressSegments, projectOrder,
-  sinceText, sliceInk, ticketPreview, projectOriginal, tryCount, unlisted, unsliced, waitingRows, type ProjectPage,
+  PAGE_WORD, PROJECT_PAGES, asksYou, clampClean, clampLines,
+  currentRows, featureCodes, inFlight, landedNewest, pageRows, pageSummary, projectOrder,
+  sinceText, sliceInk, ticketPreview, projectOriginal, unlisted, unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
 import { glyph, roleName } from './control-view.js';
 import { HUB_HINTS, inboxRolePreview, slicePreview, type Part, type Shown } from './split-project.js';
@@ -30,16 +30,6 @@ const cutText = (b: string, room: number) => room < 1 ? '' : visualLength(b) <= 
 const cutProse = (text: string, room: number) => cutText(monitorText(text), room);
 const cutId = (text: string, room: number) => { const b = monitorText(text); return room < 1 ? '' : visualLength(b) <= room ? b : cutWords(b, room) || truncateAnsi(b, room); };
 const mins = (until: number, now: number) => t('{n}m', { n: Math.max(1, Math.ceil((until - now) / 60000)) });
-export const ACCEPT_ALL = 'project:accept-all';
-const acceptAllRow = (data: ProjectSnapshot, width: number): MonitorRow[] => {
-  const n = tryCount(data);
-  if (!n) return [];
-  const label = t('Accept all'), count = t('{n} to try', { n });
-  const partial = data.ticketTotals?.partial ? t('Partial') : '';
-  const facts = [partial, count].filter(Boolean).join(' · ');
-  const right = [facts, partial].find((text) => visualLength(label) + 1 + visualLength(text) <= width) ?? '';
-  return [{ item: ACCEPT_ALL, text: pair(theme.board.active(label), muted(right), width) }];
-};
 const workerOf = (jobId: string | undefined, board?: WorkboardSnapshot) => jobId ? board?.workers.find((w) => w.evidence[0]?.sourceId === jobId) : undefined;
 const sliceAsking = (s: ProjectSnapshot['slices'][number], board?: WorkboardSnapshot) => workerOf(s.jobId, board)?.homeNeedsHuman ?? !!s.asking;
 const jobAsking = (j: ActiveJob, board?: WorkboardSnapshot) => workerOf(j.jobId, board)?.homeNeedsHuman ?? j.asking;
@@ -141,12 +131,12 @@ export function inboxHubRows(
   const expanded = state.project.folded.has('inbox:more'), many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
   const top: MonitorRow[] = [boardRow(''), { ...section(theme.board.title(monitorText(name) || t('Project')), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''), ...(many ? { item: 'project:switch' } : {}) }];
   const needs = buildNeeds(data, state, width, now, 'classic', board), live = runningRows(data, width, now, false, board), last = lastAcceptedRow(data, width, now);
-  const pages = hubPageRows(data, width, now, false), accept = acceptAllRow(data, width);
+  const pages = hubPageRows(data, width, now, false);
   const build = (cap: number, runCap: number, showLast: boolean, gaps: boolean) => [
     ...top, ...needsBlock(needs, expanded, cap, data, width), boardRow(''),
     section(t('Running'), width, live.length ? String(live.length) : ''),
     ...(live.length ? live.slice(0, runCap) : [boardRow('  ' + muted(t('Nothing in progress')))]),
-    ...(showLast && last ? [last] : []), boardRow(''), ...pages, ...accept,
+    ...(showLast && last ? [last] : []), boardRow(''), ...pages,
   ].filter((r) => gaps || r.text !== '' || r.item);
   const tiers: [number, number, boolean, boolean][] = [
     [NEEDS_CAP, live.length, true, true], [NEEDS_CAP, live.length, false, true], [NEEDS_CAP, Math.min(2, live.length), false, true],
@@ -172,10 +162,9 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
   const list = [
     name, boardRow(''), ...needsBlock(needs, expanded, NEEDS_CAP, data, width), boardRow(''),
     section(t('Running'), width, live.length ? String(live.length) : ''), ...(live.length ? live : [plain('  ' + muted(t('Nothing in progress')), width)]), ...(last ? [last] : []),
-    boardRow(''), ...hubPageRows(data, width, now, true), ...acceptAllRow(data, width),
+    boardRow(''), ...hubPageRows(data, width, now, true),
   ];
   const preview = (cursor?: string): Shown => {
-    if (cursor === ACCEPT_ALL) return { label: t('Accept all'), rows: [], hints: ['⏎ accept all', '[ ] project'] };
     const waitMatch = /^project:wait:(\d+)$/.exec(cursor ?? '');
     if (waitMatch) {
       const i = Number(waitMatch[1]), r = data.waiting[i];
@@ -204,10 +193,8 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
       const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
       return { label: t(PAGE_WORD[page]), rows: bare(pageRows(page, facts, state, width, now, board, input.modelEnabled).slice(1)) };
     }
-    const cur = currentRows(data), cells = Math.max(6, Math.min(60, width - 16));
     const rows: MonitorRow[] = [
       ...(data.summary ? clampLines(data.summary, width - 2, 2).lines.map((l) => plain('  ' + l, width)) : []),
-      ...(progressSegments(cur.counts, cells).some((s) => s.width) ? [plain(`  ${barText({ counts: cur.counts }, cells)} ${muted(acceptedText(cur.counts, cur.rows.length))}`, width)] : []),
       ...(live.length ? [boardRow(''), plain(muted(t('Running')), width), ...bare(live)] : []), ...(last ? [plain(last.text, width)] : []),
     ];
     return { label: t('Progress'), rows };
@@ -220,8 +207,7 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
 
 /** Inbox Projects list: grouped into Needs you, Running and Quiet (a quiet project is one row). */
 export function inboxListRows(projects: ProjectChoice[], width: number, now: number): MonitorRow[] {
-  const pendingOf = (p: ProjectChoice) => p.overview?.counts.try ?? 0;
-  const ordered = projectOrder(projects), needs = ordered.filter((p) => (p.overview?.waiting ?? 0) > 0 || pendingOf(p) > 0);
+  const ordered = projectOrder(projects), needs = ordered.filter((p) => (p.overview?.waiting ?? 0) > 0);
   const running = ordered.filter((p) => !needs.includes(p) && (p.overview?.running ?? 0) > 0), quiet = ordered.filter((p) => !needs.includes(p) && !running.includes(p));
   const rows: MonitorRow[] = [boardRow('')], gap = () => { if (rows.length > 1) rows.push(boardRow('')); };
   const headRow = (p: ProjectChoice, right: string): MonitorRow => {
@@ -231,11 +217,10 @@ export function inboxListRows(projects: ProjectChoice[], width: number, now: num
   if (needs.length) {
     rows.push(section(t('Needs you'), width, String(needs.length)));
     for (const p of needs) {
-      const o = p.overview!, item = `project:list:${p.root}`, age = muted(sinceText(o.at, now)), pending = pendingOf(p);
-      rows.push(headRow(p, o.waiting ? theme.board.attention(t('{n} waiting', { n: o.waiting })) : sliceInk('try')(t('{n} to try', { n: pending }))));
-      const parts = [o.waiting && pending ? sliceInk('try')(t('{n} to try', { n: pending })) : '', o.running ? theme.board.active(t('{n} running', { n: o.running })) : '', !pending && !o.running && o.open ? muted(t('{n} open', { n: o.open })) : ''].filter(Boolean);
-      while (parts.length > 1 && visualLength('  ' + parts.join(' · ')) + (age ? visualLength(age) + 1 : 0) > width) parts.pop();
-      rows.push({ item, text: pair(parts.length ? '  ' + parts.join(muted(' · ')) : '', age, width) });
+      const o = p.overview!, item = `project:list:${p.root}`, age = muted(sinceText(o.at, now));
+      rows.push(headRow(p, theme.board.attention(t('{n} waiting', { n: o.waiting }))));
+      const status = o.running ? theme.board.active(t('{n} running', { n: o.running })) : o.open ? muted(t('{n} open', { n: o.open })) : '';
+      rows.push({ item, text: pair(status ? '  ' + status : '', age, width) });
     }
   }
   if (running.length) {

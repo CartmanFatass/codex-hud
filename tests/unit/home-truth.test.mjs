@@ -75,11 +75,10 @@ test('Enter or a click on a waiting item on Home opens its whole text on the Pro
   }
 });
 
-test('Home counts tickets and uses the milestone only as a label; Accept all counts pending tickets', async (t) => {
+test('Home counts tickets and uses the milestone only as a label', async (t) => {
   const f = await fixture(t);
   for (const width of [38, 80]) {
-    const home = plain(f.quiet(width, 'en', 46)), hub = plain(f.quiet(width, 'en', 46, { ...sliceState(), activeTab: 'project' }));
-    assert.match(hub.find((l) => /^Accept all /.test(l)), /^Accept all +1 to try$/);
+    const home = plain(f.quiet(width, 'en', 46));
     assert.match(legend(home), /✓ 3.*◇ 1.*◐ 2.*◆ 2.*○ 6/);
     assert.doesNotMatch(legend(home), /dropped/);
     assert.match(home.find((l) => /^Progress ─/.test(l)), /Milestone M3b$/);

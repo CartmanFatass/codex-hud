@@ -14,7 +14,8 @@ export function ticketFileEvidence(text: string) {
   const comments = commentsSection.split(/^## /m, 1)[0];
   const field = (key: string) => body.match(new RegExp(`(?:^|·)[ \\t]*\\*\\*${key}:\\*\\*[ \\t]*([^·\\r\\n]*)`, 'mi'))?.[1]?.trim();
   const status = field('Status'), blocked = field('Blocked by');
-  const ownerTry = !/^no\b/i.test(field('Owner try') ?? '');
+  const trial = field('Owner try') ?? '';
+  const ownerTry = /^yes$/i.test(trial);
   const items = [...body.matchAll(/^[ \t]*[-*] \[([ xX])\][ \t]*([^\r\n]*)/gm)].map(b => ({
     done: b[1].toLowerCase() === 'x', text: b[2].replace(/\s+/g, ' ').trim(),
   }));
@@ -25,7 +26,8 @@ export function ticketFileEvidence(text: string) {
   const readyForHuman = /^ready-for-human\b/i.test(status ?? '');
   const landed = /^(wontfix|dropped)\b/i.test(status ?? '') ? 'dropped'
     : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') ? 'done'
-    : /^try\b/i.test(status ?? '') || recordedLanding || (readyForHuman && allChecked) ? (ownerTry ? 'try' : 'done')
+    // Preserve legacy pending records with no Owner try field.
+    : /^try\b/i.test(status ?? '') || recordedLanding || (readyForHuman && allChecked) ? (/^no\b/i.test(trial) ? 'done' : 'try')
     : allChecked ? 'done' : undefined;
   return { status, blocked, items, checked, ownerTry, landed, recordedLanding, ...(commit ? { commit } : {}) } as const;
 }

@@ -241,12 +241,12 @@ test('> and < are Home’s next and previous card that needs the owner, not Proj
   assert.notEqual(home.state.home.split.listCursor, start, '> moves to the next card that needs the owner');
   home.run({ type: 'key', key: 'previous-trouble', text: '<' });
   assert.equal(home.state.home.split.listCursor, start, '< comes back');
-  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' }, project: { nav: { cursor: 'project:accept-all' } } }) });
+  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' }, project: { nav: { cursor: 'project:page:progress' } } }) });
   for (const input of [{ type: 'key', key: 'next-trouble', text: '>' }, { type: 'key', key: 'previous-trouble', text: '<' }]) {
     const out = hub.run(input);
     assert.equal(out.action, undefined);
   }
-  assert.equal(hub.state.project.nav.cursor, 'project:accept-all');
+  assert.equal(hub.state.project.nav.cursor, 'project:page:progress');
 });
 
 const STATE_WORDS = { en: ['asking', 'failed', 'done', 'stopped', 'stalled', 'report ready'], zh: ['提问中', '失败', '完成', '已停止', '停滞', '报告待阅'] };
