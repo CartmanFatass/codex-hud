@@ -7,6 +7,7 @@ import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { getJobIndexCache } from './job-index-cache.js';
 import { jobChecks } from './job-checks.js';
+import { cliSession } from './job-sessions.js';
 import { archiveJobLand, type JobLand } from './job-land.js';
 import { epoch, readJobUsage, text, type JobUsage } from './job-usage.js';
 import { normalizeReportMeta, readReportMeta } from './report-meta.js';
@@ -70,7 +71,7 @@ function cachedOutcome(home: string, id: string, settlement?: number) {
 }
 
 const logged = new Set<string>();
-export function archiveJob(home: string, dir: string, id: string, receipt: (Job & Record<string, unknown>) | null,
+export function archiveJob(home: string, dir: string, id: string, receipt: Job | null,
   status: Partial<JobStatus>, now: number, log: (message: string) => void): void {
   try {
     // Claim first: if removal fails, a later scan must not append the same job again.
@@ -79,6 +80,10 @@ export function archiveJob(home: string, dir: string, id: string, receipt: (Job 
     const job: Partial<Job> = receipt ?? {};
     const ended = epoch(status.ended_at), reaped = epoch(job.reaped_at);
     const checks = jobChecks(dir, job);
+    const sessions = Array.isArray(job.sessions) ? job.sessions.flatMap(s => {
+      const native = s?.harness === 'pi' && text(s.id) ? { harness: 'pi', id: s.id } : cliSession(s?.harness, s?.id);
+      return native ? [{ ...native, path: text(s.path) }] : [];
+    }) : [];
     const row = {
       v: 1, ...projectJobFacts(home, dir, id, job, status, !!receipt), archived_at: new Date(now).toISOString(),
       thinking: text(job.thinking) ?? text(status.thinking), preset: text(job.preset),
@@ -87,7 +92,8 @@ export function archiveJob(home: string, dir: string, id: string, receipt: (Job 
       })) : undefined,
       dispatch_code: text(job.dispatch_code), exit_reason: reason(status.exit_reason), read_at: text(job.read_at),
       checks: checks && { passed: checks.passed, total: checks.total, stale: checks.stale },
-      repair_of: text(job.repair_of), land: archiveJobLand(home, id),
+      repair_of: text(job.repair_of), retry_of: text(job.retry_of), sessions: sessions.length ? sessions : undefined,
+      land: archiveJobLand(home, id),
       outcome: cachedOutcome(home, id, epoch(status.settled_at) ?? ended),
     };
     const archive = join(home, 'archive');

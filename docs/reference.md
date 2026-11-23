@@ -524,7 +524,8 @@ This is a main-session tool.
 For GitHub-mirrored `.scratch/`, `add` and `update` refuse: edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`.
-Pi history stays in `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to primary/helper files.
+Tabbed pi history stays in `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to primary/helper files. Headless pi keeps its native session file in the job directory.
+`job.json` records known native sessions as `sessions: [{harness, id, path?}]`, including repair continuations; reopening the same session does not duplicate it.
 A CLI job's supervisor only observes; only facts end a job: the worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or `closed` when a new report is on disk).
 Each CLI dispatch and `hud_send` starts a turn (`turn.json`).
 `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
@@ -548,7 +549,8 @@ The watcher learns of a HUD runner's exit through a socket close, not a periodic
 Native pi-roles workers have no such runner; pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
 A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.
 `hud_send` to it starts a new supervisor.
-Settled directories, including reports and `hud_read` access, expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
+Settled directories, including reports and `hud_read` access, normally expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
+A headless pi job with a native session file stored only in its job directory stays for at least **seven days after settlement**.
 Before deleting a legacy pi job it moves real JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job.
 Removing session links never removes their targets.
@@ -558,6 +560,8 @@ Failed or stopped jobs keep their raw logs until their directories expire.
 At settlement the watcher saves a bounded, best-effort snapshot of native usage in the job directory before raw logs can be pruned.
 It reads pi session entries, CLI result streams, or native transcript usage records; it never prices missing tokens or treats a truncated per-request transcript as a total.
 Before deletion it appends job facts to `$HUD_HOME/archive/YYYY-MM.jsonl`, including ticket, route, question count, land outcome, available usage and the worker's bounded declared summary with home paths removed.
+The line includes `sessions` and `retry_of` when known. Session paths are recorded as observed; the underlying files may later move or disappear.
+`land` keeps its attempt, repair and rerun counts and adds `repair_details: [{step_kind, step, outcome}]` (`conflict` for cherry-pick, `gate` otherwise) and `rerun_details: [{step, passed_unchanged}]` for reruns with a known result.
 It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
 In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.
 

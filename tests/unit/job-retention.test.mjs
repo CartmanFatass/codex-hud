@@ -203,6 +203,60 @@ test('retention deletes session links in both layouts without touching their tar
   assert.equal(fs.statSync(target).mtimeMs, before.mtimeMs);
 });
 
+test('headless pi session stays at least seven days while a pi tab keeps the one-day retention', async t => {
+  const f = fixture(t), now = Date.parse('2030-01-02T12:00:00Z');
+  const ended = new Date(now - 25 * hour).toISOString(), status = { state: 'closed', ended_at: ended };
+  const root = join(f.home, 'synthetic-project');
+  fs.mkdirSync(root);
+  const sonic = f.job({ ...status, slot: 'sonic' }, { headless: true, role: 'sonic', cwd: root });
+  const sonicPath = join(sonic, 'sonic-session.jsonl');
+  const header = id => JSON.stringify({ type: 'session', id, cwd: root }) + '\n';
+  writeFixtureFile(sonicPath, header('sonic-id'));
+  const tab = f.job({ ...status, slot: 'primary' }, { cwd: root, reaped_at: ended }, true);
+  const native = join(f.defaultPi, 'sessions');
+  fs.mkdirSync(native, { recursive: true });
+  const primary = join(native, 'primary.jsonl'), helper = join(native, 'helper.jsonl');
+  writeFixtureFile(primary, header('tab-id'));
+  writeFixtureFile(helper, header('helper-id'));
+  for (const [layout, path] of [['sessions', primary], ['.dispatch/helper/sessions', helper]]) {
+    const folder = join(tab, layout);
+    fs.mkdirSync(folder, { recursive: true });
+    fs.symlinkSync(path, join(folder, 'link.jsonl'));
+  }
+
+  const run = async at => {
+    const { child, exited } = f.start(`Date.now = () => ${at};`, '');
+    await exited;
+    assert.equal(child.exitCode, 0);
+  };
+  const fact = (id, path) => ({ harness: 'pi', id, path });
+  const receipt = dir => JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  await run(now - 2 * hour);
+  assert.deepEqual(receipt(tab).sessions, [fact('tab-id', primary), fact('helper-id', helper)]);
+  assert.deepEqual(receipt(sonic).sessions, [fact('sonic-id', sonicPath)]);
+  await run(now);
+  assert.equal(fs.existsSync(tab), false);
+  assert.equal(fs.readFileSync(primary, 'utf8'), header('tab-id'));
+  const expiry = Date.parse(ended) + 7 * 24 * hour;
+  await run(expiry);
+  assert.equal(fs.readFileSync(sonicPath, 'utf8'), header('sonic-id'));
+  await run(expiry + 1);
+  assert.equal(fs.existsSync(sonic), false);
+});
+
+test('the watcher records native CLI tab identities from STATUS', async t => {
+  const f = fixture(t);
+  const dirs = ['claude', 'codex'].map(agent => f.job({ state: 'closed', harness: 'cli', agent, agent_session_id: `synthetic-${agent}` },
+    { cli: { agent }, reaped_at: new Date().toISOString() }, true));
+  const { child, exited } = f.start();
+  await exited;
+  assert.equal(child.exitCode, 0);
+  for (const [i, harness] of ['claude', 'codex'].entries()) {
+    const receipt = JSON.parse(fs.readFileSync(join(dirs[i], 'job.json'), 'utf8'));
+    assert.deepEqual(receipt.sessions, [{ harness, id: `synthetic-${harness}` }]);
+  }
+});
+
 for (const failure of ['missing cwd', 'relative cwd', 'existing target', 'dangling target', 'rename EXDEV']) {
   test(`retention keeps the whole job and logs once on ${failure}`, async (t) => {
     const f = fixture(t), dir = f.job(expired(), { reaped_at: expired().ended_at }, true);

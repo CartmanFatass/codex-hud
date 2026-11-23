@@ -83,6 +83,8 @@ export function save(job: Job, newAttempt = false): void {
     if (owner) job.herdr_pane = owner;
     delete job.caller_pane;
   }
+  // The watcher may learn a native identity while launch, send or repair awaits the harness.
+  if (receipt?.sessions) job.sessions = receipt.sessions;
   const existing = newAttempt ? null : receipt;
   for (const key of ['read_at', 'observed_at', 'pi_sent_at'] as const) {
     const at = existing?.[key];

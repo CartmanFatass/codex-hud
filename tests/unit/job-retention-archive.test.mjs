@@ -20,7 +20,9 @@ test('retention appends one private facts-only line before removal, even if remo
     role: 'imp', cli: { agent: 'claude' }, model: 'example', thinking: 'high', project_root: '/synthetic/project',
     preset: 'default', used_place: 'claude example', attempts: [{ index: 0, place: 'pi example', reason: longReason, extra: secret }],
     checks: [secret], created_at: ended, read_at: ended, reaped_at: reaped, parent_job: 'j000000000000000a',
-    repair_of: 'j000000000000000b', package: 'archive', create_options: { task: secret }, request_key: secret,
+    repair_of: 'j000000000000000b', retry_of: 'j000000000000000c', package: 'archive',
+    sessions: [{ harness: 'claude', id: 'synthetic-claude', extra: secret }, { harness: 'pi', id: 'synthetic-pi', path: '/synthetic/history.jsonl' }],
+    create_options: { task: secret }, request_key: secret,
     headless: true, ticket: 'sample/03', route: { tier: 'standard', mode: 'headless', reason: secret }, resume_s: 0,
   });
   const id = basename(dir);
@@ -31,8 +33,13 @@ test('retention appends one private facts-only line before removal, even if remo
     usage: { input_tokens: 6, output_tokens: 9, cache_read_input_tokens: 0 } }) + '\n');
   fs.mkdirSync(join(f.home, 'flows'));
   const flow = `f${id.slice(1)}`, sha = 'abc1234'.repeat(5) + 'abc12';
-  for (const [name, facts] of [[flow, { state: 'failed', repairs: [{ outcome: secret }] }],
-    [`${flow}-2`, { state: 'completed', reruns: [{ tests: [secret] }], landed_sha: sha, updated_at: reaped }]]) {
+  for (const [name, facts] of [[flow, { state: 'failed', repairs: [
+    { step: 'cherry-pick', outcome: 'worker stopped', job: secret },
+  ] }], [`${flow}-2`, { state: 'completed', repairs: [{ step: 'gate[1]: build', outcome: 'gate passed' }], reruns: [
+    { step: 'gate[1]: build', tests: [], rerun_ok: false, output_path: secret },
+    { step: 'gate[2]: test', tests: [secret], rerun_ok: true, output_path: secret },
+    { step: 'gate[3]: check', tests: [], output_path: secret }, // No rerun verdict (e.g. timeout).
+  ], landed_sha: sha, updated_at: reaped }]]) {
     const receipt = join(f.home, 'flows', `${name}.json`);
     fs.writeFileSync(receipt, JSON.stringify({ job: id, ...facts }));
     fs.utimesSync(receipt, Date.parse(reaped) / 1000, Date.parse(reaped) / 1000);
@@ -74,10 +81,15 @@ syncBuiltinESMExports();`);
     attempts: [{ index: 0, place: 'pi example', reason: 'é'.repeat(99) }], dispatch_exit_code: 0,
     state: 'closed', exit_reason: 'é'.repeat(99), created_at: ended, started_at: ended, settled_at: ended,
     ended_at: ended, read_at: ended, reaped_at: reaped, checks: { passed: 0, total: 1, stale: true },
-    repair_of: 'j000000000000000b', parent_job: 'j000000000000000a', package: 'archive', outcome: 'partial',
+    repair_of: 'j000000000000000b', retry_of: 'j000000000000000c', parent_job: 'j000000000000000a', package: 'archive', outcome: 'partial',
+    sessions: [{ harness: 'claude', id: 'synthetic-claude' }, { harness: 'pi', id: 'synthetic-pi', path: '/synthetic/history.jsonl' }],
     mode: 'headless', route: { tier: 'standard', mode: 'headless' }, ticket: 'sample/03', question_count: 1,
     summary: 'Delivered <home path> and <home path>', usage: { input: 6, output: 9, cache_read: 0, cost_usd: 0.12 },
-    land: { attempts: 2, state: 'completed', repairs: 1, reruns: 1, sha, landed_at: reaped, updated_at: reaped },
+    land: { attempts: 2, state: 'completed', repairs: 2, reruns: 2, sha, landed_at: reaped, updated_at: reaped,
+      repair_details: [{ step_kind: 'conflict', step: 'cherry-pick', outcome: 'worker stopped' },
+        { step_kind: 'gate', step: 'gate[1]: build', outcome: 'gate passed' }],
+      rerun_details: [{ step: 'gate[1]: build', passed_unchanged: false }, { step: 'gate[2]: test', passed_unchanged: true }],
+    },
   });
   const second = f.start(clock);
   await second.exited;

@@ -289,7 +289,10 @@ if (!fs.existsSync(join(process.env.HOME, 'retry'))) {
   const retry = async key => {
     const job = await f.call('hud_create', { role: 'sonic', retry_of: source.job, request_key: key });
     await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
-    return JSON.parse(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'));
+    const report = JSON.parse(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'));
+    const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+    assert.deepEqual(receipt.sessions, [{ harness: 'pi', id: report.header.id, path: join(job.task_dir, 'sonic-session.jsonl') }]);
+    return report;
   };
   const resumed = await retry('resumed');
   assert.equal(resumed.header.id, id);

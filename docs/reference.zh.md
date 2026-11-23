@@ -562,7 +562,8 @@ pi 工作者不会启动此监听。
 若无法排队或没有队列，则回退为直接输入。
 
 任务是 `$HUD_HOME/jobs/<job>/` 中的普通文件。
-pi 历史保存在 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`，任务的 `sessions/` 链接到主代理／助手文件。
+标签页中的 pi 历史保存在 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`，任务的 `sessions/` 链接到主代理／助手文件。无界面 pi 的原生会话文件保存在任务目录中。
+`job.json` 用 `sessions: [{harness, id, path?}]` 记录已知的原生会话，包括修正时的续接；重新打开同一会话不会重复记录。
 CLI 任务的监督进程只观察；
 只有事实能结束任务：记录的进程号消失（或被替换）、标签页关闭、输入前派发被拒（`failed`；
 磁盘上有新报告则 `closed`）。
@@ -585,8 +586,8 @@ STATUS 只在行变化时写。
 watcher 通过套接字关闭事件发现 HUD 启动的运行进程退出，无需定期扫描。
 原生 pi-roles 工作者没有这样的套接字，等待停止或已读关闭时仍可按 `HUD_WATCH_CLI_CHECK_MS`（默认 30000 毫秒）复查。
 监督进程已死而工作者仍在时任务为 `waiting_orchestrator`（“supervisor exited; worker still running”），watcher 按指数退避复查该工作者，对它 `hud_send` 会启动新的监督进程。
-已结算目录在**关闭一天后**的 后续扫描时清理，不设专门到期定时器；
-包括报告及 `hud_read` 访问。
+已结算目录（包括报告及 `hud_read` 访问）通常在**关闭一天后**的后续扫描时清理，不设专门到期定时器。
+原生会话文件只存于任务目录的无界面 pi 任务，在**结算后至少保留七天**。
 删除旧 pi 任务前先将真实 JSONL 会话移至 pi 存储；
 CLI 和浏览器会话留在各自存储。
 cwd 无效、目标冲突或移动失败则保留任务。
@@ -598,6 +599,8 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。
 它读取 pi 会话记录、CLI 结果流或原生转写中的用量记录；
 不会给缺失费用的词元估价，也不会把截断的逐请求转写当成总量。
 删除任务目录前，watcher 向 `$HUD_HOME/archive/YYYY-MM.jsonl` 追加一行任务事实，包括工单、路由、提问数、合入结果、已知用量和去除主目录路径后的有限长度声明摘要。
+归档行在已知时包含 `sessions` 和 `retry_of`。会话路径按原样记录，文件之后可能移动或删除。
+`land` 保留尝试、修正和重跑次数，并增加 `repair_details: [{step_kind, step, outcome}]`（cherry-pick 步骤为 `conflict`，其余为 `gate`）和已知结果的 `rerun_details: [{step, passed_unchanged}]`。
 归档不含任务说明或报告正文；
 写入失败不影响删除，HUD 不会清理归档。
 同一轮清理中，任务目录删除后，watcher 会清理 `$HUD_HOME/flows/` 中一天未改动的已结束合入回执及附属文件。

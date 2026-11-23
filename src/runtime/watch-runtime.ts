@@ -9,6 +9,7 @@ import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.
 import { archivedClosedJobs, mainHead, reapWorktree, sweepArchivedWorktrees, type ArchivedClosedJob } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
+import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sessions.js';
 import { recordJobUsage } from '../roles/job-usage.js';
 import { landAttempt, activeLand } from '../mcp/land-state.js';
 import { queueIds, readTicketQueue } from '../mcp/ticket-queue-state.js';
@@ -22,14 +23,14 @@ import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
 import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
-import type { Job, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
+import type { Job, JobSession, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
 import { jobFiles, BUNDLED_ROOT, binScript } from '../mcp/paths.js';
 import { capForRole, isWorkingForCap, loadConcurrencySettings, queueOrderCompare, queuedTimestamp } from '../roles/concurrency.js';
 import { settingsPath } from '../settings.js';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { RunnerWatches } from './runner-watches.js';
 import { RUNNER_READY } from '../utils/runner-lifetime.js';
@@ -224,6 +225,72 @@ function sessionFolders(dir: string) {
       .map((entry) => join(dispatch, entry.name, 'sessions')) : [])]
     .filter((folder) => fs.lstatSync(folder, { throwIfNoEntry: false })?.isDirectory());
 }
+function recordSessions(dir: string, job: Job, status: Partial<JobStatus>, piFiles: string[]): Job {
+  const known = Array.isArray(job.sessions) ? job.sessions : [];
+  const found: JobSession[] = [];
+  const addPi = (id: string, path: string) => found.push({ harness: 'pi', id, path });
+  if (status.harness === 'cli' || job.cli) {
+    const agent = status.agent ?? job.cli?.agent;
+    let id = status.agent_session_id;
+    if (job.headless || status.slot === 'headless') {
+      // STATUS initially names the requested ID. Only native init is evidence it ran.
+      id = undefined;
+      const offset = status.stdout_start;
+      if ((!job.reaped_at || !known.length) && agent && typeof offset === 'number' && Number.isSafeInteger(offset) && offset >= 0) {
+        try { id = cliStreamSession(join(dir, jobFiles.sonicStdout), agent, offset); }
+        catch { /* No readable native init. */ }
+      }
+    }
+    const native = cliSession(agent, id);
+    if (native) found.push(native);
+  }
+  if (!job.cli && !job.bro && !job.jev) {
+    const identity = piSessionIdentity(job, status.session_file);
+    if (identity?.file && (!status.session_id || identity.id === status.session_id)) addPi(identity.id, identity.file);
+    else if (!identity && typeof status.session_id === 'string' && status.session_id)
+      found.push({ harness: 'pi', id: status.session_id });
+    // Sonic retries stage a copy before opening it and may replace it after a rejected open.
+    if (isSonicSession(job, status) && !(job.retry_of && status.state === 'working'))
+      piFiles.push(join(dir, jobFiles.sonicSession));
+  }
+  // The job's primary/helper links and local session files are explicit associations.
+  for (const file of piFiles) {
+    let path;
+    try { path = fs.realpathSync(file); } catch { continue; }
+    if (known.some(s => s?.harness === 'pi' && s.path === path)) continue;
+    const native = piSessionHeader(path);
+    if (native) addPi(native.id, native.path);
+  }
+  const sessions = [...known];
+  for (const fact of found) {
+    const i = sessions.findIndex(s => s?.harness === fact.harness && s.id === fact.id);
+    if (i === -1) sessions.push(fact);
+    else if (!sessions[i]!.path && fact.path) sessions[i] = fact;
+  }
+  if (sessions.length === known.length && sessions.every((s, i) => s === known[i])) return job;
+  const receipt = { ...job, sessions };
+  try { writeJsonAtomic(join(dir, jobFiles.job), receipt, 2); }
+  catch (error) { warn(`sessions ${job.job}`, `record sessions ${job.job}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
+  return receipt;
+}
+const isSonicSession = (job: Job, status: Partial<JobStatus>) => status.slot === 'sonic' || (job.headless && job.role === 'sonic');
+function hasLocalPiSession(dir: string, job: Job, status: Partial<JobStatus>, localFiles: string[]) {
+  if (job.cli || job.bro || job.jev || !(job.headless || status.slot === 'headless' || status.slot === 'sonic')) return false;
+  const root = fs.realpathSync(dir);
+  const candidates = [...localFiles, status.session_file, isSonicSession(job, status) ? join(dir, jobFiles.sonicSession) : undefined];
+  return candidates.some(file => {
+    if (!file || !isAbsolute(file)) return false;
+    try {
+      const path = fs.realpathSync(file), local = relative(root, path);
+      if (!local || isAbsolute(local) || local === '..' || local.startsWith(`..${sep}`)) return false;
+      const st = fs.lstatSync(path);
+      return st.isFile() && st.size > 0; // A failed launch can leave an empty placeholder.
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return false;
+    }
+  });
+}
 function preserveSessions(dir: string) {
   try {
     for (const folder of sessionFolders(dir)) {
@@ -386,9 +453,10 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
       output_written: !waiting && fs.existsSync(join(dir, jobFiles.report)), ...(waiting ? {} : { settled_at: now, ended_at: now }),
       stdout_bytes: size(jobFiles.sonicStdout), stderr_bytes: size(jobFiles.sonicStderr) };
     recordJobUsage(dir, job, settled);
-    writeJsonAtomic(statusFile, settled);
     const latest = readJson<Job>(jobFile);
-    if (latest && !waiting) writeJsonAtomic(jobFile, { ...latest, reaped_at: now }, 2);
+    const recorded = latest && recordSessions(dir, latest, settled, []);
+    writeJsonAtomic(statusFile, settled);
+    if (recorded && !waiting) writeJsonAtomic(jobFile, { ...recorded, reaped_at: now }, 2);
     const issue = snapshotIssueForLog(id, dir, cleanup.unrecoverable);
     if (issue) log(`reap ${id}: ${issue}; ${UNVERIFIED_TREE_NOTE}`);
     reapRetries.delete(id);
@@ -535,19 +603,24 @@ function scan(retryWatch = false) {
         continue;
       }
       if (inFlightWorktrees.has(id) || !fs.lstatSync(dir).isDirectory()) continue;
+      const piLinks: string[] = [], piLocalFiles: string[] = [];
       try {
-        const loops = sessionFolders(dir).flatMap((folder) => fs.readdirSync(folder, { withFileTypes: true })
-          .filter((entry) => entry.isSymbolicLink() && entry.name.endsWith('.jsonl'))
-          .map((entry) => join(folder, entry.name)))
-          .filter((link) => {
-            try { fs.statSync(link); } catch (error) { return (error as NodeJS.ErrnoException).code === 'ELOOP'; }
-            return false;
-          });
+        const loops: string[] = [];
+        for (const folder of sessionFolders(dir)) for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+          if (!entry.name.endsWith('.jsonl')) continue;
+          const file = join(folder, entry.name);
+          if (entry.isFile()) piLocalFiles.push(file);
+          if (!entry.isSymbolicLink()) continue;
+          try { fs.statSync(file); piLinks.push(file); } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ELOOP') loops.push(file);
+          }
+        }
+        // Identify every member before unlinking any of them.
         for (const link of loops) { fs.unlinkSync(link); log(`unlink loop ${link}`); }
       } catch (error) { warn(`keep ${id} scan`, `keep ${id} scan: ${(error as Error).message}`); }
       const jobFile = join(dir, jobFiles.job), statusFile = join(dir, jobFiles.status);
-      let job: (Job & Record<string, unknown>) | null, status: Partial<JobStatus> | null, statusAt: number | null, session: SessionEntry | null;
-      try { job = readJson<Job & Record<string, unknown>>(jobFile); ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile)); session = jobCache.readSession(id, { throwOnError: true }); }
+      let job: Job | null, status: Partial<JobStatus> | null, statusAt: number | null, session: SessionEntry | null;
+      try { job = readJson<Job>(jobFile); ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile)); session = jobCache.readSession(id, { throwOnError: true }); }
       // Unreadable lifecycle or tab evidence may still belong to an open job.
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') open = true; throw error; }
       if (job?.worktree?.root) {
@@ -558,6 +631,11 @@ function scan(retryWatch = false) {
         open = true;
         queuedJobs.push({ id, job, queuedAt: queuedTimestamp(job) });
         continue;
+      }
+      if (job && (status || piLinks.length)) {
+        // Real tab files are a legacy preservation layout; new tabs link to the native store.
+        if (job.headless || status?.slot === 'headless' || status?.slot === 'sonic') piLinks.push(...piLocalFiles);
+        job = recordSessions(dir, job, status ?? {}, piLinks);
       }
       if (job?.headless && job.reaped_at && headlessFollowupReady(status) && hasHeadlessSends(dir) &&
           !fs.existsSync(join(dir, jobFiles.stopRequested))) {
@@ -723,11 +801,13 @@ function scan(retryWatch = false) {
         }
       }
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
-      const expires = (Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs)) + JOB_RETENTION_MS;
-      if (!landing && !checkingReport && !resumable && expires < Date.now() && (!tab || job?.reaped_at)) {
-        // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
+      const closedAt = Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs);
+      const now = Date.now();
+      if (!landing && !checkingReport && !resumable && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
+        if (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles)) continue;
+        // Preserve legacy Pi history. CLI and browser keep theirs in their own stores.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
-        archiveJob(home, dir, id, job, status, Date.now(), log);
+        archiveJob(home, dir, id, job, status, now, log);
         fs.rmSync(dir, { recursive: true, force: true });
         jobCache.evictJob(id);
         reapRetries.delete(id);
@@ -886,10 +966,11 @@ function startWatch() {
     }).once('error', () => { flowsWatcher?.close(); flowsWatcher = undefined; });
   } catch { /* The initial scan and active-queue recovery timer still run. */ }
   try {
-    watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
+    watcher = fs.watch(jobs, { recursive: true }, (event, filename) => {
       const path = filename?.toString();
       jobChanges.change(path ?? '');
       if (path?.endsWith(`/${RUNNER_READY}`)) { runners.ready(join(jobs, dirname(path))); schedule(); return; }
+      if (event === 'rename' && path && /^[^/]+\/(sonic-session\.jsonl|(?:\.dispatch\/[^/]+\/)?sessions(?:\/[^/]+\.jsonl)?)$/.test(path)) schedule();
       if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-(?:exit|stop)\.json|headless-sends\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;

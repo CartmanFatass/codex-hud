@@ -12,6 +12,7 @@ export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & 
 export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default'; fallback?: string; mode_reason?: string;
   placement?: 'even'; preset?: string | null };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
+export type JobSession = { harness: 'pi' | CliAgent; id: string; path?: string };
 export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string; resumed?: true };
 export interface ManagedWorktree {
   main_root: string;
@@ -51,6 +52,7 @@ export interface Job extends PiOptions {
   checks?: string[];
   repair_of?: string;
   retry_of?: string;
+  sessions?: JobSession[];
   land_turn?: string; // Only this repair turn's ordinary notices belong to the enclosing flow.
   ticket_queue?: string; // This turn's automatic notices belong to the batch, not the job.
   target_hint?: string | null;

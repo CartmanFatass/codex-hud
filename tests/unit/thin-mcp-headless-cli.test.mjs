@@ -150,6 +150,9 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
     write(join(childDir(sonic), 'release-sonic'), '');
     await until(() => cliState(childDir(sonic))?.state === 'closed', t.signal);
     const id = status().agent_session_id;
+    const native = { harness: agent, id };
+    const sessions = () => read(join(dir, 'job.json')).sessions;
+    assert.deepEqual(sessions(), [native]);
     assert.ok(id && !isProcAlive(status().pid));
     assert.equal(status().slot, 'headless');
     assert.equal(status().agent, agent);
@@ -168,6 +171,7 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
     await wait('closed');
     assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Synthetic repair\./);
     assert.equal(status().agent_session_id, id);
+    assert.deepEqual(sessions(), [native], 'native land repair resumes the same session without duplicating it');
     const invocations = fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).filter(row => row.pid);
     assert.equal(new Set(invocations.map(row => row.pid)).size, 4);
     assert.deepEqual(invocations.map(row => row.resumed), [undefined, id, id, id]);
@@ -181,5 +185,6 @@ for (const [agent, role] of [['claude', 'frontend-imp'], ['agy', 'general']]) {
     await wait('failed');
     assert.equal(status().agent_session_id, null);
     assert.match(status().exit_reason, /did not open the recorded session/);
+    assert.deepEqual(sessions(), agent === 'claude' ? [native] : [native, { harness: agent, id: 'different-agy-conversation' }]);
   });
 }

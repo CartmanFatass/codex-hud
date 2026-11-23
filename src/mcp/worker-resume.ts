@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { readFileBounded } from '../utils/atomic-fs.js';
 import { cliKinds } from '../roles/cli-kinds.js';
+import { piSessionHeader } from '../roles/job-sessions.js';
 import { REPORT_SETTLED_EXIT } from './cli-judge.js';
 import type { Job, JobStatus } from './job-contracts.js';
 
@@ -32,13 +32,10 @@ export function resumeIdentity(job: Job, status: JobStatus): Omit<NativeResume, 
 
 /** Read pi's own header, never the model's JSON output. */
 export function piSessionIdentity(job: Job, file: string | null | undefined): Omit<NativeResume, 'message'> | null {
-  if (!file || !isAbsolute(file)) return null;
+  const head = file && piSessionHeader(file);
   try {
-    const path = fs.realpathSync(file);
-    const { bytes } = readFileBounded(path, 64 * 1024);
-    const head = JSON.parse(bytes.toString('utf8').split('\n', 1)[0]);
-    if (head.type === 'session' && typeof head.id === 'string' && head.id && typeof head.cwd === 'string' &&
-        isAbsolute(head.cwd) && fs.realpathSync(head.cwd) === fs.realpathSync(job.cwd)) return { id: head.id, file: path };
+    if (head && typeof head.cwd === 'string' && isAbsolute(head.cwd) &&
+        fs.realpathSync(head.cwd) === fs.realpathSync(job.cwd)) return { id: head.id, file: head.path };
   } catch { /* Missing or unreadable native session: the caller will repair instead. */ }
   return null;
 }

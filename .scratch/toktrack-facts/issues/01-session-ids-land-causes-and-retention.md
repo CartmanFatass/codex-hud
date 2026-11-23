@@ -1,6 +1,6 @@
 # 01: Session ids, land repair causes and retention in job records
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Blocked by:** none
 
@@ -13,10 +13,12 @@ existing counts. (3) Add `retry_of` to the archive line. (4) Retention keeps a j
 file exists nowhere else (headless pi) for at least 7 days after it settles; nothing else changes. Synthetic data
 only in tests.
 
-- [ ] Unit tests: sessions[] for a pi tab job, a headless sonic, a Claude CLI job and a repaired continuation
-- [ ] Archive line carries sessions[], retry_of and per-repair / per-rerun causes for a flow with a conflict
+- [x] Unit tests: sessions[] for a pi tab job, a headless sonic, a Claude CLI job and a repaired continuation
+- [x] Archive line carries sessions[], retry_of and per-repair / per-rerun causes for a flow with a conflict
       repair and a flaky rerun
-- [ ] Retention test: headless job kept 7 days, a pi tab job whose session lives in `~/.pi` follows today's rule
-- [ ] docs/reference.md (EN/ZH) describes the new archive fields
+- [x] Retention test: headless job kept 7 days, a pi tab job whose session lives in `~/.pi` follows today's rule
+- [x] docs/reference.md (EN/ZH) describes the new archive fields
 
 ## Comments
+
+- Landed in this commit (replay base b3168b92ce229f0f8e41447ca6080b596bd5e38f); gate 5/5 passed.

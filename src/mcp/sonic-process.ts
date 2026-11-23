@@ -12,7 +12,8 @@ import { binScript, jobFiles } from './paths.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { procStat, readBootId } from '../utils/proc.js';
-import { readFileBounded, readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
+import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
+import { cliStreamSession } from '../roles/job-sessions.js';
 import { rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
 import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cli-turn.js';
 import { REPORT_SETTLED_EXIT } from './cli-judge.js';
@@ -74,22 +75,6 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
 }
 
 type HeadlessExit = { code: number | null; signal?: string | null; paused?: boolean; error?: string; agent_session_id?: string };
-
-function cliStreamSession(dir: string, agent: string, offset: number) {
-  // The native init record precedes conversation output. Read only this turn's bounded log prefix.
-  const stdout = fs.fstatSync(1);
-  const { bytes, truncated } = readFileBounded(join(dir, jobFiles.sonicStdout), 256 * 1024, { offset,
-    validate: stat => { if (stat.dev !== stdout.dev || stat.ino !== stdout.ino) throw Error('worker log changed'); } });
-  const lines = bytes.toString('utf8').split('\n');
-  if (truncated) lines.pop();
-  for (const line of lines) {
-    let event;
-    try { event = JSON.parse(line); } catch { continue; }
-    const id = agent === 'claude' && event?.type === 'system' && event.subtype === 'init' ? event.session_id
-      : agent === 'agy' && event?.event === 'init' ? event.conversation_id : undefined;
-    if (typeof id === 'string' && /^[\w][\w.-]{0,127}$/.test(id)) return id;
-  }
-}
 
 async function launchTurn(dir: string, argv: string[], status: JobStatus, command: string) {
   const pause = join(dir, jobFiles.pauseRequested);
@@ -161,8 +146,12 @@ export async function runHeadlessTurn(dir: string, argv: string[]) {
       result = await launchTurn(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status, 'pi');
     }
     if (agent && (result.code === 0 || result.paused)) {
-      try { result.agent_session_id = cliStreamSession(dir, agent, offset); }
-      catch (error) { result.error = (error as Error).message; }
+      try {
+        const stdout = fs.fstatSync(1);
+        result.agent_session_id = cliStreamSession(join(dir, jobFiles.sonicStdout), agent, offset, stat => {
+          if (stat.dev !== stdout.dev || stat.ino !== stdout.ino) throw Error('worker log changed');
+        });
+      } catch (error) { result.error = (error as Error).message; }
     }
     writeJsonPrivate(join(dir, jobFiles.sonicExit), { ...result, at: Date.now() }, { mkdir: false });
     wake();
