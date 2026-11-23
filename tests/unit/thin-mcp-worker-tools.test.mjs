@@ -240,6 +240,26 @@ test('hud_sonic accepts a project cwd relative to the parent and refuses paths o
   assert.equal(JSON.parse(fs.readFileSync(join(jobs, job, 'job.json'))).cwd, subdir);
 });
 
+test('hud_sonic start accepts timeout_s, documents it for wait, and refuses wait with task', async (t) => {
+  const f = await fixture(t);
+  sonicTask(f);
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic parent.' });
+  const call = workerClient(t, f, parent.task_dir);
+  const sonic = (await call.rpc('tools/list')).result.tools.find(({ name }) => name === 'hud_sonic');
+  assert.match(sonic.description, /timeout_s applies to wait/);
+  assert.match(sonic.inputSchema.properties.timeout_s.description, /Wait only/);
+
+  const started = resultValue(await call('hud_sonic', { task: 'Synthetic child.', timeout_s: 30 }));
+  assert.equal(started.error, undefined);
+  assert.match(started.job, /^j[0-9a-f]{16}$/);
+  const childJob = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'jobs', started.job, 'job.json')));
+  assert.equal(childJob.parent_job, parent.job);
+
+  const conflict = await call('hud_sonic', { task: 'Synthetic child.', wait: [started.job] });
+  assert.equal(conflict.isError, true);
+  assert.match(JSON.parse(conflict.content[0].text).error, /\bwait\b/);
+});
+
 test('a working pi parent gets native sonic checkpoint and ready notices without polling or collecting', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
   const task = sonicTask(f);

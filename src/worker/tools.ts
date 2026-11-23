@@ -251,7 +251,7 @@ export async function callWorkerTool(name: string, args: Record<string, unknown>
     case 'hud_sonic':
       if (args.thinking !== undefined) throw new Error('invalid_arguments: unexpected thinking');
       if (args.task !== undefined) {
-        if (args.wait !== undefined || args.timeout_s !== undefined) throw new Error('start or wait for sonic, not both');
+        if (args.wait !== undefined) throw new Error('start or wait for sonic, not both (wait cannot be passed with task)');
         return startSonic(context, string('task'), args.cwd);
       }
       if (args.cwd !== undefined) throw new Error('cwd is only used when starting sonic');
@@ -289,9 +289,9 @@ export async function workerTools(cli = false) {
     tool('hud_ask', headless ? 'Ask the orchestrator and end the turn. The answer resumes this session.'
       : 'Ask the orchestrator and wait for an answer. Never wait on terminal input.',
       { question: string, default: string, options: strings, context: string }, ['question', 'default']),
-    tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children. Pi sends a ready notice. timeout_s defaults to 480.',
+    tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children (timeout_s applies to wait; defaults to 480). Pi sends a ready notice.',
       { task: string, cwd: { ...string, description: "Start only. Defaults to the parent job's working directory. Resolve relative paths there; the destination must stay inside the parent project." },
-        wait: strings, timeout_s: { type: 'number', minimum: 0 } }),
+        wait: strings, timeout_s: { type: 'number', minimum: 0, description: 'Wait only. Seconds to wait before returning still-working ids; defaults to 480.' } }),
     tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
     LEASE_TOOL,
   ].filter(({ name }) => role !== 'sonic' || (name !== 'hud_sonic' && name !== 'hud_ask'));
