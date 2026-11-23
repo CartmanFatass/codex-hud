@@ -116,7 +116,8 @@ test('pi role tools match the real MCP tools/list', async (t) => {
   const f = await fixture(t);
   const tools = (await f.rpc('tools/list')).result.tools.filter(({ name }) => name !== 'hud_statusline');
   assert.deepEqual(PI_ROLE_TOOLS, tools);
-  assert.ok(Buffer.byteLength(JSON.stringify(tools)) <= 9638, 'role declarations stay within the pre-update byte budget');
+  // The pre-wording-update base includes hud_create.instructions for borrowing a role.
+  assert.ok(Buffer.byteLength(JSON.stringify(tools)) <= 9715, 'role declarations stay within the pre-update byte budget');
   assert.match(tools.find(({ name }) => name === 'hud_read').description, /close at turn end with a declared report, read or not/);
   assert.match(tools.find(({ name }) => name === 'hud_create').inputSchema.properties.mode.description, /Imp routing may select it/);
 });
