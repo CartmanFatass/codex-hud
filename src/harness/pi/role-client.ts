@@ -59,7 +59,7 @@ export class PiRoleClient {
       ready: request('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {},
-        clientInfo: { name: 'hud-pi', version: '0.1.4' },
+        clientInfo: { name: 'hud-pi', version: '0.2.0' },
       }),
     };
     child.once('close', () => {

@@ -77,7 +77,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: { listChanged: true }, resources: {} },
-        serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
+        serverInfo: { name: 'hud-mcp-thin', version: '0.2.0' },
         instructions: session.resumeRefusal ?? (worker ? 'Use the worker tools for your own HUD job. Finish with hud_report.' :
           MAIN_SESSION_INSTRUCTIONS),
       };
